@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments & secrets -- never commit credentials of any kind
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local-only private files -- never commit
+CLAUDE.local.md
+MASTER_PLAN.md
+
+# Private planning notes, drafts, personal docs -- the whole folder, never commit.
+# CLAUDE.md, CONTRIBUTING.md, and README.md stay at repo root and ARE committed --
+# they're public-safe by design, not planning material.
+docs/
