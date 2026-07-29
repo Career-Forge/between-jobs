@@ -8,7 +8,8 @@ is built to be genuinely free for the people who need it most: bring your own LL
 documents, application tracking, and interview prep -- with your data staying on your
 machine.
 
-**Status: pre-alpha.** The repo is being scaffolded; there is no runnable product yet.
+**Status: pre-alpha.** The bare spine (a FastAPI app + Supabase-backed session store)
+runs, but there's no agent runtime, no channel bridge, and no user-facing product yet.
 
 ## Principles
 

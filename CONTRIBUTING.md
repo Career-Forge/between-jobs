@@ -17,7 +17,10 @@ Requires Python 3.12+.
 ```
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+cp .env.example .env  # fill in SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY to run the API
 ```
+
+Run the API locally: `uvicorn between_jobs.api.app:app --reload`
 
 Before pushing, all of these must pass:
 
