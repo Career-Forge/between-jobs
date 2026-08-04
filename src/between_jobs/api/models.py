@@ -8,12 +8,11 @@ from pydantic import BaseModel
 
 
 class CreateSessionRequest(BaseModel):
-    """No real auth yet (Sprint 2.1 is plumbing, not identity) -- `user_id`
-    is trusted as given rather than derived from a verified JWT. Real auth
-    (Supabase Auth + JWT verification) is the next foundational piece, not
-    a detail to fake past in this sprint."""
+    """`user_id` is deliberately NOT a field here (Sprint 2.2) -- it comes
+    from the verified access token (`auth.require_user_id`), never from
+    caller-supplied input. A client cannot create a session for anyone
+    but themselves."""
 
-    user_id: str
     context: dict[str, Any] = {}
 
 

@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "supabase>=2.10",
+    "pyjwt[crypto]>=2.10",
 ]
 
 [project.urls]

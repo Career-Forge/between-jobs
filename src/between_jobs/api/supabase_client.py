@@ -27,7 +27,11 @@ def _require_env(name: str) -> str:
     return value
 
 
-async def create_supabase_client() -> AsyncClient:
+async def create_supabase_client() -> tuple[AsyncClient, str]:
+    """Returns the client and the project URL -- callers that also need
+    the URL (e.g. to build a JWKS client for auth.py) shouldn't have to
+    re-read and re-validate the env var themselves."""
     url = _require_env("SUPABASE_URL")
     key = _require_env("SUPABASE_SERVICE_ROLE_KEY")
-    return await acreate_client(url, key)
+    client = await acreate_client(url, key)
+    return client, url

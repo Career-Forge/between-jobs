@@ -1,11 +1,14 @@
-"""Tests for the FastAPI spine skeleton (Sprint 2.1).
+"""Tests for the FastAPI spine skeleton (Sprint 2.1/2.2).
 
-The endpoint's own logic is tested here via a fake Supabase client swapped
-in through FastAPI's dependency_overrides -- no live credentials or network
-access needed. The schema itself (RLS behavior, the foreign-key constraint
-this test's 404 case exercises) was verified separately, live, against the
-real Supabase project before this code was written -- see the migration
-commit message.
+The endpoint's own logic is tested here via fake Supabase/auth dependencies
+swapped in through FastAPI's dependency_overrides -- no live credentials or
+network access needed. Real, non-mocked JWT verification (the part that
+actually matters to get right) is tested separately in test_auth.py.
+
+The schema itself (RLS behavior, the foreign-key constraint this test's
+404 case exercises) was verified separately, live, against the real
+Supabase project before any application code was written -- see the
+migration commit message.
 """
 
 from __future__ import annotations
@@ -18,6 +21,9 @@ from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
 
 from between_jobs.api.app import app, get_supabase
+from between_jobs.api.auth import require_user_id
+
+_TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
 class _FakeInsertBuilder:
@@ -55,7 +61,8 @@ class _FakeSupabaseClient:
 def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # Lifespan runs under TestClient regardless of dependency_overrides --
     # these just need to be non-empty so create_supabase_client() doesn't
-    # raise; the client it builds is never actually queried in these tests.
+    # raise; the client and JWKS client it builds are never actually
+    # queried in these tests (both get overridden below).
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-key-not-real")
 
@@ -67,25 +74,29 @@ def test_health() -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_create_session_without_auth_header_returns_401() -> None:
+    # No dependency override for require_user_id here -- this exercises
+    # the real header-parsing path, proving the endpoint is actually
+    # protected rather than just trusting an override to exist.
+    with TestClient(app) as client:
+        response = client.post("/sessions", json={"context": {}})
+    assert response.status_code == 401
+
+
 def test_create_session_success() -> None:
     row = {
         "id": "11111111-1111-1111-1111-111111111111",
-        "user_id": "00000000-0000-0000-0000-000000000001",
+        "user_id": _TEST_USER_ID,
         "context": {"hello": "world"},
         "created_at": "2026-07-29T00:00:00Z",
         "updated_at": "2026-07-29T00:00:00Z",
     }
     fake_client = _FakeSupabaseClient(response_data=[row])
     app.dependency_overrides[get_supabase] = lambda: fake_client
+    app.dependency_overrides[require_user_id] = lambda: _TEST_USER_ID
     try:
         with TestClient(app) as client:
-            response = client.post(
-                "/sessions",
-                json={
-                    "user_id": "00000000-0000-0000-0000-000000000001",
-                    "context": {"hello": "world"},
-                },
-            )
+            response = client.post("/sessions", json={"context": {"hello": "world"}})
     finally:
         app.dependency_overrides.clear()
 
@@ -104,17 +115,15 @@ def test_create_session_unknown_user_returns_404() -> None:
     )
     fake_client = _FakeSupabaseClient(error=error)
     app.dependency_overrides[get_supabase] = lambda: fake_client
+    app.dependency_overrides[require_user_id] = lambda: _TEST_USER_ID
     try:
         with TestClient(app) as client:
-            response = client.post(
-                "/sessions",
-                json={"user_id": "00000000-0000-0000-0000-000000000099", "context": {}},
-            )
+            response = client.post("/sessions", json={"context": {}})
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 404
-    assert "00000000-0000-0000-0000-000000000099" in response.json()["detail"]
+    assert _TEST_USER_ID in response.json()["detail"]
 
 
 def test_create_session_other_db_error_returns_500() -> None:
@@ -123,12 +132,10 @@ def test_create_session_other_db_error_returns_500() -> None:
     )
     fake_client = _FakeSupabaseClient(error=error)
     app.dependency_overrides[get_supabase] = lambda: fake_client
+    app.dependency_overrides[require_user_id] = lambda: _TEST_USER_ID
     try:
         with TestClient(app) as client:
-            response = client.post(
-                "/sessions",
-                json={"user_id": "00000000-0000-0000-0000-000000000001", "context": {}},
-            )
+            response = client.post("/sessions", json={"context": {}})
     finally:
         app.dependency_overrides.clear()
 
