@@ -20,7 +20,8 @@ import pytest
 from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
 
-from between_jobs.api.app import app, get_supabase
+from between_jobs.api.app import app
+from between_jobs.api.app_state import get_supabase
 from between_jobs.api.auth import require_user_id
 
 _TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -60,11 +61,13 @@ class _FakeSupabaseClient:
 @pytest.fixture(autouse=True)
 def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # Lifespan runs under TestClient regardless of dependency_overrides --
-    # these just need to be non-empty so create_supabase_client() doesn't
-    # raise; the client and JWKS client it builds are never actually
-    # queried in these tests (both get overridden below).
+    # these just need to be non-empty so lifespan doesn't raise; none of
+    # the clients/secrets built from them are actually used in these
+    # tests (the ones that matter get overridden below).
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-key-not-real")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token-not-real")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "test-secret-not-real")
 
 
 def test_health() -> None:

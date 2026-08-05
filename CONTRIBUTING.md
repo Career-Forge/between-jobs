@@ -17,10 +17,14 @@ Requires Python 3.12+.
 ```
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env  # fill in SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY to run the API
+cp .env.example .env  # fill in Supabase + Telegram values, see comments in the file
 ```
 
 Run the API locally: `uvicorn between_jobs.api.app:app --reload`
+
+To receive real Telegram updates locally, tunnel the port (e.g. `ngrok http 8000`)
+and register the webhook once -- see the `TELEGRAM_WEBHOOK_SECRET` comment in
+`.env.example` for the exact `setWebhook` call.
 
 Before pushing, all of these must pass:
 

@@ -15,23 +15,16 @@ yourself in `.env` from the project dashboard (Settings -> API).
 
 from __future__ import annotations
 
-import os
-
 from supabase import AsyncClient, acreate_client
 
-
-def _require_env(name: str) -> str:
-    value = os.environ.get(name, "")
-    if not value:
-        raise RuntimeError(f"missing required env var {name}")
-    return value
+from .env import require_env
 
 
 async def create_supabase_client() -> tuple[AsyncClient, str]:
     """Returns the client and the project URL -- callers that also need
     the URL (e.g. to build a JWKS client for auth.py) shouldn't have to
     re-read and re-validate the env var themselves."""
-    url = _require_env("SUPABASE_URL")
-    key = _require_env("SUPABASE_SERVICE_ROLE_KEY")
+    url = require_env("SUPABASE_URL")
+    key = require_env("SUPABASE_SERVICE_ROLE_KEY")
     client = await acreate_client(url, key)
     return client, url

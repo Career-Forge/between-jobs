@@ -96,6 +96,8 @@ def test_signature_from_wrong_key_rejected(private_key: EllipticCurvePrivateKey)
 def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SUPABASE_URL", _ISSUER_URL)
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-key-not-real")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token-not-real")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "test-secret-not-real")
 
 
 @pytest.fixture
