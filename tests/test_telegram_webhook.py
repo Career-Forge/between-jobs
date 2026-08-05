@@ -25,21 +25,31 @@ _EXISTING_USER_ID = "00000000-0000-0000-0000-000000000001"
 _NEW_USER_ID = "00000000-0000-0000-0000-000000000002"
 
 
-class _FakeTelegramLinksQuery:
-    def __init__(self, select_rows: list[dict[str, Any]]) -> None:
-        self._select_rows = select_rows
+class _FakeQuery:
+    """Serves both telegram_links and resumes -- same shape either way
+    (select/eq/insert/upsert/execute), just different preset rows."""
 
-    def select(self, columns: str) -> _FakeTelegramLinksQuery:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.rows = rows
+        self.insert_calls: list[dict[str, Any]] = []
+        self.upsert_calls: list[dict[str, Any]] = []
+
+    def select(self, columns: str) -> _FakeQuery:
         return self
 
-    def eq(self, column: str, value: Any) -> _FakeTelegramLinksQuery:
+    def eq(self, column: str, value: Any) -> _FakeQuery:
         return self
 
-    def insert(self, data: dict[str, Any]) -> _FakeTelegramLinksQuery:
+    def insert(self, data: dict[str, Any]) -> _FakeQuery:
+        self.insert_calls.append(data)
+        return self
+
+    def upsert(self, data: dict[str, Any]) -> _FakeQuery:
+        self.upsert_calls.append(data)
         return self
 
     async def execute(self) -> SimpleNamespace:
-        return SimpleNamespace(data=self._select_rows)
+        return SimpleNamespace(data=self.rows)
 
 
 class _FakeAdmin:
@@ -52,13 +62,22 @@ class _FakeAdmin:
 
 
 class _FakeSupabaseClient:
-    def __init__(self, select_rows: list[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        *,
+        telegram_links_rows: list[dict[str, Any]],
+        resumes_rows: list[dict[str, Any]] | None = None,
+    ) -> None:
         self.auth = SimpleNamespace(admin=_FakeAdmin())
-        self._select_rows = select_rows
+        self.telegram_links = _FakeQuery(telegram_links_rows)
+        self.resumes = _FakeQuery(resumes_rows or [])
 
-    def table(self, name: str) -> _FakeTelegramLinksQuery:
-        assert name == "telegram_links"
-        return _FakeTelegramLinksQuery(self._select_rows)
+    def table(self, name: str) -> _FakeQuery:
+        if name == "telegram_links":
+            return self.telegram_links
+        if name == "resumes":
+            return self.resumes
+        raise AssertionError(f"unexpected table: {name}")
 
 
 class _FakeTelegramClient:
@@ -90,6 +109,20 @@ def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", _WEBHOOK_SECRET)
 
 
+def _post(supabase: _FakeSupabaseClient, telegram: _FakeTelegramClient, text: str) -> Any:
+    app.dependency_overrides[get_supabase] = lambda: supabase
+    app.dependency_overrides[get_telegram_client] = lambda: telegram
+    try:
+        with TestClient(app) as client:
+            return client.post(
+                "/telegram/webhook",
+                json=_message_update(text),
+                headers={"X-Telegram-Bot-Api-Secret-Token": _WEBHOOK_SECRET},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_missing_secret_header_rejected() -> None:
     with TestClient(app) as client:
         response = client.post("/telegram/webhook", json=_message_update())
@@ -106,50 +139,70 @@ def test_wrong_secret_header_rejected() -> None:
     assert response.status_code == 401
 
 
-def test_message_from_new_user_provisions_and_replies() -> None:
-    fake_supabase = _FakeSupabaseClient(select_rows=[])
+def test_unrecognized_message_from_new_user_provisions_and_gets_fallback() -> None:
+    fake_supabase = _FakeSupabaseClient(telegram_links_rows=[])
     fake_telegram = _FakeTelegramClient()
-    app.dependency_overrides[get_supabase] = lambda: fake_supabase
-    app.dependency_overrides[get_telegram_client] = lambda: fake_telegram
-    try:
-        with TestClient(app) as client:
-            response = client.post(
-                "/telegram/webhook",
-                json=_message_update("hi there"),
-                headers={"X-Telegram-Bot-Api-Secret-Token": _WEBHOOK_SECRET},
-            )
-    finally:
-        app.dependency_overrides.clear()
+    response = _post(fake_supabase, fake_telegram, "hi there")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
     assert len(fake_supabase.auth.admin.create_user_calls) == 1
-    assert fake_telegram.sent == [(_CHAT_ID, fake_telegram.sent[0][1])]
-    assert "linked" in fake_telegram.sent[0][1].lower()
+    assert len(fake_telegram.sent) == 1
+    assert fake_telegram.sent[0][0] == _CHAT_ID
+    assert "resume" in fake_telegram.sent[0][1].lower()
 
 
-def test_message_from_linked_user_skips_provisioning() -> None:
-    fake_supabase = _FakeSupabaseClient(select_rows=[{"user_id": _EXISTING_USER_ID}])
+def test_unrecognized_message_from_linked_user_skips_provisioning() -> None:
+    fake_supabase = _FakeSupabaseClient(telegram_links_rows=[{"user_id": _EXISTING_USER_ID}])
     fake_telegram = _FakeTelegramClient()
-    app.dependency_overrides[get_supabase] = lambda: fake_supabase
-    app.dependency_overrides[get_telegram_client] = lambda: fake_telegram
-    try:
-        with TestClient(app) as client:
-            response = client.post(
-                "/telegram/webhook",
-                json=_message_update("hi again"),
-                headers={"X-Telegram-Bot-Api-Secret-Token": _WEBHOOK_SECRET},
-            )
-    finally:
-        app.dependency_overrides.clear()
+    response = _post(fake_supabase, fake_telegram, "hi again")
 
     assert response.status_code == 200
     assert fake_supabase.auth.admin.create_user_calls == []
     assert len(fake_telegram.sent) == 1
 
 
+def test_set_up_resume_saves_and_confirms() -> None:
+    fake_supabase = _FakeSupabaseClient(telegram_links_rows=[{"user_id": _EXISTING_USER_ID}])
+    fake_telegram = _FakeTelegramClient()
+    response = _post(fake_supabase, fake_telegram, "my resume: Jane Doe, Software Engineer")
+
+    assert response.status_code == 200
+    assert fake_supabase.resumes.upsert_calls == [
+        {"user_id": _EXISTING_USER_ID, "raw_text": "Jane Doe, Software Engineer"}
+    ]
+    assert "saved" in fake_telegram.sent[0][1].lower()
+
+
+def test_check_resume_when_none_on_file() -> None:
+    fake_supabase = _FakeSupabaseClient(
+        telegram_links_rows=[{"user_id": _EXISTING_USER_ID}], resumes_rows=[]
+    )
+    fake_telegram = _FakeTelegramClient()
+    response = _post(fake_supabase, fake_telegram, "check my resume")
+
+    assert response.status_code == 200
+    assert "don't have a resume" in fake_telegram.sent[0][1].lower()
+
+
+def test_check_resume_when_one_is_on_file() -> None:
+    fake_supabase = _FakeSupabaseClient(
+        telegram_links_rows=[{"user_id": _EXISTING_USER_ID}],
+        resumes_rows=[
+            {"raw_text": "Jane Doe, Software Engineer", "updated_at": "2026-08-05T00:00:00Z"}
+        ],
+    )
+    fake_telegram = _FakeTelegramClient()
+    response = _post(fake_supabase, fake_telegram, "check my resume")
+
+    assert response.status_code == 200
+    reply = fake_telegram.sent[0][1]
+    assert "Jane Doe" in reply
+    assert "2026-08-05" in reply
+
+
 def test_non_message_update_ignored() -> None:
-    fake_supabase = _FakeSupabaseClient(select_rows=[])
+    fake_supabase = _FakeSupabaseClient(telegram_links_rows=[])
     fake_telegram = _FakeTelegramClient()
     app.dependency_overrides[get_supabase] = lambda: fake_supabase
     app.dependency_overrides[get_telegram_client] = lambda: fake_telegram
