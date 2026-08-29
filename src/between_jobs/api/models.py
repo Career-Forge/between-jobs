@@ -39,6 +39,15 @@ class GapInterviewDraftRequest(BaseModel):
     answer: str
 
 
+class SubmitInterviewAnswerRequest(BaseModel):
+    """InterviewForge R3 (interviewforge-v1.md): the candidate's freeform
+    answer to whichever question the session's own state says is next --
+    the route resolves which question, never a caller-supplied question id,
+    matching the platform's own "next unanswered, in order" session model."""
+
+    answer_text: str
+
+
 class GapInterviewApproveRequest(BaseModel):
     """S4b: the candidate's final, explicitly-approved bullet + target
     entity -- may differ from what the draft endpoint proposed (the

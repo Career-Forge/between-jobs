@@ -24,6 +24,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from postgrest.exceptions import APIError
+
 from supabase import AsyncClient
 
 from .app_state import get_supabase
@@ -36,6 +37,7 @@ from .discovery_routes import router as discovery_router
 from .discovery_store import create_pool as create_discovery_pool
 from .env import require_env
 from .errors import ApiError
+from .interview_practice_routes import router as interview_practice_router
 from .link_routes import router as link_router
 from .models import CreateSessionRequest
 from .outbox_store import run_worker_forever
@@ -116,6 +118,7 @@ app.include_router(resume_documents_router)
 app.include_router(today_router)
 app.include_router(discovery_router)
 app.include_router(company_intel_router)
+app.include_router(interview_practice_router)
 
 
 @app.exception_handler(ApiError)
