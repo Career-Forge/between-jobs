@@ -23,6 +23,7 @@ from supabase import AsyncClient
 from .app_state import get_supabase
 from .auth import create_jwks_client, require_user_id
 from .env import require_env
+from .link_routes import router as link_router
 from .models import CreateSessionRequest
 from .profile_routes import router as profile_router
 from .supabase_client import create_supabase_client
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="between-jobs", version="0.0.1", lifespan=lifespan)
 app.include_router(telegram_router)
 app.include_router(profile_router)
+app.include_router(link_router)
 
 
 @app.get("/health")

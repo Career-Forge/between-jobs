@@ -42,7 +42,7 @@ class _FakeInsertQuery:
         return SimpleNamespace(data=[{}])
 
 
-class _FakeTelegramLinksTable:
+class _FakeChannelIdentitiesTable:
     """Same object serves both .select(...) and .insert(...) call sites,
     matching how postgrest's real query builder works (one table handle,
     different verb methods) -- separate per-scenario row/error state."""
@@ -85,12 +85,12 @@ class _FakeSupabaseClient:
         select_rows_after_race: list[dict[str, Any]] | None = None,
     ) -> None:
         self.auth = _FakeAuth(new_user_id)
-        self._table = _FakeTelegramLinksTable(select_rows, insert_error)
+        self._table = _FakeChannelIdentitiesTable(select_rows, insert_error)
         self._select_rows_after_race = select_rows_after_race
         self._select_calls = 0
 
     def table(self, name: str) -> Any:
-        assert name == "telegram_links"
+        assert name == "channel_identities"
         self._select_calls += 1
         # Calls, in order: (1) the initial select, (2) the insert that
         # raises the unique violation -- both need self._table, which
@@ -98,7 +98,7 @@ class _FakeSupabaseClient:
         # re-select after the caught exception should see the "other
         # request won" rows.
         if self._select_calls > 2 and self._select_rows_after_race is not None:
-            return _FakeTelegramLinksTable(self._select_rows_after_race)
+            return _FakeChannelIdentitiesTable(self._select_rows_after_race)
         return self._table
 
 
@@ -114,13 +114,21 @@ async def test_new_telegram_user_gets_provisioned() -> None:
     result = await resolve_or_create_user_id(client, _TELEGRAM_USER_ID)  # type: ignore[arg-type]
     assert result == _NEW_USER_ID
     assert len(client.auth.admin.create_user_calls) == 1
-    assert client.auth.admin.create_user_calls[0]["app_metadata"]["provider"] == "telegram"
+    call = client.auth.admin.create_user_calls[0]
+    assert call["app_metadata"]["provider"] == "telegram"
+    # Regression guard for the live bug found in Sprint 2.5: the real Auth
+    # server rejects create_user({}) with neither email nor phone, even
+    # though the SDK's type stub marks both NotRequired. Every field the
+    # fix depends on must actually be sent.
+    assert call["email"] == f"telegram-{_TELEGRAM_USER_ID}@users.between-jobs.tech"
+    assert call["email_confirm"] is True
 
 
 async def test_concurrent_provisioning_race_falls_back_to_winner() -> None:
     unique_violation = APIError(
         {
-            "message": 'duplicate key value violates unique constraint "telegram_links_pkey"',
+            "message": "duplicate key value violates unique constraint "
+            '"channel_identities_channel_external_tenant_external_subject_key"',
             "code": "23505",
             "hint": None,
             "details": None,

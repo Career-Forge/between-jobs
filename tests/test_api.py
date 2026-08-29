@@ -126,7 +126,9 @@ def test_create_session_unknown_user_returns_404() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 404
-    assert _TEST_USER_ID in response.json()["detail"]
+    body = response.json()["error"]
+    assert body["code"] == "NOT_FOUND"
+    assert _TEST_USER_ID in body["message"]
 
 
 def test_create_session_other_db_error_returns_500() -> None:
@@ -143,3 +145,8 @@ def test_create_session_other_db_error_returns_500() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 500
+    body = response.json()["error"]
+    assert body["code"] == "INTERNAL_ERROR"
+    # Appendix B: never leak the raw database error string to the client.
+    assert "something else broke" not in body["message"]
+    assert "42P01" not in body["message"]

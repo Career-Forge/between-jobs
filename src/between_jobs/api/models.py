@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CreateSessionRequest(BaseModel):
@@ -37,3 +37,13 @@ class ImportProfileRequest(BaseModel):
     generic 422 body-parsing failure."""
 
     raw_text: str
+
+
+class MintLinkCodeRequest(BaseModel):
+    """Sprint 2.8c. `channel` matches channel_identities' own vocabulary
+    (Proposal §14) -- only "telegram" is actually wired to a bot command
+    yet (the route rejects anything else), but the field isn't narrowed
+    to a single literal so the shape doesn't need to change when a second
+    channel's bot integration arrives."""
+
+    channel: str = Field(min_length=1)
