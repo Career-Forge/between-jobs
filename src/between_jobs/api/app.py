@@ -29,6 +29,7 @@ from supabase import AsyncClient
 from .app_state import get_supabase
 from .applications_routes import router as applications_router
 from .auth import create_jwks_client, require_user_id
+from .company_intel_routes import router as company_intel_router
 from .credentials_routes import router as credentials_router
 from .digest_listener import handle_batch as handle_digest_batch
 from .discovery_routes import router as discovery_router
@@ -114,6 +115,7 @@ app.include_router(link_router)
 app.include_router(resume_documents_router)
 app.include_router(today_router)
 app.include_router(discovery_router)
+app.include_router(company_intel_router)
 
 
 @app.exception_handler(ApiError)
