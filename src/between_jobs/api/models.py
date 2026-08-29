@@ -91,3 +91,28 @@ class SaveCredentialRequest(BaseModel):
     secret: str = Field(min_length=1)
     model: str | None = None
     base_url: str | None = None
+
+
+class PrepareApplicationRequest(BaseModel):
+    """Sprint 3.0e. No profile_version_id/job_snapshot_id here, unlike
+    Proposal §9's MCP-facing `PrepareApplicationInput` -- this HTTP route
+    resolves both itself (the user's active profile, the application's
+    current active_job_snapshot_id) rather than trusting a caller-supplied
+    id, matching this project's "resolve server-side, don't trust a
+    caller-supplied reference to sensitive resolution" posture."""
+
+    idempotency_key: str = Field(min_length=16, max_length=128)
+    force_generate: bool = False
+    """S4c (honest-score-surfaces.md): "Generate anyway" -- an explicit
+    human override of the pre-generation gate, after seeing its own
+    honest `fit` read (Honest Floor). Defaults False; every existing
+    caller is unaffected."""
+    generate_cover_letter: bool = False
+    """C1/C2 (coverforge-port.md): opt-in, defaults False. D1's decision --
+    bundled into this same `/prepare` call rather than a separate
+    endpoint, matching n8n's real parallel resume+cover generation and
+    Proposal §7.3's "share one profile/job-snapshot/artifact transaction"
+    note. A boolean, not the unwired `PrepareApplicationInput.
+    requested_artifacts` list (Proposal §9's MCP-facing schema, a separate
+    model this HTTP route has never used) -- same shape as `force_generate`
+    above."""
