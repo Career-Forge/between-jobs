@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreateSessionRequest(BaseModel):
@@ -146,3 +146,70 @@ class UpdateSectionsRequest(BaseModel):
 
     section_order: list[str]
     section_visibility: dict[str, bool] = Field(default_factory=dict)
+
+
+class UpdateSelectedEvidenceRequest(BaseModel):
+    """Sprint 3.3e's evidence picker -- the full set of career_fact ids
+    the user wants considered evidence for this document, replacing
+    whatever was selected before."""
+
+    evidence_fact_ids: list[str] = Field(default_factory=list)
+
+
+class ShapeOverrides(BaseModel):
+    """R6 (resumeforge-shape-and-fit.md): resume settings, stored as one
+    jsonb blob on `resume_documents.shape_overrides` -- both the master
+    document (defaults) and a per-application document (overrides) use
+    this exact same shape, merged by `shape_overrides.merge` before a
+    generation call.
+
+    Every field is optional with NO default rendered here on purpose:
+    unset (`None`) means "no opinion, inherit from the next layer down the
+    precedence chain" (per-application -> master -> system default). A
+    stored `{}` and a stored `{"page_count": null}` both mean that. Storing
+    the literal system-default value instead (e.g. `"auto"`) would mean
+    "explicitly pinned to auto" -- indistinguishable from "unset" only
+    because "auto" happens to BE today's system default -- so the real
+    system defaults live in `shape_overrides.py`'s `resolve()`, not here."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    page_count: Literal["auto", "1", "2"] | None = None
+    density: Literal["compact", "balanced", "spacious"] | None = None
+    """S6 (honest-score-surfaces.md): all three values render distinctly --
+    forge-engines has its own Spacious LaTeX macro family (looser vspace,
+    same font size as Balanced) and a density-aware page-line-budget scale.
+    See `shape_overrides.py`."""
+    summary: Literal["auto", "on", "off"] | None = None
+    """Decision #3 (resumeforge-shape-and-fit.md §4): the system DEFAULT
+    (applied when this is unset all the way down the chain) is "off", not
+    "auto" -- summary is opt-in. See `shape_overrides.py`'s `resolve()`."""
+    bullet_style: Literal["plain", "bold_lead_in"] | None = None
+    """Decision #2: forge-engines' own `bullet_lead_in` defaults to "none"
+    (the wiki-recommended default) -- "plain" here maps onto that."""
+    region: str | None = None
+    """A country code forge-engines' locale profiles understand (or any
+    string -- an unrecognized one resolves to forge-engines' own DEFAULT
+    profile, same as today). Merged into `locale_resolver.
+    resolve_locale_for_prepare`'s existing `document_override`/
+    `user_default` parameters, which have accepted real values since R4b
+    but were fed `None` until this sprint gave them a source."""
+    show_gpa: bool | None = None
+    """GPA renders unconditionally whenever present in the profile today
+    (Resume Hard Rules: never GPA on Pranav's OWN resume, but this is a
+    BYOK platform for every user, not just him) -- system default is
+    `False` (Pranav's own rule, generalized as the platform default, not
+    hardcoded as HIS rule specifically)."""
+    show_nationality: bool | None = None
+    """S5 (honest-score-surfaces.md, D1): opt-in only -- system default
+    `False`. Even when on, forge-engines only actually renders a nationality
+    chip when the RESOLVED locale's `effective_fields` also says
+    "expected" (today: DE/AT) -- this flag alone is never sufficient. The
+    resolved locale isn't exposed to this frontend before generation, so
+    the UI can't gate the toggle's visibility on it; it gates rendering
+    itself, backend-side. Render-only -- forge-engines' own whitelists keep
+    this out of every LLM prompt."""
+
+
+class UpdateShapeOverridesRequest(BaseModel):
+    shape_overrides: ShapeOverrides
