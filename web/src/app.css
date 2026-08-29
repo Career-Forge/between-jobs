@@ -1,0 +1,1638 @@
+/* App shell layout. Tokens live in tokens.css; this file is structure. */
+
+.bj-boot {
+  min-height: 100vh;
+  background: var(--bj-bg);
+}
+
+.bj-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.bj-nav {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--bj-border);
+  padding: 24px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.bj-wordmark {
+  font-family: var(--bj-font-display);
+  font-size: 20px;
+  font-weight: 600;
+  padding: 0 12px;
+}
+
+.bj-nav nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bj-nav-item {
+  display: block;
+  padding: 9px 12px;
+  border-radius: 6px;
+  color: var(--bj-text-muted);
+  font-size: 14px;
+}
+
+.bj-nav-item:hover {
+  color: var(--bj-text);
+  text-decoration: none;
+  background: var(--bj-surface);
+}
+
+/* Maroon = navigation/selected context -- the one place it appears. */
+.bj-nav-item.active {
+  background: var(--bj-maroon);
+  color: var(--bj-text);
+}
+
+.bj-nav-footer {
+  margin-top: auto;
+  padding: 0 12px;
+}
+
+.bj-main {
+  flex: 1;
+  padding: 40px 48px;
+  max-width: 960px;
+}
+
+.bj-empty {
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+  padding: 28px;
+  max-width: 560px;
+}
+
+.bj-empty h2 {
+  margin-top: 0;
+}
+
+.bj-empty p {
+  color: var(--bj-text-muted);
+  margin-bottom: 0;
+}
+
+/* Login */
+.bj-login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bj-login-card {
+  width: 360px;
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+  padding: 32px;
+}
+
+.bj-login-card h1 {
+  margin: 0 0 4px;
+  font-size: 24px;
+}
+
+.bj-login-card .bj-sub {
+  color: var(--bj-text-muted);
+  font-size: 13px;
+  margin-bottom: 24px;
+}
+
+.bj-login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bj-google-button {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.bj-error {
+  color: var(--bj-danger);
+  font-size: 13px;
+}
+
+/* Profile page */
+.bj-card {
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+  padding: 24px 28px;
+  max-width: 640px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bj-card h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.bj-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Emerald = completed/verified; gold = review/pending; cyan = active/
+ * in-flight; violet = elevated/in-process; danger = closed-out negative
+ * -- per the semantic contract in tokens.css, extended for application
+ * status (Sprint 2.6f) rather than inventing new meanings per status. */
+.bj-badge-emerald,
+.bj-badge-gold,
+.bj-badge-cyan,
+.bj-badge-violet,
+.bj-badge-danger {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.bj-badge-emerald {
+  color: var(--bj-emerald);
+  border-color: var(--bj-emerald);
+}
+
+.bj-badge-gold {
+  color: var(--bj-gold);
+  border-color: var(--bj-gold);
+}
+
+.bj-badge-cyan {
+  color: var(--bj-cyan);
+  border-color: var(--bj-cyan);
+}
+
+.bj-badge-violet {
+  color: var(--bj-violet);
+  border-color: var(--bj-violet);
+}
+
+.bj-badge-danger {
+  color: var(--bj-danger);
+  border-color: var(--bj-danger);
+}
+
+.bj-badge-muted {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--bj-border);
+  white-space: nowrap;
+  color: var(--bj-text-muted);
+}
+
+/* R5: mandatory-pin marker (self-contained, not combined with .bj-badge-danger
+   -- that class sets shape AND a later color rule, so pairing it with
+   .bj-badge-gold would lose the cascade tie to source order). */
+.bj-badge-pin {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--bj-gold);
+  white-space: nowrap;
+  color: var(--bj-gold);
+}
+
+.bj-muted {
+  color: var(--bj-text-muted);
+}
+
+.bj-small {
+  font-size: 13px;
+}
+
+.bj-stat-row {
+  display: flex;
+  gap: 28px;
+  padding: 4px 0;
+}
+
+.bj-stat-value {
+  font-family: var(--bj-font-display);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.bj-stat-label {
+  color: var(--bj-text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.bj-warnings {
+  color: var(--bj-gold);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bj-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bj-card textarea {
+  width: 100%;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sectioned Profile (Sprint 3.1d)                                     */
+/* ------------------------------------------------------------------ */
+
+.bj-profile-header {
+  max-width: none;
+}
+
+.bj-profile-name {
+  font-size: 34px;
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.bj-profile-headline {
+  color: var(--bj-text-muted);
+  font-size: 14px;
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.bj-contact-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bj-contact-chip {
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--bj-text-muted);
+  background: var(--bj-surface-raised);
+}
+
+a.bj-contact-chip {
+  color: var(--bj-cyan);
+}
+
+/* Header Composer (Sprint 3.2c) */
+.bj-header-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.bj-header-composer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bj-header-composer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: var(--bj-surface-raised);
+  cursor: grab;
+}
+
+.bj-header-composer-row:active {
+  cursor: grabbing;
+}
+
+.bj-drag-handle {
+  color: var(--bj-text-muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.bj-header-composer-field {
+  flex: 1;
+  font-size: 13px;
+}
+
+/* Section Order Editor (Sprint 3.2d) -- reuses the composer row/handle/
+   field classes above; only the hidden-state dimming and the toggle
+   label are section-specific. */
+.bj-section-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bj-section-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bj-section-hidden {
+  opacity: 0.55;
+}
+
+.bj-section-editor-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--bj-text-muted);
+  cursor: pointer;
+}
+
+/* Resume settings (R6) -- reuses the header-composer row/field classes'
+   visual style but WITHOUT their `cursor: grab` (these rows aren't
+   draggable, unlike the header composer's chip list). */
+.bj-shape-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.bj-shape-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.bj-shape-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: var(--bj-surface-raised);
+}
+
+/* S5 (honest-score-surfaces.md): a toggle whose visibility can't be
+   locale-gated client-side needs a caption explaining the backend gate
+   instead -- stacks the checkbox row above the explanatory line rather
+   than fighting the row's own align-items: center. */
+.bj-shape-settings-row-stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.bj-profile-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.bj-view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.bj-view-toggle button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+  padding: 6px 14px;
+}
+
+.bj-view-toggle button.bj-toggle-active {
+  background: var(--bj-maroon);
+  color: var(--bj-text);
+}
+
+.bj-json-view {
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+  padding: 20px 24px;
+  font-family: var(--bj-font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--bj-text-muted);
+  overflow-x: auto;
+  white-space: pre;
+  max-width: 900px;
+}
+
+/* Layout: sections column + anchor nav column */
+.bj-profile-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 900px) auto;
+  gap: 32px;
+  align-items: start;
+}
+
+.bj-profile-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.bj-anchor-nav {
+  position: sticky;
+  top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 16px;
+  border-left: 1px solid var(--bj-border);
+  font-size: 13px;
+}
+
+.bj-anchor-nav a {
+  color: var(--bj-text-muted);
+}
+
+.bj-anchor-nav a:hover {
+  color: var(--bj-text);
+  text-decoration: none;
+}
+
+/* Section card shell */
+.bj-section-card {
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+  padding: 22px 26px;
+}
+
+.bj-section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-section-heading h2 {
+  margin: 0;
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.bj-section-count {
+  color: var(--bj-text-muted);
+  font-size: 13px;
+  font-family: var(--bj-font-mono);
+}
+
+/* Experience timeline */
+.bj-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.bj-timeline-entry {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 14px;
+}
+
+.bj-timeline-rail {
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.bj-timeline-rail::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: -18px;
+  width: 1px;
+  background: var(--bj-border);
+}
+
+.bj-timeline-entry:last-child .bj-timeline-rail::before {
+  display: none;
+}
+
+.bj-timeline-node {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--bj-gold);
+  margin-top: 6px;
+}
+
+.bj-timeline-body {
+  padding-bottom: 20px;
+}
+
+.bj-timeline-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.bj-timeline-head h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.bj-date-chip {
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--bj-text-muted);
+  white-space: nowrap;
+  font-family: var(--bj-font-mono);
+}
+
+/* Gold metric pills -- evidence/provenance color per the semantic contract */
+.bj-metric-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.bj-metric-pill {
+  border: 1px solid var(--bj-gold);
+  color: var(--bj-gold);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: var(--bj-font-mono);
+}
+
+.bj-link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--bj-cyan);
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.bj-link-button:hover {
+  text-decoration: underline;
+  border-color: transparent;
+}
+
+.bj-entry-detail {
+  margin-top: 10px;
+}
+
+.bj-entry-detail ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  color: var(--bj-text-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.bj-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bj-chip {
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 12px;
+  color: var(--bj-text-muted);
+}
+
+/* Projects */
+.bj-project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.bj-project-card {
+  display: flex;
+  gap: 12px;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.bj-project-icon {
+  color: var(--bj-gold);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.bj-project-name {
+  font-family: var(--bj-font-display);
+  font-size: 15px;
+}
+
+/* Publications -- citation rows */
+.bj-citation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.bj-citation-row {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-citation-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.bj-citation-index {
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+}
+
+.bj-citation-title {
+  font-family: var(--bj-font-display);
+  font-style: italic;
+  font-size: 14.5px;
+}
+
+/* Links (publication DOI, project url) navigate -- cyan, not gold, per
+ * the ruling that gold is reserved for non-navigating provenance. */
+.bj-link-chip {
+  border: 1px solid var(--bj-cyan);
+  color: var(--bj-cyan);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Education / Certifications / Achievements / Volunteering -- simple rows */
+.bj-simple-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bj-simple-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bj-simple-icon {
+  width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.bj-simple-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.bj-simple-title {
+  font-family: var(--bj-font-display);
+  font-size: 15px;
+}
+
+.bj-achievement-text {
+  font-size: 13.5px;
+  color: var(--bj-text-muted);
+}
+
+/* Skills */
+.bj-skill-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.bj-skill-group-label {
+  color: var(--bj-text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+
+/* Languages */
+.bj-language-chip {
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  min-width: 90px;
+}
+
+@media (max-width: 900px) {
+  .bj-profile-layout {
+    grid-template-columns: 1fr;
+  }
+  .bj-anchor-nav {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Per-section editing (Sprint 3.1e)                                   */
+/* ------------------------------------------------------------------ */
+
+.bj-section-heading {
+  position: relative;
+}
+
+.bj-section-add {
+  margin-left: auto;
+}
+
+.bj-entry-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.bj-entry-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.bj-link-button-danger {
+  color: var(--bj-danger);
+}
+
+.bj-project-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.bj-ghost-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.bj-ghost-add-row button {
+  border-style: dashed;
+  color: var(--bj-text-muted);
+  font-size: 13px;
+}
+
+.bj-ghost-add-row button:hover {
+  color: var(--bj-text);
+  border-color: var(--bj-text-muted);
+}
+
+/* Modal */
+.bj-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+}
+
+.bj-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bj-surface);
+  border: 1px solid var(--bj-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.bj-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  text-transform: capitalize;
+}
+
+.bj-modal-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--bj-text-muted);
+  padding: 2px 6px;
+}
+
+.bj-modal-body {
+  padding: 20px 22px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.bj-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 22px;
+  border-top: 1px solid var(--bj-border);
+}
+
+/* Fields */
+.bj-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--bj-text-muted);
+}
+
+.bj-field input[type="text"],
+.bj-field input[type="number"],
+.bj-field select,
+.bj-field textarea {
+  width: 100%;
+}
+
+.bj-bullets-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bj-bullet-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.bj-bullet-row textarea {
+  flex: 1;
+  resize: vertical;
+}
+
+.bj-bullet-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bj-bullet-row-actions button {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.bj-chip-removable button {
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0 0 0 6px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.bj-inline-chip-input {
+  border: 1px dashed var(--bj-border);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 12px;
+  background: transparent;
+  width: 90px;
+}
+
+.bj-daterange {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bj-daterange-group {
+  display: flex;
+  gap: 6px;
+}
+
+.bj-daterange-group select {
+  width: 80px;
+}
+
+.bj-daterange-group input[type="number"] {
+  width: 70px;
+}
+
+.bj-current-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--bj-text-muted);
+}
+
+.bj-current-checkbox input {
+  width: auto;
+}
+
+/* Achievements inline editing */
+.bj-achievement-edit {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bj-achievement-edit input {
+  flex: 1;
+}
+
+.bj-achievement-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.bj-achievement-add input {
+  flex: 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* Applications (Sprint 2.6f)                                          */
+/* ------------------------------------------------------------------ */
+
+.bj-application-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+}
+
+.bj-application-row .bj-actions {
+  align-items: center;
+}
+
+.bj-application-title {
+  font-family: var(--bj-font-display);
+  font-size: 17px;
+}
+
+.bj-application-row select {
+  width: auto;
+}
+
+/* ------------------------------------------------------------------ */
+/* Integrations -- Telegram link (Sprint 2.8f)                         */
+/* ------------------------------------------------------------------ */
+
+.bj-link-code {
+  font-family: var(--bj-font-mono);
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  background: var(--bj-surface-raised);
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 4px 0;
+  display: inline-block;
+}
+
+/* ------------------------------------------------------------------ */
+/* Application workspace (Sprint 3.3d/3.3e)                            */
+/* ------------------------------------------------------------------ */
+
+.bj-breadcrumb {
+  color: var(--bj-text-muted);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.bj-breadcrumb a {
+  color: var(--bj-cyan);
+}
+
+.bj-workspace-layout {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 20px;
+  align-items: start;
+  margin-top: 16px;
+}
+
+.bj-workspace-studio {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (max-width: 960px) {
+  .bj-workspace-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.bj-tailor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+  padding: 20px;
+}
+
+.bj-workspace-tailor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  top: 16px;
+}
+
+.bj-company-intel-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+  padding: 20px;
+}
+
+.bj-coverage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bj-coverage-cluster {
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.bj-coverage-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bj-surface-raised);
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bj-coverage-name {
+  flex: 1;
+  font-size: 13px;
+}
+
+.bj-coverage-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  background: var(--bj-bg);
+}
+
+.bj-evidence-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--bj-text-muted);
+  cursor: pointer;
+}
+
+.bj-skill-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bj-skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid;
+}
+
+.bj-skill-chip-state {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+}
+
+.bj-generate-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bj-generate-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bj-generate-warnings {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--bj-text-muted);
+}
+
+/* R5: pin-conflict banner -- distinct from the plain warnings list since a
+   pin is the candidate's own explicit choice failing to be fully honored. */
+.bj-pin-conflict-banner {
+  border: 1px solid var(--bj-gold);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 8px 0;
+}
+
+.bj-pin-conflict-banner ul {
+  margin: 6px 0;
+  padding-left: 18px;
+  color: var(--bj-text-muted);
+}
+
+/* C4 (coverforge-port.md): claim-verification banner -- danger, not gold,
+   since a flagged claim is a possible fabrication, a different severity
+   than a pin simply not fully fitting. */
+.bj-claim-warning-banner {
+  border: 1px solid var(--bj-danger);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 8px 0;
+}
+
+.bj-claim-warning-banner ul {
+  margin: 6px 0;
+  padding-left: 18px;
+  color: var(--bj-text-muted);
+}
+
+.bj-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-surface-raised);
+}
+
+.bj-checklist-label {
+  font-size: 13px;
+}
+
+/* S1 (honest-score-surfaces.md): the Headroom Ledger -- an honest number plus
+   exactly what's movable and what isn't, replacing the old bare "ATS score:
+   X/100" line. Gold throughout per tokens.css's own contract ("gold =
+   evidence, provenance, scores, review, uncertainty"). */
+.bj-score-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bj-score-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bj-score-numeral-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.bj-score-numeral {
+  font-family: var(--bj-font-display);
+  font-weight: 600;
+  font-size: 40px;
+  line-height: 1;
+  color: var(--bj-gold);
+}
+
+.bj-score-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bj-score-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bj-score-row-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bj-score-bar-track {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bj-surface-raised);
+  overflow: hidden;
+}
+
+.bj-score-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--bj-gold);
+}
+
+/* S3: the one exact, discrete lever behind experience_quality (the
+   management-bonus points) -- a hatched segment past the solid fill, never
+   solid gold, so it never reads as "already earned." */
+.bj-score-bar-headroom {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--bj-gold) 0 3px,
+    transparent 3px 6px
+  );
+  opacity: 0.5;
+}
+
+.bj-score-disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bj-score-disclosure-toggle {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--bj-text-muted);
+  font-size: 0.85em;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.bj-score-cluster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bj-score-cluster-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bj-score-cap-callout {
+  border: 1px solid var(--bj-gold);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--bj-text-muted);
+}
+
+/* ForgeScore chart-UI pass: same shape as the cap callout, danger-colored --
+   a real, already-computed concerning signal (a penalty already applied, or
+   a visa/sponsorship mismatch), not just an explanatory note. Shared across
+   ScoreBreakdown's white-text-spam callout and HonestFloor's visa callout. */
+.bj-danger-callout {
+  border: 1px solid var(--bj-danger);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--bj-text-muted);
+}
+
+/* S2: a session-local what-if, never the stored score -- emerald because
+   this is a candidate-confirmed fact (verified), not evidence/uncertainty
+   (gold, the rest of this panel) or a model having acted (violet). */
+.bj-score-adjusted {
+  color: var(--bj-emerald);
+}
+
+/* Gap Interview (S4, honest-score-surfaces.md) -- ported from the reviewed
+   design canvas (GapInterview.dc.html / EvidenceApproval.dc.html), colors
+   and spacing carried over exactly since every value there already used
+   this file's own tokens. Violet = the LLM worded a question (it never
+   decides which gaps get asked -- that's deterministic, tokens.css's own
+   contract); emerald = a candidate-confirmed fact ready to become a real
+   profile version, same meaning .bj-score-adjusted already uses it for. */
+.bj-gap-interview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.bj-gap-idle {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.bj-gap-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bj-gap-title {
+  margin: 0;
+  font-size: 17px;
+}
+
+.bj-gap-question-card,
+.bj-gap-review-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: 8px;
+  background: var(--bj-surface-raised);
+  padding: 14px;
+  animation: bj-gap-fade-in 0.25s ease;
+}
+
+.bj-gap-question-card {
+  border: 1px solid var(--bj-violet);
+}
+
+.bj-gap-review-card {
+  border: 1px solid var(--bj-emerald);
+}
+
+.bj-gap-review-badge {
+  align-self: flex-start;
+}
+
+.bj-gap-provenance {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bj-gap-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: bj-gap-fade-in 0.2s ease;
+}
+
+.bj-gap-answer textarea {
+  width: 100%;
+}
+
+.bj-gap-yes {
+  border-color: var(--bj-emerald);
+  color: var(--bj-emerald);
+}
+
+.bj-gap-ghost {
+  border: none;
+  background: transparent;
+  color: var(--bj-text-muted);
+  padding: 8px;
+}
+
+.bj-gap-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bj-gap-queue-row {
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: none;
+  color: var(--bj-text-muted);
+  padding: 8px 12px;
+}
+
+.bj-gap-queue-row:hover {
+  border-color: var(--bj-text-muted);
+  color: var(--bj-text);
+}
+
+.bj-gap-callout {
+  border: 1px solid var(--bj-gold);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--bj-text-muted);
+}
+
+.bj-gap-lands-in {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.bj-gap-lands-in-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bj-text-muted);
+}
+
+.bj-gap-review-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+@keyframes bj-gap-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Honest Floor (S4c, honest-score-surfaces.md) -- ported from the reviewed
+   design canvas (StretchState.dc.html). Muted/neutral throughout on
+   purpose: this is a decline, not an error (bj-danger) or an achievement
+   (bj-emerald) -- tokens.css's own contract reserves red for actual
+   failure, and there's no failure here, just an honest "not yet." */
+.bj-honest-floor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-surface-raised);
+  padding: 16px;
+}
+
+.bj-honest-floor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bj-honest-floor-title {
+  margin: 0;
+  font-size: 17px;
+}
+
+.bj-honest-floor-ceiling {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.bj-honest-floor-ceiling-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bj-text-muted);
+}
+
+.bj-honest-floor-ceiling-value {
+  font-family: var(--bj-font-display);
+  font-weight: 600;
+  font-size: 28px;
+  color: var(--bj-gold);
+}
+
+.bj-honest-floor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bj-honest-floor-section-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bj-text-muted);
+}
+
+.bj-honest-floor-callout {
+  border: 1px solid var(--bj-gold);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--bj-text-muted);
+}
+
+.bj-honest-floor-callout-label {
+  color: var(--bj-gold);
+  font-weight: 600;
+}
+
+.bj-today-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.bj-today-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bj-today-item-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Interview practice (InterviewForge R4, interviewforge-v1.md)        */
+/* ------------------------------------------------------------------ */
+
+.bj-interview-practice-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bj-interview-question,
+.bj-interview-feedback,
+.bj-interview-report {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

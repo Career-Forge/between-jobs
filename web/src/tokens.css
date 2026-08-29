@@ -1,0 +1,155 @@
+/* Between Jobs design tokens -- the Obsidian Atlas hybrid.
+ *
+ * Source of truth: the private design book's foundation tokens and
+ * semantic color contract. Dark is the canonical design; light mode is
+ * not a launch requirement.
+ *
+ * SEMANTIC CONTRACT (which color may mean what -- never decorative):
+ *   maroon   brand structure, navigation, selected context
+ *   gold     evidence, provenance, scores, review, uncertainty
+ *   cyan     primary action, links, live state, sync
+ *   emerald  verified fact, completed step, successful deterministic action
+ *   violet   AI, memory, voice, MCP -- ONLY where a model acted
+ *   red      actual failure, destructive action, security warning
+ *   ivory    primary text and editorial display typography
+ * Color never carries meaning alone -- every state also uses a label,
+ * icon, shape, or position. At most two chromatic accents per region.
+ */
+
+:root {
+  --bj-bg: #070607;
+  --bj-surface: #100d0f;
+  --bj-surface-raised: #171216;
+  --bj-border: #34252b;
+  --bj-text: #f2eadf;
+  --bj-text-muted: #a99da0;
+
+  --bj-maroon: #641e2e;
+  --bj-gold: #c7a15a;
+  --bj-cyan: #38d6d0;
+  --bj-emerald: #3cb878;
+  --bj-violet: #9a7be8;
+  --bj-danger: #e25555;
+
+  /* Interaction variants (production tokens must include these -- the
+   * base values alone are "the visual starting point, not permission to
+   * skip contrast testing"). */
+  --bj-maroon-hover: #7a2839;
+  --bj-cyan-hover: #55dfda;
+  --bj-focus-ring: #38d6d0;
+
+  /* Typography: editorial serif for display/job identity; readable sans
+   * for controls and body; mono only for provenance IDs, timestamps,
+   * logs. Final production typefaces are an open decision -- these
+   * stacks are placeholders honoring the roles. */
+  --bj-font-display: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --bj-font-body:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --bj-font-mono: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bj-bg);
+  color: var(--bj-text);
+  font-family: var(--bj-font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--bj-cyan);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  font-family: var(--bj-font-body);
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid var(--bj-border);
+  background: var(--bj-surface-raised);
+  color: var(--bj-text);
+  padding: 8px 16px;
+}
+
+button:hover {
+  border-color: var(--bj-text-muted);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--bj-focus-ring);
+  outline-offset: 2px;
+}
+
+button.bj-primary {
+  background: var(--bj-cyan);
+  border-color: var(--bj-cyan);
+  color: #06211f;
+  font-weight: 600;
+}
+
+button.bj-primary:hover {
+  background: var(--bj-cyan-hover);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input,
+textarea {
+  font-family: var(--bj-font-body);
+  font-size: 14px;
+  background: var(--bj-surface);
+  color: var(--bj-text);
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  padding: 9px 12px;
+}
+
+textarea {
+  font-family: var(--bj-font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+code,
+pre {
+  font-family: var(--bj-font-mono);
+  font-size: 13px;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--bj-font-display);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* Thin brass/maroon rules for information structure -- the reference
+ * set's dossier motif, instead of card walls. */
+hr {
+  border: none;
+  border-top: 1px solid var(--bj-border);
+  margin: 20px 0;
+}
