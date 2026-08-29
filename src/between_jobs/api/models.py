@@ -47,3 +47,28 @@ class MintLinkCodeRequest(BaseModel):
     channel's bot integration arrives."""
 
     channel: str = Field(min_length=1)
+
+
+class CreateApplicationFromPasteRequest(BaseModel):
+    """Sprint 2.6f's manual-paste lane (Proposal §18) -- no URL scraping,
+    the caller supplies the job content directly. `canonical_url` is
+    optional: some pastes (forwarded emails, screenshots retyped by hand)
+    have no URL at all, and a job with no URL always gets its own row
+    rather than being deduped against anything (jobs_store's own rule)."""
+
+    title: str = Field(min_length=1)
+    company_name: str = Field(min_length=1)
+    description_text: str = Field(min_length=1)
+    canonical_url: str | None = None
+    location_text: str | None = None
+
+
+class ChangeApplicationStageRequest(BaseModel):
+    """`idempotency_key` is caller-supplied, not server-generated --
+    Proposal's own "idempotency keys on all commands" guardrail means the
+    caller (the one who can actually retry) owns picking it, e.g. a fresh
+    uuid per click of a "Mark as Applied" button, so a network retry of
+    the same click doesn't double-record the transition."""
+
+    new_status: str = Field(min_length=1)
+    idempotency_key: str = Field(min_length=1)

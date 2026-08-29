@@ -16,8 +16,10 @@ session token, not an anon-key-derived token.
 from __future__ import annotations
 
 import jwt
-from fastapi import HTTPException, Request
+from fastapi import Request
 from jwt import PyJWKClient
+
+from .errors import ApiError
 
 
 def create_jwks_client(supabase_url: str) -> PyJWKClient:
@@ -48,11 +50,11 @@ async def require_user_id(request: Request) -> str:
     malformed, expired, bad signature, wrong issuer/audience."""
     auth_header = request.headers.get("authorization", "")
     if not auth_header.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="missing or malformed Authorization header")
+        raise ApiError("AUTH_REQUIRED", "missing or malformed Authorization header")
     token = auth_header[len("Bearer ") :].strip()
     try:
         return verify_access_token(
             token, request.app.state.jwks_client, request.app.state.supabase_url
         )
     except jwt.PyJWTError as e:
-        raise HTTPException(status_code=401, detail=f"invalid token: {e}") from e
+        raise ApiError("AUTH_REQUIRED", f"invalid token: {e}") from e
