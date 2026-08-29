@@ -9,8 +9,11 @@ documents, application tracking, and interview prep -- with your data staying on
 machine.
 
 **Status: pre-alpha.** The spine (a FastAPI app + Supabase-backed session store, real
-auth) runs, and a Telegram bridge can receive messages and auto-link an identity -- but
-there's no agent runtime behind it yet, so it can't actually do anything a user would
+auth) runs. A Telegram bridge receives messages, auto-links an identity, and can take
+you through the one real user-facing flow that exists so far: send it your resume as
+JSON (a fixed template it'll walk you through), review the preview, and confirm --
+that becomes your canonical profile. There's no agent runtime, job search, or document
+generation wired up yet, so beyond that one flow it can't do anything a user would
 recognize as the product.
 
 ## Principles

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import cast
 
+import httpx
 from fastapi import Request
 from supabase import AsyncClient
 
@@ -17,6 +18,10 @@ from .telegram_client import TelegramClient
 
 def get_supabase(request: Request) -> AsyncClient:
     return cast(AsyncClient, request.app.state.supabase)
+
+
+def get_http_client(request: Request) -> httpx.AsyncClient:
+    return cast(httpx.AsyncClient, request.app.state.http)
 
 
 def get_telegram_client(request: Request) -> TelegramClient:

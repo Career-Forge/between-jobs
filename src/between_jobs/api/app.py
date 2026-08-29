@@ -24,6 +24,7 @@ from .app_state import get_supabase
 from .auth import create_jwks_client, require_user_id
 from .env import require_env
 from .models import CreateSessionRequest
+from .profile_routes import router as profile_router
 from .supabase_client import create_supabase_client
 from .telegram_client import TelegramClient
 from .telegram_webhook import router as telegram_router
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="between-jobs", version="0.0.1", lifespan=lifespan)
 app.include_router(telegram_router)
+app.include_router(profile_router)
 
 
 @app.get("/health")

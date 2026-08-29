@@ -27,3 +27,13 @@ class SessionResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     message: str
+
+
+class ImportProfileRequest(BaseModel):
+    """The raw text of a resume-template JSON paste or .json file upload --
+    unvalidated until `profile.import_profile()` runs on it. Kept as a
+    plain string rather than a pre-parsed dict so JSON-syntax errors are
+    caught by our own honest error messages (profile.py), not FastAPI's
+    generic 422 body-parsing failure."""
+
+    raw_text: str
