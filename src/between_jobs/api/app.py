@@ -31,6 +31,8 @@ from .applications_routes import router as applications_router
 from .auth import create_jwks_client, require_user_id
 from .credentials_routes import router as credentials_router
 from .digest_listener import handle_batch as handle_digest_batch
+from .discovery_routes import router as discovery_router
+from .discovery_store import create_pool as create_discovery_pool
 from .env import require_env
 from .errors import ApiError
 from .link_routes import router as link_router
@@ -80,12 +82,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             run_worker_forever(worker_supabase, listeners=[handle_digest_batch])
         )
 
+    # Horizon Sprint 4.1 -- the discovery facade's read-only connection
+    # into n8n's own Postgres (never Supabase; a completely different
+    # database this platform doesn't own). Optional by design: `None`
+    # when N8N_JOBS_DATABASE_URL isn't set, so a deployment without that
+    # local reference stack still starts -- app_state.get_n8n_pool turns
+    # the absence into a SETUP_REQUIRED response, not a startup crash.
+    app.state.n8n_pool = None
+    if os.environ.get("N8N_JOBS_DATABASE_URL"):
+        app.state.n8n_pool = await create_discovery_pool()
+
     yield
 
     if app.state.outbox_worker_task is not None:
         app.state.outbox_worker_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.outbox_worker_task
+
+    if app.state.n8n_pool is not None:
+        await app.state.n8n_pool.close()
 
     await app.state.http.aclose()
 
@@ -98,6 +113,7 @@ app.include_router(credentials_router)
 app.include_router(link_router)
 app.include_router(resume_documents_router)
 app.include_router(today_router)
+app.include_router(discovery_router)
 
 
 @app.exception_handler(ApiError)
