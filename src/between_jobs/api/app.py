@@ -32,6 +32,7 @@ from .errors import ApiError
 from .link_routes import router as link_router
 from .models import CreateSessionRequest
 from .profile_routes import router as profile_router
+from .resume_documents_routes import router as resume_documents_router
 from .supabase_client import create_supabase_client
 from .telegram_client import TelegramClient
 from .telegram_webhook import router as telegram_router
@@ -64,6 +65,7 @@ app.include_router(profile_router)
 app.include_router(applications_router)
 app.include_router(credentials_router)
 app.include_router(link_router)
+app.include_router(resume_documents_router)
 
 
 @app.exception_handler(ApiError)

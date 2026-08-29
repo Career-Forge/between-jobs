@@ -38,6 +38,12 @@ packages = ["src/between_jobs"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+# latex-service (Sprint 3.2e) is an independent sub-project -- its own
+# pyproject.toml/.venv/toolchain, deployed as its own service. Without
+# this, `ruff check .`/`ruff format .` run from this repo's root sweep it
+# up too (ruff recurses the whole tree by default); it stays linted, just
+# under its own `latex-service/pyproject.toml` config, not this one.
+extend-exclude = ["latex-service"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

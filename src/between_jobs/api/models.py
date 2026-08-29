@@ -116,3 +116,33 @@ class PrepareApplicationRequest(BaseModel):
     requested_artifacts` list (Proposal §9's MCP-facing schema, a separate
     model this HTTP route has never used) -- same shape as `force_generate`
     above."""
+
+
+class UpdateHeaderLayoutRequest(BaseModel):
+    """Sprint 3.2c. `header_layout` stays `dict[str, Any]` rather than a
+    typed model -- its shape is forge-engines' `HeaderLayout` (Sprint
+    3.2b), which this platform treats as opaque configuration it stores
+    and forwards, the same way `resume_template`/`pass1`/`pass2` are
+    opaque dicts at the forge-engines HTTP boundary itself."""
+
+    header_layout: dict[str, Any] = Field(default_factory=dict)
+
+
+class PreviewHeaderRequest(BaseModel):
+    """`header_layout=None` previews the document's already-saved layout;
+    a caller mid-edit sends the DRAFT layout instead, so the preview
+    reflects unsaved changes without requiring a save first."""
+
+    header_layout: dict[str, Any] | None = None
+
+
+class UpdateSectionsRequest(BaseModel):
+    """Sprint 3.2d. `section_order` is unconstrained here (not a Literal
+    enum of known section names) -- the resume_documents row itself has
+    no CHECK constraint on it either, matching this project's usual
+    unconstrained-status-text posture, and validating against forge-
+    engines' renderable section set would need this file to know that
+    set, which is forge-engines' own concern, not this HTTP boundary's."""
+
+    section_order: list[str]
+    section_visibility: dict[str, bool] = Field(default_factory=dict)
