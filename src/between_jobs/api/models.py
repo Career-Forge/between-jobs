@@ -29,6 +29,26 @@ class ErrorResponse(BaseModel):
     message: str
 
 
+class GapInterviewDraftRequest(BaseModel):
+    """S4b (honest-score-surfaces.md): the question that was asked and the
+    candidate's freeform answer to it -- everything the draft endpoint
+    needs from the caller; it resolves the candidate-entity list itself
+    from the user's own active profile."""
+
+    question: str
+    answer: str
+
+
+class GapInterviewApproveRequest(BaseModel):
+    """S4b: the candidate's final, explicitly-approved bullet + target
+    entity -- may differ from what the draft endpoint proposed (the
+    candidate can edit the bullet or pick a different entity before
+    approving; this is the one and only value actually applied)."""
+
+    bullet: str
+    entity_pointer: str
+
+
 class ImportProfileRequest(BaseModel):
     """The raw text of a resume-template JSON paste or .json file upload --
     unvalidated until `profile.import_profile()` runs on it. Kept as a
@@ -213,3 +233,17 @@ class ShapeOverrides(BaseModel):
 
 class UpdateShapeOverridesRequest(BaseModel):
     shape_overrides: ShapeOverrides
+
+
+class UpdateAssertionsRequest(BaseModel):
+    """S2 (honest-score-surfaces.md) -- the full set of dealbreaker
+    requirement strings the candidate has personally confirmed are true
+    for them (e.g. "on-site work is fine"), replacing whatever was
+    asserted before -- same full-replace convention as
+    `UpdateSelectedEvidenceRequest`. Plain strings, not ids: a dealbreaker
+    has no stable identity across generations (Step0 re-extracts it fresh
+    every run), so the requirement TEXT itself is the only handle there
+    is -- matched fuzzily at scoring time, see forge-engines'
+    `ats_score.apply_dealbreaker_assertions`."""
+
+    assertions: list[str] = Field(default_factory=list)
