@@ -10,6 +10,9 @@ separate, larger pieces this skeleton exists to be attached to.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
@@ -27,15 +30,18 @@ from .app_state import get_supabase
 from .applications_routes import router as applications_router
 from .auth import create_jwks_client, require_user_id
 from .credentials_routes import router as credentials_router
+from .digest_listener import handle_batch as handle_digest_batch
 from .env import require_env
 from .errors import ApiError
 from .link_routes import router as link_router
 from .models import CreateSessionRequest
+from .outbox_store import run_worker_forever
 from .profile_routes import router as profile_router
 from .resume_documents_routes import router as resume_documents_router
 from .supabase_client import create_supabase_client
 from .telegram_client import TelegramClient
 from .telegram_webhook import router as telegram_router
+from .today_routes import router as today_router
 
 load_dotenv()
 
@@ -54,7 +60,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.telegram_client = TelegramClient(app.state.http, require_env("TELEGRAM_BOT_TOKEN"))
     app.state.telegram_webhook_secret = require_env("TELEGRAM_WEBHOOK_SECRET")
 
+    # Horizon Sprint 4.0 -- the outbox's first running worker, per
+    # outbox_store.py's own note that wiring this in is "a decision worth
+    # making deliberately once [a listener] exists," not a side effect of
+    # an earlier sprint. A second Supabase client (not app.state.supabase)
+    # so the worker's own long-lived polling never shares connection
+    # state with request-handling code.
+    #
+    # DISABLE_OUTBOX_WORKER skips this entirely -- every test in this repo
+    # boots the real app (and thus this lifespan) via TestClient against a
+    # stubbed, unreachable SUPABASE_URL; without the gate, the worker's
+    # first poll would throw an unhandled connection error inside its own
+    # task on every single test run. tests/conftest.py sets this
+    # automatically so no individual test file has to know about it.
+    app.state.outbox_worker_task = None
+    if not os.environ.get("DISABLE_OUTBOX_WORKER"):
+        worker_supabase, _worker_url = await create_supabase_client()
+        app.state.outbox_worker_task = asyncio.create_task(
+            run_worker_forever(worker_supabase, listeners=[handle_digest_batch])
+        )
+
     yield
+
+    if app.state.outbox_worker_task is not None:
+        app.state.outbox_worker_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.outbox_worker_task
 
     await app.state.http.aclose()
 
@@ -66,6 +97,7 @@ app.include_router(applications_router)
 app.include_router(credentials_router)
 app.include_router(link_router)
 app.include_router(resume_documents_router)
+app.include_router(today_router)
 
 
 @app.exception_handler(ApiError)
