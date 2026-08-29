@@ -26,6 +26,7 @@ from supabase import AsyncClient
 from .app_state import get_supabase
 from .applications_routes import router as applications_router
 from .auth import create_jwks_client, require_user_id
+from .credentials_routes import router as credentials_router
 from .env import require_env
 from .errors import ApiError
 from .link_routes import router as link_router
@@ -61,6 +62,7 @@ app = FastAPI(title="between-jobs", version="0.0.1", lifespan=lifespan)
 app.include_router(telegram_router)
 app.include_router(profile_router)
 app.include_router(applications_router)
+app.include_router(credentials_router)
 app.include_router(link_router)
 
 

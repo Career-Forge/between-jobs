@@ -72,3 +72,22 @@ class ChangeApplicationStageRequest(BaseModel):
 
     new_status: str = Field(min_length=1)
     idempotency_key: str = Field(min_length=1)
+
+
+class SaveCredentialRequest(BaseModel):
+    """Sprint 2.7e. `model` is free-text, not a dropdown of known models --
+    Proposal §11: "Every model identifier is configuration, never durable
+    domain data," and a hardcoded model list goes stale exactly the way
+    this project's own model-currency discipline warns against.
+
+    `model` is optional as of Horizon Sprint 5.0 -- an LLM credential
+    needs one (which model to call), but a search-provider credential
+    (You.com, Firecrawl) doesn't have a "model" concept at all; forcing
+    one would mean either a placeholder value or a second request shape,
+    neither of which is honest."""
+
+    service: str = Field(min_length=1)
+    provider: str = Field(min_length=1)
+    secret: str = Field(min_length=1)
+    model: str | None = None
+    base_url: str | None = None
