@@ -50,6 +50,7 @@ from supabase import AsyncClient
 from .app_state import get_http_client, get_supabase, get_telegram_client, get_webhook_secret
 from .applications_store import (
     ApplicationNotFound,
+    InvalidApplicationStatus,
     change_stage,
     create_application,
     list_applications,
@@ -686,6 +687,12 @@ async def _handle_callback(
             await telegram.send_message(chat_id, _STAGE_CHANGED_TEXT.format(status=new_status))
         except ApplicationNotFound:
             await telegram.send_message(chat_id, "❌ Couldn't find that application anymore.")
+        except InvalidApplicationStatus:
+            # K1 (applications-kanban.md D2) -- this callback_data is
+            # technically forgeable, and this path never goes through
+            # ChangeApplicationStageRequest's own Pydantic Literal, so
+            # this is the first real check `new_status` ever meets.
+            await telegram.send_message(chat_id, f"❌ {new_status!r} isn't a real stage.")
 
     await telegram.answer_callback_query(callback_query["id"])
 

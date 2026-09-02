@@ -27,7 +27,7 @@ from .applications_store import (
     get_application,
     list_applications,
 )
-from .artifact_versions_store import get_latest_version
+from .artifact_versions_store import artifact_id_for, get_existing_artifact_ids, get_latest_version
 from .auth import require_user_id
 from .errors import ApiError
 from .export_checklist import ChecklistItem, build_checklist
@@ -54,6 +54,19 @@ async def _with_snapshot(
     return [
         {**a, "snapshot": snapshots_by_id.get(a["active_job_snapshot_id"])} for a in applications
     ]
+
+
+async def _with_resume_exists(
+    supabase: AsyncClient, user_id: str, applications: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Applications Kanban K1 (applications-kanban.md D5) -- the real
+    "Resume ✓" badge for a whole page of applications, one batch query via
+    `get_existing_artifact_ids` rather than `get_my_application`'s own
+    per-row `get_latest_version` (fine for a single fetch, would be N+1
+    here)."""
+    ids_by_application = {a["id"]: artifact_id_for(a["id"], "resume") for a in applications}
+    existing = await get_existing_artifact_ids(supabase, user_id, list(ids_by_application.values()))
+    return [{**a, "resume_exists": ids_by_application[a["id"]] in existing} for a in applications]
 
 
 @router.post("", status_code=201)
@@ -86,7 +99,8 @@ async def list_my_applications(
     supabase: AsyncClient = Depends(get_supabase),
 ) -> list[dict[str, Any]]:
     applications = await list_applications(supabase, user_id)
-    return await _with_snapshot(supabase, applications)
+    with_snapshot = await _with_snapshot(supabase, applications)
+    return await _with_resume_exists(supabase, user_id, with_snapshot)
 
 
 @router.get("/{application_id}")
@@ -120,6 +134,13 @@ async def change_application_stage(
     user_id: str = Depends(require_user_id),
     supabase: AsyncClient = Depends(get_supabase),
 ) -> dict[str, Any]:
+    # No `except InvalidApplicationStatus` here (K1) -- `body.new_status` is
+    # already `models.ApplicationStatus` (a Literal), so FastAPI's own
+    # Pydantic validation rejects an invalid value with a 422 before this
+    # route body ever runs; catching it here would be handling a state
+    # this call site can't actually reach. The Telegram bridge's stage-
+    # change callback is the real, reachable caller of that exception --
+    # see telegram_webhook.py, which never goes through this Literal.
     try:
         return await change_stage(
             supabase,

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import ApplicationsBoard from "../components/ApplicationsBoard";
 import { apiFetch } from "../lib/api";
+import { CROSS_NAV_ITEMS } from "../lib/applicationsBoard";
+import { ALL_STATUSES, type Application, type ApplicationStatus } from "../lib/applicationsTypes";
 
 // Applications (Sprint 2.6f) -- the first real surface over Sprint 2.6's
 // schema (jobs/job_snapshots/applications/application_events/event_outbox/
@@ -10,42 +13,30 @@ import { apiFetch } from "../lib/api";
 // top of the same jobs_store later -- manual paste stays the permanent
 // fallback for postings a scraper can't reach, not a placeholder.
 //
-// `status` is unconstrained text at the DB layer (applications_store.py's
-// own choice, matching Proposal's DDL). STATUS_OPTIONS below is this
-// page's own small vocabulary for the dropdown -- not enforced anywhere
-// server-side.
-
-interface JobSnapshot {
-  id: string;
-  title: string;
-  company_name: string;
-  location_text: string | null;
-  source_url: string;
-}
-
-interface Application {
-  id: string;
-  status: string;
-  source_channel: string;
-  created_at: string;
-  updated_at: string;
-  snapshot: JobSnapshot | null;
-}
-
-const STATUS_OPTIONS = [
-  "saved",
-  "applied",
-  "screening",
-  "interviewing",
-  "offer",
-  "rejected",
-  "withdrawn",
-];
+// `Application`/`ApplicationStatus`/`ALL_STATUSES` now live in
+// applicationsTypes.ts (Applications Kanban K2) so ApplicationsBoard.tsx
+// and applicationsBoard.ts share the exact same shapes rather than
+// reaching into this page. `status` is the real, server-enforced 7-value
+// vocabulary as of K1 (a Postgres CHECK constraint plus
+// change_application_stage's own copy of the same check) -- this page's
+// own list already matched it exactly before K1 shipped, so the List view
+// below is otherwise unchanged.
+//
+// Board vs. List defaults to List: a user who has never seen this toggle
+// should see the exact page they saw before K2 shipped, not be dropped
+// into a new view they didn't ask for.
 
 export default function Applications() {
   const [applications, setApplications] = useState<Application[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // A Set, not a single id: the Board can have several cards in flight at
+  // once (a drag on one card while another card's "Move to..." select is
+  // still awaiting its response), and a single shared busy id would let
+  // the earlier request's card render as no-longer-busy the moment a
+  // second card's move starts -- re-enabling it for a concurrent, racing
+  // stage change. See applications-kanban.md K2 for the concrete scenario.
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
+  const [view, setView] = useState<"list" | "board">("list");
 
   const load = useCallback(async () => {
     try {
@@ -61,8 +52,8 @@ export default function Applications() {
     void load();
   }, [load]);
 
-  async function changeStatus(applicationId: string, newStatus: string) {
-    setBusyId(applicationId);
+  async function changeStatus(applicationId: string, newStatus: ApplicationStatus) {
+    setBusyIds((current) => new Set(current).add(applicationId));
     try {
       await apiFetch(`/applications/${applicationId}/stage`, {
         method: "POST",
@@ -75,7 +66,11 @@ export default function Applications() {
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to change status");
     } finally {
-      setBusyId(null);
+      setBusyIds((current) => {
+        const next = new Set(current);
+        next.delete(applicationId);
+        return next;
+      });
     }
   }
 
@@ -91,16 +86,42 @@ export default function Applications() {
         </div>
       )}
       {applications !== null && applications.length > 0 && (
-        <div className="bj-application-list">
-          {applications.map((a) => (
-            <ApplicationRow
-              key={a.id}
-              application={a}
-              busy={busyId === a.id}
-              onChangeStatus={(status) => void changeStatus(a.id, status)}
+        <>
+          <div className="bj-profile-toolbar">
+            <div className="bj-view-toggle">
+              <button
+                className={view === "list" ? "bj-toggle-active" : ""}
+                onClick={() => setView("list")}
+              >
+                List
+              </button>
+              <button
+                className={view === "board" ? "bj-toggle-active" : ""}
+                onClick={() => setView("board")}
+              >
+                Board
+              </button>
+            </div>
+          </div>
+          {view === "list" ? (
+            <div className="bj-application-list">
+              {applications.map((a) => (
+                <ApplicationRow
+                  key={a.id}
+                  application={a}
+                  busy={busyIds.has(a.id)}
+                  onChangeStatus={(status) => void changeStatus(a.id, status)}
+                />
+              ))}
+            </div>
+          ) : (
+            <ApplicationsBoard
+              applications={applications}
+              busyIds={busyIds}
+              onChangeStatus={(applicationId, status) => void changeStatus(applicationId, status)}
             />
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -113,9 +134,10 @@ function ApplicationRow({
 }: {
   application: Application;
   busy: boolean;
-  onChangeStatus: (status: string) => void;
+  onChangeStatus: (status: ApplicationStatus) => void;
 }) {
   const snapshot = application.snapshot;
+  const navigate = useNavigate();
   return (
     <div className="bj-card bj-application-row">
       <div className="bj-card-header">
@@ -132,9 +154,9 @@ function ApplicationRow({
         <select
           value={application.status}
           disabled={busy}
-          onChange={(e) => onChangeStatus(e.target.value)}
+          onChange={(e) => onChangeStatus(e.target.value as ApplicationStatus)}
         >
-          {STATUS_OPTIONS.map((s) => (
+          {ALL_STATUSES.map((s) => (
             <option key={s} value={s}>
               {s}
             </option>
@@ -146,12 +168,27 @@ function ApplicationRow({
           </a>
         )}
         <Link to={`/applications/${application.id}`}>Open workspace</Link>
+        <select
+          aria-label={`Actions for "${snapshot?.title ?? "Untitled"}"`}
+          value=""
+          onChange={(e) => {
+            const hash = e.target.value;
+            if (hash) navigate(`/applications/${application.id}#${hash}`);
+          }}
+        >
+          <option value="">Actions...</option>
+          {CROSS_NAV_ITEMS.map((item) => (
+            <option key={item.hash} value={item.hash}>
+              {item.label}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );
 }
 
-function statusBadgeClass(status: string): string {
+function statusBadgeClass(status: ApplicationStatus): string {
   switch (status) {
     case "saved":
       return "bj-badge-gold";

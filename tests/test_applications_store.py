@@ -10,6 +10,7 @@ from postgrest.exceptions import APIError
 
 from between_jobs.api.applications_store import (
     ApplicationNotFound,
+    InvalidApplicationStatus,
     change_stage,
     create_application,
     get_application,
@@ -327,5 +328,25 @@ async def test_change_stage_reraises_unrelated_api_errors() -> None:
             _USER_ID,
             _APPLICATION_ID,
             new_status="applied",
+            idempotency_key="change-1",
+        )
+
+
+async def test_change_stage_raises_invalid_application_status_on_check_violation() -> None:
+    """K1 (applications-kanban.md D2) -- change_application_stage's own
+    membership check raises with a distinct SQLSTATE (22023) from the
+    plain P0001 the "not found" raise uses, so this doesn't get confused
+    with ApplicationNotFound."""
+    error = APIError({"message": "invalid application status: bogus", "code": "22023"})
+    client = _FakeSupabaseClient(
+        _FakeTable(select_rows=[]), _FakeTable(select_rows=[]), rpc_error=error
+    )
+
+    with pytest.raises(InvalidApplicationStatus):
+        await change_stage(
+            client,  # type: ignore[arg-type]
+            _USER_ID,
+            _APPLICATION_ID,
+            new_status="bogus",
             idempotency_key="change-1",
         )

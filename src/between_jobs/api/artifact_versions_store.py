@@ -76,6 +76,28 @@ async def get_latest_version(
     return cast(dict[str, Any], result.data[0])
 
 
+async def get_existing_artifact_ids(
+    supabase: AsyncClient, user_id: str, artifact_ids: list[str]
+) -> set[str]:
+    """Which of these artifact_ids have at least one persisted version for
+    this user -- a batch existence check (Applications Kanban K1,
+    applications-kanban.md D5) for e.g. a whole page of applications'
+    `resume_exists` flags, one query instead of `get_latest_version`'s
+    per-row N+1. Existence only, not "the latest version" -- a caller that
+    needs the actual row still wants `get_latest_version`."""
+    if not artifact_ids:
+        return set()
+    result = (
+        await supabase.table("artifact_versions")
+        .select("artifact_id")
+        .eq("user_id", user_id)
+        .in_("artifact_id", artifact_ids)
+        .execute()
+    )
+    rows = cast("list[dict[str, Any]]", result.data)
+    return {cast(str, row["artifact_id"]) for row in rows}
+
+
 async def download_content(supabase: AsyncClient, storage_key: str) -> bytes:
     return await supabase.storage.from_(_BUCKET).download(storage_key)
 

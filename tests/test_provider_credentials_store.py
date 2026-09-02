@@ -65,7 +65,7 @@ class _FakeSupabaseClient:
         table: _FakeTable,
         *,
         encrypt_output: str | None = None,
-        decrypt_output: str | None = None,
+        decrypt_output: str | dict[str, str] | None = None,
     ) -> None:
         self.provider_credentials = table
         self.encrypt_output = encrypt_output
@@ -81,6 +81,8 @@ class _FakeSupabaseClient:
         if fn == "encrypt_secret":
             return _FakeRpcBuilder(self.encrypt_output)
         if fn == "decrypt_secret":
+            if isinstance(self.decrypt_output, dict):
+                return _FakeRpcBuilder(self.decrypt_output[params["p_ciphertext"]])
             return _FakeRpcBuilder(self.decrypt_output)
         raise AssertionError(f"unexpected rpc: {fn}")
 
@@ -136,6 +138,7 @@ async def test_get_decrypted_credential_found() -> None:
                 "model": "anthropic/claude-sonnet-4-6",
                 "base_url": None,
                 "secret_encrypted": "ciphertext-abc",
+                "secret_2_encrypted": None,
             }
         ]
     )
@@ -153,8 +156,77 @@ async def test_get_decrypted_credential_found() -> None:
         "model": "anthropic/claude-sonnet-4-6",
         "base_url": None,
         "secret": "sk-or-v1-plaintext",
+        "secret_2": None,
     }
     assert client.rpc_calls == [("decrypt_secret", {"p_ciphertext": "ciphertext-abc"})]
+
+
+async def test_save_credential_encrypts_secret_2_when_given() -> None:
+    saved_row = {"id": "cred-1", "service": "search", "provider": "adzuna"}
+    table = _FakeTable(select_rows=[], upsert_row=saved_row)
+    client = _FakeSupabaseClient(
+        table, encrypt_output="ciphertext-1"
+    )  # same output for both calls -- wiring test, not distinctness
+
+    await save_credential(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        service="search",
+        provider="adzuna",
+        secret="app-id-value",
+        secret_2="app-key-value",
+    )
+
+    encrypt_calls = [c for c in client.rpc_calls if c[0] == "encrypt_secret"]
+    assert len(encrypt_calls) == 2
+    assert {c[1]["p_plaintext"] for c in encrypt_calls} == {"app-id-value", "app-key-value"}
+    data, _ = table.upsert_calls[0]
+    assert data["secret_2_encrypted"] == "ciphertext-1"
+
+
+async def test_save_credential_leaves_secret_2_null_when_not_given() -> None:
+    table = _FakeTable(select_rows=[], upsert_row={"id": "cred-1"})
+    client = _FakeSupabaseClient(table, encrypt_output="ciphertext-abc")
+
+    await save_credential(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        service="llm",
+        provider="openrouter",
+        secret="sk-or-v1-plaintext",
+    )
+
+    encrypt_calls = [c for c in client.rpc_calls if c[0] == "encrypt_secret"]
+    assert len(encrypt_calls) == 1  # secret_2 never touches encrypt_secret when absent
+    data, _ = table.upsert_calls[0]
+    assert data["secret_2_encrypted"] is None
+
+
+async def test_get_decrypted_credential_decrypts_secret_2_when_present() -> None:
+    table = _FakeTable(
+        select_rows=[
+            {
+                "provider": "adzuna",
+                "model": None,
+                "base_url": None,
+                "secret_encrypted": "cipher-id",
+                "secret_2_encrypted": "cipher-key",
+            }
+        ]
+    )
+    client = _FakeSupabaseClient(
+        table, decrypt_output={"cipher-id": "app-id-value", "cipher-key": "app-key-value"}
+    )
+
+    result = await get_decrypted_credential(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        service="search",
+        provider="adzuna",
+    )
+
+    assert result["secret"] == "app-id-value"
+    assert result["secret_2"] == "app-key-value"
 
 
 async def test_get_decrypted_credential_not_found_raises() -> None:

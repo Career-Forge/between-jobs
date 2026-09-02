@@ -74,3 +74,8 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 addopts = "-q"
 asyncio_mode = "auto"
+# Job Finder P1's one-time import script lives at the repo root (scripts/),
+# not inside the installed between_jobs package -- it's a standalone,
+# by-hand-run migration tool, not an API module. This is what makes
+# `from scripts.import_job_registry_seed import ...` resolvable in tests.
+pythonpath = ["."]

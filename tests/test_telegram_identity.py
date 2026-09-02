@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from postgrest.exceptions import APIError
 
-from between_jobs.api.telegram_identity import resolve_or_create_user_id
+from between_jobs.api.telegram_identity import get_chat_id, resolve_or_create_user_id
 
 _TELEGRAM_USER_ID = 987654321
 _EXISTING_USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -152,3 +152,15 @@ async def test_non_unique_db_error_propagates() -> None:
     client = _FakeSupabaseClient(select_rows=[], insert_error=other_error)
     with pytest.raises(APIError):
         await resolve_or_create_user_id(client, _TELEGRAM_USER_ID)  # type: ignore[arg-type]
+
+
+async def test_get_chat_id_returns_the_linked_telegram_user_id() -> None:
+    client = _FakeSupabaseClient(select_rows=[{"external_subject": str(_TELEGRAM_USER_ID)}])
+    result = await get_chat_id(client, _EXISTING_USER_ID)  # type: ignore[arg-type]
+    assert result == _TELEGRAM_USER_ID
+
+
+async def test_get_chat_id_returns_none_when_no_telegram_identity_is_linked() -> None:
+    client = _FakeSupabaseClient(select_rows=[])
+    result = await get_chat_id(client, _EXISTING_USER_ID)  # type: ignore[arg-type]
+    assert result is None

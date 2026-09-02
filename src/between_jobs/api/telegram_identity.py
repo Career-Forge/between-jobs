@@ -110,6 +110,27 @@ async def resolve_or_create_user_id(supabase: AsyncClient, telegram_user_id: int
     return str(new_user_id)
 
 
+async def get_chat_id(supabase: AsyncClient, user_id: str) -> int | None:
+    """The reverse of `resolve_or_create_user_id` (Job Finder P10's
+    real-time push) -- given a Supabase user_id, find their linked
+    Telegram chat_id, or None if they have no linked Telegram identity.
+    Telegram's own private-chat semantics mean chat_id == the Telegram
+    user_id for a 1:1 bot conversation (already relied on implicitly by
+    every webhook handler in this codebase), so `external_subject`
+    doubles as the chat_id with no separate column needed."""
+    result = (
+        await supabase.table("channel_identities")
+        .select("external_subject")
+        .eq("user_id", user_id)
+        .eq("channel", CHANNEL)
+        .execute()
+    )
+    if not result.data:
+        return None
+    row = cast(dict[str, Any], result.data[0])
+    return int(cast(str, row["external_subject"]))
+
+
 async def unlink(supabase: AsyncClient, telegram_user_id: int) -> None:
     """Removes this Telegram account's channel_identities row (Sprint
     2.8e's `/unlink`). The auth user it pointed at is left as-is, even if

@@ -15,6 +15,7 @@ import contextlib
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import Any, cast
 
 import httpx
@@ -34,15 +35,17 @@ from .company_intel_routes import router as company_intel_router
 from .credentials_routes import router as credentials_router
 from .digest_listener import handle_batch as handle_digest_batch
 from .discovery_routes import router as discovery_router
-from .discovery_store import create_pool as create_discovery_pool
 from .env import require_env
 from .errors import ApiError
 from .interview_practice_routes import router as interview_practice_router
+from .job_registry_poller import run_poller_forever
 from .link_routes import router as link_router
 from .models import CreateSessionRequest
 from .outbox_store import run_worker_forever
 from .profile_routes import router as profile_router
 from .resume_documents_routes import router as resume_documents_router
+from .saved_search_matcher import run_matcher_forever
+from .saved_searches_routes import router as saved_searches_router
 from .supabase_client import create_supabase_client
 from .telegram_client import TelegramClient
 from .telegram_webhook import router as telegram_router
@@ -78,22 +81,46 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # first poll would throw an unhandled connection error inside its own
     # task on every single test run. tests/conftest.py sets this
     # automatically so no individual test file has to know about it.
+    #
+    # Job Finder P10 (job-finder-p10-digest.md) binds `telegram=app.state.
+    # telegram_client` (already built above) into the listener via
+    # `partial` -- `outbox_store.py`'s own `Listener` type stays a plain
+    # 2-arg callable, no change to that abstraction for one listener's
+    # own extra dependency.
     app.state.outbox_worker_task = None
     if not os.environ.get("DISABLE_OUTBOX_WORKER"):
         worker_supabase, _worker_url = await create_supabase_client()
         app.state.outbox_worker_task = asyncio.create_task(
-            run_worker_forever(worker_supabase, listeners=[handle_digest_batch])
+            run_worker_forever(
+                worker_supabase,
+                listeners=[partial(handle_digest_batch, telegram=app.state.telegram_client)],
+            )
         )
 
-    # Horizon Sprint 4.1 -- the discovery facade's read-only connection
-    # into n8n's own Postgres (never Supabase; a completely different
-    # database this platform doesn't own). Optional by design: `None`
-    # when N8N_JOBS_DATABASE_URL isn't set, so a deployment without that
-    # local reference stack still starts -- app_state.get_n8n_pool turns
-    # the absence into a SETUP_REQUIRED response, not a startup crash.
-    app.state.n8n_pool = None
-    if os.environ.get("N8N_JOBS_DATABASE_URL"):
-        app.state.n8n_pool = await create_discovery_pool()
+    # Job Finder P2 -- the registry poller's own worker, same shape and
+    # same reasoning as the outbox worker above: its own dedicated
+    # Supabase client (never app.state.supabase), gated by its own
+    # DISABLE_* env var so tests never trigger a real network/DB call,
+    # cancelled the same way on shutdown. Reuses app.state.http for its
+    # outbound ATS calls rather than minting a second httpx.AsyncClient.
+    app.state.job_registry_poller_task = None
+    if not os.environ.get("DISABLE_JOB_REGISTRY_POLLER"):
+        poller_supabase, _poller_url = await create_supabase_client()
+        app.state.job_registry_poller_task = asyncio.create_task(
+            run_poller_forever(app.state.http, poller_supabase)
+        )
+
+    # Job Finder P9b -- the saved-search matcher's own worker, same shape
+    # as the two workers above. Its own dedicated Supabase client, gated
+    # by its own DISABLE_* env var, no `app.state.http` (the matcher never
+    # makes a raw HTTP call -- see saved_search_matcher.py's own
+    # docstring for why).
+    app.state.saved_search_matcher_task = None
+    if not os.environ.get("DISABLE_SAVED_SEARCH_MATCHER"):
+        matcher_supabase, _matcher_url = await create_supabase_client()
+        app.state.saved_search_matcher_task = asyncio.create_task(
+            run_matcher_forever(matcher_supabase)
+        )
 
     yield
 
@@ -102,8 +129,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.outbox_worker_task
 
-    if app.state.n8n_pool is not None:
-        await app.state.n8n_pool.close()
+    if app.state.job_registry_poller_task is not None:
+        app.state.job_registry_poller_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.job_registry_poller_task
+
+    if app.state.saved_search_matcher_task is not None:
+        app.state.saved_search_matcher_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.saved_search_matcher_task
 
     await app.state.http.aclose()
 
@@ -119,6 +153,7 @@ app.include_router(today_router)
 app.include_router(discovery_router)
 app.include_router(company_intel_router)
 app.include_router(interview_practice_router)
+app.include_router(saved_searches_router)
 
 
 @app.exception_handler(ApiError)

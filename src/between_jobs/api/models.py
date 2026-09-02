@@ -92,6 +92,19 @@ class CreateApplicationFromPasteRequest(BaseModel):
     location_text: str | None = None
 
 
+ApplicationStatus = Literal[
+    "saved", "applied", "screening", "interviewing", "offer", "rejected", "withdrawn"
+]
+"""Applications Kanban K1 (applications-kanban.md D1/D2) -- the 7 values
+already live in the web frontend's own STATUS_OPTIONS, now the single
+enforced vocabulary. Membership-only enforcement, not a gated state
+machine (D2) -- any-to-any moves among these 7 stay legal. The Postgres
+`applications_status_check` CHECK constraint and `change_application_
+stage`'s own copy of this same check are the real, load-bearing
+enforcement; this Literal just gives the HTTP boundary a friendly 422
+before ever reaching the DB, matching `QuestionType`'s own precedent."""
+
+
 class ChangeApplicationStageRequest(BaseModel):
     """`idempotency_key` is caller-supplied, not server-generated --
     Proposal's own "idempotency keys on all commands" guardrail means the
@@ -99,7 +112,7 @@ class ChangeApplicationStageRequest(BaseModel):
     uuid per click of a "Mark as Applied" button, so a network retry of
     the same click doesn't double-record the transition."""
 
-    new_status: str = Field(min_length=1)
+    new_status: ApplicationStatus
     idempotency_key: str = Field(min_length=1)
 
 
@@ -113,13 +126,19 @@ class SaveCredentialRequest(BaseModel):
     needs one (which model to call), but a search-provider credential
     (You.com, Firecrawl) doesn't have a "model" concept at all; forcing
     one would mean either a placeholder value or a second request shape,
-    neither of which is honest."""
+    neither of which is honest.
+
+    `secret_2` is optional as of Job Finder P4c -- a generic second-value
+    slot for the rare provider whose BYOK credential genuinely needs two
+    real values (Adzuna: app_id + app_key; USAJobs: an Authorization-Key
+    AND a registered email). Every other provider leaves it unset."""
 
     service: str = Field(min_length=1)
     provider: str = Field(min_length=1)
     secret: str = Field(min_length=1)
     model: str | None = None
     base_url: str | None = None
+    secret_2: str | None = None
 
 
 class PrepareApplicationRequest(BaseModel):
@@ -256,3 +275,38 @@ class UpdateAssertionsRequest(BaseModel):
     `ats_score.apply_dealbreaker_assertions`."""
 
     assertions: list[str] = Field(default_factory=list)
+
+
+class TrackDiscoveredJobRequest(BaseModel):
+    """Job Finder P8 -- the frontend already has the full `SearchResult`
+    (and, when scored, `ScoredJob`) data from its own last `/discover`
+    response; tracking just resubmits the fields needed to create a real
+    `jobs`/`job_snapshots` row, mirroring `CreateApplicationFromPasteRequest`'s
+    own shape. Deliberately NOT reused directly: this route needs
+    `provider` to decide whether a real full `jd_text` can be looked up
+    from the registry (Job Finder P1-P3e) server-side, since neither
+    `SearchResult` nor `ScoredJob` carries full JD text (only a 500-char
+    snippet) for a live-search-lane result."""
+
+    apply_url: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    company: str | None = None
+    location: str | None = None
+    snippet: str = ""
+    provider: str = "unknown"
+
+
+class CreateSavedSearchRequest(BaseModel):
+    """Job Finder P9a -- mirrors `/discover`'s own filter shape exactly
+    (`GET /discover?q=...&location=...&companies=...&remote_only=...`),
+    since the real UX is "save the search I already ran", not a second
+    form asking the user to re-specify criteria."""
+
+    query: str = ""
+    location: str | None = None
+    companies: list[str] = Field(default_factory=list)
+    remote_only: bool = False
+
+
+class SetSavedSearchActiveRequest(BaseModel):
+    is_active: bool

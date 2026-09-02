@@ -152,3 +152,26 @@ async def try_get_secret(
     except CredentialNotFound:
         return None
     return cast(str, credential["secret"])
+
+
+async def try_get_secret_pair(
+    supabase: AsyncClient, user_id: str, *, service: str, provider: str
+) -> tuple[str, str] | None:
+    """The two-value sibling of `try_get_secret` (Job Finder P4c) for
+    providers whose BYOK credential needs a second real value alongside
+    the main secret (Adzuna: app_id + app_key; USAJobs: an
+    Authorization-Key AND a registered email). Returns None -- degrade,
+    never fail, same contract as `try_get_secret` -- when the credential
+    is entirely absent OR only partially saved (a `secret` with no
+    `secret_2` is unusable for either provider, not a smaller-but-valid
+    configuration)."""
+    try:
+        credential = await get_decrypted_credential(
+            supabase, user_id, service=service, provider=provider
+        )
+    except CredentialNotFound:
+        return None
+    secret_2 = credential.get("secret_2")
+    if secret_2 is None:
+        return None
+    return cast(str, credential["secret"]), cast(str, secret_2)

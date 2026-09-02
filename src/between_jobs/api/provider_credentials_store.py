@@ -33,12 +33,17 @@ async def save_credential(
     secret: str,
     model: str | None = None,
     base_url: str | None = None,
+    secret_2: str | None = None,
     is_validated: bool = False,
 ) -> dict[str, Any]:
-    """Encrypts `secret` and upserts on (user_id, service, provider) --
-    saving again for the same service/provider replaces the stored key
-    (a deliberate rotate, not a duplicate)."""
+    """Encrypts `secret` (and `secret_2`, if given) and upserts on
+    (user_id, service, provider) -- saving again for the same
+    service/provider replaces the stored key (a deliberate rotate, not a
+    duplicate). `secret_2` is a generic second-value slot (Job Finder
+    P4c) -- what it MEANS depends on the provider: Adzuna's `app_key`,
+    USAJobs' registered email. Most providers never set it."""
     encrypted = await _encrypt(supabase, secret)
+    encrypted_2 = await _encrypt(supabase, secret_2) if secret_2 is not None else None
     result = (
         await supabase.table("provider_credentials")
         .upsert(
@@ -48,6 +53,7 @@ async def save_credential(
                 "provider": provider,
                 "model": model,
                 "secret_encrypted": encrypted,
+                "secret_2_encrypted": encrypted_2,
                 "base_url": base_url,
                 "is_validated": is_validated,
             },
@@ -78,13 +84,14 @@ async def get_decrypted_credential(
     at the moment a credential is actually needed (validation, or
     CredentialResolver resolving a BYOK credential for a real API call).
     Returns the full shape a caller needs to actually use the credential
-    (provider, model, base_url, decrypted secret), not just the secret --
-    a resolver needs `base_url` too (e.g. a custom/self-hosted endpoint),
-    and re-fetching the row separately would be a second round trip for
-    data already in hand."""
+    (provider, model, base_url, decrypted secret, decrypted secret_2 --
+    None for the vast majority of providers that only have one), not just
+    the secret -- a resolver needs `base_url` too (e.g. a custom/
+    self-hosted endpoint), and re-fetching the row separately would be a
+    second round trip for data already in hand."""
     result = (
         await supabase.table("provider_credentials")
-        .select("provider, model, base_url, secret_encrypted")
+        .select("provider, model, base_url, secret_encrypted, secret_2_encrypted")
         .eq("user_id", user_id)
         .eq("service", service)
         .eq("provider", provider)
@@ -94,11 +101,17 @@ async def get_decrypted_credential(
         raise CredentialNotFound(f"{service}/{provider}")
     row = cast(dict[str, Any], result.data[0])
     secret = await _decrypt(supabase, cast(str, row["secret_encrypted"]))
+    secret_2 = (
+        await _decrypt(supabase, cast(str, row["secret_2_encrypted"]))
+        if row.get("secret_2_encrypted") is not None
+        else None
+    )
     return {
         "provider": row["provider"],
         "model": row["model"],
         "base_url": row["base_url"],
         "secret": secret,
+        "secret_2": secret_2,
     }
 
 

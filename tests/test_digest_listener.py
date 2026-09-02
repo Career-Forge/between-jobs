@@ -77,6 +77,51 @@ class _InsertBuilder:
         return SimpleNamespace(data=[self._data])
 
 
+class _FakeRpcBuilder:
+    def __init__(self, table: _FakeHighFitJobRpc, params: dict[str, Any]) -> None:
+        self._table = table
+        self._params = params
+
+    async def execute(self) -> SimpleNamespace:
+        if self._params["p_source_outbox_event_id"] in self._table.raise_on:
+            raise APIError(
+                {"message": "duplicate key", "code": "23505", "details": None, "hint": None}
+            )
+        self._table.calls.append(self._params)
+        return SimpleNamespace(data=[{"id": "today-item-1", **self._params}])
+
+
+class _FakeHighFitJobRpc:
+    def __init__(self, *, raise_unique_violation_on: set[str] | None = None) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.raise_on = raise_unique_violation_on or set()
+
+
+class _FakeChannelIdentitiesTable:
+    def __init__(self, chat_id: int | None) -> None:
+        self._rows = [{"external_subject": str(chat_id)}] if chat_id is not None else []
+
+    def select(self, *_: Any, **__: Any) -> _FakeChannelIdentitiesTable:
+        return self
+
+    def eq(self, *_: Any, **__: Any) -> _FakeChannelIdentitiesTable:
+        return self
+
+    async def execute(self) -> SimpleNamespace:
+        return SimpleNamespace(data=self._rows)
+
+
+class _FakeTelegramClient:
+    def __init__(self, *, raise_on_send: bool = False) -> None:
+        self.sent: list[tuple[int, str]] = []
+        self._raise_on_send = raise_on_send
+
+    async def send_message(self, chat_id: int, text: str, **_: Any) -> None:
+        if self._raise_on_send:
+            raise RuntimeError("telegram send failed")
+        self.sent.append((chat_id, text))
+
+
 class _FakeSupabaseClient:
     def __init__(
         self,
@@ -84,6 +129,9 @@ class _FakeSupabaseClient:
         applications: list[dict[str, Any]] | None = None,
         job_snapshots: list[dict[str, Any]] | None = None,
         today_items: _FakeTodayItemsTable | None = None,
+        high_fit_job_rpc: _FakeHighFitJobRpc | None = None,
+        telegram_chat_id: int | None = None,
+        saved_search_exists: bool = True,
     ) -> None:
         self._applications = _FakeTable(
             applications if applications is not None else [_APPLICATION_ROW]
@@ -92,13 +140,25 @@ class _FakeSupabaseClient:
             job_snapshots if job_snapshots is not None else [_SNAPSHOT_ROW]
         )
         self.today_items = today_items or _FakeTodayItemsTable()
+        self.high_fit_job_rpc = high_fit_job_rpc or _FakeHighFitJobRpc()
+        self._channel_identities = _FakeChannelIdentitiesTable(telegram_chat_id)
+        self._saved_searches = _FakeTable(
+            [{"id": _SAVED_SEARCH_ID, "user_id": _USER_ID}] if saved_search_exists else []
+        )
 
     def table(self, name: str) -> Any:
         return {
             "applications": self._applications,
             "job_snapshots": self._job_snapshots,
             "today_items": self.today_items,
+            "channel_identities": self._channel_identities,
+            "saved_searches": self._saved_searches,
         }[name]
+
+    def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
+        if fn == "insert_high_fit_job_today_item":
+            return _FakeRpcBuilder(self.high_fit_job_rpc, params)
+        raise AssertionError(f"unexpected rpc: {fn}")
 
 
 async def test_application_created_produces_a_job_tracked_item() -> None:
@@ -197,6 +257,148 @@ async def test_duplicate_outbox_event_is_idempotently_skipped() -> None:
 
     assert inserted == 0
     assert today_items.insert_calls == []
+
+
+_SAVED_SEARCH_ID = "40000000-0000-0000-0000-000000000001"
+
+
+def _job_match_row(*, event_id: str = "evt-match-1", **payload_overrides: Any) -> dict[str, Any]:
+    payload = {
+        "apply_url": "https://boards.greenhouse.io/acme/jobs/1",
+        "title": "Backend Engineer",
+        "company": "Acme",
+        "location": "Remote",
+        "score100": 78,
+        "bin": "Strong",
+        "one_liner": "Strong fit -- backend skills align",
+        "snippet": "Build things.",
+        "provider": "registry",
+        **payload_overrides,
+    }
+    return {
+        "id": event_id,
+        "user_id": _USER_ID,
+        "aggregate_id": _SAVED_SEARCH_ID,
+        "event_type": "job_registry.match_found.v1",
+        "payload": payload,
+    }
+
+
+async def test_job_match_found_produces_a_high_fit_job_item_without_touching_applications() -> None:
+    supabase = _FakeSupabaseClient(applications=[])  # no application exists at all
+    row = _job_match_row()
+
+    inserted = await handle_batch(supabase, [row])  # type: ignore[arg-type]
+
+    assert inserted == 1
+    call = supabase.high_fit_job_rpc.calls[0]
+    assert call["p_user_id"] == _USER_ID
+    assert call["p_saved_search_id"] == _SAVED_SEARCH_ID
+    assert call["p_apply_url"] == "https://boards.greenhouse.io/acme/jobs/1"
+    assert call["p_score100"] == 78
+    assert call["p_bin"] == "Strong"
+    assert "Backend Engineer" in call["p_headline"]
+    assert "Acme" in call["p_headline"]
+    assert call["p_detail"] == "Strong fit -- backend skills align"
+
+
+async def test_job_match_found_headline_omits_company_when_absent() -> None:
+    supabase = _FakeSupabaseClient(applications=[])
+    row = _job_match_row(company=None)
+
+    await handle_batch(supabase, [row])  # type: ignore[arg-type]
+
+    headline = supabase.high_fit_job_rpc.calls[0]["p_headline"]
+    assert "Backend Engineer" in headline
+    assert " @ " not in headline
+
+
+async def test_job_match_found_is_idempotent_on_source_outbox_event_id() -> None:
+    rpc = _FakeHighFitJobRpc(raise_unique_violation_on={"evt-match-1"})
+    supabase = _FakeSupabaseClient(applications=[], high_fit_job_rpc=rpc)
+    row = _job_match_row()
+
+    inserted = await handle_batch(supabase, [row])  # type: ignore[arg-type]
+
+    assert inserted == 0
+    assert rpc.calls == []
+
+
+async def test_job_match_found_skips_gracefully_when_the_saved_search_was_deleted() -> None:
+    """A user can delete a saved search between the matcher publishing
+    this event and the outbox worker processing it -- must never surface
+    as an uncaught foreign-key violation out of the RPC insert (a real,
+    previously-live bug: 23503 isn't the 23505 `handle_batch` already
+    catches, so it would have propagated out of `run_worker_forever`'s
+    bare `while True` loop and killed the whole outbox worker)."""
+    supabase = _FakeSupabaseClient(applications=[], saved_search_exists=False)
+    telegram = _FakeTelegramClient()
+    row = _job_match_row()
+
+    inserted = await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+
+    assert inserted == 0
+    assert supabase.high_fit_job_rpc.calls == []
+    assert telegram.sent == []
+
+
+async def test_job_match_found_pushes_a_telegram_message_when_chat_id_resolves() -> None:
+    supabase = _FakeSupabaseClient(applications=[], telegram_chat_id=555)
+    telegram = _FakeTelegramClient()
+    row = _job_match_row()
+
+    inserted = await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+
+    assert inserted == 1
+    assert len(telegram.sent) == 1
+    chat_id, text = telegram.sent[0]
+    assert chat_id == 555
+    assert "Backend Engineer" in text
+    assert "Strong fit -- backend skills align" in text
+    assert "https://boards.greenhouse.io/acme/jobs/1" in text
+
+
+async def test_job_match_found_skips_the_push_when_no_telegram_identity_is_linked() -> None:
+    supabase = _FakeSupabaseClient(applications=[], telegram_chat_id=None)
+    telegram = _FakeTelegramClient()
+    row = _job_match_row()
+
+    inserted = await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+
+    assert inserted == 1
+    assert telegram.sent == []
+
+
+async def test_job_match_found_never_pushes_without_a_telegram_client() -> None:
+    supabase = _FakeSupabaseClient(applications=[], telegram_chat_id=555)
+    row = _job_match_row()
+
+    inserted = await handle_batch(supabase, [row])  # type: ignore[arg-type]
+
+    assert inserted == 1
+
+
+async def test_job_match_found_push_failure_does_not_affect_the_insert_count() -> None:
+    supabase = _FakeSupabaseClient(applications=[], telegram_chat_id=555)
+    telegram = _FakeTelegramClient(raise_on_send=True)
+    row = _job_match_row()
+
+    inserted = await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+
+    assert inserted == 1
+    assert telegram.sent == []
+
+
+async def test_job_match_found_does_not_push_on_idempotent_duplicate() -> None:
+    rpc = _FakeHighFitJobRpc(raise_unique_violation_on={"evt-match-1"})
+    supabase = _FakeSupabaseClient(applications=[], high_fit_job_rpc=rpc, telegram_chat_id=555)
+    telegram = _FakeTelegramClient()
+    row = _job_match_row()
+
+    inserted = await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+
+    assert inserted == 0
+    assert telegram.sent == []
 
 
 async def test_batch_processes_every_row_and_counts_only_successful_inserts() -> None:

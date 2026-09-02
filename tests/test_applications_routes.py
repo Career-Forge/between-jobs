@@ -18,6 +18,7 @@ from postgrest.exceptions import APIError
 
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_supabase
+from between_jobs.api.artifact_versions_store import artifact_id_for
 from between_jobs.api.auth import require_user_id
 
 _USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -190,6 +191,37 @@ def test_list_my_applications_embeds_snapshot() -> None:
     assert body[0]["snapshot"]["title"] == "Staff Engineer"
 
 
+def test_list_my_applications_includes_resume_exists_true_when_generated() -> None:
+    """K1 (applications-kanban.md D5) -- the real "Resume ✓" badge, batch-
+    computed for the whole list."""
+    app_row = {"id": _APPLICATION_ID, "active_job_snapshot_id": _SNAPSHOT_ID}
+    snapshot_row = {"id": _SNAPSHOT_ID, "title": "Staff Engineer"}
+    resume_artifact_id = artifact_id_for(_APPLICATION_ID, "resume")
+    supabase = _FakeSupabaseClient(
+        applications=_FakeTable(select_rows=[app_row]),
+        job_snapshots=_FakeTable(select_rows=[snapshot_row]),
+        artifact_versions=_FakeTable(select_rows=[{"artifact_id": resume_artifact_id}]),
+    )
+    with _client(supabase) as client:
+        response = client.get("/applications")
+
+    assert response.json()[0]["resume_exists"] is True
+
+
+def test_list_my_applications_includes_resume_exists_false_when_none_generated() -> None:
+    app_row = {"id": _APPLICATION_ID, "active_job_snapshot_id": _SNAPSHOT_ID}
+    snapshot_row = {"id": _SNAPSHOT_ID, "title": "Staff Engineer"}
+    supabase = _FakeSupabaseClient(
+        applications=_FakeTable(select_rows=[app_row]),
+        job_snapshots=_FakeTable(select_rows=[snapshot_row]),
+        artifact_versions=_FakeTable(select_rows=[]),
+    )
+    with _client(supabase) as client:
+        response = client.get("/applications")
+
+    assert response.json()[0]["resume_exists"] is False
+
+
 def test_list_my_applications_empty() -> None:
     supabase = _FakeSupabaseClient(applications=_FakeTable(select_rows=[]))
     with _client(supabase) as client:
@@ -250,6 +282,21 @@ def test_change_application_stage_success() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "applied"
+
+
+def test_change_application_stage_invalid_status_returns_422() -> None:
+    """K1 (applications-kanban.md D1/D2) -- `new_status` is now a Literal
+    of the 7 enforced values; an unrecognized string 422s via FastAPI's
+    own Pydantic validation before the route body ever runs."""
+    supabase = _FakeSupabaseClient()
+    with _client(supabase) as client:
+        response = client.post(
+            f"/applications/{_APPLICATION_ID}/stage",
+            json={"new_status": "bogus", "idempotency_key": "change-1"},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_INPUT"
 
 
 def test_change_application_stage_not_found_returns_404() -> None:

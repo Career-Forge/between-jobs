@@ -22,11 +22,13 @@ function called via `.rpc(...)`, so the whole body runs as one
 transaction. `change_application_stage` (Sprint 2.6d's migration) is that
 function; this module just calls it.
 
-`status` is deliberately unconstrained text at the DB layer (no CHECK, no
-Postgres enum) -- Proposal's own DDL choice. _DEFAULT_STATUS below is
-just the value a freshly created application starts at, not enforcement;
-nothing stops a caller from writing any other string, matching the
-schema's own looseness.
+`status` was originally unconstrained text at the DB layer (Proposal's own
+DDL choice) but is now a real enforced vocabulary of 7 values, membership-
+only (Applications Kanban K1, applications-kanban.md D1/D2) -- a Postgres
+CHECK constraint plus `change_application_stage`'s own copy of that same
+check, not a gated state machine; any-to-any moves among the 7 stay legal.
+_DEFAULT_STATUS below is just the value a freshly created application
+starts at ("saved" is one of the 7).
 """
 
 from __future__ import annotations
@@ -46,10 +48,25 @@ _DEFAULT_STATUS = "saved"
 # an implementation detail of the function body, not a contract).
 _RAISED_EXCEPTION_SQLSTATE = "P0001"
 
+# invalid_parameter_value -- change_application_stage's OWN status-check
+# raises with this explicit errcode (K1), distinct from the plain P0001
+# above, so a bad status and a missing application never get confused with
+# each other here.
+_INVALID_STATUS_SQLSTATE = "22023"
+
 
 class ApplicationNotFound(Exception):
     """An application id doesn't exist, or belongs to another user --
     deliberately indistinguishable from the caller's side."""
+
+
+class InvalidApplicationStatus(Exception):
+    """`new_status` isn't one of the 7 enforced values (K1, applications-
+    kanban.md D2) -- raised by `change_application_stage`'s own check, the
+    load-bearing enforcement for callers that never go through
+    `ChangeApplicationStageRequest`'s Pydantic Literal (the Telegram
+    bridge's stage-change callback parses `new_status` straight out of a
+    forgeable callback_data string)."""
 
 
 async def create_application(
@@ -247,7 +264,13 @@ async def change_stage(
     application, records the paired application_events row, and appends
     to event_outbox all in one database transaction. Idempotent on
     `idempotency_key`: a retried call returns the current row without
-    writing a second event or outbox row."""
+    writing a second event or outbox row.
+
+    `new_status` is plain `str`, not `models.ApplicationStatus` (K1) --
+    this function is also called from the Telegram bridge with a value
+    parsed straight out of a callback_data string, never validated as a
+    Literal. `change_application_stage` itself is the real enforcement
+    boundary; see `InvalidApplicationStatus`."""
     try:
         result = await supabase.rpc(
             "change_application_stage",
@@ -263,5 +286,7 @@ async def change_stage(
     except APIError as e:
         if e.code == _RAISED_EXCEPTION_SQLSTATE:
             raise ApplicationNotFound(application_id) from e
+        if e.code == _INVALID_STATUS_SQLSTATE:
+            raise InvalidApplicationStatus(new_status) from e
         raise
     return cast(dict[str, Any], result.data)

@@ -26,6 +26,7 @@ _USER_ID = "00000000-0000-0000-0000-000000000001"
 _APPLICATION_ID = "30000000-0000-0000-0000-000000000001"
 _WEBHOOK_SECRET = "test-secret-not-real"
 _RAISED_EXCEPTION_SQLSTATE = "P0001"
+_INVALID_STATUS_SQLSTATE = "22023"
 
 
 class _FakeChannelIdentitiesTable:
@@ -177,3 +178,28 @@ def test_mark_applied_callback_application_not_found_sends_honest_error() -> Non
     assert response.status_code == 200
     assert telegram.answered_callback_ids == ["cbq-1"]
     assert "❌" in telegram.sent[0][1]
+
+
+def test_stage_callback_with_forged_status_sends_honest_error() -> None:
+    """K1 (applications-kanban.md D2) -- this is the ONE real, reachable
+    caller of InvalidApplicationStatus: callback_data is parsed straight
+    into `new_status` with no Pydantic Literal anywhere on this path, so a
+    forged `app:stage:{id}:bogus` callback is the first real check it
+    meets, at the change_application_stage RPC itself."""
+    error = APIError(
+        {
+            "message": "invalid application status: bogus",
+            "code": _INVALID_STATUS_SQLSTATE,
+            "details": None,
+            "hint": None,
+        }
+    )
+    supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _USER_ID}], rpc_error=error)
+    telegram = _FakeTelegramClient()
+
+    response = _post(supabase, telegram, _callback_update(f"app:stage:{_APPLICATION_ID}:bogus"))
+
+    assert response.status_code == 200
+    assert telegram.answered_callback_ids == ["cbq-1"]
+    assert "❌" in telegram.sent[0][1]
+    assert "bogus" in telegram.sent[0][1]

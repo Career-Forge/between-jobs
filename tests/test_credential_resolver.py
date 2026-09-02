@@ -13,7 +13,12 @@ from typing import Any
 
 import pytest
 
-from between_jobs.api.credential_resolver import ResolvedCredential, resolve, try_get_secret
+from between_jobs.api.credential_resolver import (
+    ResolvedCredential,
+    resolve,
+    try_get_secret,
+    try_get_secret_pair,
+)
 from between_jobs.api.errors import ApiError
 
 _USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -69,8 +74,7 @@ class _FakeSupabaseClient:
 
     def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
         assert fn == "decrypt_secret"
-        row = self._credentials[self._last_credential_query]
-        return _FakeRpcBuilder(f"decrypted:{row['secret_encrypted']}")
+        return _FakeRpcBuilder(f"decrypted:{params['p_ciphertext']}")
 
 
 class _PreferenceTable:
@@ -264,3 +268,40 @@ async def test_try_get_secret_returns_none_when_absent() -> None:
     secret = await try_get_secret(client, _USER_ID, service="search", provider="you_com")  # type: ignore[arg-type]
 
     assert secret is None
+
+
+async def test_try_get_secret_pair_returns_both_decrypted_values_when_present() -> None:
+    client = _FakeSupabaseClient(
+        credentials={
+            ("search", "adzuna"): _credential_row(
+                provider="adzuna",
+                secret_encrypted="app-id-cipher",
+                secret_2_encrypted="app-key-cipher",
+            )
+        }
+    )
+
+    pair = await try_get_secret_pair(client, _USER_ID, service="search", provider="adzuna")  # type: ignore[arg-type]
+
+    assert pair == ("decrypted:app-id-cipher", "decrypted:app-key-cipher")
+
+
+async def test_try_get_secret_pair_returns_none_when_absent() -> None:
+    client = _FakeSupabaseClient()
+
+    pair = await try_get_secret_pair(client, _USER_ID, service="search", provider="adzuna")  # type: ignore[arg-type]
+
+    assert pair is None
+
+
+async def test_try_get_secret_pair_returns_none_when_only_secret_saved() -> None:
+    """A `secret` with no `secret_2` is a partially-saved 2-value
+    credential -- unusable for Adzuna/USAJobs, degrade the same as
+    entirely absent, never a half-working pair."""
+    client = _FakeSupabaseClient(
+        credentials={("search", "adzuna"): _credential_row(provider="adzuna")}
+    )
+
+    pair = await try_get_secret_pair(client, _USER_ID, service="search", provider="adzuna")  # type: ignore[arg-type]
+
+    assert pair is None

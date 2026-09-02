@@ -29,6 +29,9 @@ class _ChainBuilder:
     def order(self, *_: Any, **__: Any) -> _ChainBuilder:
         return self
 
+    def in_(self, column: str, values: list[Any]) -> _ChainBuilder:
+        return _ChainBuilder([row for row in self._rows if row[column] in values])
+
     async def execute(self) -> SimpleNamespace:
         return SimpleNamespace(data=self._rows)
 
@@ -49,12 +52,15 @@ class _FakeTable:
 
 
 class _FakeSupabaseClient:
-    def __init__(self, today_items: _FakeTable) -> None:
+    def __init__(self, today_items: _FakeTable, *, job_matches: _FakeTable | None = None) -> None:
         self.today_items = today_items
+        self.job_matches = job_matches or _FakeTable(select_rows=[])
 
     def table(self, name: str) -> Any:
         if name == "today_items":
             return self.today_items
+        if name == "today_item_job_matches":
+            return self.job_matches
         raise AssertionError(f"unexpected table: {name}")
 
 
@@ -79,14 +85,30 @@ def _clear_overrides() -> Any:
 
 
 def test_list_my_today_items_returns_undismissed_rows() -> None:
-    rows = [{"id": _ITEM_ID, "headline": "🆕 Tracking Staff Engineer @ Acme"}]
+    rows = [
+        {"id": _ITEM_ID, "kind": "job_tracked", "headline": "🆕 Tracking Staff Engineer @ Acme"}
+    ]
     supabase = _FakeSupabaseClient(_FakeTable(select_rows=rows))
 
     with _client(supabase) as client:
         response = client.get("/today")
 
     assert response.status_code == 200
-    assert response.json() == rows
+    assert response.json() == [{**rows[0], "job_match": None}]
+
+
+def test_list_my_today_items_embeds_the_job_match_for_high_fit_job_items() -> None:
+    rows = [{"id": _ITEM_ID, "kind": "high_fit_job", "headline": "🎯 High-fit match"}]
+    match = {"today_item_id": _ITEM_ID, "apply_url": "https://x.example/1", "score100": 78}
+    supabase = _FakeSupabaseClient(
+        _FakeTable(select_rows=rows), job_matches=_FakeTable(select_rows=[match])
+    )
+
+    with _client(supabase) as client:
+        response = client.get("/today")
+
+    assert response.status_code == 200
+    assert response.json() == [{**rows[0], "job_match": match}]
 
 
 def test_dismiss_my_today_item_success() -> None:

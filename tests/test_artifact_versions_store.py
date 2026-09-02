@@ -10,6 +10,7 @@ from between_jobs.api.artifact_versions_store import (
     artifact_id_for,
     create_version,
     download_content,
+    get_existing_artifact_ids,
     get_latest_version,
 )
 
@@ -28,6 +29,9 @@ class _ChainBuilder:
         return self
 
     def limit(self, *_: Any, **__: Any) -> _ChainBuilder:
+        return self
+
+    def in_(self, *_: Any, **__: Any) -> _ChainBuilder:
         return self
 
     async def execute(self) -> SimpleNamespace:
@@ -205,6 +209,32 @@ async def test_get_latest_version_returns_the_top_row() -> None:
     result = await get_latest_version(client, _USER_ID, _APPLICATION_ID, "resume")  # type: ignore[arg-type]
 
     assert result == row
+
+
+async def test_get_existing_artifact_ids_returns_empty_set_for_empty_input() -> None:
+    """No query at all for an empty application list -- Applications
+    Kanban K1's own reason this exists (a whole page's resume_exists in
+    one batch call, including the zero-applications case)."""
+    table = _FakeTable(select_rows=[{"artifact_id": "should-not-be-returned"}])
+    client = _FakeSupabaseClient(table, _FakeBucket())
+
+    result = await get_existing_artifact_ids(client, _USER_ID, [])  # type: ignore[arg-type]
+
+    assert result == set()
+
+
+async def test_get_existing_artifact_ids_returns_the_ids_that_exist() -> None:
+    resume_id = artifact_id_for(_APPLICATION_ID, "resume")
+    table = _FakeTable(select_rows=[{"artifact_id": resume_id}])
+    client = _FakeSupabaseClient(table, _FakeBucket())
+
+    result = await get_existing_artifact_ids(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        [resume_id, "some-other-artifact-id-with-no-versions"],
+    )
+
+    assert result == {resume_id}
 
 
 async def test_download_content_reads_from_the_artifacts_bucket() -> None:

@@ -297,6 +297,219 @@ def test_save_you_com_credential_rejected() -> None:
     assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
 
 
+def test_save_serper_credential_validates_via_a_real_search_call() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=200)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="serper", secret="sp-key", model=None),
+        )
+
+    assert response.status_code == 201
+    url, kwargs = http.requests[0]
+    assert url == "https://google.serper.dev/search"
+    assert kwargs["headers"]["X-API-KEY"] == "sp-key"
+    assert kwargs["json"]["num"] == 1
+
+
+def test_save_serper_credential_rejected() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=403)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="serper", secret="bad-key", model=None),
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
+
+
+def test_save_brave_credential_validates_via_a_real_search_call() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=200)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="brave", secret="brave-key", model=None),
+        )
+
+    assert response.status_code == 201
+    url, kwargs = http.requests[0]
+    assert url == "https://api.search.brave.com/res/v1/web/search"
+    assert kwargs["headers"]["X-Subscription-Token"] == "brave-key"
+    assert kwargs["params"]["count"] == 1
+
+
+def test_save_jsearch_credential_validates_via_a_real_search_call() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=200)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="jsearch", secret="js-key", model=None),
+        )
+
+    assert response.status_code == 201
+    url, kwargs = http.requests[0]
+    assert url == "https://jsearch.p.rapidapi.com/search-v2"
+    assert kwargs["headers"]["X-RapidAPI-Key"] == "js-key"
+    assert kwargs["headers"]["X-RapidAPI-Host"] == "jsearch.p.rapidapi.com"
+
+
+def test_save_adzuna_credential_rejects_missing_secret_2() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=200)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="adzuna", secret="app-id", model=None),
+        )
+
+    assert response.status_code == 422
+    body = response.json()["error"]
+    assert body["code"] == "INVALID_INPUT"
+    assert http.requests == []  # never even attempted validation
+
+
+def test_save_adzuna_credential_validates_via_a_real_search_call() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=200)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(
+                service="search",
+                provider="adzuna",
+                secret="app-id-value",
+                secret_2="app-key-value",
+                model=None,
+            ),
+        )
+
+    assert response.status_code == 201
+    url, kwargs = http.requests[0]
+    assert url == "https://api.adzuna.com/v1/api/jobs/us/search/1"
+    assert kwargs["params"]["app_id"] == "app-id-value"
+    assert kwargs["params"]["app_key"] == "app-key-value"
+
+
+def test_save_adzuna_credential_rejected_on_410() -> None:
+    """Adzuna's real auth-failure status is 410 ("Authorisation failed"),
+    not 401/403 -- confirmed against its own live OpenAPI spec."""
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=410)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(
+                service="search",
+                provider="adzuna",
+                secret="bad-id",
+                secret_2="bad-key",
+                model=None,
+            ),
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
+
+
+def test_save_adzuna_credential_persists_secret_2() -> None:
+    table = _FakeTable(
+        select_rows=[], upsert_row={"id": "cred-1", "service": "search", "provider": "adzuna"}
+    )
+    supabase = _FakeSupabaseClient(provider_credentials=table)
+    http = _FakeHttpClient(status_code=200)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(
+                service="search",
+                provider="adzuna",
+                secret="app-id-value",
+                secret_2="app-key-value",
+                model=None,
+            ),
+        )
+
+    assert response.status_code == 201
+    # This fake's encrypt_secret RPC returns a fixed ciphertext regardless
+    # of plaintext, so this can't prove secret vs secret_2 encrypt to
+    # DIFFERENT values -- provider_credentials_store's own tests cover
+    # that. What this proves is the real gap this phase closes: the
+    # upserted row actually carries a populated secret_2_encrypted at
+    # all, not left null the way every save did before P4c.
+    assert table.upsert_calls[0]["secret_2_encrypted"] is not None
+
+
+def test_save_usajobs_credential_rejects_missing_secret_2() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=200)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="usajobs", secret="auth-key", model=None),
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_INPUT"
+    assert http.requests == []
+
+
+def test_save_usajobs_credential_validates_via_a_real_search_call() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=200)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(
+                service="search",
+                provider="usajobs",
+                secret="auth-key-value",
+                secret_2="dev@example.com",
+                model=None,
+            ),
+        )
+
+    assert response.status_code == 201
+    url, kwargs = http.requests[0]
+    assert url == "https://data.usajobs.gov/api/search"
+    assert kwargs["headers"]["Authorization-Key"] == "auth-key-value"
+    assert kwargs["headers"]["User-Agent"] == "dev@example.com"
+
+
+def test_save_usajobs_credential_rejected() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=401)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(
+                service="search",
+                provider="usajobs",
+                secret="bad-key",
+                secret_2="dev@example.com",
+                model=None,
+            ),
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
+
+
 def test_delete_credential_route() -> None:
     table = _FakeTable(select_rows=[])
     supabase = _FakeSupabaseClient(provider_credentials=table)

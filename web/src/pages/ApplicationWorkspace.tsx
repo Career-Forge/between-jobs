@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { CompanyIntelPanel } from "../components/CompanyIntelPanel";
 import { GeneratePanel } from "../components/GeneratePanel";
 import { HeaderComposer } from "../components/HeaderComposer";
@@ -8,6 +8,7 @@ import { SectionOrderEditor } from "../components/SectionOrderEditor";
 import { ShapeSettingsPanel } from "../components/ShapeSettingsPanel";
 import { TailorPanel } from "../components/TailorPanel";
 import { ApiError, apiFetch } from "../lib/api";
+import { CROSS_NAV_HASH } from "../lib/applicationsBoard";
 import type { CanonicalProfile } from "../lib/profileTypes";
 
 // Application workspace (Sprint 3.3d) -- Proposal §37.4. The Studio
@@ -44,6 +45,7 @@ type State =
 
 export default function ApplicationWorkspace() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const [state, setState] = useState<State>({ kind: "loading" });
 
   const load = useCallback(async () => {
@@ -72,6 +74,23 @@ export default function ApplicationWorkspace() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Applications Kanban K3 -- jump to the panel a cross-nav link (Generate
+  // Docs / Research Company / Practice Interview) pointed at. Depends on
+  // BOTH `state.kind` and `location.hash`, not just one: `state.kind`
+  // covers landing here fresh with the hash already in the URL (the
+  // targeted `<div id="...">` doesn't exist in the DOM until the ready
+  // render happens), and `location.hash` covers clicking a second
+  // cross-nav link while already on this same application's workspace --
+  // React Router doesn't remount the page for a hash-only navigation, so a
+  // mount-only effect would never see that change.
+  useEffect(() => {
+    if (state.kind !== "ready") return;
+    const targetId = location.hash.replace(/^#/, "");
+    if (!targetId) return;
+    const target = document.getElementById(targetId);
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [state.kind, location.hash]);
 
   if (state.kind === "loading") {
     return <WorkspaceFrame />;
@@ -118,12 +137,18 @@ export default function ApplicationWorkspace() {
             </p>
             <ShapeSettingsPanel applicationId={application.id} />
           </div>
-          <GeneratePanel applicationId={application.id} initialHasResume={application.resume_exists} />
+          <div id={CROSS_NAV_HASH.generate}>
+            <GeneratePanel applicationId={application.id} initialHasResume={application.resume_exists} />
+          </div>
         </div>
         <div className="bj-workspace-tailor">
           <TailorPanel applicationId={application.id} />
-          <CompanyIntelPanel applicationId={application.id} />
-          <InterviewPracticePanel applicationId={application.id} />
+          <div id={CROSS_NAV_HASH.companyIntel}>
+            <CompanyIntelPanel applicationId={application.id} />
+          </div>
+          <div id={CROSS_NAV_HASH.interviewPractice}>
+            <InterviewPracticePanel applicationId={application.id} />
+          </div>
         </div>
       </div>
     </WorkspaceFrame>

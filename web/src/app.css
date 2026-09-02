@@ -1028,6 +1028,111 @@ a.bj-contact-chip {
 }
 
 /* ------------------------------------------------------------------ */
+/* Applications Kanban board (K2)                                      */
+/* ------------------------------------------------------------------ */
+
+/* Horizontal scroll rather than the app's usual collapse-to-1fr grid
+   breakpoint (.bj-workspace-layout/.bj-profile-layout's own pattern) --
+   nothing else in this file has 7 fixed columns, and squeezing them into
+   one column below a breakpoint would defeat the point of a board. Each
+   column keeps a readable minimum width and the row scrolls instead. */
+.bj-kanban-board {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin-top: 16px;
+}
+
+.bj-kanban-column {
+  flex: 1 0 240px;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+  padding: 12px;
+}
+
+/* Drag-over feedback -- cyan per tokens.css's own semantic contract
+   ("primary action, links, live state, sync"), the one piece of visual
+   feedback HeaderComposer.tsx/SectionOrderEditor.tsx's own drag-and-drop
+   never needed (a flat list has no equivalent of "which column"). */
+.bj-kanban-column-dragover {
+  border-color: var(--bj-cyan);
+}
+
+.bj-kanban-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.bj-kanban-column-title {
+  font-family: var(--bj-font-display);
+  font-size: 14px;
+}
+
+.bj-kanban-column-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 48px;
+}
+
+/* Modeled on .bj-header-composer-row -- this codebase's own established
+   "draggable row" look (border/radius/background/cursor), not a new
+   visual language. */
+.bj-kanban-card {
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-surface-raised);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: grab;
+}
+
+.bj-kanban-card:active {
+  cursor: grabbing;
+}
+
+.bj-kanban-card-dragging {
+  opacity: 0.5;
+}
+
+.bj-kanban-card-title {
+  font-family: var(--bj-font-display);
+  font-size: 15px;
+}
+
+.bj-kanban-card-move {
+  align-items: center;
+}
+
+.bj-kanban-card-move select {
+  flex: 1;
+  font-size: 12px;
+}
+
+/* K3 cross-nav menu -- same layout treatment as .bj-kanban-card-move
+   (align items, shrink the select's font size to fit the card), kept as
+   its own class since it's a separate row/action, not a variant of the
+   move control. */
+.bj-kanban-card-actions {
+  align-items: center;
+}
+
+.bj-kanban-card-actions select {
+  flex: 1;
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------------------ */
 /* Integrations -- Telegram link (Sprint 2.8f)                         */
 /* ------------------------------------------------------------------ */
 
@@ -1617,6 +1722,16 @@ a.bj-contact-chip {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.bj-today-item-body {
+  min-width: 0;
+}
+
+.bj-today-item-body > * {
+  overflow-wrap: anywhere;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1635,4 +1750,55 @@ a.bj-contact-chip {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Discover (Job Finder P8, job-finder-port.md's own build order)      */
+/* ------------------------------------------------------------------ */
+
+.bj-discover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.bj-discover-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* A flex item's default min-width:auto refuses to shrink below its
+     content's natural width -- real job-posting text sometimes carries
+     a long unbroken string (a bare URL with no spaces), which otherwise
+     forces this whole card, and the page, wider instead of wrapping.
+     Confirmed live: a real EverAI posting's own referral-form URL did
+     exactly this before min-width:0 was added. */
+  min-width: 0;
+}
+
+.bj-discover-card p {
+  overflow-wrap: anywhere;
+}
+
+.bj-discover-more-heading {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.bj-discover-saved-search-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bj-discover-saved-search-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.bj-discover-saved-search-row > span {
+  overflow-wrap: anywhere;
 }
