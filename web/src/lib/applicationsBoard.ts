@@ -58,6 +58,8 @@ export function otherStatuses(current: ApplicationStatus): ApplicationStatus[] {
 export const CROSS_NAV_HASH = {
   generate: "generate",
   companyIntel: "company-intel",
+  contacts: "contacts",
+  warmPathEvents: "warm-path-events",
   interviewPractice: "interview-practice",
 } as const;
 
@@ -69,6 +71,8 @@ export interface CrossNavItem {
 export const CROSS_NAV_ITEMS: readonly CrossNavItem[] = [
   { hash: CROSS_NAV_HASH.generate, label: "Generate Docs" },
   { hash: CROSS_NAV_HASH.companyIntel, label: "Research Company" },
+  { hash: CROSS_NAV_HASH.contacts, label: "Find Contacts" },
+  { hash: CROSS_NAV_HASH.warmPathEvents, label: "Find Events" },
   { hash: CROSS_NAV_HASH.interviewPractice, label: "Practice Interview" },
 ];
 

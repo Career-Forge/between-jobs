@@ -112,10 +112,12 @@ describe("formatAppliedDate", () => {
 });
 
 describe("CROSS_NAV_ITEMS", () => {
-  it("has exactly the 3 named cross-nav destinations, in menu order, and no Tailor entry", () => {
+  it("has exactly the 5 named cross-nav destinations, in menu order, and no Tailor entry", () => {
     expect(CROSS_NAV_ITEMS).toEqual([
       { hash: "generate", label: "Generate Docs" },
       { hash: "company-intel", label: "Research Company" },
+      { hash: "contacts", label: "Find Contacts" },
+      { hash: "warm-path-events", label: "Find Events" },
       { hash: "interview-practice", label: "Practice Interview" },
     ]);
     expect(CROSS_NAV_ITEMS.some((item) => item.hash === "tailor")).toBe(false);

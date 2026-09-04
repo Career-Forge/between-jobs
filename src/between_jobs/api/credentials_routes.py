@@ -66,6 +66,7 @@ _SUPPORTED_CREDENTIALS = {
     ("search", "jsearch"),
     ("search", "adzuna"),
     ("search", "usajobs"),
+    ("search", "apollo"),
 }
 
 _TWO_SECRET_PROVIDERS = {("search", "adzuna"), ("search", "usajobs")}
@@ -148,6 +149,34 @@ async def _validate_firecrawl_key(http: httpx.AsyncClient, secret: str) -> None:
         raise ApiError(
             "PROVIDER_UNAVAILABLE",
             "Firecrawl couldn't validate that key right now. Try again in a moment.",
+            retryable=True,
+        )
+
+
+async def _validate_apollo_key(http: httpx.AsyncClient, secret: str) -> None:
+    """Apollo has a real, free, non-billed health-check endpoint
+    (confirmed against its current developer docs before writing this,
+    not assumed) -- unlike You.com/Serper/Brave/JSearch/Adzuna/USAJobs,
+    validating an Apollo key costs nothing."""
+    try:
+        response = await http.get(
+            "https://api.apollo.io/api/v1/auth/health",
+            headers={"X-Api-Key": secret},
+            timeout=10.0,
+        )
+    except httpx.HTTPError as e:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Couldn't reach Apollo to validate that key. Try again in a moment.",
+            retryable=True,
+        ) from e
+
+    if response.status_code in (401, 403):
+        raise ApiError("PROVIDER_REJECTED", "Apollo rejected that key.")
+    if response.status_code >= 400:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Apollo couldn't validate that key right now. Try again in a moment.",
             retryable=True,
         )
 
@@ -242,6 +271,7 @@ _VALIDATORS = {
     ("search", "serper"): _validate_serper_key,
     ("search", "brave"): _validate_brave_key,
     ("search", "jsearch"): _validate_jsearch_key,
+    ("search", "apollo"): _validate_apollo_key,
 }
 
 

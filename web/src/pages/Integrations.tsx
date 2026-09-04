@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "../lib/api";
+import { apiFetch, ApiError } from "../lib/api";
 
 // Integrations (Sprint 2.7f, widened Horizon Sprint 5.0) -- the web
 // surface over Sprint 2.7's BYOK credential broker (Proposal §11).
@@ -50,6 +50,8 @@ export default function Integrations() {
   const openrouter = credentials?.find((c) => c.service === "llm" && c.provider === "openrouter") ?? null;
   const youCom = credentials?.find((c) => c.service === "search" && c.provider === "you_com") ?? null;
   const firecrawl = credentials?.find((c) => c.service === "search" && c.provider === "firecrawl") ?? null;
+  const apollo = credentials?.find((c) => c.service === "search" && c.provider === "apollo") ?? null;
+  const gmail = credentials?.find((c) => c.service === "oauth" && c.provider === "gmail") ?? null;
 
   return (
     <div>
@@ -80,7 +82,18 @@ export default function Integrations() {
           onChanged={load}
         />
       )}
+      {credentials !== null && (
+        <SearchProviderCard
+          title="Apollo"
+          provider="apollo"
+          placeholder="your-apollo-key"
+          note="Used only for contact enrichment, one already-selected person at a time -- never a bulk search. Validated against Apollo's free health-check endpoint, at no cost."
+          credential={apollo}
+          onChanged={load}
+        />
+      )}
       <TelegramLinkCard />
+      <GmailConnectCard credential={gmail} onChanged={load} />
     </div>
   );
 }
@@ -325,6 +338,80 @@ function TelegramLinkCard() {
         <button className="bj-primary" onClick={() => void generate()} disabled={busy}>
           {busy ? "Generating..." : code ? "Generate a new code" : "Generate a code"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function GmailConnectCard({
+  credential,
+  onChanged,
+}: {
+  credential: CredentialSummary | null;
+  onChanged: () => Promise<void>;
+}) {
+  // outreach-contactfinder.md Phase F. Draft-only: the OAuth scope this
+  // requests (gmail.compose) can't send an email even if the code tried
+  // to -- see gmail_client.py's own docstring.
+  const [connecting, setConnecting] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function connect() {
+    setConnecting(true);
+    setError(null);
+    try {
+      const result = await apiFetch<{ authorize_url: string }>("/profile/integrations/gmail/connect");
+      window.location.href = result.authorize_url;
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
+        setError("Gmail draft integration isn't configured on this server yet.");
+        return;
+      }
+      setError(e instanceof Error ? e.message : "Failed to start connecting Gmail.");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function disconnect() {
+    setRemoving(true);
+    setError(null);
+    try {
+      await apiFetch("/credentials/oauth/gmail", { method: "DELETE" });
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to disconnect Gmail.");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return (
+    <div className="bj-card">
+      <div className="bj-card-header">
+        <h2>Gmail</h2>
+        {credential ? (
+          <span className="bj-badge-emerald">Connected</span>
+        ) : (
+          <span className="bj-badge-gold">Not connected</span>
+        )}
+      </div>
+      <p className="bj-muted">
+        Lets ContactFinder land an outreach draft directly in your real Gmail -- draft-only,
+        always. Nothing is ever sent automatically; you still open Gmail and press Send yourself.
+      </p>
+      {error && <div className="bj-error">{error}</div>}
+      <div className="bj-actions">
+        {credential ? (
+          <button onClick={() => void disconnect()} disabled={removing}>
+            {removing ? "Disconnecting..." : "Disconnect Gmail"}
+          </button>
+        ) : (
+          <button className="bj-primary" onClick={() => void connect()} disabled={connecting}>
+            {connecting ? "Connecting..." : "Connect Gmail"}
+          </button>
+        )}
       </div>
     </div>
   );

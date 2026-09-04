@@ -362,6 +362,36 @@ def test_save_jsearch_credential_validates_via_a_real_search_call() -> None:
     assert kwargs["headers"]["X-RapidAPI-Host"] == "jsearch.p.rapidapi.com"
 
 
+def test_save_apollo_credential_validates_via_the_free_health_endpoint() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=200)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="apollo", secret="apollo-key", model=None),
+        )
+
+    assert response.status_code == 201
+    url, kwargs = http.requests[0]
+    assert url == "https://api.apollo.io/api/v1/auth/health"
+    assert kwargs["headers"]["X-Api-Key"] == "apollo-key"
+
+
+def test_save_apollo_credential_rejects_an_invalid_key() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=401)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="apollo", secret="bad-key", model=None),
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
+
+
 def test_save_adzuna_credential_rejects_missing_secret_2() -> None:
     supabase = _FakeSupabaseClient()
     http = _FakeHttpClient(status_code=200)

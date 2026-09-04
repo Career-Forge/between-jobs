@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { CompanyIntelPanel } from "../components/CompanyIntelPanel";
+import { ContactFinderPanel } from "../components/ContactFinderPanel";
 import { GeneratePanel } from "../components/GeneratePanel";
 import { HeaderComposer } from "../components/HeaderComposer";
 import { InterviewPracticePanel } from "../components/InterviewPracticePanel";
 import { SectionOrderEditor } from "../components/SectionOrderEditor";
 import { ShapeSettingsPanel } from "../components/ShapeSettingsPanel";
 import { TailorPanel } from "../components/TailorPanel";
+import { WarmPathEventsPanel } from "../components/WarmPathEventsPanel";
 import { ApiError, apiFetch } from "../lib/api";
 import { CROSS_NAV_HASH } from "../lib/applicationsBoard";
 import type { CanonicalProfile } from "../lib/profileTypes";
@@ -145,6 +147,12 @@ export default function ApplicationWorkspace() {
           <TailorPanel applicationId={application.id} />
           <div id={CROSS_NAV_HASH.companyIntel}>
             <CompanyIntelPanel applicationId={application.id} />
+          </div>
+          <div id={CROSS_NAV_HASH.contacts}>
+            <ContactFinderPanel applicationId={application.id} />
+          </div>
+          <div id={CROSS_NAV_HASH.warmPathEvents}>
+            <WarmPathEventsPanel applicationId={application.id} />
           </div>
           <div id={CROSS_NAV_HASH.interviewPractice}>
             <InterviewPracticePanel applicationId={application.id} />

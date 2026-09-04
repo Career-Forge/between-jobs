@@ -32,11 +32,13 @@ from .app_state import get_supabase
 from .applications_routes import router as applications_router
 from .auth import create_jwks_client, require_user_id
 from .company_intel_routes import router as company_intel_router
+from .contact_research_routes import router as contact_research_router
 from .credentials_routes import router as credentials_router
 from .digest_listener import handle_batch as handle_digest_batch
 from .discovery_routes import router as discovery_router
 from .env import require_env
 from .errors import ApiError
+from .gmail_oauth_routes import router as gmail_oauth_router
 from .interview_practice_routes import router as interview_practice_router
 from .job_registry_poller import run_poller_forever
 from .link_routes import router as link_router
@@ -50,6 +52,7 @@ from .supabase_client import create_supabase_client
 from .telegram_client import TelegramClient
 from .telegram_webhook import router as telegram_router
 from .today_routes import router as today_router
+from .warm_path_events_routes import router as warm_path_events_router
 
 load_dotenv()
 
@@ -152,6 +155,9 @@ app.include_router(resume_documents_router)
 app.include_router(today_router)
 app.include_router(discovery_router)
 app.include_router(company_intel_router)
+app.include_router(contact_research_router)
+app.include_router(warm_path_events_router)
+app.include_router(gmail_oauth_router)
 app.include_router(interview_practice_router)
 app.include_router(saved_searches_router)
 
