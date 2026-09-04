@@ -15,6 +15,7 @@ from .applications_store import ApplicationNotFound, get_application
 from .auth import require_user_id
 from .contact_enrichment import enrich_candidate
 from .contact_research import (
+    apply_l2_search_filters,
     build_contact_query_plan,
     find_contacts,
     guess_github_org_slug,
@@ -81,7 +82,11 @@ async def generate_contacts(
     firecrawl_key = await try_get_secret(supabase, user_id, service="search", provider="firecrawl")
 
     company_name = job_snapshot["company_name"]
-    queries = build_contact_query_plan(company_name, job_snapshot["title"])
+    # product_terms is Phase H's own output (not yet built) -- omitting it
+    # here is a documented graceful degrade, not a gap: build_contact_
+    # query_plan drops the two product-anchored manager queries and keeps
+    # the four that don't need it.
+    queries = build_contact_query_plan(company_name, job_snapshot["title"], product_terms=None)
     results, providers_used, warnings = await run_contact_research(
         http,
         queries,
@@ -89,6 +94,7 @@ async def generate_contacts(
         firecrawl_key=firecrawl_key,
         github_org_slug=guess_github_org_slug(company_name),
     )
+    results, _dropped = apply_l2_search_filters(results, company=company_name)
     candidates = await find_contacts(
         company_name,
         results,

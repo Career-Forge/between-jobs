@@ -38,9 +38,10 @@ crawled, and never structurally parsed.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Literal, TypedDict, cast
+from typing import Literal, NotRequired, TypedDict, cast
 
 import httpx
 
@@ -83,34 +84,118 @@ scope cut for Phase A, not silently dropped."""
 class ContactQuery(TypedDict):
     persona: Persona
     query: str
+    provider: NotRequired[Literal["firecrawl"]]
+    """Absent/None means "use whatever provider this run picked" (the
+    existing You.com-primary/Firecrawl-fallback choice). "firecrawl"
+    means this query is only ever safe to run on Firecrawl and must be
+    skipped (with a warning), never silently run on You.com -- see the
+    hiring-post query below."""
 
 
-def build_contact_query_plan(company: str, role_title: str) -> list[ContactQuery]:
+_TITLE_STOPWORDS = {
+    "senior",
+    "staff",
+    "principal",
+    "lead",
+    "sr",
+    "jr",
+    "junior",
+    "i",
+    "ii",
+    "iii",
+    "iv",
+    "the",
+    "a",
+    "an",
+    "of",
+    "and",
+    "for",
+}
+
+
+def _extract_role_keywords(role_title: str, *, limit: int = 3) -> str:
+    """Deterministic, no LLM. A short, UNQUOTED keyword phrase -- never
+    the full exact title. The 2026-09-04 empirical trial found that
+    quoting the exact job title as a strict phrase returns ZERO Firecrawl
+    results the moment the title has any real specificity (a listing's
+    own exact wording essentially never repeats anywhere else) -- the
+    root cause of 3 of the 5 original queries being dead weight. Splits
+    on the title's own punctuation (a dash, colon, or comma almost always
+    separates the core role from a sub-specialization or level, e.g.
+    "AI Engineer - Model Optimization & Acceleration" -> "AI Engineer"),
+    then drops seniority/level words that add no retrieval signal."""
+    head = re.split(r"[-:,\u2013\u2014]", role_title, maxsplit=1)[0]
+    words = [w for w in re.split(r"[\s/&]+", head) if w]
+    kept = [w for w in words if w.lower().strip(",.") not in _TITLE_STOPWORDS]
+    if not kept:
+        kept = words or role_title.split()
+    return " ".join(kept[:limit])
+
+
+def build_contact_query_plan(
+    company: str, role_title: str, *, product_terms: list[str] | None = None
+) -> list[ContactQuery]:
     """A fixed, bounded query plan, same discipline as
     `company_intel_pipeline.build_query_plan` ("the planner cannot
-    generate an unbounded loop") -- covers Proposal §27.1's tiers 1-5."""
-    return [
+    generate an unbounded loop") -- covers Proposal §27.1's tiers 1-5.
+
+    Rewritten 2026-09-04 (outreach-v2-search-first.md Phase G) off a real
+    5-strategy empirical trial against the live AMD application: the
+    original plan's control group returned 1 LinkedIn profile out of 47
+    results (2%) because 3 of its 5 queries quoted the exact role title
+    (see `_extract_role_keywords`) -- this is a replacement, not a tweak.
+    Every query here is a *search-endpoint* query, including the
+    `site:linkedin.com/...` ones -- reading only the snippet/title/URL
+    the provider returns. That's the same treatment every other search
+    result in this codebase already gets (identical to a human typing it
+    into Google) and is explicitly distinct from ever pointing a
+    scrape/crawl endpoint at linkedin.com, which this module never does.
+
+    `product_terms` is Phase H's own output (a company's flagship
+    software product + sub-area, extracted from the JD and Company
+    Intel) -- not yet built, so it defaults to None here and the two
+    product-anchored manager queries are simply omitted when it's empty.
+    The trial confirmed the remaining four queries "still work" without
+    it (the recruiter/TA/hiring-post/director-VP lane), so this is a
+    graceful degrade, not a broken state."""
+    role_keywords = _extract_role_keywords(role_title)
+    queries: list[ContactQuery] = [
         ContactQuery(
-            persona="hiring_lead",
-            query=f'{company} "{role_title}" hiring manager team lead',
+            persona="recruiter",
+            query=f"{company} Talent Acquisition LinkedIn profile",
         ),
         ContactQuery(
             persona="recruiter",
-            query=f"{company} technical recruiter talent acquisition {role_title}",
+            query=f"site:linkedin.com/in {company} recruiter {role_keywords}",
         ),
         ContactQuery(
-            persona="manager",
-            query=f'{company} engineering manager "{role_title}" team',
+            persona="hiring_lead",
+            query=(
+                f"site:linkedin.com/posts {company} hiring"
+                + (f" {product_terms[0]}" if product_terms else "")
+            ),
+            provider="firecrawl",
         ),
         ContactQuery(
             persona="senior_leader",
-            query=f"{company} director VP engineering {role_title}",
-        ),
-        ContactQuery(
-            persona="senior_ic",
-            query=f'{company} "{role_title}" staff principal engineer',
+            query=f"{company} director VP engineering {role_keywords}",
         ),
     ]
+    if product_terms:
+        product_phrase = " ".join(product_terms[:2])
+        queries.append(
+            ContactQuery(
+                persona="manager",
+                query=f"{company} {product_phrase} engineering manager LinkedIn",
+            )
+        )
+        queries.append(
+            ContactQuery(
+                persona="manager",
+                query=f"{company} {product_phrase} team lead",
+            )
+        )
+    return queries
 
 
 def guess_github_org_slug(company: str) -> str | None:
@@ -218,7 +303,26 @@ async def run_contact_research(
     provider = "you_com" if you_com_key is not None else "firecrawl"
     results: QueryResults = []
     warnings: list[str] = []
+    providers_used = [provider]
     for q in queries:
+        # A query tagged provider="firecrawl" (the hiring-post lane) is
+        # never safe to run on You.com -- the trial found it returns
+        # stale/login-wall junk there. Skip rather than silently degrade.
+        if q.get("provider") == "firecrawl":
+            if firecrawl_key is None:
+                warnings.append(f"{q['persona']}: needs Firecrawl, not configured -- skipped.")
+                results.append((q, []))
+                continue
+            try:
+                hits = await search_firecrawl(http, api_key=firecrawl_key, query=q["query"])
+            except ApiError as e:
+                warnings.append(f"{q['persona']}: {e.message}")
+                hits = []
+            if "firecrawl" not in providers_used:
+                providers_used.append("firecrawl")
+            results.append((q, hits))
+            continue
+
         try:
             if you_com_key is not None:
                 hits = await search_you_com(http, api_key=you_com_key, query=q["query"])
@@ -230,7 +334,6 @@ async def run_contact_research(
             hits = []
         results.append((q, hits))
 
-    providers_used = [provider]
     if github_org_slug:
         github_hits = await fetch_github_org_members(http, org_slug=github_org_slug)
         if github_hits:
@@ -240,6 +343,182 @@ async def run_contact_research(
             providers_used.append("github")
 
     return results, providers_used, warnings
+
+
+_LOGIN_WALL_MARKERS = (
+    "sign in to linkedin",
+    "log in or sign up",
+    "join linkedin now",
+    "javascript is not available",
+    "join to view",
+)
+
+_HIRING_INTENT_TERMS = ("hiring", "my team", "join us", "looking for")
+"""Deliberately narrow -- the trial found bare `hiring` (never a quoted
+"we're hiring" phrase or an OR-list) is what the query itself already
+filters for; this is a second, independent check on the snippet content
+so a post that merely mentions the word in passing (an "AMD" fan account
+retweeting someone else's hiring post) doesn't survive on query match
+alone."""
+
+_LINKEDIN_POST_MAX_AGE_DAYS = 365
+"""No fixed cutoff came out of the trial itself -- deliberately generous
+and disclosed rather than tuned: a hiring post over a year old is very
+likely for a req that's since closed or been reposted under a new
+activity id, but there's no live-verified data yet suggesting a tighter
+number is safe."""
+
+_LINKEDIN_SNOWFLAKE_EPOCH_MS = 1288834974657  # 2010-11-04, the LinkedIn/Twitter Snowflake epoch
+
+
+def _linkedin_activity_id(url: str) -> int | None:
+    """Extract the numeric id from a `.../activity-<id>-.../` LinkedIn
+    post URL, if present."""
+    match = re.search(r"activity[-:](\d{15,20})", url)
+    return int(match.group(1)) if match else None
+
+
+def _linkedin_post_age_days(url: str, *, now: datetime | None = None) -> float | None:
+    """LinkedIn (like Twitter/Discord) mints post ids as Snowflake-style
+    64-bit integers: the top 41 bits (`id >> 22`) are a millisecond
+    timestamp since 2010-11-04. This is a real, zero-page-fetch
+    freshness signal living entirely in the URL -- not an approximation
+    from crawling anything."""
+    activity_id = _linkedin_activity_id(url)
+    if activity_id is None:
+        return None
+    posted_at_ms = (activity_id >> 22) + _LINKEDIN_SNOWFLAKE_EPOCH_MS
+    posted_at = datetime.fromtimestamp(posted_at_ms / 1000, tz=UTC)
+    reference = now or datetime.now(UTC)
+    return (reference - posted_at).total_seconds() / 86400
+
+
+def _is_brand_account_post(url: str, company: str) -> bool:
+    """A `/posts/{slug}_.../` URL whose slug IS the company's own page
+    handle is the company account re-sharing, not a person -- e.g.
+    `/posts/amd_...` for AMD. Reuses `guess_github_org_slug`'s own
+    alnum-slug normalization, checked against both the full company name
+    and its first word (handles "Advanced Micro Devices" vs "AMD" style
+    mismatches between the legal name and the LinkedIn page handle)."""
+    match = re.search(r"linkedin\.com/posts/([a-z0-9-]+)[_-]", url.lower())
+    if not match:
+        return False
+    slug = match.group(1).replace("-", "")
+    if len(slug) <= 1:
+        return False
+    company_slug = guess_github_org_slug(company) or ""
+    first_word = company.split()[0] if company.split() else ""
+    first_word_slug = guess_github_org_slug(first_word) or ""
+    return slug in (company_slug, first_word_slug)
+
+
+def _is_login_wall_hit(hit: SearchHit) -> bool:
+    haystack = f"{hit['title']} {hit['snippet']}".lower()
+    return any(marker in haystack for marker in _LOGIN_WALL_MARKERS)
+
+
+def _has_hiring_intent(hit: SearchHit) -> bool:
+    haystack = f"{hit['title']} {hit['snippet']}".lower()
+    return any(term in haystack for term in _HIRING_INTENT_TERMS)
+
+
+def apply_l2_search_filters(
+    results: QueryResults, *, company: str
+) -> tuple[QueryResults, list[str]]:
+    """Deterministic, no-LLM cleanup of the raw search hits BEFORE they
+    are ever shown to the extraction LLM -- cheaper (fewer tokens) and
+    safer (less noise for the LLM to hallucinate a person out of) than
+    filtering only after extraction. Four guardrails the trial showed
+    are needed specifically for the `site:linkedin.com/posts` hiring-post
+    lane (~30-40% raw precision): a login-wall/placeholder drop, the
+    brand-account-post drop, the hiring-intent snippet check, and the
+    activity-id freshness cutoff. Also does URL-level dedupe across every
+    query in the run, on top of the name-level merge
+    `extract_and_rank_candidates` already does -- two different queries
+    can and do return the same URL.
+
+    Returns the filtered results plus a list of human-readable drop
+    reasons for the run's own diagnostics (never surfaced to the end
+    user, no PII beyond a URL that was already public)."""
+    filtered: QueryResults = []
+    seen_urls: set[str] = set()
+    dropped: list[str] = []
+    for query, hits in results:
+        kept_hits: list[SearchHit] = []
+        for hit in hits:
+            if hit["url"] in seen_urls:
+                continue
+            if _is_login_wall_hit(hit):
+                dropped.append(f"login-wall placeholder: {hit['url']}")
+                continue
+            if "linkedin.com/posts/" in hit["url"].lower():
+                if _is_brand_account_post(hit["url"], company):
+                    dropped.append(f"brand-account post: {hit['url']}")
+                    continue
+                if not _has_hiring_intent(hit):
+                    dropped.append(f"no hiring-intent language: {hit['url']}")
+                    continue
+                age_days = _linkedin_post_age_days(hit["url"])
+                if age_days is not None and age_days > _LINKEDIN_POST_MAX_AGE_DAYS:
+                    dropped.append(f"stale post ({age_days:.0f}d old): {hit['url']}")
+                    continue
+            seen_urls.add(hit["url"])
+            kept_hits.append(hit)
+        filtered.append((query, kept_hits))
+    return filtered, dropped
+
+
+def _classify_evidence_kind(url: str) -> str:
+    """Deterministic source-type classification from the URL alone --
+    "deterministic code owns structure and shape; LLMs choose words
+    only" applied to evidence_kind specifically: the LLM's own guess at
+    this field is no longer trusted (see `extract_and_rank_candidates`),
+    since the URL itself is a strictly more reliable signal for what kind
+    of source this is."""
+    u = url.lower()
+    if "linkedin.com/in/" in u:
+        return "linkedin_profile"
+    if "linkedin.com/posts/" in u or "linkedin.com/pulse/" in u or "linkedin.com/feed/update" in u:
+        return "linkedin_post"
+    if "linkedin.com/company/" in u:
+        return "company_page"
+    if "github.com/" in u:
+        return "github_membership"
+    return "search_snippet"
+
+
+_FORMER_EMPLOYMENT_MARKER_TEMPLATES = (
+    "former {}",
+    "formerly at {}",
+    "previously at {}",
+    "ex-{}",
+    "no longer at {}",
+    "no longer with {}",
+    "left {}",
+)
+
+
+def _is_former_employee_evidence(evidence: list[ContactEvidence], company: str) -> bool:
+    """Deterministic, no-LLM current-employer guard -- the same spirit as
+    command-center's `classifyCurrentEmployerEvidence` (noted in the
+    original Phase A research, never ported until now), applied at the
+    evidence-text level since this module has no structured "current
+    employer" field to check. Markers are anchored to the target
+    `company` name specifically (both the full name and its first word,
+    e.g. "AMD" for "Advanced Micro Devices") -- an unanchored "ex-" or
+    "former" would false-positive on "ex-Google, now VP Eng at {company}"
+    wording, which is actually a CURRENT-employee signal, not a drop.
+    The trial's own ~80% current-employer precision on the
+    `site:linkedin.com/in` recruiter query is what makes this check
+    mandatory rather than a nice-to-have."""
+    haystack = " ".join(f"{e['source_title']} {e['source_snippet']}".lower() for e in evidence)
+    names = {company.lower()}
+    if company.split():
+        names.add(company.split()[0].lower())
+    markers = [
+        template.format(name) for name in names for template in _FORMER_EMPLOYMENT_MARKER_TEMPLATES
+    ]
+    return any(marker in haystack for marker in markers)
 
 
 class ContactEvidence(TypedDict):
@@ -278,7 +557,6 @@ Each object in your JSON array must have exactly these fields:
 - "claimed_title": their title if stated in that source, else null
 - "claimed_team": their team if stated in that source, else null
 - "source_url": must be one of the URLs given in the evidence below, verbatim
-- "evidence_kind": "search_snippet" or "github_membership", matching the source
 - "confidence": "verified" if the source clearly and unambiguously names this person in this \
 role, "strong" if likely but with minor ambiguity, "inferred" if the connection is indirect, \
 "unsupported" if you are not confident this is a genuine match
@@ -376,7 +654,6 @@ def extract_and_rank_candidates(
             continue
         person_name = item.get("person_name")
         source_url = item.get("source_url")
-        evidence_kind = item.get("evidence_kind")
         confidence = item.get("confidence")
 
         if not person_name or not isinstance(person_name, str):
@@ -388,8 +665,10 @@ def extract_and_rank_candidates(
             continue
         if confidence not in _CONFIDENCE_VALUES:
             confidence = "inferred"
-        if not evidence_kind or not isinstance(evidence_kind, str):
-            evidence_kind = "search_snippet"
+        # evidence_kind is classified deterministically from the URL, not
+        # trusted from the LLM's own guess -- "deterministic code owns
+        # structure and shape; LLMs choose words only."
+        evidence_kind = _classify_evidence_kind(source_url)
 
         claimed_title = (
             item.get("claimed_title") if isinstance(item.get("claimed_title"), str) else None
@@ -435,7 +714,9 @@ def extract_and_rank_candidates(
                 evidence=[evidence],
             )
 
-    candidates = list(merged.values())
+    candidates = [
+        c for c in merged.values() if not _is_former_employee_evidence(c["evidence"], company)
+    ]
     for candidate in candidates:
         candidate["priority_score"] = _score_candidate(candidate["persona"], candidate["evidence"])
         candidate["relevance_reason"] = _relevance_reason(

@@ -7,13 +7,16 @@ that survives an LLM's raw extraction output.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 import pytest
 
 from between_jobs.api.contact_research import (
+    ContactQuery,
     QueryResults,
+    apply_l2_search_filters,
     build_contact_query_plan,
     extract_and_rank_candidates,
     fetch_github_org_members,
@@ -33,12 +36,45 @@ _HIT = SearchHit(
 )
 
 
-def test_build_contact_query_plan_covers_the_five_personas() -> None:
+def test_build_contact_query_plan_without_product_terms_returns_the_core_four() -> None:
+    """Phase G rewrite (outreach-v2-search-first.md): without Phase H's
+    product terms, the two product-anchored manager queries are omitted,
+    leaving the four that the trial showed work regardless."""
     queries = build_contact_query_plan("Acme", "Staff AI Engineer")
-    assert len(queries) == 5
-    personas = {q["persona"] for q in queries}
-    assert personas == {"hiring_lead", "recruiter", "manager", "senior_leader", "senior_ic"}
+    assert len(queries) == 4
+    personas = [q["persona"] for q in queries]
+    assert personas == ["recruiter", "recruiter", "hiring_lead", "senior_leader"]
     assert all("Acme" in q["query"] for q in queries)
+
+
+def test_build_contact_query_plan_with_product_terms_adds_two_manager_queries() -> None:
+    queries = build_contact_query_plan(
+        "Acme", "Staff AI Engineer", product_terms=["Widget", "core"]
+    )
+    assert len(queries) == 6
+    manager_queries = [q for q in queries if q["persona"] == "manager"]
+    assert len(manager_queries) == 2
+    assert all("Widget" in q["query"] for q in manager_queries)
+    assert any("engineering manager LinkedIn" in q["query"] for q in manager_queries)
+    assert any("team lead" in q["query"] for q in manager_queries)
+
+
+def test_build_contact_query_plan_never_quotes_the_exact_role_title() -> None:
+    """Regression guard for the exact bug the 2026-09-04 trial found: a
+    quoted exact title returns zero Firecrawl results on any real
+    listing. No query may contain the role title wrapped in quotes."""
+    role_title = "AI Engineer - Model Optimization & Acceleration"
+    queries = build_contact_query_plan("Acme", role_title)
+    assert all(f'"{role_title}"' not in q["query"] for q in queries)
+    assert all(role_title not in q["query"] for q in queries)
+
+
+def test_build_contact_query_plan_marks_the_hiring_post_query_firecrawl_only() -> None:
+    queries = build_contact_query_plan("Acme", "Engineer")
+    hiring_lead_queries = [q for q in queries if q["persona"] == "hiring_lead"]
+    assert len(hiring_lead_queries) == 1
+    assert hiring_lead_queries[0]["provider"] == "firecrawl"
+    assert "site:linkedin.com/posts" in hiring_lead_queries[0]["query"]
 
 
 def test_guess_github_org_slug_strips_to_alphanumeric() -> None:
@@ -140,8 +176,13 @@ async def test_run_contact_research_records_a_warning_but_continues(
     )
 
     assert providers_used == ["you_com"]
-    assert len(warnings) == 1
-    assert "recruiter" in warnings[0]
+    # 2 warnings, not 1: the recruiter query's real failure, plus the
+    # hiring-post query being skipped since no Firecrawl key is
+    # configured here (it's provider="firecrawl"-only, never run on
+    # You.com -- see build_contact_query_plan).
+    assert len(warnings) == 2
+    assert any("recruiter" in w and "timed out" in w for w in warnings)
+    assert any("hiring_lead" in w and "Firecrawl" in w for w in warnings)
 
 
 async def test_run_contact_research_includes_github_hits_when_org_resolves(
@@ -257,8 +298,13 @@ def test_extract_and_rank_candidates_merges_the_same_person_across_sources() -> 
 
 
 def test_extract_and_rank_candidates_ranks_hiring_lead_above_senior_ic() -> None:
-    hiring_lead_query = build_contact_query_plan("Acme", "Engineer")[0]
-    ic_query = build_contact_query_plan("Acme", "Engineer")[4]
+    """Decoupled from `build_contact_query_plan`'s own exact query shape
+    on purpose -- this test is about the ranking rule (Proposal §26.1
+    stage 6: a hiring lead can outrank a senior IC), not the plan."""
+    hiring_lead_query = ContactQuery(
+        persona="hiring_lead", query="site:linkedin.com/posts Acme hiring", provider="firecrawl"
+    )
+    ic_query = ContactQuery(persona="senior_ic", query="Acme staff engineer")
     ic_hit = SearchHit(
         title="John Smith -- Staff Engineer at Acme",
         url="https://blog.acme.example/team/john-smith",
@@ -309,3 +355,138 @@ async def test_find_contacts_wires_the_llm_call_through_to_grounded_output() -> 
 
     assert len(candidates) == 1
     assert candidates[0]["company"] == "Acme"
+
+
+def test_extract_and_rank_candidates_classifies_evidence_kind_from_the_url_not_the_llm() -> None:
+    """Deterministic code owns structure and shape: evidence_kind is
+    derived from the URL, overriding whatever the LLM's raw JSON claims."""
+    profile_hit = SearchHit(
+        title="Jane Doe -- Recruiter",
+        url="https://www.linkedin.com/in/jane-doe-123/",
+        snippet="Jane Doe is a technical recruiter at Acme.",
+        published_at=None,
+    )
+    query = ContactQuery(persona="recruiter", query="site:linkedin.com/in Acme recruiter")
+    raw = json.dumps(
+        [_candidate_payload(source_url=profile_hit["url"], evidence_kind="github_membership")]
+    )
+    candidates = extract_and_rank_candidates(raw, [(query, [profile_hit])], company="Acme")
+    assert len(candidates) == 1
+    assert candidates[0]["evidence"][0]["evidence_kind"] == "linkedin_profile"
+
+
+def test_extract_and_rank_candidates_drops_a_candidate_with_anchored_former_employer_language() -> (
+    None
+):
+    hit = SearchHit(
+        title="Jane Doe -- Former Acme Engineer",
+        url="https://blog.example/jane-doe",
+        snippet="Jane Doe, former Acme engineer, now leads platform at Widget Inc.",
+        published_at=None,
+    )
+    query = ContactQuery(persona="senior_ic", query="Acme engineer")
+    raw = json.dumps([_candidate_payload(source_url=hit["url"])])
+    candidates = extract_and_rank_candidates(raw, [(query, [hit])], company="Acme")
+    assert candidates == []
+
+
+def test_extract_and_rank_candidates_keeps_a_candidate_with_an_unrelated_ex_employer() -> None:
+    """The employer guard is anchored to the target company specifically
+    -- "ex-Google" says nothing about whether this person is currently
+    at Acme, so it must not be treated the same as "ex-Acme"."""
+    hit = SearchHit(
+        title="Jane Doe -- Staff Engineer at Acme",
+        url="https://blog.example/jane-doe",
+        snippet="Ex-Google engineer Jane Doe now leads the platform team at Acme.",
+        published_at=None,
+    )
+    query = ContactQuery(persona="senior_ic", query="Acme engineer")
+    raw = json.dumps([_candidate_payload(source_url=hit["url"])])
+    candidates = extract_and_rank_candidates(raw, [(query, [hit])], company="Acme")
+    assert len(candidates) == 1
+
+
+def _snowflake_post_url(slug: str, *, days_ago: float) -> str:
+    """Mirrors contact_research.py's own LinkedIn Snowflake epoch
+    constant (1288834974657 ms, 2010-11-04) to build a real, decodable
+    activity id for a post posted `days_ago` days before now."""
+    epoch_ms = 1288834974657
+    posted_ms = int(datetime.now(UTC).timestamp() * 1000) - int(days_ago * 86400 * 1000)
+    activity_id = (posted_ms - epoch_ms) << 22
+    return f"https://www.linkedin.com/posts/{slug}_hiring-update-activity-{activity_id}-abcd/"
+
+
+def _post_hit(*, slug: str, days_ago: float, snippet: str) -> SearchHit:
+    return SearchHit(
+        title=f"{slug} post",
+        url=_snowflake_post_url(slug, days_ago=days_ago),
+        snippet=snippet,
+        published_at=None,
+    )
+
+
+def test_apply_l2_search_filters_keeps_a_fresh_person_authored_hiring_post() -> None:
+    hit = _post_hit(
+        slug="jane-doe-987654",
+        days_ago=5,
+        snippet="My team is hiring for the platform org at Acme -- reach out!",
+    )
+    query = ContactQuery(persona="hiring_lead", query="site:linkedin.com/posts Acme hiring")
+    filtered, dropped = apply_l2_search_filters([(query, [hit])], company="Acme")
+    assert filtered[0][1] == [hit]
+    assert dropped == []
+
+
+def test_apply_l2_search_filters_drops_a_brand_account_post() -> None:
+    hit = _post_hit(
+        slug="acme",
+        days_ago=5,
+        snippet="Acme is hiring across the platform org -- see our open roles.",
+    )
+    query = ContactQuery(persona="hiring_lead", query="site:linkedin.com/posts Acme hiring")
+    filtered, dropped = apply_l2_search_filters([(query, [hit])], company="Acme")
+    assert filtered[0][1] == []
+    assert any("brand-account" in reason for reason in dropped)
+
+
+def test_apply_l2_search_filters_drops_a_post_with_no_hiring_intent_language() -> None:
+    hit = _post_hit(
+        slug="jane-doe-987654", days_ago=5, snippet="Jane Doe shares a photo from the Acme offsite."
+    )
+    query = ContactQuery(persona="hiring_lead", query="site:linkedin.com/posts Acme hiring")
+    filtered, dropped = apply_l2_search_filters([(query, [hit])], company="Acme")
+    assert filtered[0][1] == []
+    assert any("hiring-intent" in reason for reason in dropped)
+
+
+def test_apply_l2_search_filters_drops_a_stale_post() -> None:
+    hit = _post_hit(
+        slug="jane-doe-987654",
+        days_ago=800,
+        snippet="My team is hiring for the platform org at Acme -- reach out!",
+    )
+    query = ContactQuery(persona="hiring_lead", query="site:linkedin.com/posts Acme hiring")
+    filtered, dropped = apply_l2_search_filters([(query, [hit])], company="Acme")
+    assert filtered[0][1] == []
+    assert any("stale post" in reason for reason in dropped)
+
+
+def test_apply_l2_search_filters_drops_a_login_wall_placeholder() -> None:
+    hit = SearchHit(
+        title="Sign in to LinkedIn",
+        url="https://www.linkedin.com/in/some-profile/",
+        snippet="Sign in to LinkedIn to see this profile.",
+        published_at=None,
+    )
+    query = ContactQuery(persona="recruiter", query="site:linkedin.com/in Acme recruiter")
+    filtered, dropped = apply_l2_search_filters([(query, [hit])], company="Acme")
+    assert filtered[0][1] == []
+    assert any("login-wall" in reason for reason in dropped)
+
+
+def test_apply_l2_search_filters_dedupes_the_same_url_across_two_queries() -> None:
+    q1 = ContactQuery(persona="recruiter", query="Acme Talent Acquisition LinkedIn profile")
+    q2 = ContactQuery(persona="recruiter", query="site:linkedin.com/in Acme recruiter")
+    filtered, _dropped = apply_l2_search_filters([(q1, [_HIT]), (q2, [_HIT])], company="Acme")
+    total_kept = sum(len(hits) for _q, hits in filtered)
+    assert total_kept == 1

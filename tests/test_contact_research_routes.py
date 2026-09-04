@@ -358,9 +358,11 @@ def test_generate_contacts_success_stores_run_and_candidates(
     assert body["candidates"][0]["person_name"] == "Jane Doe"
     assert len(body["candidates"][0]["evidence"]) == 1
     assert supabase.contact_research_runs.insert_calls[0]["company_name"] == "Acme"
-    # 5 bounded persona queries, all against You.com since it's the only
-    # search credential configured
-    assert len(http.post_calls) == 5
+    # 4 bounded queries without product_terms (Phase G); the hiring-post
+    # query is provider="firecrawl"-only and gets skipped with no HTTP
+    # call at all since no Firecrawl key is configured here -- so only
+    # the 3 remaining queries actually hit You.com.
+    assert len(http.post_calls) == 3
 
 
 def test_generate_contacts_never_invents_a_person_not_in_the_evidence(
