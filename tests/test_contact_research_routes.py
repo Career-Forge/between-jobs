@@ -33,6 +33,10 @@ _SNAPSHOT_ROW = {
     "title": "Staff AI Engineer",
     "company_name": "Acme",
     "location_text": "Remote",
+    # Deliberately no capitalized/technical-looking tokens -- keeps
+    # extract_product_term_candidates empty so pick_product_terms
+    # short-circuits without an LLM call in tests that don't patch one.
+    "description_text": "looking for a strong engineer to help build and scale our platform",
 }
 _PREFERENCE_ROW = {
     "capability": "default",
@@ -146,6 +150,8 @@ class _FakeSupabaseClient:
         contact_candidates: _FakeTable | None = None,
         contact_candidate_evidence: _FakeTable | None = None,
         outreach_drafts: _FakeTable | None = None,
+        company_intel_runs: _FakeTable | None = None,
+        company_intel_claims: _FakeTable | None = None,
     ) -> None:
         self.applications = applications or _FakeTable(select_rows=[_APPLICATION_ROW])
         self.job_snapshots = _FakeTable(select_rows=[_SNAPSHOT_ROW])
@@ -163,6 +169,10 @@ class _FakeSupabaseClient:
         self.contact_candidates = contact_candidates or _FakeTable(select_rows=[])
         self.contact_candidate_evidence = contact_candidate_evidence or _FakeTable(select_rows=[])
         self.outreach_drafts = outreach_drafts or _FakeTable(select_rows=[])
+        # Phase H -- a prior Company Intel run is optional; empty by
+        # default so get_latest_company_intel_run cleanly returns None.
+        self.company_intel_runs = company_intel_runs or _FakeTable(select_rows=[])
+        self.company_intel_claims = company_intel_claims or _FakeTable(select_rows=[])
 
     def table(self, name: str) -> Any:
         return {
@@ -174,6 +184,8 @@ class _FakeSupabaseClient:
             "contact_candidates": self.contact_candidates,
             "contact_candidate_evidence": self.contact_candidate_evidence,
             "outreach_drafts": self.outreach_drafts,
+            "company_intel_runs": self.company_intel_runs,
+            "company_intel_claims": self.company_intel_claims,
         }[name]
 
     def rpc(self, fn: str, _params: dict[str, Any]) -> _FakeRpcBuilder:
@@ -363,6 +375,90 @@ def test_generate_contacts_success_stores_run_and_candidates(
     # call at all since no Firecrawl key is configured here -- so only
     # the 3 remaining queries actually hit You.com.
     assert len(http.post_calls) == 3
+
+
+def test_generate_contacts_fetches_company_intel_scoped_to_the_right_user_and_application(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fake company_intel_runs/company_intel_claims tables' own
+    .eq() is a no-op (this codebase has hit that exact test-harness gap
+    before -- a filter that can't fail regardless of what's passed in
+    proves nothing about scoping), so this spies on the real store
+    function directly to prove the correct user_id/application_id are
+    actually passed through, not just that SOME data comes back."""
+    supabase = _FakeSupabaseClient(
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+        }
+    )
+    http = _FakeHttpClient()
+    _patch_llm(monkeypatch)
+
+    calls: list[tuple[Any, str, str]] = []
+
+    async def fake_get_latest_company_intel_run(
+        supabase_arg: Any, user_id: str, application_id: str
+    ) -> Any:
+        calls.append((supabase_arg, user_id, application_id))
+        return None
+
+    monkeypatch.setattr(
+        "between_jobs.api.contact_research_routes.get_latest_company_intel_run",
+        fake_get_latest_company_intel_run,
+    )
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts")
+
+    assert response.status_code == 201
+    assert len(calls) == 1
+    assert calls[0][0] is supabase
+    assert calls[0][1] == _USER_ID
+    assert calls[0][2] == _APPLICATION_ID
+
+
+def test_generate_contacts_wires_product_terms_from_company_intel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase H end-to-end: a real Company Intel claim mentioning a
+    product name flows into build_contact_query_plan's manager queries
+    and gets persisted on the run row -- proving the wiring, not just
+    the underlying functions in isolation."""
+    supabase = _FakeSupabaseClient(
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+        },
+        company_intel_runs=_FakeTable(select_rows=[{"id": "ci-run-1"}]),
+        company_intel_claims=_FakeTable(
+            select_rows=[
+                {
+                    "category": "product_and_mission",
+                    "claim_text": "Acme builds its platform on WidgetCore for scalable inference.",
+                }
+            ]
+        ),
+    )
+    http = _FakeHttpClient()
+
+    async def fake_generate(**kwargs: Any) -> LLMResponse:
+        if "flagship SOFTWARE product" in kwargs["system_prompt"]:
+            return LLMResponse(content=json.dumps(["WidgetCore"]))
+        return LLMResponse(content=_CANDIDATE_LLM_RESPONSE)
+
+    monkeypatch.setattr("between_jobs.api.contact_research_routes.llm_generate", fake_generate)
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts")
+
+    assert response.status_code == 201
+    inserted_run = supabase.contact_research_runs.insert_calls[0]
+    assert inserted_run["product_terms"] == ["WidgetCore"]
+    # 6 queries now (the 4-query core plus the 2 product-anchored manager
+    # queries); the hiring-post query is still firecrawl-only and skipped
+    # (no Firecrawl key configured here), so 5 hit You.com.
+    assert len(http.post_calls) == 5
 
 
 def test_generate_contacts_never_invents_a_person_not_in_the_evidence(

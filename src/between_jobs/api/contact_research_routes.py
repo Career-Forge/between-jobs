@@ -13,12 +13,16 @@ from supabase import AsyncClient
 from .app_state import get_http_client, get_supabase
 from .applications_store import ApplicationNotFound, get_application
 from .auth import require_user_id
+from .company_intel_store import get_claims_for_run as get_company_intel_claims
+from .company_intel_store import get_latest_run as get_latest_company_intel_run
 from .contact_enrichment import enrich_candidate
 from .contact_research import (
     apply_l2_search_filters,
     build_contact_query_plan,
+    extract_product_term_candidates,
     find_contacts,
     guess_github_org_slug,
+    pick_product_terms,
     run_contact_research,
 )
 from .contact_research_store import (
@@ -82,11 +86,32 @@ async def generate_contacts(
     firecrawl_key = await try_get_secret(supabase, user_id, service="search", provider="firecrawl")
 
     company_name = job_snapshot["company_name"]
-    # product_terms is Phase H's own output (not yet built) -- omitting it
-    # here is a documented graceful degrade, not a gap: build_contact_
-    # query_plan drops the two product-anchored manager queries and keeps
-    # the four that don't need it.
-    queries = build_contact_query_plan(company_name, job_snapshot["title"], product_terms=None)
+
+    # Phase H -- per-company product vocabulary. A prior Company Intel run
+    # is optional infrastructure (a user may never have run it for this
+    # application); its absence just means an empty claims list, same
+    # null-run handling company_intel_routes.py itself already uses.
+    company_intel_run = await get_latest_company_intel_run(supabase, user_id, application_id)
+    company_intel_claims = (
+        await get_company_intel_claims(supabase, company_intel_run["id"])
+        if company_intel_run is not None
+        else []
+    )
+    product_term_candidates = extract_product_term_candidates(
+        company_name,
+        job_snapshot["description_text"],
+        *(claim["claim_text"] for claim in company_intel_claims),
+    )
+    product_terms = await pick_product_terms(
+        product_term_candidates,
+        llm_api_key=llm_credential.secret,
+        llm_model=llm_credential.model,
+        llm_base_url=llm_credential.base_url,
+        generate=llm_generate,
+    )
+    queries = build_contact_query_plan(
+        company_name, job_snapshot["title"], product_terms=product_terms
+    )
     results, providers_used, warnings = await run_contact_research(
         http,
         queries,
@@ -112,6 +137,7 @@ async def generate_contacts(
         candidates=candidates,
         providers_used=providers_used,
         warnings=warnings,
+        product_terms=product_terms,
     )
     # Read persisted rows back, same reasoning as company_intel_routes --
     # `candidates` here has no DB-assigned ids yet.

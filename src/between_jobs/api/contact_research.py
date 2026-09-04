@@ -754,3 +754,231 @@ async def find_contacts(
     )
 
     return extract_and_rank_candidates(response.content, results, company=company)
+
+
+_PRODUCT_TERM_PATTERN = re.compile(r"\b[A-Z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)?\b")
+
+_PRODUCT_TERM_STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "we",
+    "our",
+    "you",
+    "your",
+    "this",
+    "that",
+    "these",
+    "those",
+    "team",
+    "teams",
+    "engineering",
+    "engineer",
+    "engineers",
+    "join",
+    "role",
+    "position",
+    "company",
+    "job",
+    "work",
+    "remote",
+    "hybrid",
+    "onsite",
+    "senior",
+    "staff",
+    "principal",
+    "lead",
+    "who",
+    "what",
+    "why",
+    "how",
+    "if",
+    "and",
+    "or",
+    "for",
+    "with",
+    "about",
+    "us",
+    # Common JD-prose sentence-openers -- a bare capitalized word at the
+    # start of a sentence is capitalized purely by English orthography,
+    # not because it names anything. No positional sentence-boundary
+    # detection exists here (a review pass confirmed the module's own
+    # docstring previously overclaimed one) -- this is a disclosed,
+    # pragmatic mitigation against a heuristic's known noise, not a
+    # structural fix; a genuine product name is still a real word that
+    # can happen to open a sentence too and isn't specifically guarded
+    # against here.
+    "passionate",
+    "excited",
+    "motivated",
+    "committed",
+    "proven",
+    "strong",
+    "excellent",
+    "great",
+    "looking",
+    "seeking",
+    "here",
+    "today",
+    "now",
+    "as",
+    "at",
+    "in",
+    "on",
+    "to",
+    "do",
+    "does",
+    "did",
+    "have",
+    "has",
+    "had",
+    "will",
+    "would",
+    "could",
+    "should",
+    "must",
+    "can",
+    "please",
+    "note",
+}
+
+_MAX_PRODUCT_TERM_CANDIDATES = 30
+"""Bounded on purpose, same "the planner cannot generate an unbounded
+loop" discipline as `company_intel_pipeline.build_query_plan` -- a long
+JD plus several Company Intel claims could otherwise hand the picker
+prompt an unbounded token cost."""
+
+
+def extract_product_term_candidates(company: str, *texts: str | None) -> list[str]:
+    """Deterministic, no LLM (outreach-v2-search-first.md Phase H).
+    Builds the bounded candidate list `pick_product_terms` is only ever
+    allowed to choose from -- a real per-request candidate SET built
+    fresh from this company's own JD text and Company Intel claims,
+    mirroring `company_intel_pipeline._parse_claims`'s own `hits_by_url`
+    membership-check pattern rather than a fixed global enum like
+    `_CATEGORIES`: Phase H's candidates are inherently per-company, not a
+    known-in-advance vocabulary.
+
+    Matches capitalized/technical-looking tokens -- a real product or
+    platform name is almost always capitalized ("ROCm.AI", "PyTorch",
+    "Kubernetes"), including one embedded dot-suffix ("ROCm.AI" is a
+    single token, not two). Drops the company's own name (never its own
+    product) and a stopword list of generic capitalized words (common
+    JD-prose sentence-openers, level/role words) that carry no product
+    signal -- a heuristic mitigation, not real sentence-boundary
+    detection (see `_PRODUCT_TERM_STOPWORDS`).
+
+    Collects candidates ROUND-ROBIN across `texts` (one term per source
+    per pass) rather than draining each source in order before moving to
+    the next -- an adversarial review caught that the naive "accumulate
+    in order, slice at the end" approach let a long JD (processed first,
+    per its call site in contact_research_routes.py) silently fill the
+    entire bounded budget before a later, higher-signal Company Intel
+    claim was ever considered. Real JDs commonly carry 30+ unique
+    capitalized tokens across headers, tool names, and requirements/
+    benefits sections -- round-robin guarantees every source gets a fair
+    share of the budget regardless of its own length."""
+    excluded = {company.lower()}
+    if company.split():
+        excluded.add(company.split()[0].lower())
+
+    per_source_terms: list[list[str]] = []
+    for text in texts:
+        if not text:
+            continue
+        seen_in_source: set[str] = set()
+        source_terms: list[str] = []
+        for match in _PRODUCT_TERM_PATTERN.finditer(text):
+            term = match.group(0)
+            key = term.lower()
+            if len(term) < 3 or key in excluded or key in _PRODUCT_TERM_STOPWORDS:
+                continue
+            if key in seen_in_source:
+                continue
+            seen_in_source.add(key)
+            source_terms.append(term)
+        if source_terms:
+            per_source_terms.append(source_terms)
+
+    candidates: dict[str, None] = {}
+    round_index = 0
+    while len(candidates) < _MAX_PRODUCT_TERM_CANDIDATES and any(
+        round_index < len(terms) for terms in per_source_terms
+    ):
+        for terms in per_source_terms:
+            if round_index < len(terms):
+                candidates.setdefault(terms[round_index], None)
+                if len(candidates) >= _MAX_PRODUCT_TERM_CANDIDATES:
+                    break
+        round_index += 1
+
+    return list(candidates)[:_MAX_PRODUCT_TERM_CANDIDATES]
+
+
+_PRODUCT_TERM_SYSTEM_PROMPT = """You are given a bounded list of candidate terms extracted from a \
+job posting and company research. Pick UP TO 2 terms from this exact list that best represent the \
+company's flagship SOFTWARE product or platform and its most relevant sub-area for this specific \
+role -- never a hardware-only product, a generic buzzword, or a team/department name.
+
+Rules:
+- Only return terms that appear VERBATIM in the candidate list below -- never invent a term, never \
+paraphrase or combine one.
+- If nothing in the list clearly names a software product or platform, return an empty array.
+
+Return ONLY a JSON array of strings, no prose, no markdown code fences."""
+
+
+async def pick_product_terms(
+    candidates: list[str],
+    *,
+    llm_api_key: str,
+    llm_model: str,
+    llm_base_url: str | None,
+    generate: LlmGenerate = llm_generate,
+) -> list[str]:
+    """The one bounded LLM call Phase H makes -- skipped entirely (zero
+    cost) when there's nothing to pick from, since `build_contact_query_
+    plan` already degrades cleanly to its 4-query core without product
+    terms. Deterministic re-validation mirrors `company_intel_pipeline.
+    _parse_claims`'s own `hits_by_url` check: every returned term must be
+    an exact member of the candidate list actually offered -- the LLM's
+    own say-so is never trusted on its own, "LLM decides words, never
+    shape.\""""
+    if not candidates:
+        return []
+
+    response = await generate(
+        api_key=llm_api_key,
+        model=llm_model,
+        base_url=llm_base_url,
+        system_prompt=_PRODUCT_TERM_SYSTEM_PROMPT,
+        user_prompt="Candidate terms:\n" + "\n".join(candidates),
+        max_tokens=200,
+    )
+
+    text = response.content.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:]
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+
+    candidate_set = set(candidates)
+    picked: list[str] = []
+    for item in parsed:
+        if not isinstance(item, str):
+            continue
+        # Trimmed before the membership check -- a real, if less common,
+        # LLM formatting artifact (incidental whitespace inside the JSON
+        # string value) shouldn't silently fail an otherwise-correct,
+        # genuinely-verbatim pick. Never invents or normalizes the term
+        # itself, only strips surrounding whitespace.
+        term = item.strip()
+        if term in candidate_set and term not in picked:
+            picked.append(term)
+    return picked[:2]

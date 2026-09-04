@@ -19,9 +19,11 @@ from between_jobs.api.contact_research import (
     apply_l2_search_filters,
     build_contact_query_plan,
     extract_and_rank_candidates,
+    extract_product_term_candidates,
     fetch_github_org_members,
     find_contacts,
     guess_github_org_slug,
+    pick_product_terms,
     run_contact_research,
 )
 from between_jobs.api.errors import ApiError
@@ -490,3 +492,187 @@ def test_apply_l2_search_filters_dedupes_the_same_url_across_two_queries() -> No
     filtered, _dropped = apply_l2_search_filters([(q1, [_HIT]), (q2, [_HIT])], company="Acme")
     total_kept = sum(len(hits) for _q, hits in filtered)
     assert total_kept == 1
+
+
+# --- Phase H: per-company product vocabulary (outreach-v2-search-first.md) ---
+
+_AMD_CLAIM_TEXT = (
+    "AMD describes ROCm.AI as bringing its AI ecosystem into developers' "
+    "existing tools to help create optimized, GPU-accelerated applications."
+)
+
+
+def test_extract_product_term_candidates_finds_a_real_dotted_product_name() -> None:
+    """Real text from the live AMD Company Intel dossier -- confirms the
+    regex treats "ROCm.AI" as one token, not two."""
+    candidates = extract_product_term_candidates("AMD", _AMD_CLAIM_TEXT)
+    assert "ROCm.AI" in candidates
+
+
+def test_extract_product_term_candidates_excludes_the_company_name() -> None:
+    candidates = extract_product_term_candidates(
+        "AMD", "AMD is hiring engineers for the ROCm.AI platform team."
+    )
+    assert "AMD" not in candidates
+    assert "ROCm.AI" in candidates
+
+
+def test_extract_product_term_candidates_excludes_the_companys_first_word() -> None:
+    """A multi-word legal name should still exclude its own short-form --
+    e.g. "Advanced Micro Devices" shouldn't let "Advanced" through just
+    because it's capitalized."""
+    candidates = extract_product_term_candidates(
+        "Advanced Micro Devices", "Advanced engineering roles on the ROCm.AI team."
+    )
+    assert "Advanced" not in candidates
+    assert "ROCm.AI" in candidates
+
+
+def test_extract_product_term_candidates_drops_generic_stopwords() -> None:
+    candidates = extract_product_term_candidates("Acme", "The Team is hiring for this Role.")
+    assert candidates == []
+
+
+def test_extract_product_term_candidates_dedupes_across_texts() -> None:
+    candidates = extract_product_term_candidates(
+        "Acme", "Widget powers everything.", "Widget is our platform.", ""
+    )
+    assert candidates.count("Widget") == 1
+
+
+def test_extract_product_term_candidates_scans_every_text_argument() -> None:
+    """A term appearing ONLY in a later argument -- not the first, and
+    with an empty/None argument in between -- must still be found,
+    proving multi-text scanning genuinely happens rather than a bug that
+    stops after the first non-empty source (which a test asserting only
+    on a term placed in the FIRST argument couldn't distinguish)."""
+    candidates = extract_product_term_candidates(
+        "Acme", "nothing capitalized here", None, "", "Gizmo powers our platform."
+    )
+    assert "Gizmo" in candidates
+
+
+def test_extract_product_term_candidates_caps_at_the_bound() -> None:
+    many_terms = " ".join(f"Product{i}" for i in range(50))
+    candidates = extract_product_term_candidates("Acme", many_terms)
+    assert len(candidates) == 30
+    assert candidates == [f"Product{i}" for i in range(30)]
+
+
+def test_extract_product_term_candidates_round_robins_so_a_later_source_survives_the_cap() -> None:
+    """Regression test for a real starvation bug an adversarial review
+    caught: the original implementation drained the first source (a long
+    JD, always passed first at the real call site in contact_research_
+    routes.py) before ever considering a later one (a Company Intel
+    claim) -- silently excluding the exact term Phase H exists to
+    surface whenever the JD alone crossed the 30-candidate bound, which
+    real JDs with a tools/requirements section routinely do."""
+    long_jd_text = " ".join(f"Tool{i}" for i in range(40))
+    candidates = extract_product_term_candidates("AMD", long_jd_text, _AMD_CLAIM_TEXT)
+    assert len(candidates) == 30
+    assert "ROCm.AI" in candidates
+
+
+async def test_pick_product_terms_returns_empty_without_calling_the_llm_when_empty() -> None:
+    async def fail_if_called(**_kwargs: Any) -> LLMResponse:
+        raise AssertionError("the LLM must not be called when there's nothing to pick from")
+
+    picked = await pick_product_terms(
+        [], llm_api_key="key", llm_model="model", llm_base_url=None, generate=fail_if_called
+    )
+    assert picked == []
+
+
+async def test_pick_product_terms_only_returns_candidate_list_members() -> None:
+    """The re-validation this function exists for: an invented term the
+    LLM returns that isn't in the candidate list must be dropped, never
+    trusted on the model's own say-so."""
+
+    async def fake_generate(**_kwargs: Any) -> LLMResponse:
+        return LLMResponse(content=json.dumps(["ROCm.AI", "InventedProduct"]))
+
+    picked = await pick_product_terms(
+        ["ROCm.AI", "Instinct"],
+        llm_api_key="key",
+        llm_model="model",
+        llm_base_url=None,
+        generate=fake_generate,
+    )
+    assert picked == ["ROCm.AI"]
+
+
+async def test_pick_product_terms_caps_at_two() -> None:
+    async def fake_generate(**_kwargs: Any) -> LLMResponse:
+        return LLMResponse(content=json.dumps(["A", "B", "C"]))
+
+    picked = await pick_product_terms(
+        ["A", "B", "C"],
+        llm_api_key="key",
+        llm_model="model",
+        llm_base_url=None,
+        generate=fake_generate,
+    )
+    assert len(picked) == 2
+
+
+async def test_pick_product_terms_handles_malformed_json() -> None:
+    async def fake_generate(**_kwargs: Any) -> LLMResponse:
+        return LLMResponse(content="not json")
+
+    picked = await pick_product_terms(
+        ["ROCm.AI"], llm_api_key="key", llm_model="model", llm_base_url=None, generate=fake_generate
+    )
+    assert picked == []
+
+
+async def test_pick_product_terms_returns_empty_when_nothing_qualifies() -> None:
+    async def fake_generate(**_kwargs: Any) -> LLMResponse:
+        return LLMResponse(content=json.dumps([]))
+
+    picked = await pick_product_terms(
+        ["ROCm.AI"], llm_api_key="key", llm_model="model", llm_base_url=None, generate=fake_generate
+    )
+    assert picked == []
+
+
+async def test_pick_product_terms_strips_markdown_code_fences() -> None:
+    async def fake_generate(**_kwargs: Any) -> LLMResponse:
+        return LLMResponse(content='```json\n["ROCm.AI"]\n```')
+
+    picked = await pick_product_terms(
+        ["ROCm.AI"], llm_api_key="key", llm_model="model", llm_base_url=None, generate=fake_generate
+    )
+    assert picked == ["ROCm.AI"]
+
+
+async def test_pick_product_terms_dedupes_a_repeated_term() -> None:
+    async def fake_generate(**_kwargs: Any) -> LLMResponse:
+        return LLMResponse(content=json.dumps(["ROCm.AI", "ROCm.AI"]))
+
+    picked = await pick_product_terms(
+        ["ROCm.AI"], llm_api_key="key", llm_model="model", llm_base_url=None, generate=fake_generate
+    )
+    assert picked == ["ROCm.AI"]
+
+
+async def test_pick_product_terms_skips_non_string_items_without_crashing() -> None:
+    """A dict item is unhashable -- proves the isinstance guard short-
+    circuits before the set-membership check, never raising TypeError."""
+
+    async def fake_generate(**_kwargs: Any) -> LLMResponse:
+        return LLMResponse(content=json.dumps([123, {"term": "ROCm.AI"}, "ROCm.AI"]))
+
+    picked = await pick_product_terms(
+        ["ROCm.AI"], llm_api_key="key", llm_model="model", llm_base_url=None, generate=fake_generate
+    )
+    assert picked == ["ROCm.AI"]
+
+
+async def test_pick_product_terms_trims_incidental_whitespace_in_a_picked_term() -> None:
+    async def fake_generate(**_kwargs: Any) -> LLMResponse:
+        return LLMResponse(content=json.dumps(["ROCm.AI "]))
+
+    picked = await pick_product_terms(
+        ["ROCm.AI"], llm_api_key="key", llm_model="model", llm_base_url=None, generate=fake_generate
+    )
+    assert picked == ["ROCm.AI"]

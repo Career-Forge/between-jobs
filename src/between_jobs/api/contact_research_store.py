@@ -32,6 +32,7 @@ async def create_run(
     candidates: list[ContactCandidate],
     providers_used: list[str],
     warnings: list[str],
+    product_terms: list[str] | None = None,
 ) -> dict[str, Any]:
     run_result = (
         await supabase.table("contact_research_runs")
@@ -42,6 +43,7 @@ async def create_run(
                 "company_name": company_name,
                 "providers_used": providers_used,
                 "warnings": warnings,
+                "product_terms": product_terms or [],
             }
         )
         .execute()

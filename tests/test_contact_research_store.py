@@ -170,6 +170,44 @@ async def test_create_run_with_no_candidates_skips_both_child_inserts() -> None:
     assert supabase.contact_candidate_evidence.insert_calls == []
 
 
+async def test_create_run_persists_product_terms() -> None:
+    """Phase H -- stored on the run row for transparency, even when
+    empty (the default)."""
+    supabase = _FakeSupabaseClient()
+
+    run = await create_run(
+        supabase,  # type: ignore[arg-type]
+        _USER_ID,
+        application_id=_APPLICATION_ID,
+        company_name="AMD",
+        candidates=[],
+        providers_used=["you_com"],
+        warnings=[],
+        product_terms=["ROCm.AI"],
+    )
+
+    assert run["id"] == _RUN_ID
+    inserted_run = supabase.contact_research_runs.insert_calls[0]
+    assert inserted_run["product_terms"] == ["ROCm.AI"]
+
+
+async def test_create_run_defaults_product_terms_to_empty_list() -> None:
+    supabase = _FakeSupabaseClient()
+
+    await create_run(
+        supabase,  # type: ignore[arg-type]
+        _USER_ID,
+        application_id=_APPLICATION_ID,
+        company_name="Acme",
+        candidates=[],
+        providers_used=[],
+        warnings=[],
+    )
+
+    inserted_run = supabase.contact_research_runs.insert_calls[0]
+    assert inserted_run["product_terms"] == []
+
+
 async def test_get_latest_run_returns_none_when_nothing_exists() -> None:
     supabase = _FakeSupabaseClient(runs=_FakeTable(select_rows=[]))
     result = await get_latest_run(supabase, _USER_ID, _APPLICATION_ID)  # type: ignore[arg-type]
