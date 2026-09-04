@@ -61,6 +61,7 @@ export const CROSS_NAV_HASH = {
   contacts: "contacts",
   warmPathEvents: "warm-path-events",
   interviewPractice: "interview-practice",
+  positioningBrief: "your-play",
 } as const;
 
 export interface CrossNavItem {
@@ -74,6 +75,7 @@ export const CROSS_NAV_ITEMS: readonly CrossNavItem[] = [
   { hash: CROSS_NAV_HASH.contacts, label: "Find Contacts" },
   { hash: CROSS_NAV_HASH.warmPathEvents, label: "Find Events" },
   { hash: CROSS_NAV_HASH.interviewPractice, label: "Practice Interview" },
+  { hash: CROSS_NAV_HASH.positioningBrief, label: "Your Play" },
 ];
 
 // The card's "Applied <date>" badge caption, or null when date_applied is

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, apiFetchBlob } from "../lib/api";
 import type { ChecklistItem, PrepareApplicationResult } from "../lib/generateTypes";
@@ -87,6 +87,42 @@ export function GeneratePanel({
   const [wantCoverLetter, setWantCoverLetter] = useState(false);
   const [downloadingCoverLetter, setDownloadingCoverLetter] = useState(false);
 
+  // outreach-v2-search-first.md Phase I: restores the last real /prepare
+  // outcome (fit, gate_outcome, ats_attempts, ...) after a page reload --
+  // previously only ever available in-memory from the live POST response,
+  // gone the instant the page refreshed even though it was durably stored
+  // in application_events.payload the whole time (S4c's own extra="ignore"
+  // silently dropped it before that gap was closed). A component
+  // unmounting mid-fetch (a fast nav away) is harmless here -- setGenerate
+  // just gets called on an unmounted component's stale closure, same as
+  // every other fire-and-forget fetch in this codebase's panels.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await apiFetch<{ result: PrepareApplicationResult | null }>(
+          `/applications/${applicationId}/prepare-result`,
+        );
+        const restoredResult = response.result;
+        if (!cancelled && restoredResult) {
+          // Functional update, not a captured `generate` -- guards against
+          // the user clicking "Generate resume" while this restore fetch
+          // was still in flight, which would otherwise clobber a fresh
+          // "generating"/"ready"/"error" state with a stale persisted one.
+          setGenerate((current) =>
+            current.kind === "idle" ? { kind: "ready", result: restoredResult } : current,
+          );
+        }
+      } catch {
+        // Best-effort restore only -- a failed fetch just leaves the
+        // panel at its normal "idle" state, same as a first-ever visit.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applicationId]);
+
   async function runGenerate(forceGenerate = false) {
     setGenerate({ kind: "generating" });
     setChecklist({ kind: "idle" });
@@ -174,6 +210,13 @@ export function GeneratePanel({
   const hasResume =
     initialHasResume || (generate.kind === "ready" && generate.result.resume !== null);
   const hasCoverLetter = generate.kind === "ready" && !!generate.result.cover_letter;
+  // The restore-on-mount effect above can land on a DECLINED latest
+  // attempt (HonestFloor shown) while an OLDER successful generation's
+  // resume artifact still genuinely exists and is still downloadable --
+  // both are true at once, so this note exists to stop that from reading
+  // as a contradiction rather than to hide either fact.
+  const showingDeclineWithAnOlderResume =
+    hasResume && generate.kind === "ready" && generate.result.resume === null;
 
   return (
     <div className="bj-card bj-generate-panel">
@@ -286,6 +329,11 @@ export function GeneratePanel({
         </div>
       )}
 
+      {hasResume && showingDeclineWithAnOlderResume && (
+        <div className="bj-muted bj-small">
+          From an earlier successful generation -- the latest attempt above declined.
+        </div>
+      )}
       {hasResume && (
         <div className="bj-actions">
           <button onClick={() => void downloadPdf()} disabled={downloading}>

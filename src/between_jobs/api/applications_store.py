@@ -163,6 +163,34 @@ async def get_event_by_idempotency_key(
     return cast(dict[str, Any], result.data[0]) if result.data else None
 
 
+async def get_latest_prepare_result(
+    supabase: AsyncClient, user_id: str, application_id: str
+) -> dict[str, Any] | None:
+    """outreach-v2-search-first.md Phase I: reads the most recent real
+    `application.prepared` event's payload back out -- the durable home
+    for `fit`/`gate_outcome` (engine_contract.PrepareApplicationResult),
+    computed live on every `/prepare` call and previously never re-
+    readable once the HTTP response was consumed. A `None` return means
+    no prepare has ever run for this application; an old event recorded
+    before `gate_outcome` started being captured just has that key
+    absent from its stored payload, same forward-compat shape as every
+    other optional field on that model."""
+    result = (
+        await supabase.table("application_events")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("application_id", application_id)
+        .eq("event_type", "application.prepared")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        return None
+    row = cast(dict[str, Any], result.data[0])
+    return cast(dict[str, Any], row["payload"])
+
+
 async def record_event(
     supabase: AsyncClient,
     user_id: str,

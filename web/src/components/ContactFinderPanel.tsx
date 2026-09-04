@@ -34,6 +34,10 @@ interface Candidate {
   enriched_email: string | null;
   enriched_email_status: string | null;
   enrichment_provider: string | null;
+  // outreach-v2-search-first.md Phase I: literally the same hook
+  // outreach_writer.build_hook_context would pick for this candidate --
+  // null only when the candidate has no evidence to hook from.
+  approach_hint: string | null;
 }
 
 interface OutreachDraft {
@@ -262,6 +266,11 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
                     <div className="bj-muted bj-small">{candidate.claimed_team}</div>
                   )}
                   <div className="bj-small">{candidate.relevance_reason}</div>
+                  {candidate.approach_hint && (
+                    <div className="bj-small">
+                      <strong>Approach:</strong> {candidate.approach_hint}
+                    </div>
+                  )}
                   <div className="bj-actions">
                     <span className="bj-badge-muted">
                       {PERSONA_LABELS[candidate.persona] ?? candidate.persona}

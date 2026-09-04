@@ -15,6 +15,7 @@ from between_jobs.api.applications_store import (
     create_application,
     get_application,
     get_event_by_idempotency_key,
+    get_latest_prepare_result,
     list_applications,
     record_event,
 )
@@ -33,6 +34,9 @@ class _ChainBuilder:
         return self
 
     def order(self, *_: Any, **__: Any) -> _ChainBuilder:
+        return self
+
+    def limit(self, *_: Any, **__: Any) -> _ChainBuilder:
         return self
 
     async def execute(self) -> SimpleNamespace:
@@ -190,6 +194,92 @@ async def test_get_event_by_idempotency_key_not_found_returns_none() -> None:
     result = await get_event_by_idempotency_key(client, _USER_ID, "prepare-1")  # type: ignore[arg-type]
 
     assert result is None
+
+
+async def test_get_latest_prepare_result_returns_the_stored_payload() -> None:
+    prepared_event = {
+        "id": "event-1",
+        "event_type": "application.prepared",
+        "payload": {"run_id": "run-1", "fit": {"overall_score": 8.0}, "gate_outcome": "proceed"},
+    }
+    client = _FakeSupabaseClient(
+        _FakeTable(select_rows=[]), _FakeTable(select_rows=[prepared_event])
+    )
+
+    result = await get_latest_prepare_result(client, _USER_ID, _APPLICATION_ID)  # type: ignore[arg-type]
+
+    assert result == prepared_event["payload"]
+
+
+async def test_get_latest_prepare_result_returns_none_when_never_prepared() -> None:
+    client = _FakeSupabaseClient(_FakeTable(select_rows=[]), _FakeTable(select_rows=[]))
+
+    result = await get_latest_prepare_result(client, _USER_ID, _APPLICATION_ID)  # type: ignore[arg-type]
+
+    assert result is None
+
+
+class _RealFilterQuery:
+    """Unlike _ChainBuilder above (whose .eq() is a no-op -- several
+    existing tests in this file rely on that, seeding fixture rows that
+    deliberately omit fields they're not testing), this one genuinely
+    filters. Used only for the one test below proving get_latest_
+    prepare_result's event_type scoping is a real filter, not just a
+    passed-but-ignored argument -- this codebase has been bitten by
+    exactly this false-confidence class of test before."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def eq(self, column: str, value: Any) -> _RealFilterQuery:
+        return _RealFilterQuery([row for row in self._rows if row.get(column) == value])
+
+    def order(self, *_: Any, **__: Any) -> _RealFilterQuery:
+        return self
+
+    def limit(self, *_: Any, **__: Any) -> _RealFilterQuery:
+        return self
+
+    async def execute(self) -> SimpleNamespace:
+        return SimpleNamespace(data=self._rows)
+
+
+class _RealFilterTable:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+
+    def select(self, *_: Any, **__: Any) -> _RealFilterQuery:
+        return _RealFilterQuery(self._rows)
+
+
+async def test_get_latest_prepare_result_ignores_other_event_types() -> None:
+    """A real application has more than one event_type row over its
+    life (e.g. K1/K2's own stage-change events) -- the most recent event
+    for an application is not necessarily its most recent PREPARE
+    event. Proves the event_type filter is what's doing the work, not
+    just created_at ordering over an already-narrow row set."""
+    newer_stage_change = {
+        "id": "event-2",
+        "user_id": _USER_ID,
+        "application_id": _APPLICATION_ID,
+        "event_type": "application.stage_changed",
+        "payload": {"new_status": "applied"},
+        "created_at": "2026-09-02T00:00:00Z",
+    }
+    older_prepare = {
+        "id": "event-1",
+        "user_id": _USER_ID,
+        "application_id": _APPLICATION_ID,
+        "event_type": "application.prepared",
+        "payload": {"run_id": "run-1", "fit": {"overall_score": 8.0}},
+        "created_at": "2026-09-01T00:00:00Z",
+    }
+    events_table = _RealFilterTable([newer_stage_change, older_prepare])
+    client = _FakeSupabaseClient(_FakeTable(select_rows=[]), events_table)  # type: ignore[arg-type]
+
+    result = await get_latest_prepare_result(client, _USER_ID, _APPLICATION_ID)  # type: ignore[arg-type]
+
+    assert result == older_prepare["payload"]
 
 
 async def test_record_event_inserts_when_no_existing_key() -> None:

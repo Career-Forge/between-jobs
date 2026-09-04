@@ -220,9 +220,33 @@ async def test_get_candidates_with_evidence_batches_evidence_by_candidate() -> N
         {"id": "cand-2", "run_id": _RUN_ID, "person_name": "John Smith", "priority_score": 30},
     ]
     evidence_rows = [
-        {"id": "ev-1", "candidate_id": "cand-1", "source_url": "https://a.example"},
-        {"id": "ev-2", "candidate_id": "cand-1", "source_url": "https://b.example"},
-        {"id": "ev-3", "candidate_id": "cand-2", "source_url": "https://c.example"},
+        {
+            "id": "ev-1",
+            "candidate_id": "cand-1",
+            "source_url": "https://a.example",
+            "source_title": "Jane Doe -- Recruiter",
+            "source_snippet": "Jane Doe is hiring for the platform team.",
+            "confidence": "verified",
+            "observed_at": "2026-08-01T00:00:00Z",
+        },
+        {
+            "id": "ev-2",
+            "candidate_id": "cand-1",
+            "source_url": "https://b.example",
+            "source_title": "Jane Doe's other mention",
+            "source_snippet": "A weaker, inferred mention.",
+            "confidence": "inferred",
+            "observed_at": "2026-07-01T00:00:00Z",
+        },
+        {
+            "id": "ev-3",
+            "candidate_id": "cand-2",
+            "source_url": "https://c.example",
+            "source_title": "John Smith -- Engineer",
+            "source_snippet": "John Smith works on the platform.",
+            "confidence": "strong",
+            "observed_at": "2026-08-01T00:00:00Z",
+        },
     ]
     supabase = _FakeSupabaseClient(
         candidates=_FakeTable(select_rows=candidate_rows),
@@ -235,6 +259,15 @@ async def test_get_candidates_with_evidence_batches_evidence_by_candidate() -> N
     by_id = {c["id"]: c for c in result}
     assert len(by_id["cand-1"]["evidence"]) == 2
     assert len(by_id["cand-2"]["evidence"]) == 1
+    # Phase I: the per-contact "Approach" hint IS OutreachWriter's own
+    # single-strongest-evidence hook, picked deterministically -- ev-1
+    # (verified) over ev-2 (inferred) for cand-1.
+    assert by_id["cand-1"]["approach_hint"] == (
+        "Jane Doe -- Recruiter: Jane Doe is hiring for the platform team."
+    )
+    assert by_id["cand-2"]["approach_hint"] == (
+        "John Smith -- Engineer: John Smith works on the platform."
+    )
 
 
 async def test_get_candidates_with_evidence_returns_empty_list_with_no_candidates() -> None:

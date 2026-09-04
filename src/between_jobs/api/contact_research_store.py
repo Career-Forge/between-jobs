@@ -14,6 +14,7 @@ from typing import Any, cast
 from supabase import AsyncClient
 
 from .contact_research import ContactCandidate
+from .outreach_writer import build_hook_context
 
 
 class CandidateNotFound(Exception):
@@ -136,7 +137,15 @@ async def get_candidates_with_evidence(supabase: AsyncClient, run_id: str) -> li
         evidence_by_candidate.setdefault(row["candidate_id"], []).append(row)
 
     for candidate in candidates:
-        candidate["evidence"] = evidence_by_candidate.get(candidate["id"], [])
+        candidate_evidence = evidence_by_candidate.get(candidate["id"], [])
+        candidate["evidence"] = candidate_evidence
+        # outreach-v2-search-first.md Phase I: "a one-liner ... that
+        # doubles as OutreachWriter's hook" -- literally IS that hook,
+        # not a paraphrase of it. Zero extra LLM cost: the same
+        # deterministic single-strongest-evidence pick outreach_writer.py
+        # already makes when actually drafting for this candidate.
+        hook_text, _hook_evidence_id = build_hook_context(candidate_evidence)
+        candidate["approach_hint"] = hook_text or None
     return candidates
 
 

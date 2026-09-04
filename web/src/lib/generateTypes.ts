@@ -94,6 +94,12 @@ export interface PrepareApplicationResult {
   final_score: number | null;
   score_scale: string;
   fit?: ForgeFitResult;
+  // outreach-v2-search-first.md Phase I: the gate's own literal verdict
+  // ("proceed", or a decline code like REJECT_MISMATCH/SKIP_LOW_SCORE) --
+  // previously only reconstructable indirectly via resume being null.
+  gate_outcome?: string | null;
+  gate_reason?: string;
+  gate_cautions?: string[];
   warnings: string[];
 }
 

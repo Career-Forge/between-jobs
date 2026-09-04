@@ -261,6 +261,9 @@ async def run_prepare_application(
             float(forge_result.final_ats.overall_score) if forge_result.final_ats else None
         ),
         fit=forge_result.fit,
+        gate_outcome=forge_result.gate.outcome,
+        gate_reason=forge_result.gate.reason,
+        gate_cautions=forge_result.gate.cautions,
         warnings=warnings,
         evidence_fact_ids=[],
     )

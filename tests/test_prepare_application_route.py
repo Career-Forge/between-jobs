@@ -281,6 +281,8 @@ def test_prepare_application_success_stores_artifact_and_returns_result() -> Non
     assert body["application_answers_id"] is None
     assert body["evidence_fact_ids"] == []
     assert body["fit"]["overall_score"] == 8.0
+    assert body["gate_outcome"] == "proceed"
+    assert body["gate_cautions"] == ["Borderline seniority match."]
 
     assert len(supabase.bucket.uploads) == 1
     assert len(supabase.artifact_versions.insert_calls) == 1
@@ -335,6 +337,10 @@ def test_prepare_application_declined_gate_stores_no_artifact() -> None:
     # S4c: the Honest Floor read is still there on a decline -- it's the
     # whole reason to show one instead of just the bare reason string.
     assert body["fit"]["overall_score"] == 8.0
+    # Phase I: the literal gate verdict now survives too, not just its
+    # reason folded into plain warning text.
+    assert body["gate_outcome"] == "skip_low_score"
+    assert body["gate_reason"] == "Fit score too low."
     assert supabase.bucket.uploads == []
     assert supabase.artifact_versions.insert_calls == []
     assert len(supabase.event_outbox.insert_calls) == 1
@@ -501,3 +507,32 @@ def test_prepare_application_is_idempotent_on_retry() -> None:
     assert response.status_code == 201
     assert response.json() == already_prepared["payload"]
     assert http.post_calls == []
+
+
+def test_get_prepare_result_returns_the_latest_stored_payload() -> None:
+    prepared_event = {
+        "id": "event-1",
+        "event_type": "application.prepared",
+        "payload": {"run_id": "run-1", "fit": {"overall_score": 8.0}, "gate_outcome": "proceed"},
+    }
+    supabase = _FakeSupabaseClient(
+        application_events=_FakeTable(select_rows=[prepared_event]),
+    )
+    http = _FakeHttpClient()
+
+    with _client(supabase, http) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/prepare-result")
+
+    assert response.status_code == 200
+    assert response.json() == {"result": prepared_event["payload"]}
+
+
+def test_get_prepare_result_returns_none_when_never_prepared() -> None:
+    supabase = _FakeSupabaseClient(application_events=_FakeTable(select_rows=[]))
+    http = _FakeHttpClient()
+
+    with _client(supabase, http) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/prepare-result")
+
+    assert response.status_code == 200
+    assert response.json() == {"result": None}

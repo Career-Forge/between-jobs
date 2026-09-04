@@ -5,6 +5,7 @@ import { ContactFinderPanel } from "../components/ContactFinderPanel";
 import { GeneratePanel } from "../components/GeneratePanel";
 import { HeaderComposer } from "../components/HeaderComposer";
 import { InterviewPracticePanel } from "../components/InterviewPracticePanel";
+import { PositioningBriefPanel } from "../components/PositioningBriefPanel";
 import { SectionOrderEditor } from "../components/SectionOrderEditor";
 import { ShapeSettingsPanel } from "../components/ShapeSettingsPanel";
 import { TailorPanel } from "../components/TailorPanel";
@@ -156,6 +157,9 @@ export default function ApplicationWorkspace() {
           </div>
           <div id={CROSS_NAV_HASH.interviewPractice}>
             <InterviewPracticePanel applicationId={application.id} />
+          </div>
+          <div id={CROSS_NAV_HASH.positioningBrief}>
+            <PositioningBriefPanel applicationId={application.id} />
           </div>
         </div>
       </div>

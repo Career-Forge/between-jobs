@@ -22,7 +22,7 @@ sync with the LaTeX renderer, just a name, an order, and a boolean.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, NamedTuple, cast
+from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, Depends, Query
@@ -32,14 +32,11 @@ from supabase import AsyncClient
 from .app_state import get_http_client, get_supabase
 from .applications_store import ApplicationNotFound, get_application
 from .auth import require_user_id
-from .credential_resolver import ResolvedCredential, resolve
-from .engine_contract import Step0Result
 from .errors import ApiError
 from .forge_engines_client import (
     call_gap_interview,
     call_ingest,
     call_personal,
-    call_step0,
     resolve_header_chips,
 )
 from .jobs_store import SnapshotNotFound, get_snapshot
@@ -51,7 +48,7 @@ from .models import (
     UpdateSelectedEvidenceRequest,
     UpdateShapeOverridesRequest,
 )
-from .profile_store import get_active_version, get_version, list_career_facts
+from .profile_store import get_active_version, get_version
 from .resume_documents_store import (
     DocumentNotFound,
     get_document,
@@ -63,7 +60,8 @@ from .resume_documents_store import (
     update_shape_overrides,
 )
 from .skills import canonicalize_skill, classify_skill
-from .tailor import ClusterCoverage, compute_coverage, pick_gap_interview_questions
+from .tailor import pick_gap_interview_questions
+from .tailor_coverage import load_coverage_context
 
 router = APIRouter(prefix="/resume-documents")
 
@@ -173,47 +171,6 @@ async def update_document_assertions(
         raise ApiError("NOT_FOUND", f"no resume document found for id {document_id!r}") from e
 
 
-class _CoverageContext(NamedTuple):
-    step0: Step0Result
-    coverage: list[ClusterCoverage]
-    canonical_json: dict[str, Any]
-    credential: ResolvedCredential
-
-
-async def _load_coverage_context(
-    supabase: AsyncClient, http: httpx.AsyncClient, user_id: str, document: dict[str, Any]
-) -> _CoverageContext:
-    """The fetch sequence `/coverage` and `/gap-interview` both need:
-    resolve the document's job + credential, run Step0 (the one real LLM
-    call either endpoint makes), and cross it against the bound
-    profile_version deterministically. Requires a job to tailor against --
-    the master/default document (no `job_snapshot_id`) has no JD, so
-    neither coverage nor a gap interview is meaningful for it."""
-    job_snapshot_id = document.get("job_snapshot_id")
-    if job_snapshot_id is None:
-        raise ApiError(
-            "INVALID_INPUT",
-            "This document has no job to tailor against -- coverage only "
-            "applies to a per-application document.",
-        )
-
-    try:
-        snapshot = await get_snapshot(supabase, job_snapshot_id)
-    except SnapshotNotFound as e:
-        raise ApiError("NOT_FOUND", "This document's job snapshot no longer exists.") from e
-
-    credential = await resolve(supabase, user_id, capability="prepare_application")
-    step0 = await call_step0(
-        http,
-        job_description=snapshot.get("description_text") or "",
-        credential=credential,
-    )
-    profile_version = await get_version(supabase, user_id, document["profile_version_id"])
-    facts = await list_career_facts(supabase, user_id, document["profile_version_id"])
-    coverage = compute_coverage([c.model_dump() for c in step0.clusters], facts)
-    return _CoverageContext(step0, coverage, profile_version["canonical_json"], credential)
-
-
 @router.post("/{document_id}/coverage")
 async def get_coverage(
     document_id: str,
@@ -230,7 +187,7 @@ async def get_coverage(
     except DocumentNotFound as e:
         raise ApiError("NOT_FOUND", f"no resume document found for id {document_id!r}") from e
 
-    ctx = await _load_coverage_context(supabase, http, user_id, document)
+    ctx = await load_coverage_context(supabase, http, user_id, document)
     skills = [
         {
             "skill": canonicalize_skill(term),
@@ -262,7 +219,7 @@ async def get_gap_interview(
     except DocumentNotFound as e:
         raise ApiError("NOT_FOUND", f"no resume document found for id {document_id!r}") from e
 
-    ctx = await _load_coverage_context(supabase, http, user_id, document)
+    ctx = await load_coverage_context(supabase, http, user_id, document)
     candidates = pick_gap_interview_questions(ctx.coverage, ctx.canonical_json)
     if not candidates:
         return {"questions": []}

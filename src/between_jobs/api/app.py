@@ -44,6 +44,7 @@ from .job_registry_poller import run_poller_forever
 from .link_routes import router as link_router
 from .models import CreateSessionRequest
 from .outbox_store import run_worker_forever
+from .positioning_brief_routes import router as positioning_brief_router
 from .profile_routes import router as profile_router
 from .resume_documents_routes import router as resume_documents_router
 from .saved_search_matcher import run_matcher_forever
@@ -156,6 +157,7 @@ app.include_router(today_router)
 app.include_router(discovery_router)
 app.include_router(company_intel_router)
 app.include_router(contact_research_router)
+app.include_router(positioning_brief_router)
 app.include_router(warm_path_events_router)
 app.include_router(gmail_oauth_router)
 app.include_router(interview_practice_router)

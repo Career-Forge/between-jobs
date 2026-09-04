@@ -215,5 +215,17 @@ class PrepareApplicationResult(BaseModel):
     `/apply` run (proceeded, cautioned, or declined alike), optional only
     so a response from a not-yet-updated forge-engines deploy still
     validates, same forward-compat rationale as `AtsAttempt.detail`."""
+    gate_outcome: str | None = None
+    gate_reason: str = ""
+    gate_cautions: list[str] = Field(default_factory=list)
+    """outreach-v2-search-first.md Phase I: the gate's own literal verdict
+    (`GateInfo.outcome` -- "proceed", or a decline code like
+    REJECT_MISMATCH/SKIP_LOW_SCORE) was previously discarded after being
+    folded into plain `warnings` text -- reconstructable only by checking
+    whether `resume` is null. `record_event` already persists this whole
+    result into `application_events.payload` on every prepare call
+    regardless of gate outcome (fit is computed before the gate check
+    runs), so capturing the literal outcome here is the entire fix: no
+    new table, this rides the same durable row that already exists."""
     warnings: list[str]
     evidence_fact_ids: list[str]

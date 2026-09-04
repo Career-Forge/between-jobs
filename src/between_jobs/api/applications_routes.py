@@ -25,6 +25,7 @@ from .applications_store import (
     change_stage,
     create_application,
     get_application,
+    get_latest_prepare_result,
     list_applications,
 )
 from .artifact_versions_store import artifact_id_for, get_existing_artifact_ids, get_latest_version
@@ -173,6 +174,23 @@ async def prepare_application(
         force_generate=body.force_generate,
         generate_cover_letter=body.generate_cover_letter,
     )
+
+
+@router.get("/{application_id}/prepare-result")
+async def get_prepare_result(
+    application_id: str,
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> dict[str, Any]:
+    """outreach-v2-search-first.md Phase I: lets the frontend restore the
+    last real `/prepare` outcome (fit, gate_outcome, ats_attempts, ...)
+    after a page reload -- previously only ever available in-memory from
+    the live POST response, with no way back to it once that state was
+    lost. Doesn't re-run the engine or check application ownership
+    separately: `get_latest_prepare_result` is already scoped to
+    `user_id`, matching every other read in this file."""
+    result = await get_latest_prepare_result(supabase, user_id, application_id)
+    return {"result": result}
 
 
 @router.get("/{application_id}/resume.pdf")
