@@ -92,6 +92,19 @@ class CreateApplicationFromPasteRequest(BaseModel):
     location_text: str | None = None
 
 
+class CreateApplicationFromUrlRequest(BaseModel):
+    """outreach-v2-search-first.md Phase J -- the URL-ingest sibling of
+    `CreateApplicationFromPasteRequest`. Deliberately just the one field
+    the user actually has: title/company/location/description are all
+    resolved server-side (a real registry lookup, or a real Firecrawl
+    scrape) rather than trusted from the caller, matching this project's
+    own repeated "resolve server-side, don't trust a caller-supplied
+    reference" posture (see e.g. `PrepareApplicationRequest`'s own
+    docstring)."""
+
+    url: str = Field(min_length=1)
+
+
 ApplicationStatus = Literal[
     "saved", "applied", "screening", "interviewing", "offer", "rejected", "withdrawn"
 ]

@@ -77,6 +77,7 @@ export default function Applications() {
   return (
     <div>
       <h1>Applications</h1>
+      <UrlIngestForm onCreated={load} />
       <PasteJobForm onCreated={load} />
       {loadError && <div className="bj-error">{loadError}</div>}
       {applications !== null && applications.length === 0 && (
@@ -207,6 +208,64 @@ function statusBadgeClass(status: ApplicationStatus): string {
   }
 }
 
+// outreach-v2-search-first.md Phase J -- paste a posting URL and let the
+// server resolve everything else (a registry hit's own real JD text, or
+// a live Firecrawl scrape) rather than trusting/asking the user to type
+// out title/company/description by hand. `PasteJobForm` below stays the
+// permanent fallback for a posting a URL can't reach at all.
+function UrlIngestForm({ onCreated }: { onCreated: () => Promise<void> }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch("/applications/from-url", {
+        method: "POST",
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      setUrl("");
+      await onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to fetch that posting");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="bj-card">
+      <h2>Track a job</h2>
+      <p className="bj-muted">
+        Paste a job posting's own URL -- if it's already in this platform's own job registry,
+        the real description comes straight from there; otherwise a real Firecrawl fetch grabs
+        it live. Never LinkedIn or X/Twitter directly -- paste those manually below instead.
+      </p>
+      <label className="bj-field">
+        <span>Posting URL *</span>
+        <input
+          type="text"
+          value={url}
+          placeholder="https://..."
+          onChange={(e) => setUrl(e.target.value)}
+        />
+      </label>
+      {error && <div className="bj-error">{error}</div>}
+      <div className="bj-actions">
+        <button
+          className="bj-primary"
+          onClick={() => void submit()}
+          disabled={busy || url.trim() === ""}
+        >
+          {busy ? "Fetching..." : "Fetch and start tracking"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PasteJobForm({ onCreated }: { onCreated: () => Promise<void> }) {
   const [title, setTitle] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -247,10 +306,9 @@ function PasteJobForm({ onCreated }: { onCreated: () => Promise<void> }) {
 
   return (
     <div className="bj-card">
-      <h2>Track a job</h2>
+      <h2>Or paste the full posting</h2>
       <p className="bj-muted">
-        Paste a job posting -- title, company, and the description -- to start tracking it. No
-        scraping yet: this is the manual lane, always available even when a URL isn't (an emailed
+        The manual lane -- always available even when there's no URL to fetch (an emailed
         posting, a screenshot, anything behind a login).
       </p>
       <label className="bj-field">

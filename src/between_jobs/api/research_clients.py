@@ -21,8 +21,15 @@ from .errors import ApiError
 
 _YOU_COM_URL = "https://ydc-index.io/v1/search"
 _FIRECRAWL_URL = "https://api.firecrawl.dev/v2/search"
+_FIRECRAWL_SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape"
 
 _TIMEOUT_SECONDS = 20.0
+_SCRAPE_TIMEOUT_SECONDS = 30.0
+"""A single-page scrape (outreach-v2-search-first.md Phase J) is a
+heavier real fetch than a search call -- verified live against a real
+job posting before writing this: a real Firecrawl /v2/scrape response
+for one Coinbase Greenhouse posting took several seconds and returned
+~6KB of markdown."""
 
 
 class SearchHit(TypedDict):
@@ -30,6 +37,11 @@ class SearchHit(TypedDict):
     url: str
     snippet: str
     published_at: str | None
+
+
+class ScrapedPage(TypedDict):
+    markdown: str
+    title: str | None
 
 
 async def search_you_com(
@@ -102,3 +114,39 @@ async def search_firecrawl(
         for r in web_results
         if r.get("url")
     ]
+
+
+async def scrape_firecrawl(http: httpx.AsyncClient, *, api_key: str, url: str) -> ScrapedPage:
+    """outreach-v2-search-first.md Phase J -- the SCRAPE endpoint (as
+    distinct from `search_firecrawl`'s SEARCH endpoint above), used only
+    for a URL the caller already has (a job posting the user pasted
+    themselves), never for open-ended discovery. Callers must apply the
+    host deny-list (`scrape_denylist.py`) BEFORE calling this -- this
+    function itself does not check, since it has no way to distinguish
+    "the caller already checked" from "the caller forgot to."""
+    try:
+        response = await http.post(
+            _FIRECRAWL_SCRAPE_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"url": url, "formats": ["markdown"], "onlyMainContent": True},
+            timeout=_SCRAPE_TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError as e:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Couldn't reach Firecrawl. Try again in a moment.",
+            retryable=True,
+        ) from e
+
+    if response.status_code >= 400:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE", "Firecrawl couldn't fetch that page.", retryable=True
+        )
+
+    body = response.json()
+    data = body.get("data", {})
+    metadata = data.get("metadata", {})
+    return ScrapedPage(
+        markdown=data.get("markdown", "") or "",
+        title=metadata.get("title") or metadata.get("og:title"),
+    )

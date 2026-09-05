@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from between_jobs.api.errors import ApiError
-from between_jobs.api.research_clients import search_firecrawl, search_you_com
+from between_jobs.api.research_clients import scrape_firecrawl, search_firecrawl, search_you_com
 
 
 def _client(handler: Any) -> httpx.AsyncClient:
@@ -128,5 +128,85 @@ async def test_search_firecrawl_raises_provider_unavailable_on_error() -> None:
     http = _client(handler)
     with pytest.raises(ApiError) as exc_info:
         await search_firecrawl(http, api_key="bad-key", query="Acme")
+
+    assert exc_info.value.code == "PROVIDER_UNAVAILABLE"
+
+
+async def test_scrape_firecrawl_sends_the_expected_request() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["headers"] = dict(request.headers)
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"data": {"markdown": "", "metadata": {}}}, request=request)
+
+    http = _client(handler)
+    await scrape_firecrawl(http, api_key="fc-key", url="https://acme.example/jobs/1")
+
+    assert captured["url"] == "https://api.firecrawl.dev/v2/scrape"
+    assert captured["headers"]["authorization"] == "Bearer fc-key"
+    assert captured["body"] == {
+        "url": "https://acme.example/jobs/1",
+        "formats": ["markdown"],
+        "onlyMainContent": True,
+    }
+
+
+async def test_scrape_firecrawl_parses_a_real_response_shape() -> None:
+    """Shape verified live against a real Firecrawl /v2/scrape call
+    against a real Coinbase Greenhouse posting before writing this."""
+    body = {
+        "success": True,
+        "data": {
+            "markdown": "# Software Engineer\n\nBuild things.",
+            "metadata": {
+                "title": "Software Engineer, Blockchain Platform Nodes - Coinbase",
+                "og:title": "Software Engineer, Blockchain Platform Nodes - Coinbase",
+            },
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body, request=request)
+
+    http = _client(handler)
+    page = await scrape_firecrawl(http, api_key="fc-key", url="https://acme.example/jobs/1")
+
+    assert page["markdown"] == "# Software Engineer\n\nBuild things."
+    assert page["title"] == "Software Engineer, Blockchain Platform Nodes - Coinbase"
+
+
+async def test_scrape_firecrawl_falls_back_to_og_title() -> None:
+    body = {"data": {"markdown": "content", "metadata": {"og:title": "Fallback Title"}}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body, request=request)
+
+    http = _client(handler)
+    page = await scrape_firecrawl(http, api_key="fc-key", url="https://acme.example/jobs/1")
+
+    assert page["title"] == "Fallback Title"
+
+
+async def test_scrape_firecrawl_handles_missing_title() -> None:
+    body = {"data": {"markdown": "content", "metadata": {}}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body, request=request)
+
+    http = _client(handler)
+    page = await scrape_firecrawl(http, api_key="fc-key", url="https://acme.example/jobs/1")
+
+    assert page["title"] is None
+
+
+async def test_scrape_firecrawl_raises_provider_unavailable_on_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "not found"}, request=request)
+
+    http = _client(handler)
+    with pytest.raises(ApiError) as exc_info:
+        await scrape_firecrawl(http, api_key="fc-key", url="https://acme.example/jobs/1")
 
     assert exc_info.value.code == "PROVIDER_UNAVAILABLE"

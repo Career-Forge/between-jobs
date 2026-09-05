@@ -30,12 +30,19 @@ from .applications_store import (
 )
 from .artifact_versions_store import artifact_id_for, get_existing_artifact_ids, get_latest_version
 from .auth import require_user_id
+from .credential_resolver import try_get_secret
 from .errors import ApiError
 from .export_checklist import ChecklistItem, build_checklist
-from .jobs_store import create_job_from_paste, get_snapshots
+from .jobs_store import (
+    create_job_from_paste,
+    get_snapshots,
+    guess_company_name_from_url,
+    lookup_registry_posting,
+)
 from .models import (
     ChangeApplicationStageRequest,
     CreateApplicationFromPasteRequest,
+    CreateApplicationFromUrlRequest,
     PrepareApplicationRequest,
 )
 from .prepare_orchestrator import (
@@ -43,6 +50,8 @@ from .prepare_orchestrator import (
     latest_resume_pdf,
     run_prepare_application,
 )
+from .research_clients import scrape_firecrawl
+from .scrape_denylist import is_denied_scrape_host
 
 router = APIRouter(prefix="/applications")
 
@@ -84,6 +93,85 @@ async def create_application_from_paste(
         canonical_url=body.canonical_url,
         location_text=body.location_text,
     )
+    application = await create_application(
+        supabase,
+        user_id,
+        job_id=job["id"],
+        active_job_snapshot_id=snapshot["id"],
+        source_channel="web",
+    )
+    return {**application, "snapshot": snapshot}
+
+
+@router.post("/from-url", status_code=201)
+async def create_application_from_url(
+    body: CreateApplicationFromUrlRequest,
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+    http: httpx.AsyncClient = Depends(get_http_client),
+) -> dict[str, Any]:
+    """outreach-v2-search-first.md Phase J -- closes the capability map's
+    own long-open "real Firecrawl `ingest_job_url`" gap. Registry-first:
+    if this exact posting is already one of the 89k+ this platform's own
+    ATS poller has fetched, its real jd_text is used directly, no scrape
+    call at all (`jobs_store.lookup_registry_posting`, the same lookup
+    Job Finder P8's own `/discover/track` route already proved). Only a
+    registry MISS -- including a registry ROW with no usable jd_text, a
+    real, disclosed data-quality state from this project's own P1 seed-
+    import history, not hypothetical -- ever reaches Firecrawl's scrape
+    endpoint, gated by `scrape_denylist.is_denied_scrape_host` first,
+    "The line" enforced in code, not just prompt/policy text: a LinkedIn
+    or X/Twitter URL is refused outright, since this platform never
+    crawls those sites."""
+    registry_details = await lookup_registry_posting(supabase, body.url)
+    if registry_details is not None and registry_details["jd_text"]:
+        job, snapshot = await create_job_from_paste(
+            supabase,
+            title=registry_details["title"] or "Untitled Position",
+            company_name=registry_details["company"] or "Unknown Company",
+            description_text=registry_details["jd_text"] or "(no description available)",
+            canonical_url=body.url,
+            location_text=registry_details["location"],
+            source_kind="url_ingest",
+        )
+    else:
+        if is_denied_scrape_host(body.url):
+            raise ApiError(
+                "INVALID_INPUT",
+                "This platform never scrapes LinkedIn or X/Twitter directly -- "
+                "paste the job's own posting page instead.",
+            )
+
+        firecrawl_key = await try_get_secret(
+            supabase, user_id, service="search", provider="firecrawl"
+        )
+        if firecrawl_key is None:
+            raise ApiError(
+                "SETUP_REQUIRED",
+                "Add a Firecrawl key to fetch a job posting from a URL not already "
+                "in the registry.",
+                capability="job_url_ingest",
+                missing=["firecrawl_credential"],
+                settings_path="/profile/integrations",
+            )
+
+        page = await scrape_firecrawl(http, api_key=firecrawl_key, url=body.url)
+        if not page["markdown"].strip():
+            raise ApiError(
+                "INVALID_INPUT",
+                "Couldn't find any real content at that URL -- try pasting instead.",
+            )
+
+        job, snapshot = await create_job_from_paste(
+            supabase,
+            title=page["title"] or "Untitled Position",
+            company_name=guess_company_name_from_url(body.url),
+            description_text=page["markdown"],
+            canonical_url=body.url,
+            location_text=None,
+            source_kind="url_ingest",
+        )
+
     application = await create_application(
         supabase,
         user_id,

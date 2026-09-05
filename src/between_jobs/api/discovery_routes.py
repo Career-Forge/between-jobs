@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, Depends, Query
@@ -41,7 +41,7 @@ from .company_tiers import get_company_tier_index
 from .credential_resolver import resolve, try_get_secret, try_get_secret_pair
 from .errors import ApiError
 from .job_fit_scoring import ScoredJob, score_jobs
-from .jobs_store import create_job_from_paste
+from .jobs_store import create_job_from_paste, lookup_registry_posting
 from .llm_client import generate as llm_generate
 from .models import TrackDiscoveredJobRequest
 from .profile import ResumeTemplate
@@ -267,59 +267,6 @@ async def search_discover(
     }
 
 
-class _RegistryPostingDetails(TypedDict):
-    title: str | None
-    location: str | None
-    company: str | None
-    jd_text: str | None
-
-
-async def _lookup_registry_posting_details(
-    supabase: AsyncClient, apply_url: str
-) -> _RegistryPostingDetails | None:
-    """Real, ground-truth posting data exists in the registry (P1-P3e's
-    own ATS poller) for any `provider="registry"` result -- `SearchResult.
-    snippet` is only ever a 500-char excerpt (`left(jd_text, 500)`, see
-    the search function's own migration), never the full text, so a
-    tracked registry-lane job deserves better than a truncated preview
-    when the real thing is one lookup away. Previously only `jd_text` was
-    re-derived server-side here, leaving title/location/company trusted
-    from the client for this lane too even though ground truth was one
-    query away -- now all four come from the registry. Two plain queries,
-    not a PostgREST embedded select (no precedent for that pattern in
-    this codebase, see `today_store.py`'s own note on the same choice)."""
-    posting_result = (
-        await supabase.table("job_registry_postings")
-        .select("title, location, jd_text, company_id")
-        .eq("apply_url", apply_url)
-        .limit(1)
-        .execute()
-    )
-    if not posting_result.data:
-        return None
-    posting = cast("dict[str, Any]", posting_result.data[0])
-
-    company_name: str | None = None
-    company_id = posting.get("company_id")
-    if company_id:
-        company_result = (
-            await supabase.table("job_registry_companies")
-            .select("name")
-            .eq("id", company_id)
-            .limit(1)
-            .execute()
-        )
-        if company_result.data:
-            company_name = cast("dict[str, Any]", company_result.data[0])["name"]
-
-    return _RegistryPostingDetails(
-        title=posting.get("title"),
-        location=posting.get("location"),
-        company=company_name,
-        jd_text=posting.get("jd_text") or None,
-    )
-
-
 @router.post("/track", status_code=201)
 async def track_discovered_job(
     body: TrackDiscoveredJobRequest,
@@ -339,7 +286,7 @@ async def track_discovered_job(
     location = body.location
     description_text = body.snippet
     if body.provider == "registry":
-        details = await _lookup_registry_posting_details(supabase, body.apply_url)
+        details = await lookup_registry_posting(supabase, body.apply_url)
         if details is not None:
             title = details["title"] or title
             company = details["company"] or company
