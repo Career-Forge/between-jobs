@@ -13,7 +13,12 @@ import httpx
 import pytest
 
 from between_jobs.api.errors import ApiError
-from between_jobs.api.research_clients import scrape_firecrawl, search_firecrawl, search_you_com
+from between_jobs.api.research_clients import (
+    scrape_firecrawl,
+    search_exa_people,
+    search_firecrawl,
+    search_you_com,
+)
 
 
 def _client(handler: Any) -> httpx.AsyncClient:
@@ -208,5 +213,72 @@ async def test_scrape_firecrawl_raises_provider_unavailable_on_error() -> None:
     http = _client(handler)
     with pytest.raises(ApiError) as exc_info:
         await scrape_firecrawl(http, api_key="fc-key", url="https://acme.example/jobs/1")
+
+    assert exc_info.value.code == "PROVIDER_UNAVAILABLE"
+
+
+async def test_search_exa_people_sends_the_expected_request() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["headers"] = dict(request.headers)
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"results": []}, request=request)
+
+    http = _client(handler)
+    await search_exa_people(http, api_key="exa-key", query="Jane Doe at Acme", num_results=3)
+
+    assert captured["url"] == "https://api.exa.ai/search"
+    assert captured["headers"]["x-api-key"] == "exa-key"
+    assert captured["body"] == {
+        "query": "Jane Doe at Acme",
+        "category": "people",
+        "type": "auto",
+        "numResults": 3,
+    }
+
+
+async def test_search_exa_people_extracts_the_person_entity_name() -> None:
+    body = {
+        "results": [
+            {
+                "url": "https://www.linkedin.com/in/janedoe",
+                "entities": [
+                    {"type": "person", "properties": {"name": "Jane Doe"}},
+                    {"type": "organization", "properties": {"name": "Acme"}},
+                ],
+            }
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body, request=request)
+
+    http = _client(handler)
+    hits = await search_exa_people(http, api_key="exa-key", query="Jane Doe at Acme")
+
+    assert hits == [{"url": "https://www.linkedin.com/in/janedoe", "entity_name": "Jane Doe"}]
+
+
+async def test_search_exa_people_handles_a_result_with_no_person_entity() -> None:
+    body = {"results": [{"url": "https://www.linkedin.com/in/janedoe", "entities": []}]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body, request=request)
+
+    http = _client(handler)
+    hits = await search_exa_people(http, api_key="exa-key", query="Jane Doe at Acme")
+
+    assert hits == [{"url": "https://www.linkedin.com/in/janedoe", "entity_name": None}]
+
+
+async def test_search_exa_people_raises_provider_unavailable_on_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": "unauthorized"}, request=request)
+
+    http = _client(handler)
+    with pytest.raises(ApiError) as exc_info:
+        await search_exa_people(http, api_key="bad-key", query="Jane Doe at Acme")
 
     assert exc_info.value.code == "PROVIDER_UNAVAILABLE"

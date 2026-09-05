@@ -19,6 +19,7 @@ from between_jobs.api.contact_research_store import (
     get_latest_run,
     get_owned_candidate,
     save_enrichment,
+    save_linkedin_discovery,
 )
 
 _USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -329,6 +330,46 @@ async def test_save_enrichment_updates_the_candidate_row() -> None:
 
     assert result["enriched_email"] == "jane.doe@acme.example"
     assert candidates_table.update_calls[0]["enrichment_provider"] == "apollo"
+
+
+async def test_save_linkedin_discovery_updates_the_candidate_row() -> None:
+    candidate_row = {"id": _CANDIDATE_ID, "run_id": _RUN_ID, "person_name": "Jane Doe"}
+    candidates_table = _FakeTable(select_rows=[candidate_row])
+    supabase = _FakeSupabaseClient(candidates=candidates_table)
+
+    result = await save_linkedin_discovery(
+        supabase,  # type: ignore[arg-type]
+        _CANDIDATE_ID,
+        linkedin_url="https://www.linkedin.com/in/janedoe",
+        confidence="strong",
+        provider="exa",
+        discovered_at="2026-09-05T00:00:00Z",
+    )
+
+    assert result["discovered_linkedin_url"] == "https://www.linkedin.com/in/janedoe"
+    assert candidates_table.update_calls[0]["linkedin_discovery_provider"] == "exa"
+    assert candidates_table.update_calls[0]["linkedin_discovery_confidence"] == "strong"
+
+
+async def test_save_linkedin_discovery_records_a_null_result() -> None:
+    """A "no result" attempt is still recorded (via `linkedin_discovered_
+    at`), same "no result" != "never tried" distinction `save_enrichment`
+    already draws."""
+    candidate_row = {"id": _CANDIDATE_ID, "run_id": _RUN_ID, "person_name": "Jane Doe"}
+    candidates_table = _FakeTable(select_rows=[candidate_row])
+    supabase = _FakeSupabaseClient(candidates=candidates_table)
+
+    result = await save_linkedin_discovery(
+        supabase,  # type: ignore[arg-type]
+        _CANDIDATE_ID,
+        linkedin_url=None,
+        confidence="unsupported",
+        provider="exa",
+        discovered_at="2026-09-05T00:00:00Z",
+    )
+
+    assert result["discovered_linkedin_url"] is None
+    assert result["linkedin_discovered_at"] == "2026-09-05T00:00:00Z"
 
 
 async def test_get_evidence_for_candidate_returns_only_that_candidates_rows() -> None:

@@ -15,7 +15,8 @@ from .applications_store import ApplicationNotFound, get_application
 from .auth import require_user_id
 from .company_intel_store import get_claims_for_run as get_company_intel_claims
 from .company_intel_store import get_latest_run as get_latest_company_intel_run
-from .contact_enrichment import enrich_candidate
+from .company_tiers import get_company_tier_index
+from .contact_enrichment import EnrichmentResult, enrich_candidate, enrich_hunter, find_linkedin_exa
 from .contact_research import (
     apply_l2_search_filters,
     build_contact_query_plan,
@@ -33,6 +34,7 @@ from .contact_research_store import (
     get_latest_run,
     get_owned_candidate,
     save_enrichment,
+    save_linkedin_discovery,
 )
 from .credential_resolver import resolve, try_get_secret
 from .errors import ApiError
@@ -109,8 +111,25 @@ async def generate_contacts(
         llm_base_url=llm_credential.base_url,
         generate=llm_generate,
     )
+
+    # Phase K -- the X/Twitter "we're hiring" lane only fires for a
+    # company NOT found in the Fortune-500-based tier index. An empty
+    # index (the fetch failed, or the table itself is genuinely empty)
+    # must never be read as "every company is a startup" -- that would
+    # silently fire this lane against a real Fortune-500 company the
+    # moment the tier data fails to load, the same class of fail-open
+    # signal corruption already fixed for the location filter elsewhere
+    # in this codebase.
+    tier_index = await get_company_tier_index(supabase)
+    include_x_lane = (
+        bool(tier_index.weights_by_normalized_name) and tier_index.lookup(company_name) is None
+    )
+
     queries = build_contact_query_plan(
-        company_name, job_snapshot["title"], product_terms=product_terms
+        company_name,
+        job_snapshot["title"],
+        product_terms=product_terms,
+        include_x_lane=include_x_lane,
     )
     results, providers_used, warnings = await run_contact_research(
         http,
@@ -158,33 +177,134 @@ async def enrich_contact(
     discovery. `application_id` is only used for the URL's own scoping
     convention (matching every other nested route here); ownership is
     actually enforced by `get_owned_candidate` joining through the run,
-    not by cross-checking `application_id` against the candidate."""
+    not by cross-checking `application_id` against the candidate.
+
+    Phase K adds Hunter as a second provider, tried automatically -- not
+    a separate button -- so the existing one-click UX gains resilience
+    and yield for free. Apollo stays primary (unchanged behavior for
+    every user who only has Apollo configured): tried first when
+    configured, and its own failure (a bad key, a provider outage) only
+    falls through to Hunter when Hunter is ALSO configured -- a user
+    without Hunter still sees Apollo's own real error, exactly as
+    before. When Apollo succeeds but finds no email, Hunter is tried as
+    a genuine second attempt rather than accepting the first provider's
+    "not found" as final.
+
+    An adversarial review caught that the Hunter call itself was
+    originally unguarded: if Apollo already produced a valid (if empty)
+    result and Hunter then failed (a revoked key, an outage), the whole
+    request used to hard-error and discard Apollo's own completed
+    lookup -- a real regression for any user who configures Hunter, the
+    opposite of Hunter adding resilience "for free." Hunter's own
+    failure is now swallowed specifically when Apollo already produced a
+    result (keeping Apollo's own answer, including a legitimate "no
+    email found"); it still propagates when Hunter was the only real
+    attempt (Apollo not configured, or Apollo itself failed too) --
+    matching this same function's own established "surface the last
+    real provider's error rather than a silent success" stance."""
     try:
         candidate = await get_owned_candidate(supabase, user_id, candidate_id)
     except CandidateNotFound as e:
         raise ApiError("NOT_FOUND", f"no contact found for id {candidate_id!r}") from e
 
     apollo_key = await try_get_secret(supabase, user_id, service="search", provider="apollo")
-    if apollo_key is None:
+    hunter_key = await try_get_secret(supabase, user_id, service="search", provider="hunter")
+    if apollo_key is None and hunter_key is None:
         raise ApiError(
             "SETUP_REQUIRED",
-            "Contact enrichment needs an Apollo key configured.",
+            "Contact enrichment needs an Apollo or Hunter key configured.",
             capability="contact_enrichment",
-            missing=["apollo_credential"],
+            missing=["apollo_credential", "hunter_credential"],
             settings_path="/profile/integrations",
         )
 
-    result = await enrich_candidate(
-        http, api_key=apollo_key, person_name=candidate["person_name"], company=candidate["company"]
-    )
+    result: EnrichmentResult | None = None
+    provider_used: str | None = None
+
+    if apollo_key is not None:
+        try:
+            result = await enrich_candidate(
+                http,
+                api_key=apollo_key,
+                person_name=candidate["person_name"],
+                company=candidate["company"],
+            )
+            provider_used = "apollo"
+        except ApiError:
+            if hunter_key is None:
+                raise
+
+    if hunter_key is not None and (result is None or result["email"] is None):
+        try:
+            hunter_result = await enrich_hunter(
+                http,
+                api_key=hunter_key,
+                person_name=candidate["person_name"],
+                company=candidate["company"],
+            )
+            result = hunter_result
+            provider_used = "hunter"
+        except ApiError:
+            if result is None:
+                raise
+
+    assert result is not None and provider_used is not None  # a key existed, so one branch ran
 
     updated = await save_enrichment(
         supabase,
         candidate_id,
         email=result["email"],
         email_status=result["email_status"],
-        provider="apollo",
+        provider=provider_used,
         enriched_at=datetime.now(UTC).isoformat(),
+    )
+    return updated
+
+
+@router.post("/{candidate_id}/find-linkedin")
+async def find_linkedin(
+    application_id: str,
+    candidate_id: str,
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+    http: httpx.AsyncClient = Depends(get_http_client),
+) -> dict[str, Any]:
+    """Phase K -- Exa People Search, opt-in and human-gated, same shape
+    as `enrich_contact` above. A distinct action, not folded into
+    `enrich_contact`: Exa never resolves an email (a different result
+    entirely), and a candidate found via a non-LinkedIn source (a GitHub
+    org membership, a director/VP mention, an X hiring post) may have no
+    LinkedIn URL in its evidence at all."""
+    try:
+        candidate = await get_owned_candidate(supabase, user_id, candidate_id)
+    except CandidateNotFound as e:
+        raise ApiError("NOT_FOUND", f"no contact found for id {candidate_id!r}") from e
+
+    exa_key = await try_get_secret(supabase, user_id, service="search", provider="exa")
+    if exa_key is None:
+        raise ApiError(
+            "SETUP_REQUIRED",
+            "Finding a LinkedIn profile needs an Exa key configured.",
+            capability="linkedin_discovery",
+            missing=["exa_credential"],
+            settings_path="/profile/integrations",
+        )
+
+    result = await find_linkedin_exa(
+        http,
+        api_key=exa_key,
+        person_name=candidate["person_name"],
+        company=candidate["company"],
+        claimed_title=candidate["claimed_title"],
+    )
+
+    updated = await save_linkedin_discovery(
+        supabase,
+        candidate_id,
+        linkedin_url=result["linkedin_url"],
+        confidence=result["match_confidence"],
+        provider="exa",
+        discovered_at=datetime.now(UTC).isoformat(),
     )
     return updated
 

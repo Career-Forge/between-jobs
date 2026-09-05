@@ -139,6 +139,27 @@ class _FakeRpcBuilder:
         return SimpleNamespace(data=self._data)
 
 
+class _PaginatedTable:
+    """`.select().range().execute()` -- matches `company_tiers.get_
+    company_tier_index`'s own real query chain (no `.eq()` at all)."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+        self._start = 0
+        self._end = len(rows)
+
+    def select(self, *_: Any, **__: Any) -> _PaginatedTable:
+        return self
+
+    def range(self, start: int, end: int) -> _PaginatedTable:
+        self._start = start
+        self._end = end
+        return self
+
+    async def execute(self) -> SimpleNamespace:
+        return SimpleNamespace(data=self._rows[self._start : self._end + 1])
+
+
 class _FakeSupabaseClient:
     def __init__(
         self,
@@ -152,6 +173,7 @@ class _FakeSupabaseClient:
         outreach_drafts: _FakeTable | None = None,
         company_intel_runs: _FakeTable | None = None,
         company_intel_claims: _FakeTable | None = None,
+        company_tiers: list[dict[str, Any]] | None = None,
     ) -> None:
         self.applications = applications or _FakeTable(select_rows=[_APPLICATION_ROW])
         self.job_snapshots = _FakeTable(select_rows=[_SNAPSHOT_ROW])
@@ -173,6 +195,10 @@ class _FakeSupabaseClient:
         # default so get_latest_company_intel_run cleanly returns None.
         self.company_intel_runs = company_intel_runs or _FakeTable(select_rows=[])
         self.company_intel_claims = company_intel_claims or _FakeTable(select_rows=[])
+        # Phase K -- empty by default, matching get_company_tier_index's
+        # own documented fail-open contract (an empty index means the
+        # X/Twitter lane's gate never fires, never the reverse).
+        self._company_tiers = _PaginatedTable(company_tiers or [])
 
     def table(self, name: str) -> Any:
         return {
@@ -186,6 +212,7 @@ class _FakeSupabaseClient:
             "outreach_drafts": self.outreach_drafts,
             "company_intel_runs": self.company_intel_runs,
             "company_intel_claims": self.company_intel_claims,
+            "company_tiers": self._company_tiers,
         }[name]
 
     def rpc(self, fn: str, _params: dict[str, Any]) -> _FakeRpcBuilder:
@@ -228,6 +255,10 @@ class _FakeHttpClient:
         status_code: int = 200,
         apollo_status_code: int = 200,
         apollo_body: dict[str, Any] | None = None,
+        hunter_status_code: int = 200,
+        hunter_body: dict[str, Any] | None = None,
+        exa_status_code: int = 200,
+        exa_body: dict[str, Any] | None = None,
         google_token_body: dict[str, Any] | None = None,
         gmail_draft_status_code: int = 200,
         gmail_draft_body: dict[str, Any] | None = None,
@@ -235,6 +266,10 @@ class _FakeHttpClient:
         self.status_code = status_code
         self.apollo_status_code = apollo_status_code
         self.apollo_body = apollo_body if apollo_body is not None else {"person": None}
+        self.hunter_status_code = hunter_status_code
+        self.hunter_body = hunter_body if hunter_body is not None else {"data": {"email": None}}
+        self.exa_status_code = exa_status_code
+        self.exa_body = exa_body if exa_body is not None else {"results": []}
         self.google_token_body = (
             google_token_body if google_token_body is not None else {"access_token": "at-1"}
         )
@@ -253,6 +288,12 @@ class _FakeHttpClient:
                 json=self.apollo_body,
                 request=httpx.Request("POST", url),
             )
+        if "exa.ai" in url:
+            return httpx.Response(
+                status_code=self.exa_status_code,
+                json=self.exa_body,
+                request=httpx.Request("POST", url),
+            )
         if "oauth2.googleapis.com" in url:
             return httpx.Response(
                 status_code=200, json=self.google_token_body, request=httpx.Request("POST", url)
@@ -268,11 +309,17 @@ class _FakeHttpClient:
         )
 
     async def get(self, url: str, **kwargs: Any) -> httpx.Response:
+        self.get_calls.append(url)
+        if "hunter.io" in url:
+            return httpx.Response(
+                status_code=self.hunter_status_code,
+                json=self.hunter_body,
+                request=httpx.Request("GET", url),
+            )
         # No real GitHub org exists for the fixture company -- a bare 404
         # is exactly how a real "no org at that slug" response behaves,
         # and fetch_github_org_members already treats that as an empty,
         # non-error L1 result.
-        self.get_calls.append(url)
         return httpx.Response(status_code=404, json={}, request=httpx.Request("GET", url))
 
 
@@ -291,6 +338,18 @@ def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def _clear_overrides() -> Any:
     yield
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_company_tier_cache() -> Any:
+    """Phase K -- generate_contacts now calls get_company_tier_index on
+    every request; its module-level cache must not leak between tests,
+    same precedent as test_discovery_routes.py's own identical fixture."""
+    import between_jobs.api.company_tiers as tiers_module
+
+    tiers_module._cached_index = None
+    yield
+    tiers_module._cached_index = None
 
 
 def _patch_llm(monkeypatch: pytest.MonkeyPatch, content: str = _CANDIDATE_LLM_RESPONSE) -> None:
@@ -505,6 +564,89 @@ def test_generate_contacts_not_found_returns_404() -> None:
     assert response.json()["error"]["code"] == "NOT_FOUND"
 
 
+# ── Phase K: the X/Twitter lane's company-tier gate ─────────────────────
+
+_FIRECRAWL_CREDENTIAL_ROW = {
+    "provider": "firecrawl",
+    "model": None,
+    "base_url": None,
+    "secret_encrypted": "fc-cipher",
+}
+
+
+def test_generate_contacts_includes_the_x_lane_for_a_non_fortune_500_company(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-empty tier index that simply doesn't list this company is
+    the real "presumed startup" signal -- Acme isn't in the seeded rows
+    below, but WidgetCo is, proving the index itself loaded correctly."""
+    supabase = _FakeSupabaseClient(
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+            ("search", "firecrawl"): _FIRECRAWL_CREDENTIAL_ROW,
+        },
+        company_tiers=[{"normalized_name": "widgetco", "weight": 1.0}],
+    )
+    http = _FakeHttpClient()
+    _patch_llm(monkeypatch)
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts")
+
+    assert response.status_code == 201
+    # 3 untagged queries -> you_com, 1 LinkedIn hiring-post query + 2 new
+    # X/Twitter queries (all firecrawl-tagged) -> firecrawl = 6 total.
+    assert len(http.post_calls) == 6
+
+
+def test_generate_contacts_excludes_the_x_lane_for_a_fortune_500_company(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    supabase = _FakeSupabaseClient(
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+            ("search", "firecrawl"): _FIRECRAWL_CREDENTIAL_ROW,
+        },
+        company_tiers=[{"normalized_name": "acme", "weight": 1.0}],
+    )
+    http = _FakeHttpClient()
+    _patch_llm(monkeypatch)
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts")
+
+    assert response.status_code == 201
+    # No X lane -- 3 untagged queries -> you_com, 1 hiring-post -> firecrawl.
+    assert len(http.post_calls) == 4
+
+
+def test_generate_contacts_excludes_the_x_lane_when_the_tier_index_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty tier index (the fetch failed, or the table is genuinely
+    empty) must never be read as "every company is a startup" -- the
+    same fail-open-signal-corruption class already fixed elsewhere in
+    this codebase for the location filter."""
+    supabase = _FakeSupabaseClient(
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+            ("search", "firecrawl"): _FIRECRAWL_CREDENTIAL_ROW,
+        },
+        company_tiers=[],
+    )
+    http = _FakeHttpClient()
+    _patch_llm(monkeypatch)
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts")
+
+    assert response.status_code == 201
+    assert len(http.post_calls) == 4
+
+
 # ── Phase C: enrichment ──────────────────────────────────────────────────
 
 _CANDIDATE_ID = "80000000-0000-0000-0000-000000000001"
@@ -589,6 +731,270 @@ def test_enrich_contact_for_a_candidate_owned_by_someone_else_returns_404() -> N
 
     with _client(supabase, http) as client:
         response = client.post(f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/enrich")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
+# ── Phase K: Hunter as a second enrichment provider ──────────────────────
+
+_HUNTER_CREDENTIAL_ROW = {
+    "provider": "hunter",
+    "model": None,
+    "base_url": None,
+    "secret_encrypted": "hunter-cipher",
+}
+_EXA_CREDENTIAL_ROW = {
+    "provider": "exa",
+    "model": None,
+    "base_url": None,
+    "secret_encrypted": "exa-cipher",
+}
+
+
+def test_enrich_contact_uses_hunter_directly_when_apollo_not_configured() -> None:
+    supabase = _FakeSupabaseClient(
+        provider_credentials={("search", "hunter"): _HUNTER_CREDENTIAL_ROW},
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient(
+        hunter_body={
+            "data": {"email": "jane.doe@acme.example", "verification": {"status": "valid"}}
+        }
+    )
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/enrich")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enriched_email"] == "jane.doe@acme.example"
+    assert body["enrichment_provider"] == "hunter"
+    assert not any("apollo.io" in c for c in http.post_calls)
+
+
+def test_enrich_contact_falls_back_to_hunter_when_apollo_finds_nothing() -> None:
+    supabase = _FakeSupabaseClient(
+        provider_credentials={
+            ("search", "apollo"): _APOLLO_CREDENTIAL_ROW,
+            ("search", "hunter"): _HUNTER_CREDENTIAL_ROW,
+        },
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient(
+        apollo_body={"person": None},
+        hunter_body={
+            "data": {"email": "jane.doe@acme.example", "verification": {"status": "valid"}}
+        },
+    )
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/enrich")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enriched_email"] == "jane.doe@acme.example"
+    assert body["enrichment_provider"] == "hunter"
+    assert any("apollo.io" in c for c in http.post_calls)
+    assert any("hunter.io" in c for c in http.get_calls)
+
+
+def test_enrich_contact_does_not_call_hunter_when_apollo_already_found_an_email() -> None:
+    supabase = _FakeSupabaseClient(
+        provider_credentials={
+            ("search", "apollo"): _APOLLO_CREDENTIAL_ROW,
+            ("search", "hunter"): _HUNTER_CREDENTIAL_ROW,
+        },
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient(
+        apollo_body={"person": {"email": "jane.doe@acme.example", "email_status": "verified"}}
+    )
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/enrich")
+
+    assert response.status_code == 200
+    assert response.json()["enrichment_provider"] == "apollo"
+    assert not any("hunter.io" in c for c in http.get_calls)
+
+
+def test_enrich_contact_falls_through_to_hunter_when_apollo_key_is_rejected() -> None:
+    supabase = _FakeSupabaseClient(
+        provider_credentials={
+            ("search", "apollo"): _APOLLO_CREDENTIAL_ROW,
+            ("search", "hunter"): _HUNTER_CREDENTIAL_ROW,
+        },
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient(
+        apollo_status_code=401,
+        hunter_body={
+            "data": {"email": "jane.doe@acme.example", "verification": {"status": "valid"}}
+        },
+    )
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/enrich")
+
+    assert response.status_code == 200
+    assert response.json()["enrichment_provider"] == "hunter"
+
+
+def test_enrich_contact_propagates_apollo_error_when_hunter_not_configured() -> None:
+    """A user without Hunter configured still sees Apollo's own real
+    error, unchanged from before Hunter existed."""
+    supabase = _FakeSupabaseClient(
+        provider_credentials={("search", "apollo"): _APOLLO_CREDENTIAL_ROW},
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient(apollo_status_code=401)
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/enrich")
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
+
+
+def test_enrich_contact_keeps_apollos_empty_result_when_hunter_then_fails() -> None:
+    """Regression test for a real, adversarially-confirmed bug: Hunter's
+    own failure (after Apollo already produced a valid, if empty, real
+    result) used to propagate uncaught and discard Apollo's completed
+    lookup. It must now fall back to Apollo's own "no email found"
+    result instead of hard-erroring the whole request."""
+    supabase = _FakeSupabaseClient(
+        provider_credentials={
+            ("search", "apollo"): _APOLLO_CREDENTIAL_ROW,
+            ("search", "hunter"): _HUNTER_CREDENTIAL_ROW,
+        },
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient(apollo_body={"person": None}, hunter_status_code=401)
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/enrich")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enriched_email"] is None
+    assert body["enrichment_provider"] == "apollo"
+
+
+def test_enrich_contact_raises_when_both_apollo_and_hunter_fail() -> None:
+    supabase = _FakeSupabaseClient(
+        provider_credentials={
+            ("search", "apollo"): _APOLLO_CREDENTIAL_ROW,
+            ("search", "hunter"): _HUNTER_CREDENTIAL_ROW,
+        },
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient(apollo_status_code=401, hunter_status_code=401)
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/enrich")
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
+
+
+def test_enrich_contact_propagates_hunter_error_when_hunter_is_the_only_provider() -> None:
+    supabase = _FakeSupabaseClient(
+        provider_credentials={("search", "hunter"): _HUNTER_CREDENTIAL_ROW},
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient(hunter_status_code=401)
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/enrich")
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
+
+
+def test_enrich_contact_with_neither_provider_mentions_both_in_setup_required() -> None:
+    supabase = _FakeSupabaseClient(
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient()
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/enrich")
+
+    assert response.status_code == 409
+    message = response.json()["error"]["message"]
+    assert "Apollo" in message and "Hunter" in message
+
+
+# ── Phase K: Exa LinkedIn discovery ──────────────────────────────────────
+
+
+def test_find_linkedin_with_no_exa_key_returns_setup_required() -> None:
+    supabase = _FakeSupabaseClient(
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient()
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/find-linkedin"
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "SETUP_REQUIRED"
+
+
+def test_find_linkedin_success_persists_the_discovered_url() -> None:
+    supabase = _FakeSupabaseClient(
+        provider_credentials={("search", "exa"): _EXA_CREDENTIAL_ROW},
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient(
+        exa_body={
+            "results": [
+                {
+                    "url": "https://www.linkedin.com/in/janedoe",
+                    "entities": [{"type": "person", "properties": {"name": "Jane Doe"}}],
+                }
+            ]
+        }
+    )
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/find-linkedin"
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["discovered_linkedin_url"] == "https://www.linkedin.com/in/janedoe"
+    assert body["linkedin_discovery_provider"] == "exa"
+    assert body["linkedin_discovery_confidence"] == "strong"
+
+
+def test_find_linkedin_for_a_candidate_owned_by_someone_else_returns_404() -> None:
+    supabase = _FakeSupabaseClient(
+        provider_credentials={("search", "exa"): _EXA_CREDENTIAL_ROW},
+        contact_research_runs=_FakeTable(select_rows=[]),
+        contact_candidates=_FakeTable(select_rows=[dict(_CANDIDATE_ROW)]),
+    )
+    http = _FakeHttpClient()
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/find-linkedin"
+        )
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"

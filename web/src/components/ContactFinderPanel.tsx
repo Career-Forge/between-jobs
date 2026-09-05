@@ -34,6 +34,22 @@ interface Candidate {
   enriched_email: string | null;
   enriched_email_status: string | null;
   enrichment_provider: string | null;
+  // Set on every enrichment attempt, success or failure -- distinguishes
+  // "never tried" (null) from "tried, found nothing" (set, but
+  // enriched_email is still null), so the UI doesn't invite an
+  // unlimited number of repeat paid lookups with no indication a real
+  // provider credit was already spent on this candidate.
+  enriched_at: string | null;
+  // outreach-v2-search-first.md Phase K -- Exa People Search, a
+  // distinct opt-in action from email enrichment above (never an
+  // email). match_confidence mirrors the evidence Confidence vocabulary
+  // informally ("strong"/"inferred"/"unsupported"), never "verified".
+  discovered_linkedin_url: string | null;
+  linkedin_discovery_confidence: string | null;
+  linkedin_discovery_provider: string | null;
+  // Same "never tried" vs "tried, found nothing" distinction as
+  // enriched_at above.
+  linkedin_discovered_at: string | null;
   // outreach-v2-search-first.md Phase I: literally the same hook
   // outreach_writer.build_hook_context would pick for this candidate --
   // null only when the candidate has no evidence to hook from.
@@ -94,6 +110,8 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
   const [generating, setGenerating] = useState(false);
   const [enrichingId, setEnrichingId] = useState<string | null>(null);
   const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [findingLinkedInId, setFindingLinkedInId] = useState<string | null>(null);
+  const [linkedInError, setLinkedInError] = useState<string | null>(null);
   const [draftingId, setDraftingId] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, OutreachDraft>>({});
@@ -135,8 +153,8 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
 
   async function enrich(candidate: Candidate) {
     const confirmed = window.confirm(
-      `Look up a confirmed work email for ${candidate.person_name} via Apollo? This uses your ` +
-        "own Apollo credit for one lookup -- never a bulk search, never personal contact info.",
+      `Look up a confirmed work email for ${candidate.person_name}? This uses your own Apollo ` +
+        "and/or Hunter credit for one lookup -- never a bulk search, never personal contact info.",
     );
     if (!confirmed) return;
 
@@ -147,19 +165,65 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
         `/applications/${applicationId}/contacts/${candidate.id}/enrich`,
         { method: "POST" },
       );
+      // /enrich returns only the raw contact_candidates row it updated --
+      // no `evidence` (a separate table) or `approach_hint` (synthesized
+      // only by the list endpoint). A full replace here would null those
+      // out and crash the very next render's candidate.evidence.map(...);
+      // merge onto the existing candidate instead.
       setState((prev) =>
         prev.kind === "ready"
-          ? { ...prev, candidates: prev.candidates.map((c) => (c.id === updated.id ? updated : c)) }
+          ? {
+              ...prev,
+              candidates: prev.candidates.map((c) =>
+                c.id === updated.id ? { ...c, ...updated } : c,
+              ),
+            }
           : prev,
       );
     } catch (e) {
       if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
-        setEnrichError(`${e.message} Add an Apollo key in Integrations.`);
+        setEnrichError(`${e.message} Add an Apollo or Hunter key in Integrations.`);
         return;
       }
       setEnrichError(e instanceof Error ? e.message : "Enrichment failed");
     } finally {
       setEnrichingId(null);
+    }
+  }
+
+  async function findLinkedIn(candidate: Candidate) {
+    const confirmed = window.confirm(
+      `Look up a LinkedIn profile for ${candidate.person_name} via Exa? This uses your own Exa ` +
+        "credit for one lookup.",
+    );
+    if (!confirmed) return;
+
+    setFindingLinkedInId(candidate.id);
+    setLinkedInError(null);
+    try {
+      const updated = await apiFetch<Candidate>(
+        `/applications/${applicationId}/contacts/${candidate.id}/find-linkedin`,
+        { method: "POST" },
+      );
+      // Same reasoning as enrich() above -- merge, never replace.
+      setState((prev) =>
+        prev.kind === "ready"
+          ? {
+              ...prev,
+              candidates: prev.candidates.map((c) =>
+                c.id === updated.id ? { ...c, ...updated } : c,
+              ),
+            }
+          : prev,
+      );
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
+        setLinkedInError(`${e.message} Add an Exa key in Integrations.`);
+        return;
+      }
+      setLinkedInError(e instanceof Error ? e.message : "LinkedIn lookup failed");
+    } finally {
+      setFindingLinkedInId(null);
     }
   }
 
@@ -234,6 +298,7 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
       {state.kind === "loading" && <div className="bj-muted bj-small">Loading...</div>}
       {state.kind === "error" && <div className="bj-error">{state.message}</div>}
       {enrichError && <div className="bj-error">{enrichError}</div>}
+      {linkedInError && <div className="bj-error">{linkedInError}</div>}
       {draftError && <div className="bj-error">{draftError}</div>}
       {pushError && <div className="bj-error">{pushError}</div>}
 
@@ -294,6 +359,17 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
                         {candidate.enriched_email_status ? ` (${candidate.enriched_email_status})` : ""}
                         {candidate.enrichment_provider ? ` via ${candidate.enrichment_provider}` : ""}
                       </span>
+                    ) : candidate.enriched_at ? (
+                      <span className="bj-small bj-muted">
+                        No confirmed email found.{" "}
+                        <button
+                          className="bj-link-button"
+                          onClick={() => void enrich(candidate)}
+                          disabled={enrichingId === candidate.id}
+                        >
+                          {enrichingId === candidate.id ? "Looking up..." : "Retry"}
+                        </button>
+                      </span>
                     ) : (
                       <button
                         className="bj-primary"
@@ -301,6 +377,34 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
                         disabled={enrichingId === candidate.id}
                       >
                         {enrichingId === candidate.id ? "Looking up..." : "Find work email"}
+                      </button>
+                    )}
+                    {candidate.discovered_linkedin_url ? (
+                      <span className="bj-small">
+                        <a href={candidate.discovered_linkedin_url} target="_blank" rel="noreferrer">
+                          LinkedIn
+                        </a>
+                        {candidate.linkedin_discovery_confidence
+                          ? ` (${candidate.linkedin_discovery_confidence})`
+                          : ""}
+                      </span>
+                    ) : candidate.linkedin_discovered_at ? (
+                      <span className="bj-small bj-muted">
+                        No LinkedIn profile found.{" "}
+                        <button
+                          className="bj-link-button"
+                          onClick={() => void findLinkedIn(candidate)}
+                          disabled={findingLinkedInId === candidate.id}
+                        >
+                          {findingLinkedInId === candidate.id ? "Looking up..." : "Retry"}
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => void findLinkedIn(candidate)}
+                        disabled={findingLinkedInId === candidate.id}
+                      >
+                        {findingLinkedInId === candidate.id ? "Looking up..." : "Find LinkedIn"}
                       </button>
                     )}
                     <button

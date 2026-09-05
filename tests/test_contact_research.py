@@ -79,6 +79,32 @@ def test_build_contact_query_plan_marks_the_hiring_post_query_firecrawl_only() -
     assert "site:linkedin.com/posts" in hiring_lead_queries[0]["query"]
 
 
+def test_build_contact_query_plan_omits_the_x_lane_by_default() -> None:
+    queries = build_contact_query_plan("Acme", "Engineer")
+    assert not any("site:x.com" in q["query"] or "site:twitter.com" in q["query"] for q in queries)
+
+
+def test_build_contact_query_plan_adds_the_x_lane_when_included() -> None:
+    """outreach-v2-search-first.md Phase K -- gated by the caller, not
+    this function (see contact_research_routes.generate_contacts)."""
+    queries = build_contact_query_plan("Acme", "Engineer", include_x_lane=True)
+    x_queries = [q for q in queries if "site:x.com" in q["query"]]
+    twitter_queries = [q for q in queries if "site:twitter.com" in q["query"]]
+    assert len(x_queries) == 1
+    assert len(twitter_queries) == 1
+    assert x_queries[0]["provider"] == "firecrawl"
+    assert twitter_queries[0]["provider"] == "firecrawl"
+    assert x_queries[0]["persona"] == "hiring_lead"
+
+
+def test_build_contact_query_plan_x_lane_anchors_to_the_product_term_too() -> None:
+    queries = build_contact_query_plan(
+        "Acme", "Engineer", product_terms=["Widget"], include_x_lane=True
+    )
+    x_query = next(q for q in queries if "site:x.com" in q["query"])
+    assert "Widget" in x_query["query"]
+
+
 def test_guess_github_org_slug_strips_to_alphanumeric() -> None:
     assert guess_github_org_slug("Sarvam AI") == "sarvamai"
     assert guess_github_org_slug("OpenAI") == "openai"
@@ -377,6 +403,40 @@ def test_extract_and_rank_candidates_classifies_evidence_kind_from_the_url_not_t
     assert candidates[0]["evidence"][0]["evidence_kind"] == "linkedin_profile"
 
 
+def test_extract_and_rank_candidates_classifies_an_x_status_url_as_x_post() -> None:
+    """outreach-v2-search-first.md Phase K -- the "host-based classifier"
+    the plan names, applied the same "URL, not the LLM" way as every
+    other evidence_kind here."""
+    hit = SearchHit(
+        title="Jane Doe on X",
+        url="https://x.com/janedoe/status/1234567890123456789",
+        snippet="Jane Doe: We're hiring for the platform team at Acme!",
+        published_at=None,
+    )
+    query = ContactQuery(persona="hiring_lead", query="site:x.com Acme hiring")
+    raw = json.dumps([_candidate_payload(source_url=hit["url"])])
+    candidates = extract_and_rank_candidates(raw, [(query, [hit])], company="Acme")
+    assert len(candidates) == 1
+    assert candidates[0]["evidence"][0]["evidence_kind"] == "x_post"
+
+
+def test_extract_and_rank_candidates_does_not_classify_a_netflix_url_as_x_post() -> None:
+    """Regression test for the same real host-substring bug as
+    apply_l2_search_filters -- a URL on an unrelated domain ending in
+    "x.com" must never be misclassified as an X/Twitter post."""
+    hit = SearchHit(
+        title="Jane Doe -- Director of Engineering",
+        url="https://netflix.com/status/some-page",
+        snippet="Jane Doe leads the platform engineering org at Netflix.",
+        published_at=None,
+    )
+    query = ContactQuery(persona="senior_leader", query="Netflix director VP engineering")
+    raw = json.dumps([_candidate_payload(source_url=hit["url"])])
+    candidates = extract_and_rank_candidates(raw, [(query, [hit])], company="Netflix")
+    assert len(candidates) == 1
+    assert candidates[0]["evidence"][0]["evidence_kind"] == "search_snippet"
+
+
 def test_extract_and_rank_candidates_drops_a_candidate_with_anchored_former_employer_language() -> (
     None
 ):
@@ -484,6 +544,85 @@ def test_apply_l2_search_filters_drops_a_login_wall_placeholder() -> None:
     filtered, dropped = apply_l2_search_filters([(query, [hit])], company="Acme")
     assert filtered[0][1] == []
     assert any("login-wall" in reason for reason in dropped)
+
+
+def _x_status_url(handle: str, *, days_ago: float) -> str:
+    """Same Snowflake-epoch math as `_snowflake_post_url` -- X inherited
+    Twitter's identical id scheme and epoch (contact_research.py's own
+    `_SNOWFLAKE_EPOCH_MS` is shared between both platforms)."""
+    epoch_ms = 1288834974657
+    posted_ms = int(datetime.now(UTC).timestamp() * 1000) - int(days_ago * 86400 * 1000)
+    status_id = (posted_ms - epoch_ms) << 22
+    return f"https://x.com/{handle}/status/{status_id}"
+
+
+def _x_hit(*, handle: str, days_ago: float, snippet: str) -> SearchHit:
+    return SearchHit(
+        title=f"{handle} on X",
+        url=_x_status_url(handle, days_ago=days_ago),
+        snippet=snippet,
+        published_at=None,
+    )
+
+
+def test_apply_l2_search_filters_keeps_a_fresh_x_hiring_post() -> None:
+    hit = _x_hit(
+        handle="janedoe", days_ago=5, snippet="We're hiring for the platform team at Acme!"
+    )
+    query = ContactQuery(persona="hiring_lead", query="site:x.com Acme hiring")
+    filtered, dropped = apply_l2_search_filters([(query, [hit])], company="Acme")
+    assert filtered[0][1] == [hit]
+    assert dropped == []
+
+
+def test_apply_l2_search_filters_drops_an_x_post_with_no_hiring_intent_language() -> None:
+    hit = _x_hit(handle="janedoe", days_ago=5, snippet="Great time at the Acme offsite this week.")
+    query = ContactQuery(persona="hiring_lead", query="site:x.com Acme hiring")
+    filtered, dropped = apply_l2_search_filters([(query, [hit])], company="Acme")
+    assert filtered[0][1] == []
+    assert any("hiring-intent" in reason for reason in dropped)
+
+
+def test_apply_l2_search_filters_drops_a_stale_x_post() -> None:
+    hit = _x_hit(
+        handle="janedoe", days_ago=800, snippet="We're hiring for the platform team at Acme!"
+    )
+    query = ContactQuery(persona="hiring_lead", query="site:x.com Acme hiring")
+    filtered, dropped = apply_l2_search_filters([(query, [hit])], company="Acme")
+    assert filtered[0][1] == []
+    assert any("stale post" in reason for reason in dropped)
+
+
+def test_apply_l2_search_filters_does_not_treat_netflix_as_an_x_post() -> None:
+    """Regression test for a real, adversarially-confirmed bug: a bare
+    substring check ("x.com/" in url) also matches any ordinary domain
+    ending in the letter "x" before ".com/" (netflix.com/, fedex.com/,
+    vertex.com/, xerox.com/, rolex.com/, ...). A real company-site hit
+    for one of these companies must never be routed through the X/
+    Twitter-only hiring-intent gate and dropped."""
+    hit = SearchHit(
+        title="Jane Doe -- Director of Engineering",
+        url="https://netflix.com/jobs/director-of-engineering",
+        snippet="Jane Doe leads the platform engineering org at Netflix.",
+        published_at=None,
+    )
+    query = ContactQuery(persona="senior_leader", query="Netflix director VP engineering")
+    filtered, dropped = apply_l2_search_filters([(query, [hit])], company="Netflix")
+    assert filtered[0][1] == [hit]
+    assert dropped == []
+
+
+def test_apply_l2_search_filters_applies_the_same_checks_to_twitter_com() -> None:
+    hit = SearchHit(
+        title="janedoe on Twitter",
+        url=_x_status_url("janedoe", days_ago=5).replace("x.com", "twitter.com"),
+        snippet="Great time at the Acme offsite this week.",
+        published_at=None,
+    )
+    query = ContactQuery(persona="hiring_lead", query="site:twitter.com Acme hiring")
+    filtered, dropped = apply_l2_search_filters([(query, [hit])], company="Acme")
+    assert filtered[0][1] == []
+    assert any("hiring-intent" in reason for reason in dropped)
 
 
 def test_apply_l2_search_filters_dedupes_the_same_url_across_two_queries() -> None:

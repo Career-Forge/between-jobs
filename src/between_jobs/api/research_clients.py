@@ -22,6 +22,7 @@ from .errors import ApiError
 _YOU_COM_URL = "https://ydc-index.io/v1/search"
 _FIRECRAWL_URL = "https://api.firecrawl.dev/v2/search"
 _FIRECRAWL_SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape"
+_EXA_SEARCH_URL = "https://api.exa.ai/search"
 
 _TIMEOUT_SECONDS = 20.0
 _SCRAPE_TIMEOUT_SECONDS = 30.0
@@ -42,6 +43,17 @@ class SearchHit(TypedDict):
 class ScrapedPage(TypedDict):
     markdown: str
     title: str | None
+
+
+class ExaPersonHit(TypedDict):
+    url: str
+    entity_name: str | None
+    """From the result's own `entities[]` where `type == "person"` --
+    Exa's structured name for whoever it thinks this result is about,
+    distinct from the page `title` (which is often the whole post/profile
+    headline, not a bare name). `None` when Exa returned no person entity
+    for this result at all -- the caller must not trust the URL alone as
+    a confirmed match in that case."""
 
 
 async def search_you_com(
@@ -150,3 +162,45 @@ async def scrape_firecrawl(http: httpx.AsyncClient, *, api_key: str, url: str) -
         markdown=data.get("markdown", "") or "",
         title=metadata.get("title") or metadata.get("og:title"),
     )
+
+
+async def search_exa_people(
+    http: httpx.AsyncClient, *, api_key: str, query: str, num_results: int = 3
+) -> list[ExaPersonHit]:
+    """outreach-v2-search-first.md Phase K -- Exa's `category="people"`
+    search (there is no separate "People Search" endpoint; confirmed
+    against Exa's own current docs before writing this). Auth is the
+    `x-api-key` header, not `Authorization: Bearer` -- Exa's docs list
+    both as valid, this one matches every one of its own examples."""
+    try:
+        response = await http.post(
+            _EXA_SEARCH_URL,
+            headers={"x-api-key": api_key},
+            json={"query": query, "category": "people", "type": "auto", "numResults": num_results},
+            timeout=_TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError as e:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE", "Couldn't reach Exa. Try again in a moment.", retryable=True
+        ) from e
+
+    if response.status_code >= 400:
+        raise ApiError("PROVIDER_UNAVAILABLE", "Exa couldn't complete that search.", retryable=True)
+
+    body = response.json()
+    hits: list[ExaPersonHit] = []
+    for result in body.get("results") or []:
+        if not isinstance(result, dict):
+            continue
+        url = result.get("url")
+        if not isinstance(url, str):
+            continue
+        entity_name: str | None = None
+        for entity in result.get("entities") or []:
+            if isinstance(entity, dict) and entity.get("type") == "person":
+                name = (entity.get("properties") or {}).get("name")
+                if isinstance(name, str) and name:
+                    entity_name = name
+                    break
+        hits.append(ExaPersonHit(url=url, entity_name=entity_name))
+    return hits

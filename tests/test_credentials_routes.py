@@ -392,6 +392,66 @@ def test_save_apollo_credential_rejects_an_invalid_key() -> None:
     assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
 
 
+def test_save_hunter_credential_validates_via_the_free_account_endpoint() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=200)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="hunter", secret="hunter-key", model=None),
+        )
+
+    assert response.status_code == 201
+    url, kwargs = http.requests[0]
+    assert url == "https://api.hunter.io/v2/account"
+    assert kwargs["params"]["api_key"] == "hunter-key"
+
+
+def test_save_hunter_credential_rejects_an_invalid_key() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=401)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="hunter", secret="bad-key", model=None),
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
+
+
+def test_save_exa_credential_validates_via_a_real_search_call() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=200)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="exa", secret="exa-key", model=None),
+        )
+
+    assert response.status_code == 201
+    url, kwargs = http.requests[0]
+    assert url == "https://api.exa.ai/search"
+    assert kwargs["headers"]["x-api-key"] == "exa-key"
+
+
+def test_save_exa_credential_rejects_an_invalid_key() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=401)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            "/credentials",
+            json=_save_body(service="search", provider="exa", secret="bad-key", model=None),
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
+
+
 def test_save_adzuna_credential_rejects_missing_secret_2() -> None:
     supabase = _FakeSupabaseClient()
     http = _FakeHttpClient(status_code=200)

@@ -42,6 +42,7 @@ import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Literal, NotRequired, TypedDict, cast
+from urllib.parse import urlparse
 
 import httpx
 
@@ -133,7 +134,11 @@ def _extract_role_keywords(role_title: str, *, limit: int = 3) -> str:
 
 
 def build_contact_query_plan(
-    company: str, role_title: str, *, product_terms: list[str] | None = None
+    company: str,
+    role_title: str,
+    *,
+    product_terms: list[str] | None = None,
+    include_x_lane: bool = False,
 ) -> list[ContactQuery]:
     """A fixed, bounded query plan, same discipline as
     `company_intel_pipeline.build_query_plan` ("the planner cannot
@@ -157,7 +162,15 @@ def build_contact_query_plan(
     product-anchored manager queries are simply omitted when it's empty.
     The trial confirmed the remaining four queries "still work" without
     it (the recruiter/TA/hiring-post/director-VP lane), so this is a
-    graceful degrade, not a broken state."""
+    graceful degrade, not a broken state.
+
+    `include_x_lane` is Phase K's own optional X/Twitter "we're hiring"
+    lane, gated by the caller (contact_research_routes.py) to companies
+    NOT found in `company_tiers`' Fortune-500-based index -- a startup
+    founder's own hiring tweet is real signal; a random employee's tweet
+    at a company the size of AMD is noise. The caller decides the gate,
+    not this function, matching how `product_terms` already keeps this
+    function pure and testable without an async DB dependency."""
     role_keywords = _extract_role_keywords(role_title)
     queries: list[ContactQuery] = [
         ContactQuery(
@@ -193,6 +206,22 @@ def build_contact_query_plan(
             ContactQuery(
                 persona="manager",
                 query=f"{company} {product_phrase} team lead",
+            )
+        )
+    if include_x_lane:
+        hiring_suffix = f" {product_terms[0]}" if product_terms else ""
+        queries.append(
+            ContactQuery(
+                persona="hiring_lead",
+                query=f"site:x.com {company} hiring{hiring_suffix}",
+                provider="firecrawl",
+            )
+        )
+        queries.append(
+            ContactQuery(
+                persona="hiring_lead",
+                query=f"site:twitter.com {company} hiring{hiring_suffix}",
+                provider="firecrawl",
             )
         )
     return queries
@@ -361,14 +390,16 @@ so a post that merely mentions the word in passing (an "AMD" fan account
 retweeting someone else's hiring post) doesn't survive on query match
 alone."""
 
-_LINKEDIN_POST_MAX_AGE_DAYS = 365
+_HIRING_POST_MAX_AGE_DAYS = 365
 """No fixed cutoff came out of the trial itself -- deliberately generous
 and disclosed rather than tuned: a hiring post over a year old is very
 likely for a req that's since closed or been reposted under a new
-activity id, but there's no live-verified data yet suggesting a tighter
-number is safe."""
+activity/status id, but there's no live-verified data yet suggesting a
+tighter number is safe. Shared between the LinkedIn-posts lane and
+Phase K's X/Twitter lane -- no evidence either platform needs a
+different cutoff."""
 
-_LINKEDIN_SNOWFLAKE_EPOCH_MS = 1288834974657  # 2010-11-04, the LinkedIn/Twitter Snowflake epoch
+_SNOWFLAKE_EPOCH_MS = 1288834974657  # 2010-11-04, the LinkedIn/Twitter Snowflake epoch
 
 
 def _linkedin_activity_id(url: str) -> int | None:
@@ -378,19 +409,55 @@ def _linkedin_activity_id(url: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _linkedin_post_age_days(url: str, *, now: datetime | None = None) -> float | None:
-    """LinkedIn (like Twitter/Discord) mints post ids as Snowflake-style
-    64-bit integers: the top 41 bits (`id >> 22`) are a millisecond
-    timestamp since 2010-11-04. This is a real, zero-page-fetch
-    freshness signal living entirely in the URL -- not an approximation
-    from crawling anything."""
-    activity_id = _linkedin_activity_id(url)
-    if activity_id is None:
-        return None
-    posted_at_ms = (activity_id >> 22) + _LINKEDIN_SNOWFLAKE_EPOCH_MS
+def _snowflake_id_age_days(snowflake_id: int, *, now: datetime | None = None) -> float:
+    """The top 41 bits (`id >> 22`) of a Snowflake-style 64-bit id are a
+    millisecond timestamp since 2010-11-04 -- true for both LinkedIn's
+    own activity ids and X/Twitter's own status ids (X inherited
+    Twitter's exact id scheme, same documented epoch). A real,
+    zero-page-fetch freshness signal living entirely in the URL, shared
+    by `_linkedin_post_age_days` and the X-lane status-id check below."""
+    posted_at_ms = (snowflake_id >> 22) + _SNOWFLAKE_EPOCH_MS
     posted_at = datetime.fromtimestamp(posted_at_ms / 1000, tz=UTC)
     reference = now or datetime.now(UTC)
     return (reference - posted_at).total_seconds() / 86400
+
+
+def _linkedin_post_age_days(url: str, *, now: datetime | None = None) -> float | None:
+    activity_id = _linkedin_activity_id(url)
+    if activity_id is None:
+        return None
+    return _snowflake_id_age_days(activity_id, now=now)
+
+
+_X_HOSTS = frozenset({"x.com", "www.x.com", "twitter.com", "www.twitter.com"})
+
+
+def _is_x_or_twitter_host(url: str) -> bool:
+    """A real host check, not a substring test -- an adversarial review
+    caught that `"x.com/" in url.lower()` also matches any ordinary
+    domain merely ending in the letter "x" before ".com/" (netflix.com/,
+    fedex.com/, vertex.com/, xerox.com/, rolex.com/, ...), silently
+    routing a normal company-site hit through filtering meant only for
+    actual X/Twitter status URLs."""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    return host in _X_HOSTS
+
+
+def _x_status_id(url: str) -> int | None:
+    """Extract the numeric status id from an `x.com/<handle>/status/<id>`
+    or `twitter.com/<handle>/status/<id>` URL, if present."""
+    match = re.search(r"/status/(\d{15,20})", url)
+    return int(match.group(1)) if match else None
+
+
+def _x_post_age_days(url: str, *, now: datetime | None = None) -> float | None:
+    status_id = _x_status_id(url)
+    if status_id is None:
+        return None
+    return _snowflake_id_age_days(status_id, now=now)
 
 
 def _is_brand_account_post(url: str, company: str) -> bool:
@@ -437,6 +504,17 @@ def apply_l2_search_filters(
     `extract_and_rank_candidates` already does -- two different queries
     can and do return the same URL.
 
+    Phase K's X/Twitter lane reuses the hiring-intent check and the
+    Snowflake-id freshness cutoff (X status ids use the identical scheme)
+    but deliberately NOT the brand-account-post check -- that one is
+    anchored to LinkedIn's own `/posts/{slug}_.../` URL shape, which has
+    no X/Twitter equivalent, and no live-verified data exists yet for a
+    reliable "is this the company's own handle" guess on X specifically.
+    Disclosed as a real, narrower v1 guardrail set for the X lane, not a
+    silent gap -- the extraction LLM's own re-grounding check
+    (`_source_explicitly_names_candidate`) plus the former-employee guard
+    still apply regardless of source.
+
     Returns the filtered results plus a list of human-readable drop
     reasons for the run's own diagnostics (never surfaced to the end
     user, no PII beyond a URL that was already public)."""
@@ -446,12 +524,13 @@ def apply_l2_search_filters(
     for query, hits in results:
         kept_hits: list[SearchHit] = []
         for hit in hits:
+            url_lower = hit["url"].lower()
             if hit["url"] in seen_urls:
                 continue
             if _is_login_wall_hit(hit):
                 dropped.append(f"login-wall placeholder: {hit['url']}")
                 continue
-            if "linkedin.com/posts/" in hit["url"].lower():
+            if "linkedin.com/posts/" in url_lower:
                 if _is_brand_account_post(hit["url"], company):
                     dropped.append(f"brand-account post: {hit['url']}")
                     continue
@@ -459,7 +538,15 @@ def apply_l2_search_filters(
                     dropped.append(f"no hiring-intent language: {hit['url']}")
                     continue
                 age_days = _linkedin_post_age_days(hit["url"])
-                if age_days is not None and age_days > _LINKEDIN_POST_MAX_AGE_DAYS:
+                if age_days is not None and age_days > _HIRING_POST_MAX_AGE_DAYS:
+                    dropped.append(f"stale post ({age_days:.0f}d old): {hit['url']}")
+                    continue
+            elif _is_x_or_twitter_host(hit["url"]):
+                if not _has_hiring_intent(hit):
+                    dropped.append(f"no hiring-intent language: {hit['url']}")
+                    continue
+                age_days = _x_post_age_days(hit["url"])
+                if age_days is not None and age_days > _HIRING_POST_MAX_AGE_DAYS:
                     dropped.append(f"stale post ({age_days:.0f}d old): {hit['url']}")
                     continue
             seen_urls.add(hit["url"])
@@ -484,6 +571,8 @@ def _classify_evidence_kind(url: str) -> str:
         return "company_page"
     if "github.com/" in u:
         return "github_membership"
+    if _is_x_or_twitter_host(url) and "/status/" in u:
+        return "x_post"
     return "search_snippet"
 
 

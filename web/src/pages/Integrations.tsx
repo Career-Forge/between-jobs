@@ -51,6 +51,8 @@ export default function Integrations() {
   const youCom = credentials?.find((c) => c.service === "search" && c.provider === "you_com") ?? null;
   const firecrawl = credentials?.find((c) => c.service === "search" && c.provider === "firecrawl") ?? null;
   const apollo = credentials?.find((c) => c.service === "search" && c.provider === "apollo") ?? null;
+  const hunter = credentials?.find((c) => c.service === "search" && c.provider === "hunter") ?? null;
+  const exa = credentials?.find((c) => c.service === "search" && c.provider === "exa") ?? null;
   const gmail = credentials?.find((c) => c.service === "oauth" && c.provider === "gmail") ?? null;
 
   return (
@@ -89,6 +91,26 @@ export default function Integrations() {
           placeholder="your-apollo-key"
           note="Used only for contact enrichment, one already-selected person at a time -- never a bulk search. Validated against Apollo's free health-check endpoint, at no cost."
           credential={apollo}
+          onChanged={load}
+        />
+      )}
+      {credentials !== null && (
+        <SearchProviderCard
+          title="Hunter"
+          provider="hunter"
+          placeholder="your-hunter-key"
+          note="A second contact-enrichment provider, tried automatically alongside Apollo for one already-selected person -- never a bulk search. Validated against Hunter's free account endpoint, at no cost."
+          credential={hunter}
+          onChanged={load}
+        />
+      )}
+      {credentials !== null && (
+        <SearchProviderCard
+          title="Exa"
+          provider="exa"
+          placeholder="your-exa-key"
+          note="Finds a LinkedIn profile URL for one already-selected contact who doesn't already have one -- never an email. Validating costs a small real charge -- a live search call, since Exa has no free key-check endpoint."
+          credential={exa}
           onChanged={load}
         />
       )}

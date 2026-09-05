@@ -27,6 +27,15 @@ gates that requirement and routes to `_TWO_SECRET_VALIDATORS` instead of
 the plain single-secret `_VALIDATORS`; every other provider here never
 sets `secret_2` at all.
 
+Hunter and Exa (outreach-v2-search-first.md Phase K) split the same way
+Apollo/You.com already do: Hunter's `/v2/account` is a real, free,
+non-billed endpoint (confirmed against its current OpenAPI spec) -- zero
+cost to validate. Exa has no equivalent self-service endpoint (its only
+usage-reporting API needs a team-level admin key, confirmed against its
+current docs, not a regular saved API key) -- validating an Exa key
+costs a real, tiny (`numResults=1`) search call, same tradeoff as the
+other six.
+
 Saving an LLM credential also upserts the "default" capability_preference
 to point at it -- the only capability distinction this platform draws for
 LLM execution mode is "configured or not." Search-provider credentials
@@ -67,6 +76,8 @@ _SUPPORTED_CREDENTIALS = {
     ("search", "adzuna"),
     ("search", "usajobs"),
     ("search", "apollo"),
+    ("search", "hunter"),
+    ("search", "exa"),
 }
 
 _TWO_SECRET_PROVIDERS = {("search", "adzuna"), ("search", "usajobs")}
@@ -264,6 +275,61 @@ async def _validate_jsearch_key(http: httpx.AsyncClient, secret: str) -> None:
         )
 
 
+async def _validate_hunter_key(http: httpx.AsyncClient, secret: str) -> None:
+    """Hunter has a real, free, non-billed account-info endpoint
+    (confirmed against its current OpenAPI spec before writing this) --
+    unlike Exa below, validating a Hunter key costs nothing."""
+    try:
+        response = await http.get(
+            "https://api.hunter.io/v2/account", params={"api_key": secret}, timeout=10.0
+        )
+    except httpx.HTTPError as e:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Couldn't reach Hunter to validate that key. Try again in a moment.",
+            retryable=True,
+        ) from e
+
+    if response.status_code in (401, 403):
+        raise ApiError("PROVIDER_REJECTED", "Hunter rejected that key.")
+    if response.status_code >= 400:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Hunter couldn't validate that key right now. Try again in a moment.",
+            retryable=True,
+        )
+
+
+async def _validate_exa_key(http: httpx.AsyncClient, secret: str) -> None:
+    """No free key-info endpoint exists for Exa (its usage-reporting API
+    needs a team-level admin key, confirmed against its current docs,
+    not the kind of key a user saves here) -- same tradeoff as You.com/
+    Serper/Brave/JSearch's own validators: a real, tiny (1-result)
+    search call."""
+    try:
+        response = await http.post(
+            "https://api.exa.ai/search",
+            headers={"x-api-key": secret},
+            json={"query": "between-jobs key validation", "numResults": 1},
+            timeout=10.0,
+        )
+    except httpx.HTTPError as e:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Couldn't reach Exa to validate that key. Try again in a moment.",
+            retryable=True,
+        ) from e
+
+    if response.status_code in (401, 403):
+        raise ApiError("PROVIDER_REJECTED", "Exa rejected that key.")
+    if response.status_code >= 400:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Exa couldn't validate that key right now. Try again in a moment.",
+            retryable=True,
+        )
+
+
 _VALIDATORS = {
     ("llm", "openrouter"): _validate_openrouter_key,
     ("search", "you_com"): _validate_you_com_key,
@@ -272,6 +338,8 @@ _VALIDATORS = {
     ("search", "brave"): _validate_brave_key,
     ("search", "jsearch"): _validate_jsearch_key,
     ("search", "apollo"): _validate_apollo_key,
+    ("search", "hunter"): _validate_hunter_key,
+    ("search", "exa"): _validate_exa_key,
 }
 
 

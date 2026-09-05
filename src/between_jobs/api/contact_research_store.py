@@ -215,3 +215,33 @@ async def save_enrichment(
         .execute()
     )
     return cast(dict[str, Any], result.data[0])
+
+
+async def save_linkedin_discovery(
+    supabase: AsyncClient,
+    candidate_id: str,
+    *,
+    linkedin_url: str | None,
+    confidence: str,
+    provider: str,
+    discovered_at: str,
+) -> dict[str, Any]:
+    """outreach-v2-search-first.md Phase K -- same single-overwrite shape
+    as `save_enrichment` above, not an evidence-log append. A `None`
+    `linkedin_url` (Exa found nothing) is still recorded, same "no
+    result" != "never tried" distinction `save_enrichment` already
+    draws via `enriched_at`."""
+    result = (
+        await supabase.table("contact_candidates")
+        .update(
+            {
+                "discovered_linkedin_url": linkedin_url,
+                "linkedin_discovery_confidence": confidence,
+                "linkedin_discovery_provider": provider,
+                "linkedin_discovered_at": discovered_at,
+            }
+        )
+        .eq("id", candidate_id)
+        .execute()
+    )
+    return cast(dict[str, Any], result.data[0])
