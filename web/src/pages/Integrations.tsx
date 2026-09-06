@@ -27,7 +27,14 @@ interface CredentialSummary {
   model: string | null;
   is_validated: boolean;
   updated_at: string;
+  // OAuth-specific (Gmail reply/status parsing) -- the real scope
+  // string Google granted, captured at connect time. null for every
+  // credential saved before this field existed, or for a non-OAuth
+  // BYOK credential that never had a scope concept at all.
+  scope: string | null;
 }
+
+const _GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 
 export default function Integrations() {
   const [credentials, setCredentials] = useState<CredentialSummary[] | null>(null);
@@ -372,9 +379,16 @@ function GmailConnectCard({
   credential: CredentialSummary | null;
   onChanged: () => Promise<void>;
 }) {
-  // outreach-contactfinder.md Phase F. Draft-only: the OAuth scope this
-  // requests (gmail.compose) can't send an email even if the code tried
-  // to -- see gmail_client.py's own docstring.
+  // outreach-contactfinder.md Phase F. Draft-only: gmail.compose can't
+  // send an email even if the code tried to -- see gmail_client.py's own
+  // docstring. Widened (outreach-v2-search-first.md's Gmail reply/status
+  // parsing) to also request gmail.readonly, needed for the reply-
+  // checker poller. A credential connected before that widening (or
+  // whose own `scope` was never recorded) is missing that grant --
+  // detected here from the real scope string, not assumed, so a stale
+  // compose-only connection shows as needing reconnect rather than a
+  // silently-incomplete "Connected".
+  const needsReconnect = credential !== null && !credential.scope?.includes(_GMAIL_READONLY_SCOPE);
   const [connecting, setConnecting] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -413,7 +427,9 @@ function GmailConnectCard({
     <div className="bj-card">
       <div className="bj-card-header">
         <h2>Gmail</h2>
-        {credential ? (
+        {needsReconnect ? (
+          <span className="bj-badge-gold">Needs reconnect</span>
+        ) : credential ? (
           <span className="bj-badge-emerald">Connected</span>
         ) : (
           <span className="bj-badge-gold">Not connected</span>
@@ -422,16 +438,32 @@ function GmailConnectCard({
       <p className="bj-muted">
         Lets ContactFinder land an outreach draft directly in your real Gmail -- draft-only,
         always. Nothing is ever sent automatically; you still open Gmail and press Send yourself.
+        Also lets the platform check a thread you've drafted into for a reply, so a response can
+        surface as a real update -- it never reads anything else in your inbox.
       </p>
+      {needsReconnect && (
+        <p className="bj-muted bj-small">
+          Connected before reply-checking existed -- reconnect to grant the extra read access.
+        </p>
+      )}
       {error && <div className="bj-error">{error}</div>}
       <div className="bj-actions">
-        {credential ? (
+        {needsReconnect ? (
+          <button className="bj-primary" onClick={() => void connect()} disabled={connecting}>
+            {connecting ? "Connecting..." : "Reconnect Gmail"}
+          </button>
+        ) : credential ? (
           <button onClick={() => void disconnect()} disabled={removing}>
             {removing ? "Disconnecting..." : "Disconnect Gmail"}
           </button>
         ) : (
           <button className="bj-primary" onClick={() => void connect()} disabled={connecting}>
             {connecting ? "Connecting..." : "Connect Gmail"}
+          </button>
+        )}
+        {needsReconnect && (
+          <button onClick={() => void disconnect()} disabled={removing}>
+            {removing ? "Disconnecting..." : "Disconnect Gmail"}
           </button>
         )}
       </div>

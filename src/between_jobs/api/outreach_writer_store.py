@@ -55,15 +55,30 @@ async def get_latest_draft(supabase: AsyncClient, candidate_id: str) -> dict[str
 
 
 async def mark_pushed_to_gmail(
-    supabase: AsyncClient, draft_id: str, *, gmail_draft_id: str, pushed_to_gmail_at: str
+    supabase: AsyncClient,
+    draft_id: str,
+    *,
+    gmail_draft_id: str,
+    gmail_thread_id: str,
+    pushed_to_gmail_at: str,
 ) -> dict[str, Any]:
     """Phase F -- records that this exact outreach draft became a real
     Gmail draft, so a re-click on the same candidate returns the
     existing state (idempotent) instead of creating a second Gmail
-    draft for the same message."""
+    draft for the same message. `gmail_thread_id` (outreach-v2-search-
+    first.md's Gmail reply/status parsing) is the one value the reply-
+    checker poller needs on hand to ever ask Gmail what's happened in
+    this thread since -- captured here rather than at poll time, since
+    Gmail assigns it at draft-creation, before any send happens."""
     result = (
         await supabase.table("outreach_drafts")
-        .update({"gmail_draft_id": gmail_draft_id, "pushed_to_gmail_at": pushed_to_gmail_at})
+        .update(
+            {
+                "gmail_draft_id": gmail_draft_id,
+                "gmail_thread_id": gmail_thread_id,
+                "pushed_to_gmail_at": pushed_to_gmail_at,
+            }
+        )
         .eq("id", draft_id)
         .execute()
     )

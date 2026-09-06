@@ -122,8 +122,10 @@ async def test_mark_pushed_to_gmail_updates_the_draft_row() -> None:
         supabase,  # type: ignore[arg-type]
         _DRAFT_ID,
         gmail_draft_id="gmail-draft-abc",
+        gmail_thread_id="gmail-thread-abc",
         pushed_to_gmail_at="2026-09-03T00:00:00Z",
     )
 
     assert result["gmail_draft_id"] == "gmail-draft-abc"
     assert drafts_table.update_calls[0]["gmail_draft_id"] == "gmail-draft-abc"
+    assert drafts_table.update_calls[0]["gmail_thread_id"] == "gmail-thread-abc"

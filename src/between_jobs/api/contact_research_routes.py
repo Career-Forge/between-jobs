@@ -386,9 +386,10 @@ async def push_outreach_to_gmail(
     http: httpx.AsyncClient = Depends(get_http_client),
 ) -> dict[str, Any]:
     """Phase F -- lands the already-approved Phase E draft in the user's
-    real Gmail as an actual draft. Never sends: the stored credential's
-    own scope (`gmail.compose`, minted in gmail_oauth_routes.py) doesn't
-    authorize Gmail's send endpoint at all, and this function never
+    real Gmail as an actual draft. Never sends: no scope this app ever
+    requests (`gmail.compose`, widened to also include `gmail.readonly`
+    for Gmail reply/status parsing -- see gmail_client.py's own module
+    docstring) authorizes Gmail's send endpoint, and this function never
     calls it regardless. Re-clicking after a successful push is a safe
     no-op (returns the existing state) rather than creating a second
     Gmail draft for the same message -- Proposal §28.7's own "no recent
@@ -431,7 +432,7 @@ async def push_outreach_to_gmail(
         client_id=config["client_id"],
         client_secret=config["client_secret"],
     )
-    gmail_draft_id = await create_gmail_draft(
+    gmail_draft = await create_gmail_draft(
         http,
         access_token=access_token,
         to_email=candidate["enriched_email"],
@@ -442,7 +443,8 @@ async def push_outreach_to_gmail(
     updated = await mark_pushed_to_gmail(
         supabase,
         draft["id"],
-        gmail_draft_id=gmail_draft_id,
+        gmail_draft_id=gmail_draft["id"],
+        gmail_thread_id=gmail_draft["thread_id"],
         pushed_to_gmail_at=datetime.now(UTC).isoformat(),
     )
     return updated

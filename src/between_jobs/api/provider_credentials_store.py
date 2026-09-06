@@ -34,6 +34,7 @@ async def save_credential(
     model: str | None = None,
     base_url: str | None = None,
     secret_2: str | None = None,
+    scope: str | None = None,
     is_validated: bool = False,
 ) -> dict[str, Any]:
     """Encrypts `secret` (and `secret_2`, if given) and upserts on
@@ -41,7 +42,12 @@ async def save_credential(
     service/provider replaces the stored key (a deliberate rotate, not a
     duplicate). `secret_2` is a generic second-value slot (Job Finder
     P4c) -- what it MEANS depends on the provider: Adzuna's `app_key`,
-    USAJobs' registered email. Most providers never set it."""
+    USAJobs' registered email. Most providers never set it. `scope` is
+    OAuth-specific (Gmail reply/status parsing, outreach-v2-search-
+    first.md) -- the real scope string Google actually granted, captured
+    from the token endpoint's own response rather than assumed from
+    whatever was requested; every non-OAuth BYOK credential leaves it
+    unset."""
     encrypted = await _encrypt(supabase, secret)
     encrypted_2 = await _encrypt(supabase, secret_2) if secret_2 is not None else None
     result = (
@@ -55,6 +61,7 @@ async def save_credential(
                 "secret_encrypted": encrypted,
                 "secret_2_encrypted": encrypted_2,
                 "base_url": base_url,
+                "scope": scope,
                 "is_validated": is_validated,
             },
             on_conflict="user_id,service,provider",
@@ -85,13 +92,19 @@ async def get_decrypted_credential(
     CredentialResolver resolving a BYOK credential for a real API call).
     Returns the full shape a caller needs to actually use the credential
     (provider, model, base_url, decrypted secret, decrypted secret_2 --
-    None for the vast majority of providers that only have one), not just
-    the secret -- a resolver needs `base_url` too (e.g. a custom/
+    None for the vast majority of providers that only have one, and
+    scope -- OAuth-specific, None for every non-OAuth credential), not
+    just the secret -- a resolver needs `base_url` too (e.g. a custom/
     self-hosted endpoint), and re-fetching the row separately would be a
-    second round trip for data already in hand."""
+    second round trip for data already in hand. An adversarial review
+    caught that `scope` was written on save but never selected back here
+    -- the one function every real Gmail-credential caller actually
+    uses (contact_research_routes.py's push_outreach_to_gmail today; the
+    reply-checker poller tomorrow) -- silently making it impossible for
+    any caller to ever learn what was actually granted."""
     result = (
         await supabase.table("provider_credentials")
-        .select("provider, model, base_url, secret_encrypted, secret_2_encrypted")
+        .select("provider, model, base_url, scope, secret_encrypted, secret_2_encrypted")
         .eq("user_id", user_id)
         .eq("service", service)
         .eq("provider", provider)
@@ -110,6 +123,7 @@ async def get_decrypted_credential(
         "provider": row["provider"],
         "model": row["model"],
         "base_url": row["base_url"],
+        "scope": row.get("scope"),
         "secret": secret,
         "secret_2": secret_2,
     }

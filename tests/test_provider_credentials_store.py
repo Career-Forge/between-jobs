@@ -137,6 +137,7 @@ async def test_get_decrypted_credential_found() -> None:
                 "provider": "openrouter",
                 "model": "anthropic/claude-sonnet-4-6",
                 "base_url": None,
+                "scope": None,
                 "secret_encrypted": "ciphertext-abc",
                 "secret_2_encrypted": None,
             }
@@ -155,10 +156,44 @@ async def test_get_decrypted_credential_found() -> None:
         "provider": "openrouter",
         "model": "anthropic/claude-sonnet-4-6",
         "base_url": None,
+        "scope": None,
         "secret": "sk-or-v1-plaintext",
         "secret_2": None,
     }
     assert client.rpc_calls == [("decrypt_secret", {"p_ciphertext": "ciphertext-abc"})]
+
+
+async def test_get_decrypted_credential_returns_the_real_granted_scope() -> None:
+    """Regression test for a real, adversarially-confirmed gap: `scope`
+    was written on save but never selected back here, silently making
+    it impossible for the reply-checker poller (or any caller) to ever
+    learn what Gmail scope was actually granted."""
+    table = _FakeTable(
+        select_rows=[
+            {
+                "provider": "gmail",
+                "model": None,
+                "base_url": None,
+                "scope": "https://www.googleapis.com/auth/gmail.compose "
+                "https://www.googleapis.com/auth/gmail.readonly",
+                "secret_encrypted": "ciphertext-abc",
+                "secret_2_encrypted": None,
+            }
+        ]
+    )
+    client = _FakeSupabaseClient(table, decrypt_output="refresh-token-value")
+
+    result = await get_decrypted_credential(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        service="oauth",
+        provider="gmail",
+    )
+
+    assert result["scope"] == (
+        "https://www.googleapis.com/auth/gmail.compose "
+        "https://www.googleapis.com/auth/gmail.readonly"
+    )
 
 
 async def test_save_credential_encrypts_secret_2_when_given() -> None:
@@ -200,6 +235,53 @@ async def test_save_credential_leaves_secret_2_null_when_not_given() -> None:
     assert len(encrypt_calls) == 1  # secret_2 never touches encrypt_secret when absent
     data, _ = table.upsert_calls[0]
     assert data["secret_2_encrypted"] is None
+
+
+async def test_save_credential_persists_scope_when_given() -> None:
+    """Gmail reply/status parsing (outreach-v2-search-first.md) -- the
+    real granted scope string, captured at OAuth-callback time, needs
+    to survive the upsert as plaintext (never encrypted -- it isn't a
+    secret)."""
+    table = _FakeTable(select_rows=[], upsert_row={"id": "cred-1"})
+    client = _FakeSupabaseClient(table, encrypt_output="ciphertext-abc")
+
+    await save_credential(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        service="oauth",
+        provider="gmail",
+        secret="refresh-token-value",
+        scope="https://www.googleapis.com/auth/gmail.compose "
+        "https://www.googleapis.com/auth/gmail.readonly",
+    )
+
+    data, _ = table.upsert_calls[0]
+    assert data["scope"] == (
+        "https://www.googleapis.com/auth/gmail.compose "
+        "https://www.googleapis.com/auth/gmail.readonly"
+    )
+    # scope must never be run through encrypt_secret -- a review caught
+    # that only checking the stored value (and not this) would still
+    # pass under a regression that encrypted scope and discarded the
+    # ciphertext, still writing the raw value alongside a real, unwanted
+    # encrypt_secret RPC call carrying it as plaintext input.
+    assert client.rpc_calls == [("encrypt_secret", {"p_plaintext": "refresh-token-value"})]
+
+
+async def test_save_credential_leaves_scope_null_when_not_given() -> None:
+    table = _FakeTable(select_rows=[], upsert_row={"id": "cred-1"})
+    client = _FakeSupabaseClient(table, encrypt_output="ciphertext-abc")
+
+    await save_credential(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        service="llm",
+        provider="openrouter",
+        secret="sk-or-v1-plaintext",
+    )
+
+    data, _ = table.upsert_calls[0]
+    assert data["scope"] is None
 
 
 async def test_get_decrypted_credential_decrypts_secret_2_when_present() -> None:

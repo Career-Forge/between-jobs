@@ -181,7 +181,14 @@ def test_gmail_callback_success_saves_the_refresh_token_and_shows_html() -> None
         "created_at": datetime.now(UTC).isoformat(),
     }
     supabase = _FakeSupabaseClient(oauth_states=_OauthStatesTable(select_rows=[state_row]))
-    http = _FakeHttpClient(body={"access_token": "at-1", "refresh_token": "rt-1"})
+    http = _FakeHttpClient(
+        body={
+            "access_token": "at-1",
+            "refresh_token": "rt-1",
+            "scope": "https://www.googleapis.com/auth/gmail.compose "
+            "https://www.googleapis.com/auth/gmail.readonly",
+        }
+    )
 
     with _client(supabase, http, authenticated=False) as client:
         response = client.get(
@@ -199,6 +206,31 @@ def test_gmail_callback_success_saves_the_refresh_token_and_shows_html() -> None
     assert saved["is_validated"] is True
     # the raw refresh token itself is never stored -- only ciphertext
     assert saved["secret_encrypted"] == "ciphertext-abc"
+    # the real granted scope -- captured from Google's own token response,
+    # not assumed to match whatever was requested
+    assert saved["scope"] == (
+        "https://www.googleapis.com/auth/gmail.compose "
+        "https://www.googleapis.com/auth/gmail.readonly"
+    )
+
+
+def test_gmail_callback_persists_a_null_scope_when_google_omits_it() -> None:
+    state_row = {
+        "state": "state-abc",
+        "user_id": _USER_ID,
+        "provider": "gmail",
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    supabase = _FakeSupabaseClient(oauth_states=_OauthStatesTable(select_rows=[state_row]))
+    http = _FakeHttpClient(body={"access_token": "at-1", "refresh_token": "rt-1"})
+
+    with _client(supabase, http, authenticated=False) as client:
+        response = client.get(
+            "/oauth/gmail/callback", params={"code": "auth-code", "state": "state-abc"}
+        )
+
+    assert response.status_code == 200
+    assert supabase.provider_credentials.upsert_calls[0]["scope"] is None
 
 
 def test_gmail_callback_with_expired_state_shows_a_clean_failure_page() -> None:

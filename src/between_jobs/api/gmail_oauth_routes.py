@@ -117,6 +117,7 @@ async def gmail_callback(
         service="oauth",
         provider=_PROVIDER,
         secret=tokens["refresh_token"],
+        scope=tokens["scope"],
         is_validated=True,
     )
     return HTMLResponse(_SUCCESS_HTML)

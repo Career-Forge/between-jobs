@@ -275,7 +275,9 @@ class _FakeHttpClient:
         )
         self.gmail_draft_status_code = gmail_draft_status_code
         self.gmail_draft_body = (
-            gmail_draft_body if gmail_draft_body is not None else {"id": "gmail-draft-1"}
+            gmail_draft_body
+            if gmail_draft_body is not None
+            else {"id": "gmail-draft-1", "message": {"id": "msg-1", "threadId": "gmail-thread-1"}}
         )
         self.post_calls: list[str] = []
         self.get_calls: list[str] = []
@@ -1169,7 +1171,12 @@ def test_push_outreach_to_gmail_success_creates_a_real_gmail_draft() -> None:
         contact_candidates=_FakeTable(select_rows=[dict(_ENRICHED_CANDIDATE_ROW)]),
         outreach_drafts=_FakeTable(select_rows=[dict(_DRAFT_ROW)]),
     )
-    http = _FakeHttpClient(gmail_draft_body={"id": "gmail-draft-xyz"})
+    http = _FakeHttpClient(
+        gmail_draft_body={
+            "id": "gmail-draft-xyz",
+            "message": {"id": "msg-xyz", "threadId": "gmail-thread-xyz"},
+        }
+    )
 
     with _client(supabase, http) as client:
         response = client.post(
@@ -1179,12 +1186,23 @@ def test_push_outreach_to_gmail_success_creates_a_real_gmail_draft() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["gmail_draft_id"] == "gmail-draft-xyz"
+    assert body["gmail_thread_id"] == "gmail-thread-xyz"
     assert any("gmail.googleapis.com" in c for c in http.post_calls)
     assert not any("gmail.googleapis.com" in c and "send" in c for c in http.post_calls)
 
 
 def test_push_outreach_to_gmail_is_idempotent_on_a_second_call() -> None:
-    already_pushed = {**_DRAFT_ROW, "gmail_draft_id": "gmail-draft-existing"}
+    """A real already-pushed row always has gmail_thread_id set alongside
+    gmail_draft_id (mark_pushed_to_gmail writes both together) -- the
+    fixture and assertion here mirror that, closing a real, adversarially
+    -confirmed gap where this test previously couldn't have caught a
+    regression that stopped persisting/returning gmail_thread_id on the
+    idempotent short-circuit path."""
+    already_pushed = {
+        **_DRAFT_ROW,
+        "gmail_draft_id": "gmail-draft-existing",
+        "gmail_thread_id": "gmail-thread-existing",
+    }
     supabase = _FakeSupabaseClient(
         provider_credentials={("oauth", "gmail"): _GMAIL_CREDENTIAL_ROW},
         contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
@@ -1199,6 +1217,8 @@ def test_push_outreach_to_gmail_is_idempotent_on_a_second_call() -> None:
         )
 
     assert response.status_code == 200
-    assert response.json()["gmail_draft_id"] == "gmail-draft-existing"
+    body = response.json()
+    assert body["gmail_draft_id"] == "gmail-draft-existing"
+    assert body["gmail_thread_id"] == "gmail-thread-existing"
     # never re-called Gmail for an already-pushed draft
     assert not any("gmail.googleapis.com" in c for c in http.post_calls)
