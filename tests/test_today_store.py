@@ -53,15 +53,28 @@ class _FakeTable:
 
 
 class _FakeSupabaseClient:
-    def __init__(self, today_items: _FakeTable, *, job_matches: _FakeTable | None = None) -> None:
+    def __init__(
+        self,
+        today_items: _FakeTable,
+        *,
+        job_matches: _FakeTable | None = None,
+        status_proposal_links: _FakeTable | None = None,
+        status_proposals: _FakeTable | None = None,
+    ) -> None:
         self.today_items = today_items
         self.job_matches = job_matches or _FakeTable(select_rows=[])
+        self.status_proposal_links = status_proposal_links or _FakeTable(select_rows=[])
+        self.status_proposals = status_proposals or _FakeTable(select_rows=[])
 
     def table(self, name: str) -> Any:
         if name == "today_items":
             return self.today_items
         if name == "today_item_job_matches":
             return self.job_matches
+        if name == "today_item_status_proposals":
+            return self.status_proposal_links
+        if name == "application_status_proposals":
+            return self.status_proposals
         raise AssertionError(f"unexpected table: {name}")
 
 
@@ -73,7 +86,7 @@ async def test_list_today_items_returns_the_rows() -> None:
 
     result = await list_today_items(client, _USER_ID)  # type: ignore[arg-type]
 
-    assert result == [{**rows[0], "job_match": None}]
+    assert result == [{**rows[0], "job_match": None, "status_proposal": None}]
 
 
 async def test_list_today_items_embeds_the_job_match_for_high_fit_job_items() -> None:
@@ -85,7 +98,7 @@ async def test_list_today_items_embeds_the_job_match_for_high_fit_job_items() ->
 
     result = await list_today_items(client, _USER_ID)  # type: ignore[arg-type]
 
-    assert result == [{**rows[0], "job_match": match}]
+    assert result == [{**rows[0], "job_match": match, "status_proposal": None}]
 
 
 async def test_list_today_items_skips_the_batch_query_when_no_job_match_items() -> None:
@@ -98,6 +111,54 @@ async def test_list_today_items_skips_the_batch_query_when_no_job_match_items() 
     await list_today_items(client, _USER_ID)  # type: ignore[arg-type]
 
     assert job_matches.select_calls == 0
+
+
+_PROPOSAL_ID = "70000000-0000-0000-0000-000000000001"
+
+
+async def test_list_today_items_embeds_the_status_proposal_for_status_proposal_items() -> None:
+    rows = [{"id": _ITEM_ID, "kind": "status_proposal", "headline": "✉️ Possible update"}]
+    link = {"today_item_id": _ITEM_ID, "application_status_proposal_id": _PROPOSAL_ID}
+    proposal = {"id": _PROPOSAL_ID, "proposed_type": "interview.requested", "confidence": 0.5}
+    client = _FakeSupabaseClient(
+        _FakeTable(select_rows=rows),
+        status_proposal_links=_FakeTable(select_rows=[link]),
+        status_proposals=_FakeTable(select_rows=[proposal]),
+    )
+
+    result = await list_today_items(client, _USER_ID)  # type: ignore[arg-type]
+
+    assert result == [{**rows[0], "job_match": None, "status_proposal": proposal}]
+
+
+async def test_list_today_items_status_proposal_is_none_when_the_proposal_is_gone() -> None:
+    """The underlying application (and therefore this proposal, via its
+    own `on delete cascade`) can be deleted after the Today item was
+    created but before it's listed -- the item must still render, just
+    without the now-gone proposal's data, not raise."""
+    rows = [{"id": _ITEM_ID, "kind": "status_proposal", "headline": "✉️ Possible update"}]
+    link = {"today_item_id": _ITEM_ID, "application_status_proposal_id": _PROPOSAL_ID}
+    client = _FakeSupabaseClient(
+        _FakeTable(select_rows=rows),
+        status_proposal_links=_FakeTable(select_rows=[link]),
+        status_proposals=_FakeTable(select_rows=[]),
+    )
+
+    result = await list_today_items(client, _USER_ID)  # type: ignore[arg-type]
+
+    assert result == [{**rows[0], "job_match": None, "status_proposal": None}]
+
+
+async def test_list_today_items_skips_the_status_proposal_query_when_no_such_items() -> None:
+    rows = [
+        {"id": _ITEM_ID, "kind": "job_tracked", "headline": "🆕 Tracking Staff Engineer @ Acme"}
+    ]
+    links = _FakeTable(select_rows=[])
+    client = _FakeSupabaseClient(_FakeTable(select_rows=rows), status_proposal_links=links)
+
+    await list_today_items(client, _USER_ID)  # type: ignore[arg-type]
+
+    assert links.select_calls == 0
 
 
 async def test_dismiss_today_item_sets_dismissed_at() -> None:

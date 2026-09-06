@@ -124,14 +124,22 @@ class _UpdateBuilder:
         self._table = table
         self._data = data
         self._filters: dict[str, Any] = {}
+        self._not_filters: dict[str, Any] = {}
 
     def eq(self, column: str, value: Any) -> _UpdateBuilder:
         self._filters[column] = value
         return self
 
+    def neq(self, column: str, value: Any) -> _UpdateBuilder:
+        self._not_filters[column] = value
+        return self
+
     async def execute(self) -> SimpleNamespace:
         matched = [
-            r for r in self._table.rows if all(r.get(k) == v for k, v in self._filters.items())
+            r
+            for r in self._table.rows
+            if all(r.get(k) == v for k, v in self._filters.items())
+            and all(r.get(k) != v for k, v in self._not_filters.items())
         ]
         for row in matched:
             row.update(self._data)
@@ -220,8 +228,13 @@ class _ProposalsInsertBuilder:
 
 
 class _ProposalsTable:
-    def __init__(self, *, raise_on_message_id: set[str] | None = None) -> None:
-        self.rows: list[dict[str, Any]] = []
+    def __init__(
+        self,
+        *,
+        raise_on_message_id: set[str] | None = None,
+        initial_rows: list[dict[str, Any]] | None = None,
+    ) -> None:
+        self.rows: list[dict[str, Any]] = list(initial_rows or [])
         self.insert_calls: list[dict[str, Any]] = []
         self.raise_on_message_id = raise_on_message_id or set()
 
@@ -630,6 +643,46 @@ async def test_above_threshold_mappable_proposal_auto_applies_the_stage_change(
     assert (
         supabase.event_outbox.insert_calls == []
     )  # auto-applied -- no separate review-queue event
+
+
+async def test_auto_apply_dismisses_other_pending_proposals_for_the_same_application(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression guard, same reasoning as today_routes.py's own human
+    Accept path: an older sibling proposal left 'pending' after this one
+    auto-applies could later be accepted (by a human, via the Today
+    feed) and silently regress a stage that already moved forward."""
+    _patch_get_thread(monkeypatch, _sent_and_reply_thread())
+    _patch_refresh(monkeypatch)
+    _patch_llm(
+        monkeypatch,
+        json.dumps(
+            {
+                "proposed_type": "interview.requested",
+                "confidence": 0.9,
+                "evidence_spans": ["We'd love to schedule a call this week"],
+            }
+        ),
+    )
+    sibling = {
+        "id": "sibling-proposal-1",
+        "user_id": _USER_ID,
+        "application_id": _APPLICATION_ID,
+        "outreach_draft_id": "60000000-0000-0000-0000-000000000099",
+        "proposed_type": "assessment.received",
+        "confidence": 0.3,
+        "status": "pending",
+        "resolved_at": None,
+    }
+    supabase = _FakeSupabase(application_status_proposals=_ProposalsTable(initial_rows=[sibling]))
+
+    await run_reply_check_once(_http(), supabase)  # type: ignore[arg-type]
+
+    sibling_row = next(
+        r for r in supabase.application_status_proposals.rows if r["id"] == "sibling-proposal-1"
+    )
+    assert sibling_row["status"] == "dismissed"
+    assert sibling_row["resolved_at"] is not None
 
 
 async def test_auto_apply_falls_through_to_the_review_queue_when_the_application_is_gone(

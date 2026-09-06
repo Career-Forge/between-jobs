@@ -63,6 +63,11 @@ from postgrest.exceptions import APIError
 from supabase import AsyncClient
 
 from .application_status_classifier import AUTO_TRACK_THRESHOLD, StatusProposal, classify_reply
+from .application_status_proposals_store import (
+    STAGE_MAP,
+    dismiss_other_pending_proposals,
+    resolve_status_proposal,
+)
 from .applications_store import change_stage
 from .credential_resolver import resolve
 from .errors import ApiError
@@ -110,23 +115,6 @@ _CLASSIFIER_CAPABILITY = "gmail_reply_check"
 enforces these, per `resolve()`'s own docstring; falls back to the
 "default" capability preference until a user configures this one
 specifically, same as `saved_search_matcher`'s own "job_scoring"."""
-
-_STAGE_MAP: dict[str, str] = {
-    "assessment.received": "screening",
-    "interview.requested": "interviewing",
-    "interview.scheduled": "interviewing",
-    "application.rejected": "rejected",
-    "offer.received": "offer",
-}
-"""Only 4 of the classifier's 8 proposed types correspond to an actual
-NEW Kanban stage (K1's real, enforced vocabulary: saved/applied/
-screening/interviewing/offer/rejected/withdrawn). `application.
-acknowledged` and `recruiter.replied` are real signals but don't move the
-pipeline forward to any specific new stage -- auto-apply is structurally
-impossible for those two (and for `unknown`, whose confidence is always
-0.0 and therefore never reaches `AUTO_TRACK_THRESHOLD` regardless of this
-map), so they always go to the pending review queue instead, never
-guessed into an ill-fitting stage."""
 
 
 def _to_epoch_ms(value: str | None) -> int:
@@ -227,7 +215,7 @@ async def _record_proposal(
         raise
 
     proposal_row = cast(dict[str, Any], result.data[0])
-    new_status = _STAGE_MAP.get(proposal["proposed_type"])
+    new_status = STAGE_MAP.get(proposal["proposed_type"])
     auto_applied = False
 
     if new_status is not None and proposal["confidence"] >= AUTO_TRACK_THRESHOLD:
@@ -241,11 +229,9 @@ async def _record_proposal(
                 idempotency_key=idempotency_key,
                 actor_type="email_monitor",
             )
-            await (
-                supabase.table("application_status_proposals")
-                .update({"status": "accepted", "resolved_at": datetime.now(UTC).isoformat()})
-                .eq("id", proposal_row["id"])
-                .execute()
+            await resolve_status_proposal(supabase, user_id, proposal_row["id"], status="accepted")
+            await dismiss_other_pending_proposals(
+                supabase, user_id, application_id, except_proposal_id=proposal_row["id"]
             )
             auto_applied = True
         except Exception:
