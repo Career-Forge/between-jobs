@@ -32,6 +32,19 @@ The other four kinds all fire in direct response to something the user
 just did, so they stay pull-only (Today feed) for now -- a scheduled
 digest covering those too is a deliberately deferred follow-up, not
 built here.
+
+Gmail reply/status parsing R3 adds `gmail_reply.status_proposed.v1` (a
+below-threshold status proposal from `gmail_reply_checker.py`, worth a
+human's review) -- like `job_registry.match_found.v1`, its own
+`aggregate_id` isn't an `applications` row (it's the `application_status_
+proposals` row itself), so it gets the same "branch before the generic
+application lookup" treatment. Unlike that event, this one genuinely IS
+about a real application -- its own resolved `application_id` rides
+along in the payload -- so its Today item still carries `application_id`
+for real, just sourced from the payload instead of `aggregate_id`. An
+ABOVE-threshold proposal never reaches this listener at all: it
+auto-applies via the existing `change_stage`, which already produces its
+own `application.stage_changed.v1` event through the generic path above.
 """
 
 from __future__ import annotations
@@ -42,6 +55,7 @@ from postgrest.exceptions import APIError
 
 from supabase import AsyncClient
 
+from .application_status_proposals_store import StatusProposalNotFound, get_status_proposal
 from .applications_store import ApplicationNotFound, get_application
 from .jobs_store import SnapshotNotFound, get_snapshot
 from .saved_searches_store import SavedSearchNotFound, get_saved_search
@@ -49,6 +63,22 @@ from .telegram_client import TelegramClient
 from .telegram_identity import get_chat_id
 
 _UNIQUE_VIOLATION = "23505"
+
+_PROPOSAL_LABELS: dict[str, str] = {
+    "application.acknowledged": "application acknowledged",
+    "assessment.received": "assessment received",
+    "interview.requested": "interview requested",
+    "interview.scheduled": "interview scheduled",
+    "application.rejected": "application rejected",
+    "offer.received": "offer received",
+    "recruiter.replied": "recruiter replied",
+    "unknown": "new reply",
+}
+"""Human-readable labels for the classifier's 8-value taxonomy -- this
+event only ever carries a below-threshold (`status='pending'`) proposal;
+an above-threshold one auto-applies via `change_stage` instead, which
+already produces its own `application.stage_changed.v1` Today item, so
+there's no separate "high-confidence" rendering to add here."""
 
 
 class _Rendered(TypedDict):
@@ -76,6 +106,16 @@ def _render_job_match(payload: dict[str, Any]) -> _Rendered:
     return _Rendered(kind="high_fit_job", headline=headline, detail=payload.get("one_liner"))
 
 
+def _render_status_proposal(payload: dict[str, Any]) -> _Rendered:
+    label = _PROPOSAL_LABELS.get(payload.get("proposed_type", "unknown"), "new reply")
+    confidence_pct = int(payload.get("confidence", 0.0) * 100)
+    return _Rendered(
+        kind="status_proposal",
+        headline=f"✉️ Possible update: {label}",
+        detail=f"{confidence_pct}% confidence -- review and confirm",
+    )
+
+
 async def _render(supabase: AsyncClient, row: dict[str, Any]) -> _Rendered | None:
     """None means "not a today_item" -- either an event_type this
     listener doesn't recognize (a future subscriber's event landed in the
@@ -99,6 +139,21 @@ async def _render(supabase: AsyncClient, row: dict[str, Any]) -> _Rendered | Non
         except SavedSearchNotFound:
             return None
         return _render_job_match(payload)
+
+    if event_type == "gmail_reply.status_proposed.v1":
+        # Gmail reply/status parsing R3 -- `aggregate_id` here is the
+        # application_status_proposals row itself, not an application (a
+        # user, or a cascading application delete, can remove the
+        # underlying proposal between the poller publishing this event
+        # and the outbox worker processing it -- the same "confirm it
+        # still exists first" precedent job_registry.match_found.v1 uses
+        # above, so a stale reference never surfaces as an uncaught
+        # foreign-key violation out of the RPC insert below).
+        try:
+            await get_status_proposal(supabase, row["user_id"], row["aggregate_id"])
+        except StatusProposalNotFound:
+            return None
+        return _render_status_proposal(payload)
 
     user_id = row["user_id"]
     application_id = row["aggregate_id"]
@@ -170,6 +225,32 @@ async def _insert_high_fit_job_item(
     ).execute()
 
 
+async def _insert_status_proposal_item(
+    supabase: AsyncClient, row: dict[str, Any], rendered: _Rendered
+) -> None:
+    """The two-table (today_items + today_item_status_proposals) atomic
+    insert, via the migration's own `insert_status_proposal_today_item`
+    Postgres function -- same "two tables change together, or neither
+    does" precedent as `_insert_high_fit_job_item` above. Unlike that
+    event, this one IS about a real application -- `p_application_id`
+    comes straight off the payload the poller already resolved (a real
+    three-table join it would be wasteful to redo here), so this Today
+    item shows up associated with its application like every other kind
+    except `high_fit_job`."""
+    payload = row["payload"]
+    await supabase.rpc(
+        "insert_status_proposal_today_item",
+        {
+            "p_user_id": row["user_id"],
+            "p_application_id": payload["application_id"],
+            "p_headline": rendered["headline"],
+            "p_detail": rendered["detail"],
+            "p_source_outbox_event_id": row["id"],
+            "p_application_status_proposal_id": row["aggregate_id"],
+        },
+    ).execute()
+
+
 async def _push_job_match(
     supabase: AsyncClient, telegram: TelegramClient, row: dict[str, Any], rendered: _Rendered
 ) -> None:
@@ -214,6 +295,8 @@ async def handle_batch(
                 await _insert_high_fit_job_item(supabase, row, rendered)
                 if telegram is not None:
                     await _push_job_match(supabase, telegram, row, rendered)
+            elif row["event_type"] == "gmail_reply.status_proposed.v1":
+                await _insert_status_proposal_item(supabase, row, rendered)
             else:
                 await (
                     supabase.table("today_items")

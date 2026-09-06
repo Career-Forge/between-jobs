@@ -39,6 +39,7 @@ from .discovery_routes import router as discovery_router
 from .env import require_env
 from .errors import ApiError
 from .gmail_oauth_routes import router as gmail_oauth_router
+from .gmail_reply_checker import run_reply_check_forever
 from .interview_practice_routes import router as interview_practice_router
 from .job_registry_poller import run_poller_forever
 from .link_routes import router as link_router
@@ -126,6 +127,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             run_matcher_forever(matcher_supabase)
         )
 
+    # Gmail reply/status parsing R3 -- same shape as the three workers
+    # above. Its own dedicated Supabase client, gated by its own
+    # DISABLE_* env var, reuses `app.state.http` for its outbound Gmail
+    # calls (refresh_access_token/get_thread) rather than minting a
+    # second httpx.AsyncClient.
+    app.state.gmail_reply_checker_task = None
+    if not os.environ.get("DISABLE_GMAIL_REPLY_CHECKER"):
+        reply_checker_supabase, _reply_checker_url = await create_supabase_client()
+        app.state.gmail_reply_checker_task = asyncio.create_task(
+            run_reply_check_forever(app.state.http, reply_checker_supabase)
+        )
+
     yield
 
     if app.state.outbox_worker_task is not None:
@@ -142,6 +155,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.saved_search_matcher_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await app.state.saved_search_matcher_task
+
+    if app.state.gmail_reply_checker_task is not None:
+        app.state.gmail_reply_checker_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.gmail_reply_checker_task
 
     await app.state.http.aclose()
 

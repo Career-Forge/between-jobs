@@ -78,7 +78,7 @@ class _InsertBuilder:
 
 
 class _FakeRpcBuilder:
-    def __init__(self, table: _FakeHighFitJobRpc, params: dict[str, Any]) -> None:
+    def __init__(self, table: Any, params: dict[str, Any]) -> None:
         self._table = table
         self._params = params
 
@@ -92,6 +92,12 @@ class _FakeRpcBuilder:
 
 
 class _FakeHighFitJobRpc:
+    def __init__(self, *, raise_unique_violation_on: set[str] | None = None) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.raise_on = raise_unique_violation_on or set()
+
+
+class _FakeStatusProposalRpc:
     def __init__(self, *, raise_unique_violation_on: set[str] | None = None) -> None:
         self.calls: list[dict[str, Any]] = []
         self.raise_on = raise_unique_violation_on or set()
@@ -130,8 +136,10 @@ class _FakeSupabaseClient:
         job_snapshots: list[dict[str, Any]] | None = None,
         today_items: _FakeTodayItemsTable | None = None,
         high_fit_job_rpc: _FakeHighFitJobRpc | None = None,
+        status_proposal_rpc: _FakeStatusProposalRpc | None = None,
         telegram_chat_id: int | None = None,
         saved_search_exists: bool = True,
+        status_proposal_exists: bool = True,
     ) -> None:
         self._applications = _FakeTable(
             applications if applications is not None else [_APPLICATION_ROW]
@@ -141,9 +149,15 @@ class _FakeSupabaseClient:
         )
         self.today_items = today_items or _FakeTodayItemsTable()
         self.high_fit_job_rpc = high_fit_job_rpc or _FakeHighFitJobRpc()
+        self.status_proposal_rpc = status_proposal_rpc or _FakeStatusProposalRpc()
         self._channel_identities = _FakeChannelIdentitiesTable(telegram_chat_id)
         self._saved_searches = _FakeTable(
             [{"id": _SAVED_SEARCH_ID, "user_id": _USER_ID}] if saved_search_exists else []
+        )
+        self._application_status_proposals = _FakeTable(
+            [{"id": _PROPOSAL_ID, "user_id": _USER_ID, "status": "pending"}]
+            if status_proposal_exists
+            else []
         )
 
     def table(self, name: str) -> Any:
@@ -153,11 +167,14 @@ class _FakeSupabaseClient:
             "today_items": self.today_items,
             "channel_identities": self._channel_identities,
             "saved_searches": self._saved_searches,
+            "application_status_proposals": self._application_status_proposals,
         }[name]
 
     def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
         if fn == "insert_high_fit_job_today_item":
             return _FakeRpcBuilder(self.high_fit_job_rpc, params)
+        if fn == "insert_status_proposal_today_item":
+            return _FakeRpcBuilder(self.status_proposal_rpc, params)
         raise AssertionError(f"unexpected rpc: {fn}")
 
 
@@ -399,6 +416,87 @@ async def test_job_match_found_does_not_push_on_idempotent_duplicate() -> None:
 
     assert inserted == 0
     assert telegram.sent == []
+
+
+_PROPOSAL_ID = "70000000-0000-0000-0000-000000000001"
+
+
+def _status_proposal_row(
+    *, event_id: str = "evt-proposal-1", **payload_overrides: Any
+) -> dict[str, Any]:
+    payload = {
+        "application_id": _APPLICATION_ID,
+        "outreach_draft_id": "60000000-0000-0000-0000-000000000001",
+        "proposed_type": "interview.requested",
+        "confidence": 0.5,
+        "evidence_spans": ["We'd love to schedule a call this week"],
+        **payload_overrides,
+    }
+    return {
+        "id": event_id,
+        "user_id": _USER_ID,
+        "aggregate_id": _PROPOSAL_ID,
+        "event_type": "gmail_reply.status_proposed.v1",
+        "payload": payload,
+    }
+
+
+async def test_status_proposed_produces_a_status_proposal_item_without_touching_applications() -> (
+    None
+):
+    supabase = _FakeSupabaseClient(applications=[])  # no application row exists at all
+    row = _status_proposal_row()
+
+    inserted = await handle_batch(supabase, [row])  # type: ignore[arg-type]
+
+    assert inserted == 1
+    call = supabase.status_proposal_rpc.calls[0]
+    assert call["p_user_id"] == _USER_ID
+    assert call["p_application_id"] == _APPLICATION_ID
+    assert call["p_application_status_proposal_id"] == _PROPOSAL_ID
+    assert call["p_source_outbox_event_id"] == "evt-proposal-1"
+    assert "interview requested" in call["p_headline"]
+
+
+async def test_status_proposed_headline_reflects_the_proposed_type() -> None:
+    supabase = _FakeSupabaseClient(applications=[])
+    row = _status_proposal_row(proposed_type="offer.received", confidence=0.6)
+
+    await handle_batch(supabase, [row])  # type: ignore[arg-type]
+
+    call = supabase.status_proposal_rpc.calls[0]
+    assert "offer received" in call["p_headline"]
+    assert "60%" in call["p_detail"]
+
+
+async def test_status_proposed_is_idempotent_on_source_outbox_event_id() -> None:
+    rpc = _FakeStatusProposalRpc(raise_unique_violation_on={"evt-proposal-1"})
+    supabase = _FakeSupabaseClient(applications=[], status_proposal_rpc=rpc)
+    row = _status_proposal_row()
+
+    inserted = await handle_batch(supabase, [row])  # type: ignore[arg-type]
+
+    assert inserted == 0
+    assert rpc.calls == []
+
+
+async def test_status_proposed_skips_gracefully_when_the_proposal_was_deleted() -> None:
+    """The application (and therefore this proposal, via its own `on
+    delete cascade`) can be deleted between the poller publishing this
+    event and the outbox worker processing it -- must never surface as
+    an uncaught foreign-key violation out of the RPC insert, the same
+    real bug class Job Finder P10 fixed for job_registry.match_found.v1
+    (a different SQLSTATE, 23503, than the 23505 unique-violation
+    `handle_batch` already catches, which would otherwise propagate out
+    of `run_worker_forever`'s bare `while True` loop and kill the whole
+    outbox worker)."""
+    supabase = _FakeSupabaseClient(applications=[], status_proposal_exists=False)
+    row = _status_proposal_row()
+
+    inserted = await handle_batch(supabase, [row])  # type: ignore[arg-type]
+
+    assert inserted == 0
+    assert supabase.status_proposal_rpc.calls == []
 
 
 async def test_batch_processes_every_row_and_counts_only_successful_inserts() -> None:
