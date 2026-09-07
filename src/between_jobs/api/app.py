@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from postgrest.exceptions import APIError
 
@@ -166,6 +167,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="between-jobs", version="0.0.1", lifespan=lifespan)
+# The browser extension (browser-extension.md) calls this API directly
+# from a chrome-extension:// origin -- unlike the web frontend, which
+# never triggers a real CORS check at all (Vite's dev proxy makes its
+# requests same-origin from the browser's own point of view). Permissive
+# by design, not an oversight: every route here is already gated by a
+# verified Supabase JWT (auth.require_user_id) -- CORS only controls
+# which browser-page origins may READ a response via fetch/XHR, it is not
+# this API's authorization boundary, and no route here ever relies on a
+# cookie (allow_credentials stays False, so this can't be combined with
+# credentialed requests to leak a session).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(telegram_router)
 app.include_router(profile_router)
 app.include_router(applications_router)

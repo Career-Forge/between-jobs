@@ -1,0 +1,44 @@
+.panel {
+  padding: 1rem;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.panel h1 {
+  font-size: 1.1rem;
+  margin: 0 0 0.75rem;
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.button-row {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.fill-result {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #ddd;
+}
+
+.error {
+  color: #b00020;
+}
+
+.footer-note {
+  margin-top: 1.5rem;
+  color: #666;
+  font-size: 0.8rem;
+}
