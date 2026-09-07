@@ -323,3 +323,32 @@ class CreateSavedSearchRequest(BaseModel):
 
 class SetSavedSearchActiveRequest(BaseModel):
     is_active: bool
+
+
+class MatchApprovedAnswerRequest(BaseModel):
+    """browser-extension.md E1 -- the extension sends a screening
+    question's own normalized label text (never the raw DOM id/uuid,
+    which live DOM research found carries no semantic meaning on any of
+    Greenhouse/Lever/Ashby); `canonical_intent` is optional, populated
+    only when the selector map's own authoring already tags this field
+    with a known deterministic intent (e.g. "willing_to_relocate")."""
+
+    normalized_question: str = Field(min_length=1)
+    canonical_intent: str | None = None
+    jurisdiction: str | None = None
+
+
+class SaveApprovedAnswerRequest(BaseModel):
+    """Upserts on `(user_id, normalized_question)` -- approving the same
+    question a second time replaces the stored answer. `sensitive_category`
+    (D6) marks an EEO/demographic/work-authorization-class answer so the
+    extension's own per-field opt-in gate has something to check against;
+    left None for an ordinary factual answer."""
+
+    normalized_question: str = Field(min_length=1)
+    answer_text: str = Field(min_length=1)
+    canonical_intent: str | None = None
+    evidence_fact_ids: list[str] = Field(default_factory=list)
+    jurisdiction: str | None = None
+    sensitive_category: str | None = None
+    expires_at: str | None = None

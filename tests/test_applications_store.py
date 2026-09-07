@@ -13,6 +13,7 @@ from between_jobs.api.applications_store import (
     InvalidApplicationStatus,
     change_stage,
     create_application,
+    find_application_by_url,
     get_application,
     get_event_by_idempotency_key,
     get_latest_prepare_result,
@@ -31,6 +32,9 @@ class _ChainBuilder:
         self._rows = rows
 
     def eq(self, *_: Any, **__: Any) -> _ChainBuilder:
+        return self
+
+    def in_(self, *_: Any, **__: Any) -> _ChainBuilder:
         return self
 
     def order(self, *_: Any, **__: Any) -> _ChainBuilder:
@@ -78,12 +82,16 @@ class _FakeSupabaseClient:
         application_events: _FakeTable,
         *,
         event_outbox: _FakeTable | None = None,
+        jobs: _FakeTable | None = None,
+        job_snapshots: _FakeTable | None = None,
         rpc_data: Any = None,
         rpc_error: APIError | None = None,
     ) -> None:
         self.applications = applications
         self.application_events = application_events
         self.event_outbox = event_outbox or _FakeTable(select_rows=[])
+        self.jobs = jobs or _FakeTable(select_rows=[])
+        self.job_snapshots = job_snapshots or _FakeTable(select_rows=[])
         self.rpc_data = rpc_data
         self.rpc_error = rpc_error
         self.rpc_calls: list[tuple[str, dict[str, Any]]] = []
@@ -95,6 +103,10 @@ class _FakeSupabaseClient:
             return self.application_events
         if name == "event_outbox":
             return self.event_outbox
+        if name == "jobs":
+            return self.jobs
+        if name == "job_snapshots":
+            return self.job_snapshots
         raise AssertionError(f"unexpected table: {name}")
 
     def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
@@ -440,3 +452,116 @@ async def test_change_stage_raises_invalid_application_status_on_check_violation
             new_status="bogus",
             idempotency_key="change-1",
         )
+
+
+async def test_find_application_by_url_matches_on_snapshot_source_url() -> None:
+    application = {
+        "id": _APPLICATION_ID,
+        "user_id": _USER_ID,
+        "job_id": _JOB_ID,
+        "active_job_snapshot_id": _SNAPSHOT_ID,
+    }
+    applications = _FakeTable(select_rows=[application])
+    job_snapshots = _FakeTable(
+        select_rows=[{"id": _SNAPSHOT_ID, "source_url": "https://jobs.lever.co/acme/123"}]
+    )
+    jobs = _FakeTable(select_rows=[{"id": _JOB_ID, "canonical_url": None}])
+    client = _FakeSupabaseClient(
+        applications, _FakeTable(select_rows=[]), jobs=jobs, job_snapshots=job_snapshots
+    )
+
+    result = await find_application_by_url(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        "https://jobs.lever.co/acme/123",
+    )
+
+    assert result == application
+
+
+async def test_find_application_by_url_matches_on_job_canonical_url() -> None:
+    application = {
+        "id": _APPLICATION_ID,
+        "user_id": _USER_ID,
+        "job_id": _JOB_ID,
+        "active_job_snapshot_id": _SNAPSHOT_ID,
+    }
+    applications = _FakeTable(select_rows=[application])
+    job_snapshots = _FakeTable(
+        select_rows=[{"id": _SNAPSHOT_ID, "source_url": "https://old.example/x"}]
+    )
+    jobs = _FakeTable(
+        select_rows=[{"id": _JOB_ID, "canonical_url": "https://boards.greenhouse.io/acme/jobs/9"}]
+    )
+    client = _FakeSupabaseClient(
+        applications, _FakeTable(select_rows=[]), jobs=jobs, job_snapshots=job_snapshots
+    )
+
+    result = await find_application_by_url(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        "https://boards.greenhouse.io/acme/jobs/9",
+    )
+
+    assert result == application
+
+
+async def test_find_application_by_url_returns_none_when_no_url_matches() -> None:
+    application = {
+        "id": _APPLICATION_ID,
+        "user_id": _USER_ID,
+        "job_id": _JOB_ID,
+        "active_job_snapshot_id": _SNAPSHOT_ID,
+    }
+    applications = _FakeTable(select_rows=[application])
+    job_snapshots = _FakeTable(
+        select_rows=[{"id": _SNAPSHOT_ID, "source_url": "https://old.example/x"}]
+    )
+    jobs = _FakeTable(select_rows=[{"id": _JOB_ID, "canonical_url": None}])
+    client = _FakeSupabaseClient(
+        applications, _FakeTable(select_rows=[]), jobs=jobs, job_snapshots=job_snapshots
+    )
+
+    result = await find_application_by_url(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        "https://jobs.ashbyhq.com/acme/does-not-match",
+    )
+
+    assert result is None
+
+
+async def test_find_application_by_url_returns_none_when_user_has_no_applications() -> None:
+    client = _FakeSupabaseClient(_FakeTable(select_rows=[]), _FakeTable(select_rows=[]))
+
+    result = await find_application_by_url(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        "https://jobs.lever.co/acme/123",
+    )
+
+    assert result is None
+
+
+async def test_find_application_by_url_never_matches_an_empty_url() -> None:
+    """Regression guard for a real, adversarially-confirmed bug:
+    `create_job_from_paste` stores `source_url` as `""` for a URL-less
+    manually-pasted job (a real live path, not hypothetical), so a naive
+    exact-match against an empty query param used to false-positive-match
+    that application as "already tracked" for any unrelated page."""
+    application = {
+        "id": _APPLICATION_ID,
+        "user_id": _USER_ID,
+        "job_id": _JOB_ID,
+        "active_job_snapshot_id": _SNAPSHOT_ID,
+    }
+    applications = _FakeTable(select_rows=[application])
+    job_snapshots = _FakeTable(select_rows=[{"id": _SNAPSHOT_ID, "source_url": ""}])
+    jobs = _FakeTable(select_rows=[{"id": _JOB_ID, "canonical_url": None}])
+    client = _FakeSupabaseClient(
+        applications, _FakeTable(select_rows=[]), jobs=jobs, job_snapshots=job_snapshots
+    )
+
+    result = await find_application_by_url(client, _USER_ID, "")  # type: ignore[arg-type]
+
+    assert result is None

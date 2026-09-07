@@ -44,6 +44,13 @@ class _ChainBuilder:
     def in_(self, *_: Any, **__: Any) -> _ChainBuilder:
         return self
 
+    @property
+    def not_(self) -> _ChainBuilder:
+        return self
+
+    def is_(self, *_: Any, **__: Any) -> _ChainBuilder:
+        return self
+
     async def execute(self) -> SimpleNamespace:
         return SimpleNamespace(data=self._rows)
 
@@ -122,6 +129,7 @@ class _FakeSupabaseClient:
         job_registry_postings: _FakeTable | None = None,
         job_registry_companies: _FakeTable | None = None,
         provider_credentials: _FakeTable | None = None,
+        profile_versions: _FakeTable | None = None,
         rpc_data: Any = None,
         rpc_error: APIError | None = None,
     ) -> None:
@@ -134,6 +142,7 @@ class _FakeSupabaseClient:
         self.job_registry_postings = job_registry_postings or _FakeTable(select_rows=[])
         self.job_registry_companies = job_registry_companies or _FakeTable(select_rows=[])
         self.provider_credentials = provider_credentials or _FakeTable(select_rows=[])
+        self.profile_versions = profile_versions or _FakeTable(select_rows=[])
         self.rpc_data = rpc_data
         self.rpc_error = rpc_error
 
@@ -148,6 +157,7 @@ class _FakeSupabaseClient:
             "job_registry_postings": self.job_registry_postings,
             "job_registry_companies": self.job_registry_companies,
             "provider_credentials": self.provider_credentials,
+            "profile_versions": self.profile_versions,
         }[name]
 
     def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
@@ -661,6 +671,103 @@ def test_change_application_stage_not_found_returns_404() -> None:
             f"/applications/{_APPLICATION_ID}/stage",
             json={"new_status": "applied", "idempotency_key": "change-1"},
         )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
+def _profile_row(**personal_overrides: Any) -> dict[str, Any]:
+    personal = {
+        "name": "Jane Doe",
+        "emails": [{"address": "jane@example.com", "primary": True}],
+        "phones": [{"number": "+1-555-0100", "primary": True}],
+        "location": {"city": "New York", "region": "NY", "country": "US"},
+        "links": {"linkedin": "https://linkedin.com/in/jane"},
+    }
+    personal.update(personal_overrides)
+    return {"id": "profile-1", "user_id": _USER_ID, "canonical_json": {"personal": personal}}
+
+
+def test_extension_payload_returns_prepare_result_and_personal_info() -> None:
+    application = {"id": _APPLICATION_ID, "user_id": _USER_ID, "job_id": _JOB_ID}
+    prepared_event = {
+        "id": "event-1",
+        "user_id": _USER_ID,
+        "application_id": _APPLICATION_ID,
+        "event_type": "application.prepared",
+        "payload": {"final_score": 82},
+        "created_at": "2026-09-01T00:00:00Z",
+    }
+    supabase = _FakeSupabaseClient(
+        applications=_FakeTable(select_rows=[application]),
+        application_events=_FakeTable(select_rows=[prepared_event]),
+        profile_versions=_FakeTable(select_rows=[_profile_row()]),
+    )
+    with _client(supabase) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/extension-payload")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prepare_result"] == {"final_score": 82}
+    assert body["personal_info"]["name"] == "Jane Doe"
+    assert body["personal_info"]["email"] == "jane@example.com"
+    assert body["personal_info"]["phone"] == "+1-555-0100"
+    assert body["personal_info"]["linkedin"] == "https://linkedin.com/in/jane"
+
+
+def test_extension_payload_omits_sensitive_fields_by_default() -> None:
+    """D6 (browser-extension.md) -- EEO/demographic/work-authorization
+    fields never appear in this payload; there's no per-field opt-in
+    mechanism built yet, so the safe default is to leave them out
+    entirely rather than have them silently available to autofill."""
+    application = {"id": _APPLICATION_ID, "user_id": _USER_ID, "job_id": _JOB_ID}
+    supabase = _FakeSupabaseClient(
+        applications=_FakeTable(select_rows=[application]),
+        profile_versions=_FakeTable(
+            select_rows=[
+                _profile_row(
+                    work_authorization="US Citizen",
+                    nationality="American",
+                    dob="1990-01-01",
+                    marital_status="single",
+                    work_authorization_status={"US": "citizen"},
+                    photo="https://example.com/photo.jpg",
+                )
+            ]
+        ),
+    )
+    with _client(supabase) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/extension-payload")
+
+    body = response.json()
+    for banned_field in (
+        "work_authorization",
+        "nationality",
+        "dob",
+        "marital_status",
+        "work_authorization_status",
+        "photo",
+    ):
+        assert banned_field not in body["personal_info"], banned_field
+
+
+def test_extension_payload_personal_info_is_none_with_no_active_profile() -> None:
+    application = {"id": _APPLICATION_ID, "user_id": _USER_ID, "job_id": _JOB_ID}
+    supabase = _FakeSupabaseClient(
+        applications=_FakeTable(select_rows=[application]),
+        profile_versions=_FakeTable(select_rows=[]),
+    )
+    with _client(supabase) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/extension-payload")
+
+    assert response.status_code == 200
+    assert response.json()["personal_info"] is None
+
+
+def test_extension_payload_404s_for_a_missing_application() -> None:
+    supabase = _FakeSupabaseClient(applications=_FakeTable(select_rows=[]))
+    with _client(supabase) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/extension-payload")
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"

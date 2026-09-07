@@ -50,10 +50,42 @@ from .prepare_orchestrator import (
     latest_resume_pdf,
     run_prepare_application,
 )
+from .profile import ResumeTemplate
+from .profile_store import get_active_version
 from .research_clients import scrape_firecrawl
 from .scrape_denylist import is_denied_scrape_host
 
 router = APIRouter(prefix="/applications")
+
+
+def _extension_personal_info(profile: ResumeTemplate) -> dict[str, Any]:
+    """browser-extension.md E1's "prepared payload" personal-info
+    augmentation -- flat fields the content script can drop straight into
+    standard Greenhouse/Lever/Ashby inputs, since `PrepareApplicationResult`
+    is artifact-shaped (résumé/cover-letter refs), not field-shaped.
+
+    Deliberately excludes `work_authorization`, `dob`, `nationality`,
+    `marital_status`, `work_authorization_status`, and `photo` (D6) -- EEO/
+    demographic/work-authorization-class fields default to opt-in only and
+    have no per-field consent mechanism built yet (that lands with the
+    known-question-memory UI in E3), so the safe default for E1 is to omit
+    them from this payload entirely rather than have them silently
+    available to autofill."""
+    primary_email = next((e.address for e in profile.personal.emails if e.primary), None)
+    primary_phone = next((p.number for p in profile.personal.phones if p.primary), None)
+    return {
+        "name": profile.personal.name,
+        "email": primary_email,
+        "phone": primary_phone,
+        "location": {
+            "city": profile.personal.location.city,
+            "region": profile.personal.location.region,
+            "country": profile.personal.location.country,
+        },
+        "linkedin": profile.personal.links.linkedin,
+        "github": profile.personal.links.github,
+        "portfolio": profile.personal.links.portfolio,
+    }
 
 
 async def _with_snapshot(
@@ -279,6 +311,35 @@ async def get_prepare_result(
     `user_id`, matching every other read in this file."""
     result = await get_latest_prepare_result(supabase, user_id, application_id)
     return {"result": result}
+
+
+@router.get("/{application_id}/extension-payload")
+async def get_extension_payload(
+    application_id: str,
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> dict[str, Any]:
+    """browser-extension.md E1 -- the one call the extension's service
+    worker makes to assemble everything it needs to fill a page: the last
+    real `/prepare` outcome (artifact refs, fit/gate/warnings -- unchanged,
+    reused as-is per Proposal §29.4's own mapping) plus this user's flat
+    personal-info fields (new; `PrepareApplicationResult` alone has nothing
+    field-shaped for a content script to drop into standard inputs).
+    Doesn't re-run the engine -- same read-only shape as
+    `get_prepare_result` right above it."""
+    try:
+        await get_application(supabase, user_id, application_id)
+    except ApplicationNotFound as e:
+        raise ApiError("NOT_FOUND", f"no application found for id {application_id!r}") from e
+
+    prepare_result = await get_latest_prepare_result(supabase, user_id, application_id)
+    profile_version = await get_active_version(supabase, user_id)
+    personal_info = (
+        _extension_personal_info(ResumeTemplate.model_validate(profile_version["canonical_json"]))
+        if profile_version is not None
+        else None
+    )
+    return {"prepare_result": prepare_result, "personal_info": personal_info}
 
 
 @router.get("/{application_id}/resume.pdf")

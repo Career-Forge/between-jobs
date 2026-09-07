@@ -40,6 +40,8 @@ from postgrest.exceptions import APIError
 
 from supabase import AsyncClient
 
+from .jobs_store import get_jobs, get_snapshots
+
 _DEFAULT_STATUS = "saved"
 
 # SQLSTATE for a plain `raise exception '...'` in plpgsql -- confirmed
@@ -128,6 +130,53 @@ async def list_applications(supabase: AsyncClient, user_id: str) -> list[dict[st
         .execute()
     )
     return cast(list[dict[str, Any]], result.data)
+
+
+async def find_application_by_url(
+    supabase: AsyncClient, user_id: str, url: str
+) -> dict[str, Any] | None:
+    """browser-extension.md E1 -- resolves a browser tab's current URL back
+    to an existing tracked application, so the extension's hybrid page-
+    detection (D3) can tell "already tracked" from "offer to track" before
+    fetching a prepared payload.
+
+    Exact match only against `job_snapshots.source_url` and
+    `jobs.canonical_url` for this user's own applications -- no query-
+    string/tracking-param normalization. A real, disclosed v1 limitation:
+    an ATS appending its own tracking params to the URL the extension
+    reads from `window.location.href` (vs. what was stored when the job
+    was tracked) will miss. Batch-fetches this user's applications' own
+    snapshots/jobs and compares in Python, mirroring
+    `applications_routes._with_snapshot`'s own batch-then-merge shape --
+    fine at this table's real per-user scale (tens, not thousands, of
+    rows), not worth a dedicated SQL function for a v1 exact match.
+
+    An empty `url` never matches, even against a real stored empty string
+    (`jobs_store.create_job_from_paste` stores `source_url` as `""` for a
+    URL-less manually-pasted job, a real live path, not a hypothetical) --
+    adversarially confirmed as a real false-positive otherwise: any
+    accidental empty-string lookup would resolve to that job's application
+    as "already tracked."""
+    if not url:
+        return None
+
+    applications = await list_applications(supabase, user_id)
+    if not applications:
+        return None
+
+    snapshot_ids = list({a["active_job_snapshot_id"] for a in applications})
+    job_ids = list({a["job_id"] for a in applications})
+    snapshot_by_id = {s["id"]: s for s in await get_snapshots(supabase, snapshot_ids)}
+    jobs = await get_jobs(supabase, job_ids)
+    canonical_url_by_job_id = {j["id"]: j.get("canonical_url") for j in jobs}
+
+    for application in applications:
+        snapshot = snapshot_by_id.get(application["active_job_snapshot_id"])
+        if snapshot is not None and snapshot.get("source_url") == url:
+            return application
+        if canonical_url_by_job_id.get(application["job_id"]) == url:
+            return application
+    return None
 
 
 async def get_application(

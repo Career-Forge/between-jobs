@@ -243,3 +243,13 @@ async def get_snapshots(supabase: AsyncClient, snapshot_ids: list[str]) -> list[
         return []
     result = await supabase.table("job_snapshots").select("*").in_("id", snapshot_ids).execute()
     return cast(list[dict[str, Any]], result.data)
+
+
+async def get_jobs(supabase: AsyncClient, job_ids: list[str]) -> list[dict[str, Any]]:
+    """Batch fetch, mirroring `get_snapshots` -- browser-extension.md E1's
+    URL-to-application lookup needs `canonical_url` across a user's whole
+    application list in one round trip, not per-application."""
+    if not job_ids:
+        return []
+    result = await supabase.table("jobs").select("*").in_("id", job_ids).execute()
+    return cast(list[dict[str, Any]], result.data)

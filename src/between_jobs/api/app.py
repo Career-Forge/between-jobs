@@ -38,6 +38,7 @@ from .digest_listener import handle_batch as handle_digest_batch
 from .discovery_routes import router as discovery_router
 from .env import require_env
 from .errors import ApiError
+from .extension_routes import router as extension_router
 from .gmail_oauth_routes import router as gmail_oauth_router
 from .gmail_reply_checker import run_reply_check_forever
 from .interview_practice_routes import router as interview_practice_router
@@ -180,6 +181,7 @@ app.include_router(warm_path_events_router)
 app.include_router(gmail_oauth_router)
 app.include_router(interview_practice_router)
 app.include_router(saved_searches_router)
+app.include_router(extension_router)
 
 
 @app.exception_handler(ApiError)
