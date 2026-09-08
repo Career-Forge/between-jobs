@@ -352,3 +352,15 @@ class SaveApprovedAnswerRequest(BaseModel):
     jurisdiction: str | None = None
     sensitive_category: str | None = None
     expires_at: str | None = None
+
+
+class DraftAnswerRequest(BaseModel):
+    """browser-extension.md E3b -- `question_text` is the raw rendered
+    label the extension read off the page (not yet normalized; the
+    extension normalizes separately when it later saves an approved
+    answer via SaveApprovedAnswerRequest). `application_id` scopes the
+    job-description evidence source to the one specific application this
+    question came from, not a generic "current job" guess."""
+
+    application_id: str = Field(min_length=1)
+    question_text: str = Field(min_length=1)

@@ -86,7 +86,7 @@ export function applyFillPlan(doc: Document, plan: readonly FieldFillPlanItem[])
 export interface CustomQuestion {
   fieldName: string;
   label: string | null;
-  kind: "text" | "file";
+  kind: "text" | "file" | "radio";
 }
 
 // Confirmed live: `.application-field` is the per-card wrapper around a
@@ -121,6 +121,13 @@ function labelForCardField(element: Element): string | null {
 // file-type field is still returned (tagged `kind: "file"`) so the side
 // panel can at least tell the person it exists and needs their own
 // upload, even though this extension can't fill it for them.
+//
+// `kind: "radio"` (E3b) is its own category, distinct from "text" --
+// binary-choice questions are disproportionately the sensitive ones
+// (work authorization, sponsorship) and don't fit a "draft prose"
+// generation model regardless. The LLM-answer feature only ever
+// operates on `kind: "text"` fields; radio questions always stay
+// human-only, same as file fields do today.
 export function extractCustomQuestions(
   doc: Document,
   excludeFieldName: string | null = null,
@@ -133,11 +140,10 @@ export function extractCustomQuestions(
       continue;
     }
     seen.add(name);
-    questions.push({
-      fieldName: name,
-      label: labelForCardField(element),
-      kind: element.type === "file" ? "file" : "text",
-    });
+    let kind: CustomQuestion["kind"] = "text";
+    if (element.type === "file") kind = "file";
+    else if (element.type === "radio" || element.type === "checkbox") kind = "radio";
+    questions.push({ fieldName: name, label: labelForCardField(element), kind });
   }
   return questions;
 }
@@ -157,6 +163,46 @@ export function findCoverLetterField(doc: Document): string | null {
     }
   }
   return null;
+}
+
+/**
+ * E3b's known-question-memory/LLM-drafted-answer fill path -- the ONE
+ * place a value chosen off-page (a saved answer, an LLM draft) ever
+ * reaches the real DOM, so it re-validates the target itself rather than
+ * trusting the caller already filtered correctly (the same defense-in-
+ * depth precedent K1's own dual Pydantic+DB status enforcement already
+ * set). Refuses to touch anything that isn't a genuine `cards[<uuid>]`
+ * text/textarea field: never a radio/checkbox (E3b never generates
+ * binary-choice answers to begin with), never a file input, never
+ * `eeo[...]`/`surveysResponses[...]`, never a standard field, and never
+ * anything resembling a submit control. Returns false, touching nothing,
+ * for any field it won't fill.
+ *
+ * `fieldName` originates from the page's own `name` attribute (via
+ * extractCustomQuestions) -- untrusted, scraped content per this
+ * project's own rule. `CSS.escape` prevents a crafted name containing a
+ * `"` from breaking out of the attribute selector into a second,
+ * unrelated one; re-checking the matched element's own `name` against
+ * `fieldName` afterward is a second, independent guard against the same
+ * class of mistargeting even if the selector construction is ever wrong
+ * in some other way -- not exploitable against Lever's real UUID-only
+ * field names today, but cheap, defense-in-depth insurance regardless.
+ */
+export function fillCustomTextAnswer(doc: Document, fieldName: string, value: string): boolean {
+  if (!fieldName.startsWith("cards[")) return false;
+  const element = doc.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+    `form [name="${CSS.escape(fieldName)}"]`,
+  );
+  if (element === null || element.getAttribute("name") !== fieldName) return false;
+  const tag = element.tagName;
+  const type = (element as HTMLInputElement).type;
+  const isTextLike = tag === "TEXTAREA" || (tag === "INPUT" && (type === "text" || type === "email"));
+  if (!isTextLike) return false;
+
+  element.value = value;
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
 }
 
 /**

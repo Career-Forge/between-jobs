@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
+import { normalizeQuestionLabel } from "@/lib/questionMatching";
 import { getSupabaseClient } from "@/lib/supabase";
 import type {
   ContentScriptMessage,
   DetectionStateResponse,
+  DraftAnswerMessage,
+  DraftAnswerResult,
+  FillFieldResult,
   FillResult,
   MarkAppliedMessage,
   MarkAppliedResult,
+  MatchAnswerMessage,
+  MatchAnswerResult,
+  SaveAnswerMessage,
 } from "@/lib/types";
 import "./App.css";
 
@@ -16,6 +23,26 @@ type MarkAppliedState =
   | { status: "busy" }
   | { status: "done" }
   | { status: "error"; message: string };
+
+// E3b's per-question state machine, keyed by fieldName -- a question the
+// user never clicked "Draft answer" for stays absent from this map
+// entirely (treated as "idle"), rather than every unresolved question
+// needing an eagerly-initialized entry.
+type QuestionAnswerState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; text: string; warnings: string[]; fromMemory: boolean }
+  // A real DOM write is in flight for this exact text -- the textarea and
+  // both Fill buttons render disabled while in this state, closing two
+  // adversarially-confirmed gaps at once: an in-flight fill resolving
+  // after the user has already edited the textarea to something else
+  // (which used to discard the edit silently, since the fill's own
+  // success handler unconditionally overwrote state to "filled"), and a
+  // double-click/Fill-then-Fill&remember race with no busy guard.
+  | { status: "filling"; text: string; warnings: string[]; fromMemory: boolean }
+  | { status: "declined"; reason: string | null }
+  | { status: "error"; message: string }
+  | { status: "filled" };
 
 // The specific message Chrome rejects `tabs.sendMessage` with when no
 // content script is listening on the target tab -- the one case that
@@ -65,11 +92,13 @@ export default function App() {
   const [fillResult, setFillResult] = useState<FillResult | null>(null);
   const [fillNotice, setFillNotice] = useState<string | null>(null);
   const [markApplied, setMarkApplied] = useState<MarkAppliedState>({ status: "idle" });
+  const [answerStates, setAnswerStates] = useState<Record<string, QuestionAnswerState>>({});
   const [busy, setBusy] = useState(false);
 
   const refreshDetection = useCallback(async () => {
     setFillResult(null);
     setFillNotice(null);
+    setAnswerStates({});
     // Adversarially-confirmed gap: this used to reset unconditionally,
     // clobbering a genuinely in-flight "Mark as applied" call's busy
     // state (and, worse, re-enabling the button while that request was
@@ -153,6 +182,7 @@ export default function App() {
     setDetection(response);
     setFillResult(null);
     setFillNotice(null);
+    setAnswerStates({});
     setBusy(false);
   }
 
@@ -199,6 +229,98 @@ export default function App() {
         message: e instanceof Error ? e.message : "Failed to reach the extension's background worker.",
       });
     }
+  }
+
+  // E3b -- known-question-memory first (cheap, no LLM call), falling back
+  // to a fresh LLM draft only on a genuine miss. `applicationId` comes
+  // from the caller's own already-narrowed `trackedTabState` rather than
+  // re-reading `detection` here, since this function has no reason to
+  // duplicate that narrowing.
+  async function handleDraftAnswer(applicationId: string, fieldName: string, label: string | null) {
+    setAnswerStates((prev) => ({ ...prev, [fieldName]: { status: "loading" } }));
+    const questionText = label ?? fieldName;
+    try {
+      const matchMessage: MatchAnswerMessage = {
+        type: "MATCH_ANSWER",
+        normalizedQuestion: normalizeQuestionLabel(questionText),
+      };
+      const match: MatchAnswerResult = await browser.runtime.sendMessage(matchMessage);
+      if (match.answer !== null) {
+        setAnswerStates((prev) => ({
+          ...prev,
+          [fieldName]: { status: "ready", text: match.answer!.answer_text, warnings: [], fromMemory: true },
+        }));
+        return;
+      }
+
+      const draftMessage: DraftAnswerMessage = { type: "DRAFT_ANSWER", applicationId, questionText };
+      const drafted: DraftAnswerResult = await browser.runtime.sendMessage(draftMessage);
+      if (!drafted.eligible || drafted.answer_text === null) {
+        setAnswerStates((prev) => ({
+          ...prev,
+          [fieldName]: { status: "declined", reason: drafted.declined_reason },
+        }));
+        return;
+      }
+      setAnswerStates((prev) => ({
+        ...prev,
+        [fieldName]: {
+          status: "ready",
+          text: drafted.answer_text as string,
+          warnings: drafted.warnings,
+          fromMemory: false,
+        },
+      }));
+    } catch (e) {
+      setAnswerStates((prev) => ({
+        ...prev,
+        [fieldName]: { status: "error", message: e instanceof Error ? e.message : "Failed to draft an answer." },
+      }));
+    }
+  }
+
+  function handleEditAnswer(fieldName: string, text: string) {
+    setAnswerStates((prev) => {
+      const current = prev[fieldName];
+      if (current === undefined || current.status !== "ready") return prev;
+      return { ...prev, [fieldName]: { ...current, text } };
+    });
+  }
+
+  // Fills the real DOM via content.ts's own re-validating
+  // `fillCustomTextAnswer` -- this is a distinct action from the
+  // memory-check/draft step above, matching the standard-fields Fill
+  // button's own "draft, then a separate explicit act to apply it"
+  // shape. "Fill & remember" additionally saves to known-question
+  // memory (best-effort -- a save failure still leaves the real field
+  // filled, so it's logged, not surfaced as an error on top of a
+  // successful fill).
+  async function handleFillAnswer(fieldName: string, label: string | null, remember: boolean) {
+    const current = answerStates[fieldName];
+    if (current === undefined || current.status !== "ready") return;
+    const { text, warnings, fromMemory } = current;
+    setAnswerStates((prev) => ({ ...prev, [fieldName]: { status: "filling", text, warnings, fromMemory } }));
+    const result = await sendToActiveTab<FillFieldResult>({ type: "FILL_FIELD", fieldName, value: text });
+    if (result === null || !result.filled) {
+      setAnswerStates((prev) => ({
+        ...prev,
+        [fieldName]: { status: "error", message: "Couldn't fill this field -- try again." },
+      }));
+      return;
+    }
+    if (remember) {
+      try {
+        const saveMessage: SaveAnswerMessage = {
+          type: "SAVE_ANSWER",
+          normalizedQuestion: normalizeQuestionLabel(label ?? fieldName),
+          answerText: text,
+        };
+        await browser.runtime.sendMessage(saveMessage);
+      } catch (e) {
+        console.error("[between-jobs] saving approved answer failed", e);
+      }
+    }
+    setAnswerStates((prev) => ({ ...prev, [fieldName]: { status: "filled" } }));
   }
 
   if (auth.status === "loading") {
@@ -307,12 +429,83 @@ export default function App() {
                 <div>
                   <p>These need your own attention -- we don't touch them yet:</p>
                   <ul>
-                    {fillResult.unresolvedQuestions.map((q) => (
-                      <li key={q.fieldName}>
-                        {q.label ?? q.fieldName}
-                        {q.kind === "file" ? " (upload this file yourself)" : ""}
-                      </li>
-                    ))}
+                    {fillResult.unresolvedQuestions.map((q) => {
+                      const state: QuestionAnswerState = answerStates[q.fieldName] ?? { status: "idle" };
+                      return (
+                        <li key={q.fieldName}>
+                          {q.label ?? q.fieldName}
+                          {q.kind === "file" ? " (upload this file yourself)" : ""}
+                          {q.kind === "text" && (
+                            <div className="question-answer">
+                              {state.status === "idle" && trackedTabState !== null && (
+                                <button
+                                  onClick={() =>
+                                    handleDraftAnswer(trackedTabState.applicationId, q.fieldName, q.label)
+                                  }
+                                >
+                                  Draft answer
+                                </button>
+                              )}
+                              {state.status === "loading" && <p>Checking for an answer...</p>}
+                              {(state.status === "declined" || state.status === "error") && (
+                                <div>
+                                  <p className="error">
+                                    {state.status === "declined"
+                                      ? (state.reason ??
+                                        "We can't draft this one -- please answer it yourself.")
+                                      : state.message}
+                                  </p>
+                                  {trackedTabState !== null && (
+                                    <button
+                                      onClick={() =>
+                                        handleDraftAnswer(trackedTabState.applicationId, q.fieldName, q.label)
+                                      }
+                                    >
+                                      Try again
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              {state.status === "filled" && <p>Filled.</p>}
+                              {(state.status === "ready" || state.status === "filling") && (
+                                <div>
+                                  {state.fromMemory && <p>Using a previously saved answer.</p>}
+                                  {state.warnings.length > 0 && (
+                                    <ul>
+                                      {state.warnings.map((warning, i) => (
+                                        <li key={i} className="error">
+                                          {warning}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                  <textarea
+                                    value={state.text}
+                                    onChange={(e) => handleEditAnswer(q.fieldName, e.target.value)}
+                                    rows={4}
+                                    disabled={state.status === "filling"}
+                                  />
+                                  <div className="button-row">
+                                    <button
+                                      onClick={() => handleFillAnswer(q.fieldName, q.label, false)}
+                                      disabled={state.status === "filling"}
+                                    >
+                                      {state.status === "filling" ? "Filling..." : "Fill"}
+                                    </button>
+                                    <button
+                                      onClick={() => handleFillAnswer(q.fieldName, q.label, true)}
+                                      disabled={state.status === "filling"}
+                                    >
+                                      Fill &amp; remember
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}

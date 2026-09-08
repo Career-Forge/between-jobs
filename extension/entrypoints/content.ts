@@ -2,6 +2,7 @@ import {
   applyFillPlan,
   attachFile,
   extractCustomQuestions,
+  fillCustomTextAnswer,
   findCoverLetterField,
   isLeverApplyForm,
   planStandardFieldFills,
@@ -10,6 +11,7 @@ import type {
   BackgroundMessage,
   ContentScriptMessage,
   DetectionStateResponse,
+  FillFieldResult,
   FillResult,
   TabState,
 } from "@/lib/types";
@@ -156,6 +158,17 @@ export default defineContentScript({
       }
       if (message.type === "REQUEST_FILL") {
         return Promise.resolve(fillPage(message.forceRefillAll));
+      }
+      if (message.type === "FILL_FIELD") {
+        // E3b -- the one path a value chosen off-page (a saved answer,
+        // an LLM draft) ever reaches the real DOM. `fillCustomTextAnswer`
+        // itself re-validates the target (genuine cards[...] text field
+        // only, never a radio/file/eeo/standard field), so this handler
+        // doesn't need to duplicate that check.
+        const response: FillFieldResult = {
+          filled: fillCustomTextAnswer(document, message.fieldName, message.value),
+        };
+        return Promise.resolve(response);
       }
     });
   },

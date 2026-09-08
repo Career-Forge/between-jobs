@@ -1,5 +1,13 @@
 import { ApiError, apiFetch, apiFetchBlob } from "@/lib/api";
-import type { BackgroundMessage, ExtensionPayload, GeneratedFile, MarkAppliedResult, TabState } from "@/lib/types";
+import type {
+  BackgroundMessage,
+  DraftAnswerResult,
+  ExtensionPayload,
+  GeneratedFile,
+  MarkAppliedResult,
+  MatchAnswerResult,
+  TabState,
+} from "@/lib/types";
 
 // The service worker owns authentication and every backend call
 // (browser-extension.md's architecture summary) -- the content script
@@ -81,6 +89,43 @@ async function markApplied(applicationId: string, idempotencyKey: string): Promi
   }
 }
 
+// E3b's known-question-memory calls -- both routes already existed
+// (E1); this is the first time anything in the extension actually calls
+// them. `answer` errors fail open to "no match" rather than surfacing an
+// error state, since the side panel's own fallback (offer to draft) is
+// always a reasonable next step either way.
+async function matchAnswer(
+  normalizedQuestion: string,
+  canonicalIntent: string | undefined,
+): Promise<MatchAnswerResult> {
+  try {
+    return await apiFetch<MatchAnswerResult>("/extension/match-answer", {
+      method: "POST",
+      body: JSON.stringify({ normalized_question: normalizedQuestion, canonical_intent: canonicalIntent }),
+    });
+  } catch {
+    return { answer: null };
+  }
+}
+
+async function saveAnswer(normalizedQuestion: string, answerText: string): Promise<void> {
+  await apiFetch("/extension/approved-answers", {
+    method: "POST",
+    body: JSON.stringify({ normalized_question: normalizedQuestion, answer_text: answerText }),
+  });
+}
+
+// E3b's LLM-fallback path -- MASTER_PLAN's "CoverForge-lite." Only ever
+// invoked by an explicit side-panel click on a `kind: "text"` question
+// that already missed the known-question-memory check above; drafts
+// only, never fills or saves anything itself.
+async function draftAnswer(applicationId: string, questionText: string): Promise<DraftAnswerResult> {
+  return apiFetch<DraftAnswerResult>("/extension/draft-answer", {
+    method: "POST",
+    body: JSON.stringify({ application_id: applicationId, question_text: questionText }),
+  });
+}
+
 export default defineBackground(() => {
   // Clicking the toolbar icon opens the side panel directly, rather than
   // needing a separate click handler per Chrome's own current API.
@@ -92,6 +137,15 @@ export default defineBackground(() => {
     }
     if (message.type === "MARK_APPLIED") {
       return markApplied(message.applicationId, message.idempotencyKey);
+    }
+    if (message.type === "MATCH_ANSWER") {
+      return matchAnswer(message.normalizedQuestion, message.canonicalIntent);
+    }
+    if (message.type === "SAVE_ANSWER") {
+      return saveAnswer(message.normalizedQuestion, message.answerText);
+    }
+    if (message.type === "DRAFT_ANSWER") {
+      return draftAnswer(message.applicationId, message.questionText);
     }
   });
 });

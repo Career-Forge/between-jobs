@@ -37,6 +37,17 @@
   color: #b00020;
 }
 
+.question-answer {
+  margin-top: 0.4rem;
+}
+
+.question-answer textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: inherit;
+}
+
 .footer-note {
   margin-top: 1.5rem;
   color: #666;

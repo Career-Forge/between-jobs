@@ -65,7 +65,52 @@ export interface MarkAppliedMessage {
   idempotencyKey: string;
 }
 
-export type BackgroundMessage = LeverPageDetectedMessage | MarkAppliedMessage;
+/** Side panel -> background (E3b, browser-extension.md): check known-
+ * question memory before ever drafting anything new -- Proposal §25's
+ * own match order, tier 1/2 only (tier 3, semantic matching, is
+ * explicitly deferred past v1). `normalizedQuestion` must already be run
+ * through `normalizeQuestionLabel` by the caller. */
+export interface MatchAnswerMessage {
+  type: "MATCH_ANSWER";
+  normalizedQuestion: string;
+  canonicalIntent?: string;
+}
+
+export interface MatchAnswerResult {
+  answer: { answer_text: string } | null;
+}
+
+/** Side panel -> background: the human approved an answer (drafted or
+ * hand-typed) and wants it remembered for next time. */
+export interface SaveAnswerMessage {
+  type: "SAVE_ANSWER";
+  normalizedQuestion: string;
+  answerText: string;
+}
+
+/** Side panel -> background: draft an answer via the LLM-fallback path.
+ * Only ever sent for a `kind: "text"` question the memory check above
+ * already missed on -- never for a radio/file field, and never
+ * automatically without the human clicking a button first. */
+export interface DraftAnswerMessage {
+  type: "DRAFT_ANSWER";
+  applicationId: string;
+  questionText: string;
+}
+
+export interface DraftAnswerResult {
+  eligible: boolean;
+  answer_text: string | null;
+  declined_reason: string | null;
+  warnings: string[];
+}
+
+export type BackgroundMessage =
+  | LeverPageDetectedMessage
+  | MarkAppliedMessage
+  | MatchAnswerMessage
+  | SaveAnswerMessage
+  | DraftAnswerMessage;
 
 export type MarkAppliedResult =
   | { ok: true; status: string }
@@ -79,7 +124,12 @@ export type MarkAppliedResult =
 export type ContentScriptMessage =
   | { type: "GET_DETECTION_STATE" }
   | { type: "RECHECK" }
-  | { type: "REQUEST_FILL"; forceRefillAll: boolean };
+  | { type: "REQUEST_FILL"; forceRefillAll: boolean }
+  | { type: "FILL_FIELD"; fieldName: string; value: string };
+
+export interface FillFieldResult {
+  filled: boolean;
+}
 
 export interface DetectionStateResponse {
   formDetected: boolean;
@@ -95,5 +145,5 @@ export interface FillResult {
   resumeError: string | null;
   coverLetterAttached: boolean;
   coverLetterError: string | null;
-  unresolvedQuestions: { fieldName: string; label: string | null; kind: "text" | "file" }[];
+  unresolvedQuestions: { fieldName: string; label: string | null; kind: "text" | "file" | "radio" }[];
 }

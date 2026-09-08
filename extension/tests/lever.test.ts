@@ -3,6 +3,7 @@ import {
   applyFillPlan,
   attachFile,
   extractCustomQuestions,
+  fillCustomTextAnswer,
   findCoverLetterField,
   isLeverApplyForm,
   planStandardFieldFills,
@@ -197,6 +198,15 @@ describe("extractCustomQuestions", () => {
     expect(referral?.kind).toBe("text");
   });
 
+  it("tags a radio-group question with kind 'radio', not 'text' -- E3b's LLM-answer feature must never target a binary choice, since these are disproportionately the sensitive ones (work authorization, sponsorship)", () => {
+    buildLeverForm();
+    const questions = extractCustomQuestions(document);
+    const referralYesNo = questions.find((q) =>
+      q.fieldName === "cards[dbe2365b-6fb2-40f2-a0b8-9d370957da3b][field0]",
+    );
+    expect(referralYesNo?.kind).toBe("radio");
+  });
+
   it("still returns a file-type card as kind 'file' when it isn't explicitly excluded -- regression guard for a real, adversarially-confirmed bug where EVERY file field was silently dropped, not just the cover-letter one", () => {
     buildLeverForm();
     const questions = extractCustomQuestions(document);
@@ -294,5 +304,73 @@ describe("attachFile", () => {
     expect(input.files!.item(0)?.name).toBe("resume.pdf");
     expect(input.files!.item(0)?.type).toBe("application/pdf");
     expect(changeFired).toBe(true);
+  });
+});
+
+describe("fillCustomTextAnswer", () => {
+  it("fills a genuine cards[...] text field and dispatches events", () => {
+    buildLeverForm();
+    const fieldName = "cards[dbe2365b-6fb2-40f2-a0b8-9d370957da3b][field1]";
+    const input = document.querySelector<HTMLInputElement>(`[name="${fieldName}"]`)!;
+    const events: string[] = [];
+    input.addEventListener("input", () => events.push("input"));
+    input.addEventListener("change", () => events.push("change"));
+
+    const filled = fillCustomTextAnswer(document, fieldName, "Jane Doe referred me.");
+
+    expect(filled).toBe(true);
+    expect(input.value).toBe("Jane Doe referred me.");
+    expect(events).toEqual(["input", "change"]);
+  });
+
+  it("refuses a field name outside the cards[...] namespace, e.g. an eeo[...] field, without even querying the DOM for it", () => {
+    buildLeverForm();
+    const filled = fillCustomTextAnswer(document, "eeo[gender]", "Male");
+    expect(filled).toBe(false);
+  });
+
+  it("refuses a radio-type cards[...] field -- E3b never generates a binary-choice answer", () => {
+    buildLeverForm();
+    const fieldName = "cards[dbe2365b-6fb2-40f2-a0b8-9d370957da3b][field0]";
+    const filled = fillCustomTextAnswer(document, fieldName, "Yes");
+    expect(filled).toBe(false);
+  });
+
+  it("refuses a file-type cards[...] field (the cover-letter slot)", () => {
+    buildLeverForm();
+    const filled = fillCustomTextAnswer(
+      document,
+      "cards[2b91c9dd-2899-4603-ab9f-b5218e738b4a][field0]",
+      "not a real file",
+    );
+    expect(filled).toBe(false);
+  });
+
+  it("refuses the standard resume field even if somehow asked to fill it", () => {
+    buildLeverForm();
+    const filled = fillCustomTextAnswer(document, "resume", "not applicable");
+    expect(filled).toBe(false);
+  });
+
+  it("returns false for a field name that doesn't exist on the page", () => {
+    buildLeverForm();
+    const filled = fillCustomTextAnswer(document, "cards[00000000-0000-0000-0000-000000000000][field0]", "x");
+    expect(filled).toBe(false);
+  });
+
+  it("refuses a crafted field name that tries to break out of the attribute selector into an unrelated field", () => {
+    // A `"` inside fieldName, left unescaped, would turn `[name="${fieldName}"]`
+    // into TWO selectors joined by a real comma -- querySelector then matches
+    // whichever comes first in DOM order, here the unrelated urls[LinkedIn]
+    // field, even though the nonexistent cards[x] target never matched.
+    buildLeverForm();
+    const linkedin = document.querySelector<HTMLInputElement>('[name="urls[LinkedIn]"]')!;
+    linkedin.value = "https://linkedin.com/in/janedoe";
+
+    const maliciousFieldName = 'cards[x]"], input[name="urls[LinkedIn]';
+    const filled = fillCustomTextAnswer(document, maliciousFieldName, "attacker-controlled text");
+
+    expect(filled).toBe(false);
+    expect(linkedin.value).toBe("https://linkedin.com/in/janedoe");
   });
 });
