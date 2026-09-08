@@ -86,6 +86,7 @@ export function applyFillPlan(doc: Document, plan: readonly FieldFillPlanItem[])
 export interface CustomQuestion {
   fieldName: string;
   label: string | null;
+  kind: "text" | "file";
 }
 
 // Confirmed live: `.application-field` is the per-card wrapper around a
@@ -107,18 +108,55 @@ function labelForCardField(element: Element): string | null {
 // not something requiring a label-text sensitivity classifier (D6, and
 // the selector-map design note on excluding consent/sensitive fields by
 // authoring rather than runtime detection).
-export function extractCustomQuestions(doc: Document): CustomQuestion[] {
+//
+// `excludeFieldName` is the field `findCoverLetterField` already
+// identified as the cover-letter slot -- skipped here since content.ts
+// handles it separately. Adversarially confirmed a real gap in an
+// earlier version of this function: it used to exclude EVERY file-type
+// card unconditionally, which meant a real "additional portfolio file"
+// style field (confirmed present on real postings) went completely
+// unmentioned anywhere -- not attached, not listed as needing attention,
+// silently invisible right up until the person hit Lever's own Submit
+// and it blocked with no explanation from this extension. Now any OTHER
+// file-type field is still returned (tagged `kind: "file"`) so the side
+// panel can at least tell the person it exists and needs their own
+// upload, even though this extension can't fill it for them.
+export function extractCustomQuestions(
+  doc: Document,
+  excludeFieldName: string | null = null,
+): CustomQuestion[] {
   const seen = new Set<string>();
   const questions: CustomQuestion[] = [];
-  for (const element of doc.querySelectorAll<HTMLElement>('form [name^="cards["]')) {
+  for (const element of doc.querySelectorAll<HTMLInputElement>('form [name^="cards["]')) {
     const name = element.getAttribute("name");
-    if (name === null || seen.has(name) || (element as HTMLInputElement).type === "hidden") {
+    if (name === null || seen.has(name) || element.type === "hidden" || name === excludeFieldName) {
       continue;
     }
     seen.add(name);
-    questions.push({ fieldName: name, label: labelForCardField(element) });
+    questions.push({
+      fieldName: name,
+      label: labelForCardField(element),
+      kind: element.type === "file" ? "file" : "text",
+    });
   }
   return questions;
+}
+
+// Confirmed live (a real Sysdig posting, 2026-09-08): unlike Lever's
+// standard fields, a cover-letter upload -- when an org enables one at
+// all -- is NOT a stable, predictable selector. It's the exact same
+// opaque per-org `cards[<uuid>]` custom-field pattern as an ordinary
+// text question, just with `type="file"`, discoverable only by matching
+// its rendered "Cover Letter" label at runtime -- the same mechanism
+// already proven for custom-question labels, not a new one.
+export function findCoverLetterField(doc: Document): string | null {
+  for (const element of doc.querySelectorAll<HTMLInputElement>('form [name^="cards["][type="file"]')) {
+    const label = labelForCardField(element);
+    if (label !== null && /cover letter/i.test(label)) {
+      return element.getAttribute("name");
+    }
+  }
+  return null;
 }
 
 /**
@@ -126,9 +164,12 @@ export function extractCustomQuestions(doc: Document): CustomQuestion[] {
  * scripts from setting `.value` on a file input directly. Constructs a
  * real `File` from bytes already fetched, wraps it in a `DataTransfer`,
  * and dispatches a `change` event the page's own upload-handling JS
- * picks up exactly as if the user had picked a file.
+ * picks up exactly as if the user had picked a file. Used for both the
+ * résumé (a fixed selector) and the cover letter (a runtime-discovered
+ * one via `findCoverLetterField`) -- the attach mechanism itself doesn't
+ * care which.
  */
-export function attachResumeFile(
+export function attachFile(
   input: HTMLInputElement,
   bytes: ArrayBuffer,
   filename: string,

@@ -1,7 +1,8 @@
 import {
   applyFillPlan,
-  attachResumeFile,
+  attachFile,
   extractCustomQuestions,
+  findCoverLetterField,
   isLeverApplyForm,
   planStandardFieldFills,
 } from "@/lib/lever";
@@ -49,6 +50,42 @@ export default defineContentScript({
     // resolved yet" -- an adversarially-confirmed gap: returning a
     // structurally valid empty result made an in-flight lookup
     // indistinguishable from a genuine "nothing to fill."
+    // Shared by the résumé (a fixed selector) and the cover letter (a
+    // runtime-discovered one, per findCoverLetterField) -- same D5
+    // idempotency rule as every other field: skip an input that already
+    // has a file, unless forced.
+    //
+    // `attached` means "is a file present on this input right now" --
+    // NOT "did this specific call just set it." Adversarially confirmed
+    // a real bug in an earlier version that conflated the two: a D5 skip
+    // (file already there, not forced) returned attached:false, so the
+    // side panel displayed "not attached" for a résumé that was, in
+    // fact, still genuinely attached from a prior fill.
+    function tryAttach(
+      selector: string,
+      file: { base64: string; filename: string } | null,
+      forceRefillAll: boolean,
+    ): { attached: boolean; error: string | null } {
+      const input = document.querySelector<HTMLInputElement>(selector);
+      if (input === null) return { attached: false, error: null };
+      const alreadyHasFile = (input.files?.length ?? 0) > 0;
+      if (alreadyHasFile && !forceRefillAll) {
+        return { attached: true, error: null };
+      }
+      if (file === null) {
+        return { attached: alreadyHasFile, error: null };
+      }
+      try {
+        attachFile(input, base64ToArrayBuffer(file.base64), file.filename, "application/pdf");
+        return { attached: true, error: null };
+      } catch (e) {
+        return {
+          attached: alreadyHasFile,
+          error: e instanceof Error ? e.message : "Failed to attach file",
+        };
+      }
+    }
+
     function fillPage(forceRefillAll: boolean): FillResult | null {
       if (tabState === null) return null;
       const result: FillResult = {
@@ -56,6 +93,8 @@ export default defineContentScript({
         skippedFields: [],
         resumeAttached: false,
         resumeError: null,
+        coverLetterAttached: false,
+        coverLetterError: null,
         unresolvedQuestions: [],
       };
       if (tabState.status !== "tracked" || tabState.payload.personal_info === null) {
@@ -65,26 +104,34 @@ export default defineContentScript({
       const plan = planStandardFieldFills(document, tabState.payload.personal_info, forceRefillAll);
       result.filledFields = applyFillPlan(document, plan);
 
-      if (tabState.resume !== null) {
-        const resumeInput = document.querySelector<HTMLInputElement>('input[name="resume"]');
-        if (resumeInput !== null && (forceRefillAll || resumeInput.files?.length === 0)) {
-          try {
-            attachResumeFile(
-              resumeInput,
-              base64ToArrayBuffer(tabState.resume.base64),
-              tabState.resume.filename,
-              "application/pdf",
-            );
-            result.resumeAttached = true;
-          } catch (e) {
-            result.resumeError = e instanceof Error ? e.message : "Failed to attach résumé";
-          }
+      const resumeOutcome = tryAttach('input[name="resume"]', tabState.resume, forceRefillAll);
+      result.resumeAttached = resumeOutcome.attached;
+      result.resumeError = resumeOutcome.error;
+
+      const coverLetterField = findCoverLetterField(document);
+      if (coverLetterField !== null) {
+        if (tabState.coverLetter === null) {
+          // The page has a cover-letter slot but this application never
+          // generated one (generate_cover_letter wasn't requested) --
+          // told explicitly rather than left silently invisible, since
+          // this field is otherwise excluded from unresolvedQuestions
+          // entirely (it's a file field, not a text-answerable one).
+          result.coverLetterError = "No cover letter was generated for this application yet.";
+        } else {
+          const coverLetterOutcome = tryAttach(
+            `[name="${coverLetterField}"]`,
+            tabState.coverLetter,
+            forceRefillAll,
+          );
+          result.coverLetterAttached = coverLetterOutcome.attached;
+          result.coverLetterError = coverLetterOutcome.error;
         }
       }
 
-      result.unresolvedQuestions = extractCustomQuestions(document).map((q) => ({
+      result.unresolvedQuestions = extractCustomQuestions(document, coverLetterField).map((q) => ({
         fieldName: q.fieldName,
         label: q.label,
+        kind: q.kind,
       }));
       return result;
     }

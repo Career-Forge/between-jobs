@@ -1,9 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { getSupabaseClient } from "@/lib/supabase";
-import type { ContentScriptMessage, DetectionStateResponse, FillResult } from "@/lib/types";
+import type {
+  ContentScriptMessage,
+  DetectionStateResponse,
+  FillResult,
+  MarkAppliedMessage,
+  MarkAppliedResult,
+} from "@/lib/types";
 import "./App.css";
 
 type AuthState = { status: "loading" } | { status: "signed_out" } | { status: "signed_in" };
+
+type MarkAppliedState =
+  | { status: "idle" }
+  | { status: "busy" }
+  | { status: "done" }
+  | { status: "error"; message: string };
 
 // The specific message Chrome rejects `tabs.sendMessage` with when no
 // content script is listening on the target tab -- the one case that
@@ -52,11 +64,20 @@ export default function App() {
   const [detection, setDetection] = useState<DetectionStateResponse | null>(null);
   const [fillResult, setFillResult] = useState<FillResult | null>(null);
   const [fillNotice, setFillNotice] = useState<string | null>(null);
+  const [markApplied, setMarkApplied] = useState<MarkAppliedState>({ status: "idle" });
   const [busy, setBusy] = useState(false);
 
   const refreshDetection = useCallback(async () => {
     setFillResult(null);
     setFillNotice(null);
+    // Adversarially-confirmed gap: this used to reset unconditionally,
+    // clobbering a genuinely in-flight "Mark as applied" call's busy
+    // state (and, worse, re-enabling the button while that request was
+    // still pending -- letting a second click fire a second, independently
+    // idempotency-keyed POST that the idempotency key can't dedupe, since
+    // it's not a retry of the same request). A completed "done"/"error"
+    // outcome still resets on the next page, matching every other status.
+    setMarkApplied((prev) => (prev.status === "busy" ? prev : { status: "idle" }));
     const response = await sendToActiveTab<DetectionStateResponse>({ type: "GET_DETECTION_STATE" });
     setDetection(response);
   }, []);
@@ -82,8 +103,17 @@ export default function App() {
   // page hadn't finished its own detection yet.
   useEffect(() => {
     if (auth.status !== "signed_in") return;
-    const onUpdated = (_tabId: number, changeInfo: Browser.tabs.OnUpdatedInfo) => {
-      if (changeInfo.status === "complete") void refreshDetection();
+    // Adversarially-confirmed gap: this used to ignore its own `tabId`
+    // parameter and re-run for ANY tab in the browser reaching
+    // load-complete, active or not -- including a background tab
+    // finishing a load while the user was mid-click on "Mark as
+    // applied" in the tab actually showing the side panel, clobbering
+    // that in-flight state for no reason connected to what's on screen.
+    const onUpdated = (tabId: number, changeInfo: Browser.tabs.OnUpdatedInfo) => {
+      if (changeInfo.status !== "complete") return;
+      void getActiveTabId().then((activeTabId) => {
+        if (tabId === activeTabId) void refreshDetection();
+      });
     };
     const onActivated = () => void refreshDetection();
     browser.tabs.onUpdated.addListener(onUpdated);
@@ -141,6 +171,36 @@ export default function App() {
     setBusy(false);
   }
 
+  // Tracking confirmation (browser-extension.md): the human confirms the
+  // real application state after THEY submit on the real page -- this
+  // never fires on its own, and never substitutes for the human's own
+  // submit click on jobs.lever.co itself. A fresh idempotency key per
+  // click means a retried click (e.g. a flaky network) can't double-record
+  // the transition.
+  async function handleMarkApplied(applicationId: string) {
+    setMarkApplied({ status: "busy" });
+    const message: MarkAppliedMessage = {
+      type: "MARK_APPLIED",
+      applicationId,
+      idempotencyKey: crypto.randomUUID(),
+    };
+    try {
+      const result: MarkAppliedResult = await browser.runtime.sendMessage(message);
+      setMarkApplied(result.ok ? { status: "done" } : { status: "error", message: result.message });
+    } catch (e) {
+      // Adversarially-confirmed gap: sendMessage itself can throw (e.g.
+      // "Extension context invalidated" after a reload while the panel
+      // is open) -- unlike background.ts's own markApplied, which
+      // already wraps its network call, this had no catch, leaving the
+      // button stuck on "Marking..." forever with no way to tell
+      // whether the real backend mutation happened.
+      setMarkApplied({
+        status: "error",
+        message: e instanceof Error ? e.message : "Failed to reach the extension's background worker.",
+      });
+    }
+  }
+
   if (auth.status === "loading") {
     return <div className="panel">Loading...</div>;
   }
@@ -172,6 +232,13 @@ export default function App() {
       </div>
     );
   }
+
+  // Captured into its own const (not re-derived inline inside the JSX
+  // ternary below) so the "tracked" narrowing survives into the onClick
+  // closure -- TypeScript's control-flow narrowing doesn't persist
+  // through a nested arrow function re-reading `detection.tabState`.
+  const trackedTabState =
+    detection?.tabState?.status === "tracked" ? detection.tabState : null;
 
   return (
     <div className="panel">
@@ -230,18 +297,41 @@ export default function App() {
             <div className="fill-result">
               <p>Filled {fillResult.filledFields.length} field(s).</p>
               <p>Résumé: {fillResult.resumeAttached ? "attached" : (fillResult.resumeError ?? "not attached")}</p>
+              {(fillResult.coverLetterAttached || fillResult.coverLetterError !== null) && (
+                <p>
+                  Cover letter:{" "}
+                  {fillResult.coverLetterAttached ? "attached" : fillResult.coverLetterError}
+                </p>
+              )}
               {fillResult.unresolvedQuestions.length > 0 && (
                 <div>
-                  <p>These questions need your own answer -- we don't touch them yet:</p>
+                  <p>These need your own attention -- we don't touch them yet:</p>
                   <ul>
                     {fillResult.unresolvedQuestions.map((q) => (
-                      <li key={q.fieldName}>{q.label ?? q.fieldName}</li>
+                      <li key={q.fieldName}>
+                        {q.label ?? q.fieldName}
+                        {q.kind === "file" ? " (upload this file yourself)" : ""}
+                      </li>
                     ))}
                   </ul>
                 </div>
               )}
             </div>
           )}
+
+          <div className="fill-result">
+            {markApplied.status === "done" ? (
+              <p>Marked as applied.</p>
+            ) : (
+              <button
+                onClick={() => trackedTabState && handleMarkApplied(trackedTabState.applicationId)}
+                disabled={markApplied.status === "busy" || trackedTabState === null}
+              >
+                {markApplied.status === "busy" ? "Marking..." : "I submitted this -- mark as applied"}
+              </button>
+            )}
+            {markApplied.status === "error" && <p className="error">{markApplied.message}</p>}
+          </div>
         </div>
       )}
 

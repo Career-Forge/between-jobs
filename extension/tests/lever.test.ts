@@ -1,19 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
   applyFillPlan,
-  attachResumeFile,
+  attachFile,
   extractCustomQuestions,
+  findCoverLetterField,
   isLeverApplyForm,
   planStandardFieldFills,
 } from "@/lib/lever";
 import type { ExtensionPersonalInfo } from "@/lib/types";
 
 // Mirrors the real DOM structure confirmed live against
-// jobs.lever.co/theathletic (2026-09-08) -- standard fields by plain
-// `name`, a genuine `cards[<uuid>]` custom question with the real
-// `.application-field` -> parent `.application-label` nesting, plus a
-// real `eeo[...]` field and a real `surveysResponses[<uuid>]` field
-// (both must never be touched or reported as a "custom question").
+// jobs.lever.co/theathletic and jobs.lever.co/sysdig (2026-09-08) --
+// standard fields by plain `name`, a genuine `cards[<uuid>]` custom
+// question with the real `.application-field` -> parent
+// `.application-label` nesting, a real `cards[<uuid>]` FILE field
+// labeled "Cover Letter" (Sysdig's own real cover-letter field -- an
+// opaque per-org custom field, not a fixed selector), plus a real
+// `eeo[...]` field and a real `surveysResponses[<uuid>]` field (both
+// must never be touched or reported as a "custom question").
 function buildLeverForm(): void {
   document.body.innerHTML = `
     <form>
@@ -34,6 +38,13 @@ function buildLeverForm(): void {
             <li><label><input type="radio" name="cards[dbe2365b-6fb2-40f2-a0b8-9d370957da3b][field0]" value="No" />No</label></li>
           </ul>
           <input type="text" name="cards[dbe2365b-6fb2-40f2-a0b8-9d370957da3b][field1]" />
+        </div>
+      </div>
+
+      <div>
+        <div class="application-label">Cover Letter</div>
+        <div class="application-field">
+          <input type="file" name="cards[2b91c9dd-2899-4603-ab9f-b5218e738b4a][field0]" />
         </div>
       </div>
 
@@ -176,9 +187,84 @@ describe("extractCustomQuestions", () => {
     );
     expect(matching).toHaveLength(1);
   });
+
+  it("tags a text question with kind 'text'", () => {
+    buildLeverForm();
+    const questions = extractCustomQuestions(document);
+    const referral = questions.find((q) =>
+      q.fieldName === "cards[dbe2365b-6fb2-40f2-a0b8-9d370957da3b][field1]",
+    );
+    expect(referral?.kind).toBe("text");
+  });
+
+  it("still returns a file-type card as kind 'file' when it isn't explicitly excluded -- regression guard for a real, adversarially-confirmed bug where EVERY file field was silently dropped, not just the cover-letter one", () => {
+    buildLeverForm();
+    const questions = extractCustomQuestions(document);
+    const coverLetter = questions.find((q) =>
+      q.fieldName.includes("2b91c9dd-2899-4603-ab9f-b5218e738b4a"),
+    );
+    expect(coverLetter).toBeDefined();
+    expect(coverLetter?.kind).toBe("file");
+    expect(coverLetter?.label).toBe("Cover Letter");
+  });
+
+  it("excludes exactly the caller-identified cover-letter field via excludeFieldName, without hiding other file fields", () => {
+    document.body.innerHTML = `
+      <form>
+        <input type="file" name="resume" />
+        <div>
+          <div class="application-label">Cover Letter</div>
+          <div class="application-field">
+            <input type="file" name="cards[2b91c9dd-2899-4603-ab9f-b5218e738b4a][field0]" />
+          </div>
+        </div>
+        <div>
+          <div class="application-label">Portfolio Sample</div>
+          <div class="application-field">
+            <input type="file" name="cards[11111111-1111-1111-1111-111111111111][field0]" />
+          </div>
+        </div>
+      </form>
+    `;
+    const coverLetterField = findCoverLetterField(document);
+    const questions = extractCustomQuestions(document, coverLetterField);
+
+    expect(questions.some((q) => q.fieldName.includes("2b91c9dd"))).toBe(false);
+    const portfolio = questions.find((q) => q.fieldName.includes("11111111"));
+    expect(portfolio?.kind).toBe("file");
+    expect(portfolio?.label).toBe("Portfolio Sample");
+  });
 });
 
-describe("attachResumeFile", () => {
+describe("findCoverLetterField", () => {
+  it("finds a real cover-letter file field by its rendered label, not a fixed selector", () => {
+    buildLeverForm();
+    const fieldName = findCoverLetterField(document);
+    expect(fieldName).toBe("cards[2b91c9dd-2899-4603-ab9f-b5218e738b4a][field0]");
+  });
+
+  it("returns null when no cover-letter field exists on this posting", () => {
+    document.body.innerHTML = `<form><input type="file" name="resume" /></form>`;
+    expect(findCoverLetterField(document)).toBeNull();
+  });
+
+  it("never matches the resume field itself or an unrelated file field", () => {
+    document.body.innerHTML = `
+      <form>
+        <input type="file" name="resume" />
+        <div>
+          <div class="application-label">Portfolio Sample</div>
+          <div class="application-field">
+            <input type="file" name="cards[11111111-1111-1111-1111-111111111111][field0]" />
+          </div>
+        </div>
+      </form>
+    `;
+    expect(findCoverLetterField(document)).toBeNull();
+  });
+});
+
+describe("attachFile", () => {
   it("assigns a real File to the input's files and dispatches change", () => {
     buildLeverForm();
     const input = document.querySelector<HTMLInputElement>('input[name="resume"]')!;
@@ -194,14 +280,14 @@ describe("attachResumeFile", () => {
     // separate jsdom gap on top of the missing DataTransfer constructor
     // (see tests/setup.ts), specific to this one property. Redefining it
     // as a plain writable property here lets this test verify what it's
-    // actually responsible for -- that `attachResumeFile` constructs the
-    // right File and assigns *something* to `.files` before dispatching
+    // actually responsible for -- that `attachFile` constructs the right
+    // File and assigns *something* to `.files` before dispatching
     // `change` -- without that being blocked by an environment limitation
     // unrelated to this project's own code.
     Object.defineProperty(input, "files", { value: undefined, writable: true, configurable: true });
 
     const bytes = new TextEncoder().encode("%PDF-1.4 fake").buffer;
-    attachResumeFile(input, bytes, "resume.pdf", "application/pdf");
+    attachFile(input, bytes, "resume.pdf", "application/pdf");
 
     expect(input.files).not.toBeUndefined();
     expect(input.files!.length).toBe(1);
