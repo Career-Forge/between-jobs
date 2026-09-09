@@ -1,4 +1,6 @@
 import { ApiError, apiFetch, apiFetchBlob } from "@/lib/api";
+import { verifyAndParseFieldMap } from "@/lib/ats-field-map";
+import type { LeverFieldMap, SignedFieldMapResponse } from "@/lib/ats-field-map";
 import type {
   BackgroundMessage,
   DraftAnswerResult,
@@ -33,6 +35,77 @@ async function fetchGeneratedFile(
   return { base64: await blobToBase64(blob), filename: `${kind}.pdf` };
 }
 
+const FIELD_MAP_VERSION_STORAGE_PREFIX = "fieldMapVersion:";
+
+// Adversarially-confirmed gap: Ed25519 verification alone proves a
+// payload was genuinely signed at SOME point, not that it's the CURRENT
+// version -- publishing is append-only (scripts/sign_and_publish_ats_
+// field_map.py never updates/deletes a row), so every past version
+// stays validly signed forever. A compromised or buggy intermediary
+// with only READ access to the ats_field_maps table -- no access to the
+// private key at all -- could replay an old, since-corrected row
+// indefinitely and verifyAndParseFieldMap would accept it: it only
+// checks the payload's own internal ats_type/version/schema binding,
+// never "is this the version I've seen before." Remembering the highest
+// version ever accepted per ats_type (chrome.storage.local, not
+// `.session` -- this needs to survive a full browser restart to be a
+// real defense, and unlike the Supabase auth token it's a plain version
+// number with no content-script-exposure risk) and refusing anything
+// lower closes this the same way TUF's own monotonic version check
+// defends against a rollback attack.
+async function getMinimumAcceptableFieldMapVersion(atsType: string): Promise<number> {
+  const key = `${FIELD_MAP_VERSION_STORAGE_PREFIX}${atsType}`;
+  const stored = (await chrome.storage.local.get(key)) as Record<string, unknown>;
+  return typeof stored[key] === "number" ? stored[key] : 0;
+}
+
+async function recordAcceptedFieldMapVersion(atsType: string, version: number): Promise<void> {
+  const key = `${FIELD_MAP_VERSION_STORAGE_PREFIX}${atsType}`;
+  await chrome.storage.local.set({ [key]: version });
+}
+
+// E3c -- deliberately its OWN try/catch, not folded into the payload/
+// résumé fetch below: a field-map outage must degrade to "the Lever-
+// idiosyncratic behavior is unavailable," never to "the whole tab state
+// resolution failed," since the open-source GENERIC_FIELD_DEFAULTS
+// fields (name/email/phone/résumé) have nothing to do with this fetch
+// and should keep working regardless (D4's fail-closed scope is the
+// signed data specifically, not the whole extension). Every failure
+// mode -- network error, no map published yet (404), a bad signature,
+// an unrecognized signing key, a rollback attempt -- collapses to the
+// same `map: null` outcome; `error` just carries a human-readable
+// reason for the side panel, never a distinction content.ts needs to
+// act on differently.
+async function fetchFieldMap(atsType: string): Promise<{ map: LeverFieldMap | null; error: string | null }> {
+  try {
+    const response = await apiFetch<SignedFieldMapResponse>(`/extension/field-maps/${atsType}`);
+    const map = await verifyAndParseFieldMap(response);
+    if (map === null) {
+      return {
+        map: null,
+        error: "This ATS's field map failed signature verification -- refusing to use it.",
+      };
+    }
+    const minimumVersion = await getMinimumAcceptableFieldMapVersion(atsType);
+    if (map.version < minimumVersion) {
+      return {
+        map: null,
+        error: "This ATS's field map is an older version than one already seen -- refusing to use it.",
+      };
+    }
+    await recordAcceptedFieldMapVersion(atsType, map.version);
+    return { map, error: null };
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) {
+      return { map: null, error: "No field map has been published for this ATS yet." };
+    }
+    return {
+      map: null,
+      error: e instanceof Error ? e.message : "Failed to fetch this ATS's field map.",
+    };
+  }
+}
+
 async function resolveTabState(url: string): Promise<TabState> {
   let applicationId: string;
   try {
@@ -51,16 +124,29 @@ async function resolveTabState(url: string): Promise<TabState> {
   }
 
   try {
-    const payload = await apiFetch<ExtensionPayload>(
-      `/applications/${applicationId}/extension-payload`,
-    );
+    // The field-map fetch never throws (fetchFieldMap catches
+    // everything itself) and doesn't depend on `payload`, so it runs
+    // concurrently with it rather than after -- a free latency win, not
+    // a correctness-sensitive ordering.
+    const [payload, fieldMapResult] = await Promise.all([
+      apiFetch<ExtensionPayload>(`/applications/${applicationId}/extension-payload`),
+      fetchFieldMap("lever"),
+    ]);
     const resume = payload.prepare_result?.resume
       ? await fetchGeneratedFile(applicationId, "resume")
       : null;
     const coverLetter = payload.prepare_result?.cover_letter
       ? await fetchGeneratedFile(applicationId, "cover-letter")
       : null;
-    return { status: "tracked", applicationId, payload, resume, coverLetter };
+    return {
+      status: "tracked",
+      applicationId,
+      payload,
+      resume,
+      coverLetter,
+      fieldMap: fieldMapResult.map,
+      fieldMapError: fieldMapResult.error,
+    };
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) {
       return { status: "signed_out" };

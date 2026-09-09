@@ -1,10 +1,7 @@
 """HTTP surface for the browser extension (browser-extension.md E1).
 
-Selector-map serving is deliberately NOT here yet -- its real design
-(signing, key management, D4's fail-closed verification behavior) depends
-on what E2's unsigned dev-served map actually looks like once built, so it
-lands in E3c. This module carries E1's URL lookup + known-question-memory
-match/save, and E3b's LLM-answer draft endpoint.
+This module carries E1's URL lookup + known-question-memory match/save,
+E3b's LLM-answer draft endpoint, and E3c's signed field-map serving.
 """
 
 from __future__ import annotations
@@ -23,6 +20,7 @@ from .application_answer_generator import (
     verify_answer_claims,
 )
 from .applications_store import ApplicationNotFound, find_application_by_url, get_application
+from .ats_field_maps import get_latest_field_map
 from .auth import require_user_id
 from .credential_resolver import resolve
 from .errors import ApiError
@@ -47,6 +45,38 @@ async def lookup_application_by_url(
 ) -> dict[str, Any]:
     application = await find_application_by_url(supabase, user_id, url)
     return {"application_id": application["id"] if application else None}
+
+
+@router.get("/field-maps/{ats_type}")
+async def get_field_map(
+    ats_type: str,
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> dict[str, Any]:
+    """browser-extension.md E3c -- the curated, genuinely ATS-idiosyncratic
+    part of the field map (never the generic name/email/phone/resume-
+    selector defaults the extension already ships open-source). Auth-gated
+    (`user_id` isn't otherwise used) for consistency and rate-limiting
+    with every other `/extension/*` route, not because the map is secret
+    -- the Ed25519 signature, not this auth check, is what the extension
+    actually depends on for trust. Returns the exact `payload_canonical`
+    bytes `scripts/sign_and_publish_ats_field_map.py` signed, untouched,
+    so the extension's own signature check verifies the identical
+    content -- this route never re-parses or re-serializes it. A missing
+    row is a clean 404: unlike a genuine Supabase error (which propagates
+    and 500s), an ATS with no published map is a real, distinct state
+    worth telling apart from a backend fault."""
+    row = await get_latest_field_map(supabase, ats_type)
+    if row is None:
+        raise ApiError("NOT_FOUND", f"no published field map for ats_type={ats_type!r}")
+    return {
+        "ats_type": row["ats_type"],
+        "version": row["version"],
+        "schema": row["schema"],
+        "payload_canonical": row["payload_canonical"],
+        "signature_b64": row["signature_b64"],
+        "signing_key_id": row["signing_key_id"],
+    }
 
 
 @router.post("/match-answer")

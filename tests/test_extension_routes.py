@@ -133,6 +133,7 @@ class _FakeSupabase:
         profile_versions: list[dict[str, Any]] | None = None,
         capability_preferences: list[dict[str, Any]] | None = None,
         provider_credentials: list[dict[str, Any]] | None = None,
+        ats_field_maps: list[dict[str, Any]] | None = None,
     ) -> None:
         self._tables = {
             "applications": _FakeTable(rows=applications),
@@ -142,6 +143,7 @@ class _FakeSupabase:
             "profile_versions": _FakeTable(rows=profile_versions),
             "capability_preferences": _FakeTable(rows=capability_preferences),
             "provider_credentials": _FakeTable(rows=provider_credentials),
+            "ats_field_maps": _FakeTable(rows=ats_field_maps),
         }
 
     def table(self, name: str) -> _FakeTable:
@@ -516,3 +518,48 @@ def test_draft_answer_fails_open_when_the_verify_call_errors(
     assert body["eligible"] is True
     assert body["answer_text"] == "I led a team of 5."
     assert body["warnings"] == []
+
+
+_LEVER_FIELD_MAP_ROW = {
+    "ats_type": "lever",
+    "version": 1,
+    "schema": "ats-field-map/v1",
+    "payload_canonical": '{"ats_type":"lever","schema":"ats-field-map/v1","version":1}',
+    "signature_b64": "c2ln",
+    "signing_key_id": "test-key-2026-09",
+}
+
+
+def test_get_field_map_returns_the_published_map() -> None:
+    supabase = _FakeSupabase(ats_field_maps=[_LEVER_FIELD_MAP_ROW])
+    client = _client(supabase)
+
+    response = client.get("/extension/field-maps/lever")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ats_type": "lever",
+        "version": 1,
+        "schema": "ats-field-map/v1",
+        "payload_canonical": _LEVER_FIELD_MAP_ROW["payload_canonical"],
+        "signature_b64": "c2ln",
+        "signing_key_id": "test-key-2026-09",
+    }
+
+
+def test_get_field_map_404s_when_nothing_is_published_for_that_ats_type() -> None:
+    supabase = _FakeSupabase(ats_field_maps=[])
+    client = _client(supabase)
+
+    response = client.get("/extension/field-maps/lever")
+
+    assert response.status_code == 404
+
+
+def test_get_field_map_only_returns_the_requested_ats_type() -> None:
+    supabase = _FakeSupabase(ats_field_maps=[{**_LEVER_FIELD_MAP_ROW, "ats_type": "greenhouse"}])
+    client = _client(supabase)
+
+    response = client.get("/extension/field-maps/lever")
+
+    assert response.status_code == 404

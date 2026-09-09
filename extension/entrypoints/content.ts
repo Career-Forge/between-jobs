@@ -4,6 +4,7 @@ import {
   extractCustomQuestions,
   fillCustomTextAnswer,
   findCoverLetterField,
+  GENERIC_FIELD_DEFAULTS,
   isLeverApplyForm,
   planStandardFieldFills,
 } from "@/lib/lever";
@@ -98,43 +99,95 @@ export default defineContentScript({
         coverLetterAttached: false,
         coverLetterError: null,
         unresolvedQuestions: [],
+        fieldMapError: null,
       };
       if (tabState.status !== "tracked" || tabState.payload.personal_info === null) {
         return result;
       }
 
-      const plan = planStandardFieldFills(document, tabState.payload.personal_info, forceRefillAll);
+      // E3c -- the open-source GENERIC_FIELD_DEFAULTS fields fill
+      // regardless of whether the signed field map is available; only
+      // the genuinely Lever-idiosyncratic behavior below (location/
+      // LinkedIn/portfolio, cover-letter discovery, custom questions) is
+      // gated on it, matching D4's fail-closed scope to what the signed
+      // map actually protects rather than the whole extension.
+      const standardFields = [
+        ...GENERIC_FIELD_DEFAULTS.standardFields,
+        ...(tabState.fieldMap?.standard_fields ?? []),
+      ];
+      const plan = planStandardFieldFills(
+        document,
+        tabState.payload.personal_info,
+        forceRefillAll,
+        standardFields,
+      );
       result.filledFields = applyFillPlan(document, plan);
 
-      const resumeOutcome = tryAttach('input[name="resume"]', tabState.resume, forceRefillAll);
+      const resumeOutcome = tryAttach(GENERIC_FIELD_DEFAULTS.resumeSelector, tabState.resume, forceRefillAll);
       result.resumeAttached = resumeOutcome.attached;
       result.resumeError = resumeOutcome.error;
 
-      const coverLetterField = findCoverLetterField(document);
-      if (coverLetterField !== null) {
-        if (tabState.coverLetter === null) {
-          // The page has a cover-letter slot but this application never
-          // generated one (generate_cover_letter wasn't requested) --
-          // told explicitly rather than left silently invisible, since
-          // this field is otherwise excluded from unresolvedQuestions
-          // entirely (it's a file field, not a text-answerable one).
-          result.coverLetterError = "No cover letter was generated for this application yet.";
-        } else {
-          const coverLetterOutcome = tryAttach(
-            `[name="${coverLetterField}"]`,
-            tabState.coverLetter,
-            forceRefillAll,
-          );
-          result.coverLetterAttached = coverLetterOutcome.attached;
-          result.coverLetterError = coverLetterOutcome.error;
-        }
+      if (tabState.fieldMap === null) {
+        // D4 fail-closed: no verified map means no trustworthy way to
+        // know which fields on this page are the cover-letter slot or
+        // genuine custom questions -- neither gets attempted, and the
+        // side panel is told why rather than silently showing an empty
+        // "nothing to answer" list.
+        result.fieldMapError = tabState.fieldMapError;
+        return result;
       }
 
-      result.unresolvedQuestions = extractCustomQuestions(document, coverLetterField).map((q) => ({
-        fieldName: q.fieldName,
-        label: q.label,
-        kind: q.kind,
-      }));
+      // Adversarially-confirmed gap: a passed Ed25519 signature proves a
+      // map's AUTHENTICITY, not that every selector/pattern inside it is
+      // syntactically valid -- a maintainer typo (an unbalanced paren in
+      // cover_letter_label_pattern, a malformed CSS selector) would
+      // otherwise throw a synchronous, uncaught exception here, silently
+      // aborting the ENTIRE fill (custom-question extraction included,
+      // even though it doesn't itself touch the broken field) for every
+      // user of this ATS. Treated the same as D4's own "no usable map"
+      // case -- fail closed on the Lever-idiosyncratic behavior, but the
+      // GENERIC_FIELD_DEFAULTS fields above have already filled by now
+      // regardless, matching this function's own established scope split.
+      try {
+        const coverLetterField = findCoverLetterField(document, tabState.fieldMap);
+        if (coverLetterField !== null) {
+          if (tabState.coverLetter === null) {
+            // The page has a cover-letter slot but this application never
+            // generated one (generate_cover_letter wasn't requested) --
+            // told explicitly rather than left silently invisible, since
+            // this field is otherwise excluded from unresolvedQuestions
+            // entirely (it's a file field, not a text-answerable one).
+            result.coverLetterError = "No cover letter was generated for this application yet.";
+          } else {
+            // `coverLetterField` is an untrusted `name` attribute value
+            // scraped from the page's own DOM (via findCoverLetterField),
+            // not signed-map data -- CSS.escape matches the same
+            // defense-in-depth precedent fillCustomTextAnswer/
+            // extractCustomQuestions already apply to every other
+            // selector built from page-scraped content.
+            const coverLetterOutcome = tryAttach(
+              `[name="${CSS.escape(coverLetterField)}"]`,
+              tabState.coverLetter,
+              forceRefillAll,
+            );
+            result.coverLetterAttached = coverLetterOutcome.attached;
+            result.coverLetterError = coverLetterOutcome.error;
+          }
+        }
+
+        result.unresolvedQuestions = extractCustomQuestions(
+          document,
+          tabState.fieldMap,
+          coverLetterField,
+        ).map((q) => ({ fieldName: q.fieldName, label: q.label, kind: q.kind }));
+      } catch (e) {
+        result.coverLetterAttached = false;
+        result.coverLetterError = null;
+        result.unresolvedQuestions = [];
+        result.fieldMapError =
+          "This ATS's field map has an invalid selector or pattern -- refusing to use it. " +
+          (e instanceof Error ? e.message : "");
+      }
       return result;
     }
 
@@ -162,11 +215,16 @@ export default defineContentScript({
       if (message.type === "FILL_FIELD") {
         // E3b -- the one path a value chosen off-page (a saved answer,
         // an LLM draft) ever reaches the real DOM. `fillCustomTextAnswer`
-        // itself re-validates the target (genuine cards[...] text field
-        // only, never a radio/file/eeo/standard field), so this handler
-        // doesn't need to duplicate that check.
+        // itself re-validates the target (genuine custom-question text
+        // field only, never a radio/file/eeo/standard field), so this
+        // handler doesn't need to duplicate that check. E3c: needs the
+        // verified map's own `custom_question_prefix` to do that check at
+        // all -- no map, no fill, matching D4's fail-closed scope.
+        const fieldMap = tabState?.status === "tracked" ? tabState.fieldMap : null;
         const response: FillFieldResult = {
-          filled: fillCustomTextAnswer(document, message.fieldName, message.value),
+          filled:
+            fieldMap !== null &&
+            fillCustomTextAnswer(document, fieldMap, message.fieldName, message.value),
         };
         return Promise.resolve(response);
       }

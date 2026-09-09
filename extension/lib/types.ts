@@ -1,3 +1,5 @@
+import type { LeverFieldMap } from "./ats-field-map";
+
 // Mirrors between_jobs.api.applications_routes._extension_personal_info's
 // real response shape exactly (see GET /applications/{id}/extension-payload).
 // Deliberately has no work_authorization/dob/nationality/marital_status/
@@ -35,6 +37,20 @@ export interface GeneratedFile {
  * script reports a detected Lever form and the backend lookup completes.
  * Held in background's own per-tab state map; the side panel and content
  * script both ask for it rather than duplicating the lookup. */
+/** E3c -- the verified Lever-idiosyncratic field map, fetched and
+ * signature-checked once per detection alongside the résumé/cover-letter
+ * blobs (background.ts is the only context that talks to the backend,
+ * per this phase's own architecture). `fieldMap: null` means D4's
+ * fail-closed case fired -- content.ts must not attempt any Lever-
+ * idiosyncratic behavior (custom questions, cover-letter discovery,
+ * location/LinkedIn/portfolio) in that case, though the open-source
+ * GENERIC_FIELD_DEFAULTS fields (name/email/phone/résumé) remain
+ * available regardless, since nothing signed ever backed them.
+ * `fieldMapError` carries a human-readable reason for the side panel --
+ * distinct states (no map published yet vs. a signature/verification
+ * failure vs. a network error) all collapse to the same `null` map, but
+ * the reason is still worth showing the person, not just silently
+ * degrading. */
 export type TabState =
   | { status: "signed_out" }
   | { status: "untracked" }
@@ -44,6 +60,8 @@ export type TabState =
       payload: ExtensionPayload;
       resume: GeneratedFile | null;
       coverLetter: GeneratedFile | null;
+      fieldMap: LeverFieldMap | null;
+      fieldMapError: string | null;
     }
   | { status: "error"; message: string };
 
@@ -137,7 +155,11 @@ export interface DetectionStateResponse {
 }
 
 /** `null` from a REQUEST_FILL response means detection hasn't resolved
- * yet, distinct from a genuine FillResult with everything empty. */
+ * yet, distinct from a genuine FillResult with everything empty.
+ * `fieldMapError` (E3c) is non-null whenever D4's fail-closed case fired
+ * for this fill -- cover-letter discovery and custom-question surfacing
+ * were skipped entirely, not just left empty, so the side panel can tell
+ * "nothing to find" apart from "couldn't check." */
 export interface FillResult {
   filledFields: string[];
   skippedFields: string[];
@@ -146,4 +168,5 @@ export interface FillResult {
   coverLetterAttached: boolean;
   coverLetterError: string | null;
   unresolvedQuestions: { fieldName: string; label: string | null; kind: "text" | "file" | "radio" }[];
+  fieldMapError: string | null;
 }

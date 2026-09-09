@@ -1,3 +1,4 @@
+import type { StandardFieldSpec } from "./ats-field-map";
 import type { ExtensionPersonalInfo } from "./types";
 
 // Field selectors confirmed live against a real posting (jobs.lever.co/
@@ -7,41 +8,86 @@ import type { ExtensionPersonalInfo } from "./types";
 // dispatched `input`/`change` event is sufficient; no synthetic-event
 // trick for a controlled component is needed here (that problem is
 // Greenhouse/Ashby's, deferred to E4/E5).
+//
+// GENERIC_FIELD_DEFAULTS (E3c) -- deliberately open-source and unsigned,
+// NOT part of the E3c signed field map. `name`/`email`/`phone` and the
+// résumé-upload selector are plain, unremarkable HTML-form conventions
+// any ATS's markup could plausibly use, not curated Lever-specific IP --
+// unlike the genuinely Lever-idiosyncratic conventions (the urls[...]
+// field-name shape, the cards[ custom-question prefix, the application-
+// field/application-label DOM-nesting shape, the cover-letter label
+// pattern), which live ONLY in the signed map (extension/lib/
+// ats-field-map.ts) and are never bundled here. This split means a fresh
+// self-hosted clone gets baseline autofill with zero setup -- matching
+// this repo's own "BYOK-first... no demo shells" rule -- and also means
+// D4's fail-closed guarantee is scoped to what the signed map actually
+// protects: a field-map outage disables the Lever-idiosyncratic behavior
+// (custom questions, cover-letter discovery, location/LinkedIn/portfolio)
+// but never these four fields, since nothing signed ever backed them.
+export const GENERIC_FIELD_DEFAULTS: {
+  detectionSelector: string;
+  resumeSelector: string;
+  standardFields: StandardFieldSpec[];
+} = {
+  detectionSelector: 'form input[name="resume"]',
+  resumeSelector: 'input[name="resume"]',
+  standardFields: [
+    { field: "name", selector: 'input[name="name"]', strategy: "direct", profileFields: ["name"] },
+    { field: "email", selector: 'input[name="email"]', strategy: "direct", profileFields: ["email"] },
+    { field: "phone", selector: 'input[name="phone"]', strategy: "direct", profileFields: ["phone"] },
+  ],
+};
+
 export function isLeverApplyForm(doc: Document): boolean {
-  return doc.querySelector('form input[name="resume"]') !== null;
+  return doc.querySelector(GENERIC_FIELD_DEFAULTS.detectionSelector) !== null;
 }
-
-interface StandardField {
-  selector: string;
-  getValue: (info: ExtensionPersonalInfo) => string | null;
-}
-
-// Deliberately does NOT include `org` (current company) -- ExtensionPersonalInfo
-// has no such field (between-jobs' own profile schema doesn't track it),
-// so it's left for the human to fill rather than guessed at.
-export const STANDARD_FIELDS: readonly StandardField[] = [
-  { selector: 'input[name="name"]', getValue: (info) => info.name },
-  { selector: 'input[name="email"]', getValue: (info) => info.email },
-  { selector: 'input[name="phone"]', getValue: (info) => info.phone },
-  {
-    selector: 'input[name="location"]',
-    getValue: (info) => {
-      const parts = [info.location.city, info.location.region, info.location.country].filter(
-        (part) => part.length > 0,
-      );
-      return parts.length > 0 ? parts.join(", ") : null;
-    },
-  },
-  { selector: 'input[name="urls[LinkedIn]"]', getValue: (info) => info.linkedin || null },
-  {
-    selector: 'input[name="urls[Other (portfolio, GitHub etc)]"]',
-    getValue: (info) => info.portfolio || info.github || null,
-  },
-];
 
 export interface FieldFillPlanItem {
   selector: string;
   value: string;
+}
+
+function getProfileValue(info: ExtensionPersonalInfo, path: string): string {
+  const parts = path.split(".");
+  let value: unknown = info;
+  for (const part of parts) {
+    if (value === null || typeof value !== "object") return "";
+    value = (value as Record<string, unknown>)[part];
+  }
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * The declarative interpreter E3c introduced in place of `STANDARD_
+ * FIELDS`' old `getValue` closures -- functions can't be part of a
+ * signed JSON payload, so this reproduces the same three behaviors a
+ * pure, generic vocabulary a signed map (or GENERIC_FIELD_DEFAULTS) can
+ * express as plain data: `direct` (a plain field read, treating an
+ * empty string as "no value" -- matches the old `info.linkedin || null`
+ * shape exactly), `fallback` (first non-empty of several, matching the
+ * old `info.portfolio || info.github` shape), and `joinNonEmpty`
+ * (matching the old location joiner -- filters empties, joins the rest).
+ */
+function resolveFieldValue(spec: StandardFieldSpec, info: ExtensionPersonalInfo): string | null {
+  switch (spec.strategy) {
+    case "direct": {
+      const value = getProfileValue(info, spec.profileFields[0] ?? "");
+      return value || null;
+    }
+    case "fallback": {
+      for (const path of spec.profileFields) {
+        const value = getProfileValue(info, path);
+        if (value) return value;
+      }
+      return null;
+    }
+    case "joinNonEmpty": {
+      const parts = spec.profileFields
+        .map((path) => getProfileValue(info, path))
+        .filter((value) => value.length > 0);
+      return parts.length > 0 ? parts.join(spec.separator ?? ", ") : null;
+    }
+  }
 }
 
 /**
@@ -52,18 +98,25 @@ export interface FieldFillPlanItem {
  * don't clobber" decision. Pure with respect to the DOM (only reads
  * `.value`), so this is the part covered by real unit tests; the actual
  * mutation happens in `applyFillPlan`.
+ *
+ * `standardFields` (E3c) is caller-supplied -- typically
+ * `[...GENERIC_FIELD_DEFAULTS.standardFields, ...(verifiedMap?.standard_
+ * fields ?? [])]` -- rather than a hardcoded module-level constant, so
+ * this function has zero knowledge of which entries came from the
+ * signed map versus the open-source defaults.
  */
 export function planStandardFieldFills(
   doc: Document,
   personalInfo: ExtensionPersonalInfo,
   forceRefillAll: boolean,
+  standardFields: readonly StandardFieldSpec[],
 ): FieldFillPlanItem[] {
   const plan: FieldFillPlanItem[] = [];
-  for (const field of STANDARD_FIELDS) {
+  for (const field of standardFields) {
     const element = doc.querySelector<HTMLInputElement>(field.selector);
     if (element === null) continue;
     if (!forceRefillAll && element.value.trim() !== "") continue;
-    const value = field.getValue(personalInfo);
+    const value = resolveFieldValue(field, personalInfo);
     if (value === null || value === "") continue;
     plan.push({ selector: field.selector, value });
   }
@@ -89,24 +142,38 @@ export interface CustomQuestion {
   kind: "text" | "file" | "radio";
 }
 
-// Confirmed live: `.application-field` is the per-card wrapper around a
-// question's actual input(s); its own PARENT div holds `.application-label`
-// as a direct sibling -- a clean 1:1 mapping (verified: exactly one
-// `.application-field` per label-holding parent), not something that
-// needs fuzzy nearest-ancestor guessing.
-function labelForCardField(element: Element): string | null {
-  const appField = element.closest(".application-field");
-  const label = appField?.parentElement?.querySelector(".application-label");
+/** The subset of the verified field map these functions actually need --
+ * accepting a narrower type than the full `LeverFieldMap` keeps them
+ * trivially testable against a small fixture object, not the whole
+ * shape. */
+export interface LeverQuestionMapFields {
+  custom_question_prefix: string;
+  label_wrapper_selector: string;
+  label_selector: string;
+}
+
+// Confirmed live: the wrapper/label selectors' own DOM-nesting SHAPE
+// (`.closest(wrapper)` then `.parentElement.querySelector(label)`) is
+// Lever's structural convention -- a clean 1:1 mapping (verified:
+// exactly one wrapper element per label-holding parent), not something
+// that needs fuzzy nearest-ancestor guessing. The wrapper/label
+// SELECTOR STRINGS themselves are E3c signed-map data (map.label_
+// wrapper_selector/map.label_selector); this traversal shape is open-
+// source algorithm, parameterized on them.
+function labelForCardField(element: Element, wrapperSelector: string, labelSelector: string): string | null {
+  const wrapper = element.closest(wrapperSelector);
+  const label = wrapper?.parentElement?.querySelector(labelSelector);
   return label?.textContent?.trim().replace(/\s+/g, " ") ?? null;
 }
 
-// Only `cards[<uuid>][...]` fields are genuine per-org custom application
-// questions eligible for known-question-memory matching (E3). Lever's
-// `eeo[...]` (gender/race/veteran) and `surveysResponses[<uuid>][...]`
-// (a separate voluntary demographic survey) are excluded BY CONSTRUCTION
-// here -- confirmed live these are real, separate field-name namespaces,
-// not something requiring a label-text sensitivity classifier (D6, and
-// the selector-map design note on excluding consent/sensitive fields by
+// Only fields under the map's own `custom_question_prefix` (Lever:
+// `cards[<uuid>][...]`) are genuine per-org custom application questions
+// eligible for known-question-memory matching (E3). Lever's `eeo[...]`
+// (gender/race/veteran) and `surveysResponses[<uuid>][...]` (a separate
+// voluntary demographic survey) are excluded BY CONSTRUCTION here --
+// confirmed live these are real, separate field-name namespaces, not
+// something requiring a label-text sensitivity classifier (D6, and the
+// selector-map design note on excluding consent/sensitive fields by
 // authoring rather than runtime detection).
 //
 // `excludeFieldName` is the field `findCoverLetterField` already
@@ -130,11 +197,13 @@ function labelForCardField(element: Element): string | null {
 // human-only, same as file fields do today.
 export function extractCustomQuestions(
   doc: Document,
+  map: LeverQuestionMapFields,
   excludeFieldName: string | null = null,
 ): CustomQuestion[] {
   const seen = new Set<string>();
   const questions: CustomQuestion[] = [];
-  for (const element of doc.querySelectorAll<HTMLInputElement>('form [name^="cards["]')) {
+  const selector = `form [name^="${CSS.escape(map.custom_question_prefix)}"]`;
+  for (const element of doc.querySelectorAll<HTMLInputElement>(selector)) {
     const name = element.getAttribute("name");
     if (name === null || seen.has(name) || element.type === "hidden" || name === excludeFieldName) {
       continue;
@@ -143,22 +212,31 @@ export function extractCustomQuestions(
     let kind: CustomQuestion["kind"] = "text";
     if (element.type === "file") kind = "file";
     else if (element.type === "radio" || element.type === "checkbox") kind = "radio";
-    questions.push({ fieldName: name, label: labelForCardField(element), kind });
+    questions.push({
+      fieldName: name,
+      label: labelForCardField(element, map.label_wrapper_selector, map.label_selector),
+      kind,
+    });
   }
   return questions;
 }
 
 // Confirmed live (a real Sysdig posting, 2026-09-08): unlike Lever's
 // standard fields, a cover-letter upload -- when an org enables one at
-// all -- is NOT a stable, predictable selector. It's the exact same
-// opaque per-org `cards[<uuid>]` custom-field pattern as an ordinary
-// text question, just with `type="file"`, discoverable only by matching
-// its rendered "Cover Letter" label at runtime -- the same mechanism
-// already proven for custom-question labels, not a new one.
-export function findCoverLetterField(doc: Document): string | null {
-  for (const element of doc.querySelectorAll<HTMLInputElement>('form [name^="cards["][type="file"]')) {
-    const label = labelForCardField(element);
-    if (label !== null && /cover letter/i.test(label)) {
+// all -- is NOT a stable selector. It's the exact same opaque per-org
+// custom-field pattern as an ordinary text question, just with
+// `type="file"`, discoverable only by matching its rendered label at
+// runtime against the map's own `cover_letter_label_pattern` -- the same
+// mechanism already proven for custom-question labels, not a new one.
+export function findCoverLetterField(
+  doc: Document,
+  map: LeverQuestionMapFields & { cover_letter_label_pattern: string },
+): string | null {
+  const selector = `form [name^="${CSS.escape(map.custom_question_prefix)}"][type="file"]`;
+  const pattern = new RegExp(map.cover_letter_label_pattern, "i");
+  for (const element of doc.querySelectorAll<HTMLInputElement>(selector)) {
+    const label = labelForCardField(element, map.label_wrapper_selector, map.label_selector);
+    if (label !== null && pattern.test(label)) {
       return element.getAttribute("name");
     }
   }
@@ -171,7 +249,7 @@ export function findCoverLetterField(doc: Document): string | null {
  * reaches the real DOM, so it re-validates the target itself rather than
  * trusting the caller already filtered correctly (the same defense-in-
  * depth precedent K1's own dual Pydantic+DB status enforcement already
- * set). Refuses to touch anything that isn't a genuine `cards[<uuid>]`
+ * set). Refuses to touch anything that isn't a genuine custom-question
  * text/textarea field: never a radio/checkbox (E3b never generates
  * binary-choice answers to begin with), never a file input, never
  * `eeo[...]`/`surveysResponses[...]`, never a standard field, and never
@@ -188,8 +266,13 @@ export function findCoverLetterField(doc: Document): string | null {
  * in some other way -- not exploitable against Lever's real UUID-only
  * field names today, but cheap, defense-in-depth insurance regardless.
  */
-export function fillCustomTextAnswer(doc: Document, fieldName: string, value: string): boolean {
-  if (!fieldName.startsWith("cards[")) return false;
+export function fillCustomTextAnswer(
+  doc: Document,
+  map: Pick<LeverQuestionMapFields, "custom_question_prefix">,
+  fieldName: string,
+  value: string,
+): boolean {
+  if (!fieldName.startsWith(map.custom_question_prefix)) return false;
   const element = doc.querySelector<HTMLInputElement | HTMLTextAreaElement>(
     `form [name="${CSS.escape(fieldName)}"]`,
   );

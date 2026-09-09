@@ -425,6 +425,17 @@ export default function App() {
                   {fillResult.coverLetterAttached ? "attached" : fillResult.coverLetterError}
                 </p>
               )}
+              {fillResult.fieldMapError !== null && (
+                // E3c, D4 fail-closed: the signed field map couldn't be
+                // verified this time, so cover-letter discovery and
+                // custom-question surfacing were skipped entirely (not
+                // just left empty) -- the basic fields above still filled
+                // regardless, since nothing signed backs them.
+                <p className="error">
+                  Couldn&apos;t verify this ATS&apos;s field map -- only the basic fields above were
+                  filled. {fillResult.fieldMapError}
+                </p>
+              )}
               {fillResult.unresolvedQuestions.length > 0 && (
                 <div>
                   <p>These need your own attention -- we don't touch them yet:</p>

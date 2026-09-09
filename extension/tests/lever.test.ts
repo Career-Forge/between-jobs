@@ -1,14 +1,56 @@
 import { describe, expect, it } from "vitest";
+import type { LeverFieldMap } from "@/lib/ats-field-map";
 import {
   applyFillPlan,
   attachFile,
   extractCustomQuestions,
   fillCustomTextAnswer,
   findCoverLetterField,
+  GENERIC_FIELD_DEFAULTS,
   isLeverApplyForm,
   planStandardFieldFills,
 } from "@/lib/lever";
 import type { ExtensionPersonalInfo } from "@/lib/types";
+
+// E3c -- the genuinely Lever-idiosyncratic half of the field map
+// (location/LinkedIn/portfolio, the cards[ prefix, the label-lookup
+// selectors, the cover-letter pattern), exactly what a real signed
+// payload would carry post-verification. Merged with
+// GENERIC_FIELD_DEFAULTS.standardFields (open-source, unsigned) for the
+// `planStandardFieldFills` tests below, mirroring how content.ts itself
+// merges them.
+const TEST_LEVER_MAP: LeverFieldMap = {
+  ats_type: "lever",
+  version: 1,
+  schema: "ats-field-map/v1",
+  standard_fields: [
+    {
+      field: "location",
+      selector: 'input[name="location"]',
+      strategy: "joinNonEmpty",
+      profileFields: ["location.city", "location.region", "location.country"],
+      separator: ", ",
+    },
+    {
+      field: "linkedin",
+      selector: 'input[name="urls[LinkedIn]"]',
+      strategy: "direct",
+      profileFields: ["linkedin"],
+    },
+    {
+      field: "portfolio",
+      selector: 'input[name="urls[Other (portfolio, GitHub etc)]"]',
+      strategy: "fallback",
+      profileFields: ["portfolio", "github"],
+    },
+  ],
+  custom_question_prefix: "cards[",
+  label_wrapper_selector: ".application-field",
+  label_selector: ".application-label",
+  cover_letter_label_pattern: "cover letter",
+};
+
+const ALL_STANDARD_FIELDS = [...GENERIC_FIELD_DEFAULTS.standardFields, ...TEST_LEVER_MAP.standard_fields];
 
 // Mirrors the real DOM structure confirmed live against
 // jobs.lever.co/theathletic and jobs.lever.co/sysdig (2026-09-08) --
@@ -83,7 +125,7 @@ describe("isLeverApplyForm", () => {
 describe("planStandardFieldFills", () => {
   it("plans a fill for every empty standard field with available data", () => {
     buildLeverForm();
-    const plan = planStandardFieldFills(document, FULL_INFO, false);
+    const plan = planStandardFieldFills(document, FULL_INFO, false, ALL_STANDARD_FIELDS);
     const bySelector = Object.fromEntries(plan.map((p) => [p.selector, p.value]));
 
     expect(bySelector['input[name="name"]']).toBe("Jane Doe");
@@ -99,7 +141,7 @@ describe("planStandardFieldFills", () => {
     const nameInput = document.querySelector<HTMLInputElement>('input[name="name"]')!;
     nameInput.value = "Already Typed";
 
-    const plan = planStandardFieldFills(document, FULL_INFO, false);
+    const plan = planStandardFieldFills(document, FULL_INFO, false, ALL_STANDARD_FIELDS);
 
     expect(plan.some((p) => p.selector === 'input[name="name"]')).toBe(false);
   });
@@ -109,7 +151,7 @@ describe("planStandardFieldFills", () => {
     const nameInput = document.querySelector<HTMLInputElement>('input[name="name"]')!;
     nameInput.value = "Already Typed";
 
-    const plan = planStandardFieldFills(document, FULL_INFO, true);
+    const plan = planStandardFieldFills(document, FULL_INFO, true, ALL_STANDARD_FIELDS);
 
     expect(plan.find((p) => p.selector === 'input[name="name"]')?.value).toBe("Jane Doe");
   });
@@ -118,14 +160,14 @@ describe("planStandardFieldFills", () => {
     buildLeverForm();
     const info: ExtensionPersonalInfo = { ...FULL_INFO, email: null };
 
-    const plan = planStandardFieldFills(document, info, false);
+    const plan = planStandardFieldFills(document, info, false, ALL_STANDARD_FIELDS);
 
     expect(plan.some((p) => p.selector === 'input[name="email"]')).toBe(false);
   });
 
   it("skips a standard field that isn't present on this posting's form", () => {
     document.body.innerHTML = `<form><input type="file" name="resume" /><input type="text" name="name" /></form>`;
-    const plan = planStandardFieldFills(document, FULL_INFO, false);
+    const plan = planStandardFieldFills(document, FULL_INFO, false, ALL_STANDARD_FIELDS);
     expect(plan.every((p) => p.selector === 'input[name="name"]')).toBe(true);
   });
 });
@@ -155,7 +197,7 @@ describe("applyFillPlan", () => {
 describe("extractCustomQuestions", () => {
   it("extracts a genuine custom question with its real question-level label", () => {
     buildLeverForm();
-    const questions = extractCustomQuestions(document);
+    const questions = extractCustomQuestions(document, TEST_LEVER_MAP);
     const referral = questions.find((q) =>
       q.fieldName.includes("dbe2365b-6fb2-40f2-a0b8-9d370957da3b"),
     );
@@ -164,25 +206,25 @@ describe("extractCustomQuestions", () => {
 
   it("never treats an eeo[...] field as a custom question (D6, by field-name construction)", () => {
     buildLeverForm();
-    const questions = extractCustomQuestions(document);
+    const questions = extractCustomQuestions(document, TEST_LEVER_MAP);
     expect(questions.some((q) => q.fieldName.startsWith("eeo["))).toBe(false);
   });
 
   it("never treats a surveysResponses[...] field as a custom question (D6)", () => {
     buildLeverForm();
-    const questions = extractCustomQuestions(document);
+    const questions = extractCustomQuestions(document, TEST_LEVER_MAP);
     expect(questions.some((q) => q.fieldName.startsWith("surveysResponses["))).toBe(false);
   });
 
   it("excludes the hidden baseTemplate field from a card", () => {
     buildLeverForm();
-    const questions = extractCustomQuestions(document);
+    const questions = extractCustomQuestions(document, TEST_LEVER_MAP);
     expect(questions.some((q) => q.fieldName.endsWith("[baseTemplate]"))).toBe(false);
   });
 
   it("dedupes multiple radio inputs sharing the same field name into one question", () => {
     buildLeverForm();
-    const questions = extractCustomQuestions(document);
+    const questions = extractCustomQuestions(document, TEST_LEVER_MAP);
     const matching = questions.filter((q) =>
       q.fieldName === "cards[dbe2365b-6fb2-40f2-a0b8-9d370957da3b][field0]",
     );
@@ -191,7 +233,7 @@ describe("extractCustomQuestions", () => {
 
   it("tags a text question with kind 'text'", () => {
     buildLeverForm();
-    const questions = extractCustomQuestions(document);
+    const questions = extractCustomQuestions(document, TEST_LEVER_MAP);
     const referral = questions.find((q) =>
       q.fieldName === "cards[dbe2365b-6fb2-40f2-a0b8-9d370957da3b][field1]",
     );
@@ -200,7 +242,7 @@ describe("extractCustomQuestions", () => {
 
   it("tags a radio-group question with kind 'radio', not 'text' -- E3b's LLM-answer feature must never target a binary choice, since these are disproportionately the sensitive ones (work authorization, sponsorship)", () => {
     buildLeverForm();
-    const questions = extractCustomQuestions(document);
+    const questions = extractCustomQuestions(document, TEST_LEVER_MAP);
     const referralYesNo = questions.find((q) =>
       q.fieldName === "cards[dbe2365b-6fb2-40f2-a0b8-9d370957da3b][field0]",
     );
@@ -209,7 +251,7 @@ describe("extractCustomQuestions", () => {
 
   it("still returns a file-type card as kind 'file' when it isn't explicitly excluded -- regression guard for a real, adversarially-confirmed bug where EVERY file field was silently dropped, not just the cover-letter one", () => {
     buildLeverForm();
-    const questions = extractCustomQuestions(document);
+    const questions = extractCustomQuestions(document, TEST_LEVER_MAP);
     const coverLetter = questions.find((q) =>
       q.fieldName.includes("2b91c9dd-2899-4603-ab9f-b5218e738b4a"),
     );
@@ -236,8 +278,8 @@ describe("extractCustomQuestions", () => {
         </div>
       </form>
     `;
-    const coverLetterField = findCoverLetterField(document);
-    const questions = extractCustomQuestions(document, coverLetterField);
+    const coverLetterField = findCoverLetterField(document, TEST_LEVER_MAP);
+    const questions = extractCustomQuestions(document, TEST_LEVER_MAP, coverLetterField);
 
     expect(questions.some((q) => q.fieldName.includes("2b91c9dd"))).toBe(false);
     const portfolio = questions.find((q) => q.fieldName.includes("11111111"));
@@ -249,13 +291,13 @@ describe("extractCustomQuestions", () => {
 describe("findCoverLetterField", () => {
   it("finds a real cover-letter file field by its rendered label, not a fixed selector", () => {
     buildLeverForm();
-    const fieldName = findCoverLetterField(document);
+    const fieldName = findCoverLetterField(document, TEST_LEVER_MAP);
     expect(fieldName).toBe("cards[2b91c9dd-2899-4603-ab9f-b5218e738b4a][field0]");
   });
 
   it("returns null when no cover-letter field exists on this posting", () => {
     document.body.innerHTML = `<form><input type="file" name="resume" /></form>`;
-    expect(findCoverLetterField(document)).toBeNull();
+    expect(findCoverLetterField(document, TEST_LEVER_MAP)).toBeNull();
   });
 
   it("never matches the resume field itself or an unrelated file field", () => {
@@ -270,7 +312,7 @@ describe("findCoverLetterField", () => {
         </div>
       </form>
     `;
-    expect(findCoverLetterField(document)).toBeNull();
+    expect(findCoverLetterField(document, TEST_LEVER_MAP)).toBeNull();
   });
 });
 
@@ -316,7 +358,7 @@ describe("fillCustomTextAnswer", () => {
     input.addEventListener("input", () => events.push("input"));
     input.addEventListener("change", () => events.push("change"));
 
-    const filled = fillCustomTextAnswer(document, fieldName, "Jane Doe referred me.");
+    const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, fieldName, "Jane Doe referred me.");
 
     expect(filled).toBe(true);
     expect(input.value).toBe("Jane Doe referred me.");
@@ -325,22 +367,20 @@ describe("fillCustomTextAnswer", () => {
 
   it("refuses a field name outside the cards[...] namespace, e.g. an eeo[...] field, without even querying the DOM for it", () => {
     buildLeverForm();
-    const filled = fillCustomTextAnswer(document, "eeo[gender]", "Male");
+    const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, "eeo[gender]", "Male");
     expect(filled).toBe(false);
   });
 
   it("refuses a radio-type cards[...] field -- E3b never generates a binary-choice answer", () => {
     buildLeverForm();
     const fieldName = "cards[dbe2365b-6fb2-40f2-a0b8-9d370957da3b][field0]";
-    const filled = fillCustomTextAnswer(document, fieldName, "Yes");
+    const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, fieldName, "Yes");
     expect(filled).toBe(false);
   });
 
   it("refuses a file-type cards[...] field (the cover-letter slot)", () => {
     buildLeverForm();
-    const filled = fillCustomTextAnswer(
-      document,
-      "cards[2b91c9dd-2899-4603-ab9f-b5218e738b4a][field0]",
+    const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, "cards[2b91c9dd-2899-4603-ab9f-b5218e738b4a][field0]",
       "not a real file",
     );
     expect(filled).toBe(false);
@@ -348,13 +388,13 @@ describe("fillCustomTextAnswer", () => {
 
   it("refuses the standard resume field even if somehow asked to fill it", () => {
     buildLeverForm();
-    const filled = fillCustomTextAnswer(document, "resume", "not applicable");
+    const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, "resume", "not applicable");
     expect(filled).toBe(false);
   });
 
   it("returns false for a field name that doesn't exist on the page", () => {
     buildLeverForm();
-    const filled = fillCustomTextAnswer(document, "cards[00000000-0000-0000-0000-000000000000][field0]", "x");
+    const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, "cards[00000000-0000-0000-0000-000000000000][field0]", "x");
     expect(filled).toBe(false);
   });
 
@@ -368,7 +408,7 @@ describe("fillCustomTextAnswer", () => {
     linkedin.value = "https://linkedin.com/in/janedoe";
 
     const maliciousFieldName = 'cards[x]"], input[name="urls[LinkedIn]';
-    const filled = fillCustomTextAnswer(document, maliciousFieldName, "attacker-controlled text");
+    const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, maliciousFieldName, "attacker-controlled text");
 
     expect(filled).toBe(false);
     expect(linkedin.value).toBe("https://linkedin.com/in/janedoe");

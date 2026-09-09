@@ -1,0 +1,13 @@
+-- Adversarially-confirmed gap in the previous migration
+-- (20260909100000_create_ats_field_maps.sql): `unique (ats_type,
+-- version)` already creates a btree index on `(ats_type, version)`
+-- ascending, which Postgres can scan BACKWARD to serve
+-- `WHERE ats_type = $1 ORDER BY version DESC LIMIT 1` (the only real
+-- query shape against this table, used identically by
+-- ats_field_maps.get_latest_field_map and the signing script's own
+-- next_version) just as efficiently as a dedicated descending index.
+-- ats_field_maps_latest_idx added no query-plan benefit while doubling
+-- per-insert index-maintenance cost -- dropped here rather than editing
+-- the already-applied migration, per this project's own "capture a
+-- correction as its own follow-up" convention.
+drop index if exists public.ats_field_maps_latest_idx;
