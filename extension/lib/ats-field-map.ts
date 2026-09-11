@@ -74,13 +74,12 @@ export interface SignedFieldMapResponse {
  * requirement on this half of the keypair, it's meant to be committed.
  * The matching private key exists ONLY in a maintainer's own offline
  * signing environment (scripts/sign_and_publish_ats_field_map.py),
- * never in this repo, never in the running backend. Empty until a real
- * keypair is generated and a map is published: until then every fetch
- * fails closed by construction (no `signing_key_id` will ever match),
- * which is the correct, honest state for a repo that has no real
- * published map yet, rather than shipping a placeholder key nothing
- * signs against. */
-export const KNOWN_PUBLIC_KEYS: Record<string, string> = {};
+ * never in this repo, never in the running backend. Any `signing_key_id`
+ * not registered here fails closed by construction -- a genuinely
+ * missing/retired/unrecognized key is never treated as "trust anything." */
+export const KNOWN_PUBLIC_KEYS: Record<string, string> = {
+  "prod-2026-09": "v3GQ8Q3Gm3SP/wWejKoc6D6kfvdUXyPKG3c03Efus9g=",
+};
 
 function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(b64);
