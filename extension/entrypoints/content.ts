@@ -30,11 +30,20 @@ export default defineContentScript({
     let tabState: TabState | null = null;
     const formDetected = isLeverApplyForm(document);
 
+    // Guards against detect() calls resolving out of order -- the initial
+    // page-load call and a later user-triggered RECHECK are both in flight
+    // independently, with no request id of their own, so whichever promise
+    // resolves last would otherwise win regardless of which was issued last.
+    let detectGeneration = 0;
+
     async function detect(): Promise<void> {
       if (!formDetected) return;
+      const generation = ++detectGeneration;
       const message: BackgroundMessage = { type: "LEVER_PAGE_DETECTED", url: location.href };
       try {
-        tabState = await browser.runtime.sendMessage(message);
+        const result = await browser.runtime.sendMessage(message);
+        if (generation !== detectGeneration) return;
+        tabState = result;
       } catch (e) {
         // The background service worker can be mid-restart when this
         // fires (MV3 kills an idle worker after ~30s) -- an
