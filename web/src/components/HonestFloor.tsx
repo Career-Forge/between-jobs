@@ -77,7 +77,7 @@ export function HonestFloor({
       </p>
 
       {fit.visa_flag && (
-        <div className="bj-danger-callout bj-small">
+        <div className="bj-danger-callout-solid bj-small">
           This posting doesn't mention sponsorship or a cap-exempt path, and your profile
           indicates you need one.
         </div>

@@ -1478,6 +1478,19 @@ a.bj-contact-chip {
   color: var(--bj-text-muted);
 }
 
+/* A solid variant of the callout above, for a single genuinely elevated
+   case: HonestFloor's visa/sponsorship mismatch. Everything else that uses
+   .bj-danger-callout (the white-text-spam warning) stays the quieter
+   outline treatment -- this is deliberately louder, matching a real
+   employment-eligibility concern rather than a resume-quality note. */
+.bj-danger-callout-solid {
+  background: var(--bj-danger);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #ffffff;
+  font-weight: 600;
+}
+
 /* S2: a session-local what-if, never the stored score -- emerald because
    this is a candidate-confirmed fact (verified), not evidence/uncertainty
    (gold, the rest of this panel) or a model having acted (violet). */
