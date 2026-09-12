@@ -58,6 +58,20 @@ async function getActiveTabId(): Promise<number | null> {
   return tab?.id ?? null;
 }
 
+// Client-side only -- `flagged_answer_warnings()` (application_answer_
+// generator.py) formats each warning as a plain string with the verdict
+// embedded at the start ("unsupported claim (unverifiable): ..." /
+// "unsupported claim (contradicted): ..."), so this panel can tell them
+// apart for display without the backend needing to change its response
+// shape. "unverifiable" is a genuine but unconfirmed claim -- review-
+// toned (gold), not alarming; "contradicted" actively conflicts with the
+// candidate's own facts -- the one case that gets the danger (red)
+// treatment. Anything unrecognized defaults to "review," never "danger,"
+// since a false alarm here is worse than an under-alarm.
+function warningSeverity(warning: string): "review" | "danger" {
+  return warning.includes("(contradicted)") ? "danger" : "review";
+}
+
 async function sendToActiveTab<T>(message: ContentScriptMessage): Promise<T | null> {
   const tabId = await getActiveTabId();
   if (tabId === null) return null;
@@ -346,7 +360,7 @@ export default function App() {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-          <button type="submit" disabled={busy}>
+          <button type="submit" className="primary" disabled={busy}>
             {busy ? "Signing in..." : "Sign in"}
           </button>
         </form>
@@ -404,7 +418,7 @@ export default function App() {
         <div>
           <p>Application found. Ready to fill known fields.</p>
           <div className="button-row">
-            <button onClick={() => handleFill(false)} disabled={busy}>
+            <button className="primary" onClick={() => handleFill(false)} disabled={busy}>
               {busy ? "Filling..." : "Fill this page"}
             </button>
             {fillResult !== null && (
@@ -439,13 +453,18 @@ export default function App() {
               {fillResult.unresolvedQuestions.length > 0 && (
                 <div>
                   <p>These need your own attention -- we don't touch them yet:</p>
-                  <ul>
+                  <ul className="question-list">
                     {fillResult.unresolvedQuestions.map((q) => {
                       const state: QuestionAnswerState = answerStates[q.fieldName] ?? { status: "idle" };
                       return (
-                        <li key={q.fieldName}>
-                          {q.label ?? q.fieldName}
-                          {q.kind === "file" ? " (upload this file yourself)" : ""}
+                        <li key={q.fieldName} className="question-card">
+                          <p className="question-label">{q.label ?? q.fieldName}</p>
+                          {q.kind === "file" && (
+                            <p className="question-meta">Upload this file yourself.</p>
+                          )}
+                          {q.kind === "radio" && (
+                            <p className="question-meta">Answer this one yourself.</p>
+                          )}
                           {q.kind === "text" && (
                             <div className="question-answer">
                               {state.status === "idle" && trackedTabState !== null && (
@@ -457,7 +476,9 @@ export default function App() {
                                   Draft answer
                                 </button>
                               )}
-                              {state.status === "loading" && <p>Checking for an answer...</p>}
+                              {state.status === "loading" && (
+                                <p className="question-meta">Checking for an answer...</p>
+                              )}
                               {(state.status === "declined" || state.status === "error") && (
                                 <div>
                                   <p className="error">
@@ -477,14 +498,20 @@ export default function App() {
                                   )}
                                 </div>
                               )}
-                              {state.status === "filled" && <p>Filled.</p>}
+                              {state.status === "filled" && <span className="badge badge-success">Filled</span>}
                               {(state.status === "ready" || state.status === "filling") && (
                                 <div>
-                                  {state.fromMemory && <p>Using a previously saved answer.</p>}
+                                  <p>
+                                    {state.fromMemory ? (
+                                      <span className="badge badge-success">Saved answer</span>
+                                    ) : (
+                                      <span className="badge badge-ai">AI drafted -- review before filling</span>
+                                    )}
+                                  </p>
                                   {state.warnings.length > 0 && (
-                                    <ul>
+                                    <ul className="warning-list">
                                       {state.warnings.map((warning, i) => (
-                                        <li key={i} className="error">
+                                        <li key={i} className={`warning-item ${warningSeverity(warning)}`}>
                                           {warning}
                                         </li>
                                       ))}
@@ -498,6 +525,7 @@ export default function App() {
                                   />
                                   <div className="button-row">
                                     <button
+                                      className="primary"
                                       onClick={() => handleFillAnswer(q.fieldName, q.label, false)}
                                       disabled={state.status === "filling"}
                                     >

@@ -1,7 +1,34 @@
+/* Same palette as the web app's tokens.css ("Obsidian Atlas") -- the
+   extension had no relationship to it at all before this pass (it was
+   still running on Vite's unstyled scaffold). Not imported directly
+   (the two packages build independently); duplicated as plain values
+   since this is a small, closed set. Same semantic contract:
+   gold = evidence/review/uncertainty, red = an actual confirmed
+   conflict, emerald = a verified/completed state, violet = the model
+   acted here. */
+:root {
+  --bj-bg: #070607;
+  --bj-surface: #100d0f;
+  --bj-surface-raised: #171216;
+  --bj-border: #34252b;
+  --bj-text: #f2eadf;
+  --bj-text-muted: #a99da0;
+  --bj-cyan: #38d6d0;
+  --bj-emerald: #3cb878;
+  --bj-gold: #c7a15a;
+  --bj-violet: #9a7be8;
+  --bj-danger: #e25555;
+}
+
 .panel {
   padding: 1rem;
-  font-family: system-ui, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
+  background: var(--bj-bg);
+  color: var(--bj-text);
+  min-height: 100vh;
+  box-sizing: border-box;
 }
 
 .panel h1 {
@@ -21,6 +48,46 @@
   gap: 0.5rem;
 }
 
+.panel input,
+.panel textarea {
+  background: var(--bj-surface-raised);
+  border: 1px solid var(--bj-border);
+  color: var(--bj-text);
+  padding: 0.5rem;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.panel button {
+  background: var(--bj-surface-raised);
+  border: 1px solid var(--bj-border);
+  color: var(--bj-text);
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  font-size: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+.panel button:hover:not(:disabled) {
+  border-color: var(--bj-cyan);
+}
+.panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* One accent-filled button per view (matching this project's own
+   restraint convention) -- the single action that actually mutates a
+   real page: filling it. Every sibling action (Fill & remember, Try
+   again, Sign out, ...) stays the quieter outline style above. */
+.panel button.primary {
+  background: var(--bj-cyan);
+  border-color: var(--bj-cyan);
+  color: #04302e;
+  font-weight: 600;
+}
+
 .button-row {
   display: flex;
   gap: 0.5rem;
@@ -30,26 +97,116 @@
 .fill-result {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
-  border-top: 1px solid #ddd;
+  border-top: 1px solid var(--bj-border);
 }
 
 .error {
-  color: #b00020;
+  color: var(--bj-danger);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.badge-success {
+  color: var(--bj-emerald);
+  border-color: var(--bj-emerald);
+}
+.badge-review {
+  color: var(--bj-gold);
+  border-color: var(--bj-gold);
+}
+.badge-danger {
+  color: var(--bj-danger);
+  border-color: var(--bj-danger);
+}
+.badge-ai {
+  color: var(--bj-violet);
+  border-color: var(--bj-violet);
+}
+
+.question-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.question-card {
+  background: var(--bj-surface);
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  padding: 0.75rem;
+}
+
+.question-label {
+  font-weight: 500;
+  margin: 0 0 0.4rem;
+}
+
+.question-meta {
+  color: var(--bj-text-muted);
+  font-size: 12px;
 }
 
 .question-answer {
-  margin-top: 0.4rem;
+  margin-top: 0.5rem;
 }
 
+/* The violet border is the one place in this panel a drafted-not-yet-
+   approved value lives -- "the model acted here, look before you use
+   it," same semantic role violet carries in the web app. A remembered
+   (fromMemory) answer -- something the person already approved once --
+   doesn't get this border (see the .badge-ai/.badge-success split in
+   App.tsx), since it isn't a fresh model output anymore. */
 .question-answer textarea {
   width: 100%;
   box-sizing: border-box;
-  font-family: inherit;
-  font-size: inherit;
+  border-color: var(--bj-violet);
+}
+
+.warning-list {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+/* Gold ("review this") for an unverifiable claim, red for a claim that
+   actively contradicts the candidate's own facts -- these are genuinely
+   different severities and were previously both rendered as identical
+   plain red text, indistinguishable from each other or from a hard
+   error message elsewhere in this panel. */
+.warning-item {
+  font-size: 12px;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  border-left: 3px solid;
+}
+.warning-item.review {
+  color: var(--bj-gold);
+  background: rgba(199, 161, 90, 0.12);
+  border-color: var(--bj-gold);
+}
+.warning-item.danger {
+  color: var(--bj-danger);
+  background: rgba(226, 85, 85, 0.12);
+  border-color: var(--bj-danger);
 }
 
 .footer-note {
   margin-top: 1.5rem;
-  color: #666;
+  color: var(--bj-text-muted);
   font-size: 0.8rem;
 }
