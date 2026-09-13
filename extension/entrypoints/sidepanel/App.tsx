@@ -385,7 +385,10 @@ export default function App() {
       {authError && <p className="error">{authError}</p>}
 
       {detection === null || !detection.formDetected ? (
-        <p>Not on a supported application page yet. Open a Lever application form to use autofill.</p>
+        <p>
+          Not on a supported application page yet. Open a Lever, Greenhouse, or Ashby application
+          form to use autofill.
+        </p>
       ) : detection.tabState === null ? (
         <div>
           <p>Checking...</p>

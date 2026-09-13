@@ -1,4 +1,11 @@
-import type { LeverFieldMap } from "./ats-field-map";
+import type { AtsFieldMap } from "./ats-field-map";
+
+/** E4/E5 -- the three ATS types this extension's content script can run
+ * against. Threaded through detection/messaging so background.ts's own
+ * `fetchFieldMap`/tab-state resolution and content.ts's own engine
+ * dispatch both generalize on the same literal union rather than each
+ * hardcoding "lever". */
+export type AtsType = "lever" | "greenhouse" | "ashby";
 
 // Mirrors between_jobs.api.applications_routes._extension_personal_info's
 // real response shape exactly (see GET /applications/{id}/extension-payload).
@@ -34,23 +41,29 @@ export interface GeneratedFile {
 }
 
 /** What the background script learns about a tab after the content
- * script reports a detected Lever form and the backend lookup completes.
+ * script reports a detected apply form and the backend lookup completes.
  * Held in background's own per-tab state map; the side panel and content
- * script both ask for it rather than duplicating the lookup. */
-/** E3c -- the verified Lever-idiosyncratic field map, fetched and
- * signature-checked once per detection alongside the résumé/cover-letter
- * blobs (background.ts is the only context that talks to the backend,
- * per this phase's own architecture). `fieldMap: null` means D4's
- * fail-closed case fired -- content.ts must not attempt any Lever-
- * idiosyncratic behavior (custom questions, cover-letter discovery,
- * location/LinkedIn/portfolio) in that case, though the open-source
- * GENERIC_FIELD_DEFAULTS fields (name/email/phone/résumé) remain
- * available regardless, since nothing signed ever backed them.
- * `fieldMapError` carries a human-readable reason for the side panel --
- * distinct states (no map published yet vs. a signature/verification
- * failure vs. a network error) all collapse to the same `null` map, but
- * the reason is still worth showing the person, not just silently
- * degrading. */
+ * script both ask for it rather than duplicating the lookup.
+ *
+ * E3c (generalized in E4/E5) -- the verified, ATS-idiosyncratic field
+ * map, fetched and signature-checked once per detection alongside the
+ * résumé/cover-letter blobs (background.ts is the only context that
+ * talks to the backend, per this phase's own architecture). `fieldMap:
+ * null` means D4's fail-closed case fired for Lever (content.ts must not
+ * attempt any Lever-idiosyncratic behavior -- custom questions, cover-
+ * letter discovery, location/LinkedIn/portfolio -- in that case, though
+ * the open-source GENERIC_FIELD_DEFAULTS fields remain available
+ * regardless, since nothing signed ever backed them). For Greenhouse/
+ * Ashby, `fieldMap` is always `null` today (this repo never curates or
+ * signs a real map for either -- see lib/greenhouse.ts's/lib/ashby.ts's
+ * own top-of-file notes): those two ATSs' engines work entirely off
+ * their own open-source defaults and don't gate any behavior on this
+ * field, matching the state Lever itself was in before E3c. The fetch
+ * still happens for all three ATS types (a real, forward-compatible
+ * `GET /extension/field-maps/{ats_type}` call, generalized off the
+ * single Lever-only call site E2/E3c had) so a future signed map for
+ * either new ATS has a ready path with zero further plumbing changes.
+ * `fieldMapError` carries a human-readable reason for the side panel. */
 export type TabState =
   | { status: "signed_out" }
   | { status: "untracked" }
@@ -60,14 +73,18 @@ export type TabState =
       payload: ExtensionPayload;
       resume: GeneratedFile | null;
       coverLetter: GeneratedFile | null;
-      fieldMap: LeverFieldMap | null;
+      fieldMap: AtsFieldMap | null;
       fieldMapError: string | null;
     }
   | { status: "error"; message: string };
 
-/** Content script -> background, on detecting a Lever apply form. */
-export interface LeverPageDetectedMessage {
-  type: "LEVER_PAGE_DETECTED";
+/** Content script -> background, on detecting a supported apply form.
+ * Generalized in E4/E5 from the Lever-only `LEVER_PAGE_DETECTED` --
+ * `atsType` is the only new piece of information background.ts needs to
+ * generalize its own `fetchFieldMap` call site and personal-info lookup. */
+export interface PageDetectedMessage {
+  type: "PAGE_DETECTED";
+  atsType: AtsType;
   url: string;
 }
 
@@ -124,7 +141,7 @@ export interface DraftAnswerResult {
 }
 
 export type BackgroundMessage =
-  | LeverPageDetectedMessage
+  | PageDetectedMessage
   | MarkAppliedMessage
   | MatchAnswerMessage
   | SaveAnswerMessage

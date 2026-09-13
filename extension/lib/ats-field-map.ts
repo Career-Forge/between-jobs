@@ -20,14 +20,15 @@
  * to fall back TO.
  */
 
-export type FieldStrategy = "direct" | "fallback" | "joinNonEmpty";
+export type FieldStrategy = "direct" | "fallback" | "joinNonEmpty" | "firstNameWord" | "lastNameWord";
 
 /** One declarative fill behavior -- NOT a closure. `STANDARD_FIELDS`'
  * pre-E3c `getValue` functions couldn't ship as signed JSON (functions
- * aren't data), so this vocabulary reproduces the same three behaviors
- * (a plain field read, a first-non-empty-of-several fallback, and a
- * joined multi-field composite) without ever transmitting or `eval`ing
- * code -- satisfying D4's "only signed data" requirement literally. */
+ * aren't data), so this vocabulary reproduces the same behaviors (a
+ * plain field read, a first-non-empty-of-several fallback, a joined
+ * multi-field composite, and E4's first/last-name split for ATSs whose
+ * form separates them) without ever transmitting or `eval`ing code --
+ * satisfying D4's "only signed data" requirement literally. */
 export interface StandardFieldSpec {
   field: string;
   selector: string;
@@ -45,7 +46,7 @@ const SUPPORTED_SCHEMA = "ats-field-map/v1";
  * (location, LinkedIn, portfolio-or-GitHub) -- the generic ones are
  * merged in separately by the caller from `GENERIC_FIELD_DEFAULTS`. */
 export interface LeverFieldMap {
-  ats_type: string;
+  ats_type: "lever";
   version: number;
   schema: string;
   standard_fields: StandardFieldSpec[];
@@ -54,6 +55,43 @@ export interface LeverFieldMap {
   label_selector: string;
   cover_letter_label_pattern: string;
 }
+
+/** E4 -- the Greenhouse counterpart. Not yet published for real (this
+ * repo never curates or signs a real Greenhouse map -- see
+ * lib/greenhouse.ts's own top-of-file note): today's Greenhouse engine
+ * works entirely off its own open-source GENERIC_FIELD_DEFAULTS and
+ * never requires this shape to exist. Defined here so the verification
+ * plumbing (`verifyAndParseFieldMap`) and the `GET /extension/field-
+ * maps/greenhouse` fetch path are real and ready for a future maintainer
+ * publish, exactly mirroring the state Lever's own map was in between E2
+ * and E3c. `standard_fields` would carry a genuinely per-org selector
+ * (e.g. a company that renames "Website" to something else) as an
+ * ADDITIONAL entry merged on top of the generic ones, same pattern as
+ * Lever's map. */
+export interface GreenhouseFieldMap {
+  ats_type: "greenhouse";
+  version: number;
+  schema: string;
+  standard_fields: StandardFieldSpec[];
+}
+
+/** E5 -- the Ashby counterpart, same status as GreenhouseFieldMap above
+ * (defined for the verification plumbing's sake, never published in this
+ * repo). */
+export interface AshbyFieldMap {
+  ats_type: "ashby";
+  version: number;
+  schema: string;
+  standard_fields: StandardFieldSpec[];
+}
+
+/** The union every generic call site (background.ts, lib/types.ts,
+ * content.ts) should use instead of naming one ATS's map type directly.
+ * Kept as a plain union rather than renaming `LeverFieldMap` itself --
+ * that name predates this file's own multi-ATS support and renaming it
+ * would only churn E2/E3's already-shipped, already-tested code for no
+ * behavioral gain. */
+export type AtsFieldMap = LeverFieldMap | GreenhouseFieldMap | AshbyFieldMap;
 
 /** The raw, not-yet-verified shape GET /extension/field-maps/{ats_type}
  * returns. `payload_canonical` is the exact byte-for-byte string the
@@ -94,11 +132,22 @@ function isStandardFieldSpec(value: unknown): value is StandardFieldSpec {
   return (
     typeof v.field === "string" &&
     typeof v.selector === "string" &&
-    (v.strategy === "direct" || v.strategy === "fallback" || v.strategy === "joinNonEmpty") &&
+    (v.strategy === "direct" ||
+      v.strategy === "fallback" ||
+      v.strategy === "joinNonEmpty" ||
+      v.strategy === "firstNameWord" ||
+      v.strategy === "lastNameWord") &&
     Array.isArray(v.profileFields) &&
     v.profileFields.every((f) => typeof f === "string") &&
     (v.separator === undefined || typeof v.separator === "string")
   );
+}
+
+/** Greenhouse's and Ashby's own map shape (for now) is nothing more than
+ * a `standard_fields` array -- neither engine needs anything else from a
+ * signed map, per their own top-of-file notes. */
+function isBareStandardFieldMap(p: Record<string, unknown>): boolean {
+  return Array.isArray(p.standard_fields) && p.standard_fields.every(isStandardFieldSpec);
 }
 
 /** Structural validation AFTER the signature already passed -- a valid
@@ -111,11 +160,15 @@ function isStandardFieldSpec(value: unknown): value is StandardFieldSpec {
  * mislabeled under a different version/ats_type than the one actually
  * signed -- this is the extension's own half of that same defense-in-
  * depth check, the same "re-validate what the caller claims" precedent
- * `fillCustomTextAnswer` already established for this codebase. */
-function parseVerifiedFieldMap(
-  payloadCanonical: string,
-  response: SignedFieldMapResponse,
-): LeverFieldMap | null {
+ * `fillCustomTextAnswer` already established for this codebase.
+ *
+ * E4/E5 -- dispatches on the payload's own `ats_type` since Lever's
+ * shape (the `cards[`-prefix/label-lookup/cover-letter-pattern fields)
+ * and Greenhouse's/Ashby's (bare `standard_fields` only, for now -- see
+ * `GreenhouseFieldMap`/`AshbyFieldMap`'s own doc comment) are genuinely
+ * different schemas. An `ats_type` this build doesn't recognize at all
+ * fails closed the same as any other structural mismatch. */
+function parseVerifiedFieldMap(payloadCanonical: string, response: SignedFieldMapResponse): AtsFieldMap | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(payloadCanonical);
@@ -127,13 +180,17 @@ function parseVerifiedFieldMap(
   if (p.ats_type !== response.ats_type || p.version !== response.version || p.schema !== response.schema) {
     return null;
   }
+
+  if (p.ats_type === "greenhouse" || p.ats_type === "ashby") {
+    return isBareStandardFieldMap(p) ? (parsed as GreenhouseFieldMap | AshbyFieldMap) : null;
+  }
+
   if (
     typeof p.custom_question_prefix !== "string" ||
     typeof p.label_wrapper_selector !== "string" ||
     typeof p.label_selector !== "string" ||
     typeof p.cover_letter_label_pattern !== "string" ||
-    !Array.isArray(p.standard_fields) ||
-    !p.standard_fields.every(isStandardFieldSpec)
+    !isBareStandardFieldMap(p)
   ) {
     return null;
   }
@@ -167,9 +224,7 @@ function parseVerifiedFieldMap(
  * at any time regardless, so there's no reliable module-level cache to
  * fight for here in the first place.
  */
-export async function verifyAndParseFieldMap(
-  response: SignedFieldMapResponse,
-): Promise<LeverFieldMap | null> {
+export async function verifyAndParseFieldMap(response: SignedFieldMapResponse): Promise<AtsFieldMap | null> {
   if (response.schema !== SUPPORTED_SCHEMA) return null;
   const publicKeyB64 = KNOWN_PUBLIC_KEYS[response.signing_key_id];
   if (publicKeyB64 === undefined) return null;

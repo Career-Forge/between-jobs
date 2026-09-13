@@ -79,7 +79,7 @@ describe("verifyAndParseFieldMap", () => {
     const response = await signedResponse();
     const map = await verifyAndParseFieldMap(response);
     expect(map).not.toBeNull();
-    expect(map?.custom_question_prefix).toBe("cards[");
+    expect(map?.ats_type === "lever" ? map.custom_question_prefix : undefined).toBe("cards[");
   });
 
   it("rejects a tampered payload -- signature no longer matches the (changed) bytes", async () => {
@@ -161,6 +161,79 @@ describe("verifyAndParseFieldMap", () => {
   it("rejects a validly-signed payload whose cover_letter_label_pattern isn't a valid regex -- a maintainer typo, not an attack, but a signature only proves authenticity, not syntactic validity", async () => {
     const payload = validPayload({ cover_letter_label_pattern: "(unbalanced" });
     const response = await signedResponse(payload);
+    expect(await verifyAndParseFieldMap(response)).toBeNull();
+  });
+});
+
+// E4/E5 -- Greenhouse's and Ashby's own map shape is deliberately bare
+// (just `standard_fields`, per each engine's own top-of-file note: their
+// custom-question extraction is self-contained and never published as a
+// signed map in this repo). These tests exist so the verification
+// plumbing this task generalizes actually works correctly for BOTH new
+// ats_types, even though no real map is ever curated/signed here.
+describe("verifyAndParseFieldMap (Greenhouse/Ashby)", () => {
+  function bareValidPayload(atsType: "greenhouse" | "ashby", overrides: Record<string, unknown> = {}) {
+    return {
+      ats_type: atsType,
+      version: 1,
+      schema: "ats-field-map/v1",
+      standard_fields: [
+        { field: "email", selector: "#email", strategy: "direct", profileFields: ["email"] },
+      ],
+      ...overrides,
+    };
+  }
+
+  it("accepts a genuinely valid, correctly signed bare Greenhouse map", async () => {
+    const response = await signedResponse(bareValidPayload("greenhouse"));
+    const map = await verifyAndParseFieldMap(response);
+    expect(map).not.toBeNull();
+    expect(map?.ats_type).toBe("greenhouse");
+  });
+
+  it("accepts a genuinely valid, correctly signed bare Ashby map", async () => {
+    const response = await signedResponse(bareValidPayload("ashby"));
+    const map = await verifyAndParseFieldMap(response);
+    expect(map).not.toBeNull();
+    expect(map?.ats_type).toBe("ashby");
+  });
+
+  it("accepts the new firstNameWord/lastNameWord strategies E4 introduced for Greenhouse's split name fields", async () => {
+    const payload = bareValidPayload("greenhouse", {
+      standard_fields: [
+        { field: "first_name", selector: "#first_name", strategy: "firstNameWord", profileFields: ["name"] },
+        { field: "last_name", selector: "#last_name", strategy: "lastNameWord", profileFields: ["name"] },
+      ],
+    });
+    const response = await signedResponse(payload);
+    expect(await verifyAndParseFieldMap(response)).not.toBeNull();
+  });
+
+  it("rejects a bare Greenhouse/Ashby payload with an invalid standard_fields entry, same as Lever's own validation", async () => {
+    const payload = bareValidPayload("greenhouse", {
+      standard_fields: [{ field: "x", selector: "x", strategy: "eval", profileFields: [] }],
+    });
+    const response = await signedResponse(payload);
+    expect(await verifyAndParseFieldMap(response)).toBeNull();
+  });
+
+  it("rejects a payload whose embedded ats_type doesn't match the response metadata, even between two ats_types that both use the bare shape", async () => {
+    const response = await signedResponse(bareValidPayload("greenhouse"));
+    const mislabeled = { ...response, ats_type: "ashby" };
+    expect(await verifyAndParseFieldMap(mislabeled)).toBeNull();
+  });
+
+  it("rejects an ats_type this build doesn't recognize at all", async () => {
+    const payload = bareValidPayload("greenhouse", { ats_type: "workday" });
+    const payloadCanonical = JSON.stringify(payload);
+    const response: SignedFieldMapResponse = {
+      ats_type: "workday",
+      version: 1,
+      schema: "ats-field-map/v1",
+      payload_canonical: payloadCanonical,
+      signature_b64: await sign(payloadCanonical),
+      signing_key_id: TEST_KEY_ID,
+    };
     expect(await verifyAndParseFieldMap(response)).toBeNull();
   });
 });

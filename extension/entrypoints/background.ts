@@ -1,7 +1,8 @@
 import { ApiError, apiFetch, apiFetchBlob } from "@/lib/api";
 import { verifyAndParseFieldMap } from "@/lib/ats-field-map";
-import type { LeverFieldMap, SignedFieldMapResponse } from "@/lib/ats-field-map";
+import type { AtsFieldMap, SignedFieldMapResponse } from "@/lib/ats-field-map";
 import type {
+  AtsType,
   BackgroundMessage,
   DraftAnswerResult,
   ExtensionPayload,
@@ -14,11 +15,12 @@ import type {
 // The service worker owns authentication and every backend call
 // (browser-extension.md's architecture summary) -- the content script
 // never talks to the backend directly. Deliberately stateless: the
-// content script that sent LEVER_PAGE_DETECTED caches the resolved
-// TabState itself (it's the one the side panel asks for status/fill),
-// so background doesn't need its own per-tab map -- an MV3 worker gets
-// killed and restarted constantly anyway, so anything it "remembered"
-// would be unreliable regardless.
+// content script that sent PAGE_DETECTED (E4/E5: generalized from the
+// Lever-only LEVER_PAGE_DETECTED, now carrying its own detected
+// `atsType`) caches the resolved TabState itself (it's the one the side
+// panel asks for status/fill), so background doesn't need its own
+// per-tab map -- an MV3 worker gets killed and restarted constantly
+// anyway, so anything it "remembered" would be unreliable regardless.
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer();
@@ -64,19 +66,20 @@ async function recordAcceptedFieldMapVersion(atsType: string, version: number): 
   await chrome.storage.local.set({ [key]: version });
 }
 
-// E3c -- deliberately its OWN try/catch, not folded into the payload/
-// résumé fetch below: a field-map outage must degrade to "the Lever-
-// idiosyncratic behavior is unavailable," never to "the whole tab state
-// resolution failed," since the open-source GENERIC_FIELD_DEFAULTS
-// fields (name/email/phone/résumé) have nothing to do with this fetch
-// and should keep working regardless (D4's fail-closed scope is the
-// signed data specifically, not the whole extension). Every failure
-// mode -- network error, no map published yet (404), a bad signature,
-// an unrecognized signing key, a rollback attempt -- collapses to the
-// same `map: null` outcome; `error` just carries a human-readable
-// reason for the side panel, never a distinction content.ts needs to
-// act on differently.
-async function fetchFieldMap(atsType: string): Promise<{ map: LeverFieldMap | null; error: string | null }> {
+// E3c (generalized in E4/E5 -- see lib/types.ts's own TabState note for
+// why Greenhouse/Ashby always get `map: null` here today, harmlessly) --
+// deliberately its OWN try/catch, not folded into the payload/résumé
+// fetch below: a field-map outage must degrade to "the ATS-idiosyncratic
+// behavior is unavailable," never to "the whole tab state resolution
+// failed," since the open-source GENERIC_FIELD_DEFAULTS fields (name/
+// email/phone/résumé) have nothing to do with this fetch and should keep
+// working regardless (D4's fail-closed scope is the signed data
+// specifically, not the whole extension). Every failure mode -- network
+// error, no map published yet (404), a bad signature, an unrecognized
+// signing key, a rollback attempt -- collapses to the same `map: null`
+// outcome; `error` just carries a human-readable reason for the side
+// panel, never a distinction content.ts needs to act on differently.
+async function fetchFieldMap(atsType: AtsType): Promise<{ map: AtsFieldMap | null; error: string | null }> {
   try {
     const response = await apiFetch<SignedFieldMapResponse>(`/extension/field-maps/${atsType}`);
     const map = await verifyAndParseFieldMap(response);
@@ -106,7 +109,7 @@ async function fetchFieldMap(atsType: string): Promise<{ map: LeverFieldMap | nu
   }
 }
 
-async function resolveTabState(url: string): Promise<TabState> {
+async function resolveTabState(url: string, atsType: AtsType): Promise<TabState> {
   let applicationId: string;
   try {
     const lookup = await apiFetch<{ application_id: string | null }>(
@@ -130,7 +133,7 @@ async function resolveTabState(url: string): Promise<TabState> {
     // a correctness-sensitive ordering.
     const [payload, fieldMapResult] = await Promise.all([
       apiFetch<ExtensionPayload>(`/applications/${applicationId}/extension-payload`),
-      fetchFieldMap("lever"),
+      fetchFieldMap(atsType),
     ]);
     const resume = payload.prepare_result?.resume
       ? await fetchGeneratedFile(applicationId, "resume")
@@ -218,8 +221,8 @@ export default defineBackground(() => {
   chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
   browser.runtime.onMessage.addListener((message: BackgroundMessage) => {
-    if (message.type === "LEVER_PAGE_DETECTED") {
-      return resolveTabState(message.url);
+    if (message.type === "PAGE_DETECTED") {
+      return resolveTabState(message.url, message.atsType);
     }
     if (message.type === "MARK_APPLIED") {
       return markApplied(message.applicationId, message.idempotencyKey);

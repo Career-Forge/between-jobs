@@ -1,5 +1,15 @@
 import type { StandardFieldSpec } from "./ats-field-map";
-import type { ExtensionPersonalInfo } from "./types";
+
+// E4/E5 -- `planStandardFieldFills`/`applyFillPlan`/`attachFile` used to
+// be defined directly in this file; they were always genuinely ATS-
+// agnostic (no Lever-specific logic anywhere in them), so they moved to
+// lib/standardFields.ts once Greenhouse/Ashby needed the same planning
+// step (just a different, React-aware apply step for those two -- see
+// `applyReactControlledFillPlan` there). Re-exported here verbatim so
+// this file's own existing call sites and tests (which import these
+// names from "@/lib/lever") keep working unchanged.
+export { applyFillPlan, attachFile, planStandardFieldFills } from "./standardFields";
+export type { FieldFillPlanItem } from "./standardFields";
 
 // Field selectors confirmed live against a real posting (jobs.lever.co/
 // theathletic, 2026-09-07/08) via direct DOM inspection, not just the
@@ -40,100 +50,6 @@ export const GENERIC_FIELD_DEFAULTS: {
 
 export function isLeverApplyForm(doc: Document): boolean {
   return doc.querySelector(GENERIC_FIELD_DEFAULTS.detectionSelector) !== null;
-}
-
-export interface FieldFillPlanItem {
-  selector: string;
-  value: string;
-}
-
-function getProfileValue(info: ExtensionPersonalInfo, path: string): string {
-  const parts = path.split(".");
-  let value: unknown = info;
-  for (const part of parts) {
-    if (value === null || typeof value !== "object") return "";
-    value = (value as Record<string, unknown>)[part];
-  }
-  return typeof value === "string" ? value : "";
-}
-
-/**
- * The declarative interpreter E3c introduced in place of `STANDARD_
- * FIELDS`' old `getValue` closures -- functions can't be part of a
- * signed JSON payload, so this reproduces the same three behaviors a
- * pure, generic vocabulary a signed map (or GENERIC_FIELD_DEFAULTS) can
- * express as plain data: `direct` (a plain field read, treating an
- * empty string as "no value" -- matches the old `info.linkedin || null`
- * shape exactly), `fallback` (first non-empty of several, matching the
- * old `info.portfolio || info.github` shape), and `joinNonEmpty`
- * (matching the old location joiner -- filters empties, joins the rest).
- */
-function resolveFieldValue(spec: StandardFieldSpec, info: ExtensionPersonalInfo): string | null {
-  switch (spec.strategy) {
-    case "direct": {
-      const value = getProfileValue(info, spec.profileFields[0] ?? "");
-      return value || null;
-    }
-    case "fallback": {
-      for (const path of spec.profileFields) {
-        const value = getProfileValue(info, path);
-        if (value) return value;
-      }
-      return null;
-    }
-    case "joinNonEmpty": {
-      const parts = spec.profileFields
-        .map((path) => getProfileValue(info, path))
-        .filter((value) => value.length > 0);
-      return parts.length > 0 ? parts.join(spec.separator ?? ", ") : null;
-    }
-  }
-}
-
-/**
- * D5 (browser-extension.md) -- Fill is a repeatable, idempotent action
- * against a fresh DOM read: a field already holding a non-empty value
- * (whether the user typed it or a prior Fill set it) is skipped unless
- * `forceRefillAll` is passed, matching the "skip hand-edited fields,
- * don't clobber" decision. Pure with respect to the DOM (only reads
- * `.value`), so this is the part covered by real unit tests; the actual
- * mutation happens in `applyFillPlan`.
- *
- * `standardFields` (E3c) is caller-supplied -- typically
- * `[...GENERIC_FIELD_DEFAULTS.standardFields, ...(verifiedMap?.standard_
- * fields ?? [])]` -- rather than a hardcoded module-level constant, so
- * this function has zero knowledge of which entries came from the
- * signed map versus the open-source defaults.
- */
-export function planStandardFieldFills(
-  doc: Document,
-  personalInfo: ExtensionPersonalInfo,
-  forceRefillAll: boolean,
-  standardFields: readonly StandardFieldSpec[],
-): FieldFillPlanItem[] {
-  const plan: FieldFillPlanItem[] = [];
-  for (const field of standardFields) {
-    const element = doc.querySelector<HTMLInputElement>(field.selector);
-    if (element === null) continue;
-    if (!forceRefillAll && element.value.trim() !== "") continue;
-    const value = resolveFieldValue(field, personalInfo);
-    if (value === null || value === "") continue;
-    plan.push({ selector: field.selector, value });
-  }
-  return plan;
-}
-
-export function applyFillPlan(doc: Document, plan: readonly FieldFillPlanItem[]): string[] {
-  const filled: string[] = [];
-  for (const item of plan) {
-    const element = doc.querySelector<HTMLInputElement>(item.selector);
-    if (element === null) continue;
-    element.value = item.value;
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-    filled.push(item.selector);
-  }
-  return filled;
 }
 
 export interface CustomQuestion {
@@ -286,27 +202,4 @@ export function fillCustomTextAnswer(
   element.dispatchEvent(new Event("input", { bubbles: true }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
   return true;
-}
-
-/**
- * The only working approach for `<input type="file">` -- browsers block
- * scripts from setting `.value` on a file input directly. Constructs a
- * real `File` from bytes already fetched, wraps it in a `DataTransfer`,
- * and dispatches a `change` event the page's own upload-handling JS
- * picks up exactly as if the user had picked a file. Used for both the
- * résumé (a fixed selector) and the cover letter (a runtime-discovered
- * one via `findCoverLetterField`) -- the attach mechanism itself doesn't
- * care which.
- */
-export function attachFile(
-  input: HTMLInputElement,
-  bytes: ArrayBuffer,
-  filename: string,
-  mimeType: string,
-): void {
-  const file = new File([bytes], filename, { type: mimeType });
-  const dataTransfer = new DataTransfer();
-  dataTransfer.items.add(file);
-  input.files = dataTransfer.files;
-  input.dispatchEvent(new Event("change", { bubbles: true }));
 }
