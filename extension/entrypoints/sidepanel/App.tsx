@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizeQuestionLabel } from "@/lib/questionMatching";
+import { sanitizeDraftText } from "@/lib/questionSafety";
 import { getSupabaseClient } from "@/lib/supabase";
 import type {
   ContentScriptMessage,
@@ -31,7 +32,7 @@ type MarkAppliedState =
 type QuestionAnswerState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ready"; text: string; warnings: string[]; fromMemory: boolean }
+  | { status: "ready"; text: string; warnings: string[]; fromMemory: boolean; notice?: string }
   // A real DOM write is in flight for this exact text -- the textarea and
   // both Fill buttons render disabled while in this state, closing two
   // adversarially-confirmed gaps at once: an in-flight fill resolving
@@ -39,7 +40,7 @@ type QuestionAnswerState =
   // (which used to discard the edit silently, since the fill's own
   // success handler unconditionally overwrote state to "filled"), and a
   // double-click/Fill-then-Fill&remember race with no busy guard.
-  | { status: "filling"; text: string; warnings: string[]; fromMemory: boolean }
+  | { status: "filling"; text: string; warnings: string[]; fromMemory: boolean; notice?: string }
   | { status: "declined"; reason: string | null }
   | { status: "error"; message: string }
   | { status: "filled" };
@@ -52,6 +53,15 @@ type QuestionAnswerState =
 // folding both into the same "not supported" bucket with no way to tell
 // them apart or retry a transient one.
 const NO_RECEIVER_MESSAGE = "Could not establish connection. Receiving end does not exist.";
+
+// Shown when a per-question fill declined because the page field already
+// holds text (D5: never clobber). The draft stays in the box, so it isn't
+// lost -- the user can copy it, or clear the field on the page and Fill again.
+const FIELD_HAS_TEXT_NOTICE =
+  "That field on the page already has text, so it was left alone. Clear it there first if you want this answer in it.";
+
+const PAGE_CHANGED_MESSAGE =
+  "This page changed since the panel last looked at it -- it has been refreshed. Check the application shown, then try again.";
 
 async function getActiveTabId(): Promise<number | null> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
@@ -109,7 +119,11 @@ export default function App() {
   const [answerStates, setAnswerStates] = useState<Record<string, QuestionAnswerState>>({});
   const [busy, setBusy] = useState(false);
 
-  const refreshDetection = useCallback(async () => {
+  // `recheck` forces a fresh lookup instead of reading what the page
+  // already holds -- used when the signed-in user has just changed, so a
+  // previous user's cached state (personal info, PDFs) is replaced rather
+  // than displayed.
+  const refreshDetection = useCallback(async (options?: { recheck?: boolean }) => {
     setFillResult(null);
     setFillNotice(null);
     setAnswerStates({});
@@ -121,7 +135,9 @@ export default function App() {
     // it's not a retry of the same request). A completed "done"/"error"
     // outcome still resets on the next page, matching every other status.
     setMarkApplied((prev) => (prev.status === "busy" ? prev : { status: "idle" }));
-    const response = await sendToActiveTab<DetectionStateResponse>({ type: "GET_DETECTION_STATE" });
+    const response = await sendToActiveTab<DetectionStateResponse>({
+      type: options?.recheck ? "RECHECK" : "GET_DETECTION_STATE",
+    });
     setDetection(response);
   }, []);
 
@@ -135,8 +151,15 @@ export default function App() {
     return () => subscription.subscription.unsubscribe();
   }, [supabase]);
 
+  // Coming from signed-out (a fresh sign-in, possibly as a different
+  // user on the same browser profile) re-checks the page rather than
+  // reading the content script's cache; merely opening the panel while
+  // already signed in doesn't need to re-hit the backend.
+  const previousAuthStatus = useRef<AuthState["status"]>("loading");
   useEffect(() => {
-    if (auth.status === "signed_in") void refreshDetection();
+    const cameFromSignedOut = previousAuthStatus.current === "signed_out";
+    previousAuthStatus.current = auth.status;
+    if (auth.status === "signed_in") void refreshDetection({ recheck: cameFromSignedOut });
   }, [auth.status, refreshDetection]);
 
   // Adversarially-confirmed gap: without this, navigating the same tab to
@@ -159,11 +182,25 @@ export default function App() {
       });
     };
     const onActivated = () => void refreshDetection();
+    // A client-side route change (Greenhouse/Ashby are SPAs) fires neither
+    // of the tab events above -- the content script announces it instead.
+    // Only the active tab's announcement matters to what this panel shows.
+    const onMessage = (message: unknown, sender: Browser.runtime.MessageSender) => {
+      if (typeof message !== "object" || message === null) return;
+      if ((message as { type?: unknown }).type !== "PAGE_CHANGED") return;
+      const senderTabId = sender.tab?.id;
+      if (senderTabId === undefined) return;
+      void getActiveTabId().then((activeTabId) => {
+        if (senderTabId === activeTabId) void refreshDetection();
+      });
+    };
     browser.tabs.onUpdated.addListener(onUpdated);
     browser.tabs.onActivated.addListener(onActivated);
+    browser.runtime.onMessage.addListener(onMessage);
     return () => {
       browser.tabs.onUpdated.removeListener(onUpdated);
       browser.tabs.onActivated.removeListener(onActivated);
+      browser.runtime.onMessage.removeListener(onMessage);
     };
   }, [auth.status, refreshDetection]);
 
@@ -173,11 +210,23 @@ export default function App() {
     setBusy(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
-    if (error) setAuthError(error.message);
+    if (error) {
+      setAuthError(error.message);
+      return;
+    }
+    // Neither the address nor -- especially -- the plaintext password
+    // should outlive the request in component state: on a shared browser
+    // the next person to sign out and back in would find both pre-filled.
+    setEmail("");
+    setPassword("");
   }
 
   async function handleSignOut() {
-    const { error } = await supabase.auth.signOut();
+    // `scope: "local"`: this extension's session is its own (D2), so
+    // signing out of it must not revoke the same account's web-app
+    // sessions -- auth-js's default scope is "global", which signs the
+    // user out everywhere.
+    const { error } = await supabase.auth.signOut({ scope: "local" });
     if (error) {
       // Sign-out failing is rare but not impossible (e.g. a refresh
       // token invalidated by a concurrent refresh elsewhere) -- an
@@ -188,6 +237,17 @@ export default function App() {
     }
     setDetection(null);
     setFillResult(null);
+    setFillNotice(null);
+    setAnswerStates({});
+    setMarkApplied({ status: "idle" });
+    setEmail("");
+    setPassword("");
+    // The content script keeps the last user's personal info and PDFs in
+    // memory for as long as the page lives and never hears about a
+    // sign-out. Re-detecting now replaces them (with a "signed out"
+    // state) in the tab being looked at; every other tab is protected by
+    // the per-use session check instead.
+    void sendToActiveTab<DetectionStateResponse>({ type: "RECHECK" });
   }
 
   async function handleRecheck() {
@@ -205,14 +265,33 @@ export default function App() {
     setFillNotice(null);
     const result = await sendToActiveTab<FillResult | null>({ type: "REQUEST_FILL", forceRefillAll });
     if (result === null) {
-      // Detection hadn't resolved yet on the content-script side --
-      // distinct from a genuine fill that found nothing to do (an
-      // adversarially-confirmed gap: these used to be indistinguishable).
+      // Nothing usable for this page yet -- detection hadn't resolved, or
+      // it belonged to a page/user that's gone and a fresh lookup has just
+      // been started. Distinct from a genuine fill that found nothing to
+      // do (an adversarially-confirmed gap: these used to be
+      // indistinguishable).
       setFillNotice("Still checking this page -- try again in a moment.");
     } else {
       setFillResult(result);
     }
     setBusy(false);
+  }
+
+  // Everything the panel does on behalf of an application -- marking it
+  // applied, drafting an answer for it -- is keyed on the application id
+  // this panel LAST SAW. A client-side navigation (Greenhouse/Ashby)
+  // can put a different posting under the same tab without any event this
+  // panel hears in time, so before acting, ask the page what application
+  // it is showing NOW; if it isn't the one on screen, show the real state
+  // instead of acting on the stale one.
+  async function confirmStillOnApplication(applicationId: string): Promise<boolean> {
+    const live = await sendToActiveTab<DetectionStateResponse>({ type: "GET_DETECTION_STATE" });
+    if (live?.tabState?.status === "tracked" && live.tabState.applicationId === applicationId) return true;
+    setDetection(live);
+    setFillResult(null);
+    setAnswerStates({});
+    setFillNotice(PAGE_CHANGED_MESSAGE);
+    return false;
   }
 
   // Tracking confirmation (browser-extension.md): the human confirms the
@@ -223,12 +302,16 @@ export default function App() {
   // the transition.
   async function handleMarkApplied(applicationId: string) {
     setMarkApplied({ status: "busy" });
-    const message: MarkAppliedMessage = {
-      type: "MARK_APPLIED",
-      applicationId,
-      idempotencyKey: crypto.randomUUID(),
-    };
     try {
+      if (!(await confirmStillOnApplication(applicationId))) {
+        setMarkApplied({ status: "idle" });
+        return;
+      }
+      const message: MarkAppliedMessage = {
+        type: "MARK_APPLIED",
+        applicationId,
+        idempotencyKey: crypto.randomUUID(),
+      };
       const result: MarkAppliedResult = await browser.runtime.sendMessage(message);
       setMarkApplied(result.ok ? { status: "done" } : { status: "error", message: result.message });
     } catch (e) {
@@ -251,23 +334,33 @@ export default function App() {
   // re-reading `detection` here, since this function has no reason to
   // duplicate that narrowing.
   async function handleDraftAnswer(applicationId: string, fieldName: string, label: string | null) {
+    // A question whose label couldn't be read is human-only: its "question
+    // text" would be a raw field name, and nothing can show it isn't a
+    // sensitive question under a renamed label class. (The content script
+    // already downgrades these; this is the second lock.)
+    if (label === null) return;
     setAnswerStates((prev) => ({ ...prev, [fieldName]: { status: "loading" } }));
-    const questionText = label ?? fieldName;
     try {
+      if (!(await confirmStillOnApplication(applicationId))) return;
       const matchMessage: MatchAnswerMessage = {
         type: "MATCH_ANSWER",
-        normalizedQuestion: normalizeQuestionLabel(questionText),
+        normalizedQuestion: normalizeQuestionLabel(label),
       };
       const match: MatchAnswerResult = await browser.runtime.sendMessage(matchMessage);
       if (match.answer !== null) {
         setAnswerStates((prev) => ({
           ...prev,
-          [fieldName]: { status: "ready", text: match.answer!.answer_text, warnings: [], fromMemory: true },
+          [fieldName]: {
+            status: "ready",
+            text: sanitizeDraftText(match.answer!.answer_text),
+            warnings: [],
+            fromMemory: true,
+          },
         }));
         return;
       }
 
-      const draftMessage: DraftAnswerMessage = { type: "DRAFT_ANSWER", applicationId, questionText };
+      const draftMessage: DraftAnswerMessage = { type: "DRAFT_ANSWER", applicationId, questionText: label };
       const drafted: DraftAnswerResult = await browser.runtime.sendMessage(draftMessage);
       if (!drafted.eligible || drafted.answer_text === null) {
         setAnswerStates((prev) => ({
@@ -280,7 +373,7 @@ export default function App() {
         ...prev,
         [fieldName]: {
           status: "ready",
-          text: drafted.answer_text as string,
+          text: sanitizeDraftText(drafted.answer_text as string),
           warnings: drafted.warnings,
           fromMemory: false,
         },
@@ -315,6 +408,23 @@ export default function App() {
     const { text, warnings, fromMemory } = current;
     setAnswerStates((prev) => ({ ...prev, [fieldName]: { status: "filling", text, warnings, fromMemory } }));
     const result = await sendToActiveTab<FillFieldResult>({ type: "FILL_FIELD", fieldName, value: text });
+    if (result !== null && !result.filled && result.reason === "not_empty") {
+      // D5: the field already has text. Nothing was written, and the draft
+      // stays in the box -- so this isn't an error state (which would offer
+      // to re-draft), it's the same draft with a reason it wasn't applied.
+      setAnswerStates((prev) => ({
+        ...prev,
+        [fieldName]: { status: "ready", text, warnings, fromMemory, notice: FIELD_HAS_TEXT_NOTICE },
+      }));
+      return;
+    }
+    if (result !== null && !result.filled && result.reason === "page_changed") {
+      // Re-read what the tab is showing now; that also clears this list,
+      // which belonged to a page that's gone.
+      void refreshDetection();
+      setFillNotice(PAGE_CHANGED_MESSAGE);
+      return;
+    }
     if (result === null || !result.filled) {
       setAnswerStates((prev) => ({
         ...prev,
@@ -444,13 +554,24 @@ export default function App() {
               )}
               {fillResult.fieldMapError !== null && (
                 // E3c, D4 fail-closed: the signed field map couldn't be
-                // verified this time, so cover-letter discovery and
-                // custom-question surfacing were skipped entirely (not
-                // just left empty) -- the basic fields above still filled
-                // regardless, since nothing signed backs them.
+                // used (unverifiable, or wrong for this ATS), so the
+                // parts of the fill that depend on it -- cover-letter
+                // discovery, custom-question surfacing -- were skipped
+                // entirely (not just left empty). The basic fields above
+                // still filled regardless, since nothing signed backs
+                // them. E6: also covers a single unusable selector inside
+                // an otherwise-valid map, where only that field is skipped.
                 <p className="error">
-                  Couldn&apos;t verify this ATS&apos;s field map -- only the basic fields above were
-                  filled. {fillResult.fieldMapError}
+                  Part of this ATS&apos;s field map couldn&apos;t be used, so some fields were skipped.{" "}
+                  {fillResult.fieldMapError}
+                </p>
+              )}
+              {fillResult.fillError !== null && (
+                // The fill itself threw. What was written before that is
+                // still counted above -- this says the run didn't finish.
+                <p className="error">
+                  Something went wrong while filling this page, so it may be incomplete:{" "}
+                  {fillResult.fillError}
                 </p>
               )}
               {fillResult.unresolvedQuestions.length > 0 && (
@@ -459,16 +580,20 @@ export default function App() {
                   <ul className="question-list">
                     {fillResult.unresolvedQuestions.map((q) => {
                       const state: QuestionAnswerState = answerStates[q.fieldName] ?? { status: "idle" };
+                      // Only a plain text field with a readable label is
+                      // ever offered for drafting; everything else is the
+                      // human's own.
+                      const draftable = q.kind === "text" && q.label !== null;
                       return (
                         <li key={q.fieldName} className="question-card">
                           <p className="question-label">{q.label ?? q.fieldName}</p>
                           {q.kind === "file" && (
                             <p className="question-meta">Upload this file yourself.</p>
                           )}
-                          {q.kind === "radio" && (
+                          {!draftable && q.kind !== "file" && (
                             <p className="question-meta">Answer this one yourself.</p>
                           )}
-                          {q.kind === "text" && (
+                          {draftable && (
                             <div className="question-answer">
                               {state.status === "idle" && trackedTabState !== null && (
                                 <button
@@ -520,12 +645,22 @@ export default function App() {
                                       ))}
                                     </ul>
                                   )}
+                                  {state.notice !== undefined && (
+                                    <p className="question-meta" role="status">
+                                      {state.notice}
+                                    </p>
+                                  )}
+                                  {/* Sized to the whole draft (CSS caps the height and scrolls
+                                      inside it), with a length readout: Fill writes ALL of this
+                                      text into the form, so none of it should sit below the
+                                      fold unread. */}
                                   <textarea
                                     value={state.text}
                                     onChange={(e) => handleEditAnswer(q.fieldName, e.target.value)}
                                     rows={4}
                                     disabled={state.status === "filling"}
                                   />
+                                  <p className="question-meta">{state.text.length} characters</p>
                                   <div className="button-row">
                                     <button
                                       className="primary"

@@ -1,4 +1,13 @@
 import type { StandardFieldSpec } from "./ats-field-map";
+import {
+  hasExistingText,
+  isSensitiveSelfIdText,
+  isTextEntryElement,
+  questionKind,
+  readQuestionLabel,
+  type FillAnswerOutcome,
+  type QuestionKind,
+} from "./questionSafety";
 import { setReactControlledValue } from "./standardFields";
 
 // E5 (browser-extension.md) -- "Zero open-source prior art exists
@@ -100,61 +109,46 @@ const SYSTEMFIELD_PREFIX = "_systemfield_";
 const FIELD_ENTRY_SELECTOR = "[data-field-path]";
 const QUESTION_LABEL_SELECTOR = ".ashby-application-form-question-title";
 
+const QUESTION_DESCRIPTION_SELECTOR = ".ashby-application-form-question-description";
+const SECTION_SELECTOR = ".ashby-application-form-section-container";
+
 export interface CustomQuestion {
   fieldName: string;
   label: string | null;
-  kind: "text" | "file" | "radio";
+  kind: QuestionKind;
 }
 
-function labelForFieldEntry(entry: Element): string | null {
-  const label = entry.querySelector(QUESTION_LABEL_SELECTOR);
-  return label?.textContent?.trim().replace(/\s+/g, " ") ?? null;
+function labelForFieldEntry(entry: Element): { label: string | null; sensitive: boolean } {
+  return readQuestionLabel(entry.querySelector(QUESTION_LABEL_SELECTOR)?.textContent);
 }
 
-// D6 fix (2026-09-13) -- the label-text substitute for the structural
-// namespace Lever's `eeo[` prefix and Greenhouse's `#demographic-section`/
-// `.eeoc__container` give those two ATSs for free (see the file-level
-// note above: Ashby has no such signal at all). Scoped deliberately
-// narrow, to match what Lever/Greenhouse actually exclude -- genuine
-// VOLUNTARY SELF-IDENTIFICATION data (gender, sex, race/ethnicity,
-// disability status, veteran status, sexual orientation, transgender
-// status, preferred pronouns) -- not work-authorization/visa/sponsorship
-// questions. Must also catch a EUPHEMISM, not just the literal word
-// "disability": the real, directly-observed (not hypothetical) posting
-// that first surfaced this gap (jobs.ashbyhq.com/everai) phrases its own
-// disability-accommodation question as "Do you require any accommodations
-// or support during the interview(s)..." -- no word matching "disab"
-// anywhere in it. "accommodat" is included below specifically because of
-// this real example, not a hypothetical one. Confirmed directly from
-// Greenhouse's own real markup
-// (lib/greenhouse.ts's own comment): a work-authorization/sponsorship
-// question there is NOT inside `.eeoc__container` at all -- it's an
-// ordinary `question_<id>` custom question, human-only via kind:"radio"
-// when it's a yes/no select, or -- when genuinely free text -- flowing
-// through the same generate/verify/human-review pipeline every other
-// free-text question already does. That pipeline (claim verification +
-// severity-tagged warnings in the side panel) is this codebase's actual,
-// already-shipped mitigation for a free-text work-authorization answer
-// today; a properly-guided source fact is `work-authorization-status.md`'s
-// own separate, not-yet-built feature. This function does not attempt
-// to re-solve that here -- it closes the narrower, structural gap this
-// file's own research disclosed: an org phrasing genuine demographic
-// self-ID as free text, which (unlike work-authorization) has no
-// existing safety net anywhere in this codebase once it reaches
-// `kind: "text"`.
-//
-// Deliberately over-inclusive, not narrowly tuned: D6's own governing
-// principle is "opt-in only," so a false-positive exclusion (a benign
-// question that happens to mention "race" or "veteran") costs the user
-// one field they answer directly on the page instead of through the
-// side panel -- a false negative would mean a real self-ID answer
-// reaching an LLM prompt, which is the actual harm D6 exists to prevent.
-const DEMOGRAPHIC_SELF_ID_LABEL_PATTERN =
-  /\bgender\b|\bsex\b|\bpronouns?\b|\brace\b|\bracial\b|\bethnicit(?:y|ies)\b|\bhispanic\b|\blatino\b|\blatina\b|\btransgender\b|\bveteran\b|\bdisab\w*|\baccommodat\w*|\bsexual orientation\b|\bself-identif\w*/i;
-
-function isDemographicSelfIdLabel(label: string | null): boolean {
-  return label !== null && DEMOGRAPHIC_SELF_ID_LABEL_PATTERN.test(label);
+// D6 -- the self-ID wording doesn't always live in the question title. An
+// entry can be titled "Optional" or "Tell us more" while its description
+// says "Voluntary self-identification: how do you describe your ethnic
+// background?", or sit under a "Voluntary Self Identification" section
+// heading. So the description and the section's own heading are checked
+// too, not just the title.
+function isSensitiveEntryContext(entry: Element): boolean {
+  const description = entry.querySelector(QUESTION_DESCRIPTION_SELECTOR)?.textContent;
+  const heading = entry.closest(SECTION_SELECTOR)?.querySelector("h1, h2, h3, h4")?.textContent;
+  return isSensitiveSelfIdText(description) || isSensitiveSelfIdText(heading);
 }
+
+// D6 fix (2026-09-13), hardened in E6 -- the label-text substitute for the
+// structural namespace Lever's `eeo[` prefix and Greenhouse's
+// `#demographic-section`/`.eeoc__container` give those two ATSs for free
+// (see the file-level note above: Ashby has no such signal at all). The
+// classifier itself now lives in lib/questionSafety.ts, shared by all
+// three engines: the original regex here missed most realistic phrasings
+// ("ethnic origin", "Veterans", "LGBTQ+", "reasonable adjustments", "date
+// of birth"...), was bypassed by zero-width/fullwidth/accented/homoglyph
+// spellings of a tenant-controlled label, and failed OPEN on a label it
+// couldn't read. Scope is unchanged: genuine VOLUNTARY SELF-IDENTIFICATION
+// data, not work-authorization/visa/sponsorship questions (a maintainer
+// decision; the tests pin it). The real, directly-observed question that
+// first surfaced this gap -- everai's "Do you require any accommodations
+// or support during the interview(s)..." with no word matching "disab" --
+// is why accommodation wording is in the vocabulary.
 
 /**
  * Confirmed live: every genuine field on an Ashby application form --
@@ -187,16 +181,10 @@ export function extractCustomQuestions(doc: Document, excludeFieldName: string |
     const fieldPath = entry.getAttribute("data-field-path");
     if (fieldPath === null || fieldPath.startsWith(SYSTEMFIELD_PREFIX)) continue;
     if (seen.has(fieldPath) || fieldPath === excludeFieldName) continue;
-    const label = labelForFieldEntry(entry);
-    if (isDemographicSelfIdLabel(label)) continue;
     seen.add(fieldPath);
-
-    const tag = element.tagName;
-    const type = tag === "INPUT" ? (element as HTMLInputElement).type : tag === "SELECT" ? "select" : "textarea";
-    let kind: CustomQuestion["kind"] = "text";
-    if (type === "file") kind = "file";
-    else if (type === "radio" || type === "checkbox" || type === "select") kind = "radio";
-    questions.push({ fieldName: fieldPath, label, kind });
+    const { label, sensitive } = labelForFieldEntry(entry);
+    if (sensitive || isSensitiveEntryContext(entry)) continue;
+    questions.push({ fieldName: fieldPath, label, kind: questionKind(element, label) });
   }
   return questions;
 }
@@ -213,22 +201,19 @@ export function extractCustomQuestions(doc: Document, excludeFieldName: string |
  * coincidence would still need to sit inside a matching field-entry
  * container to be accepted.
  */
-export function fillCustomTextAnswer(doc: Document, fieldName: string, value: string): boolean {
-  if (fieldName.startsWith(SYSTEMFIELD_PREFIX)) return false;
-  const element = doc.querySelector<HTMLInputElement | HTMLTextAreaElement>(
-    `[name="${CSS.escape(fieldName)}"]`,
-  );
-  if (element === null || element.getAttribute("name") !== fieldName) return false;
+export function fillCustomTextAnswer(doc: Document, fieldName: string, value: string): FillAnswerOutcome {
+  if (fieldName.startsWith(SYSTEMFIELD_PREFIX)) return "refused";
+  const element = doc.querySelector<HTMLElement>(`[name="${CSS.escape(fieldName)}"]`);
+  if (element === null || element.getAttribute("name") !== fieldName) return "refused";
   const entry = element.closest(FIELD_ENTRY_SELECTOR);
-  if (entry === null || entry.getAttribute("data-field-path") !== fieldName) return false;
-  if (isDemographicSelfIdLabel(labelForFieldEntry(entry))) return false;
-
-  const tag = element.tagName;
-  const type = tag === "INPUT" ? (element as HTMLInputElement).type : "textarea";
-  const isTextLike =
-    tag === "TEXTAREA" || (tag === "INPUT" && (type === "text" || type === "email" || type === "tel" || type === "url"));
-  if (!isTextLike) return false;
+  if (entry === null || entry.getAttribute("data-field-path") !== fieldName) return "refused";
+  // Same label rules as extraction (D6), re-run on the write path.
+  const { label, sensitive } = labelForFieldEntry(entry);
+  if (label === null || sensitive || isSensitiveEntryContext(entry)) return "refused";
+  if (element.getAttribute("role") === "combobox" || !isTextEntryElement(element)) return "refused";
+  // D5: never clobber text that's already there.
+  if (hasExistingText(element)) return "not_empty";
 
   setReactControlledValue(element, value);
-  return true;
+  return "filled";
 }

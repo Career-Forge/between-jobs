@@ -2,7 +2,7 @@
   "name": "between-jobs-extension",
   "description": "Between Jobs browser extension -- deterministic ATS autofill from your own prepared résumé/cover-letter artifacts. The human always clicks submit.",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "wxt",

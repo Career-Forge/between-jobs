@@ -1,4 +1,5 @@
 import * as ashby from "@/lib/ashby";
+import { detectAtsType } from "@/lib/atsHosts";
 import * as greenhouse from "@/lib/greenhouse";
 import {
   applyFillPlan,
@@ -8,11 +9,10 @@ import {
   findCoverLetterField,
   GENERIC_FIELD_DEFAULTS,
   isLeverApplyForm,
-  planStandardFieldFills,
 } from "@/lib/lever";
-import { applyReactControlledFillPlan } from "@/lib/standardFields";
+import type { FillAnswerOutcome } from "@/lib/questionSafety";
+import { applyReactControlledFillPlan, planStandardFieldFillsChecked } from "@/lib/standardFields";
 import type {
-  AtsType,
   BackgroundMessage,
   ContentScriptMessage,
   DetectionStateResponse,
@@ -20,7 +20,9 @@ import type {
   FillFieldResult,
   FillResult,
   GeneratedFile,
+  PageChangedMessage,
   TabState,
+  VerifySessionResult,
 } from "@/lib/types";
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -30,24 +32,10 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-// E4/E5 -- which ATS this page belongs to, decided once by hostname.
-// Every other Lever/Greenhouse/Ashby-specific decision in this file
-// (which engine's GENERIC_FIELD_DEFAULTS, which fill-plan mechanism,
-// which custom-question extraction) branches off this single value
-// rather than re-deriving it. `null` means "not a page any engine here
-// understands" -- `formDetected` below stays false and nothing else in
-// this file runs.
-const ATS_HOST_SUFFIXES: [suffix: string, atsType: AtsType][] = [
-  [".lever.co", "lever"],
-  [".greenhouse.io", "greenhouse"],
-  [".ashbyhq.com", "ashby"],
-];
-
-function detectAtsType(hostname: string): AtsType | null {
-  for (const [suffix, type] of ATS_HOST_SUFFIXES) {
-    if (hostname === suffix.slice(1) || hostname.endsWith(suffix)) return type;
-  }
-  return null;
+// Chains an extra note onto a message that may already have one, so a
+// second problem never silently replaces the first.
+function appendNote(existing: string | null, note: string): string {
+  return existing === null ? note : `${existing} ${note}`;
 }
 
 export default defineContentScript({
@@ -67,18 +55,35 @@ export default defineContentScript({
     "https://boards.greenhouse.io/*",
     "https://jobs.ashbyhq.com/*",
   ],
-  main() {
+  main(ctx) {
+    // E4/E5 -- which ATS this page belongs to, decided once by hostname.
+    // Every other Lever/Greenhouse/Ashby-specific decision in this file
+    // (which engine's GENERIC_FIELD_DEFAULTS, which fill-plan mechanism,
+    // which custom-question extraction) branches off this single value
+    // rather than re-deriving it. `null` means "not a page any engine here
+    // understands" -- no form is ever detected and nothing else runs.
     const atsType = detectAtsType(location.hostname);
-    const formDetected =
-      atsType === "lever"
-        ? isLeverApplyForm(document)
-        : atsType === "greenhouse"
-          ? greenhouse.isGreenhouseApplyForm(document)
-          : atsType === "ashby"
-            ? ashby.isAshbyApplyForm(document)
-            : false;
 
-    let tabState: TabState | null = null;
+    // A function, not a value computed once at load (E6): Greenhouse and
+    // Ashby are React SPAs whose apply form can render after this content
+    // script starts, or only after a client-side route change from the
+    // posting page to `/application` -- neither starts a new content script.
+    // A load-time constant made the manual "try this page" trigger (D3)
+    // useless in exactly the case it exists for.
+    function isFormPresent(): boolean {
+      if (atsType === "lever") return isLeverApplyForm(document);
+      if (atsType === "greenhouse") return greenhouse.isGreenhouseApplyForm(document);
+      if (atsType === "ashby") return ashby.isAshbyApplyForm(document);
+      return false;
+    }
+
+    // What background resolved for this tab, together with the URL it was
+    // resolved FOR. Every consumer goes through `currentTabState()`, which
+    // discards it once `location.href` has moved on: without that binding,
+    // a client-side navigation from posting A to posting B left A's
+    // application id, résumé and cover letter driving fills, drafts and
+    // "mark as applied" on B.
+    let resolved: { state: TabState; url: string } | null = null;
 
     // Guards against detect() calls resolving out of order -- the initial
     // page-load call and a later user-triggered RECHECK are both in flight
@@ -86,32 +91,101 @@ export default defineContentScript({
     // resolves last would otherwise win regardless of which was issued last.
     let detectGeneration = 0;
 
+    // The URL a detect() is currently resolving, so a panel refresh doesn't
+    // start a duplicate lookup while the initial one is still in flight.
+    let detectingUrl: string | null = null;
+
     async function detect(): Promise<void> {
-      if (!formDetected || atsType === null) return;
+      if (atsType === null) return;
       const generation = ++detectGeneration;
-      const message: BackgroundMessage = { type: "PAGE_DETECTED", atsType, url: location.href };
+      if (!isFormPresent()) {
+        resolved = null;
+        detectingUrl = null;
+        return;
+      }
+      const url = location.href;
+      detectingUrl = url;
+      const message: BackgroundMessage = { type: "PAGE_DETECTED", atsType, url };
       try {
-        const result = await browser.runtime.sendMessage(message);
+        const result: TabState | undefined = await browser.runtime.sendMessage(message);
         if (generation !== detectGeneration) return;
-        tabState = result;
+        if (result !== undefined && result !== null) resolved = { state: result, url };
       } catch (e) {
         // The background service worker can be mid-restart when this
         // fires (MV3 kills an idle worker after ~30s) -- an
         // adversarially-confirmed gap: an unhandled rejection here used
-        // to leave `tabState` stuck at null forever with no way for the
+        // to leave the state stuck at null forever with no way for the
         // side panel to tell "still checking" from "gave up." Leaving
-        // `tabState` at null either way (detect() is safely re-callable
-        // via RECHECK), but at least this doesn't crash silently.
+        // it as-is either way (detect() is safely re-callable via
+        // RECHECK), but at least this doesn't crash silently.
         console.error("[between-jobs] page detection failed", e);
+      } finally {
+        if (generation === detectGeneration) detectingUrl = null;
       }
+    }
+
+    async function verifySession(userId: string): Promise<boolean> {
+      try {
+        const message: BackgroundMessage = { type: "VERIFY_SESSION", userId };
+        const result: VerifySessionResult | undefined = await browser.runtime.sendMessage(message);
+        return result?.valid === true;
+      } catch {
+        return false;
+      }
+    }
+
+    // The one way to read the resolved state. Null means "nothing usable
+    // for THIS page and THIS user right now" -- never a stale answer:
+    // resolved for a different URL (SPA navigation), or, for a tracked
+    // state (which holds the user's personal info and PDFs), resolved for a
+    // user who is no longer the one signed in. The session check goes to the
+    // service worker each time because sign-out reaches the side panel
+    // and background but never this content script.
+    async function currentTabState(): Promise<TabState | null> {
+      if (resolved === null) return null;
+      if (resolved.url !== location.href) {
+        resolved = null;
+        return null;
+      }
+      const { state } = resolved;
+      if (state.status === "tracked" && !(await verifySession(state.userId))) {
+        if (resolved?.state === state) resolved = null;
+        return null;
+      }
+      // Re-check after the await: the page or the resolved state may have
+      // moved on while the service worker was answering.
+      if (resolved === null || resolved.state !== state || resolved.url !== location.href) return null;
+      return state;
+    }
+
+    // Best-effort, and harmless when the panel is closed (nothing to hear
+    // it) -- the panel refreshes on it so it never keeps showing a page
+    // that is gone.
+    function notifyPanelPageChanged(): void {
+      const message: PageChangedMessage = { type: "PAGE_CHANGED" };
+      void Promise.resolve(browser.runtime.sendMessage(message)).catch(() => {});
     }
 
     void detect();
 
-    // `null` (not an all-empty FillResult) means "detection hasn't
-    // resolved yet" -- an adversarially-confirmed gap: returning a
-    // structurally valid empty result made an in-flight lookup
-    // indistinguishable from a genuine "nothing to fill."
+    // Client-side navigation (Greenhouse/Ashby): drop what belonged to the
+    // previous page immediately, then -- once the URL has actually moved --
+    // tell the panel and look again. WXT raises this event from the
+    // Navigation API's `navigate` event, which fires BEFORE `location.href`
+    // updates, so reading the URL in the handler itself would resolve the
+    // page being left; the next task sees the new one. The form may not
+    // have rendered yet either, in which case detection finds nothing now
+    // and the panel's own refresh (or a later Try this page) finds it.
+    ctx.addEventListener(window, "wxt:locationchange", () => {
+      resolved = null;
+      detectGeneration++;
+      detectingUrl = null;
+      ctx.setTimeout(() => {
+        notifyPanelPageChanged();
+        void detect().then(notifyPanelPageChanged);
+      }, 0);
+    });
+
     // Shared by the résumé (a fixed selector on every ATS) and the cover
     // letter (a runtime-discovered one on Lever via findCoverLetterField,
     // a fixed selector on Greenhouse, not yet supported on Ashby -- see
@@ -173,6 +247,18 @@ export default defineContentScript({
 
     type TrackedTabState = Extract<TabState, { status: "tracked" }>;
 
+    // A signed map can be authentic and still carry a selector the browser
+    // won't parse. That costs the one field, never the fill -- but it is
+    // reported, so a maintainer's typo shows up instead of a field quietly
+    // never filling.
+    function noteInvalidSelectors(result: FillResult, invalidSelectors: string[]): void {
+      if (invalidSelectors.length === 0) return;
+      result.fieldMapError = appendNote(
+        result.fieldMapError,
+        `This ATS's field map has an invalid selector (${invalidSelectors.join(", ")}) -- skipped that field; everything else still ran.`,
+      );
+    }
+
     // E2/E3 (unchanged) -- Lever's own fill mechanism: server-rendered
     // HTML, a plain `.value` set plus a dispatched event is enough, and
     // the Lever-idiosyncratic behavior (cover-letter discovery, custom
@@ -181,9 +267,10 @@ export default defineContentScript({
     function fillLeverPage(tracked: TrackedTabState, personalInfo: ExtensionPersonalInfo, forceRefillAll: boolean, result: FillResult): FillResult {
       const standardFields = [
         ...GENERIC_FIELD_DEFAULTS.standardFields,
-        ...(tracked.fieldMap?.standard_fields ?? []),
+        ...(tracked.fieldMap?.ats_type === "lever" ? tracked.fieldMap.standard_fields : []),
       ];
-      const plan = planStandardFieldFills(document, personalInfo, forceRefillAll, standardFields);
+      const { plan, invalidSelectors } = planStandardFieldFillsChecked(document, personalInfo, forceRefillAll, standardFields);
+      noteInvalidSelectors(result, invalidSelectors);
       result.filledFields = applyFillPlan(document, plan);
 
       const resumeOutcome = tryAttach(GENERIC_FIELD_DEFAULTS.resumeSelector, tracked.resume, forceRefillAll);
@@ -196,7 +283,10 @@ export default defineContentScript({
         // genuine custom questions -- neither gets attempted, and the
         // side panel is told why rather than silently showing an empty
         // "nothing to answer" list.
-        result.fieldMapError = tracked.fieldMapError;
+        result.fieldMapError = appendNote(
+          result.fieldMapError,
+          tracked.fieldMapError ?? "This ATS's field map doesn't match this page's ATS -- refusing to use it.",
+        );
         return result;
       }
       const leverMap = tracked.fieldMap;
@@ -222,7 +312,7 @@ export default defineContentScript({
             // defense-in-depth precedent fillCustomTextAnswer/
             // extractCustomQuestions already apply to every other
             // selector built from page-scraped content.
-            `[name="${CSS.escape(coverLetterField)}"]`,
+            `input[type="file"][name="${CSS.escape(coverLetterField)}"]`,
             tracked.coverLetter,
             forceRefillAll,
           );
@@ -239,9 +329,11 @@ export default defineContentScript({
         result.coverLetterAttached = false;
         result.coverLetterError = null;
         result.unresolvedQuestions = [];
-        result.fieldMapError =
+        result.fieldMapError = appendNote(
+          result.fieldMapError,
           "This ATS's field map has an invalid selector or pattern -- refusing to use it. " +
-          (e instanceof Error ? e.message : "");
+            (e instanceof Error ? e.message : ""),
+        );
       }
       return result;
     }
@@ -264,7 +356,8 @@ export default defineContentScript({
         ...greenhouse.GENERIC_FIELD_DEFAULTS.standardFields,
         ...(fieldMap !== null && fieldMap.ats_type === "greenhouse" ? fieldMap.standard_fields : []),
       ];
-      const plan = planStandardFieldFills(document, personalInfo, forceRefillAll, standardFields);
+      const { plan, invalidSelectors } = planStandardFieldFillsChecked(document, personalInfo, forceRefillAll, standardFields);
+      noteInvalidSelectors(result, invalidSelectors);
       result.filledFields = applyReactControlledFillPlan(document, plan);
 
       const resumeOutcome = tryAttach(greenhouse.GENERIC_FIELD_DEFAULTS.resumeSelector, tracked.resume, forceRefillAll);
@@ -298,7 +391,8 @@ export default defineContentScript({
         ...ashby.GENERIC_FIELD_DEFAULTS.standardFields,
         ...(fieldMap !== null && fieldMap.ats_type === "ashby" ? fieldMap.standard_fields : []),
       ];
-      const plan = planStandardFieldFills(document, personalInfo, forceRefillAll, standardFields);
+      const { plan, invalidSelectors } = planStandardFieldFillsChecked(document, personalInfo, forceRefillAll, standardFields);
+      noteInvalidSelectors(result, invalidSelectors);
       result.filledFields = applyReactControlledFillPlan(document, plan);
 
       const resumeOutcome = tryAttach(ashby.GENERIC_FIELD_DEFAULTS.resumeSelector, tracked.resume, forceRefillAll);
@@ -313,8 +407,7 @@ export default defineContentScript({
       return result;
     }
 
-    function fillPage(forceRefillAll: boolean): FillResult | null {
-      if (tabState === null || atsType === null) return null;
+    function fillPage(tracked: TabState, forceRefillAll: boolean): FillResult {
       const result: FillResult = {
         filledFields: [],
         skippedFields: [],
@@ -324,15 +417,95 @@ export default defineContentScript({
         coverLetterError: null,
         unresolvedQuestions: [],
         fieldMapError: null,
+        fillError: null,
       };
-      if (tabState.status !== "tracked" || tabState.payload.personal_info === null) {
+      if (atsType === null || tracked.status !== "tracked" || tracked.payload.personal_info === null) {
         return result;
       }
-      const personalInfo = tabState.payload.personal_info;
+      const personalInfo = tracked.payload.personal_info;
 
-      if (atsType === "lever") return fillLeverPage(tabState, personalInfo, forceRefillAll, result);
-      if (atsType === "greenhouse") return fillGreenhousePage(tabState, personalInfo, forceRefillAll, result);
-      return fillAshbyPage(tabState, personalInfo, forceRefillAll, result);
+      // Anything unexpected inside a fill is reported in the result
+      // instead of thrown: an exception out of a message listener reaches
+      // the side panel as "no reply", which it (correctly) can only render
+      // as "still checking" -- forever. What was written before the
+      // failure stays reported, since it really did happen.
+      try {
+        if (atsType === "lever") return fillLeverPage(tracked, personalInfo, forceRefillAll, result);
+        if (atsType === "greenhouse") return fillGreenhousePage(tracked, personalInfo, forceRefillAll, result);
+        return fillAshbyPage(tracked, personalInfo, forceRefillAll, result);
+      } catch (e) {
+        result.fillError = e instanceof Error && e.message !== "" ? e.message : "The fill stopped unexpectedly.";
+        return result;
+      }
+    }
+
+    // GET_DETECTION_STATE: what the panel renders. Also where a form that
+    // rendered after page load (or after a client-side route change) gets
+    // picked up -- if there is a form, no usable state, and no lookup
+    // already running for this URL, start one and wait for it.
+    async function getDetectionState(): Promise<DetectionStateResponse> {
+      const formDetected = isFormPresent();
+      let tabState = await currentTabState();
+      if (formDetected && tabState === null && detectingUrl !== location.href) {
+        await detect();
+        tabState = await currentTabState();
+      }
+      return { formDetected, tabState };
+    }
+
+    // D3 (browser-extension.md) -- an explicit manual retrigger, shipped
+    // from day one: even the best-resourced competitor (Simplify) maintains
+    // a permanent "not supported" failure category, so automated detection
+    // alone was never going to be sufficient on its own.
+    async function recheck(): Promise<DetectionStateResponse> {
+      await detect();
+      return { formDetected: isFormPresent(), tabState: await currentTabState() };
+    }
+
+    // `null` (not an all-empty FillResult) means "nothing usable for this
+    // page yet" -- detection hasn't resolved, or what it resolved belonged
+    // to a page or user that is gone (in which case a fresh lookup is
+    // started, so the panel's retry finds it). An adversarially-confirmed
+    // gap: returning a structurally valid empty result made this
+    // indistinguishable from a genuine "nothing to fill."
+    async function requestFill(forceRefillAll: boolean): Promise<FillResult | null> {
+      const state = await currentTabState();
+      if (state === null) {
+        if (isFormPresent() && detectingUrl !== location.href) void detect();
+        return null;
+      }
+      return fillPage(state, forceRefillAll);
+    }
+
+    // E3b -- the one path a value chosen off-page (a saved answer, an LLM
+    // draft) ever reaches the real DOM. Each ATS's own `fillCustomTextAnswer`
+    // re-validates the target itself (type, namespace, D6 label, D5
+    // emptiness), so this handler doesn't duplicate those checks -- it adds
+    // the two that only it can make: the tab still shows the page this
+    // was drafted for, and that page is a tracked application (all three
+    // ATSs now, not just Lever). Lever additionally needs a verified field
+    // map (E3c: its own `custom_question_prefix`, so no map means no fill,
+    // D4's fail-closed scope); Greenhouse/Ashby's engines are self-contained.
+    async function fillField(fieldName: string, value: string): Promise<FillFieldResult> {
+      const state = await currentTabState();
+      if (state === null) return { filled: false, reason: "page_changed" };
+      if (state.status !== "tracked") return { filled: false, reason: "refused" };
+
+      let outcome: FillAnswerOutcome = "refused";
+      try {
+        if (atsType === "lever") {
+          if (state.fieldMap?.ats_type === "lever") {
+            outcome = fillCustomTextAnswer(document, state.fieldMap, fieldName, value);
+          }
+        } else if (atsType === "greenhouse") {
+          outcome = greenhouse.fillCustomTextAnswer(document, fieldName, value);
+        } else if (atsType === "ashby") {
+          outcome = ashby.fillCustomTextAnswer(document, fieldName, value);
+        }
+      } catch (e) {
+        console.error("[between-jobs] filling an answer failed", e);
+      }
+      return outcome === "filled" ? { filled: true } : { filled: false, reason: outcome };
     }
 
     // Never registers any listener capable of clicking any ATS's own
@@ -344,46 +517,15 @@ export default defineContentScript({
     // Lever, Greenhouse, and Ashby -- nothing about generalizing this
     // file to three ATSs relaxes it anywhere.
     browser.runtime.onMessage.addListener((message: ContentScriptMessage) => {
-      if (message.type === "GET_DETECTION_STATE") {
-        const response: DetectionStateResponse = { formDetected, tabState };
-        return Promise.resolve(response);
-      }
-      if (message.type === "RECHECK") {
-        // D3 (browser-extension.md) -- an explicit manual retrigger,
-        // shipped from day one: even the best-resourced competitor
-        // (Simplify) maintains a permanent "not supported" failure
-        // category, so automated detection alone was never going to be
-        // sufficient on its own.
-        return detect().then((): DetectionStateResponse => ({ formDetected, tabState }));
-      }
-      if (message.type === "REQUEST_FILL") {
-        return Promise.resolve(fillPage(message.forceRefillAll));
-      }
-      if (message.type === "FILL_FIELD") {
-        // E3b -- the one path a value chosen off-page (a saved answer,
-        // an LLM draft) ever reaches the real DOM. Each ATS's own
-        // `fillCustomTextAnswer` re-validates the target itself, so this
-        // handler doesn't need to duplicate that check. Lever alone
-        // gates this on a verified field map (E3c: needs the map's own
-        // `custom_question_prefix` to do the check at all -- no map, no
-        // fill, matching D4's fail-closed scope); Greenhouse/Ashby's
-        // engines are self-contained and never require one, matching
-        // fillPage's own split above.
-        let filled = false;
-        const currentTabState = tabState;
-        const leverFieldMap =
-          currentTabState !== null && currentTabState.status === "tracked" && currentTabState.fieldMap !== null && currentTabState.fieldMap.ats_type === "lever"
-            ? currentTabState.fieldMap
-            : null;
-        if (atsType === "lever" && leverFieldMap !== null) {
-          filled = fillCustomTextAnswer(document, leverFieldMap, message.fieldName, message.value);
-        } else if (atsType === "greenhouse") {
-          filled = greenhouse.fillCustomTextAnswer(document, message.fieldName, message.value);
-        } else if (atsType === "ashby") {
-          filled = ashby.fillCustomTextAnswer(document, message.fieldName, message.value);
-        }
-        const response: FillFieldResult = { filled };
-        return Promise.resolve(response);
+      switch (message.type) {
+        case "GET_DETECTION_STATE":
+          return getDetectionState();
+        case "RECHECK":
+          return recheck();
+        case "REQUEST_FILL":
+          return requestFill(message.forceRefillAll);
+        case "FILL_FIELD":
+          return fillField(message.fieldName, message.value);
       }
     });
   },

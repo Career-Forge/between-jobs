@@ -158,35 +158,158 @@ describe("fillCustomTextAnswer", () => {
 
     const filled = fillCustomTextAnswer(document, "question_29077808003", "linkedin.com/in/jane");
 
-    expect(filled).toBe(true);
+    expect(filled).toBe("filled");
     expect(input.value).toBe("linkedin.com/in/jane");
     expect(events).toEqual(["input", "change"]);
   });
 
   it("refuses a field name outside the question_<id> namespace, e.g. a demographic field, without even querying for it", () => {
     buildGreenhouseForm();
-    expect(fillCustomTextAnswer(document, "4012698003", "x")).toBe(false);
-    expect(fillCustomTextAnswer(document, "gender", "x")).toBe(false);
+    expect(fillCustomTextAnswer(document, "4012698003", "x")).toBe("refused");
+    expect(fillCustomTextAnswer(document, "gender", "x")).toBe("refused");
   });
 
   it("refuses a question_<id> field sitting inside the demographic container", () => {
     buildGreenhouseForm();
-    expect(fillCustomTextAnswer(document, "question_999", "x")).toBe(false);
+    expect(fillCustomTextAnswer(document, "question_999", "x")).toBe("refused");
   });
 
   it("refuses a react-select combobox question -- never a plain text fill", () => {
     buildGreenhouseForm();
-    expect(fillCustomTextAnswer(document, "question_29077810003", "Yes")).toBe(false);
+    expect(fillCustomTextAnswer(document, "question_29077810003", "Yes")).toBe("refused");
   });
 
   it("refuses the standard resume/first_name fields even if somehow asked to fill them", () => {
     buildGreenhouseForm();
-    expect(fillCustomTextAnswer(document, "resume", "not applicable")).toBe(false);
-    expect(fillCustomTextAnswer(document, "first_name", "not applicable")).toBe(false);
+    expect(fillCustomTextAnswer(document, "resume", "not applicable")).toBe("refused");
+    expect(fillCustomTextAnswer(document, "first_name", "not applicable")).toBe("refused");
   });
 
   it("returns false for a field id that doesn't exist on the page", () => {
     buildGreenhouseForm();
-    expect(fillCustomTextAnswer(document, "question_00000000", "x")).toBe(false);
+    expect(fillCustomTextAnswer(document, "question_00000000", "x")).toBe("refused");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E6 hardening. `question_<id>` is the TENANT's namespace, not Greenhouse's:
+// real boards author "Gender" and "Pronouns" as ordinary custom questions
+// outside both EEO containers (Airbnb, Figma), and anyone can create a
+// Greenhouse account.
+// ---------------------------------------------------------------------------
+
+function buildQuestions(...questions: string[]): void {
+  document.body.innerHTML = `<form id="application-form"><input type="file" id="resume" />${questions.join("\n")}</form>`;
+}
+
+function q(id: number, label: string | null, control: string): string {
+  const labelHtml = label === null ? "" : `<label for="question_${id}">${label}</label>`;
+  return `${labelHtml}${control}`;
+}
+
+const textInput = (id: number) => `<input type="text" id="question_${id}" />`;
+
+describe("E6: control classification fails closed (Greenhouse)", () => {
+  it("lists a native <select> as human-only, never as free text", () => {
+    buildQuestions(q(3, "Are you legally authorized to work in the US?", `<select id="question_3"><option>Yes</option></select>`));
+    const found = extractCustomQuestions(document).find((x) => x.fieldName === "question_3");
+    expect(found?.label).toBe("Are you legally authorized to work in the US?");
+    expect(found?.kind).toBe("radio");
+  });
+
+  it("lists a wrapper <div> and a <fieldset> carrying a question_ id as human-only", () => {
+    buildQuestions(
+      q(4, "Fake", `<div id="question_4"></div>`),
+      `<fieldset id="question_21"><input type="checkbox" /></fieldset>`,
+    );
+    const kinds = Object.fromEntries(extractCustomQuestions(document).map((x) => [x.fieldName, x.kind]));
+    expect(kinds["question_4"]).toBe("radio");
+    expect(kinds["question_21"]).toBe("radio");
+  });
+
+  it.each(["date", "number", "password"])("lists an <input type=%s> as human-only", (type) => {
+    buildQuestions(q(5, "Earliest start date", `<input type="${type}" id="question_5" />`));
+    expect(extractCustomQuestions(document).find((x) => x.fieldName === "question_5")?.kind).toBe("radio");
+  });
+
+  it("still lists a plain text input and a textarea as text", () => {
+    buildQuestions(q(6, "Why us?", textInput(6)), q(7, "Tell us more", `<textarea id="question_7"></textarea>`));
+    const kinds = Object.fromEntries(extractCustomQuestions(document).map((x) => [x.fieldName, x.kind]));
+    expect(kinds["question_6"]).toBe("text");
+    expect(kinds["question_7"]).toBe("text");
+  });
+
+  it("never writes to a select or a wrapper element even when asked directly", () => {
+    buildQuestions(
+      q(3, "Work authorization?", `<select id="question_3"><option>Yes</option></select>`),
+      q(4, "Wrapper", `<div id="question_4"></div>`),
+    );
+    expect(fillCustomTextAnswer(document, "question_3", "Yes")).toBe("refused");
+    expect(fillCustomTextAnswer(document, "question_4", "Yes")).toBe("refused");
+  });
+});
+
+describe("E6: D6 label check on tenant-authored question_ fields (Greenhouse)", () => {
+  // The first two are the real Airbnb and Figma phrasings from their public
+  // boards-api question lists; the rest are the adversarial reviewers'.
+  const SENSITIVE = [
+    "Gender",
+    "Pronouns",
+    "Preferred pronouns",
+    "What is your gender identity?",
+    "Do you require any accommodations to complete the interview process?",
+    "Are you a veteran?",
+    "Do you have a disability? Please describe any accommodations you require.",
+    "What is your ethnic background?",
+  ];
+
+  for (const label of SENSITIVE) {
+    it(`excludes ${JSON.stringify(label)} whether it is an input or a textarea, and refuses to fill it`, () => {
+      buildQuestions(q(101, label, textInput(101)), q(102, label, `<textarea id="question_102"></textarea>`));
+      const listed = extractCustomQuestions(document).map((x) => x.fieldName);
+      expect(listed).not.toContain("question_101");
+      expect(listed).not.toContain("question_102");
+
+      expect(fillCustomTextAnswer(document, "question_101", "any text")).toBe("refused");
+      expect(fillCustomTextAnswer(document, "question_102", "any text")).toBe("refused");
+      expect(document.querySelector<HTMLInputElement>("#question_101")!.value).toBe("");
+      expect(document.querySelector<HTMLTextAreaElement>("#question_102")!.value).toBe("");
+    });
+  }
+
+  it("does NOT exclude a free-text work-authorization question -- a maintainer decision, pinned here", () => {
+    buildQuestions(q(110, "Will you now or in the future require sponsorship?", textInput(110)));
+    expect(extractCustomQuestions(document).find((x) => x.fieldName === "question_110")?.kind).toBe("text");
+    expect(fillCustomTextAnswer(document, "question_110", "No")).toBe("filled");
+  });
+});
+
+describe("E6: an unreadable label is human-only (Greenhouse)", () => {
+  it("downgrades a label-less text field to kind 'radio' and refuses to fill it", () => {
+    buildQuestions(q(8, null, textInput(8)));
+    const found = extractCustomQuestions(document).find((x) => x.fieldName === "question_8");
+    expect(found?.label).toBeNull();
+    expect(found?.kind).toBe("radio");
+    expect(fillCustomTextAnswer(document, "question_8", "text")).toBe("refused");
+  });
+});
+
+describe("E6: D5 -- a per-question fill never overwrites text already on the page (Greenhouse)", () => {
+  it("returns 'not_empty' and leaves a hand-typed answer untouched", () => {
+    buildQuestions(q(9, "Why us?", `<textarea id="question_9"></textarea>`));
+    const area = document.querySelector<HTMLTextAreaElement>("#question_9")!;
+    area.value = "my own hand-written answer";
+    const events: string[] = [];
+    area.addEventListener("input", () => events.push("input"));
+
+    expect(fillCustomTextAnswer(document, "question_9", "LLM draft")).toBe("not_empty");
+    expect(area.value).toBe("my own hand-written answer");
+    expect(events).toEqual([]);
+  });
+
+  it("treats whitespace-only content as empty", () => {
+    buildQuestions(q(9, "Why us?", textInput(9)));
+    document.querySelector<HTMLInputElement>("#question_9")!.value = "  ";
+    expect(fillCustomTextAnswer(document, "question_9", "LLM draft")).toBe("filled");
   });
 });

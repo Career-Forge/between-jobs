@@ -180,10 +180,22 @@ function parseVerifiedFieldMap(payloadCanonical: string, response: SignedFieldMa
   if (p.ats_type !== response.ats_type || p.version !== response.version || p.schema !== response.schema) {
     return null;
   }
+  // The publishing script writes an integer starting at 1. Anything else
+  // (a float, a negative, a numeric string that happens to sort below a
+  // stored number, a boolean) is a signing bug or a hostile signer, and the
+  // background ratchet compares versions numerically -- so it fails closed
+  // here rather than reaching storage.
+  if (typeof p.version !== "number" || !Number.isSafeInteger(p.version) || p.version < 1) return null;
 
   if (p.ats_type === "greenhouse" || p.ats_type === "ashby") {
     return isBareStandardFieldMap(p) ? (parsed as GreenhouseFieldMap | AshbyFieldMap) : null;
   }
+
+  // Lever is the only other shape this build understands. Anything else --
+  // including a signed `ats_type` it has never heard of -- fails closed
+  // instead of being parsed as if it were Lever-shaped and returned as a
+  // "valid" map for a type nothing here can use.
+  if (p.ats_type !== "lever") return null;
 
   if (
     typeof p.custom_question_prefix !== "string" ||

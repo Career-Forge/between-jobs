@@ -1,4 +1,5 @@
 import type { StandardFieldSpec } from "./ats-field-map";
+import { isTextEntryElement } from "./questionSafety";
 import type { ExtensionPersonalInfo } from "./types";
 
 // E4/E5 -- pulled out of lib/lever.ts, which used to own this logic
@@ -89,6 +90,15 @@ function resolveFieldValue(spec: StandardFieldSpec, info: ExtensionPersonalInfo)
   }
 }
 
+export interface StandardFieldPlanResult {
+  plan: FieldFillPlanItem[];
+  /** Selectors from the supplied specs that the browser refused to parse.
+   * A valid signature proves a signed map is AUTHENTIC, not that every
+   * selector in it is well-formed -- a maintainer typo must cost that one
+   * field, not the whole fill. */
+  invalidSelectors: string[];
+}
+
 /**
  * D5 (browser-extension.md) -- Fill is a repeatable, idempotent action
  * against a fresh DOM read: a field already holding a non-empty value
@@ -97,23 +107,56 @@ function resolveFieldValue(spec: StandardFieldSpec, info: ExtensionPersonalInfo)
  * `.value`) -- the actual mutation happens in `applyFillPlan`/
  * `applyReactControlledFillPlan` below, so this planning step is shared
  * verbatim by every ATS regardless of how its inputs need to be written.
+ *
+ * Only plain text-entry controls are ever planned (a map that points at a
+ * select, checkbox or submit button gets skipped, even under
+ * `forceRefillAll`): the signed map is the only thing deciding these
+ * selectors, so this is the second lock on the door, not the first.
  */
+export function planStandardFieldFillsChecked(
+  doc: Document,
+  personalInfo: ExtensionPersonalInfo,
+  forceRefillAll: boolean,
+  standardFields: readonly StandardFieldSpec[],
+): StandardFieldPlanResult {
+  const plan: FieldFillPlanItem[] = [];
+  const invalidSelectors: string[] = [];
+  for (const field of standardFields) {
+    let element: Element | null;
+    try {
+      element = doc.querySelector(field.selector);
+    } catch {
+      invalidSelectors.push(field.selector);
+      continue;
+    }
+    if (element === null || !isTextEntryElement(element)) continue;
+    if (!forceRefillAll && element.value.trim() !== "") continue;
+    const value = resolveFieldValue(field, personalInfo);
+    if (value === null || value === "") continue;
+    plan.push({ selector: field.selector, value });
+  }
+  return { plan, invalidSelectors };
+}
+
 export function planStandardFieldFills(
   doc: Document,
   personalInfo: ExtensionPersonalInfo,
   forceRefillAll: boolean,
   standardFields: readonly StandardFieldSpec[],
 ): FieldFillPlanItem[] {
-  const plan: FieldFillPlanItem[] = [];
-  for (const field of standardFields) {
-    const element = doc.querySelector<HTMLInputElement>(field.selector);
-    if (element === null) continue;
-    if (!forceRefillAll && element.value.trim() !== "") continue;
-    const value = resolveFieldValue(field, personalInfo);
-    if (value === null || value === "") continue;
-    plan.push({ selector: field.selector, value });
+  return planStandardFieldFillsChecked(doc, personalInfo, forceRefillAll, standardFields).plan;
+}
+
+/** The element a plan item targets, or null when it no longer exists, its
+ * selector doesn't parse, or it isn't a plain text-entry control. */
+function planTarget(doc: Document, item: FieldFillPlanItem): HTMLInputElement | HTMLTextAreaElement | null {
+  let element: Element | null;
+  try {
+    element = doc.querySelector(item.selector);
+  } catch {
+    return null;
   }
-  return plan;
+  return element !== null && isTextEntryElement(element) ? element : null;
 }
 
 /**
@@ -128,7 +171,7 @@ export function planStandardFieldFills(
 export function applyFillPlan(doc: Document, plan: readonly FieldFillPlanItem[]): string[] {
   const filled: string[] = [];
   for (const item of plan) {
-    const element = doc.querySelector<HTMLInputElement>(item.selector);
+    const element = planTarget(doc, item);
     if (element === null) continue;
     element.value = item.value;
     element.dispatchEvent(new Event("input", { bubbles: true }));
@@ -190,7 +233,7 @@ export function setReactControlledValue(element: HTMLInputElement | HTMLTextArea
 export function applyReactControlledFillPlan(doc: Document, plan: readonly FieldFillPlanItem[]): string[] {
   const filled: string[] = [];
   for (const item of plan) {
-    const element = doc.querySelector<HTMLInputElement>(item.selector);
+    const element = planTarget(doc, item);
     if (element === null) continue;
     setReactControlledValue(element, item.value);
     filled.push(item.selector);
@@ -213,6 +256,13 @@ export function applyReactControlledFillPlan(doc: Document, plan: readonly Field
  * `target.files` is read directly off the DOM at dispatch time.
  */
 export function attachFile(input: HTMLInputElement, bytes: ArrayBuffer, filename: string, mimeType: string): void {
+  // Assigning `.files` on anything but a file input is meaningless at best;
+  // a selector that resolves to some other element (a same-named text
+  // input, say) must never receive a synthetic change event as if a file
+  // had been chosen.
+  if (input.tagName !== "INPUT" || input.type !== "file") {
+    throw new Error("Refusing to attach a file to an element that isn't a file input.");
+  }
   const file = new File([bytes], filename, { type: mimeType });
   const dataTransfer = new DataTransfer();
   dataTransfer.items.add(file);

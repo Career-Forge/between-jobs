@@ -1,4 +1,12 @@
 import type { StandardFieldSpec } from "./ats-field-map";
+import {
+  hasExistingText,
+  isTextEntryElement,
+  questionKind,
+  readQuestionLabel,
+  type FillAnswerOutcome,
+  type QuestionKind,
+} from "./questionSafety";
 
 // E4/E5 -- `planStandardFieldFills`/`applyFillPlan`/`attachFile` used to
 // be defined directly in this file; they were always genuinely ATS-
@@ -55,7 +63,7 @@ export function isLeverApplyForm(doc: Document): boolean {
 export interface CustomQuestion {
   fieldName: string;
   label: string | null;
-  kind: "text" | "file" | "radio";
+  kind: QuestionKind;
 }
 
 /** The subset of the verified field map these functions actually need --
@@ -76,10 +84,14 @@ export interface LeverQuestionMapFields {
 // SELECTOR STRINGS themselves are E3c signed-map data (map.label_
 // wrapper_selector/map.label_selector); this traversal shape is open-
 // source algorithm, parameterized on them.
-function labelForCardField(element: Element, wrapperSelector: string, labelSelector: string): string | null {
+function labelForCardField(
+  element: Element,
+  wrapperSelector: string,
+  labelSelector: string,
+): { label: string | null; sensitive: boolean } {
   const wrapper = element.closest(wrapperSelector);
   const label = wrapper?.parentElement?.querySelector(labelSelector);
-  return label?.textContent?.trim().replace(/\s+/g, " ") ?? null;
+  return readQuestionLabel(label?.textContent);
 }
 
 // Only fields under the map's own `custom_question_prefix` (Lever:
@@ -87,10 +99,11 @@ function labelForCardField(element: Element, wrapperSelector: string, labelSelec
 // eligible for known-question-memory matching (E3). Lever's `eeo[...]`
 // (gender/race/veteran) and `surveysResponses[<uuid>][...]` (a separate
 // voluntary demographic survey) are excluded BY CONSTRUCTION here --
-// confirmed live these are real, separate field-name namespaces, not
-// something requiring a label-text sensitivity classifier (D6, and the
-// selector-map design note on excluding consent/sensitive fields by
-// authoring rather than runtime detection).
+// confirmed live these are real, separate field-name namespaces. That
+// covers what LEVER renders as demographic, not what a TENANT authors: an
+// org can put "What is your gender identity?" in the ordinary `cards[`
+// namespace, so every card is also label-checked (E6, lib/questionSafety.ts)
+// and a sensitive one is excluded the same way.
 //
 // `excludeFieldName` is the field `findCoverLetterField` already
 // identified as the cover-letter slot -- skipped here since content.ts
@@ -110,7 +123,9 @@ function labelForCardField(element: Element, wrapperSelector: string, labelSelec
 // (work authorization, sponsorship) and don't fit a "draft prose"
 // generation model regardless. The LLM-answer feature only ever
 // operates on `kind: "text"` fields; radio questions always stay
-// human-only, same as file fields do today.
+// human-only, same as file fields do today. E6 made this fail closed:
+// `text` is only ever a textarea or a text-like input, so a native
+// <select> (how Lever renders a Dropdown question) is `radio`, not text.
 export function extractCustomQuestions(
   doc: Document,
   map: LeverQuestionMapFields,
@@ -125,14 +140,13 @@ export function extractCustomQuestions(
       continue;
     }
     seen.add(name);
-    let kind: CustomQuestion["kind"] = "text";
-    if (element.type === "file") kind = "file";
-    else if (element.type === "radio" || element.type === "checkbox") kind = "radio";
-    questions.push({
-      fieldName: name,
-      label: labelForCardField(element, map.label_wrapper_selector, map.label_selector),
-      kind,
-    });
+    const { label, sensitive } = labelForCardField(element, map.label_wrapper_selector, map.label_selector);
+    // D6, by label: the `cards[` namespace is tenant-authored, so an org
+    // can put a gender/disability/accommodation question in it. Excluded
+    // outright, exactly like the `eeo[`/`surveysResponses[` namespaces
+    // above -- see lib/questionSafety.ts.
+    if (sensitive) continue;
+    questions.push({ fieldName: name, label, kind: questionKind(element, label) });
   }
   return questions;
 }
@@ -151,7 +165,7 @@ export function findCoverLetterField(
   const selector = `form [name^="${CSS.escape(map.custom_question_prefix)}"][type="file"]`;
   const pattern = new RegExp(map.cover_letter_label_pattern, "i");
   for (const element of doc.querySelectorAll<HTMLInputElement>(selector)) {
-    const label = labelForCardField(element, map.label_wrapper_selector, map.label_selector);
+    const { label } = labelForCardField(element, map.label_wrapper_selector, map.label_selector);
     if (label !== null && pattern.test(label)) {
       return element.getAttribute("name");
     }
@@ -184,22 +198,35 @@ export function findCoverLetterField(
  */
 export function fillCustomTextAnswer(
   doc: Document,
-  map: Pick<LeverQuestionMapFields, "custom_question_prefix">,
+  map: LeverQuestionMapFields,
   fieldName: string,
   value: string,
-): boolean {
-  if (!fieldName.startsWith(map.custom_question_prefix)) return false;
+): FillAnswerOutcome {
+  if (!fieldName.startsWith(map.custom_question_prefix)) return "refused";
   const element = doc.querySelector<HTMLInputElement | HTMLTextAreaElement>(
     `form [name="${CSS.escape(fieldName)}"]`,
   );
-  if (element === null || element.getAttribute("name") !== fieldName) return false;
-  const tag = element.tagName;
-  const type = (element as HTMLInputElement).type;
-  const isTextLike = tag === "TEXTAREA" || (tag === "INPUT" && (type === "text" || type === "email"));
-  if (!isTextLike) return false;
+  if (element === null || element.getAttribute("name") !== fieldName) return "refused";
+  if (!isTextEntryElement(element)) return "refused";
+
+  // The same label rules extraction applies (D6), re-run here because this
+  // is the write path: a sensitive label -- or one that can't be read, so
+  // can't be shown to be safe -- is refused even if a caller asks. The map's
+  // selectors are signed data, but a typo in one throws; that must not
+  // become a write.
+  let labelInfo: { label: string | null; sensitive: boolean };
+  try {
+    labelInfo = labelForCardField(element, map.label_wrapper_selector, map.label_selector);
+  } catch {
+    return "refused";
+  }
+  if (labelInfo.label === null || labelInfo.sensitive) return "refused";
+
+  // D5: never clobber text that's already there.
+  if (hasExistingText(element)) return "not_empty";
 
   element.value = value;
   element.dispatchEvent(new Event("input", { bubbles: true }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
-  return true;
+  return "filled";
 }

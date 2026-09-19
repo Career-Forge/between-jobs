@@ -1,4 +1,12 @@
 import type { StandardFieldSpec } from "./ats-field-map";
+import {
+  hasExistingText,
+  isTextEntryElement,
+  questionKind,
+  readQuestionLabel,
+  type FillAnswerOutcome,
+  type QuestionKind,
+} from "./questionSafety";
 import { setReactControlledValue } from "./standardFields";
 
 // E4 (browser-extension.md) -- confirmed live (not assumed from the
@@ -105,12 +113,12 @@ const EXCLUDED_CONTAINER_SELECTOR = "#demographic-section, .eeoc__container";
 export interface CustomQuestion {
   fieldName: string;
   label: string | null;
-  kind: "text" | "file" | "radio";
+  kind: QuestionKind;
 }
 
-function labelForQuestion(doc: Document, id: string): string | null {
+function labelForQuestion(doc: Document, id: string): { label: string | null; sensitive: boolean } {
   const label = doc.querySelector(`label[for="${CSS.escape(id)}"]`);
-  return label?.textContent?.trim().replace(/\s+/g, " ") ?? null;
+  return readQuestionLabel(label?.textContent);
 }
 
 /**
@@ -131,23 +139,27 @@ function labelForQuestion(doc: Document, id: string): string | null {
  * uses for binary-choice questions: it's not free text, and (like
  * Lever's own radio groups) disproportionately the sensitive-topic
  * questions, so it must never reach the LLM-answer-generation feature
- * regardless of ATS.
+ * regardless of ATS. E6 made this fail closed rather than a list of
+ * known exceptions: `text` is only ever a textarea or a text-like input,
+ * so a native <select>, a wrapper <div>/<fieldset>, or a date/number
+ * input is `radio` too.
  */
 export function extractCustomQuestions(doc: Document, excludeFieldName: string | null = null): CustomQuestion[] {
   const seen = new Set<string>();
   const questions: CustomQuestion[] = [];
-  for (const element of doc.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("[id]")) {
+  for (const element of doc.querySelectorAll<HTMLElement>("[id]")) {
     const id = element.id;
     if (!QUESTION_ID_PATTERN.test(id) || seen.has(id) || id === excludeFieldName) continue;
     if (element.closest(EXCLUDED_CONTAINER_SELECTOR) !== null) continue;
-    const tag = element.tagName;
-    const type = tag === "INPUT" ? (element as HTMLInputElement).type : "textarea";
-    if (type === "hidden") continue;
+    if (element.tagName === "INPUT" && (element as HTMLInputElement).type === "hidden") continue;
     seen.add(id);
-    let kind: CustomQuestion["kind"] = "text";
-    if (type === "file") kind = "file";
-    else if (type === "radio" || type === "checkbox" || element.getAttribute("role") === "combobox") kind = "radio";
-    questions.push({ fieldName: id, label: labelForQuestion(doc, id), kind });
+    const { label, sensitive } = labelForQuestion(doc, id);
+    // D6, by label: `question_<id>` is the tenant's namespace, not
+    // Greenhouse's -- real boards author "Gender" and "Pronouns" as
+    // ordinary custom questions (Airbnb, Figma), outside both EEO
+    // containers. See lib/questionSafety.ts.
+    if (sensitive) continue;
+    questions.push({ fieldName: id, label, kind: questionKind(element, label) });
   }
   return questions;
 }
@@ -164,17 +176,20 @@ export function extractCustomQuestions(doc: Document, excludeFieldName: string |
  * `setReactControlledValue` (not a plain assignment) since this is a
  * React-controlled form.
  */
-export function fillCustomTextAnswer(doc: Document, fieldName: string, value: string): boolean {
-  if (!QUESTION_ID_PATTERN.test(fieldName)) return false;
-  const element = doc.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[id="${CSS.escape(fieldName)}"]`);
-  if (element === null || element.id !== fieldName) return false;
-  if (element.closest(EXCLUDED_CONTAINER_SELECTOR) !== null) return false;
-  if (element.getAttribute("role") === "combobox") return false;
-  const tag = element.tagName;
-  const type = tag === "INPUT" ? (element as HTMLInputElement).type : "textarea";
-  const isTextLike = tag === "TEXTAREA" || (tag === "INPUT" && (type === "text" || type === "email"));
-  if (!isTextLike) return false;
+export function fillCustomTextAnswer(doc: Document, fieldName: string, value: string): FillAnswerOutcome {
+  if (!QUESTION_ID_PATTERN.test(fieldName)) return "refused";
+  const element = doc.querySelector<HTMLElement>(`[id="${CSS.escape(fieldName)}"]`);
+  if (element === null || element.id !== fieldName) return "refused";
+  if (element.closest(EXCLUDED_CONTAINER_SELECTOR) !== null) return "refused";
+  // A plain text-entry control only -- never a react-select combobox,
+  // select, file, radio, checkbox, or a wrapper element.
+  if (element.getAttribute("role") === "combobox" || !isTextEntryElement(element)) return "refused";
+  // Same label rules as extraction (D6), re-run on the write path.
+  const { label, sensitive } = labelForQuestion(doc, fieldName);
+  if (label === null || sensitive) return "refused";
+  // D5: never clobber text that's already there.
+  if (hasExistingText(element)) return "not_empty";
 
   setReactControlledValue(element, value);
-  return true;
+  return "filled";
 }

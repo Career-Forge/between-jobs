@@ -210,14 +210,14 @@ describe("fillCustomTextAnswer", () => {
 
     const filled = fillCustomTextAnswer(document, "dd4dc7a2-c59a-463e-94e9-a27b546deb8b", "+1-555-0100");
 
-    expect(filled).toBe(true);
+    expect(filled).toBe("filled");
     expect(input.value).toBe("+1-555-0100");
     expect(events).toEqual(["input", "change"]);
   });
 
   it("refuses a _systemfield_ name outright, without even querying the DOM for it", () => {
     buildAshbyForm();
-    expect(fillCustomTextAnswer(document, "_systemfield_name", "x")).toBe(false);
+    expect(fillCustomTextAnswer(document, "_systemfield_name", "x")).toBe("refused");
   });
 
   it("refuses a radio-group's own compound name -- E5 never generates a binary-choice answer", () => {
@@ -227,19 +227,19 @@ describe("fillCustomTextAnswer", () => {
       "bd7bdce0-e0ca-4dc3-bb51-277db2bcfeac_d71f0f52-ff84-400e-97ed-e194e17ca8ca",
       "He/him",
     );
-    expect(filled).toBe(false);
+    expect(filled).toBe("refused");
   });
 
   it("returns false for a field name that doesn't exist on the page", () => {
     buildAshbyForm();
-    expect(fillCustomTextAnswer(document, "00000000-0000-0000-0000-000000000000", "x")).toBe(false);
+    expect(fillCustomTextAnswer(document, "00000000-0000-0000-0000-000000000000", "x")).toBe("refused");
   });
 
   it("D6 fix: refuses to fill a free-text demographic self-ID question even if called directly, defense-in-depth on top of the extraction-side exclusion", () => {
     buildAshbyForm();
     const input = document.querySelector<HTMLInputElement>('[name="8f3b1c4d-1111-4a1a-9a1a-000000000001"]')!;
     const filled = fillCustomTextAnswer(document, "8f3b1c4d-1111-4a1a-9a1a-000000000001", "attacker-or-caller-supplied text");
-    expect(filled).toBe(false);
+    expect(filled).toBe("refused");
     expect(input.value).toBe("");
   });
 
@@ -251,7 +251,141 @@ describe("fillCustomTextAnswer", () => {
     const maliciousFieldName = 'x"], input[name="_systemfield_email';
     const filled = fillCustomTextAnswer(document, maliciousFieldName, "attacker-controlled text");
 
-    expect(filled).toBe(false);
+    expect(filled).toBe("refused");
     expect(email.value).toBe("jane@example.com");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E6 hardening. The original D6 pattern missed most realistic phrasings,
+// was defeated by odd spellings of a tenant-controlled label, and treated
+// a label it couldn't read as harmless. The full phrase table lives in
+// questionSafety.test.ts; these check it is wired into Ashby's extract and
+// fill paths, including the places the wording can hide.
+// ---------------------------------------------------------------------------
+
+// Built from char codes so this file never contains a raw invisible character.
+const ZWSP = String.fromCharCode(0x200b);
+const SOFT_HYPHEN = String.fromCharCode(0xad);
+
+function entry(id: string, label: string | null, control: string, extra = ""): string {
+  const labelHtml =
+    label === null ? "" : `<label class="ashby-application-form-question-title" for="${id}">${label}</label>`;
+  return `<div data-field-path="${id}" class="ashby-application-form-field-entry">${labelHtml}${extra}${control}</div>`;
+}
+
+function buildEntries(...entries: string[]): void {
+  document.body.innerHTML = `<div class="ashby-application-form-container">${entries.join("\n")}</div>`;
+}
+
+const textControl = (id: string) => `<input type="text" id="${id}" name="${id}" />`;
+
+describe("E6: D6 classifier is wired into extract and fill (Ashby)", () => {
+  const SENSITIVE = [
+    "What is your ethnic background?",
+    "Ethnic origin",
+    "Do you identify as LGBTQ+?",
+    "What is your date of birth?",
+    "Veterans",
+    "Are you a veteran?",
+    "Do you require reasonable adjustments?",
+    "What is your religion or belief?",
+    "What is your marital status?",
+    "Are you pregnant?",
+    "Are you neurodivergent?",
+    `What is your gen${ZWSP}der?`,
+    `What is your gen${SOFT_HYPHEN}der?`,
+  ];
+
+  for (const label of SENSITIVE) {
+    it(`excludes ${JSON.stringify(label)} from the list and refuses to fill it`, () => {
+      buildEntries(entry("aaaa-1", label, textControl("aaaa-1")));
+      expect(extractCustomQuestions(document).some((x) => x.fieldName === "aaaa-1")).toBe(false);
+      expect(fillCustomTextAnswer(document, "aaaa-1", "any text")).toBe("refused");
+      expect(document.querySelector<HTMLInputElement>("#aaaa-1")!.value).toBe("");
+    });
+  }
+});
+
+describe("E6: the self-ID wording doesn't have to be in the title (Ashby)", () => {
+  it("excludes an entry whose DESCRIPTION carries the self-identification wording", () => {
+    buildEntries(
+      entry(
+        "bbbb-1",
+        "Optional",
+        textControl("bbbb-1"),
+        `<div class="ashby-application-form-question-description">Voluntary self-identification: how do you describe your ethnic background?</div>`,
+      ),
+    );
+    expect(extractCustomQuestions(document).some((x) => x.fieldName === "bbbb-1")).toBe(false);
+    expect(fillCustomTextAnswer(document, "bbbb-1", "text")).toBe("refused");
+  });
+
+  it("excludes an entry that sits under a self-identification SECTION HEADING", () => {
+    document.body.innerHTML = `
+      <div class="ashby-application-form-section-container">
+        <h2>Voluntary Self Identification</h2>
+        ${entry("cccc-1", "Tell us more", textControl("cccc-1"))}
+      </div>
+      <div class="ashby-application-form-section-container">
+        <h2>Your application</h2>
+        ${entry("cccc-2", "Tell us more", textControl("cccc-2"))}
+      </div>`;
+    const listed = extractCustomQuestions(document).map((x) => x.fieldName);
+    expect(listed).not.toContain("cccc-1");
+    expect(listed).toContain("cccc-2");
+    expect(fillCustomTextAnswer(document, "cccc-1", "text")).toBe("refused");
+    expect(fillCustomTextAnswer(document, "cccc-2", "text")).toBe("filled");
+  });
+});
+
+describe("E6: an unreadable label fails closed (Ashby)", () => {
+  it("does not list a text field as draftable when the platform's title class is absent (e.g. renamed)", () => {
+    // The wording IS sensitive, but under a class this extension doesn't
+    // read -- it must not fail open as an ordinary draftable question.
+    buildEntries(
+      `<div data-field-path="dddd-1" class="ashby-application-form-field-entry">
+         <label class="some-renamed-class" for="dddd-1">What is your gender?</label>
+         ${textControl("dddd-1")}
+       </div>`,
+    );
+    const found = extractCustomQuestions(document).find((x) => x.fieldName === "dddd-1");
+    expect(found?.label).toBeNull();
+    expect(found?.kind).toBe("radio");
+    expect(fillCustomTextAnswer(document, "dddd-1", "text")).toBe("refused");
+  });
+});
+
+describe("E6: control classification fails closed (Ashby)", () => {
+  it.each(["date", "number"])("lists an <input type=%s> as human-only", (type) => {
+    buildEntries(entry("eeee-1", "Earliest start date", `<input type="${type}" id="eeee-1" name="eeee-1" />`));
+    expect(extractCustomQuestions(document).find((x) => x.fieldName === "eeee-1")?.kind).toBe("radio");
+    expect(fillCustomTextAnswer(document, "eeee-1", "2026-01-01")).toBe("refused");
+  });
+
+  it("does NOT exclude a free-text work-authorization question -- a maintainer decision, pinned here", () => {
+    buildEntries(entry("ffff-1", "Do you require visa sponsorship?", textControl("ffff-1")));
+    expect(extractCustomQuestions(document).find((x) => x.fieldName === "ffff-1")?.kind).toBe("text");
+    expect(fillCustomTextAnswer(document, "ffff-1", "No")).toBe("filled");
+  });
+});
+
+describe("E6: D5 -- a per-question fill never overwrites text already on the page (Ashby)", () => {
+  it("returns 'not_empty' and leaves a hand-typed answer untouched", () => {
+    buildEntries(entry("gggg-1", "Why us?", `<textarea id="gggg-1" name="gggg-1"></textarea>`));
+    const area = document.querySelector<HTMLTextAreaElement>("#gggg-1")!;
+    area.value = "my own hand-written answer";
+    const events: string[] = [];
+    area.addEventListener("input", () => events.push("input"));
+
+    expect(fillCustomTextAnswer(document, "gggg-1", "LLM draft")).toBe("not_empty");
+    expect(area.value).toBe("my own hand-written answer");
+    expect(events).toEqual([]);
+  });
+
+  it("treats whitespace-only content as empty", () => {
+    buildEntries(entry("gggg-2", "Why us?", textControl("gggg-2")));
+    document.querySelector<HTMLInputElement>("#gggg-2")!.value = "  ";
+    expect(fillCustomTextAnswer(document, "gggg-2", "LLM draft")).toBe("filled");
   });
 });

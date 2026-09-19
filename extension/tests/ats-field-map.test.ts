@@ -237,3 +237,38 @@ describe("verifyAndParseFieldMap (Greenhouse/Ashby)", () => {
     expect(await verifyAndParseFieldMap(response)).toBeNull();
   });
 });
+
+// E6 -- two gaps in what a validly-signed payload was allowed to say.
+describe("verifyAndParseFieldMap -- E6 hardening", () => {
+  it("rejects a signed, Lever-SHAPED payload for an ats_type this build has never heard of (it used to fall through to the Lever branch and come back as a 'valid' map)", async () => {
+    const response = await signedResponse(validPayload({ ats_type: "workday" }));
+    expect(response.ats_type).toBe("workday");
+    expect(await verifyAndParseFieldMap(response)).toBeNull();
+  });
+
+  // The publishing script writes an integer starting at 1; the background
+  // ratchet compares versions numerically, so a non-integer must never
+  // reach storage. A signed string version is the worst case: '10' < 5 is
+  // false, so it would be accepted, stored as a string, and then read back
+  // as "no floor" -- silently resetting the rollback protection.
+  for (const [name, version] of [
+    ["a float", 1.5],
+    ["a negative", -3],
+    ["zero", 0],
+    ["a numeric string", "10"],
+    ["a boolean", true],
+    ["a beyond-safe-integer value", 1e21],
+  ] as const) {
+    it(`rejects a validly-signed payload whose version is ${name}`, async () => {
+      const response = await signedResponse(validPayload({ version }), {
+        version: version as unknown as number,
+      });
+      expect(await verifyAndParseFieldMap(response)).toBeNull();
+    });
+  }
+
+  it("still accepts an ordinary positive-integer version", async () => {
+    const response = await signedResponse(validPayload({ version: 7 }));
+    expect((await verifyAndParseFieldMap(response))?.version).toBe(7);
+  });
+});

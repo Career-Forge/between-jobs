@@ -1,4 +1,5 @@
 import type { AtsFieldMap } from "./ats-field-map";
+import type { QuestionKind } from "./questionSafety";
 
 /** E4/E5 -- the three ATS types this extension's content script can run
  * against. Threaded through detection/messaging so background.ts's own
@@ -70,6 +71,13 @@ export type TabState =
   | {
       status: "tracked";
       applicationId: string;
+      /** The Supabase user this state (personal info, résumé, cover
+       * letter) was resolved for. A content script keeps its TabState for
+       * as long as the page lives, but sessions don't -- before any fill it
+       * re-checks with the service worker that this user is still the one
+       * signed in, so signing out and signing in as someone else on the
+       * same browser profile can't fill the previous user's data. */
+      userId: string;
       payload: ExtensionPayload;
       resume: GeneratedFile | null;
       coverLetter: GeneratedFile | null;
@@ -140,12 +148,34 @@ export interface DraftAnswerResult {
   warnings: string[];
 }
 
+/** Content script -> background: "is `userId` still the signed-in user?"
+ * Answers with a boolean only, so a content script (the least-trusted
+ * extension context, sitting next to attacker-controlled page code) never
+ * learns anything it didn't already hold. */
+export interface VerifySessionMessage {
+  type: "VERIFY_SESSION";
+  userId: string;
+}
+
+export interface VerifySessionResult {
+  valid: boolean;
+}
+
 export type BackgroundMessage =
   | PageDetectedMessage
+  | VerifySessionMessage
   | MarkAppliedMessage
   | MatchAnswerMessage
   | SaveAnswerMessage
   | DraftAnswerMessage;
+
+/** Content script -> side panel (broadcast via runtime.sendMessage): the
+ * page navigated client-side (Greenhouse and Ashby are SPAs, so no new
+ * content script starts), and whatever the panel is showing for it is
+ * stale. */
+export interface PageChangedMessage {
+  type: "PAGE_CHANGED";
+}
 
 export type MarkAppliedResult =
   | { ok: true; status: string }
@@ -162,8 +192,12 @@ export type ContentScriptMessage =
   | { type: "REQUEST_FILL"; forceRefillAll: boolean }
   | { type: "FILL_FIELD"; fieldName: string; value: string };
 
+/** Why a per-question fill wrote nothing. `not_empty` is D5 (the field
+ * already has text); `page_changed` means the tab no longer shows the page
+ * the panel was looking at, so nothing was written to it. */
 export interface FillFieldResult {
   filled: boolean;
+  reason?: "not_empty" | "page_changed" | "refused";
 }
 
 export interface DetectionStateResponse {
@@ -184,6 +218,11 @@ export interface FillResult {
   resumeError: string | null;
   coverLetterAttached: boolean;
   coverLetterError: string | null;
-  unresolvedQuestions: { fieldName: string; label: string | null; kind: "text" | "file" | "radio" }[];
+  unresolvedQuestions: { fieldName: string; label: string | null; kind: QuestionKind }[];
   fieldMapError: string | null;
+  /** Set when the fill itself threw unexpectedly. Whatever was written
+   * before the failure is still reported above -- this only says the run
+   * didn't complete, instead of the panel waiting on a reply that never
+   * comes. */
+  fillError: string | null;
 }

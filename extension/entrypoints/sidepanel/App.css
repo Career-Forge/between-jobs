@@ -148,9 +148,15 @@
   padding: 0.75rem;
 }
 
+/* The label is the tenant's own text, so it can be anything: one long
+   unbroken string shouldn't stretch the panel, and a right-to-left run in it
+   shouldn't reorder the characters around it (isolate keeps it in its own
+   bidi context). */
 .question-label {
   font-weight: 500;
   margin: 0 0 0.4rem;
+  overflow-wrap: anywhere;
+  unicode-bidi: isolate;
 }
 
 .question-meta {
@@ -172,6 +178,14 @@
   width: 100%;
   box-sizing: border-box;
   border-color: var(--bj-violet);
+  /* Grows to fit the whole draft (Chrome 123+; the manifest floor is far
+     above that), then scrolls inside a capped height. `rows` is the
+     fallback height where field-sizing is unavailable. Fill writes all of
+     this text into the tenant's form, so it shouldn't be possible to park
+     part of it below a 4-line fold. */
+  field-sizing: content;
+  min-height: 6em;
+  max-height: 22em;
 }
 
 .warning-list {

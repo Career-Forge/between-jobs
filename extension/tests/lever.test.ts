@@ -360,7 +360,7 @@ describe("fillCustomTextAnswer", () => {
 
     const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, fieldName, "Jane Doe referred me.");
 
-    expect(filled).toBe(true);
+    expect(filled).toBe("filled");
     expect(input.value).toBe("Jane Doe referred me.");
     expect(events).toEqual(["input", "change"]);
   });
@@ -368,14 +368,14 @@ describe("fillCustomTextAnswer", () => {
   it("refuses a field name outside the cards[...] namespace, e.g. an eeo[...] field, without even querying the DOM for it", () => {
     buildLeverForm();
     const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, "eeo[gender]", "Male");
-    expect(filled).toBe(false);
+    expect(filled).toBe("refused");
   });
 
   it("refuses a radio-type cards[...] field -- E3b never generates a binary-choice answer", () => {
     buildLeverForm();
     const fieldName = "cards[dbe2365b-6fb2-40f2-a0b8-9d370957da3b][field0]";
     const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, fieldName, "Yes");
-    expect(filled).toBe(false);
+    expect(filled).toBe("refused");
   });
 
   it("refuses a file-type cards[...] field (the cover-letter slot)", () => {
@@ -383,19 +383,19 @@ describe("fillCustomTextAnswer", () => {
     const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, "cards[2b91c9dd-2899-4603-ab9f-b5218e738b4a][field0]",
       "not a real file",
     );
-    expect(filled).toBe(false);
+    expect(filled).toBe("refused");
   });
 
   it("refuses the standard resume field even if somehow asked to fill it", () => {
     buildLeverForm();
     const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, "resume", "not applicable");
-    expect(filled).toBe(false);
+    expect(filled).toBe("refused");
   });
 
   it("returns false for a field name that doesn't exist on the page", () => {
     buildLeverForm();
     const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, "cards[00000000-0000-0000-0000-000000000000][field0]", "x");
-    expect(filled).toBe(false);
+    expect(filled).toBe("refused");
   });
 
   it("refuses a crafted field name that tries to break out of the attribute selector into an unrelated field", () => {
@@ -410,7 +410,170 @@ describe("fillCustomTextAnswer", () => {
     const maliciousFieldName = 'cards[x]"], input[name="urls[LinkedIn]';
     const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, maliciousFieldName, "attacker-controlled text");
 
-    expect(filled).toBe(false);
+    expect(filled).toBe("refused");
     expect(linkedin.value).toBe("https://linkedin.com/in/janedoe");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E6 hardening. The namespace (`cards[`) is chosen by the tenant, and so is
+// every label -- anyone can create a Lever account -- so these run against
+// tenant-authored questions, not just Lever's own EEO fields.
+// ---------------------------------------------------------------------------
+
+// Built from char codes so this file never contains a raw invisible character.
+const ZWSP = String.fromCharCode(0x200b);
+const RLO = String.fromCharCode(0x202e);
+const LRI = String.fromCharCode(0x2066);
+const BEL = String.fromCharCode(0x07);
+
+function cardQuestion(label: string | null, control: string): string {
+  const labelHtml = label === null ? "" : `<div class="application-label">${label}</div>`;
+  return `
+    <div>
+      ${labelHtml}
+      <div class="application-field">${control}</div>
+    </div>`;
+}
+
+function buildCards(...cards: string[]): void {
+  document.body.innerHTML = `<form><input type="file" name="resume" />${cards.join("\n")}</form>`;
+}
+
+const textCard = (uuid: string) => `<input type="text" name="cards[${uuid}][field0]" />`;
+const nameOf = (uuid: string) => `cards[${uuid}][field0]`;
+
+describe("E6: control classification fails closed (Lever)", () => {
+  it("lists a native <select> (how Lever renders a Dropdown question) as human-only, never as free text", () => {
+    buildCards(
+      cardQuestion(
+        "Work authorization?",
+        `<select name="cards[u2][field0]"><option>Yes</option><option>No</option></select>`,
+      ),
+    );
+    const q = extractCustomQuestions(document, TEST_LEVER_MAP).find((x) => x.fieldName === nameOf("u2"));
+    expect(q?.label).toBe("Work authorization?");
+    expect(q?.kind).toBe("radio");
+  });
+
+  it.each(["date", "number", "password", "search"])("lists an <input type=%s> as human-only", (type) => {
+    buildCards(cardQuestion("Earliest start date", `<input type="${type}" name="cards[u3][field0]" />`));
+    const q = extractCustomQuestions(document, TEST_LEVER_MAP).find((x) => x.fieldName === nameOf("u3"));
+    expect(q?.kind).toBe("radio");
+  });
+
+  it("still lists a plain text input and a textarea as text", () => {
+    buildCards(
+      cardQuestion("Why us?", `<input type="text" name="cards[t1][field0]" />`),
+      cardQuestion("Tell us more", `<textarea name="cards[t2][field0]"></textarea>`),
+    );
+    const kinds = Object.fromEntries(extractCustomQuestions(document, TEST_LEVER_MAP).map((q) => [q.fieldName, q.kind]));
+    expect(kinds[nameOf("t1")]).toBe("text");
+    expect(kinds[nameOf("t2")]).toBe("text");
+  });
+
+  it("never writes to a select even when asked directly", () => {
+    buildCards(cardQuestion("Work authorization?", `<select name="cards[u2][field0]"><option>Yes</option></select>`));
+    expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("u2"), "Yes")).toBe("refused");
+  });
+});
+
+describe("E6: D6 label check on the tenant-authored cards[ namespace (Lever)", () => {
+  const SENSITIVE = [
+    "What is your gender identity?",
+    "What are your preferred pronouns?",
+    "Do you require accommodations?",
+    "Do you have a disability? Please describe.",
+    "Are you a veteran?",
+    "What is your ethnic background?",
+    "What is your date of birth?",
+  ];
+
+  for (const label of SENSITIVE) {
+    it(`excludes ${JSON.stringify(label)} from the question list and refuses to fill it`, () => {
+      buildCards(cardQuestion(label, textCard("s1")));
+      expect(extractCustomQuestions(document, TEST_LEVER_MAP).some((q) => q.fieldName === nameOf("s1"))).toBe(false);
+
+      const input = document.querySelector<HTMLInputElement>(`[name="${nameOf("s1")}"]`)!;
+      expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("s1"), "any text")).toBe("refused");
+      expect(input.value).toBe("");
+    });
+  }
+
+  it("excludes a sensitive card even when its label was padded past the display cap", () => {
+    const padded = `${"Please tell us about yourself. ".repeat(20)}What is your gender?`;
+    buildCards(cardQuestion(padded, textCard("s2")));
+    expect(extractCustomQuestions(document, TEST_LEVER_MAP).some((q) => q.fieldName === nameOf("s2"))).toBe(false);
+  });
+
+  it("does NOT exclude a free-text work-authorization question -- a maintainer decision, pinned here", () => {
+    buildCards(cardQuestion("Do you now or in the future require visa sponsorship?", textCard("w1")));
+    const q = extractCustomQuestions(document, TEST_LEVER_MAP).find((x) => x.fieldName === nameOf("w1"));
+    expect(q?.kind).toBe("text");
+    expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("w1"), "No")).toBe("filled");
+  });
+});
+
+describe("E6: an unreadable label is human-only (Lever)", () => {
+  it("downgrades a text field with no label to kind 'radio' -- its only 'question text' would be a raw field name", () => {
+    buildCards(cardQuestion(null, textCard("n1")));
+    const q = extractCustomQuestions(document, TEST_LEVER_MAP).find((x) => x.fieldName === nameOf("n1"));
+    expect(q).toBeDefined();
+    expect(q?.label).toBeNull();
+    expect(q?.kind).toBe("radio");
+  });
+
+  it("refuses to fill a field whose label can't be read", () => {
+    buildCards(cardQuestion(null, textCard("n1")));
+    expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("n1"), "text")).toBe("refused");
+  });
+
+  it("refuses (rather than throwing) when the signed map's label selectors don't parse", () => {
+    buildCards(cardQuestion("Why us?", textCard("t1")));
+    const brokenMap = { ...TEST_LEVER_MAP, label_wrapper_selector: "div[" };
+    expect(() => fillCustomTextAnswer(document, brokenMap, nameOf("t1"), "x")).not.toThrow();
+    expect(fillCustomTextAnswer(document, brokenMap, nameOf("t1"), "x")).toBe("refused");
+  });
+});
+
+describe("E6: D5 -- a per-question fill never overwrites text already on the page (Lever)", () => {
+  it("returns 'not_empty' and leaves a hand-typed answer untouched", () => {
+    buildCards(cardQuestion("Why us?", textCard("t1")));
+    const input = document.querySelector<HTMLInputElement>(`[name="${nameOf("t1")}"]`)!;
+    input.value = "my own hand-written answer";
+    const events: string[] = [];
+    input.addEventListener("input", () => events.push("input"));
+
+    expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("t1"), "LLM draft")).toBe("not_empty");
+    expect(input.value).toBe("my own hand-written answer");
+    expect(events).toEqual([]);
+  });
+
+  it("treats whitespace-only content as empty", () => {
+    buildCards(cardQuestion("Why us?", textCard("t1")));
+    document.querySelector<HTMLInputElement>(`[name="${nameOf("t1")}"]`)!.value = "   ";
+    expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("t1"), "LLM draft")).toBe("filled");
+  });
+
+  it("also protects a textarea", () => {
+    buildCards(cardQuestion("Tell us more", `<textarea name="cards[t2][field0]"></textarea>`));
+    const area = document.querySelector<HTMLTextAreaElement>(`[name="${nameOf("t2")}"]`)!;
+    area.value = "already here";
+    expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("t2"), "LLM draft")).toBe("not_empty");
+    expect(area.value).toBe("already here");
+  });
+});
+
+describe("E6: labels are scraped safely (Lever)", () => {
+  it("strips control, zero-width and bidi characters from a label", () => {
+    buildCards(cardQuestion(`Why us?${RLO} gnorw ${LRI}${BEL} Verified${ZWSP}`, textCard("t1")));
+    const q = extractCustomQuestions(document, TEST_LEVER_MAP).find((x) => x.fieldName === nameOf("t1"));
+    expect(q?.label).toBe("Why us? gnorw Verified");
+  });
+
+  it("caps an oversized label", () => {
+    buildCards(cardQuestion("x".repeat(5_000), textCard("t1")));
+    const q = extractCustomQuestions(document, TEST_LEVER_MAP).find((x) => x.fieldName === nameOf("t1"));
+    expect(q?.label?.length).toBeLessThanOrEqual(300);
   });
 });

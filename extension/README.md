@@ -62,6 +62,11 @@ npm run build
 npm run test
 ```
 
+Requires Chrome 148 or newer to run (`minimum_chrome_version` in the
+manifest): every message listener answers by returning a promise, which
+Chrome documents as supported from 148. On an older Chrome each reply
+would arrive as `undefined` and the panel would never get any state.
+
 ## Loading it in Chrome for real testing
 
 `npm run build` writes an unpacked extension to `build/chrome-mv3/`.
@@ -73,6 +78,61 @@ Needs the between-jobs API running locally (`uvicorn
 between_jobs.api.app:app --reload --port 8012` from the repo root, or the
 `between-jobs-api` entry in `.claude/launch.json`) for anything beyond
 the sign-in screen to work.
+
+## Building for the store
+
+`npm run build` is for local testing: it reads `.env.local`, so the unpacked
+extension talks to your local API. **Never upload that.** The store zip is
+built with `npm run zip`, which refuses to package anything unless
+`WXT_API_BASE_URL` and `WXT_SUPABASE_URL` are real `https://` non-local
+origins, `WXT_SUPABASE_PUBLISHABLE_KEY` is set, and the manifest version is
+a valid non-zero Chrome version (`scripts/store-build-guard.ts`). Without
+that check a leftover `.env.local` ships an extension wired to
+`http://localhost:8012`, and with no env at all one that calls
+`fetch("undefined/...")` -- neither fails at build time.
+
+Vite gives `.env.local` higher precedence than `.env.production`, so pass
+the production values in the shell (shell values beat every `.env` file) and
+build from a clean checkout:
+
+```
+WXT_API_BASE_URL=https://... \
+WXT_SUPABASE_URL=https://... \
+WXT_SUPABASE_PUBLISHABLE_KEY=... \
+npm run zip
+```
+
+Bump `version` in `package.json` for every upload -- the store requires each
+version to exceed the last, and `0.0.0` is not a valid Chrome version.
+
+### What each permission is for (store listing justifications)
+
+- `storage` -- `chrome.storage.session` holds the extension's own sign-in
+  session (never readable by content scripts); `chrome.storage.local` holds
+  the highest signed field-map version accepted per ATS (an anti-rollback
+  floor that has to survive a browser restart).
+- `sidePanel` -- the entire UI lives in the side panel.
+- Host access to `jobs.lever.co`, `job-boards.greenhouse.io`,
+  `boards.greenhouse.io` and `jobs.ashbyhq.com` -- where the content script
+  runs. No other site is ever touched.
+
+The extension requests no `activeTab`, `scripting`, `tabs`, cookies or
+`<all_urls>`. What it sends the backend: the tab's posting URL (no query
+string or fragment) when it looks the page up, and -- only when you click
+the matching button -- the text of a custom question (to find or draft an
+answer), an answer you choose to remember, or an application id when you
+mark it applied. Self-identification questions (gender, race, disability,
+veteran status and the like) are never listed, drafted or filled.
+
+### Known limitations (v1)
+
+- EU-hosted boards (`jobs.eu.lever.co`, `job-boards.eu.greenhouse.io`) are
+  not matched.
+- Greenhouse application forms embedded in a customer's own careers page
+  (`boards.greenhouse.io/embed/job_app?...` inside an iframe) aren't
+  reached: content scripts don't run in subframes here, and an embed URL
+  never matches a tracked posting anyway.
+- Workday and every other ATS are out of scope.
 
 ## Architecture
 
@@ -101,6 +161,16 @@ the sign-in screen to work.
   `tests/greenhouse.test.ts`, `tests/ashby.test.ts`). Lever's takes the
   verified field map as a parameter (E3c); Greenhouse's and Ashby's are
   fully self-contained today (see the note above).
+- `lib/questionSafety.ts` -- the guards every ATS's custom-question path
+  shares, at extraction and again at fill: the D6 self-identification
+  classifier (gender, race, disability and accommodation, veteran status and
+  so on -- never listed, drafted or filled; work-authorization questions are
+  deliberately not in scope), fail-closed control classification (only a
+  plain text field with a readable label is ever offered for drafting), and
+  label sanitizing. Question labels are tenant-controlled text, so nothing
+  here trusts their spelling.
+- `lib/atsHosts.ts` -- which ATS a host belongs to, and the canonical
+  posting URL a tab is looked up by (no query string or fragment).
 - `lib/ats-field-map.ts` -- the Ed25519 signature verification for a
   fetched field map (`tests/ats-field-map.test.ts`, including real
   tamper/mismatch rejection tests, not just happy-path checks), generic
