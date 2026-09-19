@@ -134,6 +134,42 @@ veteran status and the like) are never listed, drafted or filled.
   never matches a tracked posting anyway.
 - Workday and every other ATS are out of scope.
 
+## Chrome Web Store readiness
+
+Nothing has been submitted and no store account exists yet. The store-facing text is
+drafted, from the code as it is, in `store/` (all three marked DRAFT, none is legal
+advice):
+
+- `store/PRIVACY.md` -- the privacy policy to host at a public URL. Its last section is
+  maintainer-only notes and must be deleted from the hosted copy.
+- `store/PERMISSIONS.md` -- one justification per permission and host permission, and the
+  remote-code answer (none: signed data only).
+- `store/LISTING.md` -- name, summary, description, category, single-purpose statement,
+  the Privacy practices data-usage answers row by row, draft in-product disclosure copy,
+  reviewer test instructions, and the screenshot shot list.
+
+What still needs a person:
+
+- A Chrome Web Store developer account, and the production API and sign-in origins to
+  build the zip against (see "Building for the store").
+- Every `[MAINTAINER TO FILL: ...]` placeholder in `store/`, and the policy hosted at a
+  public https URL.
+- An in-product disclosure and consent screen. Chrome requires the disclosure inside the
+  extension with an explicit agree action; the side panel has none yet. This is a code
+  change (draft copy in `store/LISTING.md`, section 4).
+- A real icon (the current one is a placeholder), 1 to 5 screenshots at 1280x800, and a
+  440x280 promo tile.
+- A reviewer test account, with tracked postings on each service and a spend-capped AI
+  provider key (`store/LISTING.md`, section 5).
+- Real-browser verification that no earlier phase could do: E3b (Draft answer, Fill and
+  Fill & remember against a live Greenhouse or Ashby page and a real provider key) and
+  E3c (a signed Lever field map on a live Lever page), plus a smoke test on Chrome 148 or
+  newer of the E6 changes -- the side panel recognized by `sender.url`, a single-page
+  navigation on Greenhouse or Ashby refreshing the panel, and the draft box sizing.
+- A decision on `host_permissions` (redundant with the content-script matches today) and
+  on the wildcard CORS the extension's API access relies on (`store/PERMISSIONS.md`,
+  note 1).
+
 ## Architecture
 
 - `entrypoints/background.ts` -- the service worker. Owns the extension's
