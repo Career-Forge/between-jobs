@@ -9,6 +9,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from between_jobs.api import geo_gazetteer as geo_gazetteer_module
 from between_jobs.api.geo_gazetteer import Gazetteer, build_gazetteer
 from between_jobs.api.search_aggregation import (
@@ -21,6 +23,8 @@ from between_jobs.api.search_aggregation import (
     filter_by_companies,
     filter_by_location,
     filter_by_role,
+    matches_all_role_terms,
+    role_term_patterns,
 )
 from between_jobs.api.search_providers import SearchResult
 
@@ -402,6 +406,76 @@ def test_filter_by_role_single_letter_terms_are_ignored() -> None:
     results = [_result(title="Engineer A", apply_url="https://a.com/1")]
 
     assert filter_by_role(results, "a") == results
+
+
+@pytest.mark.parametrize(
+    ("title", "query"),
+    [
+        ("Senior .NET Developer", ".NET developer"),
+        ("ASP.NET Developer", ".NET developer"),  # `\b` matched this one, so it must keep matching
+        ("C# Backend Developer", "c# developer"),
+        ("C++ Software Engineer", "c++ engineer"),
+        ("Sr. Software Engineer", "Sr. Software Engineer"),
+        ("Node.js Developer", "node.js developer"),
+        ("Hiring: C++/Rust Engineer", "c++ engineer"),
+    ],
+)
+def test_filter_by_role_matches_terms_that_start_or_end_with_a_symbol(
+    title: str, query: str
+) -> None:
+    """`\\b` needs a word character next to it, so these terms could never match
+    ("hiring a .NET developer" failed `.net`) -- the role filter silently dropped
+    every post for a mainstream engineering role."""
+    hit = _result(title=title, apply_url="https://a.com/1")
+    other = _result(title="Senior Frontend Designer", apply_url="https://b.com/2")
+
+    assert filter_by_role([hit, other], query) == [hit]
+
+
+@pytest.mark.parametrize(
+    ("title", "query"),
+    [
+        ("Abc++ Developer", "c++ developer"),  # a word character may not precede a word term
+        ("AI Engineering Intern", "ai engineer"),
+        ("Backend Engineers", "backend engineer"),
+        ("Senior .NETWORK Developer", ".net developer"),  # nothing word-like may follow a term
+        ("Xnet Developer", ".net developer"),  # the literal dot is still required
+    ],
+)
+def test_filter_by_role_symbol_aware_boundaries_still_refuse_partial_words(
+    title: str, query: str
+) -> None:
+    hit = _result(title=title, apply_url="https://a.com/1")
+
+    assert filter_by_role([hit], query) == []
+
+
+def test_role_term_patterns_boundaries() -> None:
+    assert [p.pattern for p in role_term_patterns("Software Engineer")] == [
+        r"(?<!\w)software(?!\w)",
+        r"(?<!\w)engineer(?!\w)",
+    ]
+    # a term that begins with a symbol has no left boundary; every term keeps a right one
+    assert [p.pattern for p in role_term_patterns(".net c++")] == [
+        r"\.net(?!\w)",
+        r"(?<!\w)c\+\+(?!\w)",
+    ]
+    # single characters are dropped, as in n8n
+    assert role_term_patterns("a b c") == []
+
+
+def test_role_term_patterns_match_a_term_ending_in_a_devanagari_vowel_sign() -> None:
+    # U+0940 is a combining mark, not a `\\w` character: `\\b` after it never held
+    patterns = role_term_patterns("नौकरी")
+    assert matches_all_role_terms("यह नौकरी अच्छी है", patterns)
+    assert not matches_all_role_terms("यह xनौकरी अच्छी है", patterns)
+
+
+def test_matches_all_role_terms_requires_every_pattern_and_lowercases_the_haystack() -> None:
+    patterns = role_term_patterns("backend engineer")
+    assert matches_all_role_terms("Senior BACKEND Engineer", patterns)
+    assert not matches_all_role_terms("Senior Backend Manager", patterns)
+    assert matches_all_role_terms("anything", [])  # vacuous: callers check for emptiness first
 
 
 # ── P5c: registry-lane query ─────────────────────────────────────────────

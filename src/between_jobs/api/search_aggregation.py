@@ -87,6 +87,7 @@ is caller-supplied here, defaulting to none.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime
 from typing import Any, Literal, cast
@@ -355,6 +356,48 @@ def filter_by_companies(results: list[SearchResult], companies: list[str]) -> li
 # ── P5b: role-word-boundary filter ───────────────────────────────────────
 
 
+def _role_term_pattern(term: str) -> re.Pattern[str]:
+    left = r"(?<!\w)" if re.match(r"\w", term) else ""
+    return re.compile(left + re.escape(term) + r"(?!\w)")
+
+
+def role_term_patterns(query: str) -> list[re.Pattern[str]]:
+    """Compiles `query` into the per-term word-boundary patterns
+    `filter_by_role` matches against -- split out so a second caller with
+    a different haystack (Hiring Signals matches title + snippet text of a
+    search hit, which is not a job-shaped `SearchResult`) reuses the exact
+    same tokenization and boundary rules instead of growing a second
+    regex implementation. Terms of a single character are dropped (n8n
+    behavior); an empty result means "no role constraint".
+
+    Boundaries are lookarounds, not n8n's `\\b`: `\\b` needs a word
+    character on the symbol's side, so a term that starts or ends with
+    punctuation -- `c++`, `c#`, `.net`, `sr.`, or a word ending in a
+    Devanagari vowel sign, which is not a `\\w` character -- could never
+    match ("hiring a .NET developer" failed the term `.net`). A term that
+    starts with a word character may not be preceded by one (`(?<!\\w)`);
+    a term that starts with a symbol has no left boundary at all, so `.net`
+    still finds `ASP.NET`, which `\\b` also matched. No term may be
+    followed by a word character (`(?!\\w)`). For an ordinary word this is
+    identical to `\\bterm\\b`; the deliberate divergence only widens matching
+    for terms `\\b` was silently unable to find. One limit remains: a
+    combining mark glued after a term's last letter is not a `\\w`
+    character, so in a script that uses them the term can match the front
+    of a longer word."""
+    terms = [t for t in query.lower().split() if len(t) > 1]
+    return [_role_term_pattern(t) for t in terms]
+
+
+def matches_all_role_terms(haystack: str, term_patterns: Sequence[re.Pattern[str]]) -> bool:
+    """The AND-term predicate at the core of `filter_by_role`: every
+    pattern must find a whole-word hit in the lower-cased `haystack`. An
+    empty pattern list is vacuously true -- callers that treat "no
+    terms" as a no-op check for emptiness first, as `filter_by_role`
+    does."""
+    lowered = haystack.lower()
+    return all(p.search(lowered) for p in term_patterns)
+
+
 def filter_by_role(
     results: list[SearchResult], query: str, *, excluded_terms: list[str] | None = None
 ) -> list[SearchResult]:
@@ -369,10 +412,9 @@ def filter_by_role(
     entries can be multi-word phrases (a literal space in the pattern
     matches a literal space in the haystack) -- unlike n8n, this has no
     hardcoded default list; see module docstring for why."""
-    terms = [t for t in query.lower().split() if len(t) > 1]
-    if not terms:
+    term_patterns = role_term_patterns(query)
+    if not term_patterns:
         return results
-    term_patterns = [re.compile(r"\b" + re.escape(t) + r"\b") for t in terms]
     excluded_patterns = [
         re.compile(r"\b" + re.escape(t.lower()) + r"\b") for t in (excluded_terms or []) if t
     ]
@@ -382,7 +424,7 @@ def filter_by_role(
         haystack = r.title.lower()
         if excluded_patterns and any(p.search(haystack) for p in excluded_patterns):
             continue
-        if all(p.search(haystack) for p in term_patterns):
+        if matches_all_role_terms(haystack, term_patterns):
             kept.append(r)
     return kept
 

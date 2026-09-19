@@ -1,0 +1,274 @@
+{
+ "_comment": "Sanitized real search-index results. See README.md in this folder for provenance and sanitization.",
+ "pulls": [
+  {
+   "pull_id": "aggregator_template_blr",
+   "locale": "india",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "india vocabulary + software roles + Bangalore, 'Hiring for ... Job Requirements' template",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/achari-tarun41_careers-at-paypal-activity-7152568401618059060-cRQF", "title": "Tarun achari's Post - Careers at PayPal - LinkedIn", "snippet": "3 days ago · PayPal Hiring for Software Engineer Location: Bangalore, Karnataka, India Job Requirements: 1 ... Apply Link: https://example.com/l/912451 Follow Tarun achari ..."},
+    {"url": "https://www.linkedin.com/posts/manasi-varde-9d2c41b7e_software-engineer-in-test-activity-7938048822571110034-j0fU", "title": "Manasi VARDE - Software Engineer in Test - LinkedIn", "snippet": "3 days ago · Headout Hiring for Software Engineer in Test Location: Bangalore, Karnataka, India Job Requirements: 1 ... Apply Link: https://example.com/l/f2eb16 Follow ..."},
+    {"url": "https://www.linkedin.com/posts/achari-tarun41_linkedin-linkedinjobs-linkedincareers-activity-7754066983119132073-RlJK", "title": "Tarun achari's Post - Software Engineer - LinkedIn", "snippet": "4 days ago · LinkedIn Hiring for Software Engineer - Fullstack Location: Bangalore, Karnataka, India Job Requirements: 1 ... Apply Link: https://example.com/l/0b21d6 ..."},
+    {"url": "https://www.linkedin.com/posts/kabir-chopdekar-731904285_linkedin-linkedinjobs-linkedincareers-activity-7762808942270931199-xIXI", "title": "Kabir Chopdekar's Post - LinkedIn", "snippet": "4 days ago · LinkedIn Hiring for Software Engineer - Fullstack Location: Bangalore, Karnataka, India Job Requirements: 1 ... Apply Link: https://example.com/l/0b21d6 ..."},
+    {"url": "https://www.linkedin.com/posts/achari-tarun41_software-engineer-paypal-activity-7152568401618059060-fxel", "title": "Software Engineer | PayPal | Tarun achari | 46 comments - LinkedIn", "snippet": "3 days ago · PayPal Hiring for Software Engineer Location: Bangalore, Karnataka, India Job Requirements: 1 ... Apply Link: https://example.com/l/912451 Follow Tarun achari ..."},
+    {"url": "https://www.linkedin.com/posts/achari-tarun41_autodesk-autodeskjobs-autodeskcareers-activity-7624867331851348433-sYQS", "title": "Tarun achari's Post - LinkedIn", "snippet": "2 days ago · Autodesk Hiring for Software Engineer (Back-end) Location: Bangalore, Karnataka, India Job Requirements: 1 ... Apply Link: https://example.com/l/479b03 Follow ..."},
+    {"url": "https://www.linkedin.com/posts/achari-tarun41_aiml-engineer-at-unitedhealth-group-activity-7667416809700865501-1Sxy", "title": "Tarun achari - AI/ML Engineer at UnitedHealth Group - LinkedIn", "snippet": "5 days ago · Optum India Hiring for AI/ML Engineer Location: Bangalore, Karnataka, India Job Requirements: 1 ... Apply Link: https://example.com/l/b659fe Follow Tarun ..."},
+    {"url": "https://www.linkedin.com/posts/achari-tarun41_nutanix-is-looking-for-sdet-python-automation-activity-7330626382405861234-Hmtl", "title": "Nutanix is looking for SDET - Python Automation [ 1 | Tarun achari", "snippet": "3 days ago · Nutanix Hiring for SDET - Python Automation [ 1 - 2 years ] Location: Bangalore, Karnataka, India Job Requirements: 1 ... Apply Link: https://example.com/l/06ca79 ..."},
+    {"url": "https://www.linkedin.com/posts/achari-tarun41_software-engineer-search-platform-in-bengaluru-activity-7271319963118509023-Tcof", "title": "Software Engineer, Search Platform in Bengaluru | Tarun achari - LinkedIn", "snippet": "1 day ago · Atlassian Hiring for Software Engineer, Search Platform Location: Bangalore, Karnataka, India Job Requirements: 1 ... Apply Link: https://example.com/l/1feba4 ..."},
+    {"url": "https://www.linkedin.com/posts/achari-tarun41_full-stack-developer-ai-agents-databricks-activity-7119810676215429777-6LKi", "title": "Full Stack Developer (AI Agents) - Databricks | Tarun achari - LinkedIn", "snippet": "6 days ago · Databricks Hiring for Full Stack Developer (AI Agents) Location: Bangalore, Karnataka, India Job Requirements: 1 ... Apply Link: https://example.com/l/fdcc28 ..."}
+   ]
+  },
+  {
+   "pull_id": "sales_mumbai",
+   "locale": "india",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "india vocabulary + sales roles + Mumbai",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/unison-international-consulting-pvt.-ltd_we-are-hiring-commercial-industrial-activity-7884006019405453158-rOtf", "title": "WE ARE HIRING - LinkedIn", "snippet": "4 days ago · Business Development Location: Mumbai / Kolkata Experience: 10+ Years CTC: Up to ₹35 LPA We are looking for an experienced Commercial & Industrial ..."},
+    {"url": "https://www.linkedin.com/posts/unison-international-consulting-pvt.-ltd_hiring-sales-manager-luxury-fb-services-activity-7561158981397231757-6vwV", "title": "Hiring: Sales Manager - LinkedIn", "snippet": "23 hours ago · ... Immediate Joiners Preferred We are looking for a dynamic Sales Manager for a ... business development. Well-connected and well-versed with the ..."},
+    {"url": "https://www.linkedin.com/posts/unison-international-consulting-pvt.-ltd_hiring-luxuryretail-luxuryjobs-activity-7371580277575871784-Dc4L", "title": "UNISON INTERNATIONAL CONSULTING (The Recruitment ...", "snippet": "4 days ago · WE'RE HIRING | SALES EXECUTIVE / CLIENT ADVISOR** **Location:** Mumbai ... looking for a polished and customer-focused **Sales Executive / Client ..."},
+    {"url": "https://www.linkedin.com/posts/unison-international-consulting-pvt.-ltd_commercial-sales-head-west-location-mumbai-activity-7384130917837220174-byol", "title": "Up to ₹80 LPA We are looking for an accomplished Commercial Sales ...", "snippet": "5 days ago · Commercial Sales Head – West Location: Mumbai CTC: Up to ₹80 LPA We are looking for ... business development strategy aligned with organizational growth ..."},
+    {"url": "https://www.linkedin.com/posts/recruitment-tms-602931784_were-hiring-business-development-manager-activity-7260962213012635972-4lo1", "title": "We're Hiring: Business Development Manager | Recruitment TMS", "snippet": "6 days ago · We're Hiring: Business Development Manager | Chembur, Mumbai Team Management Services (TMS) is hiring for ... Looking for a dynamic sales professional ..."}
+   ]
+  },
+  {
+   "pull_id": "walkin_drive_india",
+   "locale": "india",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "india walk-in vocabulary, dated drives",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/vinotharasu_necplacement-weekenddrive-walkininterview-activity-7146589039999724793-VRIB", "title": "Vinoth A's Post - LinkedIn", "snippet": "16 hours ago · ... Walk-In Interview | Electrical & Civil Engineers-LV/MV Switchgear ... Walk-In Drive on Sunday, September 20, 2026 for engineering professionals. ▪️ ..."},
+    {"url": "https://www.linkedin.com/posts/vinotharasu_necplacement-weekenddrive-walkininterview-activity-7146589039999724793-VRIB", "title": "Vinoth A's Post - LinkedIn", "snippet": "15 hours ago · Job Opportunity Alert #494 This weekend(19 & 20.09.2026) walk in interview Opportunities!!! 1.We're Hiring ... What we're looking for Data Engineer / Senior ..."},
+    {"url": "https://www.linkedin.com/posts/elango-murugan-58b1c9d3_join-our-geodis-finance-team-walk-in-activity-7289888602225178138-r2QK", "title": "elango murugan's Post - LinkedIn", "snippet": "3 days ago · Walk-In Interview Opportunity Dates: 17th September 2026 – 23rd September 2026 Location: Nandambakkam, Chennai We're hiring for the following roles ..."},
+    {"url": "https://www.linkedin.com/posts/tanvi-deshpande-71c0e2a5f_exo-edge-advantage-india-private-limited-activity-7394756581531190844-z2mA", "title": "Tanvi Deshpande's Post - Cyber Incident Response - LinkedIn", "snippet": "7 days ago · Walk-In Drive | Cyber Incident Response | Gurgaon, Mohali & Noida EXO ... 20th September, will their interviews also be held in Noida? Like · Reply. 1 ..."},
+    {"url": "https://www.linkedin.com/posts/harini-mallesh-4e8a90b16_arene-lifesciences-limited-walk-in-interviews-activity-7614904307233370613-EWdb", "title": "Arene Lifesciences Limited Walk-In Interviews on 5th–20th September ...", "snippet": "5 days ago · Arene Lifesciences Limited Walk-In Interviews on 5th–20th September 2026 ... Attended Example College of Engineering. 2h. Report this post; Close ..."},
+    {"url": "https://www.linkedin.com/posts/harini-mallesh-4e8a90b16_laurus-labs-walk-in-interviews-on-19th-activity-7757793964243475265-FS3t", "title": "Laurus Labs Walk-In Interviews on 19th & 20th September 2026", "snippet": "5 days ago · Laurus Labs Walk-In Interviews on 19th & 20th September 2026 https://example.com/l/ba1a88 #pharmajobs #walkins #interviews #jobs #updates #hiring #freshers ..."},
+    {"url": "https://www.linkedin.com/posts/izeon-innovative-s-c39d51e7a_walkininterview-itjobsinchennai-chennaijobs-activity-7140158132816779997-VEWD", "title": "Nithya Sundar's Post - LinkedIn", "snippet": "4 days ago · WALK-IN INTERVIEW OPPORTUNITY! | IZEON INNOVATIVE PVT. LTD. Are you looking for an exciting opportunity to start or grow your IT career?"},
+    {"url": "https://www.linkedin.com/posts/dr-ashwin-kulkarni-2a7f4c1_4-days-to-go-dissecting-healthcare-pls-activity-7834743942079335258-mV56", "title": "Dr. Ashwin Kulkarni's Post - LinkedIn", "snippet": "4 days ago · ... walk in and actually use by 5 PM. That combination - a sitting COO and a ... 20th September, MGUMST, Jaipur.\" Mahatma Gandhi University of Medical ..."}
+   ]
+  },
+  {
+   "pull_id": "referral_and_seeker",
+   "locale": "india",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "referral vocabulary + big-company names + India",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/venu-rachakonda_amd-hiring-referral-activity-7224860973551607065-f6iR", "title": "Venu Rachakonda posted this - LinkedIn", "snippet": "6 days ago · AMD is hiring — and I can refer you! SILICON DESIGN ENGINEER 2 AMD's Radeon ... happy to refer! #AMD #Hiring #Referral #DesignVerification #UVM ..."},
+    {"url": "https://www.linkedin.com/posts/sanket-joglekar482_visa-hiring-softwareengineer-activity-7845272011890411337-WVIo", "title": "Sanket Joglekar's Post - LinkedIn", "snippet": "4 days ago · Software Engineer at Visa | Happy to Refer Engineering roles operating at global payments scale fill up fast. Visa is expanding its engineering team in ..."},
+    {"url": "https://www.linkedin.com/posts/nandinipathak_capgemini-freshershiring-softwareengineer-activity-7687527483084502382-5_oV", "title": "Nandini Pathak's Post - LinkedIn", "snippet": "6 days ago · ... DM me for referral Repost this opportunity to help it reach more job seekers. Share this with your friends who are looking for a similar opportunity ..."},
+    {"url": "https://www.linkedin.com/posts/rehan-qureshi-217093846_referral-for-open-roles-activity-7253628428757746953-pxHC", "title": "Rehan Qureshi's Post - LinkedIn", "snippet": "4 days ago · Close menu. If Interested, I'm happy to refer you and anyone in your network who is looking at Example Corp! Feel free to look up some roles on the careers page ..."},
+    {"url": "https://www.linkedin.com/posts/ishitabhalerao1207_hiring-sde1-softwareengineer-activity-7369038583659853902-AcHR", "title": "Ishita Bhalerao's Post - LinkedIn", "snippet": "2 days ago · ... happy to refer relevant profiles, just DM me your resume and I'll take it from there. :) And yes, referrals are open Link to the job: https://example.com/l/3ab632 ..."},
+    {"url": "https://www.linkedin.com/posts/aarti-menon_referral-request-activity-7657770223150203583-osZm", "title": "Aarti Menon posted this - LinkedIn", "snippet": "4 days ago · ... can refer me, or know someone who is hiring, please get in touch or share this post. A single introduction could make a real ..."},
+    {"url": "https://www.linkedin.com/posts/soumyadeephalder_resume-and-referral-activity-7553227319994436970-rIBC", "title": "Soumyadeep Halder | 239 comments - LinkedIn", "snippet": "3 days ago · ... can refer me to your team or simply help this post reach the right person, I would be grateful. My resume is attached below. Sometimes ..."},
+    {"url": "https://www.linkedin.com/posts/marionpelletier_it-was-a-privilege-to-join-the-chancellor-activity-7744505055455447803-1J8y", "title": "Marion Pelletier's Post - LinkedIn", "snippet": "3 days ago · Would you like to cooperate or invest with me in this music project? Thank you. You can refer to version 3.0 at the following link: example-project.example.com ..."},
+    {"url": "https://www.linkedin.com/posts/vikrant-saxena-5c81a02d3_company-layoffs-referrals-activity-7658631386654059554-vxI9", "title": "Helping After a Layoff | Vikrant Saxena posted ...", "snippet": "4 days ago · If you can refer someone, do it. If you have nothing to offer, simply reach out. Because leadership isn't only about sharing wins when things ..."},
+    {"url": "https://www.linkedin.com/posts/tobiasridgeway_activity-7958144434768457620-tNyT", "title": "Tobias Ridgeway's Post - LinkedIn", "snippet": "3 days ago · Close menu.. Marlene Oakes. Registered Nurse. 18h. I'm looking for my next role! For the past few years, I worked from home for a ..."}
+   ]
+  },
+  {
+   "pull_id": "per_jd_deloitte",
+   "locale": "global",
+   "kind": "per_jd",
+   "freshness_window": "qdr:w",
+   "query_shape": "company + role: Deloitte consultant/analyst",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/dineshkarthikeyan_deloitte-ey-kpmg-pwc-are-hiring-and-activity-7967016633009202890-1clA", "title": "Dinesh Karthikeyan posted this - LinkedIn", "snippet": "5 days ago · Deloitte + EY + KPMG + PwC are hiring and I have referrals via my network ... Assistant Consultant SAP PP QM. 1h. Report this comment; Close menu. big4."},
+    {"url": "https://www.linkedin.com/posts/hirehub-io_hiring-deloitte-intrested-activity-7195591363990554718-Yh_8", "title": "HireHub.io's Post - LinkedIn", "snippet": "7 days ago · Hiring for #Deloitte #2026 I would love to refer you. :) Apply now - https ... Rohit Menon. Financial Analyst | Modelling ..."},
+    {"url": "https://www.linkedin.com/posts/harsha-vardhan-kondru_%F0%9D%97%97%F0%9D%97%B2%F0%9D%97%B9%F0%9D%97%BC%F0%9D%97%B6%F0%9D%98%81%F0%9D%98%81%F0%9D%97%B2-%F0%9D%97%B6%F0%9D%98%80-%F0%9D%97%9B%F0%9D%97%B6%F0%9D%97%BF%F0%9D%97%B6%F0%9D%97%BB%F0%9D%97%B4-%F0%9D%97%94%F0%9D%98%80%F0%9D%98%80%F0%9D%97%BC%F0%9D%97%B0%F0%9D%97%B6%F0%9D%97%AE%F0%9D%98%81%F0%9D%97%B2-activity-7931607723650921543-H4w-", "title": "Harsha Vardhan Kondru - Deloitte is Hiring - LinkedIn", "snippet": "7 days ago · Deloitte is Hiring – Associate Analyst | Automation Testing Great opportunity for freshers ..."}
+   ]
+  },
+  {
+   "pull_id": "global_nyc",
+   "locale": "global",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "global vocabulary + software/product roles + New York",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/fiona-ashcroft-8b31d47ea_were-hiring-a-senior-software-engineer-to-activity-7666353321143986205-lddj", "title": "Fiona Ashcroft's Post - Senior Software Engineer - LinkedIn", "snippet": "4 days ago · We're hiring a Senior Software Engineer to join the engineering team at Asseta ... New York. If you or someone you know would be a good fit, let me know ..."},
+    {"url": "https://www.linkedin.com/posts/nikhil-deshmukh-a3f90b2c7_microsoft-hiring-now-software-engineer-activity-7812129193055897023-t9-B", "title": "Microsoft Hiring Now | Nikhil Deshmukh | 37 comments - LinkedIn", "snippet": "3 days ago · Microsoft Hiring Now - Software Engineer! Job ID: 200040449 🗓️ Posted ... Suresh Nambiar. Software Engineer | Mentor ..."},
+    {"url": "https://www.linkedin.com/posts/lucia-fontaine_join-us-for-an-evening-in-new-york-with-activity-7563094424602813078-Xoyu", "title": "Lucía Fontaine's Post - LinkedIn", "snippet": "3 days ago · Join us for an evening in New York with Elena Marchetti, the Software Engineer leading the charge on voice agents at LangChain, and Arjun Venkat ..."},
+    {"url": "https://www.linkedin.com/posts/jonas-brooks_were-hiring-a-staff-software-engineer-activity-7722712068072106252-pWzD", "title": "Jonas Brooks' Post - LinkedIn", "snippet": "4 days ago · We're hiring a Staff Software Engineer, Enterprise Integration at Brooklinen, and I'd absolutely love your referrals ... Brooklinen, New York, NY · 53 2 ..."},
+    {"url": "https://www.linkedin.com/posts/njfglobal_hiring-activity-7860201794671863794-3dw7", "title": "#hiring | NJF Global Holdings Ltd - LinkedIn", "snippet": "6 days ago · We're #hiring a new Software Engineer in New York City Metropolitan Area. Apply today or share this post with your network."},
+    {"url": "https://www.linkedin.com/posts/withodyssey_hiring-activity-7070412263083753635-HEUd", "title": "#hiring | Odyssey - LinkedIn", "snippet": "7 days ago · We're #hiring a new Sr. Full Stack Software Engineer in New York, New York. Apply today or share this post with your network."},
+    {"url": "https://www.linkedin.com/posts/vrizeinc_hiring-activity-7222655895908521588-KDKq", "title": "VRIZE - hiring - LinkedIn", "snippet": "6 days ago · We're #hiring a new Senior Product Manager in New York. Apply today or share this post with your network. Senior Product Manager. VRIZE, New York, United States."}
+   ]
+  },
+  {
+   "pull_id": "ats_echo_india",
+   "locale": "india",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "LinkedIn auto-generated job-share template + Bengaluru",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/tlbco_hiring-activity-7012178492138656965-OfQg", "title": "#hiring | TLB & Co - LinkedIn", "snippet": "7 days ago · We're #hiring a new Article Trainee in Bengaluru, Karnataka. Apply today or share this post with your network. Article Trainee. TLB & Co, Bengaluru ..."},
+    {"url": "https://www.linkedin.com/posts/ara-resources-pvt.-ltd._hiring-activity-7664296741882985832-kGaZ", "title": "#hiring | ARA Resources Pvt. Ltd. - LinkedIn", "snippet": "7 days ago · We're #hiring a new Network Security Engineer in Bengaluru, Karnataka. Apply today or share this post with your network. Network Security Engineer. ARA ..."},
+    {"url": "https://www.linkedin.com/posts/xcel-hr-solutions_hiring-activity-7859988815068885077-Duf3", "title": "Xcel HR Solutions' Post - hiring - LinkedIn", "snippet": "5 days ago · We're #hiring a new Graphic Designer in Bengaluru, Karnataka. Apply today or share this post with your network. Graphic Designer. Xcel HR Solutions ..."},
+    {"url": "https://www.linkedin.com/posts/rubixe_hiring-activity-7331898298979876324--Ypy", "title": "#hiring | Rubixe - AI Solutions Company - LinkedIn", "snippet": "2 days ago · We're #hiring a new Digital Marketing Intern in Bengaluru, Karnataka. Apply today or share this post with your network. Digital Marketing Intern. Rubixe - AI ..."}
+   ]
+  },
+  {
+   "pull_id": "ats_echo_variant_b",
+   "locale": "global",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "template variant without 'a new <role> in <city>' + US metros",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/boston-link_hiring-activity-7083082794436464894-UUNT", "title": "Boston Link - hiring - LinkedIn", "snippet": "7 days ago · We're #hiring! Apply today or share this post with your network. Customer Support Officer – Dutch -Flemish (Hybrid) RELOCATION TO MALTA. Boston Link ..."},
+    {"url": "https://www.linkedin.com/posts/honorvettech_hiring-activity-7220877065025210860-AV1y", "title": "HonorVet Technologies - hiring - LinkedIn", "snippet": "5 days ago · We're #hiring. Apply today or share this post with your network. QA Engineer Automated. HonorVet Technologies, Austin, TX."},
+    {"url": "https://www.linkedin.com/posts/camillebertrand_exciting-hiring-updates-i-cant-wait-to-activity-7583652101926258162-yH6_", "title": "Exciting hiring updates! I can't wait to connect with everyone! | Camille ...", "snippet": "2 days ago · Please share this post with your network! REMOTE Technical Instructional Designer, AI Programming (Software Engineering Audience). CapeTalent, United States."},
+    {"url": "https://www.linkedin.com/posts/dylanhartwellatx_im-hiring-at-nebius-were-looking-for-activity-7536198338062724826-N56w", "title": "Dylan Hartwell's Post - LinkedIn", "snippet": "3 days ago · ... share this post with your network. View the role and apply: https://example.com/l/25eae2 #Hiring #PartnerSales #ChannelSales #ArtificialIntelligence ..."}
+   ]
+  },
+  {
+   "pull_id": "per_jd_stripe",
+   "locale": "global",
+   "kind": "per_jd",
+   "freshness_window": "qdr:w",
+   "query_shape": "company + role: Stripe software engineer",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/melodyashford_stripe-careers-software-engineer-early-activity-7660421591824202925-Mpdb", "title": "Melody Ashford's Post - Software Engineer, Early Career - LinkedIn", "snippet": "12 hours ago · Close menu. Did you hear the news? Stripe is hiring early-career software engineers who are available to start soon! ... Stripe Careers | Software Engineer, ..."},
+    {"url": "https://www.linkedin.com/posts/aditipendse_stripe-careers-staff-software-engineer-activity-7732564428852114270-2IPR", "title": "Stripe Careers | Staff Software Engineer, Issuing | Aditi Pendse", "snippet": "1 day ago · We're hiring a Staff Engineer to help build the future of Stripe Issuing ... Stripe Careers | Staff Software Engineer, Issuing stripe ..."},
+    {"url": "https://www.linkedin.com/posts/pooja-iyengar7-_stripe-hiring-softwareengineerintern-activity-7802471842422609282-BrMR", "title": "Pooja Iyengar's Post - LinkedIn", "snippet": "6 days ago · Stripe is hiring – Software Engineer Intern Location: Bangalore, India Apply here:https://example.com/l/64364d https://example.com/l/46b388 If you want to join ..."},
+    {"url": "https://www.linkedin.com/posts/pooja-iyengar7-_paypal-hiring-softwareengineer-activity-7957500965048623865-Tl4k", "title": "Pooja Iyengar's Post - LinkedIn", "snippet": "3 days ago · ... Stripe is hiring – Software Engineer Intern Location: Bangalore, India Apply here: https://example.com/l/4da891 https://example.com/l/46b388 Join my telegram ..."},
+    {"url": "https://www.linkedin.com/posts/simran-kohli-6e0d4b915_hiring-job-activity-7533853311233166833-COYW", "title": "Simran Kohli - hiring #job - LinkedIn", "snippet": "6 days ago · Stripe is hiring – Software Engineer Intern Location: Bangalore, India Apply here: https://example.com/l/46b388 Amazon is hiring through this hackathon ..."}
+   ]
+  },
+  {
+   "pull_id": "non_english_eu",
+   "locale": "non_english",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "non-English hiring vocabulary (es/pt/fr/de)",
+   "hits": [
+    {"url": "https://es.linkedin.com/posts/talento-mx-bledesma_busco-desarrollador-sap-abap-presencial-activity-7649250864800464121-3Gdy", "title": "Publicación de Beatriz Ledesma - LinkedIn", "snippet": "¡Busco Desarrollador SAP ABAP – Presencial CDMX! Estamos buscando Desarrollador SAP ABAP Mid-Senior para integrarse a un proyecto en Tlalpan, CDMX."},
+    {"url": "https://pt.linkedin.com/posts/previneoficial_estamos-contratando-engenheiro-de-seguran%C3%A7a-activity-7400432494826420213-xJw3", "title": "07h00 às 16h48… | Previne - Engenharia & Gestão de Riscos | 20 ...", "snippet": "Estamos contratando! Engenheiro de Segurança do Trabalho Tipo de contrato: Inicialmente prazo determinado, podendo tornar-se indeterminado Local: ..."},
+    {"url": "https://fr.linkedin.com/posts/aureliendelacroix_nous-recrutons-d%C3%A9veloppeurse-full-stack-activity-7780445180247291943-w4nz", "title": "Post de Aurélien Delacroix - LinkedIn", "snippet": "Nous recrutons – Développeur(se) Full Stack Junior Dans le cadre du renforcement de notre équipe, nous recherchons un(e) Développeur(se) Full Stack en début ..."},
+    {"url": "https://www.linkedin.com/posts/de-codigo-somos_activity-7876379491367400652-4Owt", "title": "| de codigo somos - LinkedIn", "snippet": "¡Estamos buscando talento! ¿Eres Desarrollador/a Full Stack Junior y estás buscando un nuevo desafío? ✨ Una empresa de tecnología busca incorporar a su ..."},
+    {"url": "https://de.linkedin.com/posts/j%C3%B6rg-vogler-4b18c7e2d_pia-unsere-ki-l%C3%B6sung-f%C3%BCr-das-schweizer-parlament-activity-7449559592716926243-TYg6", "title": "Beitrag von Jörg Vogler - LinkedIn", "snippet": "Wir suchen Entwickler(innen). Jörg Vogler 7 Jahre. Grossartiges Projekt im Baunebengewerbe abgeschlossen. Jörg Vogler 8 Jahre. LinkedIn © 2026; Info ..."},
+    {"url": "https://es.linkedin.com/posts/marinaledoux_hello-its-me-y-estamos-contratando-activity-7537376356246855840-BVq6", "title": "Publicación de Marina Ledoux 王芳 - LinkedIn", "snippet": "4 days ago · Hello... It's me... y ESTAMOS CONTRATANDO OTRA VEZ! Busco Affiliate Manager que tenga ganas de lo que es PETARLO en TikTok Shop España, Alemania y USA ..."},
+    {"url": "https://www.linkedin.com/posts/akdital-ksa_hiring-riyadh-and-makkah-activity-7848048001265371169-f5s4", "title": "Riyadh and Makkah | AKDITAL KSA - أكديطال السعودية - LinkedIn", "snippet": "5 days ago · ... looking for your next career opportunity in Saudi Arabia, we would be ... “Registered Nurse | Critical Care, ICU & NICU Specialist | Dedicated to ..."},
+    {"url": "https://www.instagram.com/reel/-EQ9yy2mGSc/", "title": "BLUEFIT TOLEDO Você é profissional de Educação Física e está ...", "snippet": "VAGA ABERTA | BLUEFIT TOLEDO Estamos contratando profissional para atuar na recepção da Bluefit Toledo! Local: Bluefit Toledo Segunda a sexta: 17h45 ..."},
+    {"url": "https://www.instagram.com/p/1VQdLHWpqhJ/", "title": "VAGA ABERTA | BRASÍLIA DE MINAS/MG A Cervantes ... - Instagram", "snippet": "VAGA ABERTA | BRASÍLIA DE MINAS/MG A Cervantes está contratando Ajudante de Manutenção de Frota! Local: Brasília de Minas/MG Quer fazer parte ..."}
+   ]
+  },
+  {
+   "pull_id": "non_english_cjk_hindi",
+   "locale": "non_english",
+   "kind": "tab",
+   "freshness_window": "qdr:m",
+   "query_shape": "CJK / Hindi / Arabic hiring vocabulary, month window",
+   "hits": [
+    {"url": "https://cn.linkedin.com/posts/lina-wu_%E4%BC%81%E4%B8%9A%E5%87%BA%E6%B5%B7-%E5%87%BA%E6%B5%B7%E6%8B%9B%E8%81%98-%E8%B7%A8%E5%A2%83%E6%8B%9B%E8%81%98-activity-7049780632804790034-mPX-", "title": "Lina W. - 企业出海#出海招聘#跨境招聘#海外招聘#东南亚招聘 - 领英", "snippet": "... 核心团队有多个海外岗位开放中，有兴趣欢迎私信我了解更多，也欢迎推荐合适的人选#企业出海#出海招聘#跨境招聘#海外招聘#东南亚招聘."},
+    {"url": "https://www.linkedin.com/posts/mika-tanabe-c204a71_creative-director-storytelling-japan-activity-7326531298827638696-D_fk", "title": "Creative Director, Storytelling - Japan - 採用情報 (日本) | Mika Tanabe - LinkedIn", "snippet": "Creative Director, Storytelling - Japan - 採用情報 (日本) jobs.example.com · 69 2 Comments · Like ..."},
+    {"url": "https://www.linkedin.com/posts/felix-brandner_acclime%E6%AD%A3%E5%9C%A8%E6%8B%9B%E8%81%98senior-erp-consultant-%E6%B7%B1%E5%9C%B3-%E9%A2%86%E8%8B%B1-activity-7701163300950654585-Jm87", "title": "Acclime正在招聘Senior ERP Consultant (深圳) | 领英 - LinkedIn", "snippet": "4 days ago · Acclime正在招聘Senior ERP Consultant (深圳) | 领英 cn.linkedin.com · 16 · Like Comment. Share."},
+    {"url": "https://www.linkedin.com/posts/hr-rahul-desai-2e5b84c17_sbi-sboss-2026-%E0%A4%95-%E0%A4%B8%E0%A4%AC%E0%A4%B8-%E0%A4%AC%E0%A4%A1-%E0%A4%AD%E0%A4%B0%E0%A4%A4-activity-7187945159203673806-OzOm", "title": "HR RAHUL DESAI - SBI SBOSS: 2026 की सबसे बड़ी भर्ती - LinkedIn", "snippet": "Close menu. https://example.com/l/0386a2 …more. SBI SBOSS: 2026 की सबसे बड़ी भर्ती. https://example.com/l/fef0e9. Like Comment. Share. Copy; LinkedIn"},
+    {"url": "https://cn.linkedin.com/posts/samir-haddad-104738265_%E6%8B%9B%E8%81%98%E9%94%80%E5%94%AE%E5%82%A8%E5%A4%87%E4%BA%BA%E6%89%8D-%E6%88%91%E4%BB%AC%E6%AD%A3%E5%9C%A8%E6%8B%9B%E8%81%98-%E9%94%80%E5%94%AE%E5%82%A8%E5%A4%87%E4%BA%BA%E6%89%8D%E6%AC%A2%E8%BF%8E%E5%AF%B9%E9%94%80%E5%94%AE%E9%9B%B6%E5%94%AE%E8%A1%8C%E4%B8%9A%E6%84%9F%E5%85%B4%E8%B6%A3-activity-7167692245040777171-xWdE", "title": "Samir Haddad的动态 - 领英", "snippet": "【招聘｜销售储备人才】 我们正在招聘(销售储备人才)，欢迎对销售、零售行业感兴趣，并希望在阿联酋UAE 长期发展的年轻人才加入！ 工作地点：阿联酋岗位要求： * 应届 ..."},
+    {"url": "https://www.linkedin.com/posts/limweijian_%E0%B8%87%E0%B8%B2%E0%B8%99hr-%E0%B8%87%E0%B8%B2%E0%B8%99%E0%B8%8A%E0%B8%A5%E0%B8%9A%E0%B8%A3-%E0%B8%9C%E0%B8%88%E0%B8%94%E0%B8%81%E0%B8%B2%E0%B8%A3hr-activity-7873448402119288916--6oe", "title": "Lim Wei Jian (Ryan)'s Post - LinkedIn", "snippet": "... 招聘 #人力资源经理 #制造业招聘 #跨国企业 # ... 招聘 #人力资源经理 #制造业招聘 #跨国企业 #泰国工作. diagram. 11 · Like Comment. Share."}
+   ]
+  },
+  {
+   "pull_id": "ugcpost_probe",
+   "locale": "global",
+   "kind": "probe",
+   "freshness_window": null,
+   "query_shape": "inurl:ugcPost probe",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/arjunk-academy_linkedins-new-ai-feature-might-be-hiding-ugcPost-7638652164202138324-bFYn/", "title": "How to disable LinkedIn's new AI job search feature | Arjun Kapoor posted ...", "snippet": "Software Engineer | Full Stack | React, Next.js, Node.js | Building ... LinkedIn is evolving fast — with the launch of its new Hiring Assistant ..."},
+    {"url": "https://www.linkedin.com/posts/zaid-farooqui-38c1a5e04_infosys-freshers-offcampusdrive-ugcPost-7314568013009524307--_8X/", "title": "Zaid Farooqui - infosys #freshers #offcampusdrive #itjobs - LinkedIn", "snippet": "Infosys Off-Campus Hiring Drive 2026 | Freshers Opportunity Great opportunity for fresh graduates ... Software Engineer | Spring Boot ..."},
+    {"url": "https://www.linkedin.com/posts/sharma-neelam_clay-automate-n8n-ugcPost-7482373691399071308-Very/?utm_source=share&utm_medium=member_desktop&rcm=ACoAAEXAMPLE0000000000000000000000000", "title": "clay #automate #n8n #claude #gtmengineering #revops #hubspot ...", "snippet": "Software Engineer | M.Tech AI @ Example Institute | Full-Stack & Data ... hiring the similar kind of profiles recently or not so. I have only ..."}
+   ]
+  },
+  {
+   "pull_id": "global_sf",
+   "locale": "global",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "first-person hiring vocabulary + ML/founding roles + San Francisco",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/yusufrahman_sr-genai-strategist-startups-generative-activity-7653469631689304406-JNPV", "title": "Sr. GenAI Strategist | Yusuf (Yuz) Rahman, Ph.D. - LinkedIn", "snippet": "2 days ago · I'm hiring a Sr. GenAI Strategist for startups on my team at the AWS Generative AI Innovation Center. San Francisco ... AI engineer, building AI products ..."},
+    {"url": "https://www.linkedin.com/posts/gordon-ellery-7d20b4_oceans-ventures-job-board-activity-7616950956202676412-sMUm", "title": "VC AI role for new investors | Gordon Ellery posted on the topic", "snippet": "5 days ago · A founding engineer at a $5B fintech startup. Think about what that title ... we're hiring tomorrow's leaders.\" No argument there. Both true. But ..."},
+    {"url": "https://www.linkedin.com/posts/y-combinator_kastle-is-building-ai-employees-for-banks-activity-7841582905390147786-Mfxk", "title": "Kastle is building AI employees for banks. Its agents automate ...", "snippet": "14 hours ago · And so it was actually at one of the conferences here in San Francisco where we learned about. ... Yeah, so we're hiring across the stack with the Series A."}
+   ]
+  },
+  {
+   "pull_id": "non_posts_jobs",
+   "locale": "global",
+   "kind": "probe",
+   "freshness_window": "qdr:w",
+   "query_shape": "query without the /posts/ scope -- LinkedIn jobs pages leak in",
+   "hits": [
+    {"url": "https://uk.linkedin.com/jobs/view/marketing-manager-at-xml-international-4467082370", "title": "Marketing Manager - XML International - LinkedIn", "snippet": "5 days ago · We're looking for a Marketing Manager / Marketing Specialist to support customer engagement activity across a major UK current account portfolio. This role is ..."},
+    {"url": "https://uk.linkedin.com/jobs/view/marketing-manager-at-omnes-4466770546", "title": "OMNES hiring Marketing Manager in London Area, United Kingdom", "snippet": "6 days ago · Marketing Manager. OMNES London Area, United Kingdom. 5 days ago Be among the first 25 applicants."}
+   ]
+  },
+  {
+   "pull_id": "ahmedabad_mixed",
+   "locale": "india",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "hiring vocabulary + finance/engineering roles + Ahmedabad",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/aquascapeengineers-pvt-ltd_hiring-activity-7938768210821740515-o94x", "title": "#hiring | Aquascape Engineers Pvt Ltd - Aerospace - LinkedIn", "snippet": "7 days ago · We're #hiring a new Production Engineer in Ahmedabad, Gujarat. Apply today ... Mechanical Engineer. 4d. Report this comment; Close menu. #CFBR. Like · Reply. 1 ..."},
+    {"url": "https://www.linkedin.com/posts/posco-india-pc-ahmedabad_urgent-hiring-we-are-hiring-forquality-activity-7170712462831189574-WUQW", "title": "POSCO INDIA PC (AHMEDABAD)'s Post - LinkedIn", "snippet": "2 days ago · URGENT Hiring! We are Hiring for Quality -Executive at POSCO Ahmedabad ... Notice Period: Total work experience: Email Id: careers@example.com Regards, HR Team ..."},
+    {"url": "https://www.linkedin.com/posts/grace-halvorsen-5d3e70a19_for-immediate-hiring-only-open-to-those-activity-7847681653245701581-R2Et", "title": "Grace Halvorsen's Post - FOR IMMEDIATE HIRING - LinkedIn", "snippet": "6 days ago · ... careers@example.com (Please ensure to mention the position you are ... Rashid Ansari. Civil Engineer | Water and Drainage ..."}
+   ]
+  },
+  {
+   "pull_id": "non_english_eu_more",
+   "locale": "non_english",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "non-English hiring vocabulary (es/pt/fr/de), second pull rows",
+   "hits": [
+    {"url": "https://fr.linkedin.com/posts/aur%C3%A9lie-roche-4d6b93e1f_nous-recrutons-un-d%C3%A9veloppeur-web-prestataire-activity-7451578259781208337-kI1p", "title": "Post de Aurélie ROCHE - LinkedIn", "snippet": "Nous recrutons un développeur web (prestataire) ou une agence web basé au Bénin idéalement pour un important projet digital. Demander les cahiers des ..."},
+    {"url": "https://pt.linkedin.com/posts/grupo-lamonica-log%C3%ADstica_vaga-aberta-venha-fazer-parte-do-activity-7560995383094172560-yejZ", "title": "Publicação de Grupo Lamonica Logística - LinkedIn", "snippet": "VAGA ABERTA! Venha fazer parte do nosso time! Estamos com uma nova oportunidade para quem busca crescimento profissional e deseja fazer parte da nossa ..."}
+   ]
+  },
+  {
+   "pull_id": "second_capture_india",
+   "locale": "india",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "second capture: india vocabulary + varied role families, chosen for dated drives, pipe titles and a recruiter's hiring post",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/senco-gold-and-diamonds_sencogoldanddiamonds-nowhiring-walkininterview-activity-7942765375024876113-qB1l", "title": "Senco Gold and Diamonds - LinkedIn", "snippet": "5 days ago · ... Sales Executive ✨ Cashier Walk-in Interview: Pune Showroom 17th ... Close menu. We're Hiring! Join one of India's most trusted jewellery ..."},
+    {"url": "https://www.linkedin.com/posts/meera-s-3f7a91c04_kgis-is-hiring-kg-invicta-services-kgis-activity-7677835875738693025-CKRI", "title": "KGiS is Hiring!! KG Invicta Services (KGiS) We're Hiring in OOTY!", "snippet": "3 days ago · ... Walk-in Date: 26th September 2026 (Saturday) ⏰ Time: 9:00 AM – 4:00 PM Venue: Hotel Silver Oak Walk in with your updated resume! For Queries ..."},
+    {"url": "https://www.linkedin.com/posts/constructionplacements-official_jll-walk-in-hiring-facility-management-activity-7914423343313840170-Er-B", "title": "JLL Walk-In Hiring | Hyderabad | ConstructionPlacements Official", "snippet": "4 days ago · ... September 2026 ⏰ Time: 10:00 AM – 2:00 PM Venue: JLL Site ... JOIN JLL - Walk-in Interview Drive at Hyderabad! We're excited to ..."},
+    {"url": "https://www.linkedin.com/posts/constructionplacements-official_construction-jobs-walk-in-interview-drive-activity-7719786493714027274-CeNt", "title": "Construction Jobs Walk-in Interview Drive Sept 2026 - LinkedIn", "snippet": "... September 2026 Complete eligibility, experience, venue, reporting ... Tata Consulting Engineers (TCE) Walk-In Drive 2026: PMC and Power ..."},
+    {"url": "https://www.linkedin.com/posts/kediacapital_we-are-hiring-chartered-accountant-activity-7704294116546181384-jD3q", "title": "WE ARE HIRING | Kedia Capital | Wealth Management - LinkedIn", "snippet": "WE ARE HIRING | CHARTERED ACCOUNTANT (CA) Kedia Capital is looking for a Chartered Accountant to join our team at Kalyan West, Mumbai."},
+    {"url": "https://www.linkedin.com/posts/dsshealthstaff_male-nurses-required-for-oman-walk-in-interview-activity-7520635707409501511-bIfN", "title": "Male Nurses Required for Oman | Walk-In Interview in Kerala - LinkedIn", "snippet": "Male Nurses Required for Oman | Walk-In Interview in Kerala | High ... Nursing - 3–5 years of experience Perks & Benefits - Attractive ..."},
+    {"url": "https://www.linkedin.com/posts/career-choicesolution_hiring-accountexecutive-accountsjobs-activity-7435561341967901880-SHs-", "title": "Career Choice Solution | Recruitment Agency India's Post - LinkedIn", "snippet": "7 days ago · WE'RE HIRING | Account Executive* *Location:* Nerul, Navi Mumbai ... Top 10 GCC Recruitment Agencies in Pune for Employers Building Global Teams."},
+    {"url": "https://www.linkedin.com/posts/vivek-malhotra-4e1c7a90b_hiring-for-sde-2-location-gurgaon-hybrid-activity-7499373379154810349-G65-", "title": "Vivek Malhotra's Post - LinkedIn", "snippet": "4 days ago · Hiring for SDE-2 Location:- Gurgaon (Hybrid) Experience Required:- 3-6 years Budget:- 25-34 lacs Candidate must open to work on ERLANG."}
+   ]
+  },
+  {
+   "pull_id": "second_capture_global",
+   "locale": "global",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "second capture: global vocabulary + varied metros, chosen for cut-off auto-posts and a post with no author handle",
+   "hits": [
+    {"url": "https://www.linkedin.com/posts/parker-consult_hiring-activity-7075595340437181936-0rl8", "title": "#hiring | Parker Connect - LinkedIn", "snippet": "5 days ago · We're #hiring a new Sales Operations Manager – After Sales | Luxury Furniture in Dubai ... Supply Chain Management · Future Of Work · Consulting · Writing ..."},
+    {"url": "https://www.linkedin.com/posts/mhhc_hiring-activity-7645557725458944388-ynCJ", "title": "#hiring | Morris Heights Health Center - LinkedIn", "snippet": "We're #hiring a new Registered Nurse in Bronx, New York. Apply today or share this post with your network. Registered Nurse. Morris Heights ..."},
+    {"url": "https://www.linkedin.com/posts/activity-7443070795672622531-XIrI", "title": "Hard Rock Games - bethedifference - LinkedIn", "snippet": "5 days ago · ... Toronto, Hybrid Join us and #BeTheDifference! To find out more or to apply ... Backend Developer, Owen Marsh. Hard Rock Games 7mo · Meet The Team ..."}
+   ]
+  },
+  {
+   "pull_id": "second_capture_non_english",
+   "locale": "non_english",
+   "kind": "tab",
+   "freshness_window": "qdr:w",
+   "query_shape": "second capture: German, French and Portuguese auto-generated hiring posts (localized twins of the English template)",
+   "hits": [
+    {"url": "https://de.linkedin.com/posts/hasso-plattner-institute_hiring-activity-7996591367845722671-bMiE", "title": "Hasso Plattner Institute - hiring - LinkedIn", "snippet": "Hiring – Wir suchen eine:n neue:n Softwareentwickler (m/w/d) in Berlin Metropolitan Area. Bewerben Sie sich noch heute oder teilen Sie diese ..."},
+    {"url": "https://www.linkedin.com/posts/dorfin_embauchons-hiring-activity-7303102653551541693-38bJ", "title": "Dorfin - embauchons #hiring - LinkedIn", "snippet": "Nous #embauchons ! Postulez aujourd'hui ou partagez ce message avec votre réseau. We're #hiring ! Apply today or share this post with your ..."},
+    {"url": "https://pt.linkedin.com/posts/recordeuropa_contratando-hiring-activity-7836478982096043968-KLFn", "title": "TV RECORD Europa - contratando #hiring - LinkedIn", "snippet": "Estamos a contratar para um novo [cargo] em: [localidade]. Candidate-se hoje mesmo ou partilhe este anúncio com sua rede. #Contratando #Hiring."}
+   ]
+  }
+ ]
+}
