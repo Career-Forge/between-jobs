@@ -14,6 +14,9 @@ export class ApiError extends Error {
     public readonly status: number,
     message: string,
     public readonly code?: string,
+    // The envelope's own `retryable` flag (errors.py): whether asking again can
+    // change the outcome. Undefined when the reply carried none.
+    public readonly retryable?: boolean,
   ) {
     super(message);
   }
@@ -44,13 +47,14 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   const body = (await response.json().catch(() => null)) as {
-    error?: { code?: string; message?: string };
+    error?: { code?: string; message?: string; retryable?: boolean };
   } | null;
   if (!response.ok) {
     throw new ApiError(
       response.status,
       body?.error?.message ?? `Request failed (${response.status})`,
       body?.error?.code,
+      typeof body?.error?.retryable === "boolean" ? body.error.retryable : undefined,
     );
   }
   return body as T;

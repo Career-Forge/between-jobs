@@ -4,6 +4,7 @@ import { CompanyIntelPanel } from "../components/CompanyIntelPanel";
 import { ContactFinderPanel } from "../components/ContactFinderPanel";
 import { GeneratePanel } from "../components/GeneratePanel";
 import { HeaderComposer } from "../components/HeaderComposer";
+import { HiringSignalsPanel } from "../components/HiringSignalsPanel";
 import { InterviewPracticePanel } from "../components/InterviewPracticePanel";
 import { PositioningBriefPanel } from "../components/PositioningBriefPanel";
 import { SectionOrderEditor } from "../components/SectionOrderEditor";
@@ -154,6 +155,9 @@ export default function ApplicationWorkspace() {
           </div>
           <div id={CROSS_NAV_HASH.warmPathEvents}>
             <WarmPathEventsPanel applicationId={application.id} />
+          </div>
+          <div id={CROSS_NAV_HASH.hiringPosts}>
+            <HiringSignalsPanel applicationId={application.id} />
           </div>
           <div id={CROSS_NAV_HASH.interviewPractice}>
             <InterviewPracticePanel applicationId={application.id} />

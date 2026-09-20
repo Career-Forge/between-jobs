@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Application, ApplicationStatus } from "./applicationsTypes";
 import {
+  CROSS_NAV_HASH,
   CROSS_NAV_ITEMS,
   formatAppliedDate,
   groupByStatus,
@@ -112,16 +113,28 @@ describe("formatAppliedDate", () => {
 });
 
 describe("CROSS_NAV_ITEMS", () => {
-  it("has exactly the 6 named cross-nav destinations, in menu order, and no Tailor entry", () => {
+  it("has exactly the 7 named cross-nav destinations, in menu order, and no Tailor entry", () => {
     expect(CROSS_NAV_ITEMS).toEqual([
       { hash: "generate", label: "Generate Docs" },
       { hash: "company-intel", label: "Research Company" },
       { hash: "contacts", label: "Find Contacts" },
       { hash: "warm-path-events", label: "Find Events" },
+      { hash: "hiring-posts", label: "Find Hiring Posts" },
       { hash: "interview-practice", label: "Practice Interview" },
       { hash: "your-play", label: "Your Play" },
     ]);
     expect(CROSS_NAV_ITEMS.some((item) => item.hash === "tailor")).toBe(false);
+  });
+
+  it("draws every menu hash from CROSS_NAV_HASH, the constant the workspace panels' ids also use", () => {
+    // A hash typed directly into the menu could drift from the panel id it is
+    // meant to scroll to, and a missing scroll target fails silently.
+    const known = new Set<string>(Object.values(CROSS_NAV_HASH));
+    for (const item of CROSS_NAV_ITEMS) {
+      expect(known.has(item.hash)).toBe(true);
+    }
+    expect(new Set(CROSS_NAV_ITEMS.map((item) => item.hash)).size).toBe(CROSS_NAV_ITEMS.length);
+    expect(CROSS_NAV_HASH.hiringPosts).toBe("hiring-posts");
   });
 });
 

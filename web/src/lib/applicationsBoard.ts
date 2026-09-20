@@ -43,11 +43,10 @@ export function otherStatuses(current: ApplicationStatus): ApplicationStatus[] {
 }
 
 // Applications Kanban K3 -- the per-card/per-row cross-nav menu into the
-// three ApplicationWorkspace.tsx panels each item can jump straight to.
-// Shared by both views (KanbanCard and ApplicationRow) so the label/hash
-// pairing only lives in one place. Deliberately 3 items, not 4: TailorPanel
-// is a workspace panel but not one of the capability map's own named
-// cross-nav destinations, so it has no entry here.
+// ApplicationWorkspace.tsx panels each item can jump straight to. Shared by
+// both views (KanbanCard and ApplicationRow) so the label/hash pairing only
+// lives in one place. TailorPanel is a workspace panel but not one of the
+// capability map's own named cross-nav destinations, so it has no entry here.
 //
 // CROSS_NAV_HASH is the single source of truth for the hash strings --
 // ApplicationWorkspace.tsx imports these same constants for its panel
@@ -60,6 +59,7 @@ export const CROSS_NAV_HASH = {
   companyIntel: "company-intel",
   contacts: "contacts",
   warmPathEvents: "warm-path-events",
+  hiringPosts: "hiring-posts",
   interviewPractice: "interview-practice",
   positioningBrief: "your-play",
 } as const;
@@ -74,6 +74,7 @@ export const CROSS_NAV_ITEMS: readonly CrossNavItem[] = [
   { hash: CROSS_NAV_HASH.companyIntel, label: "Research Company" },
   { hash: CROSS_NAV_HASH.contacts, label: "Find Contacts" },
   { hash: CROSS_NAV_HASH.warmPathEvents, label: "Find Events" },
+  { hash: CROSS_NAV_HASH.hiringPosts, label: "Find Hiring Posts" },
   { hash: CROSS_NAV_HASH.interviewPractice, label: "Practice Interview" },
   { hash: CROSS_NAV_HASH.positioningBrief, label: "Your Play" },
 ];

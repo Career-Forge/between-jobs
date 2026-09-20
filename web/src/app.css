@@ -1815,3 +1815,155 @@ a.bj-contact-chip {
 .bj-discover-saved-search-row > span {
   overflow-wrap: anywhere;
 }
+
+/* ------------------------------------------------------------------ */
+/* Hiring posts (Hiring Signals P3) -- per-application panel           */
+/* ------------------------------------------------------------------ */
+
+/* When the feature is switched off the panel renders nothing, leaving its
+   wrapper div empty -- and an empty flex item still adds a gap, so collapse
+   it. Every other panel wrapper always has content, so this only ever
+   matches the disabled case. */
+.bj-workspace-tailor > div:empty {
+  display: none;
+}
+
+.bj-hs-panel {
+  gap: 10px;
+  padding: 20px;
+  /* Long unbroken strings from the index (a name, a hint) must wrap inside
+     the card, never widen the page -- the earlier Discover page had exactly
+     this bug inside a flex column. */
+  min-width: 0;
+}
+
+.bj-hs-panel p {
+  margin: 0;
+}
+
+.bj-hs-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The active window is also bold, so the selection never rests on color
+   alone (aria-pressed carries it for assistive tech). */
+.bj-hs-window button[aria-pressed="true"] {
+  font-weight: 600;
+}
+
+.bj-hs-results,
+.bj-hs-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bj-hs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bj-hs-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-bg);
+  min-width: 0;
+}
+
+.bj-hs-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bj-hs-card-text,
+.bj-hs-card-meta > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bj-hs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* .bj-link-button carries a top margin for use under a paragraph; inside an
+   action row it would push the button off the row's baseline. */
+.bj-hs-actions .bj-link-button {
+  margin-top: 0;
+}
+
+/* The panel's busy buttons are aria-disabled, not disabled: a disabled button
+   drops keyboard focus (the person who pressed Enter on it lands back at the
+   top of a very long page), aria-disabled keeps it and the handlers ignore the
+   press. Same look as button:disabled in tokens.css. */
+.bj-hs-panel button[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* A saved card's button reads "Saved" and is aria-disabled, but that dims to
+   45% opacity -- keep it legible, and emerald (completed), with the word
+   itself carrying the meaning. */
+.bj-hs-panel button.bj-hs-saved[aria-disabled="true"] {
+  opacity: 1;
+  color: var(--bj-emerald);
+  border-color: var(--bj-emerald);
+  cursor: default;
+}
+
+.bj-hs-embed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bj-hs-embed-frame {
+  width: 100%;
+  height: 520px;
+  min-height: 420px;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-surface-raised);
+}
+
+/* Setup needed is a to-do, not a failure, so gold (review/uncertainty) rather
+   than the red reserved for actual failures. */
+.bj-hs-callout {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--bj-gold);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.bj-hs-saved-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.bj-hs-saved-section h3 {
+  margin: 4px 0 0;
+  font-size: 16px;
+}

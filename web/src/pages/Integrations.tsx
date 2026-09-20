@@ -10,10 +10,13 @@ import { apiFetch, ApiError } from "../lib/api";
 // Applications/Practice/Profile: this is a sub-page of Profile, not a
 // sixth destination.
 //
-// OpenRouter (LLM) plus You.com and Firecrawl (search, for the company
-// intelligence pipeline) are wired up. Both search cards share
-// SearchProviderCard -- unlike OpenRouter, neither has a "model" concept,
-// just a key -- rather than forcing them through OpenRouterCard's shape.
+// OpenRouter (LLM) plus the search providers (You.com and Firecrawl for the
+// company intelligence pipeline; Brave and Serper too for Discover's job search
+// and an application's "Hiring posts"). The search cards share
+// SearchProviderCard -- unlike OpenRouter, none has a "model" concept, just a
+// key -- rather than forcing them through OpenRouterCard's shape. Hiring posts'
+// setup message names Brave, Serper, Firecrawl and You.com, so all four have a
+// card here: a step the page tells you to take has to be one you can take.
 //
 // Sprint 2.8f adds the Telegram-link card on the same page -- both cards
 // are "connect an external account to this one," the same loose theme
@@ -57,6 +60,8 @@ export default function Integrations() {
   const openrouter = credentials?.find((c) => c.service === "llm" && c.provider === "openrouter") ?? null;
   const youCom = credentials?.find((c) => c.service === "search" && c.provider === "you_com") ?? null;
   const firecrawl = credentials?.find((c) => c.service === "search" && c.provider === "firecrawl") ?? null;
+  const brave = credentials?.find((c) => c.service === "search" && c.provider === "brave") ?? null;
+  const serper = credentials?.find((c) => c.service === "search" && c.provider === "serper") ?? null;
   const apollo = credentials?.find((c) => c.service === "search" && c.provider === "apollo") ?? null;
   const hunter = credentials?.find((c) => c.service === "search" && c.provider === "hunter") ?? null;
   const exa = credentials?.find((c) => c.service === "search" && c.provider === "exa") ?? null;
@@ -88,6 +93,26 @@ export default function Integrations() {
           placeholder="fc-..."
           note="Validated against your account's credit usage -- doesn't spend a search/scrape credit."
           credential={firecrawl}
+          onChanged={load}
+        />
+      )}
+      {credentials !== null && (
+        <SearchProviderCard
+          title="Brave Search"
+          provider="brave"
+          placeholder="your-brave-key"
+          note="Used for job search on Discover and to find hiring posts on an application. Validating runs one tiny real search call -- Brave has no free key-check endpoint."
+          credential={brave}
+          onChanged={load}
+        />
+      )}
+      {credentials !== null && (
+        <SearchProviderCard
+          title="Serper"
+          provider="serper"
+          placeholder="your-serper-key"
+          note="Used for job search on Discover and, as a last resort, to find hiring posts on an application (it returns Google results). Validating runs one 1-credit search call -- Serper has no free key-check endpoint."
+          credential={serper}
           onChanged={load}
         />
       )}
