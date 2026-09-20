@@ -755,6 +755,89 @@ async def fetch_adzuna(
 _YOU_COM_URL = "https://ydc-index.io/v1/search"
 
 
+def _check_body_size(response: httpx.Response, label: str, max_body_bytes: int | None) -> None:
+    """Refuses a body over `max_body_bytes` (when a caller sets one) BEFORE it
+    is parsed: a hostile or broken provider must not be able to make the JSON
+    decoder chew through megabytes. The body has already been read by then
+    (a plain `post`/`get` buffers it), so this bounds parsing work, not the
+    read itself -- the read is bounded in time by the caller's own deadline."""
+    if max_body_bytes is not None and len(response.content) > max_body_bytes:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            f"{label} sent a larger response than this feature will read.",
+            retryable=True,
+        )
+
+
+# The three functions below (a raw call, where the result list sits in the
+# body, which entry fields carry url/title/snippet) are the ONLY place this
+# module knows You.com's wire format. `fetch_you_com` uses them for job
+# search; `hiring_signal_search.py` reuses them verbatim for Hiring Signals
+# rather than growing a second copy of the endpoint, the auth header, the
+# error mapping and the response shape. The same trio exists per provider
+# below. They are deliberately literal extractions of what each `fetch_*`
+# used to do inline -- no behavior change on the live Discover path.
+
+
+async def you_com_search(
+    http: httpx.AsyncClient,
+    *,
+    api_key: str,
+    query: str,
+    freshness: str,
+    count: int = 10,
+    timeout: float = _TIMEOUT_SECONDS,
+    max_body_bytes: int | None = None,
+) -> Any:
+    """One You.com search call; returns the parsed JSON body. Transport
+    failures and HTTP >= 400 become a retryable `PROVIDER_UNAVAILABLE`; a
+    body that is not valid JSON raises `ValueError` (unchanged behavior).
+    `max_body_bytes` (off by default, so job search is unchanged) refuses a
+    body larger than that before it is parsed -- see `_check_body_size`."""
+    try:
+        response = await http.post(
+            _YOU_COM_URL,
+            headers={"X-API-Key": api_key},
+            json={"query": query, "count": count, "freshness": freshness},
+            timeout=timeout,
+        )
+    except httpx.HTTPError as e:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Couldn't reach You.com. Try again in a moment.",
+            retryable=True,
+        ) from e
+    if response.status_code >= 400:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE", "You.com couldn't complete that search.", retryable=True
+        )
+    _check_body_size(response, "You.com", max_body_bytes)
+    return response.json()
+
+
+def you_com_entries(body: Any) -> list[Any]:
+    entries: list[Any] = (body.get("results") or {}).get("web") or []
+    return entries
+
+
+def you_com_hit_fields(entry: Any) -> tuple[str, str, str]:
+    """`(url, title, snippet)` -- the snippet is NOT length-capped here;
+    each caller applies its own cap.
+
+    An entry with no url returns before its snippets are touched: both callers
+    skip such an entry, and before this was extracted out of `fetch_you_com`
+    the join below only ever ran for an entry that HAD a url. Doing it first
+    would let a url-less entry whose `snippets` list holds a non-string
+    (`" ".join` raises `TypeError`) fail a whole Discover search instead of
+    being skipped -- a behavior change on the live job-search path."""
+    url = entry.get("url") or ""
+    if not url:
+        return "", "", ""
+    title = entry.get("title") or ""
+    snippet = " ".join(entry.get("snippets") or []) or entry.get("description") or ""
+    return url, title, snippet
+
+
 async def fetch_you_com(
     http: httpx.AsyncClient,
     *,
@@ -770,31 +853,12 @@ async def fetch_you_com(
 
     results: list[SearchResult] = []
     for q in queries:
-        try:
-            response = await http.post(
-                _YOU_COM_URL,
-                headers={"X-API-Key": api_key},
-                json={"query": q, "count": 10, "freshness": freshness},
-                timeout=_TIMEOUT_SECONDS,
-            )
-        except httpx.HTTPError as e:
-            raise ApiError(
-                "PROVIDER_UNAVAILABLE",
-                "Couldn't reach You.com. Try again in a moment.",
-                retryable=True,
-            ) from e
-        if response.status_code >= 400:
-            raise ApiError(
-                "PROVIDER_UNAVAILABLE", "You.com couldn't complete that search.", retryable=True
-            )
-
-        body = response.json()
-        for r in (body.get("results") or {}).get("web") or []:
-            url = r.get("url") or ""
+        body = await you_com_search(http, api_key=api_key, query=q, freshness=freshness)
+        for r in you_com_entries(body):
+            url, title, snippet = you_com_hit_fields(r)
             if not url:
                 continue
-            title = r.get("title") or ""
-            snippet = (" ".join(r.get("snippets") or []) or r.get("description") or "")[:600]
+            snippet = snippet[:600]
             tier, _tier_label = _classify_url_tier(url)
             kwargs: dict[str, Any] = {
                 "provider": "you_com",
@@ -816,6 +880,59 @@ async def fetch_you_com(
 # provider="firecrawl") ────────────────────────────────────────────────────
 
 _FIRECRAWL_URL = "https://api.firecrawl.dev/v2/search"
+
+
+async def firecrawl_search(
+    http: httpx.AsyncClient,
+    *,
+    api_key: str,
+    query: str,
+    limit: int,
+    tbs: str,
+    timeout: float = _TIMEOUT_SECONDS,
+    max_body_bytes: int | None = None,
+) -> Any:
+    """One Firecrawl **search** call (never scrape/crawl/map/extract);
+    returns the parsed JSON body. Same error contract as `you_com_search`."""
+    try:
+        response = await http.post(
+            _FIRECRAWL_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "query": query,
+                "limit": limit,
+                "sources": [{"type": "web"}],
+                "tbs": tbs,
+            },
+            timeout=timeout,
+        )
+    except httpx.HTTPError as e:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Couldn't reach Firecrawl. Try again in a moment.",
+            retryable=True,
+        ) from e
+    if response.status_code >= 400:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE", "Firecrawl couldn't complete that search.", retryable=True
+        )
+    _check_body_size(response, "Firecrawl", max_body_bytes)
+    return response.json()
+
+
+def firecrawl_entries(body: Any) -> list[Any]:
+    entries: list[Any] = (body.get("data") or {}).get("web") or []
+    return entries
+
+
+def firecrawl_hit_fields(entry: Any) -> tuple[str, str, str]:
+    """`(url, title, snippet)`; the snippet is uncapped (see
+    `you_com_hit_fields`)."""
+    metadata = entry.get("metadata") or {}
+    url = entry.get("url") or metadata.get("sourceURL") or ""
+    title = entry.get("title") or metadata.get("title") or ""
+    snippet = entry.get("description") or entry.get("markdown") or metadata.get("description") or ""
+    return url, title, snippet
 
 
 async def fetch_firecrawl(
@@ -848,41 +965,12 @@ async def fetch_firecrawl(
     limit = 25 if remote_only else 10
     results: list[SearchResult] = []
     for q in queries:
-        try:
-            response = await http.post(
-                _FIRECRAWL_URL,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "query": q,
-                    "limit": limit,
-                    "sources": [{"type": "web"}],
-                    "tbs": freshness,
-                },
-                timeout=_TIMEOUT_SECONDS,
-            )
-        except httpx.HTTPError as e:
-            raise ApiError(
-                "PROVIDER_UNAVAILABLE",
-                "Couldn't reach Firecrawl. Try again in a moment.",
-                retryable=True,
-            ) from e
-        if response.status_code >= 400:
-            raise ApiError(
-                "PROVIDER_UNAVAILABLE", "Firecrawl couldn't complete that search.", retryable=True
-            )
-
-        body = response.json()
-        for r in (body.get("data") or {}).get("web") or []:
-            url = r.get("url") or (r.get("metadata") or {}).get("sourceURL") or ""
+        body = await firecrawl_search(http, api_key=api_key, query=q, limit=limit, tbs=freshness)
+        for r in firecrawl_entries(body):
+            url, title, snippet = firecrawl_hit_fields(r)
             if not url:
                 continue
-            title = r.get("title") or (r.get("metadata") or {}).get("title") or ""
-            snippet = (
-                r.get("description")
-                or r.get("markdown")
-                or (r.get("metadata") or {}).get("description")
-                or ""
-            )[:600]
+            snippet = snippet[:600]
             tier, _tier_label = _classify_url_tier(url)
             kwargs: dict[str, Any] = {
                 "provider": "firecrawl",
@@ -909,6 +997,51 @@ async def fetch_firecrawl(
 _SERPER_URL = "https://google.serper.dev/search"
 
 
+async def serper_search(
+    http: httpx.AsyncClient,
+    *,
+    api_key: str,
+    query: str,
+    tbs: str,
+    num: int = 10,
+    country: str = "us",
+    timeout: float = _TIMEOUT_SECONDS,
+    max_body_bytes: int | None = None,
+) -> Any:
+    """One Serper search call; returns the parsed JSON body. Same error
+    contract as `you_com_search`."""
+    try:
+        response = await http.post(
+            _SERPER_URL,
+            headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+            json={"q": query, "num": num, "gl": country, "tbs": tbs},
+            timeout=timeout,
+        )
+    except httpx.HTTPError as e:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Couldn't reach Serper. Try again in a moment.",
+            retryable=True,
+        ) from e
+    if response.status_code >= 400:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE", "Serper couldn't complete that search.", retryable=True
+        )
+    _check_body_size(response, "Serper", max_body_bytes)
+    return response.json()
+
+
+def serper_entries(body: Any) -> list[Any]:
+    entries: list[Any] = body.get("organic") or []
+    return entries
+
+
+def serper_hit_fields(entry: Any) -> tuple[str, str, str]:
+    """`(url, title, snippet)`; the snippet is uncapped (see
+    `you_com_hit_fields`)."""
+    return entry.get("link") or "", entry.get("title") or "", entry.get("snippet") or ""
+
+
 async def fetch_serper(
     http: httpx.AsyncClient,
     *,
@@ -925,31 +1058,12 @@ async def fetch_serper(
 
     results: list[SearchResult] = []
     for q in queries:
-        try:
-            response = await http.post(
-                _SERPER_URL,
-                headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-                json={"q": q, "num": 10, "gl": country, "tbs": freshness},
-                timeout=_TIMEOUT_SECONDS,
-            )
-        except httpx.HTTPError as e:
-            raise ApiError(
-                "PROVIDER_UNAVAILABLE",
-                "Couldn't reach Serper. Try again in a moment.",
-                retryable=True,
-            ) from e
-        if response.status_code >= 400:
-            raise ApiError(
-                "PROVIDER_UNAVAILABLE", "Serper couldn't complete that search.", retryable=True
-            )
-
-        body = response.json()
-        for r in body.get("organic") or []:
-            url = r.get("link") or ""
+        body = await serper_search(http, api_key=api_key, query=q, tbs=freshness, country=country)
+        for r in serper_entries(body):
+            url, title, snippet = serper_hit_fields(r)
             if not url:
                 continue
-            title = r.get("title") or ""
-            snippet = (r.get("snippet") or "")[:500]
+            snippet = snippet[:500]
             tier, _tier_label = _classify_url_tier(url)
             kwargs: dict[str, Any] = {
                 "provider": "serper",
@@ -976,6 +1090,51 @@ async def fetch_serper(
 _BRAVE_URL = "https://api.search.brave.com/res/v1/web/search"
 
 
+async def brave_search(
+    http: httpx.AsyncClient,
+    *,
+    api_key: str,
+    query: str,
+    freshness: str,
+    count: int = 20,
+    country: str = "us",
+    timeout: float = _TIMEOUT_SECONDS,
+    max_body_bytes: int | None = None,
+) -> Any:
+    """One Brave web-search call; returns the parsed JSON body. Same error
+    contract as `you_com_search`."""
+    try:
+        response = await http.get(
+            _BRAVE_URL,
+            headers={"X-Subscription-Token": api_key, "Accept": "application/json"},
+            params={"q": query, "count": count, "freshness": freshness, "country": country},
+            timeout=timeout,
+        )
+    except httpx.HTTPError as e:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Couldn't reach Brave. Try again in a moment.",
+            retryable=True,
+        ) from e
+    if response.status_code >= 400:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE", "Brave couldn't complete that search.", retryable=True
+        )
+    _check_body_size(response, "Brave", max_body_bytes)
+    return response.json()
+
+
+def brave_entries(body: Any) -> list[Any]:
+    entries: list[Any] = (body.get("web") or {}).get("results") or []
+    return entries
+
+
+def brave_hit_fields(entry: Any) -> tuple[str, str, str]:
+    """`(url, title, snippet)`; the snippet is uncapped (see
+    `you_com_hit_fields`)."""
+    return entry.get("url") or "", entry.get("title") or "", entry.get("description") or ""
+
+
 async def fetch_brave(
     http: httpx.AsyncClient,
     *,
@@ -992,31 +1151,14 @@ async def fetch_brave(
 
     results: list[SearchResult] = []
     for q in queries:
-        try:
-            response = await http.get(
-                _BRAVE_URL,
-                headers={"X-Subscription-Token": api_key, "Accept": "application/json"},
-                params={"q": q, "count": 20, "freshness": freshness, "country": country},
-                timeout=_TIMEOUT_SECONDS,
-            )
-        except httpx.HTTPError as e:
-            raise ApiError(
-                "PROVIDER_UNAVAILABLE",
-                "Couldn't reach Brave. Try again in a moment.",
-                retryable=True,
-            ) from e
-        if response.status_code >= 400:
-            raise ApiError(
-                "PROVIDER_UNAVAILABLE", "Brave couldn't complete that search.", retryable=True
-            )
-
-        body = response.json()
-        for r in (body.get("web") or {}).get("results") or []:
-            url = r.get("url") or ""
+        body = await brave_search(
+            http, api_key=api_key, query=q, freshness=freshness, country=country
+        )
+        for r in brave_entries(body):
+            url, title, snippet = brave_hit_fields(r)
             if not url:
                 continue
-            title = r.get("title") or ""
-            snippet = (r.get("description") or "")[:500]
+            snippet = snippet[:500]
             tier, _tier_label = _classify_url_tier(url)
             kwargs: dict[str, Any] = {
                 "provider": "brave",
