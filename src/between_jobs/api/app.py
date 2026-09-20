@@ -44,6 +44,7 @@ from .gmail_oauth_routes import router as gmail_oauth_router
 from .gmail_reply_checker import run_reply_check_forever
 from .hiring_signal_cache import run_purge_forever as run_hiring_cache_purge_forever
 from .hiring_signal_routes import router as hiring_signal_router
+from .hiring_signal_routes import status_router as hiring_signal_status_router
 from .hiring_signal_search import refuse_non_provider_hosts
 from .interview_practice_routes import router as interview_practice_router
 from .job_registry_poller import run_poller_forever
@@ -228,6 +229,7 @@ app.include_router(interview_practice_router)
 app.include_router(saved_searches_router)
 app.include_router(extension_router)
 app.include_router(hiring_signal_router)
+app.include_router(hiring_signal_status_router)
 
 
 @app.exception_handler(ApiError)
@@ -245,8 +247,18 @@ async def handle_validation_error(request: Request, exc: RequestValidationError)
     # {"detail": [...]} shape for this one failure mode. Noticed while
     # adding this sprint's own request models, since they'd have had the
     # exact same gap; fixed globally instead of letting it recur.
+    #
+    # Only WHERE and WHY go into the body (`loc`, `type`, `msg`), never the offending
+    # `input` or its `ctx`. The input is what somebody typed: echoing it back made
+    # a 3 MB request a 3 MB response, and a lone surrogate or a NaN in it could not be
+    # encoded at all, so a request the client got wrong answered a bare 500 instead of
+    # this 422.
+    errors = [
+        {"type": e.get("type"), "loc": list(e.get("loc", ())), "msg": e.get("msg")}
+        for e in exc.errors()
+    ]
     fallback = ApiError(
-        "INVALID_INPUT", "Invalid request.", details={"errors": jsonable_encoder(exc.errors())}
+        "INVALID_INPUT", "Invalid request.", details={"errors": jsonable_encoder(errors)}
     )
     return JSONResponse(status_code=fallback.status_code, content=fallback.to_body())
 

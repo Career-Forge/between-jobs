@@ -1,6 +1,7 @@
 # Hiring Signals golden input: `provider_responses/`
 
-Search-provider response bodies for the P3 adapters and the per-application service.
+Search-provider response bodies for the P3 adapters and the per-application service,
+and (P4) for the standalone Hiring signals tab.
 Companion to [../inputs/README.md](../inputs/README.md), which holds the P2 parser's
 sanitized corpus. Read that one's rules first -- they apply here too, and where this
 file is stricter it says so.
@@ -10,6 +11,7 @@ file is stricter it says so.
 | File | Shape | Content |
 | --- | --- | --- |
 | `firecrawl_company_posts.json` | real Firecrawl v2 `search` response | **composed by hand** (13 rows, below) |
+| `firecrawl_role_posts.json` | real Firecrawl v2 `search` response | **composed by hand** (20 rows, P4, below) |
 | `firecrawl_empty.json` | real Firecrawl answer with nothing to return | none to sanitize |
 | `you_com_empty.json` | real You.com answer to a LinkedIn-directed query | query and uuid replaced |
 | `you_com_unscoped_control.json` | real You.com answer to an ordinary (non-LinkedIn) query | rows composed, example.com / example.org |
@@ -17,7 +19,7 @@ file is stricter it says so.
 The **shape** of every file is captured from a real provider response: field names,
 nesting, the `N days ago ·` stamp and the ` ... ` elisions Firecrawl joins fragments
 with, `results: {}` for a You.com answer with nothing in it. The **content** of the
-two non-empty files was written by hand, on purpose, and that is stricter than the
+three non-empty files was written by hand, on purpose, and that is stricter than the
 P2 corpus (which is real text with identities replaced): a person's post body is
 personal text, so no row here is a renamed copy of one. Where a row imitates a
 kind of real post (a recruiter's pitch, a copy-pasted job share), it says the same
@@ -55,6 +57,40 @@ Person names in it are obviously synthetic (`Jordan Testwell`, `Avery Placeholde
 ...), handles carry a made-up suffix of the real shape, the one email is
 `careers@example.com`. The company page handle in row 4 (`stripe`) and every company
 and role name are public facts and stay.
+
+### `firecrawl_role_posts.json` -- one row per case (P4, the standalone tab)
+
+The set-piece is a search for a ROLE and a metro with no company at all: `software
+engineer` in Bengaluru (India vocabulary), a 3-day window, "now" being `FIXTURE_NOW`.
+Same rules as above: every row is written by hand (`gen_role_posts.py` in the private
+scratch directory, not committed), every activity id is synthetic and encodes a chosen
+post time, names are obviously synthetic, company names are the well-known fictional
+sample companies (`Northwind`, `Contoso`, `Fabrikam`, `Litware`, ...), and the one
+email is `recruiter@example.com`.
+
+| # | Case | Age at `FIXTURE_NOW` | In the tab's search |
+| --- | --- | --- | --- |
+| 1 | a hiring manager, role in the title and the opening | 38 h | shown |
+| 2 | a recruiter, India vocabulary (`immediate joiners`, `notice period`) | 30 h | shown |
+| 3 | the role in the plural (`Software Engineers`) | 55 h | shown (a plural is accepted) |
+| 4 | LinkedIn's auto job-share from a company page, a listing the registry tracks | 45 h | `echoes_hidden` in the registry world, shown (unknown) without one |
+| 5 | an auto job-share whose company the registry has, but not this listing | 50 h | shown, `unmatched` in the registry world |
+| 6 | an auto job-share from a company the registry does not know | 48 h | shown, registry match unknown |
+| 7 | a different role entirely (`manual tester`) | 35 h | `role_mismatch_hidden` |
+| 8 | a hiring post with no role of its own -- the role words come from a commenter's headline after the first elision | 52 h | shown, but UNVERIFIED: the role is not in the post's title or opening, so it ranks below every post that states the role (`tab_role_fit` says `later`); it is not hidden, because a genuine `Role: ...` line also sits after the opening |
+| 9 | a job seeker (`open to work`) | 20 h | `job_seekers_hidden` |
+| 10 | a real hiring post, four days old | 100 h | `too_old_hidden` for 3 days, shown for a week |
+| 11 | not a post: a `/jobs/view/` page | -- | `rejected` |
+| 12 | the same post as row 1 under a second slug | 38 h | `duplicates` |
+| 13-17 | ONE job-alert account, five DISTINCT posts (the aggregator threshold); row 13 is fresher (4 h) than every other post in the set | 4 - 66 h | shown, `aggregator`, ranked BELOW every non-aggregator |
+| 18 | someone offering referrals (`referral_offer`) | 57 h | shown |
+| 19 | a walk-in drive with a date (`hiring_drive`) | 31 h | shown |
+| 20 | a post url that names no author (`/posts/activity-<id>`) | 28 h | shown, no author, `aggregator` null |
+
+For `software engineer` / `Bengaluru` / 3 days the buckets are: 20 raw = 1 rejected + 1
+duplicate + 1 role mismatch + 1 too old + 1 job seeker + 0 echoes hidden + 15 shown (with
+a registry that tracks row 4's listing: 1 echo hidden + 14 shown). The tests assert those,
+and that `raw = shown + every hidden bucket`.
 
 ## Sanitization applied (and audited)
 

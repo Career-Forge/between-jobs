@@ -215,7 +215,15 @@ _INDIA_LOCATION_RX = re.compile(
     r"\b(?:india|bengaluru|bangalore|mumbai|navi mumbai|delhi|new delhi|hyderabad|chennai"
     r"|pune|kolkata|gurgaon|gurugram|noida|ahmedabad|jaipur|kochi|cochin|coimbatore"
     r"|chandigarh|indore|thiruvananthapuram|trivandrum|lucknow|nagpur|vadodara|surat"
-    r"|mysuru|mysore|visakhapatnam|bhubaneswar)\b",
+    r"|mysuru|mysore|visakhapatnam|bhubaneswar"
+    # cities a person types into the standalone tab and the list above missed
+    r"|bombay|madras|calcutta|bhopal|patna|thane|mohali|goa|kanpur|vizag|nashik|gandhinagar"
+    r"|vijayawada|mangaluru|mangalore|dehradun|ranchi|raipur|guwahati|jodhpur|udaipur"
+    r"|faridabad|ghaziabad|madurai|tiruchirappalli|trichy|kozhikode|calicut|rajkot"
+    # states, which is how many people type where they are
+    r"|karnataka|maharashtra|tamil nadu|telangana|kerala|gujarat|rajasthan|haryana"
+    r"|uttar pradesh|madhya pradesh|west bengal|odisha|andhra pradesh|bihar|jharkhand"
+    r"|chhattisgarh|uttarakhand|himachal pradesh)\b",
     re.IGNORECASE,
 )
 
@@ -277,6 +285,12 @@ _FRESHNESS_LABELS: dict[Freshness, str] = {
     Freshness.THREE_DAYS: "last 3 days",
     Freshness.WEEK: "last 7 days",
 }
+
+
+def freshness_label(freshness: Freshness) -> str:
+    """The window as the human summary of a query says it (`last 3 days`) --
+    shared by the per-application label and the standalone tab's."""
+    return _FRESHNESS_LABELS[freshness]
 
 
 @dataclass(frozen=True)

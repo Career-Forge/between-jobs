@@ -7,6 +7,10 @@ recording HTTP transport.
 Not a general Supabase fake: it implements exactly the calls the Hiring
 Signals modules make, and raises on anything else, so a new query shape shows
 up as a loud failure here instead of a silently different fake behavior.
+
+(P4 added `is_` -- `IS NULL`, what separates a standalone save from a
+per-application one -- and `or_` of `<column>.ilike.<pattern>` clauses, the one
+shape the registry's batch read uses, and a `hiring_signal_searches` table.)
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ import httpx
 from postgrest.exceptions import APIError
 
 from between_jobs.api.hiring_signal_search import refuse_non_provider_hosts
-from between_jobs.api.hiring_signal_service import search_application
+from between_jobs.api.hiring_signal_service import search_application, search_tab
 from between_jobs.api.hiring_signals import Freshness
 from supabase import AsyncClient
 
@@ -64,6 +68,11 @@ def _comparable(value: Any) -> Any:
     return value
 
 
+def _ilike(actual: Any, pattern: str) -> bool:
+    regex = "^" + ".*".join(re.escape(part) for part in pattern.split("%")) + "$"
+    return isinstance(actual, str) and re.match(regex, actual, re.IGNORECASE) is not None
+
+
 class Query:
     def __init__(
         self, table: FakeTable, op: str, payload: Any = None, on_conflict: str = ""
@@ -93,6 +102,23 @@ class Query:
         self._filters.append(("ilike", column, pattern))
         return self
 
+    def is_(self, column: str, value: Any) -> Query:
+        """`IS NULL` only (`value` is `None`) -- the one `is` this feature uses."""
+        assert value is None, "the fake supports is_(column, None) only"
+        self._filters.append(("is", column, None))
+        return self
+
+    def or_(self, filters: str) -> Query:
+        """`or=(a.ilike.%x%,b.ilike.%y%)` -- only `ilike` clauses of the form
+        `<column>.ilike.<pattern>`, and any other clause is a loud failure."""
+        clauses: list[tuple[str, str]] = []
+        for clause in filters.split(","):
+            column, operator, pattern = clause.split(".", 2)
+            assert operator == "ilike", f"the fake supports or_ of ilike clauses only: {clause!r}"
+            clauses.append((column, pattern))
+        self._filters.append(("or_ilike", "", clauses))
+        return self
+
     def order(self, column: str, *, desc: bool = False) -> Query:
         self._order.append((column, desc))
         return self
@@ -110,10 +136,12 @@ class Query:
                 return False
             if op == "in" and actual not in value:
                 return False
-            if op == "ilike":
-                regex = "^" + ".*".join(re.escape(part) for part in value.split("%")) + "$"
-                if not isinstance(actual, str) or not re.match(regex, actual, re.IGNORECASE):
-                    return False
+            if op == "ilike" and not _ilike(actual, value):
+                return False
+            if op == "is" and actual is not None:
+                return False
+            if op == "or_ilike" and not any(_ilike(row.get(c), pat) for c, pat in value):
+                return False
         return True
 
     async def execute(self) -> Any:
@@ -188,6 +216,31 @@ class FakeTable:
 
     def delete(self) -> Query:
         return Query(self, "delete")
+
+
+def blind_first_look(table: FakeTable) -> None:
+    """Makes the FIRST `select` on `table` answer with no rows (the query is still
+    made and recorded), then behave normally. This is what a lost race looks like
+    from the loser's side: it looked, saw nothing, and by the time it inserted,
+    somebody else had -- so the insert hits the unique violation and the re-read
+    finds the winner."""
+    real_select = table.select
+    state = {"blind": True}
+
+    def select(*columns: Any) -> Query:
+        query = real_select(*columns)
+        if state["blind"]:
+            state["blind"] = False
+            real_execute = query.execute
+
+            async def execute() -> Any:
+                await real_execute()
+                return _Result([])
+
+            query.execute = execute  # type: ignore[method-assign]
+        return query
+
+    table.select = select  # type: ignore[method-assign]
 
 
 class _Rpc:
@@ -301,6 +354,7 @@ class World:
         registry_companies: list[dict[str, Any]] | None = None,
         registry_postings: list[dict[str, Any]] | None = None,
         cache_rows: list[dict[str, Any]] | None = None,
+        searches: list[dict[str, Any]] | None = None,
     ) -> None:
         keys = {"firecrawl": "fc-key"} if keys is None else keys
         self.tables: dict[str, FakeTable] = {
@@ -333,6 +387,13 @@ class World:
             "hiring_signal_saves": FakeTable(saves),
             "job_registry_companies": FakeTable(registry_companies),
             "job_registry_postings": FakeTable(registry_postings),
+            # the unique index is over (user, lower(query), coalesce(lower(location), ''))
+            "hiring_signal_searches": FakeTable(
+                searches,
+                unique=[
+                    lambda r: (r["user_id"], r["query"].lower(), (r.get("location") or "").lower())
+                ],
+            ),
         }
         self.supabase = FakeSupabase(self.tables)
         self.responses: dict[str, Any] = {
@@ -369,6 +430,25 @@ class World:
         kwargs.setdefault("now", FIXTURE_NOW)
         return await search_application(
             as_client(self.supabase), self.http, USER, APP, freshness=freshness, **kwargs
+        )
+
+    async def tab_search(
+        self,
+        query: str = "software engineer",
+        location: str | None = None,
+        freshness: Freshness = Freshness.WEEK,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """The standalone tab's search (P4), as `USER`."""
+        kwargs.setdefault("now", FIXTURE_NOW)
+        return await search_tab(
+            as_client(self.supabase),
+            self.http,
+            USER,
+            query=query,
+            location=location,
+            freshness=freshness,
+            **kwargs,
         )
 
 

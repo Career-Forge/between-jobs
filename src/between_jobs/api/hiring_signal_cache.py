@@ -28,6 +28,15 @@ Only a user who holds a key for a provider ever reads that provider's rows:
 the cache never makes a provider available to someone who has not configured
 it.
 
+**What sharing tells a caller.** The key holds no user, so `cached: true` in a
+response says that SOME user with a key for the same provider ran the same
+normalized query inside the TTL. That is the price of a shared cache (the saving
+is the point), and it is a real, disclosed side channel: on the standalone tab the
+query is free typed text, so a caller can probe whether a given role and metro
+was searched recently. The tab response's `cached` field is part of the API
+contract, so dropping it -- or keying the tab's rows per user, which would give up
+the sharing -- is recorded as an open contract decision, not made here.
+
 **Lifetime.** Expiry is PHYSICAL, not only logical -- a row is not merely
 ignored once it is too old, it is deleted, because the snippet text in it is
 what the short TTL exists to bound:

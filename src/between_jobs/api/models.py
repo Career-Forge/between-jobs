@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class CreateSessionRequest(BaseModel):
@@ -352,6 +352,42 @@ class SaveHiringSignalRequest(BaseModel):
 
     activity_id: str = Field(pattern=r"^[1-9][0-9]{0,24}$")
     query_label: str | None = None
+
+
+HiringSignalLocale = Literal["india", "global"]
+
+_TypedRole = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+_TypedLocation = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
+
+
+class SearchHiringTabRequest(BaseModel):
+    """Hiring Signals P4 -- the standalone tab's search: a typed role and,
+    optionally, a metro, with NO company. Both are the user's own typing and
+    are treated as untrusted (see `hiring_signal_tab`); the provider query is
+    built server-side and is never a field here, and neither is a provider or a
+    cache choice -- anything but these four fields is a 422 rather than silently
+    ignored. `query` is 1-200 characters after trimming, `location` at most 100
+    (a blank one means none), and `locale` (which hiring vocabulary to ask for)
+    is derived from the location when omitted or `null`. The default window is
+    the one `hiring_signal_tab.TAB_DEFAULT_FRESHNESS` names."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: _TypedRole
+    location: _TypedLocation | None = None
+    freshness: HiringSignalFreshness = "3days"
+    locale: HiringSignalLocale | None = None
+
+
+class CreateHiringSearchRequest(BaseModel):
+    """Hiring Signals P4 -- save a tab search. ONLY the user's own typed role
+    and metro: a saved search does not run, schedule or watch anything, so there
+    is no window, locale or provider to store."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: _TypedRole
+    location: _TypedLocation | None = None
 
 
 class MatchApprovedAnswerRequest(BaseModel):

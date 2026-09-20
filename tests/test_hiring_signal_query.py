@@ -168,6 +168,47 @@ def test_locale_is_global_for_everything_else_including_missing(location: object
     assert locale_for_location(location) is Locale.GLOBAL
 
 
+@pytest.mark.parametrize(
+    "location",
+    [
+        # the standalone tab types a place freely: cities and states the first list missed
+        "Bhopal",
+        "Patna, Bihar",
+        "Thane",
+        "Mohali",
+        "Goa",
+        "Kanpur",
+        "Vizag",
+        "Bombay",
+        "Nashik, Maharashtra",
+        "Gandhinagar",
+        "Karnataka",
+        "Maharashtra",
+        "Tamil Nadu",
+        "Telangana",
+        "Kerala",
+        "Andhra Pradesh",
+        "Mangalore",
+    ],
+)
+def test_locale_is_india_for_the_cities_and_states_a_person_types_into_the_tab(
+    location: str,
+) -> None:
+    """The wording changes what a provider returns (on 2026-09-20 the India terms
+    appeared in most hits of Bengaluru pulls and the global ones in fewer than half; an
+    observation from captures kept outside the repository, not a guarantee), so a metro
+    the list did not know was quietly searched with the wrong words."""
+    assert locale_for_location(location) is Locale.INDIA
+
+
+@pytest.mark.parametrize(
+    "location",
+    ["Indianapolis", "Goad Hill", "Bihari Street, Toronto", "Thanet, Kent", "Austin, Texas"],
+)
+def test_the_wider_india_list_still_matches_whole_words_only(location: str) -> None:
+    assert locale_for_location(location) is Locale.GLOBAL
+
+
 # ── company ──────────────────────────────────────────────────────────────
 
 

@@ -84,6 +84,16 @@ job seeker's post.
 **Recency: deterministic.** The window is enforced from the post time decoded
 off the activity id (`posted_at`), not from the provider's own freshness
 parameter, which is only a way to save results.
+
+**An author is shown only when it agrees with the url's handle** (`shown_author`).
+`display_author` is a shape test, and title-cased headline text has the shape of a
+name: the title `Hiring Backend Software Engineers Bengaluru posted` is read by the
+parser as the author `Hiring Backend Software Engineers Bengaluru`, which the
+response contract forbids sending (no title text). The parser trusts some title
+positions without checking the url, so the response's author is a name that ALSO
+agrees with the handle LinkedIn derived from it, and is unknown otherwise (a url
+with no handle has nothing to agree with). Company matching above still reads the
+parser's own author (`display_author`): that decision never leaves the server.
 """
 
 from __future__ import annotations
@@ -92,7 +102,13 @@ import re
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 
-from .hiring_signal_company import CompanyNames, has_unspaced_script
+from .hiring_signal_company import (
+    LEGAL_FORMS,
+    CompanyNames,
+    has_unspaced_script,
+    identity_keys_of,
+    tokens_of,
+)
 from .hiring_signal_query import clean_display_text, role_phrase_variants
 from .hiring_signals import (
     HiringSignal,
@@ -190,6 +206,71 @@ def display_author(name: object) -> str | None:
         if word[0].isalpha() and word[0].islower() and not any(ch.isupper() for ch in word):
             return None
     return cleaned
+
+
+_HANDLE_ID_SUFFIX_RX = re.compile(r"[0-9a-f]{6,10}")
+_TRADEMARK_MARKS_RX = re.compile("[™®©℠]")
+_TAGLINE_SEPARATOR = " - "
+
+
+def _handle_forms(handle: str) -> tuple[frozenset[str], str]:
+    """`(tokens, run-together key)` of a url handle, without LinkedIn's trailing
+    collision id (`priya-testwell-2f7a91c3` -> `priya`, `testwell`): the last
+    token when it is six to ten hexadecimal characters with at least one digit."""
+    tokens = tokens_of(handle)
+    last = tokens[-1] if tokens else ""
+    if len(tokens) > 1 and _HANDLE_ID_SUFFIX_RX.fullmatch(last) and any(c.isdigit() for c in last):
+        tokens = tokens[:-1]
+    return frozenset(tokens), "".join(tokens)
+
+
+def shown_author(name: object, handle: str | None) -> str | None:
+    """The author's name as it may be SENT in a response, or `None`.
+
+    `display_author` decides whether a string reads as a name; that is a shape
+    test, and title-cased headline text has the shape of a name
+    (`Hiring Backend Software Engineers Bengaluru`, `Software Engineer Openings
+    At Northwind`). The parser takes a name out of a title by position and only
+    sometimes checks it against the url, so a stretch of the post's own title can
+    arrive here as an author. The contract lets a response carry an author's name
+    and no title text, so the name must also AGREE WITH THE URL'S HANDLE -- LinkedIn
+    derives a handle from a name, and a stretch of a headline is not in it:
+
+    - every significant word of the name (two or more characters, not a
+      particle such as `of`/`de`, not a legal form such as `Inc`) is a word of the
+      handle or, from three characters up, sits inside the handle's run-together
+      form (`janedoe1` corroborates `Jane Doe`); or
+    - the name is a company page's own name, by the same run-together identity the
+      registry matching uses (`Northwind Labs` is the page `northwind`; `Scale AI`
+      is `scaleai`).
+
+    A page name carries its tagline after ` - ` (`Northwind - Cloud Security`); the
+    tagline is post-title text and is cut off before the check, and the part before
+    it is what is returned. A url that names no author (`/posts/activity-<id>`) has
+    nothing to agree with, so the name is unknown, and so is one that does not agree:
+    an honest blank is better than a wrong string that looks like a name."""
+    shown = display_author(name)
+    if shown is None or not handle:
+        return None
+    head = _TRADEMARK_MARKS_RX.sub("", shown.split(_TAGLINE_SEPARATOR)[0]).strip()
+    if not head:
+        return None
+    handle_tokens, handle_key = _handle_forms(handle)
+    if not handle_key:
+        return None
+    if handle_key in identity_keys_of(head):
+        return head
+    significant = [
+        token
+        for token in tokens_of(head)
+        if len(token) >= 2 and token not in _NAME_PARTICLES and token not in LEGAL_FORMS
+    ]
+    if not significant:
+        return None
+    for token in significant:
+        if token not in handle_tokens and not (len(token) >= 3 and token in handle_key):
+            return None
+    return head
 
 
 def opening(snippet: str) -> str:

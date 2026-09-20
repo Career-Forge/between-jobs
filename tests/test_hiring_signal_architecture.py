@@ -71,7 +71,9 @@ FEATURE_MODULES = {
     "hiring_signal_routes.py",
     "hiring_signal_saves_store.py",
     "hiring_signal_search.py",
+    "hiring_signal_searches_store.py",
     "hiring_signal_service.py",
+    "hiring_signal_tab.py",
 }
 """Every module of the feature. Listed, and checked against the directory, so a
 new module cannot be added without being scanned."""
@@ -255,13 +257,33 @@ def client_flow_violations(source: str, *, allowed_callees: Collection[str]) -> 
     return found
 
 
-_DYNAMIC_BUILTINS = {"getattr", "__import__", "eval", "exec", "compile", "globals", "vars"}
+_DYNAMIC_BUILTINS = {
+    "getattr",
+    "setattr",
+    "delattr",
+    "__import__",
+    "eval",
+    "exec",
+    "compile",
+    "globals",
+    "vars",
+}
+_DYNAMIC_ATTRIBUTES = frozenset(
+    {"__getattribute__", "__getattr__", "__dict__", "attrgetter", "methodcaller"}
+)
+"""Ways to reach an attribute by a NAME HELD AS A STRING that are not the builtin
+`getattr`: the dunder that `getattr` itself calls, the instance dictionary, and the
+two `operator` helpers that build a getter from a string."""
+_DYNAMIC_MODULES = frozenset({"importlib", "operator"})
 
 
 def dynamic_access_violations(source: str) -> list[str]:
     """Anything that can reach a name, a module or code without spelling it:
-    `getattr`, `__import__`, `importlib`, `eval`, `exec`, the builtin `compile`
-    (`re.compile` is an attribute, not this)."""
+    `getattr` and its siblings, `__import__`, `importlib`, `eval`, `exec`, the
+    builtin `compile` (`re.compile` is an attribute, not this), the dunders that
+    look an attribute up by a string (`sb.__getattribute__('ta' + 'ble')`), and
+    the `operator` module (`operator.attrgetter('table')(sb)`) -- none of which
+    spells the name a table scan would read."""
     found: list[str] = []
     for node in ast.walk(ast.parse(source)):
         if (
@@ -270,12 +292,19 @@ def dynamic_access_violations(source: str) -> list[str]:
             and node.func.id in _DYNAMIC_BUILTINS
         ):
             found.append(f"line {node.lineno}: {node.func.id}(...)")
-        elif isinstance(node, ast.Name) and node.id == "importlib":
-            found.append(f"line {node.lineno}: importlib")
-        elif isinstance(node, ast.Import) and any(a.name == "importlib" for a in node.names):
-            found.append(f"line {node.lineno}: import importlib")
-        elif isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "importlib":
-            found.append(f"line {node.lineno}: from importlib import ...")
+        elif isinstance(node, ast.Name) and node.id in _DYNAMIC_MODULES | _DYNAMIC_ATTRIBUTES:
+            found.append(f"line {node.lineno}: {node.id}")
+        elif isinstance(node, ast.Attribute) and node.attr in _DYNAMIC_ATTRIBUTES:
+            found.append(f"line {node.lineno}: .{node.attr}")
+        elif isinstance(node, ast.Import) and any(
+            a.name.split(".")[0] in _DYNAMIC_MODULES for a in node.names
+        ):
+            found.append(f"line {node.lineno}: import of a dynamic-access module")
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and (node.module or "").split(".")[0] in _DYNAMIC_MODULES
+        ):
+            found.append(f"line {node.lineno}: from a dynamic-access module import ...")
     return found
 
 
@@ -351,9 +380,10 @@ def url_constant_violations(
     return found
 
 
-SANCTIONED_CALLEES = {"search_provider", "search_application"}
+SANCTIONED_CALLEES = {"search_provider", "search_application", "search_tab"}
 """Where the feature's modules may hand the client: the one function that owns
-the network calls, and the service entry point the route hands it to."""
+the network calls, and the two service entry points the routes hand it to (the
+per-application search and the standalone tab's)."""
 ROUTES_MAY_IMPORT_FROM_APP_STATE = {"get_hiring_http_client", "get_supabase"}
 TEMPLATE_CONSTANTS = {
     "hiring_signals.py": {
@@ -377,7 +407,9 @@ NO_LINKEDIN_WORD_MODULES = {
     "hiring_signal_registry.py",
     "hiring_signal_routes.py",
     "hiring_signal_saves_store.py",
+    "hiring_signal_searches_store.py",
     "hiring_signal_service.py",
+    "hiring_signal_tab.py",
 }
 """Modules with no business naming LinkedIn at all in code (the parser, the
 relevance rules and the network module say it in patterns and prose; the
@@ -618,6 +650,11 @@ BYPASSES: list[tuple[str, str]] = [
     ("importlib used without an import line", "\n\n_m = importlib.import_module('requests')\n"),
     ("__import__", "\n\n_m = __import__('requests')\n"),
     ("eval", "\n\n_x = eval('1')\n"),
+    ("setattr", "\n\n_x = setattr(object(), 'a', 1)\n"),
+    ("__getattribute__", "\n\n_x = object().__getattribute__('a' + 'b')\n"),
+    ("operator.attrgetter", "\n\n_x = operator.attrgetter('get')\n"),
+    ("operator, imported", "\n\nimport operator\n"),
+    ("attrgetter, imported by name", "\n\nfrom operator import attrgetter\n"),
     (
         "the shared client off app.state",
         "\n\nasync def _leak(request):\n"

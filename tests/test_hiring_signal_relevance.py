@@ -27,6 +27,7 @@ from between_jobs.api.hiring_signal_relevance import (
     opening,
     rank_key,
     role_match,
+    shown_author,
     visible_posted_at,
 )
 from between_jobs.api.hiring_signals import (
@@ -501,3 +502,64 @@ def test_role_match_is_unknown_not_false_for_a_role_in_a_script_without_word_bou
 def test_role_match_true_still_wins_over_unknown() -> None:
     post = _text_hit("募集: ソフトウェアエンジニア, Tokyo")
     assert role_match([post], ("ソフトウェアエンジニア",)) is True
+
+
+# ── PRIV-1: an author is only sent when it agrees with the url's handle ──
+
+
+@pytest.mark.parametrize(
+    ("name", "handle", "expected"),
+    [
+        # a person: LinkedIn derives the handle from the name, plus a collision id
+        ("Priya Testwell", "priya-testwell-2f7a91c3", "Priya Testwell"),
+        ("Priya Testwell", "priyatestwell", "Priya Testwell"),  # run together
+        ("Priya Marie Testwell", "priya-testwell-2f7a91c3", None),  # a middle name is not in it
+        ("Jose Garcia", "jos\u00e9-garc\u00eda-1a2b3c4d", "Jose Garcia"),  # accents fold
+        # a company page: its own name, with or without its descriptors and legal form
+        ("Stripe", "stripe", "Stripe"),
+        ("Stripe, Inc.", "stripe", "Stripe, Inc."),
+        ("Northwind Labs", "northwind", "Northwind Labs"),
+        ("Scale AI", "scaleai", "Scale AI"),
+        ("Gnani.ai", "gnani-ai", "Gnani.ai"),
+        ("gnani.ai", "gnani-ai", None),  # an all-lowercase name is unknown (display_author)
+        # a page name carries a tagline after ` - `: post-title text, cut off
+        ("Northwind - Cloud Security Platform", "northwind", "Northwind"),
+        ("Mitigata\u2122 - Full-Stack Cyber Resilience", "mitigata", "Mitigata"),
+        # a stretch of a headline has the SHAPE of a name and is not one
+        ("Hiring Backend Software Engineers Bengaluru", "priya-testwell-2f7a91c3", None),
+        ("Software Engineer Openings At Northwind", "arjun-placeholder", None),
+        ("Urgent Hiring Software Engineers Meera Fixture", "meera-fixture-91d3c0aa", None),
+        ("ZQXTITLE Jane Doe", "jane-doe-1a2b3c4d", None),
+        # one word of a name agreeing with the handle is not enough
+        ("Meera Fixture Openings", "meera-fixture-91d3c0aa", None),
+        # a url that names no author has nothing to agree with
+        ("Northwind Labs", None, None),
+        ("Northwind Labs", "", None),
+        # nothing significant in it
+        ("The", "the-team", None),
+        # not a name at all, whatever the handle says
+        ("we are hiring", "we-are-hiring", None),
+        (None, "stripe", None),
+    ],
+)
+def test_an_author_is_shown_only_when_it_agrees_with_the_handle(
+    name: str | None, handle: str | None, expected: str | None
+) -> None:
+    assert shown_author(name, handle) == expected
+
+
+def test_display_author_alone_would_have_shown_every_headline_above() -> None:
+    """The shape test is not what the fix replaced but what it now sits behind: the
+    same strings pass it, which is the whole reason the handle check exists."""
+    for headline in (
+        "Hiring Backend Software Engineers Bengaluru",
+        "Software Engineer Openings At Northwind",
+        "Urgent Hiring Software Engineers Meera Fixture",
+    ):
+        assert display_author(headline) == headline
+
+
+def test_a_handles_collision_id_is_not_a_word_of_the_handle() -> None:
+    """`2f7a91c3` is LinkedIn's suffix, not a word of the person's name, so a name
+    word that is only a run of hex characters does not "agree" with it."""
+    assert shown_author("Priya 2f7a91c3", "priya-testwell-2f7a91c3") is None

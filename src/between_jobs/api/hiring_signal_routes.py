@@ -1,6 +1,24 @@
-"""HTTP surface for Hiring Signals P3 -- the per-application button.
+"""HTTP surface for Hiring Signals: the per-application button (P3) and the
+standalone "Hiring signals" tab (P4).
 
-Four routes, all behind the same two gates:
+Per-application (P3):
+
+- `POST /applications/{id}/hiring-signals/search`
+- `POST` / `GET /applications/{id}/hiring-signals/saves`
+
+Standalone tab (P4), no application and no company:
+
+- `POST /hiring-signals/search` -- a typed role and optionally a metro;
+- `POST` / `GET /hiring-signals/searches`, `DELETE /hiring-signals/searches/{id}`
+  -- the user's saved searches (their typed text, nothing that runs);
+- `POST` / `GET /hiring-signals/saves` -- standalone saves, the same pointer rows
+  as the per-application saves but with no application (the two lists never
+  contain each other's rows);
+- `GET /hiring-signals/status` -- whether the feature is on, so the web app can
+  hide a dead link instead of showing one.
+
+Both surfaces share `DELETE /hiring-signals/saves/{save_id}`, and all of them sit
+behind the same two gates:
 
 - `DISABLE_HIRING_SIGNALS` (any non-empty value) turns the whole feature off,
   checked on every request: each route answers 404 `FEATURE_DISABLED`, before
@@ -11,8 +29,12 @@ Four routes, all behind the same two gates:
   enforced by the router's own route class (`_FlagCheckedRoute`) rather than a
   dependency, because FastAPI reads and validates a body BEFORE it resolves
   dependencies.
-- The verified user id, like every other route: an application, a save or a
-  cache row is only ever reached through the caller's own id.
+- The verified user id, like every other route: an application, a save, a
+  saved search or a cache row is only ever reached through the caller's own id.
+
+The one exception to the flag is `GET /hiring-signals/status`, which REPORTS it
+(`{"enabled": false}`) and so cannot be blocked by it. It is on its own router
+without the flag-checked route class, and it still requires authentication.
 
 An id in a path that is not a canonical UUID (36 characters, ASCII hex and
 hyphens -- not `uuid.UUID`'s wider set of spellings, such as full-width digits
@@ -22,16 +44,21 @@ uuid and come back as a 500.
 
 Errors are the platform's own envelope and `ErrorCode` set, so a client needs
 no special case: 401 `AUTH_REQUIRED`; 404 `NOT_FOUND` (an unknown, foreign or
-non-UUID application or save id -- one answer for all three) and 404
-`FEATURE_DISABLED`; 409 `SETUP_REQUIRED` (no search key saved; carries
+non-UUID application, save or saved-search id -- one answer for all of them) and
+404 `FEATURE_DISABLED`; 409 `SETUP_REQUIRED` (no search key saved; carries
 `capability`, `missing` and `settings_path` like every other resolver error);
-422 `INVALID_INPUT` (a bad window, a non-digit activity id, an extra field --
-the app-wide validation handler; this is the API contract's `INVALID_REQUEST`,
-which `ErrorCode` does not have); 503 `PROVIDER_UNAVAILABLE`, retryable.
+409 `CONFLICT` (saving a search past the per-user cap -- the closest existing
+code: the request is well formed, the user's own state forbids it; the message
+says so and the UI shows it -- or a concurrent save took the last slot, `retryable`
+and worded to try again); 422 `INVALID_INPUT` (a bad window, a non-digit
+activity id, an extra field, a role or place that cannot be searched -- the
+app-wide validation handler; this is the API contract's `INVALID_REQUEST`, which
+`ErrorCode` does not have); 503 `PROVIDER_UNAVAILABLE`, retryable.
 
-Nothing here fires anything: the search reads a provider index the user has
-their own key for, a save writes a pointer row, and neither posts, messages
-or contacts anyone.
+Nothing here fires anything: a search reads a provider index the user has their
+own key for, a save writes a pointer row, a saved search stores two typed
+strings, and none of it posts, messages, contacts anyone or notifies anyone. It
+is pull-only: it runs when the user clicks.
 """
 
 from __future__ import annotations
@@ -57,9 +84,24 @@ from .hiring_signal_saves_store import (
     delete_save,
     list_saves,
 )
-from .hiring_signal_service import search_application
-from .hiring_signals import Freshness
-from .models import SaveHiringSignalRequest, SearchHiringSignalsRequest
+from .hiring_signal_searches_store import (
+    MAX_SAVED_SEARCHES,
+    HiringSignalSearchLimitReached,
+    HiringSignalSearchNotFound,
+    HiringSignalSearchSaveRaced,
+    create_search,
+    delete_search,
+    list_searches,
+)
+from .hiring_signal_service import search_application, search_tab
+from .hiring_signal_tab import InvalidSearchInput
+from .hiring_signals import Freshness, Locale
+from .models import (
+    CreateHiringSearchRequest,
+    SaveHiringSignalRequest,
+    SearchHiringSignalsRequest,
+    SearchHiringTabRequest,
+)
 
 
 def require_hiring_signals_enabled() -> None:
@@ -82,6 +124,9 @@ class _FlagCheckedRoute(APIRoute):
 
 
 router = APIRouter(route_class=_FlagCheckedRoute)
+
+status_router = APIRouter()
+"""Not flag-checked: `GET /hiring-signals/status` reports the flag."""
 
 _UUID_RX = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
@@ -162,3 +207,119 @@ async def delete_hiring_signal_save(
         await delete_save(supabase, user_id, save_id)
     except HiringSignalSaveNotFound as e:
         raise ApiError("NOT_FOUND", f"no save found for id {save_id!r}") from e
+
+
+# ── the standalone tab (P4) ──────────────────────────────────────────────
+
+
+@status_router.get("/hiring-signals/status", dependencies=[Depends(require_user_id)])
+async def hiring_signals_status() -> dict[str, bool]:
+    """Whether Hiring signals is on for this server (`DISABLE_HIRING_SIGNALS`
+    unset or empty). Read on every request, like the flag itself."""
+    return {"enabled": not os.environ.get("DISABLE_HIRING_SIGNALS")}
+
+
+@router.post("/hiring-signals/search")
+async def search_hiring_signals_tab(
+    body: SearchHiringTabRequest,
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+    http: httpx.AsyncClient = Depends(get_hiring_http_client),
+) -> dict[str, Any]:
+    """Searches a provider index the user has a key for, for recent hiring posts
+    for a typed role (and optionally a metro), with no company. Spends the
+    USER'S OWN provider credits (absorbed by the shared cache on a repeat), so it
+    is a POST and runs only on a deliberate click."""
+    return await search_tab(
+        supabase,
+        http,
+        user_id,
+        query=body.query,
+        location=body.location,
+        freshness=Freshness(body.freshness),
+        locale=Locale(body.locale) if body.locale is not None else None,
+    )
+
+
+@router.post("/hiring-signals/searches", status_code=201)
+async def save_hiring_search(
+    body: CreateHiringSearchRequest,
+    response: Response,
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> dict[str, Any]:
+    """201 for a new saved search, 200 with the existing row for an equivalent
+    one (same words ignoring case) -- the same request twice is the same result.
+    Past the per-user cap it is a 409 `CONFLICT` that says to delete one; when a
+    save of the same user's took the last slot a moment earlier it is a 409
+    `CONFLICT` too, worded as "try again" and marked retryable."""
+    try:
+        saved, created = await create_search(
+            supabase, user_id, query=body.query, location=body.location
+        )
+    except InvalidSearchInput as e:
+        raise ApiError("INVALID_INPUT", str(e)) from e
+    except HiringSignalSearchSaveRaced as e:  # before its base class: the message differs
+        raise ApiError(
+            "CONFLICT",
+            "Another save was in progress at the same moment. Try saving this search again.",
+            retryable=True,
+        ) from e
+    except HiringSignalSearchLimitReached as e:
+        raise ApiError(
+            "CONFLICT",
+            f"You can keep at most {MAX_SAVED_SEARCHES} saved searches. "
+            "Delete one to save another.",
+        ) from e
+    if not created:
+        response.status_code = 200
+    return saved
+
+
+@router.get("/hiring-signals/searches")
+async def list_hiring_searches(
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> dict[str, Any]:
+    return {"searches": await list_searches(supabase, user_id)}
+
+
+@router.delete("/hiring-signals/searches/{search_id}", status_code=204)
+async def delete_hiring_search(
+    search_id: str,
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> None:
+    _require_uuid(search_id, what="saved search")
+    try:
+        await delete_search(supabase, user_id, search_id)
+    except HiringSignalSearchNotFound as e:
+        raise ApiError("NOT_FOUND", f"no saved search found for id {search_id!r}") from e
+
+
+@router.post("/hiring-signals/saves", status_code=201)
+async def save_standalone_hiring_signal(
+    body: SaveHiringSignalRequest,
+    response: Response,
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> dict[str, Any]:
+    """A save from the tab: the same pointer row as a per-application save, with
+    no application. 201 for a new save, 200 with the existing row for one that
+    was already saved."""
+    saved, created = await create_save(
+        supabase, user_id, None, activity_id=body.activity_id, query_label=body.query_label
+    )
+    if not created:
+        response.status_code = 200
+    return saved
+
+
+@router.get("/hiring-signals/saves")
+async def list_standalone_hiring_signal_saves(
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> dict[str, Any]:
+    """Only the saves with no application; the per-application list never
+    contains these and this never contains those."""
+    return {"saves": await list_saves(supabase, user_id, None)}

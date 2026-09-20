@@ -1,10 +1,19 @@
 """Hiring Signals P3 -- persistence for saved posts (`hiring_signal_saves`).
 
 A save is a POINTER: the numeric activity id of a post, the id-only address it
-lives at, the application it was saved against, and when. Nothing else about
-the post is ever stored -- no author, no title, no text -- so a saved post is
-only ever shown by re-embedding it live in the user's browser; if the post is
-gone, the embed is empty and the UI says so, instead of a cached stand-in.
+lives at, the application it was saved against (or none, for a post saved from
+the standalone Hiring signals tab), and when. Nothing else about the post is
+ever stored -- no author, no title, no text -- so a saved post is only ever
+shown by re-embedding it live in the user's browser; if the post is gone, the
+embed is empty and the UI says so, instead of a cached stand-in.
+
+**Two kinds of save, one implementation.** Every function takes an
+`application_id` that is either an application's id or `None`. `None` means the
+STANDALONE saves (rows whose `application_id` is null) and nothing else: the two
+kinds are separate namespaces that never bleed into each other -- a listing, a
+`saved` flag or a duplicate check for one kind cannot see a row of the other
+(`= <id>` never matches a null, and `IS NULL` never matches an id). A post can
+be saved from both places, and those are two saves.
 
 **The server builds the address.** `post_url` is always
 `https://www.linkedin.com/feed/update/urn:li:activity:<id>`, rebuilt here from
@@ -20,12 +29,23 @@ table's row-level-security insert policy was written for a client that no
 longer exists, and `add_hiring_signal_saves_constraints` closes it -- is left
 out of a listing instead of failing the whole list.
 
+**`discovered_via_query` is user-controlled text.** It is the label the client
+sent (the tab sends the `query_label` its own search returned), cleaned and capped
+at `MAX_QUERY_LABEL_CHARS` characters. The server cannot verify that a label is one
+it produced, so a client can park up to that much text of its own choosing in its
+OWN row. It is never returned by any route (`to_saved_post` names its fields) and
+never read back into anything, so it is a private note the user keeps against a
+save, not a way for post text to reach anyone; anything stronger (rebuilding the
+label from state the server holds) would need the saved-search flow to carry more
+than the two typed strings it stores today.
+
 **No duplicates, arbitrated by the database.** The same post cannot be saved
-twice for one application by one user: a partial unique index (see the
-`add_hiring_signal_saves_unique_indexes` migration) decides, not a
-check-then-insert race. `create_save` looks first only as a fast path; when
-two requests race, the loser's insert hits the unique violation and the
-existing row is returned exactly as if it had been there all along.
+twice for one application (or twice with no application) by one user: a partial
+unique index for each kind (see the `add_hiring_signal_saves_unique_indexes`
+migration) decides, not a check-then-insert race. `create_save` looks first
+only as a fast path; when two requests race, the loser's insert hits the unique
+violation and the existing row is returned exactly as if it had been there all
+along.
 
 Every function takes a verified `user_id` and filters on it -- this backend
 uses the service-role client, so these WHERE clauses are the enforcement
@@ -91,29 +111,28 @@ def to_saved_post(row: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _find(
-    supabase: AsyncClient, user_id: str, application_id: str, activity_id: str
+    supabase: AsyncClient, user_id: str, application_id: str | None, activity_id: str
 ) -> dict[str, Any] | None:
-    result = (
-        await supabase.table(_TABLE)
-        .select("*")
-        .eq("user_id", user_id)
-        .eq("application_id", application_id)
-        .eq("activity_id", activity_id)
-        .limit(1)
-        .execute()
+    query = supabase.table(_TABLE).select("*").eq("user_id", user_id)
+    query = (
+        query.eq("application_id", application_id)
+        if application_id is not None
+        else query.is_("application_id", None)
     )
+    result = await query.eq("activity_id", activity_id).limit(1).execute()
     return cast(dict[str, Any], result.data[0]) if result.data else None
 
 
 async def create_save(
     supabase: AsyncClient,
     user_id: str,
-    application_id: str,
+    application_id: str | None,
     *,
     activity_id: str,
     query_label: object = None,
 ) -> tuple[dict[str, Any], bool]:
-    """Saves a post against an application. Returns `(saved_post, created)`:
+    """Saves a post against an application (or standalone, with `None`).
+    Returns `(saved_post, created)`:
     `created` is `False` when the post was already saved (a repeat request, or
     the losing side of a race) and the existing row is returned unchanged --
     its `discovered_via_query` is not overwritten."""
@@ -146,17 +165,17 @@ async def create_save(
 
 
 async def list_saves(
-    supabase: AsyncClient, user_id: str, application_id: str
+    supabase: AsyncClient, user_id: str, application_id: str | None
 ) -> list[dict[str, Any]]:
-    """This user's saves for one application, newest first."""
-    result = (
-        await supabase.table(_TABLE)
-        .select("*")
-        .eq("user_id", user_id)
-        .eq("application_id", application_id)
-        .order("created_at", desc=True)
-        .execute()
+    """This user's saves for one application -- or, with `None`, their
+    standalone saves -- newest first."""
+    query = supabase.table(_TABLE).select("*").eq("user_id", user_id)
+    query = (
+        query.eq("application_id", application_id)
+        if application_id is not None
+        else query.is_("application_id", None)
     )
+    result = await query.order("created_at", desc=True).execute()
     posts: list[dict[str, Any]] = []
     for row in result.data:
         try:
@@ -169,21 +188,21 @@ async def list_saves(
 async def saved_activity_ids(
     supabase: AsyncClient,
     user_id: str,
-    application_id: str,
+    application_id: str | None,
     activity_ids: Collection[str],
 ) -> set[str]:
-    """Which of `activity_ids` this user already saved for this application
-    (one query) -- what marks a search result `saved`."""
+    """Which of `activity_ids` this user already saved for this application --
+    or, with `None`, saved standalone (one query) -- what marks a search result
+    `saved`."""
     if not activity_ids:
         return set()
-    result = (
-        await supabase.table(_TABLE)
-        .select("activity_id")
-        .eq("user_id", user_id)
-        .eq("application_id", application_id)
-        .in_("activity_id", sorted(activity_ids))
-        .execute()
+    query = supabase.table(_TABLE).select("activity_id").eq("user_id", user_id)
+    query = (
+        query.eq("application_id", application_id)
+        if application_id is not None
+        else query.is_("application_id", None)
     )
+    result = await query.in_("activity_id", sorted(activity_ids)).execute()
     return {cast(dict[str, Any], row)["activity_id"] for row in result.data}
 
 

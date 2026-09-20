@@ -172,6 +172,14 @@ def test_the_contract_routes_are_registered_with_their_status_codes() -> None:
         ("POST", "/applications/{application_id}/hiring-signals/saves"): ["201"],
         ("GET", "/applications/{application_id}/hiring-signals/saves"): ["200"],
         ("DELETE", "/hiring-signals/saves/{save_id}"): ["204"],
+        # P4, the standalone tab
+        ("GET", "/hiring-signals/status"): ["200"],
+        ("POST", "/hiring-signals/search"): ["200"],
+        ("POST", "/hiring-signals/searches"): ["201"],  # 200 for an equivalent one, at runtime
+        ("GET", "/hiring-signals/searches"): ["200"],
+        ("DELETE", "/hiring-signals/searches/{search_id}"): ["204"],
+        ("POST", "/hiring-signals/saves"): ["201"],  # 200 for one already saved, at runtime
+        ("GET", "/hiring-signals/saves"): ["200"],
     }
 
 
@@ -353,8 +361,10 @@ def test_providers_are_tried_in_order_and_the_first_answer_with_posts_ends_it() 
     response = api(world).post(SEARCH)
 
     assert response.status_code == 200
-    # brave fails, firecrawl times out, you.com answers with no posts, serper is last
-    assert response.json()["provider"] == "serper"
+    # brave fails, firecrawl times out, you.com answers with no posts and is the FIRST
+    # to answer, serper is asked last and has none either: nobody has posts, so the
+    # first answer is the one reported
+    assert response.json()["provider"] == "you_com"
     assert world.providers_called == ["brave", "firecrawl", "you_com", "serper"]
 
 

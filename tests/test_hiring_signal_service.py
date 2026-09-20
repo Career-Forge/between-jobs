@@ -347,7 +347,12 @@ async def test_a_you_com_only_user_gets_an_honest_empty_answer_not_an_error() ->
     }
 
 
-async def test_when_every_provider_answers_empty_the_last_answer_is_the_result() -> None:
+async def test_when_every_provider_answers_empty_the_first_answer_is_the_result() -> None:
+    """Firecrawl (which sees LinkedIn) answering empty is the informative answer;
+    You.com, asked next, cannot see LinkedIn, so its empty answer must not replace
+    it -- the page would otherwise tell a user who has Firecrawl connected to go
+    and connect one. Both are still asked: an empty answer alone does not stop the
+    search while another provider is configured."""
     world = World(
         keys={"firecrawl": "f", "you_com": "y"},
         responses={"firecrawl": load_fixture("firecrawl_empty.json")},
@@ -355,7 +360,7 @@ async def test_when_every_provider_answers_empty_the_last_answer_is_the_result()
     response = await world.search()
 
     assert world.providers_called == ["firecrawl", "you_com"]
-    assert response["provider"] == "you_com"
+    assert response["provider"] == "firecrawl"
     assert response["signals"] == []
 
 
