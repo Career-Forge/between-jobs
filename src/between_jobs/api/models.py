@@ -325,6 +325,35 @@ class SetSavedSearchActiveRequest(BaseModel):
     is_active: bool
 
 
+HiringSignalFreshness = Literal["day", "3days", "week"]
+
+
+class SearchHiringSignalsRequest(BaseModel):
+    """Hiring Signals P3 -- how recent the posts must be. The whole body is
+    optional (a bare POST means the default window); anything but the three
+    windows, or any other field, is a 422 rather than silently ignored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    freshness: HiringSignalFreshness = "week"
+
+
+class SaveHiringSignalRequest(BaseModel):
+    """Hiring Signals P3 -- save a post the search returned. ONLY the numeric
+    activity id and the label of the search that found it: a url, author,
+    title or text is not a field here and `extra="forbid"` turns one into a
+    422 instead of an ignored extra, so nothing but the id can ever reach the
+    store -- the server builds the address itself (see
+    `hiring_signal_saves_store`). `activity_id` is 1-25 ASCII digits and never
+    starts with 0: a real id does not, and `0007...` and `7...` are the same
+    number, which would otherwise be two saves of one post."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    activity_id: str = Field(pattern=r"^[1-9][0-9]{0,24}$")
+    query_label: str | None = None
+
+
 class MatchApprovedAnswerRequest(BaseModel):
     """browser-extension.md E1 -- the extension sends a screening
     question's own normalized label text (never the raw DOM id/uuid,

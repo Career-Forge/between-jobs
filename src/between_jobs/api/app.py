@@ -42,6 +42,9 @@ from .errors import ApiError
 from .extension_routes import router as extension_router
 from .gmail_oauth_routes import router as gmail_oauth_router
 from .gmail_reply_checker import run_reply_check_forever
+from .hiring_signal_cache import run_purge_forever as run_hiring_cache_purge_forever
+from .hiring_signal_routes import router as hiring_signal_router
+from .hiring_signal_search import refuse_non_provider_hosts
 from .interview_practice_routes import router as interview_practice_router
 from .job_registry_poller import run_poller_forever
 from .link_routes import router as link_router
@@ -72,6 +75,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.jwks_client = create_jwks_client(app.state.supabase_url)
 
     app.state.http = httpx.AsyncClient()
+    # Hiring Signals' own client: every request it makes is checked against the
+    # four search-provider hosts first (see `refuse_non_provider_hosts`), so the
+    # "never request linkedin.com" hard line holds at runtime as well as in the
+    # source. A separate client because `app.state.http` legitimately talks to
+    # many other hosts.
+    app.state.hiring_http = httpx.AsyncClient(event_hooks={"request": [refuse_non_provider_hosts]})
     app.state.telegram_client = TelegramClient(app.state.http, require_env("TELEGRAM_BOT_TOKEN"))
     app.state.telegram_webhook_secret = require_env("TELEGRAM_WEBHOOK_SECRET")
 
@@ -141,7 +150,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             run_reply_check_forever(app.state.http, reply_checker_supabase)
         )
 
+    # Hiring Signals -- the sweep that keeps the shared query cache's
+    # third-party text inside its lifetime even when nobody searches (see
+    # `hiring_signal_cache`, "Lifetime"). Runs whether or not the feature is
+    # switched on: switching it off must not leave that text at rest. Own
+    # Supabase client and own DISABLE_* flag, like the workers above.
+    app.state.hiring_cache_purge_task = None
+    if not os.environ.get("DISABLE_HIRING_SIGNAL_CACHE_PURGE"):
+        purge_supabase, _purge_url = await create_supabase_client()
+        app.state.hiring_cache_purge_task = asyncio.create_task(
+            run_hiring_cache_purge_forever(purge_supabase)
+        )
+
     yield
+
+    if app.state.hiring_cache_purge_task is not None:
+        app.state.hiring_cache_purge_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await app.state.hiring_cache_purge_task
 
     if app.state.outbox_worker_task is not None:
         app.state.outbox_worker_task.cancel()
@@ -164,6 +190,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await app.state.gmail_reply_checker_task
 
     await app.state.http.aclose()
+    await app.state.hiring_http.aclose()
 
 
 app = FastAPI(title="between-jobs", version="0.0.1", lifespan=lifespan)
@@ -200,6 +227,7 @@ app.include_router(gmail_oauth_router)
 app.include_router(interview_practice_router)
 app.include_router(saved_searches_router)
 app.include_router(extension_router)
+app.include_router(hiring_signal_router)
 
 
 @app.exception_handler(ApiError)

@@ -38,12 +38,18 @@ ErrorCode = Literal[
     "RUN_FAILED",
     "CONFLICT",
     "INTERNAL_ERROR",
+    "FEATURE_DISABLED",
 ]
-"""Every code but INTERNAL_ERROR is Appendix B's own core list, verbatim.
-INTERNAL_ERROR isn't in the appendix -- it's this platform's own fallback
-for failures that don't fit any named code (an unmapped database error, a
-genuine bug), so those still reach the client as the documented envelope
-shape instead of FastAPI's default unstructured 500 body."""
+"""Every code but INTERNAL_ERROR and FEATURE_DISABLED is Appendix B's own core
+list, verbatim. INTERNAL_ERROR isn't in the appendix -- it's this platform's
+own fallback for failures that don't fit any named code (an unmapped database
+error, a genuine bug), so those still reach the client as the documented
+envelope shape instead of FastAPI's default unstructured 500 body.
+FEATURE_DISABLED is the other platform-own code: a feature an operator has
+switched off with a `DISABLE_*` environment flag (Hiring Signals is the first
+to answer with it). It is a 404 -- from the client's side the route does not
+exist -- but a distinct code, so a UI can tell "turned off" from "no such
+thing"."""
 
 _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "AUTH_REQUIRED": 401,
@@ -62,6 +68,7 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "RUN_FAILED": 500,
     "CONFLICT": 409,
     "INTERNAL_ERROR": 500,
+    "FEATURE_DISABLED": 404,
 }
 
 

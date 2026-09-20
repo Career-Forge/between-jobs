@@ -25,6 +25,14 @@ def get_http_client(request: Request) -> httpx.AsyncClient:
     return cast(httpx.AsyncClient, request.app.state.http)
 
 
+def get_hiring_http_client(request: Request) -> httpx.AsyncClient:
+    """The HTTP client Hiring Signals is handed: a separate client that refuses,
+    at request time, every host that is not one of the four search providers
+    (see `hiring_signal_search.refuse_non_provider_hosts`). Not `app.state.http`,
+    which the ATS poller and Gmail also use for their own hosts."""
+    return cast(httpx.AsyncClient, request.app.state.hiring_http)
+
+
 def get_telegram_client(request: Request) -> TelegramClient:
     return cast(TelegramClient, request.app.state.telegram_client)
 

@@ -52,6 +52,15 @@ def _setup_required(capability: str, *, missing: list[str], message: str) -> Api
     )
 
 
+def setup_required(capability: str, *, missing: list[str], message: str) -> ApiError:
+    """The SETUP_REQUIRED error `resolve()` raises, for a caller that
+    gathers its own credentials (`try_get_secret`) but must answer "nothing
+    usable is configured" in the same shape -- same code, same
+    `settings_path` convention -- so the UI's existing handling of it
+    applies unchanged."""
+    return _setup_required(capability, missing=missing, message=message)
+
+
 async def resolve(
     supabase: AsyncClient,
     user_id: str,
