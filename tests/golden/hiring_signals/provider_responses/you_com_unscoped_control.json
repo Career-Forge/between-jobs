@@ -1,0 +1,32 @@
+{
+  "results": {
+    "web": [
+      {
+        "url": "https://jobs.example.com/roles/software-engineer-payments",
+        "title": "Software Engineer, Payments - Example Careers",
+        "description": "Build and run payments services.",
+        "page_age": "2026-09-18T09:30:00",
+        "favicon_url": "https://you.com/favicon?domain=jobs.example.com&size=128",
+        "snippets": [
+          "Build and run payments services used by millions of businesses.",
+          "Work with a small team on reliability and scale."
+        ]
+      },
+      {
+        "url": "https://blog.example.org/2026/09/hiring-software-engineers",
+        "title": "How we hire software engineers",
+        "description": "A write-up of our interview loop.",
+        "page_age": "2026-09-17T14:02:41",
+        "favicon_url": "https://you.com/favicon?domain=blog.example.org&size=128",
+        "snippets": [
+          "Our loop has three stages and a take-home."
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "query": "example control query",
+    "search_uuid": "00000000-0000-4000-8000-00000000e002",
+    "latency": 0.61
+  }
+}

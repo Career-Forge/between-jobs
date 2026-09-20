@@ -1,0 +1,8 @@
+{
+  "results": {},
+  "metadata": {
+    "query": "site:linkedin.com/posts (\"we're hiring\" OR \"we are hiring\") \"stripe\" (\"software engineer\" OR \"engineer\")",
+    "search_uuid": "00000000-0000-4000-8000-00000000e001",
+    "latency": 0.27
+  }
+}

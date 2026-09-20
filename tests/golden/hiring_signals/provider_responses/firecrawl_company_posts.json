@@ -1,0 +1,87 @@
+{
+  "success": true,
+  "data": {
+    "web": [
+      {
+        "url": "https://www.linkedin.com/posts/jordan-testwell-4b1c9e02_stripe-careers-staff-software-engineer-activity-7506381452083381426-kQ2x",
+        "title": "Stripe Careers | Staff Software Engineer, Payments | Jordan Testwell",
+        "description": "2 days ago · Our payments team is hiring a Staff Software Engineer to build money-movement systems at Stripe ... Stripe Careers | Staff Software Engineer, Payments ...",
+        "position": 1
+      },
+      {
+        "url": "https://www.linkedin.com/posts/avery-placeholder-77a3d1f0_stripe-is-hiring-software-engineer-intern-activity-7506683441971389345-Lm9Z",
+        "title": "Avery Placeholder's Post - LinkedIn",
+        "description": "1 day ago · Openings at Stripe include a Software Engineer Intern in Bangalore. Apply through the careers page ... Comment below and I will share a referral ...",
+        "position": 2
+      },
+      {
+        "url": "https://www.linkedin.com/posts/morgan-fixture-19d4a8c6_my-team-at-stripe-is-hiring-a-data-analyst-activity-7506079462195397264-Tr5p",
+        "title": "Morgan Fixture's Post - LinkedIn",
+        "description": "2 days ago · My team at Stripe is hiring a Data Analyst in Toronto. DM me your resume ... Reach out if you want to chat about the team ...",
+        "position": 3
+      },
+      {
+        "url": "https://www.linkedin.com/posts/stripe_hiring-activity-7506456949555405183-aB3d",
+        "title": "#hiring | Stripe - LinkedIn",
+        "description": "2 days ago · We're #hiring a new Software Engineer in Dublin. Apply today or share this post with your network.",
+        "position": 4
+      },
+      {
+        "url": "https://www.linkedin.com/posts/taylor-example-52e0b7a1_full-stack-developer-open-to-new-roles-activity-7505626477363413102-Vc8w",
+        "title": "Taylor Example's Post - LinkedIn",
+        "description": "4 days ago · Full-stack developer, five years of experience, open to new roles ... Python | Django | Stripe | Paystack | Flutterwave | Docker ...",
+        "position": 5
+      },
+      {
+        "url": "https://www.linkedin.com/posts/casey-mock-a8f13d55_why-ai-infrastructure-keeps-consolidating-activity-7505324487475421021-Hn4y",
+        "title": "Why AI infrastructure keeps consolidating - LinkedIn",
+        "description": "5 days ago · The infrastructure layer is consolidating fast ... one startup was acquired last month by Stripe ... what it means for builders ...",
+        "position": 6
+      },
+      {
+        "url": "https://www.linkedin.com/posts/quinn-demo-3c6e9a40_our-recent-placements-include-activity-7506230457139428940-Pd2s",
+        "title": "Quinn Demo's Post - LinkedIn",
+        "description": "2 days ago · Placements we made this quarter: an ex-Stripe engineer and a founding designer. We're hiring for two more roles ... Message me for details ...",
+        "position": 7
+      },
+      {
+        "url": "https://www.linkedin.com/posts/riley-sample-0d7b41e9_acme-corp-is-looking-for-a-software-engineer-activity-7506532447027436859-Jf6t",
+        "title": "Riley Sample's Post - LinkedIn",
+        "description": "1 day ago · We're hiring! Acme Corp is looking for a Software Engineer in Pune ... Send your CV to careers@example.com ...",
+        "position": 8
+      },
+      {
+        "url": "https://www.linkedin.com/posts/sam-mockup-6e2f80b3_looking-for-my-next-role-activity-7506834436915444778-Wk7v",
+        "title": "Sam Mockup's Post - LinkedIn",
+        "description": "20 hours ago · I'm looking for my next role. Previously at Stripe, now open to work in payments ... Happy to connect ...",
+        "position": 9
+      },
+      {
+        "url": "https://www.linkedin.com/posts/alex-stub-91c5d2f4_stripe-is-hiring-a-software-engineer-activity-7503874936013052697-Bz1q",
+        "title": "Alex Stub's Post - LinkedIn",
+        "description": "9 days ago · Stripe is hiring a Software Engineer in Seattle. Applications close soon ... See the careers page ...",
+        "position": 10
+      },
+      {
+        "url": "https://www.linkedin.com/jobs/view/software-engineer-at-stripe-3999999999",
+        "title": "Stripe hiring Software Engineer in Dublin | LinkedIn",
+        "description": "Apply to the Software Engineer role at Stripe in Dublin.",
+        "position": 11
+      },
+      {
+        "url": "https://www.linkedin.com/posts/pat-sketch-8a4d6e21_stripe-hiring-ugcPost-7999999999999999999-Xy3u",
+        "title": "Pat Sketch's Post - LinkedIn",
+        "description": "3 days ago · Stripe is hiring engineers across three offices ...",
+        "position": 12
+      },
+      {
+        "url": "https://www.linkedin.com/posts/avery-placeholder-77a3d1f0_hiring-activity-7506683441971389345-Lm9Z",
+        "title": "Avery Placeholder's Post - LinkedIn",
+        "description": "1 day ago · Openings at Stripe include a Software Engineer Intern in Bangalore. Apply through the careers page ...",
+        "position": 13
+      }
+    ]
+  },
+  "creditsUsed": 4,
+  "id": "018f0000-0000-7000-8000-00000000f1c0"
+}
