@@ -139,17 +139,17 @@ export function focusTargetId(target: FocusTarget): string {
   }
 }
 
-function without<T>(set: ReadonlySet<T>, value: T): Set<T> {
+export function without<T>(set: ReadonlySet<T>, value: T): Set<T> {
   const next = new Set(set);
   next.delete(value);
   return next;
 }
 
-function withEntry<T>(set: ReadonlySet<T>, value: T): Set<T> {
+export function withEntry<T>(set: ReadonlySet<T>, value: T): Set<T> {
   return new Set(set).add(value);
 }
 
-function withoutKey(
+export function withoutKey(
   record: Readonly<Record<string, string>>,
   key: string,
 ): Readonly<Record<string, string>> {

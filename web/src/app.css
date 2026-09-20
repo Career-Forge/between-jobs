@@ -1967,3 +1967,86 @@ a.bj-contact-chip {
   margin: 4px 0 0;
   font-size: 16px;
 }
+
+/* ------------------------------------------------------------------ */
+/* Hiring signals tab (Hiring Signals P4) -- standalone, no company    */
+/* ------------------------------------------------------------------ */
+
+/* Everything below reuses the bj-hs- classes above (cards, list, embed, the
+   aria-disabled dimming under .bj-hs-panel) and only adds what the form and the
+   saved-search rows need. */
+
+.bj-hs-tab {
+  min-width: 0;
+}
+
+.bj-hs-tab-intro {
+  margin: 0 0 20px;
+  max-width: 640px;
+}
+
+.bj-hs-tab-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.bj-hs-tab-form p {
+  margin: 0;
+}
+
+/* A field in error is also announced (aria-invalid plus its own message under
+   it), so the red border is never the only signal. */
+.bj-hs-tab-form input[aria-invalid="true"] {
+  border-color: var(--bj-danger);
+}
+
+.bj-hs-tab-wording {
+  display: inline-flex;
+  flex-wrap: wrap; /* on a narrow screen the select drops under its label instead of widening the page */
+  align-items: center;
+  gap: 8px;
+}
+
+/* No other select in the app is styled to match the inputs; this one sits in a
+   form next to two text inputs, so it is, and it gets the focus ring the global
+   rules in tokens.css give buttons, links and inputs. */
+.bj-hs-tab-wording select {
+  font-family: var(--bj-font-body);
+  font-size: 14px;
+  background: var(--bj-surface);
+  color: var(--bj-text);
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  max-width: 100%;
+}
+
+.bj-hs-tab-wording select:focus-visible {
+  outline: 2px solid var(--bj-focus-ring);
+  outline-offset: 2px;
+}
+
+.bj-hs-tab-search-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-bg);
+}
+
+/* A saved role or location is the person's own text and can be one long
+   unbroken string: wrap it inside the row instead of widening the page. */
+.bj-hs-tab-search-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bj-hs-tab-search-row .bj-hs-actions {
+  flex-shrink: 0;
+}

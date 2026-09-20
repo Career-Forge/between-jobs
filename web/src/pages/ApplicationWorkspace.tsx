@@ -4,7 +4,7 @@ import { CompanyIntelPanel } from "../components/CompanyIntelPanel";
 import { ContactFinderPanel } from "../components/ContactFinderPanel";
 import { GeneratePanel } from "../components/GeneratePanel";
 import { HeaderComposer } from "../components/HeaderComposer";
-import { HiringSignalsPanel } from "../components/HiringSignalsPanel";
+import { HiringPostsSlot } from "../components/HiringPostsSlot";
 import { InterviewPracticePanel } from "../components/InterviewPracticePanel";
 import { PositioningBriefPanel } from "../components/PositioningBriefPanel";
 import { SectionOrderEditor } from "../components/SectionOrderEditor";
@@ -14,6 +14,8 @@ import { WarmPathEventsPanel } from "../components/WarmPathEventsPanel";
 import { ApiError, apiFetch } from "../lib/api";
 import { CROSS_NAV_HASH } from "../lib/applicationsBoard";
 import type { CanonicalProfile } from "../lib/profileTypes";
+import { useHiringSignalsEnabled } from "../lib/useHiringSignalsStatus";
+import { useScrollToHash } from "../lib/useScrollToHash";
 
 // Application workspace (Sprint 3.3d) -- Proposal §37.4. The Studio
 // embedded here is the SAME HeaderComposer/SectionOrderEditor Profile.tsx
@@ -51,6 +53,11 @@ export default function ApplicationWorkspace() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const [state, setState] = useState<State>({ kind: "loading" });
+  // The Hiring posts panel exists only while the server is known to have the
+  // feature on (Hiring Signals P4's shared status), so a server with it off never
+  // gets the panel's saved-posts request or an empty panel slot, and the panel
+  // never appears just to disappear.
+  const hiringSignalsEnabled = useHiringSignalsEnabled();
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -87,14 +94,12 @@ export default function ApplicationWorkspace() {
   // render happens), and `location.hash` covers clicking a second
   // cross-nav link while already on this same application's workspace --
   // React Router doesn't remount the page for a hash-only navigation, so a
-  // mount-only effect would never see that change.
-  useEffect(() => {
-    if (state.kind !== "ready") return;
-    const targetId = location.hash.replace(/^#/, "");
-    if (!targetId) return;
-    const target = document.getElementById(targetId);
-    target?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [state.kind, location.hash]);
+  // mount-only effect would never see that change. And it depends on whether
+  // the Hiring posts panel is on: that panel mounts only after the server's
+  // feature status arrives, and its slot is hidden while empty, so a deep link to
+  // `#hiring-posts` that lands before the answer would scroll to nothing and
+  // never try again (see useScrollToHash).
+  useScrollToHash(state.kind === "ready", location.hash, hiringSignalsEnabled);
 
   if (state.kind === "loading") {
     return <WorkspaceFrame />;
@@ -156,9 +161,7 @@ export default function ApplicationWorkspace() {
           <div id={CROSS_NAV_HASH.warmPathEvents}>
             <WarmPathEventsPanel applicationId={application.id} />
           </div>
-          <div id={CROSS_NAV_HASH.hiringPosts}>
-            <HiringSignalsPanel applicationId={application.id} />
-          </div>
+          <HiringPostsSlot enabled={hiringSignalsEnabled} applicationId={application.id} />
           <div id={CROSS_NAV_HASH.interviewPractice}>
             <InterviewPracticePanel applicationId={application.id} />
           </div>

@@ -122,7 +122,7 @@ const MAX_AUTHOR_CHARS = 100;
 const MAX_AGE_HINT_CHARS = 40;
 const MAX_QUERY_LABEL_CHARS = 200;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -153,7 +153,7 @@ export function cleanText(value: unknown, maxChars: number): string | null {
   return points.length > maxChars ? points.slice(0, maxChars).join("").trim() : cleaned;
 }
 
-function nonNegativeInt(value: unknown): number | null {
+export function nonNegativeInt(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
@@ -180,7 +180,7 @@ export function isFreshness(value: unknown): value is Freshness {
   return typeof value === "string" && (FRESHNESS_VALUES as readonly string[]).includes(value);
 }
 
-function parseProvider(value: unknown): SearchProvider | null {
+export function parseProvider(value: unknown): SearchProvider | null {
   return typeof value === "string" && (SEARCH_PROVIDERS as readonly string[]).includes(value)
     ? (value as SearchProvider)
     : null;

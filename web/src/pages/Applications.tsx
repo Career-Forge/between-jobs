@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { ApplicationActionsSelect } from "../components/ApplicationActionsSelect";
 import ApplicationsBoard from "../components/ApplicationsBoard";
 import { apiFetch } from "../lib/api";
-import { CROSS_NAV_ITEMS } from "../lib/applicationsBoard";
 import { ALL_STATUSES, type Application, type ApplicationStatus } from "../lib/applicationsTypes";
 
 // Applications (Sprint 2.6f) -- the first real surface over Sprint 2.6's
@@ -138,7 +138,6 @@ function ApplicationRow({
   onChangeStatus: (status: ApplicationStatus) => void;
 }) {
   const snapshot = application.snapshot;
-  const navigate = useNavigate();
   return (
     <div className="bj-card bj-application-row">
       <div className="bj-card-header">
@@ -169,21 +168,7 @@ function ApplicationRow({
           </a>
         )}
         <Link to={`/applications/${application.id}`}>Open workspace</Link>
-        <select
-          aria-label={`Actions for "${snapshot?.title ?? "Untitled"}"`}
-          value=""
-          onChange={(e) => {
-            const hash = e.target.value;
-            if (hash) navigate(`/applications/${application.id}#${hash}`);
-          }}
-        >
-          <option value="">Actions...</option>
-          {CROSS_NAV_ITEMS.map((item) => (
-            <option key={item.hash} value={item.hash}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+        <ApplicationActionsSelect applicationId={application.id} title={snapshot?.title} />
       </div>
     </div>
   );

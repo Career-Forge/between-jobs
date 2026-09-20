@@ -134,6 +134,15 @@ export function speciesInfo(species: string): SpeciesInfo {
   return SPECIES_INFO[species] ?? SPECIES_INFO.unclassified;
 }
 
+// A neutral fact about one search, not a verdict (Hiring Signals P4, the tab): an
+// account with many posts in one pull may be a job-alert or reposting account, or
+// simply an active recruiter. The card says only the fact; the legend says what it
+// may mean, in visible text, because a tooltip alone is out of reach of keyboard,
+// touch and screen-reader users.
+export const AGGREGATOR_BADGE = "Posts often";
+export const AGGREGATOR_LEGEND =
+  "Posts often means this account has many posts in this search, so it may be a job-alert or reposting account rather than a person hiring. Those are listed after other accounts.";
+
 const REGISTRY_MATCH_NOTES: Record<RegistryMatch, string> = {
   matched: "Matches a job listing we already track.",
   possible: "May match a job listing we already track.",
@@ -269,11 +278,11 @@ export function commentCountLabel(count: number | null): string | null {
   return `${count.toLocaleString("en-US")} ${count === 1 ? "comment" : "comments"}`;
 }
 
-function plural(n: number, one: string, many: string): string {
+export function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-function joinList(items: readonly string[]): string {
+export function joinList(items: readonly string[]): string {
   if (items.length <= 1) return items.join("");
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
@@ -372,7 +381,9 @@ export function countsSummary(input: CountsSummaryInput): string | null {
 // How many entries the search index returned that WERE LinkedIn posts (whatever
 // was then hidden): everything it returned, less what was not a usable post
 // link. Null when the counts were unreadable.
-export function postsSeen(counts: SignalCounts | null): number | null {
+export function postsSeen(
+  counts: Pick<SignalCounts, "raw_hits" | "rejected"> | null,
+): number | null {
   return counts === null ? null : counts.raw_hits - counts.rejected;
 }
 
@@ -415,7 +426,7 @@ export interface SpeciesLegendLine {
   description: string;
 }
 
-export function speciesLegendLines(signals: readonly HiringSignal[]): SpeciesLegendLine[] {
+export function speciesLegendLines(signals: readonly { species: string }[]): SpeciesLegendLine[] {
   const seen = new Set<string>();
   const lines: SpeciesLegendLine[] = [];
   for (const signal of signals) {
@@ -457,7 +468,7 @@ export function savesByActivity(saves: readonly SavedPost[]): Map<string, SavedP
 // loaded -- or if it failed to -- the server's per-signal flag is the best
 // information there is.
 export function isSignalSaved(
-  signal: HiringSignal,
+  signal: Pick<HiringSignal, "activity_id" | "saved">,
   saved: ReadonlyMap<string, SavedPost>,
   savesLoaded: boolean,
 ): boolean {

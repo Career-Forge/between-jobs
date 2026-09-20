@@ -1,4 +1,6 @@
 import {
+  AGGREGATOR_BADGE,
+  AGGREGATOR_LEGEND,
   commentCountLabel,
   postedAtFromActivityId,
   postedLabel,
@@ -9,7 +11,7 @@ import {
   validateEmbedUrl,
 } from "../lib/hiringSignals";
 import { saveButtonId } from "../lib/hiringSignalsPanelModel";
-import type { HiringSignal, SavedPost } from "../lib/hiringSignalsTypes";
+import type { HiringSignal, RegistryMatch, SavedPost } from "../lib/hiringSignalsTypes";
 
 // Presentational cards for the "Hiring posts" panel (Hiring Signals P3).
 //
@@ -105,8 +107,18 @@ function OpenPostLink({ postUrl, context }: { postUrl: string; context: string }
   );
 }
 
+// What a result card needs. The per-application panel's signal (HiringSignal) and
+// the tab's (TabSignal) are the same shape except for two fields, one each:
+// `role_match` (only the panel tags it) and `aggregator` (only the tab has it).
+// Both are optional here, so either surface's signal is accepted as it is, and a
+// card renders a badge only for a field that is present and true.
+export type SignalCardSignal = Omit<HiringSignal, "role_match"> & {
+  role_match?: boolean | null;
+  aggregator?: boolean | null;
+};
+
 export interface SignalCardProps {
-  signal: HiringSignal;
+  signal: SignalCardSignal;
   now: Date;
   saved: boolean;
   saving: boolean;
@@ -118,6 +130,10 @@ export interface SignalCardProps {
   // saved list has not caught up), in which case there is nothing to delete yet.
   onUnsave: (() => void) | null;
   unsaving: boolean;
+  // How a registry match is worded. The per-application panel's own wording
+  // names "this company", which a search with no company of its own must not
+  // say; the tab passes its own. Defaults to the panel's.
+  registryNoteFor?: (match: RegistryMatch | null) => string | null;
 }
 
 export function SignalCard({
@@ -131,10 +147,11 @@ export function SignalCard({
   onSave,
   onUnsave,
   unsaving,
+  registryNoteFor = registryMatchNote,
 }: SignalCardProps) {
   const species = speciesInfo(signal.species);
   const comments = commentCountLabel(signal.comment_count);
-  const registryNote = registryMatchNote(signal.registry_match);
+  const registryNote = registryNoteFor(signal.registry_match);
   const author = signal.author_name;
   const regionId = `hs-embed-search-${signal.activity_id}`;
   const forWhom = author !== null ? ` by ${author}` : "";
@@ -146,6 +163,11 @@ export function SignalCard({
           {species.label}
         </span>
         {signal.role_match === true && <span className="bj-badge-gold">Role words found</span>}
+        {signal.aggregator === true && (
+          <span className="bj-badge-muted" title={AGGREGATOR_LEGEND}>
+            {AGGREGATOR_BADGE}
+          </span>
+        )}
         <span className="bj-muted bj-small">
           {postedLabel(signal.posted_at, signal.age_hint, now)}
         </span>

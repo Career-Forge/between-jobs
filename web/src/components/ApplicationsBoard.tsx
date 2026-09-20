@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
-  CROSS_NAV_ITEMS,
   formatAppliedDate,
   groupByStatus,
   otherStatuses,
   STATUS_LABELS,
 } from "../lib/applicationsBoard";
 import { ALL_STATUSES, type Application, type ApplicationStatus } from "../lib/applicationsTypes";
+import { ApplicationActionsSelect } from "./ApplicationActionsSelect";
 
 // Applications Kanban board (K2) -- native HTML5 drag-and-drop between the
 // 7 K1-enforced columns, same underlying technique as
@@ -114,7 +114,6 @@ function KanbanCard({
 }) {
   const snapshot = application.snapshot;
   const appliedLabel = formatAppliedDate(application.date_applied);
-  const navigate = useNavigate();
   return (
     <div
       className={dragging ? "bj-kanban-card bj-kanban-card-dragging" : "bj-kanban-card"}
@@ -157,21 +156,7 @@ function KanbanCard({
         )}
       </div>
       <div className="bj-actions bj-kanban-card-actions">
-        <select
-          aria-label={`Actions for "${snapshot?.title ?? "Untitled"}"`}
-          value=""
-          onChange={(e) => {
-            const hash = e.target.value;
-            if (hash) navigate(`/applications/${application.id}#${hash}`);
-          }}
-        >
-          <option value="">Actions...</option>
-          {CROSS_NAV_ITEMS.map((item) => (
-            <option key={item.hash} value={item.hash}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+        <ApplicationActionsSelect applicationId={application.id} title={snapshot?.title} />
       </div>
     </div>
   );

@@ -50,7 +50,7 @@ export type Result<T> =
   // FEATURE_DISABLED: the server has this feature switched off.
   | { kind: "disabled" };
 
-const UNREADABLE: Failure = { kind: "error", message: UNREADABLE_MESSAGE, retryable: true };
+export const UNREADABLE: Failure = { kind: "error", message: UNREADABLE_MESSAGE, retryable: true };
 
 // The application id comes from the route, so it is encoded like any other
 // path segment; a uuid passes through unchanged.
@@ -62,7 +62,7 @@ export function savedPostPath(saveId: string): string {
   return `/hiring-signals/saves/${encodeURIComponent(saveId)}`;
 }
 
-async function attempt<T>(
+export async function attempt<T>(
   unreachableMessage: string,
   run: () => Promise<Result<T>>,
 ): Promise<Result<T>> {
