@@ -141,7 +141,7 @@ the template in with your actual info.
     "phones": [{"number": "<+1 555 0100>", "primary": true, "region": "US"}],
     "links": {"linkedin": "", "github": "", "portfolio": "", "scholar": ""},
     "location": {"city": "", "region": "", "country": "", "show_on_resume": false},
-    "work_authorization": ""
+    "work_authorization": "<your own work-authorization situation, in your own words>"
   },
   "summary_bullets": ["<one line summarizing who you are>"],
   "experience": [
@@ -183,6 +183,10 @@ Sections shown empty above (publications, patents, certifications, \
 languages, volunteering, and links.scholar) are optional -- fill in \
 whichever apply to you and delete the rest. At least one of experience, \
 projects, publications, patents, or volunteering needs a real entry.
+
+`work_authorization` wants your actual situation, not just your \
+citizenship -- a citizenship or nationality alone isn't a complete \
+answer, and what counts as complete looks different in every country.
 
 `"pin"` on an experience/project/education entry (shown above as `null`) \
 is a manual choice, not something to fill in from your resume: set it to \

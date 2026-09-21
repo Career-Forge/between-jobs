@@ -357,6 +357,32 @@ def test_setup_help_sends_the_template() -> None:
     assert "experience" in reply
 
 
+def test_setup_help_gives_work_authorization_real_guidance() -> None:
+    """work-authorization-status.md P2: `work_authorization` used to be a
+    bare `""` in the fenced JSON while every sibling field already carried
+    `<...>` placeholder guidance -- directly why a bare "Indian Citizen"
+    self-report once read as a complete answer. Confirms the new guidance
+    text is present, region-neutral (no US-only wording baked into the
+    Telegram copy itself), and that adding it didn't quietly break the
+    fenced JSON block real users copy into a resume-filling LLM."""
+    from between_jobs.api.telegram_webhook import _SETUP_HELP_TEXT
+
+    assert "work_authorization" in _SETUP_HELP_TEXT
+    # The prose addition explaining the citizenship trap, not just a bare
+    # inline placeholder.
+    assert "not just your citizenship" in _SETUP_HELP_TEXT
+    for us_only_phrase in ("H-1B", "OPT", "green card", "United States"):
+        assert us_only_phrase not in _SETUP_HELP_TEXT
+
+    fence = "```"
+    start = _SETUP_HELP_TEXT.index(fence) + len(fence)
+    end = _SETUP_HELP_TEXT.index(fence, start)
+    json_block = _SETUP_HELP_TEXT[start:end].strip()
+
+    parsed = json.loads(json_block)  # still valid JSON with the new placeholder in place
+    assert parsed["personal"]["work_authorization"] != ""
+
+
 def test_json_paste_creates_pending_version_and_sends_preview_with_buttons() -> None:
     inserted_row = {
         "id": _VERSION_ID,

@@ -1467,6 +1467,68 @@ a.bj-contact-chip {
   color: var(--bj-text-muted);
 }
 
+/* Personal details -- work authorization (work-authorization-status.md).
+   Same expand/collapse idiom as .bj-score-disclosure above (ScoreBreakdown.
+   tsx) -- forked rather than shared, since this is its own "Examples"
+   affordance rather than a score detail, even though the visual language
+   matches it on purpose. */
+.bj-workauth-disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Same nested-flex-column shrink guard as .bj-discover-card below --
+     a flex item's default min-width:auto refuses to shrink below its
+     content's natural width. Today's example sentences are ordinary
+     wrappable prose, but this is cheap insurance against a future long
+     unbroken token (a URL, a permit reference code) blowing out the
+     card the same way a real Discover posting once did. */
+  min-width: 0;
+}
+
+.bj-workauth-disclosure-toggle {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--bj-text-muted);
+  font-size: 0.85em;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.bj-workauth-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-surface-raised);
+  min-width: 0;
+}
+
+.bj-workauth-example {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bj-workauth-example-region {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bj-gold);
+}
+
+.bj-workauth-example-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
 /* ForgeScore chart-UI pass: same shape as the cap callout, danger-colored --
    a real, already-computed concerning signal (a penalty already applied, or
    a visa/sponsorship mismatch), not just an explanatory note. Shared across

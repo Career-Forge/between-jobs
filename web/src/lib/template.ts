@@ -31,7 +31,14 @@ export const RESUME_TEMPLATE = {
     phones: [{ number: "<+1 555 0100>", primary: true, region: "US" }],
     links: { linkedin: "", github: "", portfolio: "", scholar: "" },
     location: { city: "", region: "", country: "", show_on_resume: false },
-    work_authorization: "",
+    // No visa/permit fact belongs on a resume, so it's fine (expected,
+    // even) for a real resume to leave this untouched -- the placeholder
+    // below has to read unmistakably as "your own words go here," never as
+    // a real answer an LLM could just carry through unedited (the exact
+    // failure this field guards against: see the web Profile page's own
+    // "Personal details" card for the real, region-specific examples).
+    work_authorization:
+      "<describe your work authorization in your own words -- e.g. citizenship/visa/permit status and whether continuing here would need any employer action>",
   },
   summary_bullets: ["<one line summarizing who you are>"],
   experience: [

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { HeaderComposer } from "../components/HeaderComposer";
+import { PersonalDetailsCard } from "../components/PersonalDetailsCard";
 import { SectionedProfile } from "../components/SectionedProfile";
 import { SectionOrderEditor } from "../components/SectionOrderEditor";
 import { ShapeSettingsPanel } from "../components/ShapeSettingsPanel";
@@ -158,7 +159,9 @@ function PageFrame({ children }: { children?: React.ReactNode }) {
   );
 }
 
-function ActiveProfile({
+// Exported for Profile.test.tsx -- everything else in this file stays
+// unexported page-local plumbing, same as before this feature.
+export function ActiveProfile({
   version,
   onEdited,
 }: {
@@ -232,6 +235,8 @@ function ActiveProfile({
           Activated {version.activated_at ? new Date(version.activated_at).toLocaleString() : ""}
         </div>
       </div>
+
+      <PersonalDetailsCard personal={personal} onSave={editor.save} saving={editor.saving} />
 
       <div className="bj-card">
         <h2>Resume structure</h2>
