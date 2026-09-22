@@ -200,8 +200,20 @@ export function extractCustomQuestions(doc: Document, excludeFieldName: string |
  * shape, since a crafted `fieldName` matching some unrelated element by
  * coincidence would still need to sit inside a matching field-entry
  * container to be accepted.
+ *
+ * `force` (E6 continuation) -- mirrors Lever's and Greenhouse's own
+ * `fillCustomTextAnswer`: bypasses ONLY the D5 not-empty check at the
+ * bottom. Every refusal above it (systemfield namespace, missing/
+ * mismatched field-entry container, D6 sensitive label or context, combo/
+ * non-text control kind) runs unconditionally first and is never affected
+ * by `force`.
  */
-export function fillCustomTextAnswer(doc: Document, fieldName: string, value: string): FillAnswerOutcome {
+export function fillCustomTextAnswer(
+  doc: Document,
+  fieldName: string,
+  value: string,
+  force = false,
+): FillAnswerOutcome {
   if (fieldName.startsWith(SYSTEMFIELD_PREFIX)) return "refused";
   const element = doc.querySelector<HTMLElement>(`[name="${CSS.escape(fieldName)}"]`);
   if (element === null || element.getAttribute("name") !== fieldName) return "refused";
@@ -211,8 +223,9 @@ export function fillCustomTextAnswer(doc: Document, fieldName: string, value: st
   const { label, sensitive } = labelForFieldEntry(entry);
   if (label === null || sensitive || isSensitiveEntryContext(entry)) return "refused";
   if (element.getAttribute("role") === "combobox" || !isTextEntryElement(element)) return "refused";
-  // D5: never clobber text that's already there.
-  if (hasExistingText(element)) return "not_empty";
+  // D5: never clobber text that's already there, unless the human
+  // explicitly asked to replace it (`force`).
+  if (hasExistingText(element) && !force) return "not_empty";
 
   setReactControlledValue(element, value);
   return "filled";

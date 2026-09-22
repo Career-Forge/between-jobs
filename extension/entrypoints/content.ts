@@ -17,6 +17,7 @@ import type {
   ContentScriptMessage,
   DetectionStateResponse,
   ExtensionPersonalInfo,
+  FetchApplicationFilesResult,
   FillFieldResult,
   FillResult,
   GeneratedFile,
@@ -76,6 +77,25 @@ export default defineContentScript({
       if (atsType === "ashby") return ashby.isAshbyApplyForm(document);
       return false;
     }
+
+    type TrackedTabState = Extract<TabState, { status: "tracked" }>;
+
+    // E6 continuation -- carries a résumé/cover-letter fetch failure (see
+    // ensureFilesFetched below) down into fillLeverPage/fillGreenhousePage/
+    // fillAshbyPage as its own argument, rather than stuffing it onto
+    // TrackedTabState itself: `tracked` here is exactly the shape
+    // background.ts's own TabState declares, and the three fill functions
+    // narrow `fillPage`'s TabState parameter down to it via the ordinary
+    // discriminated-union check, which drops any extra properties TS
+    // doesn't know the type has. A constant `null`/`null` value stands in
+    // for "no fetch was attempted" wherever a fill runs without ever
+    // calling ensureFilesFetched (there is no such caller today, but the
+    // type keeps that possibility honest rather than assuming one shape).
+    interface FilesFetchInfo {
+      resumeFetchError: string | null;
+      coverLetterFetchError: string | null;
+    }
+    const NO_FILE_FETCH_ERRORS: FilesFetchInfo = { resumeFetchError: null, coverLetterFetchError: null };
 
     // What background resolved for this tab, together with the URL it was
     // resolved FOR. Every consumer goes through `currentTabState()`, which
@@ -158,6 +178,73 @@ export default defineContentScript({
       return state;
     }
 
+    // E6 continuation -- lazily fetches this application's résumé/cover-
+    // letter PDFs, once, the first time a Fill is actually requested for
+    // it (see GeneratedFile's own doc comment in lib/types.ts for why
+    // this moved off PAGE_DETECTED). `tracked.resume`/`.coverLetter` are
+    // always `null` coming out of detection now, so "want" is derived
+    // from what the payload says SHOULD exist (`prepare_result`) rather
+    // than from those fields being null -- and, once a fetch has actually
+    // populated them, a second call for the same tracked state (e.g.
+    // Refill all right after Fill) sees them already non-null and skips
+    // re-fetching entirely.
+    //
+    // Caches the result onto `resolved` itself, but only if `resolved`
+    // still IS the same state object for the same URL by the time the
+    // fetch finishes -- a slow fetch racing a client-side navigation or a
+    // fresh RECHECK must never resurrect a page or application the
+    // person has already moved past.
+    async function ensureFilesFetched(tracked: TrackedTabState): Promise<{
+      tracked: TrackedTabState;
+      resumeFetchError: string | null;
+      coverLetterFetchError: string | null;
+    }> {
+      // "Should this exist at all" is a genuine presence check, not just
+      // "the key isn't undefined" -- the real wire payload always carries
+      // both keys (see ExtensionPayload's own doc comment in lib/types.ts),
+      // with `cover_letter: null` for the common no-cover-letter-generated
+      // case (JSON `null`, not an absent key, since `generate_cover_letter`
+      // defaults to false). `!== undefined` alone treated that `null` the
+      // same as "not fetched yet," so every resume-only application
+      // re-requested (and re-404'd on) the cover letter on every single
+      // Fill/Refill-all, forever -- fixed by checking truthiness instead.
+      const wantResume = Boolean(tracked.payload.prepare_result?.resume) && tracked.resume === null;
+      const wantCoverLetter =
+        Boolean(tracked.payload.prepare_result?.cover_letter) && tracked.coverLetter === null;
+      if (!wantResume && !wantCoverLetter) {
+        return { tracked, resumeFetchError: null, coverLetterFetchError: null };
+      }
+
+      const message: BackgroundMessage = {
+        type: "FETCH_APPLICATION_FILES",
+        applicationId: tracked.applicationId,
+        wantResume,
+        wantCoverLetter,
+      };
+      let response: FetchApplicationFilesResult | undefined;
+      try {
+        response = await browser.runtime.sendMessage(message);
+      } catch (e) {
+        console.error("[between-jobs] fetching application files failed", e);
+      }
+      const updated: TrackedTabState = {
+        ...tracked,
+        resume: wantResume ? (response?.resume ?? null) : tracked.resume,
+        coverLetter: wantCoverLetter ? (response?.coverLetter ?? null) : tracked.coverLetter,
+      };
+      if (resolved !== null && resolved.state === tracked && resolved.url === location.href) {
+        resolved = { state: updated, url: resolved.url };
+      }
+      return {
+        tracked: updated,
+        resumeFetchError: wantResume && updated.resume === null ? (response?.resumeError ?? "Failed to fetch résumé.") : null,
+        coverLetterFetchError:
+          wantCoverLetter && updated.coverLetter === null
+            ? (response?.coverLetterError ?? "Failed to fetch cover letter.")
+            : null,
+      };
+    }
+
     // Best-effort, and harmless when the panel is closed (nothing to hear
     // it) -- the panel refreshes on it so it never keeps showing a page
     // that is gone.
@@ -199,10 +286,17 @@ export default defineContentScript({
     // (file already there, not forced) returned attached:false, so the
     // side panel displayed "not attached" for a résumé that was, in
     // fact, still genuinely attached from a prior fill.
+    // `fetchError` (E6 continuation): the reason `file` is null when it's
+    // null because ensureFilesFetched tried and failed to download it --
+    // as opposed to null because this application genuinely never had one
+    // (the ordinary case, still reported as `error: null`, unchanged).
+    // Only surfaced when there's otherwise nothing already attached to
+    // show instead.
     function tryAttach(
       selector: string,
       file: { base64: string; filename: string } | null,
       forceRefillAll: boolean,
+      fetchError: string | null = null,
     ): { attached: boolean; error: string | null } {
       const input = document.querySelector<HTMLInputElement>(selector);
       if (input === null) return { attached: false, error: null };
@@ -211,7 +305,7 @@ export default defineContentScript({
         return { attached: true, error: null };
       }
       if (file === null) {
-        return { attached: alreadyHasFile, error: null };
+        return { attached: alreadyHasFile, error: alreadyHasFile ? null : fetchError };
       }
       try {
         attachFile(input, base64ToArrayBuffer(file.base64), file.filename, "application/pdf");
@@ -234,18 +328,21 @@ export default defineContentScript({
       selector: string,
       coverLetter: GeneratedFile | null,
       forceRefillAll: boolean,
+      fetchError: string | null = null,
     ): { attached: boolean; error: string | null } {
       if (document.querySelector(selector) === null) return { attached: false, error: null };
       if (coverLetter === null) {
         return {
           attached: false,
-          error: "No cover letter was generated for this application yet.",
+          // A real fetch failure is a more useful message than the
+          // catch-all "never generated" one, and distinguishes an
+          // application that genuinely has no cover letter from a network
+          // hiccup fetching a real one.
+          error: fetchError ?? "No cover letter was generated for this application yet.",
         };
       }
       return tryAttach(selector, coverLetter, forceRefillAll);
     }
-
-    type TrackedTabState = Extract<TabState, { status: "tracked" }>;
 
     // A signed map can be authentic and still carry a selector the browser
     // won't parse. That costs the one field, never the fill -- but it is
@@ -264,7 +361,13 @@ export default defineContentScript({
     // the Lever-idiosyncratic behavior (cover-letter discovery, custom
     // questions, location/LinkedIn/portfolio) fails closed (D4) when no
     // verified signed map exists.
-    function fillLeverPage(tracked: TrackedTabState, personalInfo: ExtensionPersonalInfo, forceRefillAll: boolean, result: FillResult): FillResult {
+    function fillLeverPage(
+      tracked: TrackedTabState,
+      personalInfo: ExtensionPersonalInfo,
+      forceRefillAll: boolean,
+      filesInfo: FilesFetchInfo,
+      result: FillResult,
+    ): FillResult {
       const standardFields = [
         ...GENERIC_FIELD_DEFAULTS.standardFields,
         ...(tracked.fieldMap?.ats_type === "lever" ? tracked.fieldMap.standard_fields : []),
@@ -273,7 +376,12 @@ export default defineContentScript({
       noteInvalidSelectors(result, invalidSelectors);
       result.filledFields = applyFillPlan(document, plan);
 
-      const resumeOutcome = tryAttach(GENERIC_FIELD_DEFAULTS.resumeSelector, tracked.resume, forceRefillAll);
+      const resumeOutcome = tryAttach(
+        GENERIC_FIELD_DEFAULTS.resumeSelector,
+        tracked.resume,
+        forceRefillAll,
+        filesInfo.resumeFetchError,
+      );
       result.resumeAttached = resumeOutcome.attached;
       result.resumeError = resumeOutcome.error;
 
@@ -315,6 +423,7 @@ export default defineContentScript({
             `input[type="file"][name="${CSS.escape(coverLetterField)}"]`,
             tracked.coverLetter,
             forceRefillAll,
+            filesInfo.coverLetterFetchError,
           );
           result.coverLetterAttached = coverLetterOutcome.attached;
           result.coverLetterError = coverLetterOutcome.error;
@@ -350,7 +459,13 @@ export default defineContentScript({
     // future signed Greenhouse map would only ever ADD supplemental
     // standard_fields on top of the generic ones, same merge pattern as
     // Lever's.
-    function fillGreenhousePage(tracked: TrackedTabState, personalInfo: ExtensionPersonalInfo, forceRefillAll: boolean, result: FillResult): FillResult {
+    function fillGreenhousePage(
+      tracked: TrackedTabState,
+      personalInfo: ExtensionPersonalInfo,
+      forceRefillAll: boolean,
+      filesInfo: FilesFetchInfo,
+      result: FillResult,
+    ): FillResult {
       const fieldMap = tracked.fieldMap;
       const standardFields = [
         ...greenhouse.GENERIC_FIELD_DEFAULTS.standardFields,
@@ -360,7 +475,12 @@ export default defineContentScript({
       noteInvalidSelectors(result, invalidSelectors);
       result.filledFields = applyReactControlledFillPlan(document, plan);
 
-      const resumeOutcome = tryAttach(greenhouse.GENERIC_FIELD_DEFAULTS.resumeSelector, tracked.resume, forceRefillAll);
+      const resumeOutcome = tryAttach(
+        greenhouse.GENERIC_FIELD_DEFAULTS.resumeSelector,
+        tracked.resume,
+        forceRefillAll,
+        filesInfo.resumeFetchError,
+      );
       result.resumeAttached = resumeOutcome.attached;
       result.resumeError = resumeOutcome.error;
 
@@ -368,6 +488,7 @@ export default defineContentScript({
         greenhouse.GENERIC_FIELD_DEFAULTS.coverLetterSelector,
         tracked.coverLetter,
         forceRefillAll,
+        filesInfo.coverLetterFetchError,
       );
       result.coverLetterAttached = coverLetterOutcome.attached;
       result.coverLetterError = coverLetterOutcome.error;
@@ -385,7 +506,13 @@ export default defineContentScript({
     // No cover-letter attach attempted at all (lib/ashby.ts's own note:
     // no stable selector/naming convention was found live on either
     // tested posting) -- a real, disclosed gap, not silently guessed at.
-    function fillAshbyPage(tracked: TrackedTabState, personalInfo: ExtensionPersonalInfo, forceRefillAll: boolean, result: FillResult): FillResult {
+    function fillAshbyPage(
+      tracked: TrackedTabState,
+      personalInfo: ExtensionPersonalInfo,
+      forceRefillAll: boolean,
+      filesInfo: FilesFetchInfo,
+      result: FillResult,
+    ): FillResult {
       const fieldMap = tracked.fieldMap;
       const standardFields = [
         ...ashby.GENERIC_FIELD_DEFAULTS.standardFields,
@@ -395,7 +522,12 @@ export default defineContentScript({
       noteInvalidSelectors(result, invalidSelectors);
       result.filledFields = applyReactControlledFillPlan(document, plan);
 
-      const resumeOutcome = tryAttach(ashby.GENERIC_FIELD_DEFAULTS.resumeSelector, tracked.resume, forceRefillAll);
+      const resumeOutcome = tryAttach(
+        ashby.GENERIC_FIELD_DEFAULTS.resumeSelector,
+        tracked.resume,
+        forceRefillAll,
+        filesInfo.resumeFetchError,
+      );
       result.resumeAttached = resumeOutcome.attached;
       result.resumeError = resumeOutcome.error;
 
@@ -407,7 +539,7 @@ export default defineContentScript({
       return result;
     }
 
-    function fillPage(tracked: TabState, forceRefillAll: boolean): FillResult {
+    function fillPage(tracked: TabState, forceRefillAll: boolean, filesInfo: FilesFetchInfo): FillResult {
       const result: FillResult = {
         filledFields: [],
         skippedFields: [],
@@ -430,9 +562,9 @@ export default defineContentScript({
       // as "still checking" -- forever. What was written before the
       // failure stays reported, since it really did happen.
       try {
-        if (atsType === "lever") return fillLeverPage(tracked, personalInfo, forceRefillAll, result);
-        if (atsType === "greenhouse") return fillGreenhousePage(tracked, personalInfo, forceRefillAll, result);
-        return fillAshbyPage(tracked, personalInfo, forceRefillAll, result);
+        if (atsType === "lever") return fillLeverPage(tracked, personalInfo, forceRefillAll, filesInfo, result);
+        if (atsType === "greenhouse") return fillGreenhousePage(tracked, personalInfo, forceRefillAll, filesInfo, result);
+        return fillAshbyPage(tracked, personalInfo, forceRefillAll, filesInfo, result);
       } catch (e) {
         result.fillError = e instanceof Error && e.message !== "" ? e.message : "The fill stopped unexpectedly.";
         return result;
@@ -474,7 +606,13 @@ export default defineContentScript({
         if (isFormPresent() && detectingUrl !== location.href) void detect();
         return null;
       }
-      return fillPage(state, forceRefillAll);
+      if (state.status !== "tracked") return fillPage(state, forceRefillAll, NO_FILE_FETCH_ERRORS);
+
+      // E6 continuation -- this is the moment the résumé/cover-letter PDFs
+      // actually get fetched (see GeneratedFile's own doc comment): the
+      // first REQUEST_FILL for this tracked application, not detection.
+      const { tracked, resumeFetchError, coverLetterFetchError } = await ensureFilesFetched(state);
+      return fillPage(tracked, forceRefillAll, { resumeFetchError, coverLetterFetchError });
     }
 
     // E3b -- the one path a value chosen off-page (a saved answer, an LLM
@@ -486,7 +624,7 @@ export default defineContentScript({
     // ATSs now, not just Lever). Lever additionally needs a verified field
     // map (E3c: its own `custom_question_prefix`, so no map means no fill,
     // D4's fail-closed scope); Greenhouse/Ashby's engines are self-contained.
-    async function fillField(fieldName: string, value: string): Promise<FillFieldResult> {
+    async function fillField(fieldName: string, value: string, force: boolean): Promise<FillFieldResult> {
       const state = await currentTabState();
       if (state === null) return { filled: false, reason: "page_changed" };
       if (state.status !== "tracked") return { filled: false, reason: "refused" };
@@ -495,12 +633,12 @@ export default defineContentScript({
       try {
         if (atsType === "lever") {
           if (state.fieldMap?.ats_type === "lever") {
-            outcome = fillCustomTextAnswer(document, state.fieldMap, fieldName, value);
+            outcome = fillCustomTextAnswer(document, state.fieldMap, fieldName, value, force);
           }
         } else if (atsType === "greenhouse") {
-          outcome = greenhouse.fillCustomTextAnswer(document, fieldName, value);
+          outcome = greenhouse.fillCustomTextAnswer(document, fieldName, value, force);
         } else if (atsType === "ashby") {
-          outcome = ashby.fillCustomTextAnswer(document, fieldName, value);
+          outcome = ashby.fillCustomTextAnswer(document, fieldName, value, force);
         }
       } catch (e) {
         console.error("[between-jobs] filling an answer failed", e);
@@ -525,7 +663,7 @@ export default defineContentScript({
         case "REQUEST_FILL":
           return requestFill(message.forceRefillAll);
         case "FILL_FIELD":
-          return fillField(message.fieldName, message.value);
+          return fillField(message.fieldName, message.value, message.force ?? false);
       }
     });
   },

@@ -390,6 +390,24 @@ class CreateHiringSearchRequest(BaseModel):
     location: _TypedLocation | None = None
 
 
+_MAX_NORMALIZED_QUESTION_CHARS = 500
+"""`questionSafety.ts`'s own `MAX_LABEL_LENGTH` caps a client-read label at
+300 characters (plus a 1-character ellipsis) before it's ever normalized
+and sent here -- this is that bound with real headroom above it, not a
+re-derivation of it, since nothing stops a modified client or a direct
+API call from sending an uncapped string. Generous enough for any real
+question label, bounded well short of the request becoming a vector for
+an oversized storage key or lookup payload."""
+
+_MAX_ANSWER_TEXT_CHARS = 2000
+"""Same free-text ceiling this codebase already uses elsewhere for a
+bounded prose field (`hiring_signal_tab._MAX_FIT_TEXT_CHARS`) -- an
+approved answer is a short, human-reviewed paragraph before it's ever
+saved (it either came out of `/draft-answer`'s own ~500-token generation
+cap, or was typed/edited by the user in the panel), so this is headroom
+above any real answer, not a tight fit around one."""
+
+
 class MatchApprovedAnswerRequest(BaseModel):
     """browser-extension.md E1 -- the extension sends a screening
     question's own normalized label text (never the raw DOM id/uuid,
@@ -398,7 +416,7 @@ class MatchApprovedAnswerRequest(BaseModel):
     only when the selector map's own authoring already tags this field
     with a known deterministic intent (e.g. "willing_to_relocate")."""
 
-    normalized_question: str = Field(min_length=1)
+    normalized_question: str = Field(min_length=1, max_length=_MAX_NORMALIZED_QUESTION_CHARS)
     canonical_intent: str | None = None
     jurisdiction: str | None = None
 
@@ -410,8 +428,8 @@ class SaveApprovedAnswerRequest(BaseModel):
     extension's own per-field opt-in gate has something to check against;
     left None for an ordinary factual answer."""
 
-    normalized_question: str = Field(min_length=1)
-    answer_text: str = Field(min_length=1)
+    normalized_question: str = Field(min_length=1, max_length=_MAX_NORMALIZED_QUESTION_CHARS)
+    answer_text: str = Field(min_length=1, max_length=_MAX_ANSWER_TEXT_CHARS)
     canonical_intent: str | None = None
     evidence_fact_ids: list[str] = Field(default_factory=list)
     jurisdiction: str | None = None
@@ -425,7 +443,14 @@ class DraftAnswerRequest(BaseModel):
     extension normalizes separately when it later saves an approved
     answer via SaveApprovedAnswerRequest). `application_id` scopes the
     job-description evidence source to the one specific application this
-    question came from, not a generic "current job" guess."""
+    question came from, not a generic "current job" guess.
+
+    `question_text`'s cap is `_MAX_ANSWER_TEXT_CHARS`, not
+    `_MAX_NORMALIZED_QUESTION_CHARS` -- deliberately: it must stay well
+    above `application_answer_generator._MAX_QUESTION_LENGTH_FOR_GENERATION`
+    (400) so a genuinely long disclaimer-shaped question still reaches
+    `is_generation_eligible` and gets a real, deterministic "not
+    eligible" answer instead of a generic validation 422."""
 
     application_id: str = Field(min_length=1)
-    question_text: str = Field(min_length=1)
+    question_text: str = Field(min_length=1, max_length=_MAX_ANSWER_TEXT_CHARS)

@@ -195,12 +195,23 @@ export function findCoverLetterField(
  * class of mistargeting even if the selector construction is ever wrong
  * in some other way -- not exploitable against Lever's real UUID-only
  * field names today, but cheap, defense-in-depth insurance regardless.
+ *
+ * `force` (E6 continuation) -- the side panel's per-question "Replace"
+ * action, the only escape hatch for D5's "not_empty" outcome on a custom
+ * question ("Refill all" explicitly never touches these -- the per-
+ * question FILL_FIELD path threads no such parameter today). It bypasses
+ * ONLY the D5 not-empty check below, nothing else: the namespace check,
+ * the element-kind check, and the D6 sensitive-label check above all run
+ * first and still refuse unconditionally regardless of `force` -- there
+ * is no code path where `force: true` can make a sensitive or unmatched
+ * field fillable.
  */
 export function fillCustomTextAnswer(
   doc: Document,
   map: LeverQuestionMapFields,
   fieldName: string,
   value: string,
+  force = false,
 ): FillAnswerOutcome {
   if (!fieldName.startsWith(map.custom_question_prefix)) return "refused";
   const element = doc.querySelector<HTMLInputElement | HTMLTextAreaElement>(
@@ -222,8 +233,9 @@ export function fillCustomTextAnswer(
   }
   if (labelInfo.label === null || labelInfo.sensitive) return "refused";
 
-  // D5: never clobber text that's already there.
-  if (hasExistingText(element)) return "not_empty";
+  // D5: never clobber text that's already there, unless the human
+  // explicitly asked to replace it (`force`).
+  if (hasExistingText(element) && !force) return "not_empty";
 
   element.value = value;
   element.dispatchEvent(new Event("input", { bubbles: true }));

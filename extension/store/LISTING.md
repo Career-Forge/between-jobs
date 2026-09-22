@@ -159,15 +159,22 @@ feature, which is one more reason the in-product disclosure below matters. The p
 removed]. It must be the same URL on the developer account page, and the disclosures above
 must be consistent with it.
 
-## 4. In-product disclosure and consent (needs a code change)
+## 4. In-product disclosure and consent -- SHIPPED (E6 continuation)
+
+**Status: built.** `entrypoints/sidepanel/App.tsx`'s `ConsentGate` implements this, close to
+verbatim against the draft copy below, gated on a version-carrying `chrome.storage.local`
+flag (see `PRIVACY.md` section 4's storage table). A live re-check of Chrome's current
+policy pages (2026-09-21, cited below) found nothing materially wrong with the draft, so
+the copy below is what shipped, not a stale plan. Toolchain-verified only -- not yet
+exercised in a real Chrome session. The rest of this section is kept as the design record
+for why it's shaped this way.
 
 Chrome's User Data FAQ says the prominent disclosure and the consent must occur **inside
 the extension's own interface**, that store-listing text does not satisfy the requirement,
 and that the extension must ask the user to take a specific action clearly agreeing before
 it collects or handles user data. The 2026 policy update (enforced from 2026-08-01) also
 removed the "closely related to the single purpose" qualifier and requires notice of any
-later change in data practices. The side panel today has a sign-in form and one footer line.
-I treat this as required before submitting.
+later change in data practices.
 
 Draft copy for a first-run screen, shown before the sign-in form, with an explicit agree
 action (button labels are suggestions):
@@ -192,12 +199,17 @@ action (button labels are suggestions):
 >
 > [ I understand and agree ]   [ Not now ]
 
-Implementation notes for whoever writes it: the sign-in form should not render, and no
-request other than the extension's own start-up should be made, until the user agrees;
-"Not now" should leave the extension inert. Remembering the agreement needs a stored flag
-(`storage.local` is the natural place), and that must be added to the storage table in
-`PRIVACY.md` section 4. When a later release changes what is collected, the screen should
-appear again with the change described. This copy describes only what the code does today.
+Implementation notes, as built: the sign-in form does not render, and no request other than
+the extension's own start-up is made, until the user agrees (concretely: the effect that
+calls `refreshDetection` never fires, and neither do the tab-update/tab-activated/
+`PAGE_CHANGED` listeners that would otherwise call it, even if a returning user's session is
+already valid); "Not now" leaves the extension inert -- it writes nothing, so the gate is
+still there next time the panel opens. The agreement is a stored `{version: number}` flag
+(`CONSENT_VERSION`/`CONSENT_STORAGE_KEY` in `App.tsx`, `chrome.storage.local`), added to the
+storage table in `PRIVACY.md` section 4. When a later release changes what is collected,
+bumping `CONSENT_VERSION` makes the screen appear again with the change described -- that
+mechanism is real today, exercised directly in `tests/App.test.tsx`, even though only one
+version exists so far. This copy describes only what the code does today.
 
 ## 5. Test instructions for reviewers (Test instructions tab)
 
@@ -281,7 +293,7 @@ make.
 
 ## 8. Before you submit
 
-Everything here needs a person; none of it is done.
+Everything here needs a person, except the one item now checked below.
 
 - [ ] Developer account, and the account-page privacy policy URL, set up.
 - [ ] Production origins decided. Build the zip with `npm run zip` from a clean checkout and
@@ -289,8 +301,10 @@ Everything here needs a person; none of it is done.
       step refuses a local or non-https address and an all-zero version.
 - [ ] Privacy policy: fill every `[MAINTAINER TO FILL]`, delete the notes section, host it at
       a public https URL.
-- [ ] In-product disclosure and consent screen (section 4) built and reflected in
-      `PRIVACY.md`.
+- [x] In-product disclosure and consent screen (section 4) built and reflected in
+      `PRIVACY.md` -- SHIPPED (E6 continuation), toolchain-verified only. Still needs the
+      privacy-policy URL filled in (the screen's own `[MAINTAINER TO FILL]` placeholder) and
+      a real Chrome check like everything else in this list.
 - [ ] Real logo replacing the placeholder icon; screenshots (section 6); small promo tile.
 - [ ] Reviewer test account, tracked postings and spend-capped AI key (section 5).
 - [ ] The real-browser verification the earlier phases could not do: E3b (Draft answer,
@@ -302,11 +316,15 @@ Everything here needs a person; none of it is done.
       `PERMISSIONS.md` note 1) and on the wildcard CORS the extension's API access depends on.
 - [ ] Bump `version` in `package.json` for every upload.
 
-## Sources (checked 2026-09-19)
+## Sources (checked 2026-09-19; re-checked 2026-09-21 for section 4 specifically)
 
 Every fetch below succeeded; none had to be skipped. The MV3 review that preceded this pass
 had already fetched the policy-update, troubleshooting, dashboard-privacy and review-process
-pages.
+pages. A second, targeted live fetch on 2026-09-21 (E6 continuation, before building the
+consent screen) re-confirmed the User Data FAQ's in-product/before-collection/affirmative-
+action wording and the 2026 policy update's "closely related" removal, notice-of-change
+requirement and 2026-08-01 enforcement date word-for-word against what's summarized above --
+nothing had drifted in the two days since the first pass.
 
 - [Fill out the privacy fields](https://developer.chrome.com/docs/webstore/cws-dashboard-privacy)
   -- single purpose, permission justifications, remote-code field, the two data-usage

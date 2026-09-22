@@ -145,6 +145,21 @@ const LATIN_TERMS: string[] = [
   String.raw`\bsocial category\b`,
   String.raw`\bnationalit`,
   String.raw`\bnational origin\b`,
+  // E6 -- a real, distinct self-ID phrasing from "national origin" (which
+  // the pattern above already covers): "country of origin" is common on
+  // its own, e.g. UK/EU-style EEO forms. Scoped to the exact three-word
+  // phrase, not bare "country" or "origin" alone -- a bare "country" would
+  // false-positive on an ordinary "country of residence" address question
+  // (a ubiquitous, non-self-ID logistics field on every one of these
+  // ATSs), and a bare "origin" would swallow unrelated wording too. See
+  // questionSafety.test.ts's false-positive check.
+  // d6-2 -- real-world forms don't always use this exact word order
+  // ("Origin Country", "Country/Region of Origin" on localized/translated
+  // forms). Bounded gap (not an unbounded `.*`) so a hostile multi-megabyte
+  // label can't turn this into a superlinear scan -- same reasoning as
+  // every other multi-word pattern in this file.
+  String.raw`\bcountry\b.{0,20}\borigin\b`,
+  String.raw`\borigin\b.{0,20}\bcountry\b`,
   String.raw`\bnacionalidad\b`,
   String.raw`\bstaatsangehorigkeit\b`,
   String.raw`\bnazionalita\b`,
@@ -159,6 +174,32 @@ const LATIN_TERMS: string[] = [
   String.raw`\bmarried\b`,
   String.raw`\bspouse`,
   String.raw`\bdependents?\b`,
+  // E6 -- "family status" specifically (a real EEO-adjacent phrase, e.g.
+  // Canadian/Ontario human-rights-code forms, and "marital or family
+  // status" per this project's own PRIVACY.md wording), scoped to the
+  // exact two-word phrase rather than a bare "family": a bare match would
+  // false-positive on an ordinary "family referral program" or "family
+  // medical leave" logistics question, neither of which is self-ID. See
+  // questionSafety.test.ts's false-positive checks for both.
+  String.raw`\bfamily status\b`,
+  // d6-2 -- "familial status" (the actual US Fair Housing Act / several
+  // state EEO statutes' own term, a distinct phrasing from "family
+  // status" above, not just an inflection of it) and "parental status" (a
+  // genuine self-ID category on federal-contractor EEO forms under
+  // Executive Order 13152). Neither is caught by "family status",
+  // "married"/"marital", "spouse", or "dependents" either.
+  String.raw`\bfamilial\b`,
+  String.raw`\bparental status\b`,
+  // "do you have children"/"kids" -- a common self-ID-adjacent family-
+  // status phrasing (dependent-care benefits, EEO-style forms) with no
+  // other realistic meaning inside a SHORT APPLICATION-QUESTION label
+  // (this classifier never scans free-text job descriptions or answers,
+  // only question text) -- kept as bare short words to match this file's
+  // own register (`married`, `spouse`, `pregnan`) rather than one narrow
+  // literal phrase, so "Number of children" or "Do you have kids?" are
+  // both caught, not just the one example phrasing that motivated this.
+  String.raw`\bchildren\b`,
+  String.raw`\bkids\b`,
   String.raw`\bpregnan`,
   String.raw`\bestado civil\b`,
   String.raw`\bfamilienstand\b`,

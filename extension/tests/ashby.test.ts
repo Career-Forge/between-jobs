@@ -389,3 +389,46 @@ describe("E6: D5 -- a per-question fill never overwrites text already on the pag
     expect(fillCustomTextAnswer(document, "gggg-2", "LLM draft")).toBe("filled");
   });
 });
+
+// ---------------------------------------------------------------------------
+// E6 continuation -- the per-question "Replace" action's `force` parameter.
+// Mirrors lever.test.ts's/greenhouse.test.ts's own force suite: proves
+// force bypasses ONLY D5, never the D6 sensitive-label/context refusals or
+// the systemfield/entry-container refusals.
+// ---------------------------------------------------------------------------
+
+describe("E6 continuation: fillCustomTextAnswer's force parameter (Ashby)", () => {
+  it("force:true overwrites existing text", () => {
+    buildEntries(entry("gggg-1", "Why us?", `<textarea id="gggg-1" name="gggg-1"></textarea>`));
+    const area = document.querySelector<HTMLTextAreaElement>("#gggg-1")!;
+    area.value = "my own hand-written answer";
+
+    expect(fillCustomTextAnswer(document, "gggg-1", "Replacement draft", true)).toBe("filled");
+    expect(area.value).toBe("Replacement draft");
+  });
+
+  it("force:false (the default) still never overwrites -- the existing D5 behavior is unchanged", () => {
+    buildEntries(entry("gggg-1", "Why us?", `<textarea id="gggg-1" name="gggg-1"></textarea>`));
+    const area = document.querySelector<HTMLTextAreaElement>("#gggg-1")!;
+    area.value = "my own hand-written answer";
+
+    expect(fillCustomTextAnswer(document, "gggg-1", "LLM draft", false)).toBe("not_empty");
+    expect(fillCustomTextAnswer(document, "gggg-1", "LLM draft")).toBe("not_empty");
+    expect(area.value).toBe("my own hand-written answer");
+  });
+
+  it("force cannot make a D6-sensitive field fillable", () => {
+    buildEntries(entry("aaaa-1", "What is your gender identity?", textControl("aaaa-1")));
+    const input = document.querySelector<HTMLInputElement>("#aaaa-1")!;
+    input.value = "already has text";
+
+    expect(fillCustomTextAnswer(document, "aaaa-1", "any text", true)).toBe("refused");
+    expect(input.value).toBe("already has text");
+  });
+
+  it("force cannot make a _systemfield_ or unmatched field fillable", () => {
+    buildAshbyForm();
+    expect(fillCustomTextAnswer(document, "_systemfield_name", "x", true)).toBe("refused");
+    expect(fillCustomTextAnswer(document, "00000000-0000-0000-0000-000000000000", "x", true)).toBe("refused");
+  });
+});

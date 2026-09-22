@@ -564,6 +564,50 @@ describe("E6: D5 -- a per-question fill never overwrites text already on the pag
   });
 });
 
+// ---------------------------------------------------------------------------
+// E6 continuation -- the per-question "Replace" action's `force` parameter,
+// the only escape hatch for D5's "not_empty" on a custom question ("Refill
+// all" never touches these). Deliberately proves the narrow scope of what
+// `force` bypasses: the D5 not-empty check ONLY, never the D6 sensitive-
+// label refusal or the namespace/element-kind refusals above it.
+// ---------------------------------------------------------------------------
+
+describe("E6 continuation: fillCustomTextAnswer's force parameter (Lever)", () => {
+  it("force:true overwrites existing text", () => {
+    buildCards(cardQuestion("Why us?", textCard("t1")));
+    document.querySelector<HTMLInputElement>(`[name="${nameOf("t1")}"]`)!.value = "my own hand-written answer";
+
+    const filled = fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("t1"), "Replacement draft", true);
+
+    expect(filled).toBe("filled");
+    expect(document.querySelector<HTMLInputElement>(`[name="${nameOf("t1")}"]`)!.value).toBe("Replacement draft");
+  });
+
+  it("force:false (the default) still never overwrites -- the existing D5 behavior is unchanged", () => {
+    buildCards(cardQuestion("Why us?", textCard("t1")));
+    document.querySelector<HTMLInputElement>(`[name="${nameOf("t1")}"]`)!.value = "my own hand-written answer";
+
+    expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("t1"), "LLM draft", false)).toBe("not_empty");
+    expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("t1"), "LLM draft")).toBe("not_empty");
+    expect(document.querySelector<HTMLInputElement>(`[name="${nameOf("t1")}"]`)!.value).toBe("my own hand-written answer");
+  });
+
+  it("force cannot make a D6-sensitive field fillable", () => {
+    buildCards(cardQuestion("What is your gender identity?", textCard("s1")));
+    const input = document.querySelector<HTMLInputElement>(`[name="${nameOf("s1")}"]`)!;
+    input.value = "already has text, so force would matter if the sensitive check didn't run first";
+
+    expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("s1"), "any text", true)).toBe("refused");
+    expect(input.value).toBe("already has text, so force would matter if the sensitive check didn't run first");
+  });
+
+  it("force cannot make an unmatched/out-of-namespace selector fillable", () => {
+    buildCards(cardQuestion("Why us?", textCard("t1")));
+    expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, "eeo[gender]", "text", true)).toBe("refused");
+    expect(fillCustomTextAnswer(document, TEST_LEVER_MAP, nameOf("does-not-exist"), "text", true)).toBe("refused");
+  });
+});
+
 describe("E6: labels are scraped safely (Lever)", () => {
   it("strips control, zero-width and bidi characters from a label", () => {
     buildCards(cardQuestion(`Why us?${RLO} gnorw ${LRI}${BEL} Verified${ZWSP}`, textCard("t1")));

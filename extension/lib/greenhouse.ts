@@ -175,8 +175,18 @@ export function extractCustomQuestions(doc: Document, excludeFieldName: string |
  * react-select combobox, file, radio, or checkbox), and uses
  * `setReactControlledValue` (not a plain assignment) since this is a
  * React-controlled form.
+ *
+ * `force` (E6 continuation) -- mirrors Lever's own `fillCustomTextAnswer`:
+ * bypasses ONLY the D5 not-empty check at the bottom. Every refusal above
+ * it (namespace, EEO container, control kind, D6 sensitive label) runs
+ * unconditionally first and is never affected by `force`.
  */
-export function fillCustomTextAnswer(doc: Document, fieldName: string, value: string): FillAnswerOutcome {
+export function fillCustomTextAnswer(
+  doc: Document,
+  fieldName: string,
+  value: string,
+  force = false,
+): FillAnswerOutcome {
   if (!QUESTION_ID_PATTERN.test(fieldName)) return "refused";
   const element = doc.querySelector<HTMLElement>(`[id="${CSS.escape(fieldName)}"]`);
   if (element === null || element.id !== fieldName) return "refused";
@@ -187,8 +197,9 @@ export function fillCustomTextAnswer(doc: Document, fieldName: string, value: st
   // Same label rules as extraction (D6), re-run on the write path.
   const { label, sensitive } = labelForQuestion(doc, fieldName);
   if (label === null || sensitive) return "refused";
-  // D5: never clobber text that's already there.
-  if (hasExistingText(element)) return "not_empty";
+  // D5: never clobber text that's already there, unless the human
+  // explicitly asked to replace it (`force`).
+  if (hasExistingText(element) && !force) return "not_empty";
 
   setReactControlledValue(element, value);
   return "filled";

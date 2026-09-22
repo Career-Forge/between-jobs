@@ -52,6 +52,18 @@ extend-exclude = ["latex-service"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# E6's server-side D6 gate ports questionSafety.ts's own CONFUSABLES table
+# (Cyrillic/Greek/fullwidth letters that render identically to Latin ones,
+# folded back before matching so a tenant can't disguise a self-ID label
+# past the check) and its own adversarial disguise test fixtures. RUF001
+# ("ambiguous unicode character") exists to catch an ACCIDENTAL confusable
+# slipping into ordinary source text -- here every flagged character is the
+# deliberate subject of the code, named in its own inline comment, not a
+# typo.
+"src/between_jobs/api/application_answer_generator.py" = ["RUF001"]
+"tests/test_application_answer_generator.py" = ["RUF001"]
+
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's own idiomatic pattern (Depends()/Query()/etc as a default arg
 # value) -- not the mutable-default footgun B008 exists to catch.

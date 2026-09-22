@@ -144,6 +144,23 @@ const SHOULD_BE_EXCLUDED: Record<string, string[]> = {
     "Pregnancy",
     "Are you pregnant or nursing?",
     "Are you pregnant?",
+    // E6 -- the three confirmed-missing phrasings this pass closed.
+    "Family status",
+    "Marital or family status",
+    "Do you have children?",
+    "Do you have any children?",
+    "Number of children",
+    "Do you have kids?",
+    "Country of origin",
+    "What is your country of origin?",
+    // d6-2 -- real-world word-order/statutory-term variants the original
+    // three E6 phrasings above missed (see questionSafety.ts's own d6-2
+    // comments).
+    "What is your familial status?",
+    "Familial status (protected class)",
+    "Parental status",
+    "Origin Country",
+    "Country/Region of Origin",
     "first-generation student",
     "Are you a first-generation college student?",
     "Underrepresented minority",
@@ -189,6 +206,17 @@ const MUST_STAY_VISIBLE = [
   "Cover Letter",
   "Did someone from The Athletic refer you? *",
   "Phone number",
+  // E6 -- the false-positive check for the three new terms added this
+  // pass: real, plausible logistics questions that share a word with the
+  // new patterns ("family", "country", "kid") but aren't self-ID, and
+  // must not be swept in by a too-broad pattern.
+  "What is your current notice period?",
+  "What is your available start date?",
+  "Country of residence",
+  "What country do you currently reside in?",
+  "Did a family member refer you to this role?",
+  "Are you eligible for our family medical leave policy?",
+  "Kid-friendly office tour available on request",
 ];
 
 describe("isSensitiveSelfIdText -- D6 vocabulary", () => {

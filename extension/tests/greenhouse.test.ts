@@ -313,3 +313,50 @@ describe("E6: D5 -- a per-question fill never overwrites text already on the pag
     expect(fillCustomTextAnswer(document, "question_9", "LLM draft")).toBe("filled");
   });
 });
+
+// ---------------------------------------------------------------------------
+// E6 continuation -- the per-question "Replace" action's `force` parameter.
+// Mirrors lever.test.ts's own force suite: proves force bypasses ONLY D5,
+// never the D6 sensitive-label or namespace/container refusals.
+// ---------------------------------------------------------------------------
+
+describe("E6 continuation: fillCustomTextAnswer's force parameter (Greenhouse)", () => {
+  it("force:true overwrites existing text", () => {
+    buildQuestions(q(9, "Why us?", textInput(9)));
+    document.querySelector<HTMLInputElement>("#question_9")!.value = "my own hand-written answer";
+
+    expect(fillCustomTextAnswer(document, "question_9", "Replacement draft", true)).toBe("filled");
+    expect(document.querySelector<HTMLInputElement>("#question_9")!.value).toBe("Replacement draft");
+  });
+
+  it("force:false (the default) still never overwrites -- the existing D5 behavior is unchanged", () => {
+    buildQuestions(q(9, "Why us?", textInput(9)));
+    document.querySelector<HTMLInputElement>("#question_9")!.value = "my own hand-written answer";
+
+    expect(fillCustomTextAnswer(document, "question_9", "LLM draft", false)).toBe("not_empty");
+    expect(fillCustomTextAnswer(document, "question_9", "LLM draft")).toBe("not_empty");
+    expect(document.querySelector<HTMLInputElement>("#question_9")!.value).toBe("my own hand-written answer");
+  });
+
+  it("force cannot make a D6-sensitive field fillable", () => {
+    buildQuestions(q(101, "What is your gender identity?", textInput(101)));
+    const input = document.querySelector<HTMLInputElement>("#question_101")!;
+    input.value = "already has text";
+
+    expect(fillCustomTextAnswer(document, "question_101", "any text", true)).toBe("refused");
+    expect(input.value).toBe("already has text");
+  });
+
+  it("force cannot make a field inside the EEO/demographic container fillable", () => {
+    buildGreenhouseForm();
+    // question_999 sits inside #demographic-section -- see buildGreenhouseForm's
+    // own comment: even a question_-shaped id there must stay refused.
+    expect(fillCustomTextAnswer(document, "question_999", "any text", true)).toBe("refused");
+  });
+
+  it("force cannot make an unmatched/nonexistent field fillable", () => {
+    buildQuestions(q(9, "Why us?", textInput(9)));
+    expect(fillCustomTextAnswer(document, "question_00000000", "text", true)).toBe("refused");
+    expect(fillCustomTextAnswer(document, "gender", "text", true)).toBe("refused");
+  });
+});

@@ -8,9 +8,11 @@ import type {
   BackgroundMessage,
   DraftAnswerResult,
   ExtensionPayload,
+  FetchApplicationFilesResult,
   GeneratedFile,
   MarkAppliedResult,
   MatchAnswerResult,
+  SignOutResult,
   TabState,
   VerifySessionResult,
 } from "@/lib/types";
@@ -36,8 +38,58 @@ async function fetchGeneratedFile(
   applicationId: string,
   kind: "resume" | "cover-letter",
 ): Promise<GeneratedFile> {
-  const blob = await apiFetchBlob(`/applications/${applicationId}/${kind}.pdf`);
+  // E6 continuation, part 2 -- these used to be the web app's own
+  // /applications/{id}/{kind}.pdf routes (require_user_id, shared with
+  // GeneratePanel.tsx's own "Download resume" button), which meant the
+  // extension's sign-out never actually revoked its own access to these
+  // files. The extension has its own mirror of each route now
+  // (extension_routes.py), gated by the same sign-out-aware check every
+  // other /extension/* call already goes through -- the web app keeps
+  // using the original routes unchanged.
+  const blob = await apiFetchBlob(`/extension/${applicationId}/${kind}.pdf`);
   return { base64: await blobToBase64(blob), filename: `${kind}.pdf` };
+}
+
+// E6 continuation -- FETCH_APPLICATION_FILES's own handler. Used to be
+// folded into resolveTabState's single try/catch below, which meant a
+// PDF-fetch failure turned the WHOLE detection into `status: "error"`,
+// hiding the personal-info fields and field map too even though neither
+// has anything to do with the résumé/cover-letter blobs. Now that the
+// fetch happens on its own request (lazily, on Fill -- see
+// GeneratedFile's own doc comment), each file's own failure is caught
+// independently and reported as that file's own error string, matching
+// the granularity content.ts's tryAttach/tryAttachCoverLetter already
+// expose in a FillResult -- a résumé fetch failing never blocks the
+// cover letter, or any of the plain-text standard fields, from filling.
+async function fetchOneGeneratedFile(
+  applicationId: string,
+  kind: "resume" | "cover-letter",
+): Promise<{ file: GeneratedFile | null; error: string | null }> {
+  try {
+    return { file: await fetchGeneratedFile(applicationId, kind), error: null };
+  } catch (e) {
+    const label = kind === "resume" ? "résumé" : "cover letter";
+    return { file: null, error: e instanceof Error ? e.message : `Failed to fetch ${label}.` };
+  }
+}
+
+async function fetchApplicationFiles(
+  applicationId: string,
+  wantResume: boolean,
+  wantCoverLetter: boolean,
+): Promise<FetchApplicationFilesResult> {
+  const [resume, coverLetter] = await Promise.all([
+    wantResume ? fetchOneGeneratedFile(applicationId, "resume") : Promise.resolve({ file: null, error: null }),
+    wantCoverLetter
+      ? fetchOneGeneratedFile(applicationId, "cover-letter")
+      : Promise.resolve({ file: null, error: null }),
+  ]);
+  return {
+    resume: resume.file,
+    resumeError: resume.error,
+    coverLetter: coverLetter.file,
+    coverLetterError: coverLetter.error,
+  };
 }
 
 const FIELD_MAP_VERSION_STORAGE_PREFIX = "fieldMapVersion:";
@@ -201,23 +253,29 @@ async function resolveTabState(url: string, atsType: AtsType): Promise<TabState>
     // everything itself) and doesn't depend on `payload`, so it runs
     // concurrently with it rather than after -- a free latency win, not
     // a correctness-sensitive ordering.
+    //
+    // E6 continuation: this used to also fetch the résumé/cover-letter
+    // PDFs right here, on every detection -- i.e. on every tracked
+    // application page visit, whether or not the person ever pressed
+    // Fill. Moved to its own lazy, Fill-triggered fetch
+    // (FETCH_APPLICATION_FILES below) instead: `resume`/`coverLetter`
+    // always come back `null` from THIS function now (see GeneratedFile's
+    // and TabState's own doc comments in lib/types.ts for why), and a
+    // content script fetches the real blobs itself the first time a Fill
+    // is actually requested, caching them for the rest of that page
+    // load. Cuts backend load and the user's own network use to once per
+    // application actually filled, not once per page visit.
     const [payload, fieldMapResult] = await Promise.all([
       apiFetch<ExtensionPayload>(`/applications/${applicationId}/extension-payload`),
       fetchFieldMap(atsType),
     ]);
-    const resume = payload.prepare_result?.resume
-      ? await fetchGeneratedFile(applicationId, "resume")
-      : null;
-    const coverLetter = payload.prepare_result?.cover_letter
-      ? await fetchGeneratedFile(applicationId, "cover-letter")
-      : null;
     return {
       status: "tracked",
       applicationId,
       userId,
       payload,
-      resume,
-      coverLetter,
+      resume: null,
+      coverLetter: null,
       fieldMap: fieldMapResult.map,
       fieldMapError: fieldMapResult.error,
     };
@@ -265,6 +323,23 @@ async function matchAnswer(
     });
   } catch {
     return { answer: null };
+  }
+}
+
+// E6 continuation -- records this user's extension sign-out server-side
+// (see SignOutMessage's own doc comment in lib/types.ts for the ordering
+// requirement this depends on: the side panel calls this BEFORE clearing
+// its local Supabase session, while the bearer token is still valid).
+// Deliberately never throws: a failed revocation call must never be the
+// reason a person's own device fails to sign them out. `ok: false` just
+// lets the side panel log/note the gap rather than pretending it
+// succeeded.
+async function signOutExtension(): Promise<SignOutResult> {
+  try {
+    await apiFetch("/extension/sign-out", { method: "POST" });
+    return { ok: true };
+  } catch {
+    return { ok: false };
   }
 }
 
@@ -374,6 +449,23 @@ export default defineBackground(() => {
           return invalidRequest();
         }
         return draftAnswer(message.applicationId, message.questionText);
+      case "FETCH_APPLICATION_FILES":
+        // E6 continuation -- only a content script fetches these (it owns
+        // the Fill flow and the tab's own cached TabState), matching
+        // PAGE_DETECTED/VERIFY_SESSION's own sender restriction above,
+        // not MARK_APPLIED/DRAFT_ANSWER's side-panel-only one.
+        if (kind !== "content_script") return;
+        if (
+          !UUID_PATTERN.test(message.applicationId) ||
+          typeof message.wantResume !== "boolean" ||
+          typeof message.wantCoverLetter !== "boolean"
+        ) {
+          return invalidRequest();
+        }
+        return fetchApplicationFiles(message.applicationId, message.wantResume, message.wantCoverLetter);
+      case "SIGN_OUT":
+        if (kind !== "extension_page") return;
+        return signOutExtension();
     }
   });
 });

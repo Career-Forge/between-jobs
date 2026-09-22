@@ -21,6 +21,7 @@ from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase
 from between_jobs.api.artifact_versions_store import artifact_id_for
 from between_jobs.api.auth import require_user_id
+from between_jobs.api.extension_auth import require_active_extension_user_id
 
 _USER_ID = "00000000-0000-0000-0000-000000000001"
 _JOB_ID = "20000000-0000-0000-0000-000000000001"
@@ -190,6 +191,11 @@ class _FakeHttpClient:
 def _client(supabase: _FakeSupabaseClient, http: _FakeHttpClient | None = None) -> TestClient:
     app.dependency_overrides[get_supabase] = lambda: supabase
     app.dependency_overrides[require_user_id] = lambda: _USER_ID
+    # extension-payload moved to the extension's own sign-out-aware dependency
+    # (E6 continuation, part 2) -- overridden here too so every existing test
+    # against that one route keeps exercising the same USER_ID without having
+    # to know which of the two dependencies the route it happens to call uses.
+    app.dependency_overrides[require_active_extension_user_id] = lambda: _USER_ID
     if http is not None:
         app.dependency_overrides[get_http_client] = lambda: http
     return TestClient(app)
@@ -695,7 +701,11 @@ def test_extension_payload_returns_prepare_result_and_personal_info() -> None:
         "user_id": _USER_ID,
         "application_id": _APPLICATION_ID,
         "event_type": "application.prepared",
-        "payload": {"final_score": 82},
+        "payload": {
+            "resume": {"artifact_id": "art-1", "version_id": "ver-1"},
+            "cover_letter": {"artifact_id": "art-2", "version_id": "ver-2"},
+            "final_score": 82,
+        },
         "created_at": "2026-09-01T00:00:00Z",
     }
     supabase = _FakeSupabaseClient(
@@ -708,11 +718,63 @@ def test_extension_payload_returns_prepare_result_and_personal_info() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["prepare_result"] == {"final_score": 82}
+    assert body["prepare_result"] == {
+        "resume": {"artifact_id": "art-1", "version_id": "ver-1"},
+        "cover_letter": {"artifact_id": "art-2", "version_id": "ver-2"},
+    }
     assert body["personal_info"]["name"] == "Jane Doe"
     assert body["personal_info"]["email"] == "jane@example.com"
     assert body["personal_info"]["phone"] == "+1-555-0100"
     assert body["personal_info"]["linkedin"] == "https://linkedin.com/in/jane"
+
+
+def test_extension_payload_trims_prepare_result_to_resume_and_cover_letter() -> None:
+    """E6 continuation -- confirmed by grepping the whole extension/ tree
+    that nothing there reads `fit`/`gate_outcome`/`gate_reason`/
+    `gate_cautions`/`final_score`/`ats_attempts`/`evidence_fact_ids`/
+    `run_id`/`profile_version_id`/`job_snapshot_id` off this route's
+    response -- only `resume`/`cover_letter`. This is a real trim, not
+    just "those fields happen not to be set" -- every one of them is
+    present on the stored payload here and still must not appear."""
+    application = {"id": _APPLICATION_ID, "user_id": _USER_ID, "job_id": _JOB_ID}
+    prepared_event = {
+        "id": "event-1",
+        "user_id": _USER_ID,
+        "application_id": _APPLICATION_ID,
+        "event_type": "application.prepared",
+        "payload": {
+            "run_id": "run-1",
+            "profile_version_id": "profile-1",
+            "job_snapshot_id": "snap-1",
+            "resume": {"artifact_id": "art-1", "version_id": "ver-1"},
+            "cover_letter": None,
+            "application_answers_id": None,
+            "ats_attempts": [],
+            "final_score": 82,
+            "score_scale": "0-100",
+            "fit": {"score100": 82, "recommendation": "Strong fit"},
+            "gate_outcome": "proceed",
+            "gate_reason": "",
+            "gate_cautions": [],
+            "warnings": [],
+            "evidence_fact_ids": ["fact-1"],
+        },
+        "created_at": "2026-09-01T00:00:00Z",
+    }
+    supabase = _FakeSupabaseClient(
+        applications=_FakeTable(select_rows=[application]),
+        application_events=_FakeTable(select_rows=[prepared_event]),
+        profile_versions=_FakeTable(select_rows=[]),
+    )
+    with _client(supabase) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/extension-payload")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prepare_result"] == {
+        "resume": {"artifact_id": "art-1", "version_id": "ver-1"},
+        "cover_letter": None,
+    }
 
 
 def test_extension_payload_omits_sensitive_fields_by_default() -> None:
@@ -771,3 +833,29 @@ def test_extension_payload_404s_for_a_missing_application() -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_extension_payload_is_gated_by_the_extensions_own_sign_out_aware_dependency() -> None:
+    """E6 continuation, part 2. `_client()` overrides BOTH auth dependencies so
+    every other test above can call this route without knowing which one it
+    uses -- so this is the one place that proves it's really
+    `require_active_extension_user_id`, not the plain `require_user_id` every
+    other route in this file relies on. Only `require_user_id` is overridden
+    here; the real `require_active_extension_user_id` is left in place, so a
+    request with no Authorization header must hit its real "missing or
+    malformed Authorization header" rejection -- if this route were still on
+    `require_user_id` (the pre-E6-continuation-part-2 wiring), the override
+    below would make it succeed instead, and this test would catch that
+    regression immediately."""
+    application = {"id": _APPLICATION_ID, "user_id": _USER_ID, "job_id": _JOB_ID}
+    supabase = _FakeSupabaseClient(applications=_FakeTable(select_rows=[application]))
+    app.dependency_overrides[get_supabase] = lambda: supabase
+    app.dependency_overrides[require_user_id] = lambda: _USER_ID
+    try:
+        with TestClient(app) as client:
+            response = client.get(f"/applications/{_APPLICATION_ID}/extension-payload")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "AUTH_REQUIRED"

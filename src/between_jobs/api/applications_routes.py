@@ -33,6 +33,7 @@ from .auth import require_user_id
 from .credential_resolver import try_get_secret
 from .errors import ApiError
 from .export_checklist import ChecklistItem, build_checklist
+from .extension_auth import require_active_extension_user_id
 from .jobs_store import (
     create_job_from_paste,
     get_snapshots,
@@ -316,7 +317,7 @@ async def get_prepare_result(
 @router.get("/{application_id}/extension-payload")
 async def get_extension_payload(
     application_id: str,
-    user_id: str = Depends(require_user_id),
+    user_id: str = Depends(require_active_extension_user_id),
     supabase: AsyncClient = Depends(get_supabase),
 ) -> dict[str, Any]:
     """browser-extension.md E1 -- the one call the extension's service
@@ -326,13 +327,53 @@ async def get_extension_payload(
     personal-info fields (new; `PrepareApplicationResult` alone has nothing
     field-shaped for a content script to drop into standard inputs).
     Doesn't re-run the engine -- same read-only shape as
-    `get_prepare_result` right above it."""
+    `get_prepare_result` right above it.
+
+    E6 continuation, part 2 -- moved from `require_user_id` to
+    `require_active_extension_user_id`. This route has exactly one real
+    caller anywhere (confirmed by grepping `web/src` too, not just
+    `extension/`: nothing in the web app calls it, only
+    `background.ts`'s `resolveTabState`), so unlike `resume.pdf`/
+    `cover-letter.pdf` below -- which the web app's own `GeneratePanel.tsx`
+    also calls, and which this pass deliberately leaves on `require_user_id`
+    rather than risk rejecting an ordinary web-app download for a user who
+    has ever signed out of the extension -- gating this one on the
+    extension's own sign-out liveness check has no other caller to break.
+    A live E6-continuation review found the PDF routes were left uncovered
+    by the sign-out check; this closes the one route safe to close the
+    same way without a design decision. The PDF routes remain a disclosed,
+    real gap: a stolen/leftover extension token still reads `resume.pdf`/
+    `cover-letter.pdf` after the user signs out of the extension.
+
+    E6 continuation -- `prepare_result` here is trimmed to just
+    `{resume, cover_letter}`, not `get_latest_prepare_result`'s full
+    stored `PrepareApplicationResult` payload (which also carries
+    `fit`/`gate_outcome`/`gate_reason`/`gate_cautions`/`final_score`/
+    `ats_attempts`/`evidence_fact_ids`/`run_id`/`profile_version_id`/
+    `job_snapshot_id`). Confirmed by grepping the whole `extension/` tree
+    (`background.ts`, `content.ts`, every file under `extension/lib/`,
+    and both test helper files that construct a payload fixture) for each
+    of those field names plus `prepare_result` itself: the extension's
+    own `ExtensionPayload` type (lib/types.ts) declares only
+    `resume`/`cover_letter` on this field, and background.ts's real
+    resolveTabState only ever reads `payload.prepare_result?.resume` /
+    `?.cover_letter` off it -- nothing else in the extension touches any
+    other key. `get_prepare_result` (the web app's own route, right
+    above this one) is untouched and still returns the full payload."""
     try:
         await get_application(supabase, user_id, application_id)
     except ApplicationNotFound as e:
         raise ApiError("NOT_FOUND", f"no application found for id {application_id!r}") from e
 
-    prepare_result = await get_latest_prepare_result(supabase, user_id, application_id)
+    full_prepare_result = await get_latest_prepare_result(supabase, user_id, application_id)
+    prepare_result = (
+        {
+            "resume": full_prepare_result.get("resume"),
+            "cover_letter": full_prepare_result.get("cover_letter"),
+        }
+        if full_prepare_result is not None
+        else None
+    )
     profile_version = await get_active_version(supabase, user_id)
     personal_info = (
         _extension_personal_info(ResumeTemplate.model_validate(profile_version["canonical_json"]))

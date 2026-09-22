@@ -5,12 +5,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from between_jobs.api.application_answer_generator import (
     _ANSWER_GENERATION_SYSTEM_PROMPT,
+    _ANSWER_VERIFY_SYSTEM_PROMPT,
     AnswerVerification,
     flagged_answer_warnings,
     generate_answer,
     is_generation_eligible,
+    is_sensitive_self_id_text,
     verify_answer_claims,
 )
 from between_jobs.api.llm_client import LLMResponse
@@ -372,3 +376,293 @@ async def test_generate_answer_well_guided_fact_still_produces_a_grounded_answer
     assert result["answer_text"] is not None
     assert "OPT" in result["answer_text"]
     assert "H-1B" in result["answer_text"]
+
+
+# --- E6: question_text marked untrusted in both system prompts --------------
+
+
+def test_generation_prompt_marks_question_text_untrusted() -> None:
+    assert "question text" in _ANSWER_GENERATION_SYSTEM_PROMPT.lower()
+    assert "untrusted" in _ANSWER_GENERATION_SYSTEM_PROMPT.lower()
+
+
+def test_verify_prompt_marks_the_drafted_answer_untrusted() -> None:
+    """The verify prompt never receives `question_text` itself (confirmed
+    directly against `_build_verify_user` -- it takes only `answer_text`,
+    `profile_summary`, `job_description`) -- so the faithful analog of
+    "mark question_text untrusted" here is marking the DRAFTED ANSWER
+    under review untrusted, since it may itself reflect a D6-adjacent or
+    otherwise attacker-controlled question label the generation step was
+    conditioned on."""
+    assert "untrusted" in _ANSWER_VERIFY_SYSTEM_PROMPT.lower()
+    assert "drafted answer" in _ANSWER_VERIFY_SYSTEM_PROMPT.lower()
+
+
+# --- E6: the server-side D6 gate (is_sensitive_self_id_text) ----------------
+#
+# Every phrase below is ported verbatim from
+# extension/tests/questionSafety.test.ts's own regression suite for
+# isSensitiveSelfIdText -- this is the server-side sibling of that exact
+# function, tested against the exact same adversarial cases, not a
+# paraphrase or a re-derivation of the D6 topic list.
+
+_SHOULD_BE_EXCLUDED: dict[str, list[str]] = {
+    "race and ethnicity": [
+        "What is your ethnic background?",
+        "Ethnic origin",
+        "Origen étnico",
+        "Are you Asian?",
+        "Are you white?",
+        "Black or African American",
+        "Caucasian",
+        "Native Hawaiian",
+        "Alaska Native",
+        "AAPI",
+        "Person of color",
+        "BIPOC",
+        "Multiracial",
+        "Biracial",
+        "Racially",
+        "Do you identify as a person of color / BIPOC?",
+    ],
+    "Latinx / Latine": [
+        "Do you identify as Latinx?",
+        "Are you Latine?",
+        "Latin American descent",
+    ],
+    "gender and sex without the word gender": [
+        "Are you a woman?",
+        "female",
+        "Are you male or female?",
+        "Male/Female",
+        "non-binary",
+        "Nonbinary",
+        "Are you trans?",
+        "Cisgender",
+        "Agender",
+        "Genderqueer",
+        "Womxn",
+        "Two-spirit",
+        "He/him, she/her, they/them",
+        "Genders",
+        "Do you identify as a woman?",
+        "What are your preferred pronouns?",
+        "Preferred pronouns",
+        "Pronouns",
+        "Gender",
+        "What is your gender identity?",
+        "gender expression",
+    ],
+    "orientation and LGBTQ": [
+        "LGBTQ+",
+        "LGBTQIA+",
+        "LGBT community",
+        "Sexuality",
+        "Sexual preference",
+        "Gay, lesbian, bisexual, straight",
+        "Do you identify as LGBTQ+?",
+        "Which sexual identity best describes you?",
+    ],
+    "disability and health": [
+        "impairment",
+        "Handicap",
+        "health condition",
+        "chronic illness",
+        "medical conditions",
+        "Mental health",
+        "neurodivergent",
+        "neurodiverse",
+        "Neurodiversity",
+        "Deaf or hard of hearing",
+        "Dyslexia",
+        "Wheelchair access needs",
+        "Do you have a disability? Please describe.",
+        "Do you have a health condition or impairment?",
+        "Are you neurodivergent?",
+    ],
+    "accommodation": [
+        "reasonable adjustments",
+        "special assistance during interviews",
+        "access requirements",
+        "support needs",
+        "accomodation",
+        "Do you require any accommodations or support during the interview(s)?",
+        "Do you require accommodations?",
+    ],
+    "veteran and military": [
+        "Veterans",
+        "Military status",
+        "armed forces",
+        "Reservist",
+        "military spouse",
+        "Recently separated service member",
+        "Ex-military",
+        "Are you a veteran?",
+        "What is your veteran status?",
+    ],
+    "self-ID section titles": [
+        "Voluntary Self Identification",
+        "Self identification",
+        "Self ID",
+        "EEO",
+        "Equal Employment Opportunity information",
+        "Diversity survey",
+        "Diversity monitoring",
+        "Demographics",
+        "Affirmative action",
+        "OFCCP",
+        "Protected class",
+    ],
+    "other protected characteristics": [
+        "Religion",
+        "religious affiliation",
+        "Faith",
+        "What is your religion or belief?",
+        "national origin",
+        "What is your nationality?",
+        "marital status",
+        "What is your marital status?",
+        "Are you married?",
+        "Spouse's name",
+        "number of dependents",
+        "Caste / Category (General, OBC, SC, ST)",
+        "What is your caste?",
+        "Social category",
+        "Date of birth",
+        "What is your date of birth?",
+        "DOB",
+        "Birthdate",
+        "What is your age?",
+        "What is your age range?",
+        "How old are you?",
+        "Pregnancy",
+        "Are you pregnant or nursing?",
+        "Are you pregnant?",
+        # E6 -- the three confirmed-missing phrasings that pass closed
+        # (mirrored from questionSafety.test.ts's own additions).
+        "Family status",
+        "Marital or family status",
+        "Do you have children?",
+        "Do you have any children?",
+        "Number of children",
+        "Do you have kids?",
+        "Country of origin",
+        "What is your country of origin?",
+        # d6-2 -- real-world word-order/statutory-term variants the
+        # original three E6 phrasings above missed.
+        "What is your familial status?",
+        "Familial status (protected class)",
+        "Parental status",
+        "Origin Country",
+        "Country/Region of Origin",
+        "first-generation student",
+        "Are you a first-generation college student?",
+        "Underrepresented minority",
+        "Are you a member of an underrepresented group?",
+        "Indigenous/tribal",
+    ],
+    "non-English": [
+        "Género",
+        "Geschlecht",
+        "Sexo",
+        "Discapacidad",
+        "Behinderung",
+        "Identità di genere",
+        "Origine ethnique",
+        "性别",
+        "残疾",
+        "Пол",
+        "الجنس",
+    ],
+}
+
+_MUST_STAY_VISIBLE = [
+    "Are you legally authorized to work in the US?",
+    "Will you now or in the future require visa sponsorship for employment?",
+    "Do you require sponsorship?",
+    "What is your work authorization status?",
+    "Please describe your current work authorization status",
+    "Are you a US citizen or permanent resident?",
+    "Are you eligible to work in the US?*",
+    "Why do you want to work here?",
+    "What is your current notice period?",
+    "How did you hear about this role?",
+    "What are your salary expectations?",
+    "Are you willing to relocate?",
+    "Please describe your experience with Python.",
+    "LinkedIn Profile",
+    "GitHub URL",
+    "Portfolio",
+    "Cover Letter",
+    "Did someone from The Athletic refer you? *",
+    "Phone number",
+    # E6/d6-2 -- the false-positive check for the new terms: real,
+    # plausible logistics questions that share a word with the new
+    # patterns ("family", "country", "kid") but aren't self-ID, mirrored
+    # from questionSafety.test.ts's own additions.
+    "What is your available start date?",
+    "Country of residence",
+    "What country do you currently reside in?",
+    "Did a family member refer you to this role?",
+    "Are you eligible for our family medical leave policy?",
+    "Kid-friendly office tour available on request",
+]
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [phrase for phrases in _SHOULD_BE_EXCLUDED.values() for phrase in phrases],
+)
+def test_is_sensitive_self_id_text_excludes_known_d6_phrases(phrase: str) -> None:
+    assert is_sensitive_self_id_text(phrase) is True, phrase
+
+
+@pytest.mark.parametrize("phrase", _MUST_STAY_VISIBLE)
+def test_is_sensitive_self_id_text_leaves_work_authorization_and_ordinary_questions_alone(
+    phrase: str,
+) -> None:
+    """The maintainer's own pinned boundary, ported from the extension's
+    tests-pinned MUST_STAY_VISIBLE list: work-authorization / visa /
+    sponsorship questions are NOT D6 self-ID and must not be caught by
+    this gate."""
+    assert is_sensitive_self_id_text(phrase) is False, phrase
+
+
+def test_is_sensitive_self_id_text_treats_none_and_blank_as_not_sensitive() -> None:
+    assert is_sensitive_self_id_text(None) is False
+    assert is_sensitive_self_id_text("   ") is False
+    assert is_sensitive_self_id_text("") is False
+
+
+_DISGUISES = {
+    "zero-width space inside the word": "What is your gen​der?",
+    "zero-width space at the start": "​gender",
+    "soft hyphen inside the word": "What is your gen­der?",
+    "zero-width joiner and word joiner": "What is your g‍en⁠der?",
+    "fullwidth letters": "What is your ｇｅｎｄｅｒ?",
+    "an accented letter": "What is your Gënder?",
+    "a combining mark": "What is your gendër?",
+    "a Cyrillic letter standing in for a Latin one": "What is your gеnder?",
+    "a Greek letter standing in for a Latin one": "Are you a vεteran?",
+    "a right-to-left override wrapped around it": "‮redneg‬ gender",
+    "mixed case": "wHaT iS yOuR gEnDeR?",
+    "a soft hyphen in a multi-word phrase": "sexual or­ientation",
+}
+
+
+@pytest.mark.parametrize("label", _DISGUISES.values(), ids=list(_DISGUISES.keys()))
+def test_is_sensitive_self_id_text_survives_tenant_controlled_disguises(label: str) -> None:
+    assert is_sensitive_self_id_text(label) is True
+
+
+def test_is_sensitive_self_id_text_does_not_treat_genuine_cyrillic_as_a_disguise() -> None:
+    assert is_sensitive_self_id_text("Какова ваша зарплата?") is False
+
+
+def test_is_sensitive_self_id_text_classifies_the_full_text_not_a_truncated_one() -> None:
+    """Mirrors questionSafety.ts's own "padding can't push the giveaway
+    word past a cap" case -- this Python port never truncates before
+    classifying at all, but a hostile, heavily padded label must still be
+    caught."""
+    padded = "Please tell us more about yourself. " * 20 + "What is your gender?"
+    assert is_sensitive_self_id_text(padded) is True

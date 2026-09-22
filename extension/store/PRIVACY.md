@@ -57,20 +57,29 @@ These are all the network requests the extension makes. There are no others.
 |---|---------|---------|-----------------|-----------------|
 | 1 | Sign in | Sign-in service | You press "Sign in" | The email address and password of your Between Jobs account |
 | 2 | Refresh session | Sign-in service | Automatically, when you are signed in and the stored token has expired | Your refresh token |
-| 3 | Sign out | Sign-in service | You press "Sign out" | Your session token, asking the service to end this extension's session |
+| 3 | Sign out | Sign-in service, then the Between Jobs API | You press "Sign out" | Your session token, asking the sign-in service to end this extension's session; then your access token, asking the Between Jobs API to reject any of this extension's own access tokens issued before this moment |
 | 4 | Look up the page | Between Jobs API | You are signed in and an application form is detected on a supported site, whether or not you track that job | The page address without any query string or fragment (for example `https://jobs.lever.co/acme/<posting-id>`), plus your access token |
 | 5 | Get the field map | Between Jobs API | The page is a job you track | Nothing beyond the site name (`lever`, `greenhouse` or `ashby`) and your access token |
 | 6 | Get your details | Between Jobs API | The page is a job you track | The application's id |
-| 7 | Get your résumé and cover letter | Between Jobs API | The page is a job you track, and a résumé or cover letter has been prepared for it | The application's id |
+| 7 | Get your résumé and cover letter | Between Jobs API | The page is a job you track, and you press "Fill this page" for the first time on it | The application's id |
 | 8 | Check for a saved answer | Between Jobs API | You press "Draft answer" | The question's text, lower-cased with whitespace collapsed |
 | 9 | Draft an answer | Between Jobs API | You press "Draft answer" and no saved answer matched | The application's id and the question's text |
 | 10 | Save an answer | Between Jobs API | You press "Fill & remember" | The question's text (normalized as above) and the answer text you approved |
 | 11 | Mark as applied | Between Jobs API | You press "I submitted this -- mark as applied" | The application's id, the new status "applied", and a random key that stops a retried click being recorded twice |
 
-Requests 4 to 11 also carry your access token so the service knows which account they
-belong to. Requests 5, 6 and 7 happen as soon as the page is recognized as a job you
-track, not when you press "Fill this page". Requests 4 to 7 happen again if you press
-"Try this page", or if the page moves to a different posting without a full reload.
+Request 3's second call and requests 4 to 11 also carry your access token so the service
+knows which account they belong to. If that second call fails (for example the service is
+unreachable), the extension still ends your local session -- your device is always what
+promptly stops it being used, and this second call is a further protection against a
+token that leaked or was left behind, not a condition for signing out at all. Requests 5
+and 6 happen as soon as the page is recognized as a job you
+track, not when you press "Fill this page" -- request 7 does not: your résumé and cover
+letter are only downloaded the first time you actually press "Fill this page" for that
+application, not on every page visit, and the extension reuses what it already
+downloaded for the rest of that page's life rather than asking again on a later Fill or
+"Refill all". Requests 4, 5 and 6 happen again if you press "Try this page", or if the
+page moves to a different posting without a full reload; request 7 would then happen
+again too, the next time you press "Fill this page" on the newly-resolved application.
 
 **What you get back.** The service returns your profile details (name, email address,
 phone number, city, region and country, and your LinkedIn, GitHub and portfolio links),
@@ -113,6 +122,7 @@ library, not you). We do not use any of this for tracking.
 |-------|------|----------|
 | Chrome's `storage.session` area | Your sign-in session record: access token, refresh token, expiry, and the account record the sign-in service returns (your account id, email address and similar account fields) | Until you sign out, or until Chrome clears it -- which it does when the browser restarts and when the extension is disabled, reloaded or updated (so you sign in again after an update). By default Chrome does not let the extension's content scripts (the part that runs alongside web pages) read this area |
 | Chrome's `storage.local` area | For each supported site that has a signed field map, one whole number: the highest signed field-map version the extension has accepted (used to reject an older map being replayed) | Until you uninstall the extension |
+| Chrome's `storage.local` area | Whether you have agreed to the in-product disclosure screen shown before you can sign in, and which version of it you agreed to (a whole number, not just yes/no, so a later release that changes what this page collects can show the screen again instead of silently relying on an old agreement) | Until you uninstall the extension, or until a future release changes what is collected and shows the screen again |
 | Memory of the extension's script on the page you have open | The profile details, résumé and cover letter fetched for that tracked job, the rest of that job's prepared-application record, and the field map | Only while that page is open. The extension stops using it as soon as you sign out or the page moves to a different job, and drops it from memory the next time the page is used, navigated or closed |
 | Memory of the side panel | Drafts you are editing, and panel state | Until you close the panel or navigate away |
 
@@ -231,9 +241,12 @@ compromised.
 ## 9. Your choices
 
 - Press "Sign out" in the side panel. That asks the sign-in service to end this
-  extension's session and removes it from the browser. It does not sign you out of the
-  Between Jobs website. A short-lived access token that was already issued can remain
-  valid until it expires.
+  extension's session and removes it from the browser, and separately asks the Between
+  Jobs API to reject any of this extension's own access tokens issued before that moment
+  -- so a token that leaked or was left behind stops working against the extension's own
+  requests right away, rather than staying valid until it naturally expires. It does not
+  sign you out of the Between Jobs website, and it has no effect on any session for that
+  website itself: the two are scoped separately on purpose.
 - Do not press "Draft answer" and nothing is sent to an AI provider.
 - Do not press "Fill & remember" and no answer is saved.
 - Uninstall the extension to remove everything it stored on your device.
@@ -308,9 +321,28 @@ Chrome Web Store dashboard's own live form.
   Standard-field fill, per-question fill and file attach each re-check the target's type.
 - **Sign-out.** `signOut({ scope: "local" })` calls `/logout?scope=local` (confirmed
   again in the recording above), so the refresh token is revoked server-side, and the
-  local session is removed even if that call errors. The backend verifies JWTs locally,
-  so an access token issued before sign-out stays valid until it expires. Section 9's
-  wording reflects that.
+  local session is removed even if that call errors.
+- **Sign-out, server-side revocation (2026-09-22 update, E6 continuation).** A prior pass
+  of this policy said the backend verifies JWTs locally with no way to reject one issued
+  before sign-out -- that gap is now closed, scoped to the extension only:
+  `handleSignOut` (side panel) now sends `SIGN_OUT` to the background worker BEFORE
+  calling `signOut()`, while the bearer token is still readable, and the background
+  worker calls `POST /extension/sign-out`. The backend records that moment
+  (`extension_sign_outs`) and `require_active_extension_user_id` -- the dependency every
+  `/extension/*` route uses -- rejects any token whose own `iat` predates it. Confirmed
+  by reading the source path end to end (`App.tsx` -> `background.ts` -> `extension_
+  routes.sign_out` -> `extension_auth.record_extension_sign_out`/`require_active_
+  extension_user_id`) and by the backend's own real, passing test suite (`tests/
+  test_extension_auth.py`), which drives the actual dependency function against real
+  signed JWTs. It is best-effort and non-blocking by design: a failed or unreachable call
+  never prevents the local sign-out above, so this narrows the exposure window for a
+  leaked or leftover token rather than being a precondition for signing out at all. It
+  has no effect on the Between Jobs website's own session (a different auth path,
+  `require_user_id`, never reads this table -- also proven directly in that same test
+  file). Per this task's own hard rule against driving the MV3 extension through browser
+  automation tooling, this was NOT re-confirmed by loading the built extension into a
+  real Chrome and watching the network tab the way the rest of this section's findings
+  were -- that check is the maintainer's own, separately.
 - **AI provider.** `credential_resolver.resolve` has no platform default provider or key
   (its docstring: no hosted credits, "no silent platform fallback"); an unconfigured user
   gets a setup-required error. `llm_client.generate` falls back to OpenRouter's URL only
@@ -323,14 +355,16 @@ Chrome Web Store dashboard's own live form.
 
 ### Things this draft cannot honestly say yet, or that need a decision
 
-1. **No in-product disclosure and consent. Treat as required before submitting.**
-   Chrome's User Data FAQ says the disclosure and consent must occur inside the
-   extension's own interface, with a specific action agreeing to it before user data is
-   collected or handled, and that store-listing text does not satisfy it. The 2026
-   update (enforced from 2026-08-01) dropped the "closely related to the single purpose"
-   qualifier. The side panel today has a sign-in form and a footer line, nothing more.
-   A draft disclosure screen is in `LISTING.md`; adding it needs a code change, which
-   this task did not make.
+1. **In-product disclosure and consent screen -- SHIPPED (E6 continuation).** `App.tsx`'s
+   `ConsentGate` now renders before the sign-in form (and before anything else) until the
+   person presses "I understand and agree," which stores a version-carrying flag in
+   `chrome.storage.local` (this section's own table, above) and only then lets
+   `refreshDetection`/the tab-change listeners run at all -- confirmed by toolchain tests,
+   not yet by a real Chrome session (see the E6-continuation session notes for exactly
+   what that leaves unverified). The copy is `LISTING.md` section 4's own draft, close to
+   verbatim; a live re-check of Chrome's current policy pages (2026-09-21) found nothing
+   materially wrong with it. The privacy-policy link inside the screen is still the
+   `[MAINTAINER TO FILL]` placeholder below -- fill it in before submitting.
 2. **No self-service deletion.** No route or screen deletes saved answers
    (`approved_answers`), applications or the account. The table cascades on account
    deletion at the database level, and has an owner-only delete policy, but nothing calls
@@ -358,10 +392,13 @@ Chrome Web Store dashboard's own live form.
    it can land in access logs. The extension already strips query strings and
    fragments; the path still identifies the company and posting. Moving it to a POST
    body is on the earlier decision list.
-7. **Requests 5 to 7 happen on detection, not on "Fill".** Your details and both PDFs are
-   downloaded into the page's script as soon as a tracked job's form is recognized. The
-   earlier decision list already suggests fetching the PDFs on Fill instead; it would
-   also narrow what section 3 has to say.
+7. **Request 7 (the PDFs) moved to "Fill" -- SHIPPED (E6 continuation).** Requests 5 and 6
+   still happen on detection (your profile details and the field map are needed to even
+   show what Fill would do), but request 7 -- the résumé/cover-letter download -- no
+   longer does; it fires the first time you actually press "Fill this page" for that
+   application, and is cached in the page's own memory for the rest of that page's life
+   rather than re-fetched on a later Fill or "Refill all". Section 3's table above
+   reflects this.
 8. **Google-only accounts cannot use the extension.** The web app offers "sign in with
    Google" and email-and-password sign-up; the extension has only email and password, and
    the web app has no password-reset or set-password flow (no `resetPasswordForEmail` or

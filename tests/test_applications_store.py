@@ -565,3 +565,115 @@ async def test_find_application_by_url_never_matches_an_empty_url() -> None:
     result = await find_application_by_url(client, _USER_ID, "")  # type: ignore[arg-type]
 
     assert result is None
+
+
+async def test_find_application_by_url_matches_across_a_query_string_difference() -> None:
+    """E6 continuation -- regression guard for a real regression: a job
+    tracked via a URL carrying a query string (an ATS's own tracking
+    param, or the URL as it happened to be stored) no longer matched an
+    otherwise-identical lookup URL without one, and vice versa. Same
+    fixture shape as `test_find_application_by_url_never_matches_an_empty_
+    url` right above, deliberately -- this is the same function, the same
+    kind of regression guard, just for the opposite direction of the same
+    bug class."""
+    application = {
+        "id": _APPLICATION_ID,
+        "user_id": _USER_ID,
+        "job_id": _JOB_ID,
+        "active_job_snapshot_id": _SNAPSHOT_ID,
+    }
+    applications = _FakeTable(select_rows=[application])
+    job_snapshots = _FakeTable(
+        select_rows=[{"id": _SNAPSHOT_ID, "source_url": "https://jobs.lever.co/acme/123"}]
+    )
+    jobs = _FakeTable(select_rows=[{"id": _JOB_ID, "canonical_url": None}])
+    client = _FakeSupabaseClient(
+        applications, _FakeTable(select_rows=[]), jobs=jobs, job_snapshots=job_snapshots
+    )
+
+    # A stored URL with no query string still matches a lookup URL that
+    # picked one up (e.g. an ATS's own tracking param on the live page).
+    result = await find_application_by_url(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        "https://jobs.lever.co/acme/123?utm_source=linkedin&ref=abc",
+    )
+    assert result == application
+
+
+async def test_find_application_by_url_matches_when_the_stored_url_has_the_query_string() -> None:
+    """The mirror image of the test above: a URL that was originally
+    STORED with a query string still matches a lookup URL without one."""
+    application = {
+        "id": _APPLICATION_ID,
+        "user_id": _USER_ID,
+        "job_id": _JOB_ID,
+        "active_job_snapshot_id": _SNAPSHOT_ID,
+    }
+    applications = _FakeTable(select_rows=[application])
+    job_snapshots = _FakeTable(
+        select_rows=[
+            {
+                "id": _SNAPSHOT_ID,
+                "source_url": "https://boards.greenhouse.io/acme/jobs/9?gh_src=abc123",
+            }
+        ]
+    )
+    jobs = _FakeTable(select_rows=[{"id": _JOB_ID, "canonical_url": None}])
+    client = _FakeSupabaseClient(
+        applications, _FakeTable(select_rows=[]), jobs=jobs, job_snapshots=job_snapshots
+    )
+
+    result = await find_application_by_url(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        "https://boards.greenhouse.io/acme/jobs/9",
+    )
+    assert result == application
+
+
+async def test_find_application_by_url_matches_across_a_trailing_slash_and_fragment() -> None:
+    application = {
+        "id": _APPLICATION_ID,
+        "user_id": _USER_ID,
+        "job_id": _JOB_ID,
+        "active_job_snapshot_id": _SNAPSHOT_ID,
+    }
+    applications = _FakeTable(select_rows=[application])
+    job_snapshots = _FakeTable(
+        select_rows=[{"id": _SNAPSHOT_ID, "source_url": "https://jobs.ashbyhq.com/acme/role/"}]
+    )
+    jobs = _FakeTable(select_rows=[{"id": _JOB_ID, "canonical_url": None}])
+    client = _FakeSupabaseClient(
+        applications, _FakeTable(select_rows=[]), jobs=jobs, job_snapshots=job_snapshots
+    )
+
+    result = await find_application_by_url(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        "https://jobs.ashbyhq.com/acme/role#application-form",
+    )
+    assert result == application
+
+
+async def test_find_application_by_url_canonicalization_never_matches_an_empty_stored_url() -> None:
+    """The canonicalization added for the query-string fix must never
+    weaken the empty-url guard -- a lookup URL that canonicalizes down to
+    something short must still never collide with a real stored empty
+    string."""
+    application = {
+        "id": _APPLICATION_ID,
+        "user_id": _USER_ID,
+        "job_id": _JOB_ID,
+        "active_job_snapshot_id": _SNAPSHOT_ID,
+    }
+    applications = _FakeTable(select_rows=[application])
+    job_snapshots = _FakeTable(select_rows=[{"id": _SNAPSHOT_ID, "source_url": ""}])
+    jobs = _FakeTable(select_rows=[{"id": _JOB_ID, "canonical_url": None}])
+    client = _FakeSupabaseClient(
+        applications, _FakeTable(select_rows=[]), jobs=jobs, job_snapshots=job_snapshots
+    )
+
+    result = await find_application_by_url(client, _USER_ID, "?")  # type: ignore[arg-type]
+
+    assert result is None

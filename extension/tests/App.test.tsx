@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CONSENT_STORAGE_KEY, CONSENT_VERSION } from "@/entrypoints/sidepanel/App";
 import type { DetectionStateResponse, FillResult } from "@/lib/types";
 
 // Renders the real side panel against a fake Supabase client and a fake
@@ -40,6 +41,26 @@ const backgroundMessages: Message[] = [];
 let runtimeListeners: Array<(message: unknown, sender: unknown) => void> = [];
 let container: HTMLDivElement;
 let root: Root;
+
+// E6 continuation -- the consent gate's own stored flag. Defaults to
+// "already agreed, current version" in beforeEach so every OTHER describe
+// block in this file (written before the gate existed) keeps mounting
+// straight into its signed-out/signed-in UI unchanged; the "consent gate"
+// describe block below overrides this per test to exercise the gate itself.
+let chromeStore: Record<string, unknown>;
+
+function stubChromeStorage(): void {
+  vi.stubGlobal("chrome", {
+    storage: {
+      local: {
+        get: vi.fn(async (key: string) => (key in chromeStore ? { [key]: chromeStore[key] } : {})),
+        set: vi.fn(async (values: Record<string, unknown>) => {
+          Object.assign(chromeStore, values);
+        }),
+      },
+    },
+  });
+}
 
 function tracked(applicationId: string): DetectionStateResponse {
   return {
@@ -134,6 +155,8 @@ beforeEach(() => {
 
   toTab = (_tabId, message) => (message.type === "GET_DETECTION_STATE" || message.type === "RECHECK" ? tracked(APP_A) : undefined);
   toBackground = () => undefined;
+  chromeStore = { [CONSENT_STORAGE_KEY]: { version: CONSENT_VERSION } };
+  stubChromeStorage();
   vi.stubGlobal("browser", {
     tabs: {
       query: vi.fn(async () => [{ id: 1 }]),
@@ -169,6 +192,113 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+// ---- E6 continuation: the in-product data-collection consent gate ------------------
+
+describe("the consent gate", () => {
+  it("blocks sign-in until agreed, and fires no request other than its own local storage read", async () => {
+    chromeStore = {}; // never agreed
+    await mount();
+
+    expect(textOf()).toContain("Before you sign in");
+    expect(container.querySelector('input[type="email"]')).toBeNull();
+    expect(buttonWith("Sign in")).toBeUndefined();
+    // The two calls this panel would otherwise make on mount -- reading the
+    // page's detection state, and the auth-state getSession() call -- must
+    // not have fired. getSession() is stubbed separately per test in this
+    // file and defaults to resolving, so its own absence here is the
+    // meaningful check: nothing reached the content script or background.
+    expect(tabMessages).toEqual([]);
+    expect(backgroundMessages).toEqual([]);
+  });
+
+  it("also gates a stale consent version, not just a missing one", async () => {
+    chromeStore = { [CONSENT_STORAGE_KEY]: { version: CONSENT_VERSION - 1 } };
+    await mount();
+
+    expect(textOf()).toContain("Before you sign in");
+    expect(tabMessages).toEqual([]);
+  });
+
+  it("'Not now' is inert: no storage write, and the gate is still shown", async () => {
+    chromeStore = {};
+    await mount();
+
+    await click("Not now", { exact: true });
+
+    expect(textOf()).toContain("Before you sign in");
+    expect(chromeStore[CONSENT_STORAGE_KEY]).toBeUndefined();
+    expect(tabMessages).toEqual([]);
+  });
+
+  it("revisiting later (a fresh mount) still shows the gate after 'Not now'", async () => {
+    chromeStore = {};
+    await mount();
+    await click("Not now", { exact: true });
+    await act(async () => root.unmount());
+    container.remove();
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+
+    await mount();
+
+    expect(textOf()).toContain("Before you sign in");
+  });
+
+  it("'I understand and agree' persists the flag and proceeds to the normal signed-in flow", async () => {
+    chromeStore = {};
+    await mount();
+
+    await click("I understand and agree");
+
+    expect(textOf()).not.toContain("Before you sign in");
+    expect(chromeStore[CONSENT_STORAGE_KEY]).toEqual({ version: CONSENT_VERSION });
+    // Now past the gate, the normal signed-in flow runs as usual.
+    expect(tabMessages.map((m) => m.type)).toContain("GET_DETECTION_STATE");
+  });
+
+  it("agreeing is remembered across a remount -- the gate doesn't reappear", async () => {
+    chromeStore = {};
+    await mount();
+    await click("I understand and agree");
+    await act(async () => root.unmount());
+    container.remove();
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+
+    await mount();
+
+    expect(textOf()).not.toContain("Before you sign in");
+  });
+
+  it("a version bump would re-show it -- the stored-version comparison, exercised directly", async () => {
+    // Simulates a future release changing CONSENT_VERSION: today's stored
+    // agreement (this exact version) is what "already agreed" looks like;
+    // anything else -- including a HIGHER version than what's actually
+    // current, not just a lower one -- must not be treated as a match,
+    // since the comparison is equality, not "at least."
+    chromeStore = { [CONSENT_STORAGE_KEY]: { version: CONSENT_VERSION + 1 } };
+    await mount();
+    expect(textOf()).toContain("Before you sign in");
+
+    chromeStore = { [CONSENT_STORAGE_KEY]: { version: CONSENT_VERSION } };
+    await act(async () => root.unmount());
+    container.remove();
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await mount();
+    expect(textOf()).not.toContain("Before you sign in");
+  });
+
+  it("a malformed stored value is treated the same as never having agreed (fail closed)", async () => {
+    chromeStore = { [CONSENT_STORAGE_KEY]: "yes" };
+    await mount();
+    expect(textOf()).toContain("Before you sign in");
+  });
+});
+
 // ---- AB-05 / AB-02: sign-out ------------------------------------------------------
 
 describe("signing out", () => {
@@ -179,6 +309,49 @@ describe("signing out", () => {
 
     expect(auth.signOut).toHaveBeenCalledTimes(1);
     expect(auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+
+  // F2 -- the server-side revocation (POST /extension/sign-out, via
+  // background's own SIGN_OUT handler) must actually be wired up, not just
+  // built and left uncalled. Confirms both the message fires AND that it
+  // fires BEFORE the local session is cleared (still-valid bearer token).
+  it("sends SIGN_OUT to the background worker before clearing the local Supabase session", async () => {
+    const order: string[] = [];
+    toBackground = (message) => {
+      if (message.type === "SIGN_OUT") order.push("SIGN_OUT");
+      return { ok: true };
+    };
+    auth.signOut.mockImplementation(async () => {
+      order.push("local signOut");
+      return { error: null };
+    });
+    await mount();
+
+    await click("Sign out");
+
+    expect(backgroundMessages.map((m) => m.type)).toContain("SIGN_OUT");
+    expect(order).toEqual(["SIGN_OUT", "local signOut"]);
+  });
+
+  it("still signs out locally even when the server-side revocation call fails", async () => {
+    toBackground = (message) => (message.type === "SIGN_OUT" ? { ok: false } : undefined);
+    await mount();
+
+    await click("Sign out");
+
+    expect(auth.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("still signs out locally even when sending SIGN_OUT itself throws (e.g. a dead background worker)", async () => {
+    toBackground = (message) => {
+      if (message.type === "SIGN_OUT") throw new Error("Extension context invalidated.");
+      return undefined;
+    };
+    await mount();
+
+    await click("Sign out");
+
+    expect(auth.signOut).toHaveBeenCalledTimes(1);
   });
 
   it("leaves no address or password in the form for the next person on this browser", async () => {
@@ -378,6 +551,90 @@ describe("filling a drafted answer into a field that already has text (D5)", () 
     await click("Fill & remember");
 
     expect(backgroundMessages.filter((m) => m.type === "SAVE_ANSWER")).toEqual([]);
+  });
+
+  // ---- E6 continuation: the "Replace" action -------------------------------------
+
+  it("offers a Replace button alongside the notice", async () => {
+    await mount();
+    await click("Fill this page");
+    await click("Draft answer");
+
+    await click("Fill", { exact: true });
+
+    expect(buttonExactly("Replace")).toBeDefined();
+  });
+
+  it("Replace re-sends FILL_FIELD for that field with force:true, and the field is written this time", async () => {
+    toTab = (_tabId, message) => {
+      if (message.type === "GET_DETECTION_STATE") return tracked(APP_A);
+      if (message.type === "REQUEST_FILL") {
+        return fillResult({ unresolvedQuestions: [{ fieldName: "question_1", label: "Why us?", kind: "text" }] });
+      }
+      if (message.type === "FILL_FIELD") {
+        return message.force === true ? { filled: true } : { filled: false, reason: "not_empty" };
+      }
+      return undefined;
+    };
+    await mount();
+    await click("Fill this page");
+    await click("Draft answer");
+    await click("Fill", { exact: true }); // first Fill: not_empty, shows Replace
+
+    await click("Replace", { exact: true });
+
+    const fillFieldMessages = tabMessages.filter((m) => m.type === "FILL_FIELD");
+    expect(fillFieldMessages).toEqual([
+      { type: "FILL_FIELD", fieldName: "question_1", value: "My drafted answer", force: false },
+      { type: "FILL_FIELD", fieldName: "question_1", value: "My drafted answer", force: true },
+    ]);
+    expect(textOf()).toContain("Filled");
+    expect(textOf()).not.toContain("already has text");
+  });
+
+  it("Replace appears only for the one question that reported not_empty, not a sibling question", async () => {
+    toTab = (_tabId, message) => {
+      if (message.type === "GET_DETECTION_STATE") return tracked(APP_A);
+      if (message.type === "REQUEST_FILL") {
+        return fillResult({
+          unresolvedQuestions: [
+            { fieldName: "question_1", label: "Why us?", kind: "text" },
+            { fieldName: "question_2", label: "Tell us more", kind: "text" },
+          ],
+        });
+      }
+      if (message.type === "FILL_FIELD") {
+        return message.fieldName === "question_1" ? { filled: false, reason: "not_empty" } : { filled: true };
+      }
+      return undefined;
+    };
+    toBackground = (m) => {
+      if (m.type === "MATCH_ANSWER") return { answer: null };
+      if (m.type === "DRAFT_ANSWER") return { eligible: true, answer_text: "draft", declined_reason: null, warnings: [] };
+      return undefined;
+    };
+    await mount();
+    await click("Fill this page");
+    for (const button of buttons().filter((b) => b.textContent === "Draft answer")) {
+      await act(async () => button.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+      await flush();
+    }
+    for (const button of buttons().filter((b) => b.textContent?.trim() === "Fill")) {
+      await act(async () => button.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+      await flush();
+    }
+
+    expect(buttons().filter((b) => b.textContent === "Replace")).toHaveLength(1);
+    expect(textOf()).toContain("already has text");
+    expect(textOf()).toContain("Filled");
+  });
+
+  it("Replace does not appear before any Fill attempt, or once the field has already filled", async () => {
+    await mount();
+    await click("Fill this page");
+    await click("Draft answer");
+
+    expect(buttonWith("Replace")).toBeUndefined(); // not yet filled at all
   });
 });
 

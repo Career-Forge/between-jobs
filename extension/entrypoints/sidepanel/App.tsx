@@ -14,8 +14,100 @@ import type {
   MatchAnswerMessage,
   MatchAnswerResult,
   SaveAnswerMessage,
+  SignOutMessage,
+  SignOutResult,
 } from "@/lib/types";
 import "./App.css";
+
+// ---- E6 continuation: in-product data-collection disclosure and consent ----
+//
+// Chrome Web Store's User Data policy (confirmed live, 2026-09-21, against
+// developer.chrome.com/docs/webstore/program-policies/user-data-faq and
+// .../blog/cws-policy-updates-2026): the prominent disclosure and consent
+// "must occur within the Product's user interface" -- store-listing text
+// does not satisfy it -- and must happen BEFORE the product collects or
+// handles user data, via "a specific action clearly agreeing to the
+// disclosure." The 2026 update (enforced from 2026-08-01) removed the
+// "closely related to the single purpose" qualifier (every data type must
+// be disclosed, not just ones tied to the extension's stated purpose) and
+// separately requires "proactively disclos[ing] to users if their data
+// handling practices change at any point after the initial installation."
+// Both match extension/store/LISTING.md section 4's own draft exactly, so
+// this pass implements that draft close to verbatim rather than rewriting
+// it -- the live check found nothing materially wrong with it.
+//
+// The stored flag carries a VERSION, not a bare boolean, specifically so a
+// future change in what this extension collects can force re-consent by
+// bumping CONSENT_VERSION -- without that, shipping a materially different
+// disclosure later would need a storage-schema migration instead of a
+// one-line constant change. There is only one version today.
+export const CONSENT_STORAGE_KEY = "disclosureConsent";
+export const CONSENT_VERSION = 1;
+
+interface StoredConsent {
+  version: number;
+}
+
+type ConsentState = { status: "loading" } | { status: "needed" } | { status: "granted" };
+
+function isStoredConsent(value: unknown): value is StoredConsent {
+  return typeof value === "object" && value !== null && typeof (value as { version?: unknown }).version === "number";
+}
+
+// The gating screen itself, shown before any sign-in UI. Copy is
+// extension/store/LISTING.md section 4's draft, adapted to JSX (a bullet
+// list instead of a blockquote) but otherwise close to verbatim -- it's
+// real product copy someone already got right, and it describes exactly
+// what handleFill/handleDraftAnswer/handleFillAnswer above actually do.
+// The privacy-policy link is left as an explicit maintainer placeholder
+// (LISTING.md's own convention) rather than inventing a URL.
+function ConsentGate({ onAgree }: { onAgree: () => void }): React.JSX.Element {
+  return (
+    <div className="panel">
+      <h1>Between Jobs</h1>
+      <div className="consent-gate">
+        <h2>Before you sign in</h2>
+        <p>
+          Between Jobs autofill works with your Between Jobs account. When you are signed in and
+          open a job application on Lever, Greenhouse or Ashby, this extension will:
+        </p>
+        <ul>
+          <li>
+            send the address of that page (without any query string) to the Between Jobs service
+            to find the job you track;
+          </li>
+          <li>
+            download your profile details (name, email, phone, location, links) and the résumé
+            and cover letter you prepared, and use them to fill the form when you press Fill;
+          </li>
+          <li>
+            only if you press Draft answer or Fill &amp; remember, send that question&apos;s text
+            to the service, which may pass it, with a summary of your profile and the job
+            description, to the AI provider you configured with your own key, and save answers
+            you choose to remember.
+          </li>
+        </ul>
+        <p>
+          It never submits an application, never ticks a checkbox, and never fills
+          self-identification questions. It has no analytics and sells nothing. Full policy:{" "}
+          [MAINTAINER TO FILL: privacy policy URL]
+        </p>
+        <div className="button-row">
+          <button className="primary" onClick={onAgree}>
+            I understand and agree
+          </button>
+          {/* Deliberately does nothing: no state is written, so the gate
+              is still here next time the panel opens. This button exists
+              only so declining is an explicit, visible choice rather than
+              the person having no way to say "not yet" but closing the
+              panel. */}
+          <button type="button">Not now</button>
+        </div>
+      </div>
+      <p className="footer-note">You always review and submit this application yourself.</p>
+    </div>
+  );
+}
 
 type AuthState = { status: "loading" } | { status: "signed_out" } | { status: "signed_in" };
 
@@ -108,6 +200,7 @@ export default function App() {
   // visible to the other); it was never meant to also apply to repeated
   // calls WITHIN one already-open realm, which is what this panel does.
   const [supabase] = useState(getSupabaseClient);
+  const [consent, setConsent] = useState<ConsentState>({ status: "loading" });
   const [auth, setAuth] = useState<AuthState>({ status: "loading" });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -141,6 +234,46 @@ export default function App() {
     setDetection(response);
   }, []);
 
+  // E6 continuation -- reads the stored consent flag once, on mount. This
+  // is the one thing allowed to happen before the person has agreed to
+  // anything: it's a local `chrome.storage.local` read, never a network
+  // request, and it isn't "collecting" anything FROM the person or about
+  // them (see ConsentGate's own doc comment for the policy citation this
+  // is built against). A version mismatch (or nothing stored at all) is
+  // treated identically to "never agreed" -- fail closed, ask again.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      let stored: StoredConsent | null = null;
+      try {
+        const result = (await chrome.storage.local.get(CONSENT_STORAGE_KEY)) as Record<string, unknown>;
+        const value = result[CONSENT_STORAGE_KEY];
+        stored = isStoredConsent(value) ? value : null;
+      } catch (e) {
+        console.error("[between-jobs] reading stored consent failed", e);
+      }
+      if (cancelled) return;
+      setConsent(stored?.version === CONSENT_VERSION ? { status: "granted" } : { status: "needed" });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // "I understand and agree": persists the flag (so a remount, or the
+  // panel reopening tomorrow, doesn't ask again) and lets the rest of the
+  // panel render. If the write itself fails, the person still proceeds
+  // for this session rather than being trapped behind a broken screen by
+  // a transient storage error -- the gate simply reappears next time.
+  async function handleAgreeToConsent() {
+    try {
+      await chrome.storage.local.set({ [CONSENT_STORAGE_KEY]: { version: CONSENT_VERSION } satisfies StoredConsent });
+    } catch (e) {
+      console.error("[between-jobs] saving consent failed", e);
+    }
+    setConsent({ status: "granted" });
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setAuth({ status: data.session ? "signed_in" : "signed_out" });
@@ -155,12 +288,22 @@ export default function App() {
   // user on the same browser profile) re-checks the page rather than
   // reading the content script's cache; merely opening the panel while
   // already signed in doesn't need to re-hit the backend.
+  //
+  // Gated on consent (E6 continuation): while the flag is unset (or
+  // stale), this effect must not fire refreshDetection at all -- that's
+  // the one call in this panel that reaches the content script and, from
+  // there, the backend. `previousAuthStatus` is deliberately left
+  // untouched on an early return too, not just the refreshDetection call:
+  // once consent is granted, "did this session just sign in" should still
+  // reflect the real auth history, not a transition that happened while
+  // the gate was blocking everything downstream of it.
   const previousAuthStatus = useRef<AuthState["status"]>("loading");
   useEffect(() => {
+    if (consent.status !== "granted") return;
     const cameFromSignedOut = previousAuthStatus.current === "signed_out";
     previousAuthStatus.current = auth.status;
     if (auth.status === "signed_in") void refreshDetection({ recheck: cameFromSignedOut });
-  }, [auth.status, refreshDetection]);
+  }, [auth.status, refreshDetection, consent.status]);
 
   // Adversarially-confirmed gap: without this, navigating the same tab to
   // a different posting (or a page reload) left the panel showing the
@@ -168,7 +311,14 @@ export default function App() {
   // Fill button -- while the freshly-injected content script on the new
   // page hadn't finished its own detection yet.
   useEffect(() => {
-    if (auth.status !== "signed_in") return;
+    // Gated on consent too (E6 continuation), not just auth status: the
+    // auth-state listener above runs unconditionally, so a returning user
+    // with an already-valid session can reach `auth.status === "signed_in"`
+    // before ever seeing (let alone agreeing to) the consent gate. Without
+    // this check, THESE listeners -- not the render gate -- would be the
+    // ones actually reaching the content script/backend behind the
+    // person's back the moment a tab updates or activates.
+    if (auth.status !== "signed_in" || consent.status !== "granted") return;
     // Adversarially-confirmed gap: this used to ignore its own `tabId`
     // parameter and re-run for ANY tab in the browser reaching
     // load-complete, active or not -- including a background tab
@@ -202,7 +352,7 @@ export default function App() {
       browser.tabs.onActivated.removeListener(onActivated);
       browser.runtime.onMessage.removeListener(onMessage);
     };
-  }, [auth.status, refreshDetection]);
+  }, [auth.status, refreshDetection, consent.status]);
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -222,6 +372,28 @@ export default function App() {
   }
 
   async function handleSignOut() {
+    // E6 continuation -- record the server-side revocation (the ORIGINAL
+    // spec's own "server-side revocation" requirement -- see
+    // extension_auth.py's module docstring) BEFORE clearing the local
+    // Supabase session below: the bearer token this call needs is only
+    // still readable from `getSession()` up until `signOut()` clears it.
+    // Best-effort and non-blocking on purpose (SignOutMessage's own doc
+    // comment) -- a network hiccup here must never trap the user signed
+    // in on THIS device; it only means a stolen/leftover token stays
+    // valid a little longer than intended, not that sign-out itself
+    // fails. `sendMessage` itself can throw (e.g. "Extension context
+    // invalidated"), same gap handleMarkApplied already guards -- caught
+    // the same way, never allowed to block the local sign-out below.
+    try {
+      const signOutMessage: SignOutMessage = { type: "SIGN_OUT" };
+      const result: SignOutResult | undefined = await browser.runtime.sendMessage(signOutMessage);
+      if (!result?.ok) {
+        console.error("[between-jobs] server-side extension sign-out failed");
+      }
+    } catch (e) {
+      console.error("[between-jobs] server-side extension sign-out failed", e);
+    }
+
     // `scope: "local"`: this extension's session is its own (D2), so
     // signing out of it must not revoke the same account's web-app
     // sessions -- auth-js's default scope is "global", which signs the
@@ -402,12 +574,20 @@ export default function App() {
   // memory (best-effort -- a save failure still leaves the real field
   // filled, so it's logged, not surfaced as an error on top of a
   // successful fill).
-  async function handleFillAnswer(fieldName: string, label: string | null, remember: boolean) {
+  // `force` (E6 continuation): the per-question "Replace" action, D5's
+  // only escape hatch for a custom question -- defaults to false for the
+  // ordinary Fill/Fill & remember buttons, and is passed true only from
+  // the Replace button rendered specifically for the "not_empty" notice
+  // below. content.ts's own fillCustomTextAnswer re-validates everything
+  // this bypasses is limited to (the D5 not-empty check only, never the
+  // D6/namespace/element-kind refusals) -- this panel just threads the
+  // flag through, it doesn't re-implement that scoping.
+  async function handleFillAnswer(fieldName: string, label: string | null, remember: boolean, force = false) {
     const current = answerStates[fieldName];
     if (current === undefined || current.status !== "ready") return;
     const { text, warnings, fromMemory } = current;
     setAnswerStates((prev) => ({ ...prev, [fieldName]: { status: "filling", text, warnings, fromMemory } }));
-    const result = await sendToActiveTab<FillFieldResult>({ type: "FILL_FIELD", fieldName, value: text });
+    const result = await sendToActiveTab<FillFieldResult>({ type: "FILL_FIELD", fieldName, value: text, force });
     if (result !== null && !result.filled && result.reason === "not_empty") {
       // D5: the field already has text. Nothing was written, and the draft
       // stays in the box -- so this isn't an error state (which would offer
@@ -445,6 +625,16 @@ export default function App() {
       }
     }
     setAnswerStates((prev) => ({ ...prev, [fieldName]: { status: "filled" } }));
+  }
+
+  // E6 continuation -- the consent gate renders before anything else,
+  // including the auth-loading screen: while it's unresolved or unagreed,
+  // nothing past it (the sign-in form, any detection/fill UI) is shown.
+  if (consent.status === "loading") {
+    return <div className="panel">Loading...</div>;
+  }
+  if (consent.status === "needed") {
+    return <ConsentGate onAgree={() => void handleAgreeToConsent()} />;
   }
 
   if (auth.status === "loading") {
@@ -646,9 +836,25 @@ export default function App() {
                                     </ul>
                                   )}
                                   {state.notice !== undefined && (
-                                    <p className="question-meta" role="status">
-                                      {state.notice}
-                                    </p>
+                                    <div>
+                                      <p className="question-meta" role="status">
+                                        {state.notice}
+                                      </p>
+                                      {/* E6 continuation -- D5's only escape hatch for a custom
+                                          question ("Refill all" explicitly never touches these).
+                                          Shown only alongside FIELD_HAS_TEXT_NOTICE specifically
+                                          (not any future notice this same field might carry), and
+                                          only for this one question -- it re-sends FILL_FIELD for
+                                          `q.fieldName` with force:true, nothing else on the page. */}
+                                      {state.notice === FIELD_HAS_TEXT_NOTICE && (
+                                        <button
+                                          onClick={() => handleFillAnswer(q.fieldName, q.label, false, true)}
+                                          disabled={state.status === "filling"}
+                                        >
+                                          Replace
+                                        </button>
+                                      )}
+                                    </div>
                                   )}
                                   {/* Sized to the whole draft (CSS caps the height and scrolls
                                       inside it), with a length readout: Fill writes ALL of this

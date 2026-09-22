@@ -25,8 +25,16 @@ export interface ExtensionPersonalInfo {
 
 export interface ExtensionPayload {
   prepare_result: {
-    resume?: { artifact_id: string; version_id: string };
-    cover_letter?: { artifact_id: string; version_id: string };
+    // Both keys are always PRESENT on the real wire response (the backend's
+    // GET /extension-payload always writes them, via `.get(...)` on the
+    // stored PrepareApplicationResult) -- `| null` is the common case, not
+    // an edge case: `generate_cover_letter` defaults to false, so most
+    // applications' own real payload is `{ resume: {...}, cover_letter:
+    // null }`. Only `?` (the whole `resume`/`cover_letter` key literally
+    // absent) is the one shape that can't happen on this field today; kept
+    // optional anyway so a stricter/older payload shape still type-checks.
+    resume?: { artifact_id: string; version_id: string } | null;
+    cover_letter?: { artifact_id: string; version_id: string } | null;
   } | null;
   personal_info: ExtensionPersonalInfo | null;
 }
@@ -34,8 +42,14 @@ export interface ExtensionPayload {
 /** A generated PDF (résumé or cover letter), base64-encoded for
  * structured-clone transfer across the background <-> content-script
  * message boundary. Fetched by background (the only context allowed to
- * talk to the backend, per this phase's own architecture) once per
- * detection, not per fill click. */
+ * talk to the backend, per this phase's own architecture) -- E6
+ * continuation: lazily, the first time a Fill is actually requested for
+ * this application, via FETCH_APPLICATION_FILES, not eagerly at
+ * PAGE_DETECTED/detection time the way it used to be. Detection used to
+ * download both files on every tracked page visit regardless of whether
+ * the person ever pressed Fill; moving the fetch to the Fill path cuts
+ * that load on the backend and the user's own network to just once per
+ * application actually filled. */
 export interface GeneratedFile {
   base64: string;
   filename: string;
@@ -47,9 +61,13 @@ export interface GeneratedFile {
  * script both ask for it rather than duplicating the lookup.
  *
  * E3c (generalized in E4/E5) -- the verified, ATS-idiosyncratic field
- * map, fetched and signature-checked once per detection alongside the
- * résumé/cover-letter blobs (background.ts is the only context that
- * talks to the backend, per this phase's own architecture). `fieldMap:
+ * map, fetched and signature-checked once per detection (background.ts
+ * is the only context that talks to the backend, per this phase's own
+ * architecture). Unlike the field map, `resume`/`coverLetter` below are
+ * NOT fetched at detection time (E6 continuation) -- they start `null`
+ * here regardless of whether the application actually has one, and a
+ * content script fills them in itself, lazily, via FETCH_APPLICATION_
+ * FILES, the first time a Fill is requested. `fieldMap:
  * null` means D4's fail-closed case fired for Lever (content.ts must not
  * attempt any Lever-idiosyncratic behavior -- custom questions, cover-
  * letter discovery, location/LinkedIn/portfolio -- in that case, though
@@ -79,6 +97,12 @@ export type TabState =
        * same browser profile can't fill the previous user's data. */
       userId: string;
       payload: ExtensionPayload;
+      /** E6 continuation: always `null` as returned by PAGE_DETECTED --
+       * "not fetched yet," not "this application has none." Whether one
+       * should exist at all comes from `payload.prepare_result`; a content
+       * script fetches the real blob itself, lazily, on the first Fill
+       * (FETCH_APPLICATION_FILES) and caches it locally rather than
+       * re-detecting. See GeneratedFile's own doc comment for why. */
       resume: GeneratedFile | null;
       coverLetter: GeneratedFile | null;
       fieldMap: AtsFieldMap | null;
@@ -148,6 +172,53 @@ export interface DraftAnswerResult {
   warnings: string[];
 }
 
+/** Content script -> background (E6 continuation): fetch this
+ * application's résumé/cover-letter PDFs, lazily -- the first time a Fill
+ * is actually requested, not at PAGE_DETECTED time (see GeneratedFile's
+ * own doc comment). `wantResume`/`wantCoverLetter` say which of the two
+ * are actually worth fetching (the content script already knows, from
+ * `payload.prepare_result`, whether each one should exist and whether it
+ * has already fetched it once this page load) -- background trusts them
+ * as a fetch selector only, never as a substitute for its own
+ * `prepare_result` read, so asking for a file that doesn't exist just
+ * costs one extra round trip, not a security question. */
+export interface FetchApplicationFilesMessage {
+  type: "FETCH_APPLICATION_FILES";
+  applicationId: string;
+  wantResume: boolean;
+  wantCoverLetter: boolean;
+}
+
+/** Each file's fetch is independent: a résumé fetch failing (or not being
+ * requested) never prevents the cover letter from coming back, and vice
+ * versa. `null` with a `null` error means "not requested"; `null` with a
+ * non-null error means "requested and failed" -- content.ts turns that
+ * into the same resumeError/coverLetterError a FillResult already shows. */
+export interface FetchApplicationFilesResult {
+  resume: GeneratedFile | null;
+  resumeError: string | null;
+  coverLetter: GeneratedFile | null;
+  coverLetterError: string | null;
+}
+
+/** Side panel -> background (E6 continuation): the human clicked "Sign
+ * out." Records this user's extension sign-out server-side
+ * (POST /extension/sign-out -- extension_auth.py's own scoped liveness
+ * check) BEFORE the panel clears its local Supabase session, so the call
+ * is still made with a currently-valid bearer token. Best-effort: a
+ * failure here (network down, backend unreachable) never blocks the
+ * local sign-out itself -- the user's own device is always the thing
+ * that must end the session promptly; the server-side revocation is
+ * defense against a stolen/leftover token outliving that, not a
+ * precondition for signing out at all. */
+export interface SignOutMessage {
+  type: "SIGN_OUT";
+}
+
+export interface SignOutResult {
+  ok: boolean;
+}
+
 /** Content script -> background: "is `userId` still the signed-in user?"
  * Answers with a boolean only, so a content script (the least-trusted
  * extension context, sitting next to attacker-controlled page code) never
@@ -167,7 +238,9 @@ export type BackgroundMessage =
   | MarkAppliedMessage
   | MatchAnswerMessage
   | SaveAnswerMessage
-  | DraftAnswerMessage;
+  | DraftAnswerMessage
+  | FetchApplicationFilesMessage
+  | SignOutMessage;
 
 /** Content script -> side panel (broadcast via runtime.sendMessage): the
  * page navigated client-side (Greenhouse and Ashby are SPAs, so no new
@@ -190,7 +263,13 @@ export type ContentScriptMessage =
   | { type: "GET_DETECTION_STATE" }
   | { type: "RECHECK" }
   | { type: "REQUEST_FILL"; forceRefillAll: boolean }
-  | { type: "FILL_FIELD"; fieldName: string; value: string };
+  // `force` (E6 continuation): the per-question "Replace" action, D5's
+  // only escape hatch for a custom question -- defaults to false/absent
+  // for every existing caller, matching "Refill all"'s own explicit scope
+  // (it never touches custom questions at all). See each ATS's own
+  // `fillCustomTextAnswer` for exactly what `force` does and doesn't
+  // bypass.
+  | { type: "FILL_FIELD"; fieldName: string; value: string; force?: boolean };
 
 /** Why a per-question fill wrote nothing. `not_empty` is D5 (the field
  * already has text); `page_changed` means the tab no longer shows the page

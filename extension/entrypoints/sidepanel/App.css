@@ -224,3 +224,24 @@
   color: var(--bj-text-muted);
   font-size: 0.8rem;
 }
+
+/* E6 continuation -- the in-product data-collection consent gate. Plain
+   prose over this panel's usual terse status lines, since this is the one
+   screen whose whole job is to be read carefully before anything else
+   runs. */
+.consent-gate h2 {
+  font-size: 1rem;
+  margin: 0 0 0.6rem;
+}
+.consent-gate p {
+  margin: 0 0 0.75rem;
+  line-height: 1.45;
+}
+.consent-gate ul {
+  margin: 0 0 0.75rem;
+  padding-left: 1.2rem;
+  line-height: 1.45;
+}
+.consent-gate li {
+  margin-bottom: 0.4rem;
+}

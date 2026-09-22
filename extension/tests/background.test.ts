@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SignedFieldMapResponse } from "@/lib/ats-field-map";
-import type { TabState } from "@/lib/types";
+import type { FetchApplicationFilesResult, TabState } from "@/lib/types";
 
 // Drives the real background.ts through its real onMessage listener, with the
 // network (apiFetch), the Supabase session and chrome.storage stubbed. The
@@ -317,6 +317,176 @@ describe("tracked state carries the signed-in user", () => {
     const harness = await loadBackground();
     mocks.getSession.mockRejectedValue(new Error("storage unavailable"));
     expect(await harness.send({ type: "VERIFY_SESSION", userId: "user-1" })).toEqual({ valid: false });
+  });
+});
+
+// ---- E6 continuation: résumé/cover-letter PDFs move off PAGE_DETECTED --------------
+
+describe("résumé/cover-letter PDFs are no longer fetched at detection time", () => {
+  it("PAGE_DETECTED never calls apiFetchBlob, even when the payload says both files exist", async () => {
+    const harness = await loadBackground();
+    routeApi();
+    mocks.apiFetch.mockImplementation(async (path: string) => {
+      if (path.startsWith("/extension/lookup")) return { application_id: APP_ID };
+      if (path === `/applications/${APP_ID}/extension-payload`) {
+        return {
+          prepare_result: { resume: { artifact_id: "a", version_id: "v" }, cover_letter: { artifact_id: "b", version_id: "w" } },
+          personal_info: null,
+        };
+      }
+      if (path.startsWith("/extension/field-maps/")) {
+        const { ApiError } = await import("@/lib/api");
+        throw new ApiError(404, "not found");
+      }
+      return {};
+    });
+
+    const state = await detect(harness, "greenhouse");
+
+    expect(state.status).toBe("tracked");
+    expect(state.status === "tracked" && state.resume).toBeNull();
+    expect(state.status === "tracked" && state.coverLetter).toBeNull();
+    expect(mocks.apiFetchBlob).not.toHaveBeenCalled();
+  });
+});
+
+// ---- E6 continuation: FETCH_APPLICATION_FILES ---------------------------------------
+
+function base64Of(text: string): string {
+  return Buffer.from(text, "utf-8").toString("base64");
+}
+
+describe("FETCH_APPLICATION_FILES", () => {
+  it("fetches only the files asked for, base64-encoded", async () => {
+    const harness = await loadBackground();
+    mocks.apiFetchBlob.mockImplementation(async (path: string) => {
+      const text = path.endsWith("resume.pdf") ? "%PDF resume" : "%PDF cover letter";
+      return new Blob([text], { type: "application/pdf" });
+    });
+
+    const result = await harness.send(
+      { type: "FETCH_APPLICATION_FILES", applicationId: APP_ID, wantResume: true, wantCoverLetter: false },
+      CONTENT_SCRIPT,
+    );
+
+    expect(result).toEqual({
+      resume: { base64: base64Of("%PDF resume"), filename: "resume.pdf" },
+      resumeError: null,
+      coverLetter: null,
+      coverLetterError: null,
+    });
+    expect(mocks.apiFetchBlob).toHaveBeenCalledTimes(1);
+    // E6 continuation, part 2 -- moved to the extension's own mirrored route
+    // (sign-out-aware), not the web app's shared /applications/... one.
+    expect(mocks.apiFetchBlob).toHaveBeenCalledWith(`/extension/${APP_ID}/resume.pdf`);
+  });
+
+  it("fetches both when both are wanted", async () => {
+    const harness = await loadBackground();
+    mocks.apiFetchBlob.mockImplementation(async (path: string) => {
+      const text = path.endsWith("resume.pdf") ? "%PDF resume" : "%PDF cover letter";
+      return new Blob([text], { type: "application/pdf" });
+    });
+
+    const result = (await harness.send(
+      { type: "FETCH_APPLICATION_FILES", applicationId: APP_ID, wantResume: true, wantCoverLetter: true },
+      CONTENT_SCRIPT,
+    )) as FetchApplicationFilesResult;
+
+    expect(result.resume).toEqual({ base64: base64Of("%PDF resume"), filename: "resume.pdf" });
+    expect(result.coverLetter).toEqual({ base64: base64Of("%PDF cover letter"), filename: "cover-letter.pdf" });
+  });
+
+  it("a résumé fetch failure doesn't block the cover letter -- each file fails independently", async () => {
+    const harness = await loadBackground();
+    mocks.apiFetchBlob.mockImplementation(async (path: string) => {
+      if (path.endsWith("resume.pdf")) throw new Error("network hiccup");
+      return new Blob(["%PDF cover letter"], { type: "application/pdf" });
+    });
+
+    const result = (await harness.send(
+      { type: "FETCH_APPLICATION_FILES", applicationId: APP_ID, wantResume: true, wantCoverLetter: true },
+      CONTENT_SCRIPT,
+    )) as FetchApplicationFilesResult;
+
+    expect(result.resume).toBeNull();
+    expect(result.resumeError).toBe("network hiccup");
+    expect(result.coverLetter).toEqual({ base64: base64Of("%PDF cover letter"), filename: "cover-letter.pdf" });
+    expect(result.coverLetterError).toBeNull();
+  });
+
+  it("asking for neither calls apiFetchBlob zero times", async () => {
+    const harness = await loadBackground();
+    const result = await harness.send(
+      { type: "FETCH_APPLICATION_FILES", applicationId: APP_ID, wantResume: false, wantCoverLetter: false },
+      CONTENT_SCRIPT,
+    );
+    expect(result).toEqual({ resume: null, resumeError: null, coverLetter: null, coverLetterError: null });
+    expect(mocks.apiFetchBlob).not.toHaveBeenCalled();
+  });
+
+  it("only a content script may send it -- the side panel is refused", async () => {
+    const harness = await loadBackground();
+    const reply = harness.send(
+      { type: "FETCH_APPLICATION_FILES", applicationId: APP_ID, wantResume: true, wantCoverLetter: false },
+      SIDE_PANEL,
+    );
+    expect(reply).toBeUndefined();
+    expect(mocks.apiFetchBlob).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed applicationId or non-boolean want flags", async () => {
+    const harness = await loadBackground();
+    await expect(
+      harness.send(
+        { type: "FETCH_APPLICATION_FILES", applicationId: "not-a-uuid", wantResume: true, wantCoverLetter: false },
+        CONTENT_SCRIPT,
+      ) as Promise<unknown>,
+    ).rejects.toThrow(/invalid request/i);
+    await expect(
+      harness.send(
+        { type: "FETCH_APPLICATION_FILES", applicationId: APP_ID, wantResume: "yes", wantCoverLetter: false },
+        CONTENT_SCRIPT,
+      ) as Promise<unknown>,
+    ).rejects.toThrow(/invalid request/i);
+    expect(mocks.apiFetchBlob).not.toHaveBeenCalled();
+  });
+});
+
+// ---- E6 continuation / F2: SIGN_OUT ---------------------------------------------------
+//
+// Closes a real, confirmed gap: the backend's server-side extension
+// sign-out revocation (POST /extension/sign-out) existed with nothing in
+// the shipped extension ever calling it. These prove background.ts's own
+// half of the wire-up -- App.test.tsx's own "signing out" tests prove the
+// side panel actually sends this message as part of a real sign-out.
+
+describe("SIGN_OUT", () => {
+  it("POSTs to /extension/sign-out and reports ok", async () => {
+    const harness = await loadBackground();
+
+    const result = await harness.send({ type: "SIGN_OUT" }, SIDE_PANEL);
+
+    expect(result).toEqual({ ok: true });
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/extension/sign-out", { method: "POST" });
+  });
+
+  it("never throws -- a failed revocation call reports ok: false instead", async () => {
+    mocks.apiFetch.mockRejectedValueOnce(new Error("network down"));
+    const harness = await loadBackground();
+
+    const result = await harness.send({ type: "SIGN_OUT" }, SIDE_PANEL);
+
+    expect(result).toEqual({ ok: false });
+  });
+
+  it("only the side panel may send it -- a content script is refused", async () => {
+    const harness = await loadBackground();
+
+    const reply = harness.send({ type: "SIGN_OUT" }, CONTENT_SCRIPT);
+
+    expect(reply).toBeUndefined();
+    expect(mocks.apiFetch).not.toHaveBeenCalledWith("/extension/sign-out", expect.anything());
   });
 });
 

@@ -33,8 +33,10 @@ starts at ("saved" is one of the 7).
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any, cast
+from urllib.parse import urlsplit, urlunsplit
 
 from postgrest.exceptions import APIError
 
@@ -132,6 +134,25 @@ async def list_applications(supabase: AsyncClient, user_id: str) -> list[dict[st
     return cast(list[dict[str, Any]], result.data)
 
 
+def _canonical_for_comparison(url: str) -> str:
+    """The lightest, ATS-agnostic normalization that makes drift between
+    however a URL was originally stored and however the extension builds
+    its lookup URL today stop causing a silent miss: strip the query
+    string, the fragment, and a trailing slash, keep scheme/host/path
+    exactly as given. Deliberately does NOT duplicate `atsHosts.ts`'s own
+    `canonicalLookupUrl` (origin + path with an ATS-specific form-route
+    suffix stripped) -- the extension already does that ATS-idiosyncratic
+    normalization client-side before it ever calls `/extension/lookup`,
+    and this backend has no business re-deriving that knowledge. Never
+    called on an empty string -- callers guard that themselves, since "no
+    url at all" and "a url that happens to canonicalize to something
+    empty" must never be treated as the same value (see the empty-url
+    guard below)."""
+    split = urlsplit(url)
+    path = re.sub(r"/+$", "", split.path)
+    return urlunsplit((split.scheme, split.netloc, path, "", ""))
+
+
 async def find_application_by_url(
     supabase: AsyncClient, user_id: str, url: str
 ) -> dict[str, Any] | None:
@@ -140,12 +161,16 @@ async def find_application_by_url(
     detection (D3) can tell "already tracked" from "offer to track" before
     fetching a prepared payload.
 
-    Exact match only against `job_snapshots.source_url` and
-    `jobs.canonical_url` for this user's own applications -- no query-
-    string/tracking-param normalization. A real, disclosed v1 limitation:
-    an ATS appending its own tracking params to the URL the extension
-    reads from `window.location.href` (vs. what was stored when the job
-    was tracked) will miss. Batch-fetches this user's applications' own
+    Compares `job_snapshots.source_url` and `jobs.canonical_url` for this
+    user's own applications against the lookup URL after both sides go
+    through `_canonical_for_comparison` (E6 continuation -- closes a real
+    regression where a job tracked via a URL carrying a query string no
+    longer matched an otherwise-identical lookup URL without one). Still
+    not a byte-exact match and still a real, disclosed limitation beyond
+    that: two URLs that differ in path casing, a trailing ATS-specific
+    route segment the extension's own `canonicalLookupUrl` didn't know to
+    strip, or any other divergence this lighter normalization doesn't
+    cover, will still miss. Batch-fetches this user's applications' own
     snapshots/jobs and compares in Python, mirroring
     `applications_routes._with_snapshot`'s own batch-then-merge shape --
     fine at this table's real per-user scale (tens, not thousands, of
@@ -156,9 +181,11 @@ async def find_application_by_url(
     URL-less manually-pasted job, a real live path, not a hypothetical) --
     adversarially confirmed as a real false-positive otherwise: any
     accidental empty-string lookup would resolve to that job's application
-    as "already tracked."""
+    as "already tracked." Kept as a guard on the raw, un-canonicalized
+    `url` -- exactly as it was before this normalization existed."""
     if not url:
         return None
+    canonical_lookup_url = _canonical_for_comparison(url)
 
     applications = await list_applications(supabase, user_id)
     if not applications:
@@ -172,9 +199,14 @@ async def find_application_by_url(
 
     for application in applications:
         snapshot = snapshot_by_id.get(application["active_job_snapshot_id"])
-        if snapshot is not None and snapshot.get("source_url") == url:
+        source_url = snapshot.get("source_url") if snapshot is not None else None
+        if source_url and _canonical_for_comparison(source_url) == canonical_lookup_url:
             return application
-        if canonical_url_by_job_id.get(application["job_id"]) == url:
+        job_canonical_url = canonical_url_by_job_id.get(application["job_id"])
+        if (
+            job_canonical_url
+            and _canonical_for_comparison(job_canonical_url) == canonical_lookup_url
+        ):
             return application
     return None
 

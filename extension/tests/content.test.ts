@@ -418,6 +418,176 @@ describe("cover-letter attach only targets a file input", () => {
   });
 });
 
+// ---- E6 continuation: résumé/cover-letter PDFs are fetched lazily, on Fill ----
+
+describe("résumé/cover-letter PDFs are fetched on Fill, not on detection", () => {
+  function respondWithFiles(
+    overrides: {
+      resume?: { base64: string; filename: string } | null;
+      resumeError?: string | null;
+      coverLetter?: { base64: string; filename: string } | null;
+      coverLetterError?: string | null;
+    },
+    prepareResult: {
+      resume?: { artifact_id: string; version_id: string } | null;
+      cover_letter?: { artifact_id: string; version_id: string } | null;
+    } = { resume: { artifact_id: "a", version_id: "v" } },
+  ) {
+    return (message: { type: string; [key: string]: unknown }): unknown => {
+      if (message.type === "PAGE_DETECTED") {
+        return trackedState({
+          payload: {
+            prepare_result: prepareResult,
+            personal_info: PERSON,
+          },
+        });
+      }
+      if (message.type === "VERIFY_SESSION") return { valid: true };
+      if (message.type === "FETCH_APPLICATION_FILES") {
+        return {
+          resume: overrides.resume ?? null,
+          resumeError: overrides.resumeError ?? null,
+          coverLetter: overrides.coverLetter ?? null,
+          coverLetterError: overrides.coverLetterError ?? null,
+        };
+      }
+      return undefined;
+    };
+  }
+
+  it("does not ask for the files at PAGE_DETECTED/GET_DETECTION_STATE time", async () => {
+    buildLeverForm();
+    const harness = await loadContentScript({
+      href: LEVER_URL,
+      respond: respondWithFiles({ resume: { base64: btoa("%PDF resume"), filename: "resume.pdf" } }),
+    });
+    await harness.send({ type: "GET_DETECTION_STATE" });
+
+    expect(harness.sentOfType("FETCH_APPLICATION_FILES")).toHaveLength(0);
+  });
+
+  it("fetches the résumé the first time Fill is requested, and attaches it", async () => {
+    buildLeverForm();
+    // jsdom's own `files` setter rejects the test double FileList (a
+    // documented jsdom gap, not this project's code -- see lever.test.ts's
+    // own "attachFile" test and tests/setup.ts).
+    const resumeInput = document.querySelector<HTMLInputElement>('input[name="resume"]')!;
+    Object.defineProperty(resumeInput, "files", { value: undefined, writable: true, configurable: true });
+    const harness = await loadContentScript({
+      href: LEVER_URL,
+      respond: respondWithFiles({ resume: { base64: btoa("%PDF resume"), filename: "resume.pdf" } }),
+    });
+
+    const reply = fillOf(await harness.send({ type: "REQUEST_FILL", forceRefillAll: false }));
+
+    expect(harness.sentOfType("FETCH_APPLICATION_FILES")).toEqual([
+      { type: "FETCH_APPLICATION_FILES", applicationId: "app-A", wantResume: true, wantCoverLetter: false },
+    ]);
+    expect(reply?.resumeAttached).toBe(true);
+    expect(resumeInput.files?.length).toBe(1);
+  });
+
+  it("a second Fill for the same application reuses the cached file instead of re-fetching it", async () => {
+    buildLeverForm();
+    const resumeInput = document.querySelector<HTMLInputElement>('input[name="resume"]')!;
+    Object.defineProperty(resumeInput, "files", { value: undefined, writable: true, configurable: true });
+    const harness = await loadContentScript({
+      href: LEVER_URL,
+      respond: respondWithFiles({ resume: { base64: btoa("%PDF resume"), filename: "resume.pdf" } }),
+    });
+
+    await harness.send({ type: "REQUEST_FILL", forceRefillAll: false });
+    await harness.send({ type: "REQUEST_FILL", forceRefillAll: true });
+
+    expect(harness.sentOfType("FETCH_APPLICATION_FILES")).toHaveLength(1);
+  });
+
+  it("surfaces a real fetch failure as resumeError, rather than the generic 'never generated' message", async () => {
+    buildLeverForm();
+    const harness = await loadContentScript({
+      href: LEVER_URL,
+      respond: respondWithFiles({ resumeError: "network hiccup" }),
+    });
+
+    const reply = fillOf(await harness.send({ type: "REQUEST_FILL", forceRefillAll: false }));
+
+    expect(reply?.resumeAttached).toBe(false);
+    expect(reply?.resumeError).toBe("network hiccup");
+  });
+
+  it("an application with no résumé/cover letter at all never sends FETCH_APPLICATION_FILES", async () => {
+    buildLeverForm();
+    const harness = await loadContentScript({ href: LEVER_URL, respond: backend(trackedState()) });
+
+    await harness.send({ type: "REQUEST_FILL", forceRefillAll: false });
+
+    expect(harness.sentOfType("FETCH_APPLICATION_FILES")).toHaveLength(0);
+  });
+
+  it("a resume-only application (cover_letter: null, the real default shape) never asks for a cover letter -- on this Fill or any later one", async () => {
+    // Regression for the real wire shape: `generate_cover_letter` defaults
+    // to false, so the backend's actual GET /extension-payload response for
+    // most applications is `prepare_result: { resume: {...}, cover_letter:
+    // null }` -- the key is PRESENT with a JSON null value, not absent.
+    // `wantCoverLetter` must derive from that null meaning "doesn't exist,"
+    // not "not fetched yet," or every Fill re-requests (and re-404s on) a
+    // cover letter that was never generated.
+    buildLeverForm();
+    const resumeInput = document.querySelector<HTMLInputElement>('input[name="resume"]')!;
+    Object.defineProperty(resumeInput, "files", { value: undefined, writable: true, configurable: true });
+    const harness = await loadContentScript({
+      href: LEVER_URL,
+      respond: respondWithFiles(
+        { resume: { base64: btoa("%PDF resume"), filename: "resume.pdf" } },
+        { resume: { artifact_id: "a", version_id: "v" }, cover_letter: null },
+      ),
+    });
+
+    await harness.send({ type: "REQUEST_FILL", forceRefillAll: false });
+    expect(harness.sentOfType("FETCH_APPLICATION_FILES")).toEqual([
+      { type: "FETCH_APPLICATION_FILES", applicationId: "app-A", wantResume: true, wantCoverLetter: false },
+    ]);
+
+    // A later Fill (e.g. "Refill all") must not re-ask either -- proves
+    // this isn't a one-shot fluke of the first check.
+    await harness.send({ type: "REQUEST_FILL", forceRefillAll: true });
+    expect(harness.sentOfType("FETCH_APPLICATION_FILES")).toHaveLength(1);
+  });
+});
+
+// ---- E6 continuation: the per-question "Replace" action's force flag ----------
+
+describe("FILL_FIELD's force flag", () => {
+  const QUESTION = `<label for="question_1">Why us?</label><textarea id="question_1"></textarea>`;
+
+  it("force:true overwrites a field that already has text", async () => {
+    buildGreenhouseForm(QUESTION);
+    document.querySelector<HTMLTextAreaElement>("#question_1")!.value = "my own answer";
+    const harness = await loadContentScript({ href: GREENHOUSE_URL, respond: backend(trackedState()) });
+
+    const reply = (await harness.send({
+      type: "FILL_FIELD",
+      fieldName: "question_1",
+      value: "Replacement draft",
+      force: true,
+    })) as FillFieldResult;
+
+    expect(reply).toEqual({ filled: true });
+    expect(value("#question_1")).toBe("Replacement draft");
+  });
+
+  it("omitting force still refuses to overwrite -- the default is unchanged", async () => {
+    buildGreenhouseForm(QUESTION);
+    document.querySelector<HTMLTextAreaElement>("#question_1")!.value = "my own answer";
+    const harness = await loadContentScript({ href: GREENHOUSE_URL, respond: backend(trackedState()) });
+
+    const reply = (await harness.send({ type: "FILL_FIELD", fieldName: "question_1", value: "draft" })) as FillFieldResult;
+
+    expect(reply).toEqual({ filled: false, reason: "not_empty" });
+    expect(value("#question_1")).toBe("my own answer");
+  });
+});
+
 describe("robustness", () => {
   it("survives the service worker answering nothing for PAGE_DETECTED", async () => {
     buildLeverForm();

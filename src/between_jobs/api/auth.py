@@ -88,22 +88,53 @@ def create_jwks_client(supabase_url: str) -> PyJWKClient:
     return ThrottledJWKClient(f"{supabase_url}/auth/v1/.well-known/jwks.json", cache_keys=True)
 
 
-def verify_access_token(token: str, jwks_client: PyJWKClient, supabase_url: str) -> str:
-    """Verify a Supabase Auth access token; return the verified user id (`sub`).
-
-    Raises `jwt.PyJWTError` subclasses on any failure -- expired, bad
-    signature, wrong issuer/audience -- callers map those to a 401, they
-    aren't swallowed here.
-    """
+def _decode_access_token(token: str, jwks_client: PyJWKClient, supabase_url: str) -> dict[str, Any]:
+    """The one real verification step (signature, `exp`, `iss`, `aud`) --
+    `verify_access_token` and `verify_access_token_and_iat` are both thin
+    wrappers over this, so there is exactly one place that decides what
+    makes a token valid. Raises `jwt.PyJWTError` subclasses on any
+    failure; callers map those to a 401."""
     signing_key = jwks_client.get_signing_key_from_jwt(token)
-    payload = jwt.decode(
-        token,
-        signing_key.key,
-        algorithms=["ES256"],
-        audience="authenticated",
-        issuer=f"{supabase_url}/auth/v1",
+    return dict(
+        jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["ES256"],
+            audience="authenticated",
+            issuer=f"{supabase_url}/auth/v1",
+        )
     )
+
+
+def verify_access_token(token: str, jwks_client: PyJWKClient, supabase_url: str) -> str:
+    """Verify a Supabase Auth access token; return the verified user id (`sub`)."""
+    payload = _decode_access_token(token, jwks_client, supabase_url)
     return str(payload["sub"])
+
+
+def verify_access_token_and_iat(
+    token: str, jwks_client: PyJWKClient, supabase_url: str
+) -> tuple[str, int]:
+    """Same verification as `verify_access_token`, plus the token's own
+    `iat` (issued-at) claim -- needed only by the browser extension's
+    scoped sign-out liveness check (`extension_auth.
+    require_active_extension_user_id`), which is the sole reason this
+    sibling exists rather than widening `verify_access_token` itself and
+    every one of its other callers.
+
+    A validly-signed token with no `iat` claim at all is not something
+    Supabase's own Auth server ever issues, but nothing here should
+    *assume* that forever -- a plain `payload["iat"]` used to raise a bare
+    `KeyError`, which isn't a `jwt.PyJWTError` and so would propagate out
+    of `require_active_extension_user_id` as an unhandled 500 instead of
+    the clean 401 every other malformed-token case gets. Raising PyJWT's
+    own `MissingRequiredClaimError` (a real `PyJWTError` subclass) makes
+    this failure mode deliberate and covered by the same `except
+    jwt.PyJWTError` every caller already has, rather than accidental."""
+    payload = _decode_access_token(token, jwks_client, supabase_url)
+    if "iat" not in payload:
+        raise jwt.MissingRequiredClaimError("iat")
+    return str(payload["sub"]), int(payload["iat"])
 
 
 async def require_user_id(request: Request) -> str:

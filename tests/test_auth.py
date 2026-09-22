@@ -30,6 +30,7 @@ from between_jobs.api.auth import (
     create_jwks_client,
     require_user_id,
     verify_access_token,
+    verify_access_token_and_iat,
 )
 from between_jobs.api.errors import ApiError
 
@@ -100,6 +101,42 @@ def test_signature_from_wrong_key_rejected(private_key: EllipticCurvePrivateKey)
     # module exists to stop.
     with pytest.raises(jwt.InvalidSignatureError):
         verify_access_token(token, _fake_jwks_client(private_key.public_key()), _ISSUER_URL)
+
+
+def test_verify_access_token_and_iat_returns_both(private_key: EllipticCurvePrivateKey) -> None:
+    claims = _base_claims()
+    token = _sign(private_key, claims)
+    user_id, issued_at = verify_access_token_and_iat(
+        token, _fake_jwks_client(private_key.public_key()), _ISSUER_URL
+    )
+    assert user_id == _USER_ID
+    assert issued_at == claims["iat"]
+
+
+def test_verify_access_token_and_iat_fails_closed_on_a_token_with_no_iat_claim(
+    private_key: EllipticCurvePrivateKey,
+) -> None:
+    """Regression: a validly-signed token missing `iat` entirely used to
+    raise a bare `KeyError` from `payload["iat"]` -- not a `jwt.
+    PyJWTError`, so it would propagate past every caller's own `except
+    jwt.PyJWTError` (extension_auth.require_active_extension_user_id
+    included) as an unhandled 500 instead of a clean 401. `jwt.encode`
+    won't omit `iat` given a dict that has one, so the claims are built by
+    hand rather than via `_base_claims()`, to actually produce a token
+    with no `iat` claim in its payload at all."""
+    now = int(time.time())
+    claims = {
+        "iss": _ISSUER,
+        "aud": "authenticated",
+        "sub": _USER_ID,
+        "role": "authenticated",
+        "exp": now + 3600,
+    }
+    assert "iat" not in claims
+    token = _sign(private_key, claims)
+
+    with pytest.raises(jwt.PyJWTError):
+        verify_access_token_and_iat(token, _fake_jwks_client(private_key.public_key()), _ISSUER_URL)
 
 
 @pytest.fixture

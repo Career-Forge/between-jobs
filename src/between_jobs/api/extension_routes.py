@@ -1,34 +1,44 @@
 """HTTP surface for the browser extension (browser-extension.md E1).
 
 This module carries E1's URL lookup + known-question-memory match/save,
-E3b's LLM-answer draft endpoint, and E3c's signed field-map serving.
+E3b's LLM-answer draft endpoint, E3c's signed field-map serving, and
+(E6 continuation) the extension-scoped sign-out liveness check.
+
+Every route below depends on `require_active_extension_user_id`
+(extension_auth.py), never plain `require_user_id` -- see that module's
+own docstring for why this router gets its own auth dependency instead of
+widening the app's general one.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+import httpx
+from fastapi import APIRouter, Depends, Query, Response
 
 from supabase import AsyncClient
 
-from .app_state import get_supabase
+from .app_state import get_http_client, get_supabase
 from .application_answer_generator import (
     flagged_answer_warnings,
     generate_answer,
     is_generation_eligible,
+    is_sensitive_self_id_text,
     verify_answer_claims,
 )
 from .applications_store import ApplicationNotFound, find_application_by_url, get_application
 from .ats_field_maps import get_latest_field_map
-from .auth import require_user_id
 from .credential_resolver import resolve
 from .errors import ApiError
 from .extension_answers_store import match_approved_answer, save_approved_answer
+from .extension_auth import record_extension_sign_out, require_active_extension_user_id
+from .extension_rate_limit import claim_draft_answer_slot
 from .job_fit_scoring import summarize_profile
 from .jobs_store import SnapshotNotFound, get_snapshot
 from .llm_client import generate as llm_generate
 from .models import DraftAnswerRequest, MatchApprovedAnswerRequest, SaveApprovedAnswerRequest
+from .prepare_orchestrator import latest_cover_letter_pdf, latest_resume_pdf
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
 
@@ -40,17 +50,81 @@ router = APIRouter(prefix="/extension")
 @router.get("/lookup")
 async def lookup_application_by_url(
     url: str = Query(min_length=1),
-    user_id: str = Depends(require_user_id),
+    user_id: str = Depends(require_active_extension_user_id),
     supabase: AsyncClient = Depends(get_supabase),
 ) -> dict[str, Any]:
     application = await find_application_by_url(supabase, user_id, url)
     return {"application_id": application["id"] if application else None}
 
 
+@router.post("/sign-out", status_code=204)
+async def sign_out(
+    user_id: str = Depends(require_active_extension_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> None:
+    """E6 continuation -- the scoped "server-side revocation" the original
+    spec asked for, built exactly as narrow as Pranav's go-ahead: this
+    records "signed out now" for the caller, so every extension token
+    issued before this call (this one included -- see
+    `extension_auth.record_extension_sign_out`'s own docstring) is
+    rejected by `require_active_extension_user_id` from this point on.
+    Nothing else in the app reads this table, so the web session and
+    every other route are entirely unaffected -- see
+    `tests/test_extension_auth.py`."""
+    await record_extension_sign_out(supabase, user_id)
+
+
+@router.get("/{application_id}/resume.pdf")
+async def download_resume_pdf(
+    application_id: str,
+    user_id: str = Depends(require_active_extension_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+    http: httpx.AsyncClient = Depends(get_http_client),
+) -> Response:
+    """E6 continuation, part 2 -- extension-only mirror of
+    `applications_routes.download_resume_pdf`, gated by
+    `require_active_extension_user_id` instead of `require_user_id`. Real
+    gap this closes: `sign_out` above revokes an extension token for every
+    OTHER `/extension/*` route, but before this route existed the actual
+    Fill flow fetched the résumé PDF from the WEB APP's own
+    `/applications/{id}/resume.pdf` -- which is genuinely shared with
+    `GeneratePanel.tsx`'s own "Download resume" button and stays on
+    `require_user_id` on purpose, since gating a route the web app also
+    calls on the extension's own sign-out state would 401 an ordinary web
+    download for anyone who has ever signed out of the extension. This
+    route reuses the identical fetch (`prepare_orchestrator.
+    latest_resume_pdf`) so there is no second implementation to drift from
+    the web app's own; only the auth dependency and the URL differ. The
+    extension's `background.ts` calls this one, never the web app's."""
+    _version_row, pdf_bytes = await latest_resume_pdf(supabase, http, user_id, application_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="resume.pdf"'},
+    )
+
+
+@router.get("/{application_id}/cover-letter.pdf")
+async def download_cover_letter_pdf(
+    application_id: str,
+    user_id: str = Depends(require_active_extension_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+    http: httpx.AsyncClient = Depends(get_http_client),
+) -> Response:
+    """E6 continuation, part 2 -- same shape and same reasoning as
+    `download_resume_pdf` right above, for the cover letter."""
+    _version_row, pdf_bytes = await latest_cover_letter_pdf(supabase, http, user_id, application_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="cover-letter.pdf"'},
+    )
+
+
 @router.get("/field-maps/{ats_type}")
 async def get_field_map(
     ats_type: str,
-    user_id: str = Depends(require_user_id),
+    user_id: str = Depends(require_active_extension_user_id),
     supabase: AsyncClient = Depends(get_supabase),
 ) -> dict[str, Any]:
     """browser-extension.md E3c -- the curated, genuinely ATS-idiosyncratic
@@ -82,7 +156,7 @@ async def get_field_map(
 @router.post("/match-answer")
 async def match_answer(
     body: MatchApprovedAnswerRequest,
-    user_id: str = Depends(require_user_id),
+    user_id: str = Depends(require_active_extension_user_id),
     supabase: AsyncClient = Depends(get_supabase),
 ) -> dict[str, Any]:
     answer = await match_approved_answer(
@@ -98,7 +172,7 @@ async def match_answer(
 @router.post("/approved-answers", status_code=201)
 async def save_answer(
     body: SaveApprovedAnswerRequest,
-    user_id: str = Depends(require_user_id),
+    user_id: str = Depends(require_active_extension_user_id),
     supabase: AsyncClient = Depends(get_supabase),
 ) -> dict[str, Any]:
     return await save_approved_answer(
@@ -117,7 +191,7 @@ async def save_answer(
 @router.post("/draft-answer")
 async def draft_answer(
     body: DraftAnswerRequest,
-    user_id: str = Depends(require_user_id),
+    user_id: str = Depends(require_active_extension_user_id),
     supabase: AsyncClient = Depends(get_supabase),
 ) -> dict[str, Any]:
     """browser-extension.md E3b -- drafts, never fills or saves anything
@@ -126,17 +200,25 @@ async def draft_answer(
     the real page or `approved_answers`, matching this project's own
     "surface, never auto-rewrite" precedent from C4.
 
-    `eligible: False` (no LLM call made at all) covers both the
-    deterministic length pre-filter and -- once a call IS made -- the
-    model's own decision that the input wasn't really a question; both
-    are real, disclosed v1 gaps in what this project can automatically
-    tell apart, not a bug to route around."""
+    `eligible: False` (no LLM call made at all) covers three independent
+    reasons, none distinguished from each other in the response -- real,
+    disclosed v1 gaps in what this project can automatically tell apart,
+    not a bug to route around: the deterministic length pre-filter
+    (`is_generation_eligible`), the server-side D6 topic gate
+    (`is_sensitive_self_id_text` -- E6 continuation: the extension's own
+    client-side D6 check already keeps a real self-ID question off this
+    path under normal use, but nothing before this stopped a modified
+    client or a direct API call from sending one anyway), and -- once a
+    call IS made -- the model's own decision that the input wasn't really
+    a question."""
     try:
         application = await get_application(supabase, user_id, body.application_id)
     except ApplicationNotFound as e:
         raise ApiError("NOT_FOUND", f"no application found for id {body.application_id!r}") from e
 
-    if not is_generation_eligible(body.question_text):
+    if not is_generation_eligible(body.question_text) or is_sensitive_self_id_text(
+        body.question_text
+    ):
         return {"eligible": False, "answer_text": None, "declined_reason": None, "warnings": []}
 
     try:
@@ -158,6 +240,16 @@ async def draft_answer(
     profile_summary = summarize_profile(profile)
 
     llm_credential = await resolve(supabase, user_id, capability=_ANSWER_GENERATION_CAPABILITY)
+
+    # extension_rate_limit.py -- checked here, right before the real LLM
+    # spend begins, so a request that was going to be declined above
+    # (ineligible or D6) never counts against the caller's own budget.
+    if not await claim_draft_answer_slot(supabase, user_id):
+        raise ApiError(
+            "PROVIDER_RATE_LIMITED",
+            "You're drafting answers too quickly -- wait a bit and try again.",
+            retryable=True,
+        )
 
     generated = await generate_answer(
         question_text=body.question_text,
