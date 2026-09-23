@@ -13,10 +13,11 @@ and every other tri-state field in this codebase already uses.
 C4 (coverforge-port.md) closes the "no unsupported claims" gap: forge-
 engines now runs a real claim-verification pass on every generation, and
 `_no_unsupported_claims` below reads its findings back off the SAME
-`warnings` list `_no_engine_warnings` already reads -- see that
-function's own docstring for the one accepted, honestly-named limitation
-(a verifier outage and "nothing to flag" read the same from this list
-alone).
+`warnings` list `_no_engine_warnings` reads, and `_no_engine_warnings`
+skips them so one flagged claim fails one item, not two. See
+`_no_unsupported_claims`' own docstring for the one accepted,
+honestly-named limitation (a verifier outage and "nothing to flag" read
+the same from this list alone).
 
 R6 (resumeforge-shape-and-fit.md) adds `page_fill`, `pins_honored`, and
 `page_count_within_shape` as REAL checks against forge-engines'
@@ -106,28 +107,32 @@ def _one_page(page_count: int | None) -> ChecklistItem:
     )
 
 
+_CLAIM_WARNING_PREFIX = "unsupported claim"
+
+
 def _no_engine_warnings(warnings: list[str]) -> ChecklistItem:
-    if not warnings:
+    """Skips claim-verification entries: those belong to
+    `_no_unsupported_claims`, and counting them here too would fail two
+    items for one flagged claim."""
+    engine_warnings = [w for w in warnings if not w.startswith(_CLAIM_WARNING_PREFIX)]
+    if not engine_warnings:
         return ChecklistItem(
             key="no_engine_warnings",
             label="No engine warnings",
             status="pass",
-            detail="The generation run raised no cautions.",
+            detail="The generation engine raised no cautions; claim flags are checked separately.",
         )
     return ChecklistItem(
         key="no_engine_warnings",
         label="No engine warnings",
         status="fail",
-        detail="; ".join(warnings),
+        detail="; ".join(engine_warnings),
     )
-
-
-_CLAIM_WARNING_PREFIX = "unsupported claim"
 
 
 def _no_unsupported_claims(warnings: list[str]) -> ChecklistItem:
     """C4 (coverforge-port.md): real now, not `not_checked` -- filters the
-    SAME `warnings` list `_no_engine_warnings` reads for entries forge-
+    SAME `warnings` list `_no_engine_warnings` reads (and skips) for entries forge-
     engines' claim-verification Judge added
     (`forge_engines.claim_verify.flagged_claim_warnings`'s own
     "unsupported claim (...)" prefix), rather than a separate stored

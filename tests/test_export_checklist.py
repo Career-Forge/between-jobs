@@ -76,17 +76,33 @@ def test_a_claim_warning_fails_the_unsupported_claims_check_and_is_surfaced() ->
 
 
 def test_claim_warnings_do_not_leak_into_unrelated_checks() -> None:
-    """A claim-verification finding fails ITS OWN check (and, since it rides
-    the same shared list, `no_engine_warnings` too -- that's intentional,
-    see export_checklist.py's own module docstring) but must never affect
-    checks that have nothing to do with warnings at all."""
+    """A claim-verification finding fails ITS OWN check only. It rides the
+    same shared warnings list, but `no_engine_warnings` skips it -- one
+    flagged claim is one failure, not two."""
     items = build_checklist(
         _pdf_with_pages(1),
         warnings=['unsupported claim (unverifiable): "Reduced cost 90%" -- not found'],
     )
     assert _find(items, "no_unsupported_claims")["status"] == "fail"
-    assert _find(items, "no_engine_warnings")["status"] == "fail"
+    assert _find(items, "no_engine_warnings")["status"] == "pass"
     assert _find(items, "one_page")["status"] == "pass"
+
+
+def test_engine_and_claim_warnings_each_fail_only_their_own_check() -> None:
+    items = build_checklist(
+        _pdf_with_pages(1),
+        warnings=[
+            "Borderline seniority match.",
+            'unsupported claim (contradicted): "Led 20 engineers" -- no match',
+        ],
+    )
+    engine = _find(items, "no_engine_warnings")
+    claims = _find(items, "no_unsupported_claims")
+    assert engine["status"] == "fail"
+    assert engine["detail"] == "Borderline seniority match."
+    assert claims["status"] == "fail"
+    assert "Led 20 engineers" in claims["detail"]
+    assert "Borderline seniority match." not in claims["detail"]
 
 
 def test_a_non_claim_warning_does_not_fail_the_unsupported_claims_check() -> None:
