@@ -376,6 +376,13 @@ def _logs_or_raises(handler: ast.ExceptHandler) -> bool:
             and node.func.value.id in ("logger", "logging")
         ):
             return True
+        # a module's own logging helper (worker_supervision._log_failure)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id.startswith("_log")
+        ):
+            return True
     return False
 
 

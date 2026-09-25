@@ -75,6 +75,7 @@ from typing import Any, cast
 from supabase import AsyncClient
 
 from .hiring_signals import Freshness, RawSearchHit
+from .worker_supervision import Sleep, WorkerState, run_supervised
 
 logger = logging.getLogger(__name__)
 
@@ -256,16 +257,25 @@ async def purge_all_expired(supabase: AsyncClient, *, now: datetime) -> int:
 
 
 async def run_purge_forever(
-    supabase: AsyncClient, *, interval_seconds: float = PURGE_INTERVAL_SECONDS
+    supabase: AsyncClient,
+    *,
+    interval_seconds: float = PURGE_INTERVAL_SECONDS,
+    state: WorkerState | None = None,
+    sleep: Sleep = asyncio.sleep,
 ) -> None:
     """The background sweep behind "Lifetime": a plain sleep loop, the shape
     of `saved_search_matcher.run_matcher_forever` -- shutdown is
     `asyncio.CancelledError` out of the sleep. A sweep that fails (the
-    database was unreachable) is skipped, never fatal: the next one runs a full
-    interval later, and nothing here is on a request's path."""
-    while True:
-        try:
-            await purge_all_expired(supabase, now=datetime.now(UTC))
-        except Exception:  # a failed sweep must not end the worker
-            logger.exception("hiring-signal cache sweep failed; retrying next interval")
-        await asyncio.sleep(interval_seconds)
+    database was unreachable) is never fatal: supervised like the other
+    workers (worker_supervision.py), it is logged and retried after a backoff.
+    The deletes are idempotent and bounded, so retrying sooner is safe."""
+
+    async def tick() -> None:
+        await purge_all_expired(supabase, now=datetime.now(UTC))
+
+    await run_supervised(
+        tick,
+        state=state
+        or WorkerState(name="hiring_signal_cache_purge", interval_seconds=interval_seconds),
+        sleep=sleep,
+    )

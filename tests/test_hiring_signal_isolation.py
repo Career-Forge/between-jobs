@@ -170,13 +170,16 @@ ALLOWED_PACKAGE_MODULES = frozenset(
         "models",
         "search_aggregation",
         "search_providers",
+        "worker_supervision",
     }
 )
 """The rest of the package the feature may import, besides its own modules: the
 app wiring, the credential lookup, a read of an application and its job snapshot,
-the shared job-search helpers the query and the parser build on, and the request
-models. Nothing that publishes, schedules or calls a model is here, so adding one
-is a decision somebody has to make by editing this list."""
+the shared job-search helpers the query and the parser build on, the request
+models, and the loop runner every background worker shares (the cache purge's own
+loop runs on it; it publishes nothing and calls no model). Nothing that publishes,
+schedules work for the job side or calls a model is here, so adding one is a
+decision somebody has to make by editing this list."""
 ALLOWED_NAMES_FROM_MODULE = {
     "applications_store": frozenset({"ApplicationNotFound", "get_application"}),
 }

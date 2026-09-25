@@ -81,6 +81,7 @@ from .gmail_client import (
 )
 from .llm_client import generate as llm_generate
 from .provider_credentials_store import CredentialNotFound, get_decrypted_credential
+from .worker_supervision import Sleep, WorkerState, run_supervised
 
 logger = logging.getLogger(__name__)
 
@@ -415,8 +416,17 @@ async def run_reply_check_once(http: httpx.AsyncClient, supabase: AsyncClient) -
     semaphore = asyncio.Semaphore(_MAX_CONCURRENT_CHECKS)
 
     async def _bounded(draft: dict[str, Any]) -> None:
+        # Contained per draft, like the saved-search matcher: a failure here
+        # must not fail the tick, whose supervised retry would classify
+        # replies of the other drafts a second time on their owners' keys.
         async with semaphore:
-            await _check_one_draft(http, supabase, draft, oauth_config, access_token_tasks)
+            try:
+                await _check_one_draft(http, supabase, draft, oauth_config, access_token_tasks)
+            except Exception:
+                logger.exception(
+                    "reply check failed for a draft; retried next tick",
+                    extra={"ctx": {"draft_id": draft.get("draft_id")}},
+                )
 
     await asyncio.gather(*(_bounded(draft) for draft in drafts))
     return len(drafts)
@@ -427,7 +437,18 @@ async def run_reply_check_forever(
     supabase: AsyncClient,
     *,
     poll_interval_seconds: float = _DEFAULT_CHECK_INTERVAL_SECONDS,
+    state: WorkerState | None = None,
+    sleep: Sleep = asyncio.sleep,
 ) -> None:
-    while True:
+    """Checks due drafts for replies, then sleeps, forever -- supervised
+    (worker_supervision.py), like the other workers."""
+
+    async def tick() -> None:
         await run_reply_check_once(http, supabase)
-        await asyncio.sleep(poll_interval_seconds)
+
+    await run_supervised(
+        tick,
+        state=state
+        or WorkerState(name="gmail_reply_checker", interval_seconds=poll_interval_seconds),
+        sleep=sleep,
+    )

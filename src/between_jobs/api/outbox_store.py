@@ -29,6 +29,8 @@ from typing import Any, cast
 
 from supabase import AsyncClient
 
+from .worker_supervision import Sleep, WorkerState, run_supervised
+
 _DEFAULT_BATCH_SIZE = 20
 _DEFAULT_POLL_INTERVAL_SECONDS = 5.0
 
@@ -62,12 +64,19 @@ async def run_worker_forever(
     batch_size: int = _DEFAULT_BATCH_SIZE,
     poll_interval_seconds: float = _DEFAULT_POLL_INTERVAL_SECONDS,
     listeners: list[Listener] | None = None,
+    state: WorkerState | None = None,
+    sleep: Sleep = asyncio.sleep,
 ) -> None:
-    """A plain sleep loop, per the plan's own "simplest loop" scope --
-    not a scheduler, not backoff-aware. Shutdown is `asyncio.CancelledError`
-    propagating out of the `sleep`/RPC await, same as any other asyncio
-    task cancelled from outside -- app.py's lifespan cancels this task
-    directly rather than this loop polling for a shutdown flag itself."""
-    while True:
+    """Claims and publishes a batch, then sleeps, forever -- supervised, so a
+    failed tick is logged and retried rather than ending the worker (see
+    worker_supervision.py). Shutdown is `asyncio.CancelledError` from
+    app.py's lifespan, as before."""
+
+    async def tick() -> None:
         await run_worker_once(supabase, batch_size=batch_size, listeners=listeners)
-        await asyncio.sleep(poll_interval_seconds)
+
+    await run_supervised(
+        tick,
+        state=state or WorkerState(name="outbox", interval_seconds=poll_interval_seconds),
+        sleep=sleep,
+    )

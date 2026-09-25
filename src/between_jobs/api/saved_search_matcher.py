@@ -54,6 +54,7 @@ from .profile_store import get_active_version
 from .search_aggregation import apply_search_filters
 from .search_providers import SearchResult
 from .supabase_helpers import fetch_all_pages
+from .worker_supervision import Sleep, WorkerState, run_supervised
 
 logger = logging.getLogger(__name__)
 
@@ -248,8 +249,9 @@ async def run_match_tick(supabase: AsyncClient) -> int:
     """Runs one tick across every active saved search, up to
     `_MAX_CONCURRENT_SEARCHES` at a time. Returns the number of saved
     searches processed (0 when none are active). Each search's own
-    failure (no profile, no credential) is contained to that search --
-    one user's incomplete setup never blocks another user's matching.
+    failure (no profile, no credential, a failing LLM call) is contained to
+    that search -- one user's setup or key never blocks another user's
+    matching, and only the reads before any LLM call can fail the tick.
     Takes no `httpx.AsyncClient` -- unlike the registry poller or live
     search, everything here is a Supabase RPC/table call or an LLM call
     through the openai SDK, never a raw HTTP fetch."""
@@ -261,8 +263,19 @@ async def run_match_tick(supabase: AsyncClient) -> int:
     semaphore = asyncio.Semaphore(_MAX_CONCURRENT_SEARCHES)
 
     async def _bounded(search: dict[str, Any]) -> None:
+        # Contained per search: one user's failing key (revoked, out of credit)
+        # must neither fail the tick -- which the supervisor would retry within
+        # minutes, re-scoring every other search on its owner's key -- nor
+        # stop the searches running beside it. The failed search keeps its
+        # watermark and is retried at the next scheduled tick.
         async with semaphore:
-            await _match_one_search(supabase, search, tier_index)
+            try:
+                await _match_one_search(supabase, search, tier_index)
+            except Exception:
+                logger.exception(
+                    "saved search match failed; retried next tick",
+                    extra={"ctx": {"saved_search_id": search.get("id")}},
+                )
 
     await asyncio.gather(*(_bounded(search) for search in searches))
     return len(searches)
@@ -276,12 +289,22 @@ not with how fresh the underlying data is."""
 
 
 async def run_matcher_forever(
-    supabase: AsyncClient, *, poll_interval_seconds: float = _DEFAULT_MATCH_INTERVAL_SECONDS
+    supabase: AsyncClient,
+    *,
+    poll_interval_seconds: float = _DEFAULT_MATCH_INTERVAL_SECONDS,
+    state: WorkerState | None = None,
+    sleep: Sleep = asyncio.sleep,
 ) -> None:
-    """A plain sleep loop, matching `job_registry_poller.run_poller_
-    forever`'s and `outbox_store.run_worker_forever`'s own shape --
-    shutdown is `asyncio.CancelledError` propagating out of the sleep/
-    RPC await, same as both."""
-    while True:
+    """Matches every active saved search, then sleeps, forever -- supervised
+    (worker_supervision.py), like the other workers. Shutdown is
+    `asyncio.CancelledError` from app.py."""
+
+    async def tick() -> None:
         await run_match_tick(supabase)
-        await asyncio.sleep(poll_interval_seconds)
+
+    await run_supervised(
+        tick,
+        state=state
+        or WorkerState(name="saved_search_matcher", interval_seconds=poll_interval_seconds),
+        sleep=sleep,
+    )

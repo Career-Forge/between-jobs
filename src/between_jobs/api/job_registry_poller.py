@@ -96,6 +96,7 @@ reasoning.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -114,6 +115,9 @@ from .job_registry_adapters import (
     fetch_eightfold_detail,
 )
 from .supabase_helpers import retry_on_statement_timeout
+from .worker_supervision import Sleep, WorkerState, run_supervised
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_POLL_INTERVAL_SECONDS = 900.0  # 15 minutes, matching n8n's own scheduleTrigger
 _PER_COMPANY_TIMEOUT_SECONDS = 90.0  # Workday's own worst case: 5 sequential page fetches
@@ -244,6 +248,14 @@ async def _fetch_one(http: httpx.AsyncClient, company: DueCompany) -> AdapterRes
     try:
         return await asyncio.wait_for(adapter(http, company), timeout=_PER_COMPANY_TIMEOUT_SECONDS)
     except TimeoutError:
+        return AdapterResult(status="failed")
+    except Exception:
+        # An adapter bug for one board fails that board (backed off by the
+        # bookkeeping below), not the whole tick and every due company.
+        logger.exception(
+            "adapter raised; board counted as failed",
+            extra={"ctx": {"ats_type": company.ats_type, "board": company.board}},
+        )
         return AdapterResult(status="failed")
 
 
@@ -409,13 +421,22 @@ async def run_poller_forever(
     supabase: AsyncClient,
     *,
     poll_interval_seconds: float = _DEFAULT_POLL_INTERVAL_SECONDS,
+    state: WorkerState | None = None,
+    sleep: Sleep = asyncio.sleep,
 ) -> None:
-    """A plain sleep loop, matching outbox_store.run_worker_forever's own
-    shape -- not a scheduler, not backoff-aware at the loop level (each
-    tick's own failure handling is inside run_poll_tick). Shutdown is
-    asyncio.CancelledError propagating out of the sleep/RPC await, same
-    as the outbox worker -- app.py's lifespan cancels this task directly."""
-    while True:
+    """Polls due companies and backfills Eightfold descriptions, then sleeps,
+    forever -- supervised (worker_supervision.py): a tick that raises is
+    logged and retried after a backoff instead of ending the worker, which is
+    how this poller died on 2026-08-31. Per-company failures are still handled
+    inside run_poll_tick. Shutdown is asyncio.CancelledError from app.py."""
+
+    async def tick() -> None:
         await run_poll_tick(http, supabase)
         await run_eightfold_jd_backfill(http, supabase)
-        await asyncio.sleep(poll_interval_seconds)
+
+    await run_supervised(
+        tick,
+        state=state
+        or WorkerState(name="job_registry_poller", interval_seconds=poll_interval_seconds),
+        sleep=sleep,
+    )

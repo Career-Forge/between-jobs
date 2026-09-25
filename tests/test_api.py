@@ -74,7 +74,18 @@ def test_health() -> None:
     with TestClient(app) as client:
         response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    body = response.json()
+    assert body["status"] == "ok"
+    # tests/conftest.py switches every worker and the dependency probes off.
+    assert set(body["workers"]) == {
+        "outbox",
+        "job_registry_poller",
+        "saved_search_matcher",
+        "gmail_reply_checker",
+        "hiring_signal_cache_purge",
+    }
+    assert {w["status"] for w in body["workers"].values()} == {"disabled"}
+    assert set(body["dependencies"].values()) == {"not_checked"}
 
 
 def test_create_session_without_auth_header_returns_401() -> None:
