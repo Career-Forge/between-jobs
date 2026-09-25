@@ -36,6 +36,7 @@ to `event_outbox` instead, with its own idempotency key.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -53,6 +54,8 @@ from .profile_store import get_active_version
 from .search_aggregation import apply_search_filters
 from .search_providers import SearchResult
 from .supabase_helpers import fetch_all_pages
+
+logger = logging.getLogger(__name__)
 
 _UNIQUE_VIOLATION = "23505"
 _STRONG_THRESHOLD = 70
@@ -196,7 +199,11 @@ async def _match_one_search(
 
     try:
         llm_credential = await resolve(supabase, search["user_id"], capability="job_scoring")
-    except ApiError:
+    except ApiError as e:
+        logger.info(
+            "saved search skipped: no job_scoring model resolves",
+            extra={"ctx": {"saved_search_id": search["id"], "code": e.code}},
+        )
         await _advance_watermark(supabase, search["id"], tick_start)
         return
 

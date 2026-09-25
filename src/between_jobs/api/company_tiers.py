@@ -19,6 +19,7 @@ score time, closing the duplication n8n's own reference never did)."""
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, cast
@@ -26,6 +27,8 @@ from typing import Any, cast
 from supabase import AsyncClient
 
 from .supabase_helpers import fetch_all_pages
+
+logger = logging.getLogger(__name__)
 
 _NAME_SUFFIX_RX = re.compile(
     r"\b(incorporated|corporation|company|limited|holdings?|group|llc|"
@@ -91,6 +94,7 @@ async def get_company_tier_index(supabase: AsyncClient) -> CompanyTierIndex:
         rows = await _fetch_all_rows(supabase)
         weights = {r["normalized_name"]: float(r["weight"]) for r in rows}
     except Exception:
+        logger.exception("company tier index failed to load; company_health scores as inapplicable")
         weights = {}
     _cached_index = (
         CompanyTierIndex(weights_by_normalized_name=weights) if weights else _EMPTY_INDEX

@@ -107,6 +107,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from dataclasses import dataclass, replace
 from typing import Any, Literal
@@ -115,6 +116,8 @@ from urllib.parse import unquote
 import httpx
 
 from .search_providers import SearchResult
+
+logger = logging.getLogger(__name__)
 
 _JsonDict = dict[str, Any]
 
@@ -169,12 +172,23 @@ def _is_listing_page(title: str) -> bool:
     return bool(_LISTING_PAGE_RX.search(title))
 
 
+def _host_of(raw: str) -> str:
+    """The host alone, for logs -- a job URL's path and query stay out. Never
+    raises: it runs inside exception handlers."""
+    try:
+        url = _parse_url(raw)
+    except (httpx.InvalidURL, UnicodeError, ValueError, TypeError):
+        return "unparseable"
+    return url.host if url is not None else "unparseable"
+
+
 def _parse_url(raw: str) -> httpx.URL | None:
+    # `.host` decodes IDNA, which raises UnicodeError for a malformed xn-- label.
     try:
         url = httpx.URL(raw)
-    except httpx.InvalidURL:
-        return None
-    if url.scheme != "https" or not url.host:
+        if url.scheme != "https" or not url.host:
+            return None
+    except (httpx.InvalidURL, UnicodeError):
         return None
     return url
 
@@ -676,16 +690,32 @@ async def verify_liveness(
     ashby_cache: dict[str, asyncio.Task[dict[str, _JsonDict] | None]] = {}
     lever_cache: dict[str, asyncio.Task[dict[str, _JsonDict] | None]] = {}
 
+    timed_out = 0
+
     async def _probe_with_budget(result: SearchResult) -> _ProbeResult:
+        nonlocal timed_out
         try:
             return await asyncio.wait_for(
                 _probe(http, result, ashby_cache, lever_cache),
                 timeout=_JOB_OVERALL_TIMEOUT_SECONDS,
             )
+        except TimeoutError:
+            timed_out += 1
+            return _ProbeResult("keep")
         except Exception:
+            logger.warning(
+                "liveness probe failed; keeping the result",
+                exc_info=True,
+                extra={"ctx": {"host": _host_of(result.apply_url)}},
+            )
             return _ProbeResult("keep")
 
     verdicts = await asyncio.gather(*(_probe_with_budget(r) for r in candidates))
+    if timed_out:
+        logger.info(
+            "liveness probes timed out; those results were kept",
+            extra={"ctx": {"timed_out": timed_out, "probed": len(candidates)}},
+        )
 
     alive: list[SearchResult] = []
     for result, verdict in zip(candidates, verdicts, strict=True):

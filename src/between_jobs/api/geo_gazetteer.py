@@ -60,6 +60,7 @@ too broad.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from importlib import resources
@@ -68,6 +69,8 @@ from typing import Any, Literal, cast
 from supabase import AsyncClient
 
 from .supabase_helpers import fetch_all_pages
+
+logger = logging.getLogger(__name__)
 
 _REMOTE_RX = re.compile(r"\b(remote|wfh|work[\s-]?from[\s-]?home|telecommut\w*)\b", re.IGNORECASE)
 _GLOBAL_RX = re.compile(r"\b(worldwide|global|anywhere|any\s*location)\b", re.IGNORECASE)
@@ -185,6 +188,7 @@ async def get_gazetteer(supabase: AsyncClient) -> Gazetteer:
     try:
         rows = await _fetch_all_city_rows(supabase)
     except Exception:
+        logger.exception("gazetteer failed to load; location filtering falls back to unknown")
         rows = []
     _cached_gazetteer = build_gazetteer(rows) if rows else _EMPTY_GAZETTEER
     return _cached_gazetteer

@@ -54,6 +54,7 @@ that building a fully atomic RPC for it isn't worth the machinery.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -80,6 +81,8 @@ from .gmail_client import (
 )
 from .llm_client import generate as llm_generate
 from .provider_credentials_store import CredentialNotFound, get_decrypted_credential
+
+logger = logging.getLogger(__name__)
 
 _UNIQUE_VIOLATION = "23505"
 
@@ -242,7 +245,13 @@ async def _record_proposal(
             # than silently stranding this proposal at 'pending' forever
             # with no event ever published (an adversarial review found
             # the original narrower except left exactly that gap).
-            pass
+            logger.warning(
+                "auto-applying a reply's status proposal failed; queued for review instead",
+                exc_info=True,
+                extra={
+                    "ctx": {"proposal_id": proposal_row["id"], "application_id": application_id}
+                },
+            )
 
     if not auto_applied:
         await _publish_pending_proposal_event(

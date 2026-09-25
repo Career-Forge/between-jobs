@@ -12,6 +12,7 @@ widening the app's general one.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -41,6 +42,8 @@ from .models import DraftAnswerRequest, MatchApprovedAnswerRequest, SaveApproved
 from .prepare_orchestrator import latest_cover_letter_pdf, latest_resume_pdf
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
+
+logger = logging.getLogger(__name__)
 
 _ANSWER_GENERATION_CAPABILITY = "application_answer_generation"
 
@@ -287,6 +290,9 @@ async def draft_answer(
         )
         warnings = flagged_answer_warnings(verification)
     except Exception:  # deliberately broad -- see comment above
+        logger.warning(
+            "draft-answer claim check failed; returning the draft unflagged", exc_info=True
+        )
         warnings = []
     return {
         "eligible": True,

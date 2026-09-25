@@ -36,8 +36,8 @@ nothing to retry here since not every update needs an action.
 
 from __future__ import annotations
 
-import contextlib
 import hmac
+import logging
 import uuid
 from typing import Any, cast
 
@@ -88,6 +88,8 @@ from .working_sets_store import (
     get_active_working_set,
     resolve_reference,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -558,8 +560,14 @@ async def _handle_link_command(
     # a leftover empty auth user on failure here is a harmless gap (same
     # acceptance as telegram_identity.unlink's own note), not worth
     # failing this confirmation over.
-    with contextlib.suppress(Exception):
+    try:
         await supabase.auth.admin.delete_user(user_id)
+    except Exception:
+        logger.warning(
+            "could not delete the emptied auth user after a link merge",
+            exc_info=True,
+            extra={"ctx": {"user_id": user_id}},
+        )
 
     await telegram.send_message(chat_id, _format_merge_summary(result["summary"]))
 

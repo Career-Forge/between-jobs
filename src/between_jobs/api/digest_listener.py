@@ -49,6 +49,7 @@ own `application.stage_changed.v1` event through the generic path above.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, TypedDict
 
 from postgrest.exceptions import APIError
@@ -61,6 +62,8 @@ from .jobs_store import SnapshotNotFound, get_snapshot
 from .saved_searches_store import SavedSearchNotFound, get_saved_search
 from .telegram_client import TelegramClient
 from .telegram_identity import get_chat_id
+
+logger = logging.getLogger(__name__)
 
 _UNIQUE_VIOLATION = "23505"
 
@@ -270,7 +273,11 @@ async def _push_job_match(
         text = f"{rendered['headline']}\n\n{rendered['detail'] or ''}\n\n{apply_url}".strip()
         await telegram.send_message(chat_id, text)
     except Exception:  # deliberately broad -- see docstring above
-        pass
+        logger.warning(
+            "job-match push failed; the today item is already saved",
+            exc_info=True,
+            extra={"ctx": {"outbox_event_id": row.get("id"), "user_id": row.get("user_id")}},
+        )
 
 
 async def handle_batch(

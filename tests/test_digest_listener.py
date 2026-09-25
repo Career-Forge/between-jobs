@@ -4,9 +4,11 @@ event_outbox subscriber.
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from postgrest.exceptions import APIError
 
 from between_jobs.api.digest_listener import handle_batch
@@ -404,6 +406,21 @@ async def test_job_match_found_push_failure_does_not_affect_the_insert_count() -
 
     assert inserted == 1
     assert telegram.sent == []
+
+
+async def test_job_match_found_push_failure_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING)
+    supabase = _FakeSupabaseClient(applications=[], telegram_chat_id=555)
+    telegram = _FakeTelegramClient(raise_on_send=True)
+    row = _job_match_row()
+
+    await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+
+    records = [r for r in caplog.records if r.name == "between_jobs.api.digest_listener"]
+    assert len(records) == 1
+    assert records[0].levelno == logging.WARNING
+    assert records[0].exc_info is not None
+    assert records[0].ctx == {"outbox_event_id": "evt-match-1", "user_id": row["user_id"]}  # type: ignore[attr-defined]
 
 
 async def test_job_match_found_does_not_push_on_idempotent_duplicate() -> None:

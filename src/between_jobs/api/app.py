@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
-from collections.abc import AsyncIterator
+import re
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from functools import partial
 from typing import Any, cast
@@ -24,7 +27,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from postgrest.exceptions import APIError
 
 from supabase import AsyncClient
@@ -49,6 +52,7 @@ from .hiring_signal_search import refuse_non_provider_hosts
 from .interview_practice_routes import router as interview_practice_router
 from .job_registry_poller import run_poller_forever
 from .link_routes import router as link_router
+from .logging_setup import configure_logging, request_id_var
 from .models import CreateSessionRequest
 from .outbox_store import run_worker_forever
 from .positioning_brief_routes import router as positioning_brief_router
@@ -63,6 +67,9 @@ from .today_routes import router as today_router
 from .warm_path_events_routes import router as warm_path_events_router
 
 load_dotenv()
+configure_logging()
+
+logger = logging.getLogger(__name__)
 
 # Postgres error code for a foreign-key violation -- raised here when the
 # verified user_id doesn't match a real auth.users row (shouldn't happen
@@ -211,7 +218,40 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets the extension read the request id it can quote in a bug report.
+    expose_headers=["X-Request-ID"],
 )
+
+# A caller-supplied id is kept only when it looks like one; anything else is
+# replaced, so a request can't inject arbitrary text into every log line.
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._\-]{8,64}$")
+
+
+@app.middleware("http")
+async def request_id_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    incoming = request.headers.get("x-request-id", "")
+    request_id = incoming if _REQUEST_ID_RE.fullmatch(incoming) else uuid.uuid4().hex
+    token = request_id_var.set(request_id)
+    try:
+        response = await call_next(request)
+    except Exception:
+        # An exception no handler caught. Logged here, inside the request's
+        # context, so the line carries the request id; answered here too, so
+        # the 500 carries the header and the same envelope as every other error.
+        logger.exception(
+            "unhandled error",
+            extra={"ctx": {"method": request.method, "route": _route_path(request)}},
+        )
+        fallback = ApiError("INTERNAL_ERROR", "Something went wrong. Try again in a moment.")
+        response = JSONResponse(status_code=fallback.status_code, content=fallback.to_body())
+    finally:
+        request_id_var.reset(token)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
 app.include_router(telegram_router)
 app.include_router(profile_router)
 app.include_router(applications_router)
@@ -232,8 +272,40 @@ app.include_router(hiring_signal_router)
 app.include_router(hiring_signal_status_router)
 
 
+def _route_path(request: Request) -> str:
+    """The route template (`/applications/{application_id}`) when the request
+    matched one, else the bare path -- never the query string."""
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    return path if isinstance(path, str) else request.url.path
+
+
 @app.exception_handler(ApiError)
 async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
+    # The cause's type (and a Postgres SQLSTATE when it carries one) is what
+    # makes a 500 diagnosable; its message is left out because database and
+    # provider messages can quote the values involved.
+    cause = exc.__cause__
+    ctx: dict[str, object] = {
+        "code": exc.code,
+        "status": exc.status_code,
+        "method": request.method,
+        "route": _route_path(request),
+    }
+    if cause is not None:
+        ctx["cause_type"] = f"{type(cause).__module__}.{type(cause).__qualname__}"
+        cause_code = getattr(cause, "code", None)
+        if isinstance(cause_code, str) and len(cause_code) <= 16:
+            ctx["cause_code"] = cause_code
+    # A provider refusing or failing (a user's own key, a rate limit) is not
+    # this service breaking, so those 5xx codes log a level lower.
+    if exc.status_code < 500:
+        level = logging.INFO
+    elif exc.code.startswith("PROVIDER_"):
+        level = logging.WARNING
+    else:
+        level = logging.ERROR
+    logger.log(level, "api error %s", exc.code, extra={"ctx": ctx})
     return JSONResponse(status_code=exc.status_code, content=exc.to_body())
 
 
@@ -257,6 +329,17 @@ async def handle_validation_error(request: Request, exc: RequestValidationError)
         {"type": e.get("type"), "loc": list(e.get("loc", ())), "msg": e.get("msg")}
         for e in exc.errors()
     ]
+    logger.info(
+        "request validation failed",
+        extra={
+            "ctx": {
+                "method": request.method,
+                "route": _route_path(request),
+                "errors": len(errors),
+                "fields": ",".join(".".join(str(p) for p in e["loc"]) for e in errors)[:300],
+            }
+        },
+    )
     fallback = ApiError(
         "INVALID_INPUT", "Invalid request.", details={"errors": jsonable_encoder(errors)}
     )
@@ -284,7 +367,7 @@ async def create_session(
         if e.code == _FOREIGN_KEY_VIOLATION:
             raise ApiError("NOT_FOUND", f"no user found for user_id {user_id!r}") from e
         # Appendix B: "Do not leak database error strings to the user" --
-        # the real e.code/e.message go to the server log via `from e`,
-        # never into the response body.
+        # the cause's type and SQLSTATE go to the server log (the ApiError
+        # handler logs `__cause__`), never into the response body.
         raise ApiError("INTERNAL_ERROR", "Something went wrong creating that session.") from e
     return cast(dict[str, Any], result.data[0])

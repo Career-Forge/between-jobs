@@ -66,8 +66,8 @@ policies, so a client-side key can neither read nor write it.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
+import logging
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
@@ -75,6 +75,8 @@ from typing import Any, cast
 from supabase import AsyncClient
 
 from .hiring_signals import Freshness, RawSearchHit
+
+logger = logging.getLogger(__name__)
 
 CACHE_TTL = timedelta(hours=24)
 """The hard ceiling: no row is served, or kept, at or past this age."""
@@ -262,6 +264,8 @@ async def run_purge_forever(
     database was unreachable) is skipped, never fatal: the next one runs a full
     interval later, and nothing here is on a request's path."""
     while True:
-        with contextlib.suppress(Exception):  # a failed sweep must not end the worker
+        try:
             await purge_all_expired(supabase, now=datetime.now(UTC))
+        except Exception:  # a failed sweep must not end the worker
+            logger.exception("hiring-signal cache sweep failed; retrying next interval")
         await asyncio.sleep(interval_seconds)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -25,6 +26,8 @@ from .interview_registry import synthesize_interview_process_model
 from .interview_registry_store import create_registry_entry
 from .jobs_store import SnapshotNotFound, get_snapshot
 from .llm_client import generate as llm_generate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/applications/{application_id}/company-intel")
 
@@ -115,6 +118,11 @@ async def generate_company_intel(
             generate=llm_generate,
         )
     except Exception:  # deliberately broad -- see comment above
+        logger.warning(
+            "interview-process synthesis failed; claims were saved",
+            exc_info=True,
+            extra={"ctx": {"run_id": run["id"]}},
+        )
         process_model = None
     if process_model is not None:
         await create_registry_entry(
