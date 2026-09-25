@@ -43,6 +43,11 @@ no file has. Never change the SQL of a migration that has already been applied -
 the change as a new migration. Never run `supabase config push`: `supabase/config.toml`
 holds local-development auth settings, not prod's.
 
+Grant explicitly. Projects created after prod don't grant new tables, sequences or
+functions to the API roles, so every migration that creates one must grant what the
+backend needs -- at least `service_role` -- and `revoke ... from public, anon,
+authenticated` on every SECURITY DEFINER function. Nothing may rely on a default.
+
 ## Testing & parity discipline
 
 - Behavior ported from a proven reference implementation ships only when it reproduces
