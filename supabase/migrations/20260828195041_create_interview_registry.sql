@@ -2,7 +2,7 @@
 --
 -- No `user_id` -- deliberately the first genuinely SHARED, cross-user table
 -- in this schema, same "shared reference data, not per-user rows" reasoning
--- `jobs`/`job_snapshots` already use (20260811090000_create_jobs_and_
+-- `jobs`/`job_snapshots` already use (20260811163041_create_jobs_and_
 -- snapshots.sql): the whole point of a registry is that one user's real,
 -- cited research benefits every future user researching the same company,
 -- rather than each person re-researching (and re-paying for) it from
@@ -13,7 +13,7 @@
 -- write to shared registry data has no legitimate case.
 --
 -- Append-only, same immutable-run shape `company_intel_runs` already uses
--- (20260821130000_create_company_intel.sql) -- a new entry never edits or
+-- (20260821132652_create_company_intel.sql) -- a new entry never edits or
 -- replaces a prior one; "the registry" for a company is whichever entry is
 -- most recent. This sidesteps concurrent-write conflict handling entirely.
 --

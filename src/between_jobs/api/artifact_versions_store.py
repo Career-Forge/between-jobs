@@ -1,6 +1,6 @@
 """Persistence for generated document versions (Sprint 3.0e) -- Proposal
 §24.3, `document_kind` per this sprint's own migration
-(20260816090000_artifact_versions_document_kind_and_bucket.sql).
+(20260815183434_artifact_versions_document_kind_and_bucket.sql).
 
 `artifact_id` is never looked up or minted with a fresh random id -- it's
 derived deterministically from `(application_id, document_kind)` via

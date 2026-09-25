@@ -48,7 +48,7 @@ different real companies (PNC, GEICO, T-Mobile, Micron, Travelers, and
 match purely on `board`, a single company's poll result was being
 applied to every company sharing its board -- a real tick that fetched
 72 companies updated tier/poll state on 93. Fixed in migration
-`20260830130000_fix_job_registry_board_collision.sql`: `board` is now
+`20260830125416_fix_job_registry_board_collision.sql`: `board` is now
 the same 3-part key (`ats_type:slug:api_base`) `job_registry_companies`
 already uses to disambiguate itself, applied both to the 4 SQL functions
 here and as a one-time backfill of every already-imported posting

@@ -25,6 +25,24 @@ mypy                        # types (strict)
 
 All of the above must pass before any commit.
 
+## Database migrations
+
+```
+supabase migration new <name>          # create the file; never hand-pick its timestamp
+supabase db reset --local              # replay every migration on a local stack
+supabase db push --dry-run --linked    # see exactly what would run on the linked project
+supabase db push --linked              # ship it
+```
+
+Every file in `supabase/migrations/` carries the version prod recorded when it was
+applied, so `supabase migration list --linked` must show local and remote matched. Push
+to a separate dev project first once one exists; until then the linked project is prod,
+so read the dry run before every push. Never change the database any other way: SQL run
+in the dashboard records no version at all, and MCP `apply_migration` records a version
+no file has. Never change the SQL of a migration that has already been applied -- ship
+the change as a new migration. Never run `supabase config push`: `supabase/config.toml`
+holds local-development auth settings, not prod's.
+
 ## Testing & parity discipline
 
 - Behavior ported from a proven reference implementation ships only when it reproduces

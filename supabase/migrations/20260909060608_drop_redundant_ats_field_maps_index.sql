@@ -1,5 +1,5 @@
 -- Adversarially-confirmed gap in the previous migration
--- (20260909100000_create_ats_field_maps.sql): `unique (ats_type,
+-- (20260909053510_create_ats_field_maps.sql): `unique (ats_type,
 -- version)` already creates a btree index on `(ats_type, version)`
 -- ascending, which Postgres can scan BACKWARD to serve
 -- `WHERE ats_type = $1 ORDER BY version DESC LIMIT 1` (the only real

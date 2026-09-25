@@ -1,7 +1,7 @@
 -- Interview practice sessions (InterviewForge R3, interviewforge-v1.md).
 --
 -- Mirrors company_intel_runs/claims' own normalized parent-run + child-rows
--- shape (20260821130000_create_company_intel.sql) -- NOT a JSONB-blob-per-
+-- shape (20260821132652_create_company_intel.sql) -- NOT a JSONB-blob-per-
 -- row shape like command-center's own `interview_sessions` table -- same
 -- convention every other session-shaped table in this schema already uses.
 -- Per-user RLS, unlike the shared `interview_process_registry` (R1): a

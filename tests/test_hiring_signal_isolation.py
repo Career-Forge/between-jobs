@@ -694,7 +694,7 @@ def test_no_hiring_signal_migration_wires_a_table_into_the_job_side(path: Path) 
 
 def test_the_sql_scan_reads_code_and_not_comments() -> None:
     """The migrations DO talk about the separation, in comments."""
-    p1 = read(MIGRATIONS_DIR / "20260913140000_create_hiring_signal_tables.sql")
+    p1 = read(MIGRATIONS_DIR / "20260913045525_create_hiring_signal_tables.sql")
     assert "saved_search_matcher" in p1  # in a comment
     assert sql_violations(p1) == []
     assert sql_violations("-- saved_searches\n/* event_outbox */\nselect 1;") == []

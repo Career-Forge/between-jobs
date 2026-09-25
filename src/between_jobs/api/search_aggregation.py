@@ -31,7 +31,7 @@ freshness window exists) can identify these rows the same way n8n's own
 `source === 'cache'` check does.
 
 The SQL side (`search_job_registry_postings`, `supabase/migrations/
-20260831130000_fix_job_registry_search_performance.sql`) needed a real
+20260831112543_fix_job_registry_search_performance.sql`) needed a real
 fix, found by this phase's own live verification, not a unit test: the
 first version hit a genuine statement timeout (57014) against the real
 89,000+-row registry. Root cause was two real, distinct query-planning

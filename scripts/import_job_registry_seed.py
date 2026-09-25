@@ -119,7 +119,7 @@ def job_row_to_upsert(
         # exact board string, so `close_stale`/`advance_poll_state` -- both
         # keyed on `board` -- silently applied one company's poll outcome
         # to every company sharing it. Fixed everywhere in the same
-        # migration (job-finder-port.md P2 section, 20260830130000): board
+        # migration (job-finder-port.md P2 section, 20260830125416): board
         # is now the same 3-part key (ats_type:slug:api_base) the
         # companies table already uses to disambiguate itself.
         "board": f"{company_key[0]}:{company_key[1]}:{company_key[2]}",
