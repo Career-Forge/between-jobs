@@ -220,6 +220,19 @@ async def _upsert_batch_with_retry(
     return await retry_on_statement_timeout(_op, max_attempts=_MAX_UPSERT_ATTEMPTS)
 
 
+async def _bookkeeping_rpc(supabase: AsyncClient, name: str, params: dict[str, Any]) -> None:
+    """One of the tick's bookkeeping calls, retried on a statement timeout
+    like the upsert. A timed-out statement was cancelled and rolled back, so
+    running it again can't apply it twice -- even penalize, which increments
+    a counter. A close-stale timeout after the postings were written is how
+    the poller died on 2026-08-31 (see launch plan P0.6a)."""
+
+    async def _op() -> None:
+        await supabase.rpc(name, params).execute()
+
+    await retry_on_statement_timeout(_op, max_attempts=_MAX_UPSERT_ATTEMPTS)
+
+
 def _dedupe_postings(postings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """A real live tick (P3a) hit Postgres error 21000 ("ON CONFLICT DO
     UPDATE command cannot affect row a second time") -- a single
@@ -346,18 +359,19 @@ async def run_poll_tick(http: httpx.AsyncClient, supabase: AsyncClient) -> int:
             entry["relevant"] = new_counts.get(entry["board"], 0)
 
     if close_targets:
-        await supabase.rpc(
-            "close_stale_job_registry_postings", {"close_targets": close_targets}
-        ).execute()
+        await _bookkeeping_rpc(
+            supabase, "close_stale_job_registry_postings", {"close_targets": close_targets}
+        )
     if poll_state_results:
-        await supabase.rpc(
-            "advance_job_registry_poll_state", {"results": poll_state_results}
-        ).execute()
+        await _bookkeeping_rpc(
+            supabase, "advance_job_registry_poll_state", {"results": poll_state_results}
+        )
     if failed_boards or gone_boards:
-        await supabase.rpc(
+        await _bookkeeping_rpc(
+            supabase,
             "penalize_failed_job_registry_boards",
             {"failed_boards": failed_boards, "gone_boards": gone_boards},
-        ).execute()
+        )
 
     return len(companies)
 

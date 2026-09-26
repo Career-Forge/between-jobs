@@ -746,3 +746,50 @@ async def test_run_eightfold_jd_backfill_skips_when_detail_fetch_fails(
     count = await run_eightfold_jd_backfill(_http(), supabase)  # type: ignore[arg-type]
 
     assert count == 0
+
+
+# ── bookkeeping retries (P0.6a) ───────────────────────────────────────────
+# The captured production failure: a tick's postings were written, then
+# close_stale_job_registry_postings hit the API roles' 8s statement timeout
+# (Postgres 57014, prod logs 2026-09-25 18:40:04 UTC) and the exception ended
+# the tick -- so no company's poll state ever advanced past 2026-08-31.
+
+
+class _TimeoutOnceSupabase(_FakeSupabase):
+    def __init__(self, due_rows: list[dict[str, Any]], failing_rpc: str) -> None:
+        super().__init__(due_rows)
+        self._failing_rpc = failing_rpc
+        self.failed = False
+
+    def rpc(self, name: str, params: dict[str, Any]) -> Any:
+        if name == self._failing_rpc and not self.failed:
+            self.failed = True
+            self.rpc_calls.append((name, params))
+            return _FlakyUpsertRpcCall({"attempts": 0, "fail_times": 1}, {"postings": []})
+        return super().rpc(name, params)
+
+
+@pytest.mark.parametrize(
+    "failing_rpc",
+    [
+        "close_stale_job_registry_postings",
+        "advance_job_registry_poll_state",
+    ],
+)
+async def test_a_bookkeeping_statement_timeout_is_retried_and_the_tick_completes(
+    failing_rpc: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+    supabase = _TimeoutOnceSupabase([_due_row()], failing_rpc)
+
+    async def fetch_ok(_http: Any, _company: Any) -> AdapterResult:
+        return AdapterResult(status="ok", postings=[_posting("greenhouse:acme", "1")])
+
+    monkeypatch.setitem(ADAPTERS, "greenhouse", fetch_ok)
+
+    processed = await run_poll_tick(_http(), supabase)  # type: ignore[arg-type]
+
+    assert processed == 1
+    assert supabase.failed
+    assert len(supabase.calls_named(failing_rpc)) == 2  # the timeout, then the retry
+    assert supabase.calls_named("advance_job_registry_poll_state")  # poll state moved on
