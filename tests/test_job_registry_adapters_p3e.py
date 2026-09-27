@@ -56,6 +56,11 @@ def _page(cards: list[str]) -> str:
     return f"<html><body><ul>{body}</ul></body></html>"
 
 
+# Past the last page: no cards and a "No results" message (confirmed live
+# 2026-09-27, pages 165+ of 164).
+_END_PAGE = "<html><body><h2>No results</h2><p>Try a different search.</p></body></html>"
+
+
 async def test_fetch_google_parses_a_real_shaped_card() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert "page=1" in str(request.url)
@@ -91,7 +96,7 @@ async def test_fetch_google_resumes_from_company_etag_cursor() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         page = int(str(request.url).rsplit("page=", 1)[1])
         seen_pages.append(page)
-        return httpx.Response(200, text=_page([]))  # empty -> hit_end immediately
+        return httpx.Response(200, text=_END_PAGE)  # past the end -> hit_end immediately
 
     result = await fetch_google(_http(handler), _company(etag="25"))
 
@@ -128,22 +133,40 @@ async def test_fetch_google_short_page_sets_hit_end() -> None:
     assert len(result.postings) == 7
 
 
-async def test_fetch_google_genuinely_empty_page_is_ok_not_failed() -> None:
-    """Unlike Avature/SuccessFactors' own "silent-empty trap" fix (P3d),
-    Google's safety net against a broken scraper lives at the SWEEP
-    level (job_registry_poller.py's own zero-sweep-guard), not the
-    per-tick adapter level -- matching n8n's own real s151 fix. A single
-    genuinely empty page here is a normal, valid signal that the sweep
-    has reached the end of the board."""
-
+async def test_fetch_google_no_results_page_ends_the_sweep() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text=_page([]))
+        return httpx.Response(200, text=_END_PAGE)
 
     result = await fetch_google(_http(handler), _company())
 
     assert result.status == "ok"
     assert result.hit_end is True
     assert result.postings == []
+
+
+async def test_fetch_google_unreadable_page_never_ends_the_sweep() -> None:
+    """A 200 with no cards and no "No results" -- a renamed card class,
+    say -- must not end the sweep: the poller would close every posting
+    the sweep hasn't reached yet, and its zero-sweep guard can't catch it
+    once the sweep's count is above zero."""
+    unreadable = "<html><body><ul><li class='renamed'>Role</li></ul></body></html>"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(str(request.url).rsplit("page=", 1)[1])
+        if page == 37:
+            return httpx.Response(200, text=_page([_card(ssk=f"37{i}") for i in range(20)]))
+        return httpx.Response(200, text=unreadable)
+
+    later_page = await fetch_google(_http(handler), _company(etag="37"))
+
+    assert later_page.status == "ok"
+    assert later_page.hit_end is False
+    assert later_page.new_etag == "38"  # the next tick retries the unreadable page
+    assert len(later_page.postings) == 20
+
+    first_page = await fetch_google(_http(handler), _company(etag="38"))
+
+    assert first_page.status == "failed"
 
 
 async def test_fetch_google_http_error_on_first_page_fails() -> None:

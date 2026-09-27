@@ -67,12 +67,25 @@ _IBM_CARD_HTML = """
 """
 
 
+# Past the end of a listing Avature renders one "No jobs found" card in the
+# result template (confirmed live 2026-09-27, Bloomberg jobOffset=400 of 352).
+_AVATURE_NO_JOBS_HTML = """
+<article class="article article--result">
+  <div class="article__header"><div class="article__header__text">
+    <h3 class="article__header__text__title title title--04">
+      No jobs found - There are currently no open roles matching your search.
+    </h3>
+  </div></div>
+</article>
+"""
+
+
 def _avature_handler_single_page(html: str) -> Callable[[httpx.Request], httpx.Response]:
     def handler(request: httpx.Request) -> httpx.Response:
         query = dict(pair.split("=") for pair in str(request.url).split("?")[1].split("&"))
         if int(query["jobOffset"]) == 0:
             return httpx.Response(200, text=html)
-        return httpx.Response(200, text="<div>no more cards</div>")
+        return httpx.Response(200, text=_AVATURE_NO_JOBS_HTML)
 
     return handler
 
@@ -236,7 +249,7 @@ async def test_fetch_avature_advances_offset_by_actual_blocks_not_page_size() ->
         offset = int(query["jobOffset"])
         offsets_seen.append(offset)
         if offset >= 12:
-            return httpx.Response(200, text="<div>no more cards</div>")
+            return httpx.Response(200, text=_AVATURE_NO_JOBS_HTML)
         # Real IBM behavior: 9 cards per page regardless of the requested 50.
         cards = _IBM_CARD_HTML.replace("129448", str(129448 + offset)) * 1
         return httpx.Response(200, text=cards * 9 if offset == 0 else cards)

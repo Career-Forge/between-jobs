@@ -104,7 +104,10 @@ async def test_fetch_smartrecruiters_paginates_using_real_offset_totalfound() ->
     assert len(result.postings) == total_found  # 3 real pages: 100 + 100 + 50
 
 
-async def test_fetch_smartrecruiters_stops_when_content_empty() -> None:
+async def test_fetch_smartrecruiters_empty_page_short_of_total_found_is_partial() -> None:
+    """The API said 1,000 postings and stopped after one: that's not the
+    board's complete listing, so nothing may be closed off it."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         query = dict(pair.split("=") for pair in str(request.url).split("?")[1].split("&"))
         offset = int(query["offset"])
@@ -117,7 +120,7 @@ async def test_fetch_smartrecruiters_stops_when_content_empty() -> None:
 
     result = await fetch_smartrecruiters(_http(handler), _company())
 
-    assert result.status == "ok"
+    assert result.status == "partial"
     assert len(result.postings) == 1
 
 

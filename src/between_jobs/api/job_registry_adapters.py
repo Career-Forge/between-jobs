@@ -200,13 +200,13 @@ selectors (`<li class="lLd3Je" ssk='N:ID'>` cards, `QJPWVe` title,
 against the base careers-applications URL). Confirmed live: pagination
 is real (`page=1` vs `page=2` return fully disjoint real postings),
 `PAGE_SIZE=20` is exact, and a genuinely exhausted page (`page=200`)
-returns zero cards cleanly. A single tick's own `ok` flag is set on
-ANY valid parseable response, same as Apple/Workday/Eightfold, NOT
-the stricter Avature/SuccessFactors "zero blocks this call = fail"
-rule -- Google's own safety net against a broken-scraper-vs-genuinely-
-done ambiguity lives one layer up, at the cumulative multi-tick sweep
-level (see job_registry_poller.py), matching exactly where n8n's own
-real fix (s151) put it, not at the single-page level.
+returns zero cards and a "No results" message. Only that message ends
+a sweep: a 200 page with zero cards and no message is one the adapter
+can't read (a renamed card class, say), and ending the sweep there
+would close every posting it hadn't reached. The poller's cumulative
+zero-sweep guard (s151's fix, see job_registry_poller.py) can't catch
+that on its own -- by the time a sweep is deep into the board its
+count is already well above zero.
 
 D8 (Pranav, 2026-08-30) changed what gets stored: between-jobs keeps every
 posting from a board, not just ones matching n8n's own AI/ML title regex
@@ -299,6 +299,7 @@ _AVATURE_REDIRECT_MARKER = "LanguageManager::redirectToUrl"
 _AVATURE_CARD_MARKER = '<article class="article article--card'
 _AVATURE_RESULT_MARKER = '<article class="article article--result'
 _AVATURE_BARE_RESULT_MARKER = '<article class="article--result'
+_AVATURE_NO_JOBS_MARKERS = ("--nojobs", "No jobs found")
 _AVATURE_TITLE_ANCHOR_RX = re.compile(
     r'article__header__text__title[^>]*>\s*<a\s+href="([^"]*)"[^>]*>(.*?)</a>', re.DOTALL
 )
@@ -325,6 +326,7 @@ _GOOGLE_PAGE_SIZE = 20
 _GOOGLE_MAX_PAGES_PER_TICK = 6
 _GOOGLE_BASE_URL = "https://www.google.com/about/careers/applications/"
 _GOOGLE_CARD_MARKER = '<li class="lLd3Je"'
+_GOOGLE_NO_RESULTS_MARKER = "No results"
 _GOOGLE_SSK_RX = re.compile(r"ssk='(?:\d+:)?(\d+)'")
 _GOOGLE_TITLE_RX = re.compile(r'<h3 class="QJPWVe">([^<]+)</h3>')
 _GOOGLE_LOCATION_RX = re.compile(r'class="r0wTof ">([^<]+)<')
@@ -669,6 +671,9 @@ async def fetch_workday(http: httpx.AsyncClient, company: DueCompany) -> Adapter
             cached_total = data.get("total") or 0
         job_postings = data.get("jobPostings") or []
         if not job_postings:
+            # An empty board reports total 0. Any other empty page is short
+            # of the board's own total -- the loop stops before paging past it.
+            incomplete = page > 0 or bool(cached_total)
             break
         for j in job_postings:
             external_path = j.get("externalPath") or ""
@@ -685,7 +690,8 @@ async def fetch_workday(http: httpx.AsyncClient, company: DueCompany) -> Adapter
                     posted_at=None,
                 )
             )
-        if offset + _WORKDAY_PAGE_LIMIT >= cached_total:
+        # A missing total (0) must not read as "already past it".
+        if cached_total and offset + _WORKDAY_PAGE_LIMIT >= cached_total:
             break
     else:
         incomplete = True  # the page budget ran out before the board did
@@ -719,12 +725,17 @@ async def fetch_smartrecruiters(http: httpx.AsyncClient, company: DueCompany) ->
             new_etag = response.headers.get("etag")
         elif status != "ok":
             return _partial(postings, new_etag)
-        if not isinstance(body, dict):
+        if not isinstance(body, dict) or "content" not in body:
+            # Not a postings page -- on page 0 that's a failure, not an
+            # empty board (an empty board still carries "content": []).
             if page == 0:
-                break
+                return _failed()
             return _partial(postings, new_etag)
 
         content = body.get("content") or []
+        total_found = body.get("totalFound") or 0
+        if not content and page > 0 and offset < total_found:
+            return _partial(postings, new_etag)  # an empty page short of the API's own total
         for j in content:
             posting_id = j.get("id")
             if posting_id is None or posting_id == "":
@@ -750,7 +761,6 @@ async def fetch_smartrecruiters(http: httpx.AsyncClient, company: DueCompany) ->
                     posted_at=_iso(j.get("releasedDate")),
                 )
             )
-        total_found = body.get("totalFound") or 0
         offset += _SMARTRECRUITERS_PAGE_SIZE
         if not content or offset >= total_found:
             break
@@ -841,9 +851,11 @@ async def fetch_amazon(http: httpx.AsyncClient, company: DueCompany) -> AdapterR
             new_etag = response.headers.get("etag")
         elif status != "ok":
             return _partial(postings, new_etag)
-        if not isinstance(body, dict):
+        if not isinstance(body, dict) or "jobs" not in body:
+            # Not a search page -- on page 0 that's a failure, not an empty
+            # board (an empty search still carries "jobs": []).
             if page == 0:
-                break
+                return _failed()
             return _partial(postings, new_etag)
 
         jobs = body.get("jobs") or []
@@ -965,6 +977,14 @@ async def fetch_deshaw(http: httpx.AsyncClient, company: DueCompany) -> AdapterR
         return _failed()
 
     page_props = ((data.get("props") or {}).get("pageProps")) or {}
+    # The careers page still renders (200) when its own job fetch fails:
+    # it sets jobsFetchingError and shows a maintenance notice instead of
+    # the lists (confirmed live 2026-09-27, the flag is in pageProps).
+    # Reading that as an empty board would close all ~90 postings.
+    if page_props.get("jobsFetchingError") or not (
+        "regularJobs" in page_props or "internships" in page_props
+    ):
+        return _failed()
     entries = [*(page_props.get("regularJobs") or []), *(page_props.get("internships") or [])]
     postings = []
     for entry in entries:
@@ -1016,14 +1036,17 @@ async def fetch_oracle(http: httpx.AsyncClient, company: DueCompany) -> AdapterR
             incomplete = ok
             break
         items = body.get("items") if isinstance(body, dict) else None
+        # An empty page: on page 0, ambiguous empty vs. malformed (the
+        # "silent-empty trap", see fetch_avature), so a failure. Later, the
+        # loop stops before paging past TotalJobsCount, so an empty page
+        # here is short of the board's own total -- incomplete.
         if not items:
-            # Ambiguous empty vs. malformed, same class already accepted
-            # for Avature/SuccessFactors' own documented "silent-empty
-            # trap" reasoning -- not treated as a transport/parse failure.
+            incomplete = ok
             break
         first_item = items[0] or {}
         req_list = first_item.get("requisitionList") or []
         if not req_list:
+            incomplete = ok
             break
         ok = True
         for j in req_list:
@@ -1054,7 +1077,8 @@ async def fetch_oracle(http: httpx.AsyncClient, company: DueCompany) -> AdapterR
         if total is None:
             total = first_item.get("TotalJobsCount") or 0
         offset += _ORACLE_PAGE_SIZE
-        if len(req_list) < _ORACLE_PAGE_SIZE or offset >= total:
+        # A missing TotalJobsCount (0) must not read as "already past it".
+        if len(req_list) < _ORACLE_PAGE_SIZE or (total and offset >= total):
             break
     else:
         incomplete = True  # the page budget ran out before the board did
@@ -1350,22 +1374,42 @@ async def fetch_avature(http: httpx.AsyncClient, company: DueCompany) -> Adapter
 
         blocks, template = _avature_split_blocks(body)
         if not blocks:
-            # Deliberately NOT `ok = True` here -- n8n's own real incident
-            # history (s201) documents exactly this as "the silent-empty
-            # trap": treating zero matched blocks as a valid empty result
-            # let a real board (Deloitte, before its 3rd template existed)
-            # decay to permanently-empty without ever erroring or
-            # deactivating. Unlike a JSON API's structured `{"positions":
-            # []}` (genuinely unambiguous), zero string-split matches on
-            # scraped HTML can't be told apart from a stale template
-            # assumption -- so it's treated as a failure (real backoff,
-            # eventual deactivation if it persists), not a silent success.
+            # Zero matched blocks is never the end of a board. On page 0
+            # it's n8n's documented "silent-empty trap" (s201): a board
+            # whose template stopped matching (Deloitte, before its 3rd
+            # template existed) decayed to permanently-empty without ever
+            # erroring -- so it's a failure. On a later page it's Avature's
+            # generic "Something went wrong" error page, which it serves
+            # with a 200 and no cards (confirmed live on both Deloitte
+            # tenants and Bloomberg) -- so the fetch is incomplete.
+            incomplete = ok
+            break
+        page_postings = [
+            parsed
+            for block in blocks
+            if (
+                parsed := _avature_parse_block(
+                    block, template, company, host, locale_prefix, portal
+                )
+            )
+            is not None
+        ]
+        if not page_postings:
+            # Blocks, but not one job in them. Past the real end of a
+            # listing -- and on page 0 of an empty board -- Avature renders
+            # a single "No jobs found" card in the result template
+            # (confirmed live 2026-09-27: usijobs.deloitte.com and
+            # Bloomberg), the only positive end-of-board signal it has.
+            # Without that card the blocks are a template that no longer
+            # parses (Bloomberg's anchors now put class before href): a
+            # failure on page 0, an incomplete fetch on a later page.
+            if any(marker in block for block in blocks for marker in _AVATURE_NO_JOBS_MARKERS):
+                ok = True
+            else:
+                incomplete = ok
             break
         ok = True
-        for block in blocks:
-            parsed = _avature_parse_block(block, template, company, host, locale_prefix, portal)
-            if parsed is not None:
-                postings.append(parsed)
+        postings.extend(page_postings)
         # s72 (confirmed still live, P3d research, on ALL 5 real tenants,
         # not just IBM): advance by the ACTUAL block count returned, never
         # the requested page size -- every tenant renders fewer than the
@@ -1411,6 +1455,7 @@ def _successfactors_parse_tile(tile: str, host: str, company: DueCompany) -> Par
 
 async def fetch_successfactors(http: httpx.AsyncClient, company: DueCompany) -> AdapterResult:
     postings: list[ParsedPosting] = []
+    seen_ids: set[str] = set()
     ok = False
     incomplete = False
     offset = 0
@@ -1430,16 +1475,31 @@ async def fetch_successfactors(http: httpx.AsyncClient, company: DueCompany) -> 
             break
         tiles = response.text.split(_SUCCESSFACTORS_TILE_MARKER)[1:]
         if not tiles:
-            # Same "silent-empty trap" reasoning as fetch_avature -- zero
-            # matched tiles on scraped HTML can't be told apart from a
-            # stale extraction pattern, so it's a failure, not a silent
-            # empty success.
+            # On page 0, the "silent-empty trap" (see fetch_avature): zero
+            # tiles can't be told apart from a stale extraction pattern, so
+            # it's a failure. On a later page it's the end of the board --
+            # EY and Vodafone answer past their last tile with an empty
+            # document (confirmed live 2026-09-27), the only end signal
+            # they give. No tenant has been seen serving a 200 error page
+            # the way Avature does; one that did would be read as the end.
+            break
+        page_postings = [
+            parsed
+            for tile in tiles
+            if (parsed := _successfactors_parse_tile(tile, company.api_base, company)) is not None
+        ]
+        if not page_postings:
+            incomplete = ok  # tiles that no longer parse: failed on page 0
+            break
+        if ok and all(p.external_id in seen_ids for p in page_postings):
+            # adidas, ExxonMobil and Cargill never serve an empty page:
+            # past their last tile they repeat page 0's (confirmed live
+            # 2026-09-27). A page of nothing but jobs already collected
+            # is the end of the board.
             break
         ok = True
-        for tile in tiles:
-            parsed = _successfactors_parse_tile(tile, company.api_base, company)
-            if parsed is not None:
-                postings.append(parsed)
+        seen_ids.update(p.external_id for p in page_postings)
+        postings.extend(page_postings)
         # Confirmed live (P3d research): the tenant's own per-page tile
         # count is NOT a platform constant -- 4 of 5 real tenants are 25,
         # adidas is real at 50 -- and there is no request-side page-size
@@ -1507,15 +1567,19 @@ async def fetch_google(http: httpx.AsyncClient, company: DueCompany) -> AdapterR
             break
         if response.status_code != 200:
             break
-        ok = True  # a valid response -- even a genuinely empty one is a
-        # normal, expected way for a sweep to end here, unlike Avature/
-        # SuccessFactors' own single-page ambiguity (see this module's
-        # own docstring for why the safety net lives one layer up for
-        # this adapter specifically).
         cards = response.text.split(_GOOGLE_CARD_MARKER)[1:]
         if not cards:
-            hit_end = True
+            # Past the last page Google renders "No results" and no cards
+            # (confirmed live 2026-09-27: pages 165+ of 164). A 200 with no
+            # cards and no such message is a page this adapter can't read
+            # -- a renamed card class, say -- and ending the sweep there
+            # would close every posting it hasn't reached yet. Stop without
+            # ending it; the cursor stays on this page.
+            if _GOOGLE_NO_RESULTS_MARKER in response.text:
+                ok = True
+                hit_end = True
             break
+        ok = True
         for card in cards:
             parsed = _google_parse_card(card, company)
             if parsed is not None:
