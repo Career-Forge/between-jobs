@@ -142,9 +142,11 @@ _EIGHTFOLD_JD_BACKFILL_MIN_JD_LENGTH = 50
 
 # ats_types whose own adapter pages across MULTIPLE ticks (reports
 # hit_end=False when its own per-tick page budget runs out before the
-# board does) and therefore needs the sweep-start-cutoff bookkeeping --
-# every other adapter here completes its full listing within one tick, so
-# a plain run_start cutoff (unchanged since P2) stays correct for them.
+# board does) and therefore needs the sweep-start-cutoff bookkeeping.
+# Every other adapter either completes its listing within one tick
+# ("ok", closed with this tick's run_start as the cutoff) or reports
+# "partial" when its page budget or a later page gives out first, and
+# then closes nothing.
 _PAGINATED_ATS_TYPES = frozenset({"google"})
 
 
@@ -317,12 +319,11 @@ async def run_poll_tick(http: httpx.AsyncClient, supabase: AsyncClient) -> int:
             elif outcome.status == "ok":
                 close_targets.append({"board": company.board, "cutoff": run_start})
             # else: outcome.status == "partial" on a non-paginated board --
-            # upsert whatever was collected before the mid-pagination
-            # failure, but skip close_targets: closing stale postings off
-            # an admittedly incomplete fetch would wrongly mark still-open
-            # postings closed just because a later page 404'd, timed out,
-            # or came back malformed. Deferred to a future tick that
-            # (hopefully) completes cleanly.
+            # upsert whatever was collected, but skip close_targets:
+            # closing stale postings off an incomplete listing would mark
+            # every still-open posting past the last page fetched as
+            # closed, whether a later page failed or the adapter's page
+            # budget ran out first. Deferred to a tick that completes.
             # `relevant` is filled in below, once the upsert tells us how
             # many of this board's postings were genuinely new.
             poll_state_results.append(

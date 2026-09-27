@@ -340,8 +340,9 @@ async def test_fetch_workday_stops_after_max_pages_on_a_huge_board() -> None:
 
     result = await fetch_workday(_http(handler), _workday_company())
     # 5 pages * 20/page, regardless of the board's real (much larger) total --
-    # the disclosed v1 limitation (module docstring), not a bug.
+    # and "partial", so the poller doesn't close the postings it never saw.
     assert len(result.postings) == 100
+    assert result.status == "partial"
 
 
 async def test_fetch_workday_first_page_failure_is_failed() -> None:

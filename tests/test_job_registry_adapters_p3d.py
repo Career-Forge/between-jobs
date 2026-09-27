@@ -126,7 +126,7 @@ async def test_fetch_avature_needs_bare_path_retry_and_parses_result_template() 
                 200,
                 text="LanguageManager::redirectToUrl::https://bloomberg.avature.net/careers/SearchJobs?...::UrlWithoutLocale",
             )
-        return httpx.Response(200, text=_BLOOMBERG_RESULT_HTML)
+        return _avature_handler_single_page(_BLOOMBERG_RESULT_HTML)(request)
 
     company = _avature_company(
         name="Bloomberg", slug="bloomberg", board="avature:bloomberg:careers"
@@ -204,8 +204,7 @@ async def test_fetch_avature_parses_deloitte_bare_result_template_positionally()
     location CSS class at all (confirmed live, real markup) -- location
     is the LAST of several plain <span> tags, not a selector match."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text=_DELOITTE_BARE_RESULT_HTML)
+    handler = _avature_handler_single_page(_DELOITTE_BARE_RESULT_HTML)
 
     company = _avature_company(
         name="Deloitte",
@@ -236,7 +235,7 @@ async def test_fetch_avature_advances_offset_by_actual_blocks_not_page_size() ->
         query = dict(pair.split("=") for pair in str(request.url).split("?")[1].split("&"))
         offset = int(query["jobOffset"])
         offsets_seen.append(offset)
-        if offset >= 18:
+        if offset >= 12:
             return httpx.Response(200, text="<div>no more cards</div>")
         # Real IBM behavior: 9 cards per page regardless of the requested 50.
         cards = _IBM_CARD_HTML.replace("129448", str(129448 + offset)) * 1

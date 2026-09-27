@@ -372,12 +372,11 @@ class AdapterResult:
     status: AdapterStatus
     postings: list[ParsedPosting] = field(default_factory=list)
     new_etag: str | None = None
-    # True for every adapter except fetch_google: a single-response (or,
-    # for Workday/Oracle/etc, single-tick-bounded-pagination) fetch is
-    # inherently "the end" of what this tick will ever see. Only Google's
-    # own cross-tick sweep can have more real pages waiting beyond this
-    # tick's own page budget -- job_registry_poller.py is what actually
-    # acts on this, not this module.
+    # Only fetch_google sets this: its cross-tick sweep reports whether
+    # this tick reached the board's last page, and job_registry_poller.py
+    # closes stale postings only once the sweep has. Every other adapter
+    # leaves it True and signals an incomplete listing through
+    # status="partial" instead (see _partial).
     hit_end: bool = True
 
 
@@ -483,18 +482,21 @@ def _failed() -> AdapterResult:
 
 
 def _partial(postings: list[ParsedPosting], new_etag: str | None = None) -> AdapterResult:
-    """A mid-pagination failure (page > 0 network error or bad response)
-    that still collected real data from at least one earlier page --
-    returned instead of "ok" so job_registry_poller.run_poll_tick knows
-    this fetch is NOT a complete listing (it skips closing stale
-    postings for this board this tick) while still upserting whatever
-    WAS collected, so a later page's failure doesn't throw away good
-    data from earlier pages. Never returned when page 0 itself fails --
-    that stays a full _failed(), unchanged. Distinct from Google's own
-    hit_end/sweep-bookkeeping mechanism (job_registry_poller.py's
-    _PAGINATED_ATS_TYPES branch) -- that's for a cross-tick sweep, this
-    is for a fetch that was meant to complete within one tick and
-    didn't."""
+    """A fetch that collected real data but is NOT the board's complete
+    listing: either a later page failed (network error or bad response),
+    or the adapter's per-tick page budget ran out before the board did.
+    Returned instead of "ok" so job_registry_poller.run_poll_tick upserts
+    what was collected but skips closing stale postings for this board --
+    closing off an incomplete listing marks every posting past the last
+    page fetched as closed. That happened for real on 2026-09-26: the
+    first ticks to complete after 2026-08-31 closed 14,367 open Amazon
+    postings past its 2,000-posting budget, and every other capped board
+    past its own. Never returned when page 0 itself fails -- that stays a
+    full _failed(). Distinct from Google's own hit_end/sweep-bookkeeping
+    (job_registry_poller.py's _PAGINATED_ATS_TYPES branch), which walks a
+    board across ticks and closes once the sweep reaches its end; a
+    capped board here never closes a posting, so postings past the budget
+    stay active until something else ages them out."""
     return AdapterResult(status="partial", postings=postings, new_etag=new_etag)
 
 
@@ -638,7 +640,7 @@ async def fetch_workday(http: httpx.AsyncClient, company: DueCompany) -> Adapter
     url = f"https://{host}/wday/cxs/{tenant}/{company.slug}/jobs"
     postings: list[ParsedPosting] = []
     ok = False
-    partial_failure = False
+    incomplete = False
     cached_total: int | None = None
 
     for page in range(_WORKDAY_MAX_PAGES):
@@ -652,15 +654,15 @@ async def fetch_workday(http: httpx.AsyncClient, company: DueCompany) -> Adapter
         try:
             response = await http.post(url, json=payload, timeout=_HTTP_TIMEOUT_SECONDS)
         except httpx.HTTPError:
-            partial_failure = ok
+            incomplete = ok
             break
         if response.status_code != 200:
-            partial_failure = ok
+            incomplete = ok
             break
         try:
             data = response.json()
         except ValueError:
-            partial_failure = ok
+            incomplete = ok
             break
         ok = True
         if cached_total is None:
@@ -685,10 +687,12 @@ async def fetch_workday(http: httpx.AsyncClient, company: DueCompany) -> Adapter
             )
         if offset + _WORKDAY_PAGE_LIMIT >= cached_total:
             break
+    else:
+        incomplete = True  # the page budget ran out before the board did
 
     if not ok:
         return _failed()
-    if partial_failure:
+    if incomplete:
         return _partial(postings)
     return AdapterResult(status="ok", postings=postings, new_etag=None)
 
@@ -750,6 +754,8 @@ async def fetch_smartrecruiters(http: httpx.AsyncClient, company: DueCompany) ->
         offset += _SMARTRECRUITERS_PAGE_SIZE
         if not content or offset >= total_found:
             break
+    else:
+        return _partial(postings, new_etag)  # the page budget ran out before the board did
     return AdapterResult(status="ok", postings=postings, new_etag=new_etag)
 
 
@@ -864,13 +870,15 @@ async def fetch_amazon(http: httpx.AsyncClient, company: DueCompany) -> AdapterR
         offset += _AMAZON_PAGE_SIZE
         if len(jobs) < _AMAZON_PAGE_SIZE:
             break
+    else:
+        return _partial(postings, new_etag)  # the page budget ran out before the board did
     return AdapterResult(status="ok", postings=postings, new_etag=new_etag)
 
 
 async def fetch_apple(http: httpx.AsyncClient, company: DueCompany) -> AdapterResult:
     postings: list[ParsedPosting] = []
     ok = False
-    partial_failure = False
+    incomplete = False
     for page in range(1, _APPLE_MAX_PAGES + 1):
         payload = {
             "query": "",
@@ -885,19 +893,19 @@ async def fetch_apple(http: httpx.AsyncClient, company: DueCompany) -> AdapterRe
                 "https://jobs.apple.com/api/v1/search", json=payload, timeout=_HTTP_TIMEOUT_SECONDS
             )
         except httpx.HTTPError:
-            partial_failure = ok
+            incomplete = ok
             break
         if response.status_code != 200:
-            partial_failure = ok
+            incomplete = ok
             break
         try:
             body = response.json()
         except ValueError:
-            partial_failure = ok
+            incomplete = ok
             break
         res = body.get("res") if isinstance(body, dict) else None
         if not isinstance(res, dict):
-            partial_failure = ok
+            incomplete = ok
             break
         ok = True
         results = res.get("searchResults") or []
@@ -931,10 +939,12 @@ async def fetch_apple(http: httpx.AsyncClient, company: DueCompany) -> AdapterRe
             )
         if len(results) < _APPLE_PAGE_SIZE:
             break
+    else:
+        incomplete = True  # the page budget ran out before the board did
 
     if not ok:
         return _failed()
-    if partial_failure:
+    if incomplete:
         return _partial(postings)
     return AdapterResult(status="ok", postings=postings, new_etag=None)
 
@@ -983,7 +993,7 @@ async def fetch_deshaw(http: httpx.AsyncClient, company: DueCompany) -> AdapterR
 async def fetch_oracle(http: httpx.AsyncClient, company: DueCompany) -> AdapterResult:
     postings: list[ParsedPosting] = []
     ok = False
-    partial_failure = False
+    incomplete = False
     offset = 0
     total: int | None = None
     for _page in range(_ORACLE_MAX_PAGES):
@@ -995,15 +1005,15 @@ async def fetch_oracle(http: httpx.AsyncClient, company: DueCompany) -> AdapterR
         try:
             response = await http.get(url, timeout=_HTTP_TIMEOUT_SECONDS)
         except httpx.HTTPError:
-            partial_failure = ok
+            incomplete = ok
             break
         if response.status_code != 200:
-            partial_failure = ok
+            incomplete = ok
             break
         try:
             body = response.json()
         except ValueError:
-            partial_failure = ok
+            incomplete = ok
             break
         items = body.get("items") if isinstance(body, dict) else None
         if not items:
@@ -1046,10 +1056,12 @@ async def fetch_oracle(http: httpx.AsyncClient, company: DueCompany) -> AdapterR
         offset += _ORACLE_PAGE_SIZE
         if len(req_list) < _ORACLE_PAGE_SIZE or offset >= total:
             break
+    else:
+        incomplete = True  # the page budget ran out before the board did
 
     if not ok:
         return _failed()
-    if partial_failure:
+    if incomplete:
         return _partial(postings)
     return AdapterResult(status="ok", postings=postings, new_etag=None)
 
@@ -1140,7 +1152,7 @@ async def _fetch_eightfold_page(
 async def fetch_eightfold(http: httpx.AsyncClient, company: DueCompany) -> AdapterResult:
     postings: list[ParsedPosting] = []
     ok = False
-    partial_failure = False
+    incomplete = False
     offset = 0
     tier = "smartapply"
 
@@ -1149,7 +1161,7 @@ async def fetch_eightfold(http: httpx.AsyncClient, company: DueCompany) -> Adapt
             http, company, offset, tier, allow_fallback=(page == 0)
         )
         if positions is None:
-            partial_failure = ok
+            incomplete = ok
             break
         ok = True
         if not positions:
@@ -1177,10 +1189,12 @@ async def fetch_eightfold(http: httpx.AsyncClient, company: DueCompany) -> Adapt
         offset += _EIGHTFOLD_PAGE_SIZE
         if len(positions) < _EIGHTFOLD_PAGE_SIZE:
             break
+    else:
+        incomplete = True  # the page budget ran out before the board did
 
     if not ok:
         return _failed()
-    if partial_failure:
+    if incomplete:
         return _partial(postings)
     return AdapterResult(status="ok", postings=postings, new_etag=None)
 
@@ -1293,6 +1307,7 @@ async def fetch_avature(http: httpx.AsyncClient, company: DueCompany) -> Adapter
 
     postings: list[ParsedPosting] = []
     ok = False
+    incomplete = False
     offset = 0
     use_locale = True
 
@@ -1305,8 +1320,10 @@ async def fetch_avature(http: httpx.AsyncClient, company: DueCompany) -> Adapter
         try:
             response = await http.get(url, timeout=_HTTP_TIMEOUT_SECONDS)
         except httpx.HTTPError:
+            incomplete = ok
             break
         if response.status_code != 200:
+            incomplete = ok
             break
         body = response.text
 
@@ -1324,8 +1341,10 @@ async def fetch_avature(http: httpx.AsyncClient, company: DueCompany) -> Adapter
             try:
                 response = await http.get(url, timeout=_HTTP_TIMEOUT_SECONDS)
             except httpx.HTTPError:
+                incomplete = ok
                 break
             if response.status_code != 200:
+                incomplete = ok
                 break
             body = response.text
 
@@ -1353,9 +1372,13 @@ async def fetch_avature(http: httpx.AsyncClient, company: DueCompany) -> Adapter
         # requested 50 (9/12/10/10/10), so `offset += _AVATURE_PAGE_SIZE`
         # would skip most of every board.
         offset += len(blocks)
+    else:
+        incomplete = True  # the page budget ran out before the board did
 
     if not ok:
         return _failed()
+    if incomplete:
+        return _partial(postings)
     return AdapterResult(status="ok", postings=postings, new_etag=None)
 
 
@@ -1389,6 +1412,7 @@ def _successfactors_parse_tile(tile: str, host: str, company: DueCompany) -> Par
 async def fetch_successfactors(http: httpx.AsyncClient, company: DueCompany) -> AdapterResult:
     postings: list[ParsedPosting] = []
     ok = False
+    incomplete = False
     offset = 0
 
     for _page in range(_SUCCESSFACTORS_MAX_PAGES):
@@ -1399,8 +1423,10 @@ async def fetch_successfactors(http: httpx.AsyncClient, company: DueCompany) -> 
         try:
             response = await http.get(url, timeout=_HTTP_TIMEOUT_SECONDS)
         except httpx.HTTPError:
+            incomplete = ok
             break
         if response.status_code != 200:
+            incomplete = ok
             break
         tiles = response.text.split(_SUCCESSFACTORS_TILE_MARKER)[1:]
         if not tiles:
@@ -1423,9 +1449,13 @@ async def fetch_successfactors(http: httpx.AsyncClient, company: DueCompany) -> 
         # pagination-drift bug already found and fixed for SmartRecruiters
         # in P3a (a hardcoded 25 would re-fetch half of every adidas page).
         offset += len(tiles)
+    else:
+        incomplete = True  # the page budget ran out before the board did
 
     if not ok:
         return _failed()
+    if incomplete:
+        return _partial(postings)
     return AdapterResult(status="ok", postings=postings, new_etag=None)
 
 
