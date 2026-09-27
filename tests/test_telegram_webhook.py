@@ -155,14 +155,19 @@ class _FakeSimpleTable:
         return _ChainBuilder([row])
 
 
-def _auth_user(email: str, provider: str) -> SimpleNamespace:
-    return SimpleNamespace(email=email, app_metadata={"provider": provider})
+def _auth_user(email: str, **app_metadata: str) -> SimpleNamespace:
+    return SimpleNamespace(email=email, app_metadata=app_metadata)
 
 
 # What resolve_or_create_user_id creates for _TELEGRAM_USER_ID on first contact.
 _AUTO_PROVISIONED_USER = _auth_user(
-    f"telegram-{_TELEGRAM_USER_ID}@users.between-jobs.tech", "telegram"
+    "telegram-5f0c7a8e9b1d4c3e8a2f6b7d9e0c1a2b@users.between-jobs.tech",
+    provider="telegram",
+    bj_provisioned_by="telegram",
+    bj_telegram_subject=str(_TELEGRAM_USER_ID),
 )
+# The web account a linked Telegram account resolves to.
+_WEB_USER = _auth_user("someone@example.com", provider="email")
 
 
 class _FakeAdmin:
@@ -767,11 +772,18 @@ def test_link_success_sends_summary_and_keeps_the_source_user() -> None:
     "source_user",
     [
         # A Telegram account already linked to a web account resolves to that web user.
-        _auth_user("someone@example.com", "email"),
-        # A web sign-up squatting this account's synthetic address.
-        _auth_user(f"telegram-{_TELEGRAM_USER_ID}@users.between-jobs.tech", "email"),
+        _WEB_USER,
+        # A web sign-up on the synthetic domain: app_metadata is the service role's only.
+        _auth_user("telegram-111@users.between-jobs.tech", provider="email"),
         # Another Telegram account's auto-provisioned user.
-        _auth_user("telegram-111@users.between-jobs.tech", "telegram"),
+        _auth_user(
+            "telegram-0a1b@users.between-jobs.tech",
+            provider="telegram",
+            bj_provisioned_by="telegram",
+            bj_telegram_subject="111",
+        ),
+        # Created before the bj_ markers existed: refused, never guessed at.
+        _auth_user("telegram-987654321@users.between-jobs.tech", provider="telegram"),
     ],
 )
 def test_link_from_anything_but_this_accounts_auto_provisioned_user_is_refused(
@@ -813,18 +825,38 @@ def test_link_database_error_answers_without_failing_the_webhook() -> None:
     assert fake_supabase.auth.admin.delete_user_calls == []
 
 
-def test_link_already_linked_to_same_account_is_a_friendly_noop() -> None:
+def test_link_resent_from_an_already_linked_account_says_it_is_set_without_consuming() -> None:
+    """A linked Telegram account resolves to its web user, so a "did it
+    work?" retry with the same account's code is refused before the RPC --
+    and the reply has to read right for that case too."""
     fake_supabase = _FakeSupabaseClient(
-        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}],
-        rpc_data={"ok": True, "target_user_id": _EXISTING_USER_ID, "summary": {}},
+        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}], existing_user=_WEB_USER
     )
     fake_telegram = _FakeTelegramClient()
 
     response = _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
 
     assert response.status_code == 200
-    assert "already linked" in fake_telegram.sent[0][1].lower()
-    assert fake_supabase.auth.admin.delete_user_calls == []
+    assert "you're all set" in fake_telegram.sent[0][1]
+    assert fake_supabase.rpc_calls == []
+
+
+def test_link_gateway_error_does_not_claim_nothing_changed() -> None:
+    """postgrest-py raises APIError with the HTTP status as `code` for a
+    non-JSON error from a gateway in front of PostgREST, and the RPC may have
+    committed behind it."""
+    gateway = APIError({"message": "Bad gateway", "code": "502"})
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}], rpc_error=gateway
+    )
+    fake_telegram = _FakeTelegramClient()
+
+    response = _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
+
+    assert response.status_code == 200
+    reply = fake_telegram.sent[0][1]
+    assert "couldn't confirm" in reply.lower()
+    assert "nothing was changed" not in reply.lower()
 
 
 @pytest.mark.parametrize(
@@ -874,7 +906,9 @@ def test_link_collision_sends_conflict_message_without_leaking_db_details() -> N
 
 
 def test_unlink_deletes_the_channel_identity() -> None:
-    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}], existing_user=_WEB_USER
+    )
     fake_telegram = _FakeTelegramClient()
 
     response = _post(fake_supabase, fake_telegram, _message_update("/unlink"))
@@ -882,3 +916,16 @@ def test_unlink_deletes_the_channel_identity() -> None:
     assert response.status_code == 200
     assert fake_supabase.channel_identities.delete_calls == 1
     assert "unlinked" in fake_telegram.sent[0][1].lower()
+
+
+def test_unlink_from_a_telegram_only_account_changes_nothing() -> None:
+    """There's no web account to detach from, and dropping the identity row
+    would strand the account's data under an auth user nothing points at."""
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    fake_telegram = _FakeTelegramClient()
+
+    response = _post(fake_supabase, fake_telegram, _message_update("/unlink"))
+
+    assert response.status_code == 200
+    assert fake_supabase.channel_identities.delete_calls == 0
+    assert "isn't linked" in fake_telegram.sent[0][1]

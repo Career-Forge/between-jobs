@@ -107,17 +107,21 @@ _NO_RESUME_TEXT = 'I don\'t have a resume on file yet. Send "set up my resume" t
 _LINK_INVALID_TEXT = "❌ That code isn't valid. Double-check it and try again."
 _LINK_EXPIRED_TEXT = "❌ That code expired. Generate a new one from the website."
 _LINK_RATE_LIMITED_TEXT = "❌ Too many wrong codes -- try again in a few minutes."
-_LINK_ALREADY_LINKED_TEXT = "You're already linked to that account."
 _LINK_CONFLICT_TEXT = (
     "❌ Couldn't link -- both accounts already have conflicting data "
     "(e.g. the same saved API key or tracked job). Nothing was changed."
 )
 _LINK_SOURCE_LINKED_TEXT = (
-    "❌ This Telegram account is already linked to a web account. "
-    "Send /unlink first, then generate a new code on the website."
+    "This Telegram account is already linked to a web account -- if that's the one "
+    "you're linking, you're all set. To link a different account, send /unlink first, "
+    "then generate a new code on the website."
 )
 _LINK_FAILED_TEXT = "❌ Couldn't link right now. Nothing was changed -- try again in a minute."
+_LINK_UNCONFIRMED_TEXT = "❌ Couldn't confirm the link. Send /link with a new code in a minute."
 _UNLINK_TEXT = "Unlinked. This Telegram account is no longer connected to any web account."
+_UNLINK_NOT_LINKED_TEXT = (
+    "This Telegram account isn't linked to a web account -- nothing to unlink."
+)
 
 _MERGE_SUMMARY_LABELS = (
     ("profile_versions", "resume version"),
@@ -547,13 +551,20 @@ async def _handle_link_command(
             source_user_id=user_id,
         )
     except APIError as e:
-        # The RPC is one transaction, so any error means nothing changed.
-        # Answer the user instead of failing the webhook: a 5xx makes
-        # Telegram redeliver the same /link, and the retry would report a
-        # misleading "invalid code".
-        logger.warning("link code consumption failed", extra={"ctx": {"sqlstate": e.code}})
-        conflict = e.code == _UNIQUE_VIOLATION
-        await telegram.send_message(chat_id, _LINK_CONFLICT_TEXT if conflict else _LINK_FAILED_TEXT)
+        # Answer instead of failing the webhook: a 5xx makes Telegram
+        # redeliver the same /link, and the retry would report a misleading
+        # "invalid code". A Postgres error (a 5-character SQLSTATE) rolled
+        # the whole RPC back, so nothing changed; anything else -- a gateway
+        # error in front of PostgREST -- says nothing about whether it
+        # committed.
+        logger.warning("link code consumption failed", extra={"ctx": {"code": e.code}})
+        if e.code == _UNIQUE_VIOLATION:
+            text = _LINK_CONFLICT_TEXT
+        elif isinstance(e.code, str) and len(e.code) == 5:
+            text = _LINK_FAILED_TEXT
+        else:
+            text = _LINK_UNCONFIRMED_TEXT
+        await telegram.send_message(chat_id, text)
         return
 
     if not result["ok"]:
@@ -565,11 +576,6 @@ async def _handle_link_command(
         await telegram.send_message(chat_id, text)
         return
 
-    target_user_id = result["target_user_id"]
-    if target_user_id == user_id:
-        await telegram.send_message(chat_id, _LINK_ALREADY_LINKED_TEXT)
-        return
-
     # The auto-provisioned source user is deliberately NOT deleted.
     # merge_user_data moves only 11 of the 28 tables that belong to a user,
     # and deleting the auth user cascades through the rest; left in place,
@@ -579,8 +585,18 @@ async def _handle_link_command(
 
 
 async def _handle_unlink_command(
-    supabase: AsyncClient, telegram_user_id: int, telegram: TelegramClient, chat_id: int
+    supabase: AsyncClient,
+    user_id: str,
+    telegram_user_id: int,
+    telegram: TelegramClient,
+    chat_id: int,
 ) -> None:
+    # A Telegram-only account has no web account to detach from, and
+    # dropping its identity row would strand its data under an auth user
+    # nothing points at any more.
+    if await is_auto_provisioned(supabase, user_id, telegram_user_id):
+        await telegram.send_message(chat_id, _UNLINK_NOT_LINKED_TEXT)
+        return
     await unlink_telegram_identity(supabase, telegram_user_id)
     await telegram.send_message(chat_id, _UNLINK_TEXT)
 
@@ -613,7 +629,7 @@ async def _handle_message(
         return
 
     if is_unlink_command(text):
-        await _handle_unlink_command(supabase, telegram_user_id, telegram, chat_id)
+        await _handle_unlink_command(supabase, user_id, telegram_user_id, telegram, chat_id)
         return
 
     if looks_like_json_payload(text):

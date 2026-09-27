@@ -16,10 +16,15 @@ their absence -- it rejects `create_user({})` with "Cannot create a user
 without either an email or phone" (confirmed against the real project, not
 assumed from the type stub). Every truly-new Telegram user hit this; only
 already-linked users worked, which prior live testing never exercised.
-Fixed with a synthetic, deterministic, non-deliverable email plus
-`email_confirm: True` (so Supabase never attempts to actually send mail to
-it) -- the standard workaround for headless/social-only Supabase Auth
-users.
+Fixed with a synthetic, non-deliverable email plus `email_confirm: True`
+(so Supabase never attempts to actually send mail to it) -- the standard
+workaround for headless/social-only Supabase Auth users. The address is
+random, not derived from the Telegram id: a derived one could be registered
+on the web by anyone who knows the id, and a leftover auto-provisioned user
+(after a link or an unlink) held it forever, so the account's next first
+contact failed on a duplicate email. What identifies an auto-provisioned
+user is its app_metadata, which only the service role can write -- see
+`is_auto_provisioned`.
 
 Uses the admin API, not `sign_in_anonymously()` -- the latter mutates the
 CALLING client's own session state, which would hijack the shared,
@@ -30,6 +35,7 @@ session.
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -47,8 +53,12 @@ tenant, matching the unique(channel, external_tenant, external_subject)
 constraint's shape for a channel that doesn't need it."""
 
 
-def _synthetic_email(telegram_user_id: int) -> str:
-    return f"telegram-{telegram_user_id}@users.between-jobs.tech"
+PROVISIONED_BY = "telegram"
+"""`app_metadata.bj_provisioned_by` on an auth user created on first contact."""
+
+
+def _synthetic_email() -> str:
+    return f"telegram-{uuid.uuid4().hex}@users.between-jobs.tech"
 
 
 async def resolve_or_create_user_id(supabase: AsyncClient, telegram_user_id: int) -> str:
@@ -67,9 +77,13 @@ async def resolve_or_create_user_id(supabase: AsyncClient, telegram_user_id: int
 
     created = await supabase.auth.admin.create_user(
         {
-            "email": _synthetic_email(telegram_user_id),
+            "email": _synthetic_email(),
             "email_confirm": True,
-            "app_metadata": {"provider": "telegram"},
+            "app_metadata": {
+                "provider": "telegram",
+                "bj_provisioned_by": PROVISIONED_BY,
+                "bj_telegram_subject": external_subject,
+            },
         }
     )
     new_user_id = created.user.id
@@ -111,17 +125,16 @@ async def resolve_or_create_user_id(supabase: AsyncClient, telegram_user_id: int
 
 
 async def is_auto_provisioned(supabase: AsyncClient, user_id: str, telegram_user_id: int) -> bool:
-    """True only for the auth user `resolve_or_create_user_id` created for
-    this Telegram account on first contact: `app_metadata.provider` is
-    "telegram" (only the service role can write app_metadata) and the email
-    is this account's own synthetic address. A Telegram account already
-    linked to a web account resolves to that web user, which fails both --
-    and a web sign-up that squats the synthetic address fails the first."""
+    """True only for an auth user `resolve_or_create_user_id` created for
+    this Telegram account on first contact: its app_metadata -- which only
+    the service role can write, never a web session -- says so and names
+    this account. A Telegram account already linked to a web account
+    resolves to that web user, which carries neither key."""
     user = (await supabase.auth.admin.get_user_by_id(user_id)).user
     app_metadata = user.app_metadata or {}
-    return app_metadata.get("provider") == "telegram" and user.email == _synthetic_email(
-        telegram_user_id
-    )
+    return app_metadata.get("bj_provisioned_by") == PROVISIONED_BY and app_metadata.get(
+        "bj_telegram_subject"
+    ) == str(telegram_user_id)
 
 
 async def get_chat_id(supabase: AsyncClient, user_id: str) -> int | None:
@@ -147,15 +160,11 @@ async def get_chat_id(supabase: AsyncClient, user_id: str) -> int | None:
 
 async def unlink(supabase: AsyncClient, telegram_user_id: int) -> None:
     """Removes this Telegram account's channel_identities row (Sprint
-    2.8e's `/unlink`). The auth user it pointed at is left as-is, even if
-    that leaves it empty -- deleting auth users is a deliberate, narrow
-    action this module only takes on a successful merge (Sprint 2.8e's
-    /link handler), not here; an empty orphaned account is a small,
-    accepted, harmless gap, matching this codebase's existing precedent
-    (e.g. the sessions.updated_at gap) rather than something worth
-    inventing extra logic to avoid. The NEXT message from this Telegram
-    account auto-provisions a fresh identity again, same as first
-    contact -- `resolve_or_create_user_id`'s own behavior, unchanged."""
+    2.8e's `/unlink`), detaching it from the web account it's linked to.
+    The web account keeps everything. The NEXT message from this Telegram
+    account auto-provisions a fresh identity, same as first contact.
+    Callers only unlink a linked account: unlinking an auto-provisioned
+    identity would strand its data under an auth user nothing points at."""
     await (
         supabase.table("channel_identities")
         .delete()

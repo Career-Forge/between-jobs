@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from postgrest.exceptions import APIError
 
-from between_jobs.api.telegram_identity import get_chat_id, resolve_or_create_user_id
+from between_jobs.api.telegram_identity import (
+    get_chat_id,
+    is_auto_provisioned,
+    resolve_or_create_user_id,
+)
 
 _TELEGRAM_USER_ID = 987654321
 _EXISTING_USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -69,6 +74,14 @@ class _FakeAdmin:
         self.create_user_calls.append(attributes)
         return SimpleNamespace(user=SimpleNamespace(id=self._new_user_id))
 
+    async def get_user_by_id(self, user_id: str) -> SimpleNamespace:
+        # Whatever the most recent create_user call stored -- enough to read
+        # back the user resolve_or_create_user_id just provisioned.
+        attributes = self.create_user_calls[-1]
+        return SimpleNamespace(
+            user=SimpleNamespace(email=attributes["email"], app_metadata=attributes["app_metadata"])
+        )
+
 
 class _FakeAuth:
     def __init__(self, new_user_id: str) -> None:
@@ -115,13 +128,39 @@ async def test_new_telegram_user_gets_provisioned() -> None:
     assert result == _NEW_USER_ID
     assert len(client.auth.admin.create_user_calls) == 1
     call = client.auth.admin.create_user_calls[0]
-    assert call["app_metadata"]["provider"] == "telegram"
+    assert call["app_metadata"] == {
+        "provider": "telegram",
+        "bj_provisioned_by": "telegram",
+        "bj_telegram_subject": str(_TELEGRAM_USER_ID),
+    }
     # Regression guard for the live bug found in Sprint 2.5: the real Auth
     # server rejects create_user({}) with neither email nor phone, even
     # though the SDK's type stub marks both NotRequired. Every field the
     # fix depends on must actually be sent.
-    assert call["email"] == f"telegram-{_TELEGRAM_USER_ID}@users.between-jobs.tech"
+    assert re.fullmatch(r"telegram-[0-9a-f]{32}@users\.between-jobs\.tech", call["email"])
     assert call["email_confirm"] is True
+
+
+async def test_synthetic_email_is_random_so_it_never_blocks_a_later_first_contact() -> None:
+    """A derived address could be registered on the web by anyone who knows
+    the Telegram id, and a leftover auto-provisioned user (after a link or
+    an unlink) held it forever, so the account's next first contact failed
+    on a duplicate email."""
+    client = _FakeSupabaseClient(select_rows=[])
+    await resolve_or_create_user_id(client, _TELEGRAM_USER_ID)  # type: ignore[arg-type]
+    await resolve_or_create_user_id(client, _TELEGRAM_USER_ID)  # type: ignore[arg-type]
+
+    first, second = (call["email"] for call in client.auth.admin.create_user_calls)
+    assert first != second
+    assert str(_TELEGRAM_USER_ID) not in first
+
+
+async def test_the_provisioned_user_is_recognized_only_for_its_own_telegram_account() -> None:
+    client = _FakeSupabaseClient(select_rows=[])
+    user_id = await resolve_or_create_user_id(client, _TELEGRAM_USER_ID)  # type: ignore[arg-type]
+
+    assert await is_auto_provisioned(client, user_id, _TELEGRAM_USER_ID)  # type: ignore[arg-type]
+    assert not await is_auto_provisioned(client, user_id, _TELEGRAM_USER_ID + 1)  # type: ignore[arg-type]
 
 
 async def test_concurrent_provisioning_race_falls_back_to_winner() -> None:
