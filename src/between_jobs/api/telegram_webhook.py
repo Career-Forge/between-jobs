@@ -79,7 +79,7 @@ from .profile_store import (
     get_active_version,
 )
 from .telegram_client import TelegramClient
-from .telegram_identity import CHANNEL, resolve_or_create_user_id
+from .telegram_identity import CHANNEL, is_auto_provisioned, resolve_or_create_user_id
 from .telegram_identity import unlink as unlink_telegram_identity
 from .working_sets_store import (
     ReferenceOutOfRange,
@@ -112,6 +112,11 @@ _LINK_CONFLICT_TEXT = (
     "❌ Couldn't link -- both accounts already have conflicting data "
     "(e.g. the same saved API key or tracked job). Nothing was changed."
 )
+_LINK_SOURCE_LINKED_TEXT = (
+    "❌ This Telegram account is already linked to a web account. "
+    "Send /unlink first, then generate a new code on the website."
+)
+_LINK_FAILED_TEXT = "❌ Couldn't link right now. Nothing was changed -- try again in a minute."
 _UNLINK_TEXT = "Unlinked. This Telegram account is no longer connected to any web account."
 
 _MERGE_SUMMARY_LABELS = (
@@ -121,8 +126,8 @@ _MERGE_SUMMARY_LABELS = (
 )
 """Only the tables a human would recognize -- career_facts,
 application_events, event_outbox, artifact_versions, working_sets, and
-link_codes all moved too (merge_user_data reparents every user-owned
-table), but naming them in a chat message would just be noise."""
+link_codes move too, but naming them in a chat message would just be
+noise."""
 
 _SETUP_HELP_TEXT = """🗂️ *Set up your resume (one-time)*
 
@@ -526,6 +531,13 @@ async def _handle_link_command(
     chat_id: int,
     code: str,
 ) -> None:
+    # Only the auth user this Telegram account got on first contact may be
+    # merged into a web account. A Telegram account that's already linked
+    # resolves to its web user, and merging that into the code's owner would
+    # move a real account's data into someone else's.
+    if not await is_auto_provisioned(supabase, user_id, telegram_user_id):
+        await telegram.send_message(chat_id, _LINK_SOURCE_LINKED_TEXT)
+        return
     try:
         result = await consume_link_code(
             supabase,
@@ -535,10 +547,14 @@ async def _handle_link_command(
             source_user_id=user_id,
         )
     except APIError as e:
-        if e.code == _UNIQUE_VIOLATION:
-            await telegram.send_message(chat_id, _LINK_CONFLICT_TEXT)
-            return
-        raise
+        # The RPC is one transaction, so any error means nothing changed.
+        # Answer the user instead of failing the webhook: a 5xx makes
+        # Telegram redeliver the same /link, and the retry would report a
+        # misleading "invalid code".
+        logger.warning("link code consumption failed", extra={"ctx": {"sqlstate": e.code}})
+        conflict = e.code == _UNIQUE_VIOLATION
+        await telegram.send_message(chat_id, _LINK_CONFLICT_TEXT if conflict else _LINK_FAILED_TEXT)
+        return
 
     if not result["ok"]:
         reason = result["reason"]
@@ -554,21 +570,11 @@ async def _handle_link_command(
         await telegram.send_message(chat_id, _LINK_ALREADY_LINKED_TEXT)
         return
 
-    # Everything the source identity had has been reparented -- clean up
-    # the now-empty orphaned auto-provisioned auth user rather than
-    # leaving it behind permanently. The link itself already committed;
-    # a leftover empty auth user on failure here is a harmless gap (same
-    # acceptance as telegram_identity.unlink's own note), not worth
-    # failing this confirmation over.
-    try:
-        await supabase.auth.admin.delete_user(user_id)
-    except Exception:
-        logger.warning(
-            "could not delete the emptied auth user after a link merge",
-            exc_info=True,
-            extra={"ctx": {"user_id": user_id}},
-        )
-
+    # The auto-provisioned source user is deliberately NOT deleted.
+    # merge_user_data moves only 11 of the 28 tables that belong to a user,
+    # and deleting the auth user cascades through the rest; left in place,
+    # whatever didn't move is stranded but intact until the merge covers
+    # every table.
     await telegram.send_message(chat_id, _format_merge_summary(result["summary"]))
 
 

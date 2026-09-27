@@ -155,15 +155,31 @@ class _FakeSimpleTable:
         return _ChainBuilder([row])
 
 
+def _auth_user(email: str, provider: str) -> SimpleNamespace:
+    return SimpleNamespace(email=email, app_metadata={"provider": provider})
+
+
+# What resolve_or_create_user_id creates for _TELEGRAM_USER_ID on first contact.
+_AUTO_PROVISIONED_USER = _auth_user(
+    f"telegram-{_TELEGRAM_USER_ID}@users.between-jobs.tech", "telegram"
+)
+
+
 class _FakeAdmin:
-    def __init__(self, new_user_id: str) -> None:
+    def __init__(self, new_user_id: str, existing_user: SimpleNamespace) -> None:
         self._new_user_id = new_user_id
+        self._existing_user = existing_user
         self.create_user_calls: list[dict[str, Any]] = []
+        self.get_user_by_id_calls: list[str] = []
         self.delete_user_calls: list[str] = []
 
     async def create_user(self, attributes: dict[str, Any]) -> SimpleNamespace:
         self.create_user_calls.append(attributes)
         return SimpleNamespace(user=SimpleNamespace(id=self._new_user_id))
+
+    async def get_user_by_id(self, user_id: str) -> SimpleNamespace:
+        self.get_user_by_id_calls.append(user_id)
+        return SimpleNamespace(user=self._existing_user)
 
     async def delete_user(self, user_id: str) -> None:
         self.delete_user_calls.append(user_id)
@@ -195,8 +211,9 @@ class _FakeSupabaseClient:
         new_user_id: str = _NEW_USER_ID,
         rpc_data: Any = None,
         rpc_error: Exception | None = None,
+        existing_user: SimpleNamespace = _AUTO_PROVISIONED_USER,
     ) -> None:
-        self.auth = SimpleNamespace(admin=_FakeAdmin(new_user_id))
+        self.auth = SimpleNamespace(admin=_FakeAdmin(new_user_id, existing_user))
         self.channel_identities = _FakeChannelIdentitiesTable(channel_identities_rows)
         self.profile_versions = profile_versions or _FakeProfileVersionsTable()
         self.career_facts = _FakeCareerFactsTable()
@@ -712,7 +729,7 @@ def test_non_message_update_ignored() -> None:
     assert fake_telegram.sent == []
 
 
-def test_link_success_sends_summary_and_cleans_up_orphan() -> None:
+def test_link_success_sends_summary_and_keeps_the_source_user() -> None:
     fake_supabase = _FakeSupabaseClient(
         channel_identities_rows=[{"user_id": _EXISTING_USER_ID}],
         rpc_data={
@@ -741,8 +758,59 @@ def test_link_success_sends_summary_and_cleans_up_orphan() -> None:
     assert "Linked" in reply
     assert "resume version" in reply
     assert "tracked application" in reply
-    # The now-empty source identity's auth user gets cleaned up.
-    assert fake_supabase.auth.admin.delete_user_calls == [_EXISTING_USER_ID]
+    # merge_user_data doesn't move every table yet, and deleting the source
+    # auth user would cascade-delete whatever it left behind.
+    assert fake_supabase.auth.admin.delete_user_calls == []
+
+
+@pytest.mark.parametrize(
+    "source_user",
+    [
+        # A Telegram account already linked to a web account resolves to that web user.
+        _auth_user("someone@example.com", "email"),
+        # A web sign-up squatting this account's synthetic address.
+        _auth_user(f"telegram-{_TELEGRAM_USER_ID}@users.between-jobs.tech", "email"),
+        # Another Telegram account's auto-provisioned user.
+        _auth_user("telegram-111@users.between-jobs.tech", "telegram"),
+    ],
+)
+def test_link_from_anything_but_this_accounts_auto_provisioned_user_is_refused(
+    source_user: SimpleNamespace,
+) -> None:
+    """The hijack: a Telegram account linked to web account A sending a code
+    minted by web account B used to merge A into B and delete A."""
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}],
+        rpc_data={"ok": True, "target_user_id": "target-web-user", "summary": {}},
+        existing_user=source_user,
+    )
+    fake_telegram = _FakeTelegramClient()
+
+    response = _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
+
+    assert response.status_code == 200
+    assert "/unlink first" in fake_telegram.sent[0][1]
+    assert fake_supabase.auth.admin.get_user_by_id_calls == [_EXISTING_USER_ID]
+    assert fake_supabase.rpc_calls == []
+    assert fake_supabase.auth.admin.delete_user_calls == []
+
+
+def test_link_database_error_answers_without_failing_the_webhook() -> None:
+    """A 5xx makes Telegram redeliver the /link; the retry would then say
+    "invalid code" about a code that may never have been consumed."""
+    timeout = APIError({"message": "canceling statement due to statement timeout", "code": "57014"})
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}], rpc_error=timeout
+    )
+    fake_telegram = _FakeTelegramClient()
+
+    response = _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
+
+    assert response.status_code == 200
+    reply = fake_telegram.sent[0][1]
+    assert "nothing was changed" in reply.lower()
+    assert "statement" not in reply
+    assert fake_supabase.auth.admin.delete_user_calls == []
 
 
 def test_link_already_linked_to_same_account_is_a_friendly_noop() -> None:

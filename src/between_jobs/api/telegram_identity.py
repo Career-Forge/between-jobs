@@ -110,6 +110,20 @@ async def resolve_or_create_user_id(supabase: AsyncClient, telegram_user_id: int
     return str(new_user_id)
 
 
+async def is_auto_provisioned(supabase: AsyncClient, user_id: str, telegram_user_id: int) -> bool:
+    """True only for the auth user `resolve_or_create_user_id` created for
+    this Telegram account on first contact: `app_metadata.provider` is
+    "telegram" (only the service role can write app_metadata) and the email
+    is this account's own synthetic address. A Telegram account already
+    linked to a web account resolves to that web user, which fails both --
+    and a web sign-up that squats the synthetic address fails the first."""
+    user = (await supabase.auth.admin.get_user_by_id(user_id)).user
+    app_metadata = user.app_metadata or {}
+    return app_metadata.get("provider") == "telegram" and user.email == _synthetic_email(
+        telegram_user_id
+    )
+
+
 async def get_chat_id(supabase: AsyncClient, user_id: str) -> int | None:
     """The reverse of `resolve_or_create_user_id` (Job Finder P10's
     real-time push) -- given a Supabase user_id, find their linked
