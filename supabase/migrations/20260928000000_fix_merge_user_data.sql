@@ -57,6 +57,19 @@ declare
   v_column name;
   v_count bigint;
 begin
+  if exists (
+    select 1 from pg_catalog.pg_constraint c
+    where c.contype = 'f' and c.confrelid = p_table and array_length(c.conkey, 1) > 1
+      and not (c.conrelid = any(p_ignore))
+  ) then
+    -- A composite FK into this table would be silently skipped by the
+    -- single-column check below (conkey[1] alone can't express "check all
+    -- of these columns together"). Fail loudly instead of quietly losing
+    -- the guarantee this function exists to provide.
+    raise exception 'a composite foreign key into % is not supported by assert_unreferenced', p_table
+      using errcode = 'BJ008';
+  end if;
+
   for v_conrelid, v_column in
     select c.conrelid, a.attname
     from pg_catalog.pg_constraint c
@@ -126,6 +139,19 @@ declare
   v_column name;
   v_count bigint;
 begin
+  if exists (
+    select 1 from pg_catalog.pg_constraint c
+    where c.contype = 'f' and c.confrelid = 'auth.users'::regclass
+      and c.connamespace = 'public'::regnamespace and array_length(c.conkey, 1) > 1
+  ) then
+    -- Same reasoning as assert_unreferenced: a composite FK straight to
+    -- auth.users would need auth.users to expose a matching compound
+    -- unique key, which it doesn't today -- but if one is ever added, fail
+    -- loudly rather than silently under-counting what a user still owns.
+    raise exception 'a composite foreign key to auth.users is not supported by user_owned_row_counts'
+      using errcode = 'BJ008';
+  end if;
+
   -- Every table with a real FK to auth.users, using the FK's own column --
   -- not an assumed "user_id" -- so a future table is covered automatically,
   -- the whole reason this walks the catalog instead of a hard-coded list.
@@ -201,8 +227,9 @@ declare
   v_kept_id uuid;
   v_kept_json jsonb;
   v_src_pv record;
-  v_src_fact record;
-  v_kept_fact_id uuid;
+  v_matched_src_ids uuid[];
+  v_matched_kept_ids uuid[];
+  v_i integer;
   v_collision record;
   v_kind record;
   v_old_artifact_id uuid;
@@ -280,35 +307,58 @@ begin
 
     -- career_facts is a CASCADE child of profile_versions, so anything
     -- still pointing at the source version when it's deleted below is
-    -- gone. A fact matching one the kept version already has (same
+    -- gone. A fact matching one the kept version ALREADY had (same
     -- fact_type + source_pointer) is a genuine duplicate -- let it cascade
     -- away, but first remap any evidence_fact_ids array entry pointing at
     -- it onto the kept version's copy. A fact with no match is real,
     -- unique content -- move it onto the kept version so it survives.
-    for v_src_fact in
-      select * from public.career_facts where profile_version_id = v_src_pv.id
-    loop
-      select id into v_kept_fact_id from public.career_facts
-        where profile_version_id = v_kept_id
-          and fact_type = v_src_fact.fact_type
-          and source_pointer = v_src_fact.source_pointer
-        limit 1;
-      if v_kept_fact_id is not null then
+    --
+    -- The match set below is computed in one plain query, before any of
+    -- this loop's own writes happen -- it must never be re-queried live
+    -- inside the loop. An earlier version did exactly that (a fresh SELECT
+    -- per fact, inside the loop body), and under this function's own
+    -- transaction a later iteration's lookup then saw the EARLIER
+    -- iteration's own "move" -- so two source facts sharing one
+    -- (fact_type, source_pointer) that matched nothing on the target (a
+    -- source-side duplicate, not a target-side one) had the second
+    -- wrongly treated as matching the first, its content silently
+    -- cascade-deleted. Freezing the match set up front closes that.
+    select array_agg(sf.id order by sf.id), array_agg(kf.id order by sf.id)
+      into v_matched_src_ids, v_matched_kept_ids
+      from public.career_facts sf
+      join public.career_facts kf
+        on kf.profile_version_id = v_kept_id
+        and kf.fact_type = sf.fact_type
+        and kf.source_pointer = sf.source_pointer
+      where sf.profile_version_id = v_src_pv.id;
+
+    if v_matched_src_ids is not null then
+      for v_i in 1 .. array_length(v_matched_src_ids, 1) loop
         update public.artifact_versions
-          set evidence_fact_ids = array_replace(evidence_fact_ids, v_src_fact.id, v_kept_fact_id)
-          where v_src_fact.id = any(evidence_fact_ids);
+          set evidence_fact_ids =
+            array_replace(evidence_fact_ids, v_matched_src_ids[v_i], v_matched_kept_ids[v_i])
+          where v_matched_src_ids[v_i] = any(evidence_fact_ids);
         update public.resume_documents
           set selected_evidence_fact_ids =
-            array_replace(selected_evidence_fact_ids, v_src_fact.id, v_kept_fact_id)
-          where v_src_fact.id = any(selected_evidence_fact_ids);
+            array_replace(selected_evidence_fact_ids, v_matched_src_ids[v_i], v_matched_kept_ids[v_i])
+          where v_matched_src_ids[v_i] = any(selected_evidence_fact_ids);
         update public.approved_answers
-          set evidence_fact_ids = array_replace(evidence_fact_ids, v_src_fact.id, v_kept_fact_id)
-          where v_src_fact.id = any(evidence_fact_ids);
-      else
-        update public.career_facts set profile_version_id = v_kept_id
-          where id = v_src_fact.id;
-      end if;
-    end loop;
+          set evidence_fact_ids =
+            array_replace(evidence_fact_ids, v_matched_src_ids[v_i], v_matched_kept_ids[v_i])
+          where v_matched_src_ids[v_i] = any(evidence_fact_ids);
+      end loop;
+    end if;
+
+    -- Every source fact NOT in the frozen match set above moves onto the
+    -- kept version, including two source facts that share a (fact_type,
+    -- source_pointer) with each other but with nothing pre-existing on the
+    -- target: there's no unique key on (profile_version_id, fact_type,
+    -- source_pointer), and both are genuinely new content, not duplicates
+    -- of anything the target already had.
+    update public.career_facts
+      set profile_version_id = v_kept_id
+      where profile_version_id = v_src_pv.id
+        and not (id = any(coalesce(v_matched_src_ids, array[]::uuid[])));
 
     if v_src_pv.activated_at is not null then
       update public.profile_versions
@@ -490,6 +540,20 @@ begin
       and exists (
         select 1 from public.resume_documents t
         where t.user_id = p_target_user_id and t.application_id = rd.application_id
+      );
+
+  -- channel_identities is unique on (user_id, channel) (the index this
+  -- migration adds). 'telegram' can never collide here -- consume_link_code
+  -- already refused the link earlier if the target had one -- but the
+  -- channel column also allows other values (the browser extension,
+  -- future channels) nothing writes yet; if one ever links both accounts
+  -- to the same channel independently, target wins here rather than the
+  -- bulk reparent below raising a raw, unrecoverable 23505.
+  delete from public.channel_identities ci
+    where ci.user_id = p_source_user_id
+      and exists (
+        select 1 from public.channel_identities t
+        where t.user_id = p_target_user_id and t.channel = ci.channel
       );
 
   -- 5. application_events keeps every row (it's an audit trail) --
@@ -864,10 +928,19 @@ begin
     raise exception 'no matching consumed link code found' using errcode = 'BJ007';
   end if;
 
-  -- Locks the row so an in-flight insert that still references this user
-  -- (its FK takes a FOR KEY SHARE lock) is waited on rather than raced --
-  -- it then fails visibly with a foreign-key violation instead of being
-  -- silently cascaded away by the delete below.
+  -- Locks the row so an in-flight insert into any FK-backed column this
+  -- lock conflicts with (its own FOR KEY SHARE lock) is waited on rather
+  -- than raced -- it then fails visibly with a foreign-key violation once
+  -- unblocked, instead of being silently cascaded away by the delete
+  -- below. Disclosed gap, not closed by this lock: user_owned_row_counts
+  -- also reports two signals with no real FK to auth.users --
+  -- application_events.actor_id (a plain text column) and storage.objects
+  -- (matched by path, not a foreign key) -- so a row landing there in the
+  -- narrow window between the recount just below and the delete can still
+  -- end up referencing a user id that no longer exists. Low-consequence
+  -- (an audit-trail or storage-path reference, not data a user reads back
+  -- through the merged account) and narrow enough that closing it -- a
+  -- trigger-backed guard on actor_id, most plausibly -- isn't done here.
   perform 1 from auth.users where id = p_source for update;
 
   v_counts := public.user_owned_row_counts(p_source);
