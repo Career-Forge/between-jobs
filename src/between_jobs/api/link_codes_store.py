@@ -83,14 +83,27 @@ async def consume_link_code(
     logic (splitting that across two Python round trips would reopen the
     exact race the SQL function exists to close).
 
-    Returns the function's own JSON result for the three EXPECTED
-    outcomes: `{"ok": false, "reason": "invalid_code" | "expired_code" |
-    "rate_limited"}` or `{"ok": true, "target_user_id": ..., "summary":
-    {...}}`. A genuine merge collision (both accounts already have
-    conflicting data) is NOT one of these -- it surfaces as a raised
-    `postgrest.exceptions.APIError` with code "23505", which this
-    function doesn't catch; callers that need to turn that into a clean
-    user-facing message do so themselves."""
+    Returns the function's own JSON result. Refusals are
+    `{"ok": false, "reason": ...}`, the reason being one of
+    "invalid_code", "expired_code", "rate_limited", "source_mismatch" (a
+    concurrent link for the same Telegram account got there first),
+    "source_already_linked" (this account is already linked to a web
+    account) or "target_linked_elsewhere" (the code's owner already has a
+    different Telegram account). Success is `{"ok": true,
+    "target_user_id": ..., "source_user_id": ..., "summary": {...}}`;
+    the same account resubmitting a code it already used gets
+    `{"ok": true, "resumed": true, "target_user_id": ...,
+    "source_user_id": ...}` with no summary, and a code minted by the
+    account itself comes back with target and source the same.
+
+    Committing the merge is not the end of a link: `finish_link` (in
+    link_completion.py) moves what the database can't and retires the
+    source account. Anything the SQL raises -- a unique violation (23505)
+    from two accounts racing to link the same web account, a statement
+    timeout, a refused merge (BJ00x) -- rolled the whole transaction back
+    and surfaces as a raised `postgrest.exceptions.APIError`, which this
+    function doesn't catch; callers turn it into a user-facing message
+    themselves."""
     result = await supabase.rpc(
         "consume_link_code",
         {
@@ -101,3 +114,65 @@ async def consume_link_code(
         },
     ).execute()
     return cast(dict[str, Any], result.data)
+
+
+async def finish_link_merge(
+    supabase: AsyncClient,
+    *,
+    channel: str,
+    subject: str,
+    source_user_id: str,
+    target_user_id: str,
+) -> dict[str, Any]:
+    """Runs the merge again for an already-consumed link (safe to repeat:
+    every write in it is scoped to what the source still owns, so once
+    that's nothing it's a no-op). `{"ok": true, "source_gone": true}` when
+    the source account no longer exists; otherwise `{"ok": true,
+    "source_gone": false, "summary": {...}}`. Raises `APIError` unless
+    `target_user_id` is the confirmed target of a link this Telegram
+    subject consumed in the last 24 hours."""
+    result = await supabase.rpc(
+        "finish_link_merge",
+        {
+            "p_channel": channel,
+            "p_subject": subject,
+            "p_source": source_user_id,
+            "p_target": target_user_id,
+        },
+    ).execute()
+    return cast(dict[str, Any], result.data)
+
+
+async def finish_link_delete_source(
+    supabase: AsyncClient,
+    *,
+    channel: str,
+    subject: str,
+    source_user_id: str,
+    target_user_id: str,
+) -> dict[str, Any]:
+    """Deletes the source auth user -- but only if it owns nothing at all,
+    checked again inside the function under a row lock. `{"ok": true,
+    "source_gone": true}` once it's gone; `{"ok": true, "source_gone":
+    false, "counts": {...}}` naming what it still owns otherwise."""
+    result = await supabase.rpc(
+        "finish_link_delete_source",
+        {
+            "p_channel": channel,
+            "p_subject": subject,
+            "p_source": source_user_id,
+            "p_target": target_user_id,
+        },
+    ).execute()
+    return cast(dict[str, Any], result.data)
+
+
+async def user_owned_row_counts(supabase: AsyncClient, user_id: str) -> dict[str, int]:
+    """What a user still owns, by table -- every table with a foreign key
+    to auth.users, plus three references that aren't foreign keys:
+    `application_events.actor_id`, the denormalized
+    `artifact_versions.storage_key`, and storage objects under the user's
+    prefix. Empty means nothing. Table names and counts only, never row
+    contents."""
+    result = await supabase.rpc("user_owned_row_counts", {"p_user_id": user_id}).execute()
+    return cast(dict[str, int], result.data)

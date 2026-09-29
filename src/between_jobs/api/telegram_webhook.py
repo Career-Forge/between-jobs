@@ -68,6 +68,7 @@ from .intents import (
 )
 from .jobs_store import create_job_from_paste, get_snapshots
 from .link_codes_store import consume_link_code
+from .link_completion import LinkCompletion, finish_link
 from .prepare_orchestrator import latest_resume_pdf, run_prepare_application
 from .profile import ProfileImportError, import_profile
 from .profile_store import (
@@ -111,13 +112,30 @@ _LINK_CONFLICT_TEXT = (
     "❌ Couldn't link -- both accounts already have conflicting data "
     "(e.g. the same saved API key or tracked job). Nothing was changed."
 )
+_LINK_ALREADY_LINKED_TEXT = "You're already linked to that account."
 _LINK_SOURCE_LINKED_TEXT = (
     "This Telegram account is already linked to a web account -- if that's the one "
     "you're linking, you're all set. To link a different account, send /unlink first, "
     "then generate a new code on the website."
 )
+_LINK_TARGET_LINKED_TEXT = (
+    "❌ That web account is already linked to a different Telegram account. Unlink it "
+    "there first, then generate a new code."
+)
+_LINK_RETRY_TEXT = "Please send that again."
+_LINK_PRIVATE_ONLY_TEXT = (
+    "Send /link in a private chat with me, not a group -- and generate a fresh code, "
+    "since anyone in this chat could have seen that one."
+)
 _LINK_FAILED_TEXT = "❌ Couldn't link right now. Nothing was changed -- try again in a minute."
 _LINK_UNCONFIRMED_TEXT = "❌ Couldn't confirm the link. Send /link with a new code in a minute."
+_LINK_REFUSALS = {
+    "rate_limited": _LINK_RATE_LIMITED_TEXT,
+    "expired_code": _LINK_EXPIRED_TEXT,
+    "source_mismatch": _LINK_RETRY_TEXT,
+    "source_already_linked": _LINK_SOURCE_LINKED_TEXT,
+    "target_linked_elsewhere": _LINK_TARGET_LINKED_TEXT,
+}
 _UNLINK_TEXT = "Unlinked. This Telegram account is no longer connected to any web account."
 _UNLINK_NOT_LINKED_TEXT = (
     "This Telegram account isn't linked to a web account -- nothing to unlink."
@@ -535,18 +553,12 @@ async def _handle_link_command(
     chat_id: int,
     code: str,
 ) -> None:
-    # Only the auth user this Telegram account got on first contact may be
-    # merged into a web account. A Telegram account that's already linked
-    # resolves to its web user, and merging that into the code's owner would
-    # move a real account's data into someone else's.
-    if not await is_auto_provisioned(supabase, user_id, telegram_user_id):
-        await telegram.send_message(chat_id, _LINK_SOURCE_LINKED_TEXT)
-        return
+    subject = str(telegram_user_id)
     try:
         result = await consume_link_code(
             supabase,
             channel=CHANNEL,
-            external_subject=str(telegram_user_id),
+            external_subject=subject,
             code=code,
             source_user_id=user_id,
         )
@@ -568,20 +580,50 @@ async def _handle_link_command(
         return
 
     if not result["ok"]:
-        reason = result["reason"]
-        text = {
-            "rate_limited": _LINK_RATE_LIMITED_TEXT,
-            "expired_code": _LINK_EXPIRED_TEXT,
-        }.get(reason, _LINK_INVALID_TEXT)
+        text = _LINK_REFUSALS.get(result["reason"], _LINK_INVALID_TEXT)
         await telegram.send_message(chat_id, text)
         return
 
-    # The auto-provisioned source user is deliberately NOT deleted.
-    # merge_user_data moves only 11 of the 28 tables that belong to a user,
-    # and deleting the auth user cascades through the rest; left in place,
-    # whatever didn't move is stranded but intact until the merge covers
-    # every table.
-    await telegram.send_message(chat_id, _format_merge_summary(result["summary"]))
+    target_user_id = result["target_user_id"]
+    source_user_id = result["source_user_id"]
+    if target_user_id == source_user_id:
+        await telegram.send_message(chat_id, _LINK_ALREADY_LINKED_TEXT)
+        return
+
+    # The merge is committed. What's left -- moving the files, retiring the
+    # emptied source account -- is finished before replying, so a crash in
+    # it means no reply, Telegram redelivers, and the same code resumes it
+    # (consume_link_code recognizes it) instead of leaving the source
+    # stranded behind a "Linked!" nobody will ever resend.
+    completion = await _finish_link(
+        supabase,
+        source_user_id=source_user_id,
+        target_user_id=target_user_id,
+        subject=subject,
+    )
+    if result.get("resumed") and completion is not None and completion.already_complete:
+        await telegram.send_message(chat_id, _LINK_ALREADY_LINKED_TEXT)
+        return
+    await telegram.send_message(chat_id, _format_merge_summary(result.get("summary") or {}))
+
+
+async def _finish_link(
+    supabase: AsyncClient, *, source_user_id: str, target_user_id: str, subject: str
+) -> LinkCompletion | None:
+    """`finish_link`, contained: the link itself already committed, so a
+    failure finishing it is logged and the user still hears "Linked!" -- the
+    same code resumes it if they resend it, and nothing is lost meanwhile,
+    since the source account isn't deleted until it owns nothing."""
+    try:
+        return await finish_link(
+            supabase,
+            source_user_id=source_user_id,
+            target_user_id=target_user_id,
+            subject=subject,
+        )
+    except Exception:
+        logger.error("finishing a link failed", exc_info=True)
+        return None
 
 
 async def _handle_unlink_command(
@@ -623,6 +665,9 @@ async def _handle_message(
 
     link_code = parse_link_code(text)
     if link_code is not None:
+        if message.get("chat", {}).get("type") != "private":
+            await telegram.send_message(chat_id, _LINK_PRIVATE_ONLY_TEXT)
+            return
         await _handle_link_command(
             supabase, user_id, telegram_user_id, telegram, chat_id, link_code
         )

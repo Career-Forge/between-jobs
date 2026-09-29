@@ -20,6 +20,7 @@ from postgrest.exceptions import APIError
 
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_supabase, get_telegram_client
+from between_jobs.api.link_completion import LinkCompletion
 
 _WEBHOOK_SECRET = "test-secret-not-real"
 _TELEGRAM_USER_ID = 987654321
@@ -734,12 +735,38 @@ def test_non_message_update_ignored() -> None:
     assert fake_telegram.sent == []
 
 
-def test_link_success_sends_summary_and_keeps_the_source_user() -> None:
+def _stub_finish_link(
+    monkeypatch: pytest.MonkeyPatch,
+    completion: LinkCompletion | None = None,
+    error: Exception | None = None,
+) -> list[dict[str, Any]]:
+    """Replaces the webhook's `finish_link` (tested on its own in
+    test_link_completion.py) with a recorder."""
+    calls: list[dict[str, Any]] = []
+
+    async def fake(supabase: Any, **kwargs: Any) -> LinkCompletion:
+        calls.append(kwargs)
+        if error is not None:
+            raise error
+        return completion or LinkCompletion(already_complete=False, retired=True)
+
+    monkeypatch.setattr("between_jobs.api.telegram_webhook.finish_link", fake)
+    return calls
+
+
+_TARGET_USER_ID = "00000000-0000-0000-0000-0000000000aa"
+
+
+def test_link_success_finishes_the_link_then_sends_the_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    finish_calls = _stub_finish_link(monkeypatch)
     fake_supabase = _FakeSupabaseClient(
         channel_identities_rows=[{"user_id": _EXISTING_USER_ID}],
         rpc_data={
             "ok": True,
-            "target_user_id": "target-web-user",
+            "target_user_id": _TARGET_USER_ID,
+            "source_user_id": _EXISTING_USER_ID,
             "summary": {"profile_versions": 1, "applications": 2, "provider_credentials": 0},
         },
     )
@@ -759,52 +786,168 @@ def test_link_success_sends_summary_and_keeps_the_source_user() -> None:
             },
         )
     ]
+    assert finish_calls == [
+        {
+            "source_user_id": _EXISTING_USER_ID,
+            "target_user_id": _TARGET_USER_ID,
+            "subject": str(_TELEGRAM_USER_ID),
+        }
+    ]
     reply = fake_telegram.sent[0][1]
     assert "Linked" in reply
     assert "resume version" in reply
     assert "tracked application" in reply
-    # merge_user_data doesn't move every table yet, and deleting the source
-    # auth user would cascade-delete whatever it left behind.
+    # Retiring the emptied account is finish_link's job, after checking it owns
+    # nothing -- never this handler's, which used to delete it blind.
     assert fake_supabase.auth.admin.delete_user_calls == []
 
 
-@pytest.mark.parametrize(
-    "source_user",
-    [
-        # A Telegram account already linked to a web account resolves to that web user.
-        _WEB_USER,
-        # A web sign-up on the synthetic domain: app_metadata is the service role's only.
-        _auth_user("telegram-111@users.between-jobs.tech", provider="email"),
-        # Another Telegram account's auto-provisioned user.
-        _auth_user(
-            "telegram-0a1b@users.between-jobs.tech",
-            provider="telegram",
-            bj_provisioned_by="telegram",
-            bj_telegram_subject="111",
-        ),
-        # Created before the bj_ markers existed: refused, never guessed at.
-        _auth_user("telegram-987654321@users.between-jobs.tech", provider="telegram"),
-    ],
-)
-def test_link_from_anything_but_this_accounts_auto_provisioned_user_is_refused(
-    source_user: SimpleNamespace,
-) -> None:
-    """The hijack: a Telegram account linked to web account A sending a code
-    minted by web account B used to merge A into B and delete A."""
+def test_link_reply_waits_for_finishing_the_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A crash while finishing means no reply, so Telegram redelivers and the
+    same code resumes it -- a reply first would leave the source stranded
+    behind a "Linked!" nobody resends."""
+    order: list[str] = []
+
+    async def fake_finish(supabase: Any, **kwargs: Any) -> LinkCompletion:
+        order.append("finish")
+        return LinkCompletion(already_complete=False, retired=True)
+
+    monkeypatch.setattr("between_jobs.api.telegram_webhook.finish_link", fake_finish)
     fake_supabase = _FakeSupabaseClient(
         channel_identities_rows=[{"user_id": _EXISTING_USER_ID}],
-        rpc_data={"ok": True, "target_user_id": "target-web-user", "summary": {}},
-        existing_user=source_user,
+        rpc_data={
+            "ok": True,
+            "target_user_id": _TARGET_USER_ID,
+            "source_user_id": _EXISTING_USER_ID,
+            "summary": {},
+        },
+    )
+    fake_telegram = _FakeTelegramClient()
+    original_send = fake_telegram.send_message
+
+    async def recording_send(chat_id: int, text: str, **kwargs: Any) -> None:
+        order.append("reply")
+        await original_send(chat_id, text, **kwargs)
+
+    monkeypatch.setattr(fake_telegram, "send_message", recording_send)
+
+    _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
+
+    assert order == ["finish", "reply"]
+
+
+def test_link_still_replies_when_finishing_it_fails(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The merge is committed by then; a storage or RPC failure finishing it
+    is logged, not surfaced -- the source account is only deleted once it
+    owns nothing, so nothing is lost, and the same code resumes it."""
+    _stub_finish_link(monkeypatch, error=RuntimeError("storage exploded"))
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}],
+        rpc_data={
+            "ok": True,
+            "target_user_id": _TARGET_USER_ID,
+            "source_user_id": _EXISTING_USER_ID,
+            "summary": {"profile_versions": 1},
+        },
+    )
+    fake_telegram = _FakeTelegramClient()
+
+    with caplog.at_level("ERROR", logger="between_jobs.api.telegram_webhook"):
+        response = _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
+
+    assert response.status_code == 200
+    assert "Linked" in fake_telegram.sent[0][1]
+    assert any(r.getMessage() == "finishing a link failed" for r in caplog.records)
+    assert fake_supabase.auth.admin.delete_user_calls == []
+
+
+def test_link_resumed_after_a_crash_finishes_it_without_a_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same Telegram account resending an already-consumed code: the RPC
+    says so (no summary -- the merge already ran) and the storage move and
+    retirement pick up where they stopped."""
+    finish_calls = _stub_finish_link(
+        monkeypatch, LinkCompletion(already_complete=False, retired=True)
+    )
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _TARGET_USER_ID}],
+        existing_user=_WEB_USER,
+        rpc_data={
+            "ok": True,
+            "resumed": True,
+            "target_user_id": _TARGET_USER_ID,
+            "source_user_id": _EXISTING_USER_ID,
+        },
     )
     fake_telegram = _FakeTelegramClient()
 
     response = _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
 
     assert response.status_code == 200
-    assert "/unlink first" in fake_telegram.sent[0][1]
-    assert fake_supabase.auth.admin.get_user_by_id_calls == [_EXISTING_USER_ID]
+    assert [c["source_user_id"] for c in finish_calls] == [_EXISTING_USER_ID]
+    assert "Linked" in fake_telegram.sent[0][1]
+    # resolve_or_create_user_id gave back the target, so that's what was passed.
+    assert fake_supabase.rpc_calls[0][1]["p_source_user_id"] == _TARGET_USER_ID
+
+
+def test_link_resumed_after_it_fully_finished_says_already_linked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_finish_link(monkeypatch, LinkCompletion(already_complete=True, retired=True))
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _TARGET_USER_ID}],
+        existing_user=_WEB_USER,
+        rpc_data={
+            "ok": True,
+            "resumed": True,
+            "target_user_id": _TARGET_USER_ID,
+            "source_user_id": _EXISTING_USER_ID,
+        },
+    )
+    fake_telegram = _FakeTelegramClient()
+
+    _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
+
+    assert fake_telegram.sent[0][1] == "You're already linked to that account."
+
+
+def test_link_with_a_code_from_the_account_itself_is_a_friendly_noop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Target and source the same: a linked account re-linking to itself."""
+    finish_calls = _stub_finish_link(monkeypatch)
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _TARGET_USER_ID}],
+        existing_user=_WEB_USER,
+        rpc_data={"ok": True, "target_user_id": _TARGET_USER_ID, "source_user_id": _TARGET_USER_ID},
+    )
+    fake_telegram = _FakeTelegramClient()
+
+    _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
+
+    assert fake_telegram.sent[0][1] == "You're already linked to that account."
+    assert finish_calls == []
+
+
+def test_link_in_a_group_chat_is_refused_without_touching_the_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Everyone in the chat could see the code, so it's never even submitted."""
+    finish_calls = _stub_finish_link(monkeypatch)
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    fake_telegram = _FakeTelegramClient()
+    update = _message_update("/link ABCD2345")
+    update["message"]["chat"]["type"] = "supergroup"
+
+    response = _post(fake_supabase, fake_telegram, update)
+
+    assert response.status_code == 200
+    assert "private chat" in fake_telegram.sent[0][1]
     assert fake_supabase.rpc_calls == []
-    assert fake_supabase.auth.admin.delete_user_calls == []
+    assert finish_calls == []
 
 
 def test_link_database_error_answers_without_failing_the_webhook() -> None:
@@ -823,22 +966,6 @@ def test_link_database_error_answers_without_failing_the_webhook() -> None:
     assert "nothing was changed" in reply.lower()
     assert "statement" not in reply
     assert fake_supabase.auth.admin.delete_user_calls == []
-
-
-def test_link_resent_from_an_already_linked_account_says_it_is_set_without_consuming() -> None:
-    """A linked Telegram account resolves to its web user, so a "did it
-    work?" retry with the same account's code is refused before the RPC --
-    and the reply has to read right for that case too."""
-    fake_supabase = _FakeSupabaseClient(
-        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}], existing_user=_WEB_USER
-    )
-    fake_telegram = _FakeTelegramClient()
-
-    response = _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
-
-    assert response.status_code == 200
-    assert "you're all set" in fake_telegram.sent[0][1]
-    assert fake_supabase.rpc_calls == []
 
 
 def test_link_gateway_error_does_not_claim_nothing_changed() -> None:
@@ -865,6 +992,9 @@ def test_link_gateway_error_does_not_claim_nothing_changed() -> None:
         ("invalid_code", "isn't valid"),
         ("expired_code", "expired"),
         ("rate_limited", "too many"),
+        ("source_mismatch", "send that again"),
+        ("source_already_linked", "/unlink first"),
+        ("target_linked_elsewhere", "different telegram account"),
     ],
 )
 def test_link_soft_failures_send_distinct_messages(reason: str, expected_snippet: str) -> None:
