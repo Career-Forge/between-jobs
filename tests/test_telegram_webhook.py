@@ -307,6 +307,17 @@ def _callback_update(data: str) -> dict[str, Any]:
 
 
 @pytest.fixture(autouse=True)
+def _stub_link_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The real probe calls an RPC the fake Supabase client doesn't model; it
+    has its own tests in test_link_codes_store.py."""
+
+    async def ready(supabase: Any) -> bool:
+        return True
+
+    monkeypatch.setattr("between_jobs.api.telegram_webhook.link_schema_ready", ready)
+
+
+@pytest.fixture(autouse=True)
 def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-key-not-real")
@@ -858,9 +869,63 @@ def test_link_still_replies_when_finishing_it_fails(
         response = _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
 
     assert response.status_code == 200
-    assert "Linked" in fake_telegram.sent[0][1]
-    assert any(r.getMessage() == "finishing a link failed" for r in caplog.records)
+    reply = fake_telegram.sent[0][1]
+    assert "Linked" in reply
+    assert "send the same /link code again" in reply  # not "all done"
+    failures = [r for r in caplog.records if r.getMessage() == "finishing a link failed"]
+    assert len(failures) == 1
+    assert failures[0].ctx == {  # type: ignore[attr-defined]
+        "source_user_id": _EXISTING_USER_ID,
+        "target_user_id": _TARGET_USER_ID,
+    }
     assert fake_supabase.auth.admin.delete_user_calls == []
+
+
+def test_link_that_could_not_retire_the_old_account_says_it_is_still_finishing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_finish_link(
+        monkeypatch,
+        LinkCompletion(already_complete=False, retired=False, leftover={"storage.objects": 1}),
+    )
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}],
+        rpc_data={
+            "ok": True,
+            "target_user_id": _TARGET_USER_ID,
+            "source_user_id": _EXISTING_USER_ID,
+            "summary": {"applications": 1},
+        },
+    )
+    fake_telegram = _FakeTelegramClient()
+
+    _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
+
+    reply = fake_telegram.sent[0][1]
+    assert "1 tracked application" in reply
+    assert "send the same /link code again" in reply
+
+
+def test_link_is_refused_before_touching_the_code_when_the_database_is_behind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deploy that reaches the server before the migration: the old
+    consume_link_code would merge without the new checks."""
+
+    async def not_ready(supabase: Any) -> bool:
+        return False
+
+    monkeypatch.setattr("between_jobs.api.telegram_webhook.link_schema_ready", not_ready)
+    finish_calls = _stub_finish_link(monkeypatch)
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    fake_telegram = _FakeTelegramClient()
+
+    response = _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
+
+    assert response.status_code == 200
+    assert "Nothing was changed" in fake_telegram.sent[0][1]
+    assert fake_supabase.rpc_calls == []
+    assert finish_calls == []
 
 
 def test_link_resumed_after_a_crash_finishes_it_without_a_summary(

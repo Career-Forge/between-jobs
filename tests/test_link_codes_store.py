@@ -6,7 +6,16 @@ import hashlib
 from types import SimpleNamespace
 from typing import Any
 
-from between_jobs.api.link_codes_store import _CODE_ALPHABET, consume_link_code, mint_code
+import pytest
+from postgrest.exceptions import APIError
+
+from between_jobs.api import link_codes_store
+from between_jobs.api.link_codes_store import (
+    _CODE_ALPHABET,
+    consume_link_code,
+    link_schema_ready,
+    mint_code,
+)
 
 _USER_ID = "00000000-0000-0000-0000-000000000001"
 _LINK_CODE_ID = "60000000-0000-0000-0000-000000000001"
@@ -128,3 +137,48 @@ async def test_consume_link_code_returns_soft_failure_shape() -> None:
     )
 
     assert result == {"ok": False, "reason": "invalid_code"}
+
+
+class _ProbeClient:
+    """Answers the probe's one RPC, or raises what the server would."""
+
+    def __init__(self, error: APIError | None = None) -> None:
+        self.error = error
+        self.calls = 0
+
+    def rpc(self, fn: str, params: dict[str, Any]) -> Any:
+        assert fn == "user_owned_row_counts"
+        self.calls += 1
+        error = self.error
+
+        class _Call:
+            async def execute(self) -> SimpleNamespace:
+                if error is not None:
+                    raise error
+                return SimpleNamespace(data={})
+
+        return _Call()
+
+
+@pytest.fixture
+def fresh_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(link_codes_store, "_schema_ready", False)
+
+
+async def test_link_schema_ready_is_false_while_the_migration_is_missing(fresh_probe: None) -> None:
+    missing = APIError({"message": "Could not find the function", "code": "PGRST202"})
+    client = _ProbeClient(missing)
+
+    assert await link_schema_ready(client) is False  # type: ignore[arg-type]
+    # Not remembered: the next /link asks again, so applying the migration
+    # takes effect without restarting the server.
+    assert await link_schema_ready(client) is False  # type: ignore[arg-type]
+    assert client.calls == 2
+
+
+async def test_link_schema_ready_is_remembered_once_it_has_been_seen(fresh_probe: None) -> None:
+    client = _ProbeClient()
+
+    assert await link_schema_ready(client) is True  # type: ignore[arg-type]
+    assert await link_schema_ready(client) is True  # type: ignore[arg-type]
+    assert client.calls == 1

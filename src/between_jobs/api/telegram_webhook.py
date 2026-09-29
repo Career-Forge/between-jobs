@@ -67,7 +67,7 @@ from .intents import (
     parse_link_code,
 )
 from .jobs_store import create_job_from_paste, get_snapshots
-from .link_codes_store import consume_link_code
+from .link_codes_store import consume_link_code, link_schema_ready
 from .link_completion import LinkCompletion, finish_link
 from .prepare_orchestrator import latest_resume_pdf, run_prepare_application
 from .profile import ProfileImportError, import_profile
@@ -129,6 +129,10 @@ _LINK_PRIVATE_ONLY_TEXT = (
 )
 _LINK_FAILED_TEXT = "❌ Couldn't link right now. Nothing was changed -- try again in a minute."
 _LINK_UNCONFIRMED_TEXT = "❌ Couldn't confirm the link. Send /link with a new code in a minute."
+_LINK_FINISHING_NOTE = (
+    "\n\nStill moving your files over -- send the same /link code again in a minute "
+    "and I'll finish it."
+)
 _LINK_REFUSALS = {
     "rate_limited": _LINK_RATE_LIMITED_TEXT,
     "expired_code": _LINK_EXPIRED_TEXT,
@@ -554,6 +558,9 @@ async def _handle_link_command(
     code: str,
 ) -> None:
     subject = str(telegram_user_id)
+    if not await link_schema_ready(supabase):
+        await telegram.send_message(chat_id, _LINK_FAILED_TEXT)
+        return
     try:
         result = await consume_link_code(
             supabase,
@@ -604,16 +611,22 @@ async def _handle_link_command(
     if result.get("resumed") and completion is not None and completion.already_complete:
         await telegram.send_message(chat_id, _LINK_ALREADY_LINKED_TEXT)
         return
-    await telegram.send_message(chat_id, _format_merge_summary(result.get("summary") or {}))
+    text = _format_merge_summary(result.get("summary") or {})
+    if completion is None or not completion.retired:
+        # The accounts are linked, but the old one still holds something --
+        # say so rather than implying it's all done.
+        text += _LINK_FINISHING_NOTE
+    await telegram.send_message(chat_id, text)
 
 
 async def _finish_link(
     supabase: AsyncClient, *, source_user_id: str, target_user_id: str, subject: str
 ) -> LinkCompletion | None:
     """`finish_link`, contained: the link itself already committed, so a
-    failure finishing it is logged and the user still hears "Linked!" -- the
-    same code resumes it if they resend it, and nothing is lost meanwhile,
-    since the source account isn't deleted until it owns nothing."""
+    failure finishing it is logged and the user still hears "Linked!" (with a
+    note that it isn't quite done) -- the same code resumes it if they resend
+    it, and nothing is lost meanwhile, since the source account isn't deleted
+    until it owns nothing."""
     try:
         return await finish_link(
             supabase,
@@ -622,7 +635,11 @@ async def _finish_link(
             subject=subject,
         )
     except Exception:
-        logger.error("finishing a link failed", exc_info=True)
+        logger.error(
+            "finishing a link failed",
+            extra={"ctx": {"source_user_id": source_user_id, "target_user_id": target_user_id}},
+            exc_info=True,
+        )
         return None
 
 

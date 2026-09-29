@@ -21,6 +21,7 @@ within a day, which lands back here.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -49,6 +50,11 @@ link committed."""
 
 _PAGE_SIZE = 100
 _MAX_LIST_DEPTH = 5
+
+_TIME_BUDGET_SECONDS = 20.0
+"""How long finishing one /link may spend moving files before it gives up and
+leaves the rest for the same code sent again -- the webhook is waiting on this
+to reply, and Telegram redelivers an update it gets no answer to."""
 
 _MIN_ORPHAN_AGE = timedelta(minutes=5)
 """An object with no `artifact_versions` row yet may be mid-`create_version`,
@@ -124,6 +130,18 @@ async def _copy_or_verify(bucket: Any, source_path: str, destination: str) -> No
             raise _StorageBlocked("the destination already holds different content") from e
 
 
+async def _rows_naming(supabase: AsyncClient, key: str) -> list[dict[str, Any]]:
+    return cast(
+        list[dict[str, Any]],
+        (
+            await supabase.table("artifact_versions")
+            .select("id,user_id")
+            .eq("storage_key", key)
+            .execute()
+        ).data,
+    )
+
+
 async def _move_object(
     supabase: AsyncClient,
     bucket: Any,
@@ -134,28 +152,33 @@ async def _move_object(
     now: datetime,
 ) -> bool:
     """Moves one object under the source's prefix to the target's, repointing
-    the `artifact_versions` rows that name it. False when it was left alone
-    for being too new to tell whether it's about to get a row."""
+    the `artifact_versions` rows that name it. False when it was left alone:
+    too new to tell whether it's about to get a row, or a row appeared for it
+    while it was being copied (the next pass moves it the ordinary way)."""
     path = cast(str, entry["path"])
     rest = path.removeprefix(f"{source}/")
-    rows = cast(
-        list[dict[str, Any]],
-        (
-            await supabase.table("artifact_versions")
-            .select("id,user_id")
-            .eq("storage_key", path)
-            .execute()
-        ).data,
-    )
+    onward = f"{target}/{rest}"
+    rows = await _rows_naming(supabase, path)
     if any(row["user_id"] not in (source, target) for row in rows):
         raise _StorageBlocked("an artifact version of a third account names this object")
 
+    orphan = False
     if rows:
-        destination = f"{target}/{rest}"
-    elif now - _parse_created_at(entry) < _MIN_ORPHAN_AGE:
-        return False
+        destination = onward
     else:
-        destination = f"{target}/{_ORPHAN_DIR}/{source}/{rest}"
+        moved_rows = await _rows_naming(supabase, onward)
+        if any(row["user_id"] not in (source, target) for row in moved_rows):
+            raise _StorageBlocked("an artifact version of a third account names this object")
+        if moved_rows:
+            # An earlier pass already repointed the row and died before it
+            # removed the original: this is what's left of that move, not a
+            # row-less object, so it must not be filed away as one.
+            destination = onward
+        elif now - _parse_created_at(entry) < _MIN_ORPHAN_AGE:
+            return False
+        else:
+            destination = f"{target}/{_ORPHAN_DIR}/{source}/{rest}"
+            orphan = True
 
     await _copy_or_verify(bucket, path, destination)
 
@@ -167,14 +190,15 @@ async def _move_object(
             .in_("user_id", [source, target])
             .execute()
         )
-        still_named = (
-            await supabase.table("artifact_versions").select("id").eq("storage_key", path).execute()
-        ).data
-        if still_named:
-            # Something wrote a row for the old key after it was read above
-            # (or it belongs to neither account). Removing the object now
-            # would leave that row pointing at nothing.
-            raise _StorageBlocked("an artifact version still names the old key")
+    # Whatever the object was, a row for the old key may have been written
+    # since it was read above (create_version uploading, then inserting), or
+    # belong to neither account. Removing the object now would leave that row
+    # pointing at nothing.
+    if await _rows_naming(supabase, path):
+        if orphan:
+            await bucket.remove([destination])
+            return False
+        raise _StorageBlocked("an artifact version still names the old key")
 
     await bucket.remove([path])
     return True
@@ -211,13 +235,22 @@ async def _rewrite_dangling_keys(
         )
 
 
-async def _move_storage(supabase: AsyncClient, *, source: str, target: str) -> bool:
+async def _move_storage(
+    supabase: AsyncClient, *, source: str, target: str, deadline: float
+) -> bool:
     """One pass over everything under the source's storage prefix. False when
-    something blocked it -- the caller then leaves the source in place."""
+    something blocked it -- the caller then leaves the source in place. Stops
+    quietly at `deadline` (a `time.monotonic()` value); what's left is
+    counted by the caller's recount and finished by the same code sent again."""
     bucket = supabase.storage.from_(_BUCKET)
     now = datetime.now(UTC)
+    ids = {"source_user_id": source, "target_user_id": target}
     moved = left_alone = failed = 0
+    timed_out = False
     for entry in await _list_objects(bucket, source):
+        if time.monotonic() >= deadline:
+            timed_out = True
+            break
         try:
             if await _move_object(
                 supabase, bucket, source=source, target=target, entry=entry, now=now
@@ -227,18 +260,30 @@ async def _move_storage(supabase: AsyncClient, *, source: str, target: str) -> b
                 left_alone += 1
         except _StorageBlocked as e:
             logger.error(
-                "a linked account's file can't be moved", extra={"ctx": {"reason": str(e)}}
+                "a linked account's file can't be moved",
+                extra={"ctx": {**ids, "reason": str(e)}},
             )
             return False
         except Exception:
             # One object's failure (a network error, a storage 5xx) must not
             # strand the rest; the recount after this pass sees what's left.
-            logger.warning("moving a linked account's file failed", exc_info=True)
+            logger.warning(
+                "moving a linked account's file failed", extra={"ctx": ids}, exc_info=True
+            )
             failed += 1
-    await _rewrite_dangling_keys(supabase, bucket, source=source, target=target)
+    if not timed_out:
+        await _rewrite_dangling_keys(supabase, bucket, source=source, target=target)
     logger.info(
         "moved a linked account's files",
-        extra={"ctx": {"moved": moved, "left_alone": left_alone, "failed": failed}},
+        extra={
+            "ctx": {
+                **ids,
+                "moved": moved,
+                "left_alone": left_alone,
+                "failed": failed,
+                "timed_out": timed_out,
+            }
+        },
     )
     return True
 
@@ -248,11 +293,20 @@ def _describe(counts: dict[str, int]) -> str:
 
 
 async def finish_link(
-    supabase: AsyncClient, *, source_user_id: str, target_user_id: str, subject: str
+    supabase: AsyncClient,
+    *,
+    source_user_id: str,
+    target_user_id: str,
+    subject: str,
+    budget_seconds: float = _TIME_BUDGET_SECONDS,
 ) -> LinkCompletion:
     """Moves what the merge left (storage) and retires the source account
-    once it owns nothing. Raises on an unexpected failure (an RPC or storage
-    error the passes below don't contain); the caller logs it and carries on."""
+    once it owns nothing. Gives up moving files after `budget_seconds`, which
+    reads as not retired -- the same code sent again carries on. Raises on an
+    unexpected failure (an RPC or storage error the passes below don't
+    contain); the caller logs it and carries on."""
+    deadline = time.monotonic() + budget_seconds
+    ids = {"source_user_id": source_user_id, "target_user_id": target_user_id}
     leftover: dict[str, int] = {}
     for attempt in range(_MAX_PASSES):
         merged = await finish_link_merge(
@@ -264,15 +318,17 @@ async def finish_link(
         )
         if merged.get("source_gone"):
             return LinkCompletion(already_complete=attempt == 0, retired=True)
-        blocked = not await _move_storage(supabase, source=source_user_id, target=target_user_id)
+        blocked = not await _move_storage(
+            supabase, source=source_user_id, target=target_user_id, deadline=deadline
+        )
         leftover = await user_owned_row_counts(supabase, source_user_id)
-        if blocked or not leftover:
+        if blocked or not leftover or time.monotonic() >= deadline:
             break
 
     if leftover:
         logger.error(
             "a linked account still owns rows after finishing its link",
-            extra={"ctx": {"leftover": _describe(leftover)}},
+            extra={"ctx": {**ids, "leftover": _describe(leftover)}},
         )
         return LinkCompletion(already_complete=False, retired=False, leftover=leftover)
 
@@ -288,6 +344,6 @@ async def finish_link(
     leftover = cast(dict[str, int], deleted.get("counts") or {})
     logger.error(
         "a linked account owned rows again by the time it was to be retired",
-        extra={"ctx": {"leftover": _describe(leftover)}},
+        extra={"ctx": {**ids, "leftover": _describe(leftover)}},
     )
     return LinkCompletion(already_complete=False, retired=False, leftover=leftover)

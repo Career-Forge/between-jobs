@@ -14,11 +14,16 @@ either; nothing here can enforce that past its own boundary.
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
+from postgrest.exceptions import APIError
+
 from supabase import AsyncClient
+
+logger = logging.getLogger(__name__)
 
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 """Excludes 0/O and 1/I/L -- easy to misread when a human is retyping this
@@ -176,3 +181,29 @@ async def user_owned_row_counts(supabase: AsyncClient, user_id: str) -> dict[str
     contents."""
     result = await supabase.rpc("user_owned_row_counts", {"p_user_id": user_id}).execute()
     return cast(dict[str, int], result.data)
+
+
+_PROBE_USER_ID = "00000000-0000-0000-0000-000000000000"
+_schema_ready = False
+
+
+async def link_schema_ready(supabase: AsyncClient) -> bool:
+    """Whether the database has the functions the link flow now calls.
+
+    A deploy that reaches the server before the migration would run the new
+    `/link` code against the old `consume_link_code`, which merges without
+    the checks and hands back none of what `finish_link` needs. Asking for a
+    function only the migration creates catches that: False means "don't
+    start a link", not "something is wrong with this user". Once it's seen
+    ready it stays ready for the life of the process -- a migration is never
+    rolled back under a running server."""
+    global _schema_ready
+    if _schema_ready:
+        return True
+    try:
+        await user_owned_row_counts(supabase, _PROBE_USER_ID)
+    except APIError as e:
+        logger.error("the link functions aren't installed", extra={"ctx": {"code": e.code}})
+        return False
+    _schema_ready = True
+    return True

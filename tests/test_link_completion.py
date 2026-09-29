@@ -8,7 +8,7 @@ prefix, and `user_owned_row_counts` computes its answer from what's left."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -31,6 +31,9 @@ class _Bucket:
         self.objects = objects
         self.copy_errors: dict[str, Exception] = {}
         self.list_calls = 0
+        self.after_copy: Callable[[], None] | None = None
+        """Runs once, right after the first copy -- a stand-in for another
+        request writing to the database while this one is mid-move."""
 
     async def list(self, prefix: str, options: dict[str, Any]) -> list[dict[str, Any]]:
         self.list_calls += 1
@@ -57,6 +60,9 @@ class _Bucket:
         if to_path in self.objects:
             raise StorageApiError("The resource already exists", "Duplicate", 409)
         self.objects[to_path] = (self.objects[from_path][0], datetime.now(UTC))
+        if self.after_copy is not None:
+            hook, self.after_copy = self.after_copy, None
+            hook()
         return {"path": to_path}
 
     async def download(self, path: str) -> bytes:
@@ -167,12 +173,13 @@ def _row(key: str, user_id: str = _TARGET, row_id: str | None = None) -> dict[st
     return {"id": row_id or f"row-{key}", "user_id": user_id, "storage_key": key}
 
 
-async def _finish(client: _FakeSupabase) -> LinkCompletion:
+async def _finish(client: _FakeSupabase, **kwargs: Any) -> LinkCompletion:
     return await finish_link(
         client,  # type: ignore[arg-type]
         source_user_id=_SOURCE,
         target_user_id=_TARGET,
         subject=_SUBJECT,
+        **kwargs,
     )
 
 
@@ -368,3 +375,47 @@ async def test_rpc_errors_propagate_to_the_caller() -> None:
 
     with pytest.raises(RuntimeError):
         await _finish(Exploding())
+
+
+async def test_the_original_of_a_move_already_repointed_is_finished_not_filed_away() -> None:
+    """A pass repointed the row and copied the object, then died before it
+    removed the original. What's left at the old key has no row naming it any
+    more -- but it isn't an orphan, and must not be copied a second time into
+    the orphans directory."""
+    old, new = f"{_SOURCE}/art-1/1", f"{_TARGET}/art-1/1"
+    client = _FakeSupabase({old: b"same"}, rows=[_row(new)])
+    client.bucket.objects[new] = (b"same", _OLD)
+
+    completion = await _finish(client)
+
+    assert completion.retired
+    assert client.bucket.objects.keys() == {new}
+    assert client.rows[0]["storage_key"] == new
+
+
+async def test_a_row_written_while_an_object_is_copied_aside_is_not_stranded() -> None:
+    """create_version uploads, then inserts its row. An object that looked
+    row-less when it was read can get its row while it's being copied to the
+    orphans directory; removing it then would strand that row."""
+    key = f"{_SOURCE}/art-9/1"
+    client = _FakeSupabase({key: b"late row"})
+    client.bucket.after_copy = lambda: client.rows.append(_row(key, user_id=_SOURCE))
+
+    completion = await _finish(client)
+
+    assert completion.retired
+    assert client.bucket.objects.keys() == {f"{_TARGET}/art-9/1"}  # no orphan copy left behind
+    assert [r["storage_key"] for r in client.rows] == [f"{_TARGET}/art-9/1"]
+
+
+async def test_moving_files_stops_at_the_time_budget_and_leaves_the_rest_for_a_resend() -> None:
+    key = f"{_SOURCE}/art-1/1"
+    client = _FakeSupabase({key: b"x"}, rows=[_row(key)])
+
+    completion = await _finish(client, budget_seconds=0)
+
+    assert not completion.retired
+    assert key in client.bucket.objects
+    assert completion.leftover == {"storage.objects": 1, "artifact_versions.storage_key": 1}
+    assert client.merge_calls == 1  # no second pass once out of time
+    assert not client.deleted
