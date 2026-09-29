@@ -892,6 +892,15 @@ begin
     raise exception 'no matching consumed link code found' using errcode = 'BJ007';
   end if;
 
+  -- A concurrent finisher (Telegram redelivering the /link) may have retired
+  -- the source while this waited on the identity lock above; the check at the
+  -- top ran before that and can't have seen it. Asked again after the wait,
+  -- on a fresh snapshot, it does -- otherwise merge_user_data's guard would
+  -- raise BJ004 about an account that is simply already gone.
+  if not exists (select 1 from auth.users where id = p_source) then
+    return jsonb_build_object('ok', true, 'source_gone', true);
+  end if;
+
   -- Safe to call again: merge_user_data's own writes are all "where
   -- user_id = source", so once source has nothing left, every statement in
   -- it is a no-op and the completeness check passes trivially.
