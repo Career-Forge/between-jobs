@@ -85,7 +85,12 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# tests/integration needs a local Supabase stack (`supabase start`); they're
+# skipped unless asked for: `pytest -m local_supabase`.
+addopts = "-q -m 'not local_supabase'"
+markers = [
+    "local_supabase: runs against a local Supabase stack (never a hosted project)",
+]
 asyncio_mode = "auto"
 # Job Finder P1's one-time import script lives at the repo root (scripts/),
 # not inside the installed between_jobs package -- it's a standalone,
