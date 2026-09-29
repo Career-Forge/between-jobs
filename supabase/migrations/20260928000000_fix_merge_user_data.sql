@@ -820,6 +820,16 @@ begin
     return jsonb_build_object('ok', false, 'reason', 'source_already_linked');
   end if;
 
+  -- Two Telegram accounts each holding a code for this one web account hold
+  -- different identity-row locks, so nothing above serializes them: both
+  -- could pass the check below before either commits, and the loser's merge
+  -- would then find the winner's identity already committed and apply the
+  -- target-wins delete to its own instead of being refused. One lock per
+  -- target, held to the end of the transaction, makes the check see the
+  -- winner's identity. Taken after the identity-row lock everywhere, and
+  -- nothing holding it waits on another link's row, so it can't deadlock.
+  perform pg_advisory_xact_lock(hashtextextended('bj-link-target:' || v_code_row.user_id::text, 0));
+
   -- The new (user_id, channel) unique index would refuse this anyway; catch
   -- it here first for a clean reason instead of a raw 23505.
   if exists (
