@@ -752,13 +752,19 @@ begin
 
   if not found then
     -- Not an unconsumed code. Maybe it's one this exact Telegram account
-    -- already used successfully, and the caller (retried after a crash
-    -- between the commit below and finishing the storage move, P0.7 S2)
-    -- never saw the result -- recognize that instead of saying it's invalid.
+    -- already used to link, and the caller (retried after a crash between
+    -- the commit below and finishing the storage move, P0.7 S2) never saw
+    -- the result -- recognize that instead of saying it's invalid. Only a
+    -- completed merge counts (a refused or no-op burn below never records
+    -- who used it), and only while the code's owner still holds this
+    -- subject's identity: a link since undone by /unlink has nothing to
+    -- resume, and pretending otherwise would tell the user they're linked
+    -- to an account the bot no longer sends anything to.
     select * into v_resume from public.link_codes
       where channel = p_channel
         and code_hash = encode(digest(p_code, 'sha256'), 'hex')
         and consumed_by_subject = p_external_subject
+        and user_id = v_owner
         and consumed_at > now() - v_resume_window
       order by consumed_at desc
       limit 1;
@@ -801,9 +807,7 @@ begin
   end if;
 
   if v_code_row.user_id = p_source_user_id then
-    update public.link_codes
-      set consumed_at = now(), consumed_by_user_id = p_source_user_id, consumed_by_subject = p_external_subject
-      where id = v_code_row.id;
+    update public.link_codes set consumed_at = now() where id = v_code_row.id;
     return jsonb_build_object('ok', true, 'target_user_id', v_code_row.user_id, 'source_user_id', p_source_user_id);
   end if;
 
@@ -812,9 +816,7 @@ begin
   -- auto-provisioned as may be merged away. The code is still burned --
   -- otherwise a linked account could be probed for whether a code is real.
   if not public.is_auto_provisioned_telegram_user(p_source_user_id, p_external_subject) then
-    update public.link_codes
-      set consumed_at = now(), consumed_by_user_id = p_source_user_id, consumed_by_subject = p_external_subject
-      where id = v_code_row.id;
+    update public.link_codes set consumed_at = now() where id = v_code_row.id;
     return jsonb_build_object('ok', false, 'reason', 'source_already_linked');
   end if;
 
@@ -824,9 +826,7 @@ begin
     select 1 from public.channel_identities
     where user_id = v_code_row.user_id and channel = p_channel
   ) then
-    update public.link_codes
-      set consumed_at = now(), consumed_by_user_id = p_source_user_id, consumed_by_subject = p_external_subject
-      where id = v_code_row.id;
+    update public.link_codes set consumed_at = now() where id = v_code_row.id;
     return jsonb_build_object('ok', false, 'reason', 'target_linked_elsewhere');
   end if;
 
