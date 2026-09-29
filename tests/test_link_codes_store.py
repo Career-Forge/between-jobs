@@ -182,3 +182,19 @@ async def test_link_schema_ready_is_remembered_once_it_has_been_seen(fresh_probe
     assert await link_schema_ready(client) is True  # type: ignore[arg-type]
     assert await link_schema_ready(client) is True  # type: ignore[arg-type]
     assert client.calls == 1
+
+
+async def test_link_schema_ready_only_says_not_installed_when_postgrest_says_so(
+    fresh_probe: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    """PostgREST reloading its schema cache right after the migration, or a
+    gateway error, says nothing about the migration being absent."""
+    for code, expected in (
+        ("PGRST202", "the link functions aren't installed"),
+        ("PGRST002", "couldn't check that the link functions are installed"),
+    ):
+        caplog.clear()
+        client = _ProbeClient(APIError({"message": "x", "code": code}))
+        with caplog.at_level("ERROR", logger="between_jobs.api.link_codes_store"):
+            assert await link_schema_ready(client) is False  # type: ignore[arg-type]
+        assert [r.getMessage() for r in caplog.records] == [expected]

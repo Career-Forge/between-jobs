@@ -8,8 +8,10 @@ Run with `pytest -m local_supabase` after `supabase start` and
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
+import asyncpg
 import pytest
 
 from .conftest import World
@@ -132,3 +134,42 @@ async def test_two_finishers_racing_over_one_link_lose_nothing(world: World) -> 
         bytes(await world.sb.storage.from_("artifacts").download(r["storage_key"])) for r in rows
     }
     assert downloaded == payloads
+
+
+async def test_a_finisher_waiting_on_the_one_retiring_the_source_finds_it_gone(
+    world: World, pg: Any
+) -> None:
+    """Telegram redelivering a /link while the first delivery is deleting the
+    source: the second checks the source exists, blocks on the identity-row
+    lock, and wakes after the delete commits. It must answer "gone", not fail
+    inside the merge about an account that no longer exists."""
+    src = await world.telegram_user()
+    target = await world.web_user()
+    await world.link(src.subject, await world.mint(target), src.id)
+    retiring = await asyncpg.connect(world.stack["DB_URL"])
+    try:
+        transaction = retiring.transaction()
+        await transaction.start()
+        deleted = await retiring.fetchval(
+            "select public.finish_link_delete_source('telegram', $1, $2::uuid, $3::uuid)",
+            src.subject,
+            src.id,
+            target,
+        )
+        assert json.loads(deleted)["source_gone"] is True  # not committed yet
+        waiting = asyncio.create_task(
+            pg.fetchval(
+                "select public.finish_link_merge('telegram', $1, $2::uuid, $3::uuid)",
+                src.subject,
+                src.id,
+                target,
+            )
+        )
+        await asyncio.sleep(0.5)
+        assert not waiting.done()  # parked on the identity-row lock
+        await transaction.commit()
+        result = json.loads(await asyncio.wait_for(waiting, timeout=10))
+    finally:
+        await retiring.close()
+
+    assert result == {"ok": True, "source_gone": True}

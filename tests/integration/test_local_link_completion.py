@@ -326,3 +326,54 @@ async def test_an_object_a_third_accounts_row_names_is_never_touched(world: Worl
     assert not completion.retired
     assert await world.storage_keys(src.id) == [key]
     assert datetime.now(UTC)  # nothing here depends on wall-clock time
+
+
+async def test_an_orphan_at_the_slot_the_target_regenerates_into_does_not_wedge_the_link(
+    world: World, pg: Any
+) -> None:
+    """A failed create_version leaves an object at the artifact's next-version
+    slot with no row. The link commits (the object still too young to move),
+    the merged account regenerates that artifact into the very same slot, and
+    the code is resent: the orphan must be filed aside, not compared against
+    the target's new version as if it were a half-finished move of it."""
+    src = await world.telegram_user()
+    target = await world.web_user()
+    app = await world.application(src.id, await world.job())
+    pv = await world.profile_version(src.id)
+    kept = await world.artifact_version(src.id, app["id"], pv["id"], version=1, body=b"v1")
+    artifact_id = artifact_id_for(app["id"], "resume")
+    orphan = f"{src.id}/{artifact_id}/2"
+    await world.sb.storage.from_("artifacts").upload(
+        orphan, b"failed upload", {"content-type": "application/pdf"}
+    )
+    await world.link(src.subject, await world.mint(target), src.id)
+
+    first = await world.finish(src.id, target, src.subject)
+    assert not first.retired  # the orphan is too young to touch
+
+    regenerated = await create_version(
+        world.sb,
+        target,
+        application_id=app["id"],
+        document_kind="resume",
+        content=b"the target's own version 2",
+        media_type="application/pdf",
+        generator="test",
+        generator_version="1",
+        profile_version_id=pv["id"],
+        job_snapshot_id=None,
+        evidence_fact_ids=[],
+        warnings=[],
+    )
+    assert regenerated["storage_key"] == f"{target}/{artifact_id}/2"
+    await _age(pg, orphan)
+
+    second = await world.finish(src.id, target, src.subject)
+
+    assert second.retired
+    assert await _download(world, regenerated["storage_key"]) == b"the target's own version 2"
+    assert await _download(world, f"{target}/_merged_orphans/{src.id}/{artifact_id}/2") == (
+        b"failed upload"
+    )
+    assert await _download(world, f"{target}/{artifact_id}/1") == b"v1"
+    assert kept["id"]  # the first version's row moved with the application

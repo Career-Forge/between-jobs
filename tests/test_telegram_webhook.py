@@ -808,6 +808,7 @@ def test_link_success_finishes_the_link_then_sends_the_summary(
     assert "Linked" in reply
     assert "resume version" in reply
     assert "tracked application" in reply
+    assert "send the same /link code again" not in reply  # it's all done
     # Retiring the emptied account is finish_link's job, after checking it owns
     # nothing -- never this handler's, which used to delete it blind.
     assert fake_supabase.auth.admin.delete_user_calls == []
@@ -954,8 +955,48 @@ def test_link_resumed_after_a_crash_finishes_it_without_a_summary(
     assert response.status_code == 200
     assert [c["source_user_id"] for c in finish_calls] == [_EXISTING_USER_ID]
     assert "Linked" in fake_telegram.sent[0][1]
+    assert "send the same /link code again" not in fake_telegram.sent[0][1]
     # resolve_or_create_user_id gave back the target, so that's what was passed.
     assert fake_supabase.rpc_calls[0][1]["p_source_user_id"] == _TARGET_USER_ID
+
+
+def test_link_resumed_but_still_not_finished_asks_for_the_same_code_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_finish_link(
+        monkeypatch,
+        LinkCompletion(already_complete=False, retired=False, leftover={"storage.objects": 1}),
+    )
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _TARGET_USER_ID}],
+        existing_user=_WEB_USER,
+        rpc_data={
+            "ok": True,
+            "resumed": True,
+            "target_user_id": _TARGET_USER_ID,
+            "source_user_id": _EXISTING_USER_ID,
+        },
+    )
+    fake_telegram = _FakeTelegramClient()
+
+    _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
+
+    assert "send the same /link code again" in fake_telegram.sent[0][1]
+
+
+def test_link_gateway_error_says_to_send_the_same_code_again() -> None:
+    """The RPC may have committed behind the gateway; only the original code
+    resumes that (a new one would read "already linked" and finish nothing)."""
+    gateway = APIError({"message": "bad gateway", "code": 502})
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}], rpc_error=gateway
+    )
+    fake_telegram = _FakeTelegramClient()
+
+    response = _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
+
+    assert response.status_code == 200
+    assert "same /link code again" in fake_telegram.sent[0][1]
 
 
 def test_link_resumed_after_it_fully_finished_says_already_linked(

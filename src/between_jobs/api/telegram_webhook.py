@@ -128,7 +128,10 @@ _LINK_PRIVATE_ONLY_TEXT = (
     "since anyone in this chat could have seen that one."
 )
 _LINK_FAILED_TEXT = "❌ Couldn't link right now. Nothing was changed -- try again in a minute."
-_LINK_UNCONFIRMED_TEXT = "❌ Couldn't confirm the link. Send /link with a new code in a minute."
+_LINK_UNCONFIRMED_TEXT = (
+    "❌ Couldn't confirm the link. Send the same /link code again in a minute -- if it "
+    "says the code isn't valid, generate a new one on the website."
+)
 _LINK_FINISHING_NOTE = (
     "\n\nStill moving your files over -- send the same /link code again in a minute "
     "and I'll finish it."
@@ -571,11 +574,13 @@ async def _handle_link_command(
         )
     except APIError as e:
         # Answer instead of failing the webhook: a 5xx makes Telegram
-        # redeliver the same /link, and the retry would report a misleading
-        # "invalid code". A Postgres error (a 5-character SQLSTATE) rolled
-        # the whole RPC back, so nothing changed; anything else -- a gateway
-        # error in front of PostgREST -- says nothing about whether it
-        # committed.
+        # redeliver the same /link, and if the code was already consumed the
+        # retry would call it invalid. A Postgres error (a 5-character
+        # SQLSTATE) rolled the whole RPC back, so nothing changed; anything
+        # else -- a gateway error in front of PostgREST -- says nothing about
+        # whether it committed, so the user is told to send the same code
+        # again: if it did commit, that resumes the link (a new code would
+        # not); if it didn't, the code still works.
         logger.warning("link code consumption failed", extra={"ctx": {"code": e.code}})
         if e.code == _UNIQUE_VIOLATION:
             text = _LINK_CONFLICT_TEXT

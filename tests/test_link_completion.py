@@ -66,6 +66,8 @@ class _Bucket:
         return {"path": to_path}
 
     async def download(self, path: str) -> bytes:
+        if path not in self.objects:
+            raise StorageApiError("Object not found", "not_found", 404)
         return self.objects[path][0]
 
     async def remove(self, paths: Sequence[str]) -> Sequence[dict[str, Any]]:
@@ -419,3 +421,36 @@ async def test_moving_files_stops_at_the_time_budget_and_leaves_the_rest_for_a_r
     assert completion.leftover == {"storage.objects": 1, "artifact_versions.storage_key": 1}
     assert client.merge_calls == 1  # no second pass once out of time
     assert not client.deleted
+
+
+async def test_an_orphan_at_a_slot_the_target_since_filled_is_filed_away_not_wedged() -> None:
+    """A row-less object at the artifact's next-version slot, and the target
+    then regenerated that artifact into the same slot with different bytes. A
+    row at the target's key is only proof of an earlier move when the bytes
+    match; here it's the target's own upload, so the orphan goes aside."""
+    kept, orphan = f"{_SOURCE}/art-1/1", f"{_SOURCE}/art-1/2"
+    clash = f"{_TARGET}/art-1/2"
+    client = _FakeSupabase({kept: b"v1", orphan: b"stray"}, rows=[_row(kept), _row(clash)])
+    client.bucket.objects[clash] = (b"the target's new version", _OLD)
+
+    completion = await _finish(client)
+
+    assert completion.retired
+    assert client.bucket.objects[clash][0] == b"the target's new version"
+    assert client.bucket.objects[f"{_TARGET}/_merged_orphans/{_SOURCE}/art-1/2"][0] == b"stray"
+    assert client.bucket.objects.keys() == {
+        f"{_TARGET}/art-1/1",
+        clash,
+        f"{_TARGET}/_merged_orphans/{_SOURCE}/art-1/2",
+    }
+
+
+async def test_an_orphan_whose_look_alike_row_points_at_nothing_is_filed_away() -> None:
+    orphan, clash = f"{_SOURCE}/art-1/2", f"{_TARGET}/art-1/2"
+    client = _FakeSupabase({orphan: b"stray"}, rows=[_row(clash)])  # no object at `clash`
+
+    completion = await _finish(client)
+
+    assert completion.retired
+    assert f"{_TARGET}/_merged_orphans/{_SOURCE}/art-1/2" in client.bucket.objects
+    assert clash not in client.bucket.objects

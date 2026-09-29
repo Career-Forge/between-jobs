@@ -130,6 +130,18 @@ async def _copy_or_verify(bucket: Any, source_path: str, destination: str) -> No
             raise _StorageBlocked("the destination already holds different content") from e
 
 
+async def _holds_same_bytes(bucket: Any, original: str, other: str) -> bool:
+    """Whether `other` exists and holds exactly the bytes of `original`. A
+    missing object is a plain False; any other storage failure propagates."""
+    try:
+        candidate = await bucket.download(other)
+    except StorageApiError as e:
+        if str(e.status) == "404":
+            return False
+        raise
+    return bool(candidate == await bucket.download(original))
+
+
 async def _rows_naming(supabase: AsyncClient, key: str) -> list[dict[str, Any]]:
     return cast(
         list[dict[str, Any]],
@@ -169,10 +181,13 @@ async def _move_object(
         moved_rows = await _rows_naming(supabase, onward)
         if any(row["user_id"] not in (source, target) for row in moved_rows):
             raise _StorageBlocked("an artifact version of a third account names this object")
-        if moved_rows:
-            # An earlier pass already repointed the row and died before it
-            # removed the original: this is what's left of that move, not a
-            # row-less object, so it must not be filed away as one.
+        if moved_rows and await _holds_same_bytes(bucket, path, onward):
+            # An earlier pass already copied the object and repointed the row,
+            # then died before it removed the original: this is what's left
+            # of that move, not a row-less object, so it must not be filed
+            # away as one. Bytes have to match -- a row at the target's key
+            # can equally be the target's own newer upload, which a genuine
+            # orphan at the same slot must not be mistaken for a copy of.
             destination = onward
         elif now - _parse_created_at(entry) < _MIN_ORPHAN_AGE:
             return False

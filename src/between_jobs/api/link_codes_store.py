@@ -184,6 +184,7 @@ async def user_owned_row_counts(supabase: AsyncClient, user_id: str) -> dict[str
 
 
 _PROBE_USER_ID = "00000000-0000-0000-0000-000000000000"
+_FUNCTION_MISSING = "PGRST202"
 _schema_ready = False
 
 
@@ -203,7 +204,15 @@ async def link_schema_ready(supabase: AsyncClient) -> bool:
     try:
         await user_owned_row_counts(supabase, _PROBE_USER_ID)
     except APIError as e:
-        logger.error("the link functions aren't installed", extra={"ctx": {"code": e.code}})
+        # PGRST202 is PostgREST saying no such function; anything else (its
+        # schema cache reloading right after the migration, a gateway error, a
+        # timeout) says nothing about whether the migration is there.
+        message = (
+            "the link functions aren't installed"
+            if e.code == _FUNCTION_MISSING
+            else "couldn't check that the link functions are installed"
+        )
+        logger.error(message, extra={"ctx": {"code": e.code}})
         return False
     _schema_ready = True
     return True
