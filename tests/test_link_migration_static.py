@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from between_jobs.api.artifact_versions_store import _ARTIFACT_ID_NAMESPACE
 
 _MIGRATIONS = Path(__file__).parent.parent / "supabase" / "migrations"
@@ -117,13 +119,21 @@ def test_the_merge_migration_uses_the_python_artifact_namespace() -> None:
     assert match.group(1) == str(_ARTIFACT_ID_NAMESPACE)
 
 
-def test_merge_user_data_is_reachable_by_no_api_role() -> None:
-    """Only consume_link_code and finish_link_merge (both owned by postgres)
-    call it; an RPC-reachable merge would be a hijack on its own."""
-    sql = _without_comments(_MERGE.read_text())
+@pytest.mark.parametrize(
+    "function", ["merge_user_data", "assert_unreferenced", "is_auto_provisioned_telegram_user"]
+)
+def test_the_internal_link_functions_are_reachable_by_no_api_role(function: str) -> None:
+    """Only functions owned by postgres call these (consume_link_code,
+    finish_link_merge, merge_user_data); an RPC-reachable merge would be a
+    hijack on its own. Revoking from public, anon and authenticated isn't
+    enough: prod's default privileges also grant service_role, a fresh stack's
+    don't, so service_role has to be named -- somewhere in the migrations."""
+    sql = "\n".join(
+        _without_comments(path.read_text()) for path in sorted(_MIGRATIONS.glob("*.sql"))
+    )
     assert re.search(
-        r"revoke\s+execute\s+on\s+function\s+public\.merge_user_data\s*\([^)]*\)\s+"
-        r"from\s+public,\s*anon,\s*authenticated,\s*service_role",
+        rf"revoke\s+execute\s+on\s+function\s+public\.{function}\s*\([^)]*\)\s+"
+        r"from\s+[^;]*\bservice_role\b",
         sql,
         re.IGNORECASE,
     )
