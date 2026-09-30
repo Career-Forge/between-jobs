@@ -13,9 +13,26 @@ file API.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
+
+_BOT_USERNAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{4,31}")
+"""Telegram's rule for a username: 5-32 characters, letters, digits and
+underscores, starting with a letter."""
+
+
+def parse_bot_username(raw: str | None) -> str | None:
+    """The bot's public username, without a leading "@", or None when none was
+    given. Raises ValueError (naming no value) for something that can't be one.
+    Shown to people so they can find the bot; it is not a credential."""
+    if raw is None or raw.strip() == "":
+        return None
+    name = raw.strip().removeprefix("@")
+    if _BOT_USERNAME.fullmatch(name) is None:
+        raise ValueError("not a valid Telegram username")
+    return name
 
 
 class TelegramClient:

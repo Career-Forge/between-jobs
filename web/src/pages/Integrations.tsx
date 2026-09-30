@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "../lib/api";
-import { isTelegramAvailable } from "../lib/capabilities";
+import { isTelegramAvailable, telegramBotUsername } from "../lib/capabilities";
 import { useCapabilities } from "../lib/useCapabilities";
 
 // Integrations (Sprint 2.7f, widened Horizon Sprint 5.0) -- the web
@@ -150,7 +150,9 @@ export default function Integrations() {
           onChanged={load}
         />
       )}
-      {isTelegramAvailable(capabilities) && <TelegramLinkCard />}
+      {isTelegramAvailable(capabilities) && (
+        <TelegramLinkCard botUsername={telegramBotUsername(capabilities)} />
+      )}
       <GmailConnectCard credential={gmail} onChanged={load} />
     </div>
   );
@@ -349,7 +351,7 @@ function OpenRouterCard({
   );
 }
 
-function TelegramLinkCard() {
+function TelegramLinkCard({ botUsername }: { botUsername: string | null }) {
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -376,9 +378,9 @@ function TelegramLinkCard() {
     <div className="bj-card">
       <h2>Telegram</h2>
       <p className="bj-muted">
-        Link your Telegram account to use @between_jobs_tech_bot with the same profile and
-        applications you see here. If you've already used the bot, linking brings over anything
-        you built up there.
+        Link your Telegram account to use {botUsername ? `@${botUsername}` : "this server's Telegram bot"}{" "}
+        with the same profile and applications you see here. If you've already used the bot,
+        linking brings over anything you built up there.
       </p>
       {code && (
         <div>

@@ -69,7 +69,7 @@ from .saved_search_matcher import _DEFAULT_MATCH_INTERVAL_SECONDS as MATCHER_INT
 from .saved_search_matcher import run_matcher_forever
 from .saved_searches_routes import router as saved_searches_router
 from .supabase_client import create_supabase_client
-from .telegram_client import TelegramClient
+from .telegram_client import TelegramClient, parse_bot_username
 from .telegram_webhook import router as telegram_router
 from .today_routes import router as today_router
 from .warm_path_events_routes import router as warm_path_events_router
@@ -118,6 +118,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         TelegramClient(app.state.http, telegram_token) if telegram_token is not None else None
     )
     app.state.telegram_webhook_secret = telegram_secret
+    # Optional and cosmetic: the name the Integrations page tells people to look
+    # for. A malformed value is dropped, not fatal -- a typo in a display name
+    # must not keep the API from starting -- and the page then says "this
+    # server's bot" instead. Only meaningful when there is a bot.
+    app.state.telegram_bot_username = None
+    if telegram_token is not None:
+        try:
+            app.state.telegram_bot_username = parse_bot_username(
+                os.environ.get("TELEGRAM_BOT_USERNAME")
+            )
+        except ValueError:
+            logger.warning("TELEGRAM_BOT_USERNAME is not a valid Telegram username; ignoring it")
 
     # Background workers. Each gets its own Supabase client (never
     # app.state.supabase), so its long-lived polling never shares connection

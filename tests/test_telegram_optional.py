@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from between_jobs.api.app import app
 from between_jobs.api.auth import require_user_id
+from between_jobs.api.telegram_client import parse_bot_username
 
 _USER_ID = "00000000-0000-0000-0000-000000000001"
 _TOKEN = "test-token-not-real"
@@ -33,6 +34,7 @@ def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-key-not-real")
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("TELEGRAM_BOT_USERNAME", raising=False)
 
 
 @contextmanager
@@ -64,7 +66,7 @@ def test_blank_values_count_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "")
     monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "")
     with _client() as client:
-        assert client.get("/capabilities").json() == {"telegram": False}
+        assert client.get("/capabilities").json()["telegram"] is False
 
 
 @pytest.mark.parametrize("only", ["TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET"])
@@ -114,7 +116,7 @@ def test_capabilities_says_telegram_is_off() -> None:
     with _client() as client:
         response = client.get("/capabilities")
     assert response.status_code == 200
-    assert response.json() == {"telegram": False}
+    assert response.json() == {"telegram": False, "telegram_bot_username": None}
 
 
 # -- on is unchanged --------------------------------------------------------
@@ -123,7 +125,10 @@ def test_capabilities_says_telegram_is_off() -> None:
 def test_capabilities_says_telegram_is_on(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure(monkeypatch)
     with _client() as client:
-        assert client.get("/capabilities").json() == {"telegram": True}
+        assert client.get("/capabilities").json() == {
+            "telegram": True,
+            "telegram_bot_username": None,
+        }
 
 
 def test_the_webhook_still_checks_its_secret_when_telegram_is_on(
@@ -139,6 +144,62 @@ def test_the_webhook_still_checks_its_secret_when_telegram_is_on(
         missing = client.post("/telegram/webhook", json={})
     assert wrong.status_code == 401
     assert missing.status_code == 401
+
+
+# -- the bot's public name ---------------------------------------------------
+
+
+@pytest.mark.parametrize("given", ["Acme_Jobs_bot", "@Acme_Jobs_bot", "  @Acme_Jobs_bot  "])
+def test_capabilities_names_the_bot_when_the_server_says_which(
+    monkeypatch: pytest.MonkeyPatch, given: str
+) -> None:
+    _configure(monkeypatch)
+    monkeypatch.setenv("TELEGRAM_BOT_USERNAME", given)
+    with _client() as client:
+        assert client.get("/capabilities").json() == {
+            "telegram": True,
+            "telegram_bot_username": "Acme_Jobs_bot",
+        }
+
+
+def test_a_bot_name_with_no_bot_is_not_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TELEGRAM_BOT_USERNAME", "Acme_Jobs_bot")
+    with _client() as client:
+        assert client.get("/capabilities").json() == {
+            "telegram": False,
+            "telegram_bot_username": None,
+        }
+
+
+@pytest.mark.parametrize("bad", ["not a username", "ab", "1starts_with_digit", "x" * 40, "@@twice"])
+def test_a_malformed_bot_name_is_ignored_not_fatal(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, bad: str
+) -> None:
+    """A typo in a display name must not keep the API from starting, and the
+    value is never logged."""
+    _configure(monkeypatch)
+    monkeypatch.setenv("TELEGRAM_BOT_USERNAME", bad)
+    with caplog.at_level("WARNING", logger="between_jobs.api.app"), _client() as client:
+        body = client.get("/capabilities").json()
+    assert body == {"telegram": True, "telegram_bot_username": None}
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("TELEGRAM_BOT_USERNAME" in message for message in warnings)
+    assert not any(bad in message for message in warnings)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(None, None), ("", None), ("   ", None), ("@a_bot_x", "a_bot_x"), ("Five5", "Five5")],
+)
+def test_parse_bot_username_accepts_and_normalizes(raw: str | None, expected: str | None) -> None:
+    assert parse_bot_username(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["abcd", "has space", "trailing-dash", "_leading", "a" * 33])
+def test_parse_bot_username_rejects_what_cannot_be_a_username(raw: str) -> None:
+    with pytest.raises(ValueError, match="not a valid Telegram username") as raised:
+        parse_bot_username(raw)
+    assert raw not in str(raised.value)
 
 
 # -- the gate on the capabilities route itself -------------------------------

@@ -19,6 +19,10 @@ export const CAPABILITIES_PATH = "/capabilities";
 
 export interface Capabilities {
   telegram: boolean;
+  // The bot's public username, without the "@", when the server says which one
+  // it is; null otherwise. A self-hosted server has its own bot, so the page
+  // must not assume the hosted service's.
+  telegramBotUsername: string | null;
 }
 
 export type CapabilitiesState =
@@ -31,12 +35,23 @@ export type CapabilitiesState =
 
 export type CapabilitiesFetcher = <T>(path: string) => Promise<T>;
 
+// Telegram's own rule for a username: 5-32 letters, digits and underscores,
+// starting with a letter. Anything else is shown as no name rather than
+// rendered as whatever the server sent.
+const BOT_USERNAME = /^[A-Za-z][A-Za-z0-9_]{4,31}$/;
+
 /** The body as a `Capabilities`, or null if it isn't one. A missing or
- *  non-boolean flag is not guessed at. */
+ *  non-boolean `telegram` flag is not guessed at; a missing or malformed bot
+ *  name just means the name isn't known. */
 export function parseCapabilities(body: unknown): Capabilities | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
-  const telegram = (body as Record<string, unknown>).telegram;
-  return typeof telegram === "boolean" ? { telegram } : null;
+  const record = body as Record<string, unknown>;
+  if (typeof record.telegram !== "boolean") return null;
+  const name = record.telegram_bot_username;
+  return {
+    telegram: record.telegram,
+    telegramBotUsername: typeof name === "string" && BOT_USERNAME.test(name) ? name : null,
+  };
 }
 
 export async function loadCapabilities(fetcher: CapabilitiesFetcher): Promise<CapabilitiesState> {
@@ -51,4 +66,12 @@ export async function loadCapabilities(fetcher: CapabilitiesFetcher): Promise<Ca
 /** Whether the Telegram card may be shown: only for a definite yes. */
 export function isTelegramAvailable(state: CapabilitiesState): boolean {
   return state.kind === "ready" && state.capabilities.telegram;
+}
+
+/** The bot's name for the card's copy, or null when it isn't known (the card
+ *  then says "this server's Telegram bot"). */
+export function telegramBotUsername(state: CapabilitiesState): string | null {
+  return state.kind === "ready" && state.capabilities.telegram
+    ? state.capabilities.telegramBotUsername
+    : null;
 }
