@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "../lib/api";
+import { isTelegramAvailable } from "../lib/capabilities";
+import { useCapabilities } from "../lib/useCapabilities";
 
 // Integrations (Sprint 2.7f, widened Horizon Sprint 5.0) -- the web
 // surface over Sprint 2.7's BYOK credential broker (Proposal §11).
@@ -21,7 +23,8 @@ import { apiFetch, ApiError } from "../lib/api";
 // Sprint 2.8f adds the Telegram-link card on the same page -- both cards
 // are "connect an external account to this one," the same loose theme
 // the page's own title already claims, so this doesn't need a second
-// route to earn its place.
+// route to earn its place. It shows only on a server that has a bot (P2.4):
+// GET /capabilities says so, and until that answer is known the card stays out.
 
 interface CredentialSummary {
   id: string;
@@ -40,6 +43,7 @@ interface CredentialSummary {
 const _GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 
 export default function Integrations() {
+  const capabilities = useCapabilities();
   const [credentials, setCredentials] = useState<CredentialSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -146,7 +150,7 @@ export default function Integrations() {
           onChanged={load}
         />
       )}
-      <TelegramLinkCard />
+      {isTelegramAvailable(capabilities) && <TelegramLinkCard />}
       <GmailConnectCard credential={gmail} onChanged={load} />
     </div>
   );

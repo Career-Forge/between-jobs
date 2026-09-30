@@ -14,6 +14,7 @@ from fastapi import Request
 
 from supabase import AsyncClient
 
+from .errors import ApiError
 from .telegram_client import TelegramClient
 
 
@@ -33,9 +34,27 @@ def get_hiring_http_client(request: Request) -> httpx.AsyncClient:
     return cast(httpx.AsyncClient, request.app.state.hiring_http)
 
 
+def telegram_enabled(request: Request) -> bool:
+    """Whether this server was started with a Telegram bot. The lifespan sets
+    both Telegram values together or neither (see `app.lifespan`), so either
+    one answers it."""
+    return request.app.state.telegram_client is not None
+
+
+def _require_telegram(request: Request) -> None:
+    if not telegram_enabled(request):
+        raise ApiError("FEATURE_DISABLED", "Telegram isn't set up on this server.")
+
+
 def get_telegram_client(request: Request) -> TelegramClient:
+    """The bot client, or 404 FEATURE_DISABLED on a server running without one.
+    Every Telegram route depends on this (or `get_webhook_secret`), so none of
+    them does anything -- least of all compare a secret against nothing -- when
+    Telegram isn't configured."""
+    _require_telegram(request)
     return cast(TelegramClient, request.app.state.telegram_client)
 
 
 def get_webhook_secret(request: Request) -> str:
+    _require_telegram(request)
     return cast(str, request.app.state.telegram_webhook_secret)

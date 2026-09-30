@@ -35,12 +35,13 @@ from supabase import AsyncClient
 from .app_state import get_supabase
 from .applications_routes import router as applications_router
 from .auth import create_jwks_client, require_user_id
+from .capabilities_routes import router as capabilities_router
 from .company_intel_routes import router as company_intel_router
 from .contact_research_routes import router as contact_research_router
 from .credentials_routes import router as credentials_router
 from .digest_listener import handle_batch as handle_digest_batch
 from .discovery_routes import router as discovery_router
-from .env import require_env
+from .env import optional_env
 from .errors import ApiError
 from .extension_routes import router as extension_router
 from .forge_engines_client import _base_url as forge_engines_base_url
@@ -100,8 +101,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # source. A separate client because `app.state.http` legitimately talks to
     # many other hosts.
     app.state.hiring_http = httpx.AsyncClient(event_hooks={"request": [refuse_non_provider_hosts]})
-    app.state.telegram_client = TelegramClient(app.state.http, require_env("TELEGRAM_BOT_TOKEN"))
-    app.state.telegram_webhook_secret = require_env("TELEGRAM_WEBHOOK_SECRET")
+    # Telegram is optional: a server with neither value runs web-only (the
+    # webhook and the link-code route answer 404 FEATURE_DISABLED, the digest
+    # push is skipped, and GET /capabilities says so). One value without the
+    # other is a mistake, not "off" -- a bot that can't verify its webhook, or
+    # a secret with no bot behind it -- so it stops the boot instead of quietly
+    # running half-configured.
+    telegram_token = optional_env("TELEGRAM_BOT_TOKEN")
+    telegram_secret = optional_env("TELEGRAM_WEBHOOK_SECRET")
+    if (telegram_token is None) != (telegram_secret is None):
+        raise RuntimeError(
+            "TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET must be set together, "
+            "or both left unset to run without Telegram"
+        )
+    app.state.telegram_client = (
+        TelegramClient(app.state.http, telegram_token) if telegram_token is not None else None
+    )
+    app.state.telegram_webhook_secret = telegram_secret
 
     # Background workers. Each gets its own Supabase client (never
     # app.state.supabase), so its long-lived polling never shares connection
@@ -248,6 +264,7 @@ async def request_id_middleware(
     return response
 
 
+app.include_router(capabilities_router)
 app.include_router(telegram_router)
 app.include_router(profile_router)
 app.include_router(applications_router)

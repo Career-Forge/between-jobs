@@ -12,11 +12,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from supabase import AsyncClient
 
-from .app_state import get_supabase
+from .app_state import get_supabase, telegram_enabled
 from .auth import require_user_id
 from .errors import ApiError
 from .link_codes_store import mint_code
@@ -29,12 +29,16 @@ _SUPPORTED_CHANNELS = {"telegram"}
 
 @router.post("/code", status_code=201)
 async def mint_link_code_route(
+    request: Request,
     body: MintLinkCodeRequest,
     user_id: str = Depends(require_user_id),
     supabase: AsyncClient = Depends(get_supabase),
 ) -> dict[str, Any]:
     if body.channel not in _SUPPORTED_CHANNELS:
         raise ApiError("INVALID_INPUT", f"{body.channel!r} isn't a supported channel yet.")
+    if body.channel == "telegram" and not telegram_enabled(request):
+        # A code nobody can redeem: there's no bot on this server to send it to.
+        raise ApiError("FEATURE_DISABLED", "Telegram isn't set up on this server.")
 
     code, expires_at = await mint_code(supabase, user_id, body.channel)
     return {"code": code, "channel": body.channel, "expires_at": expires_at}

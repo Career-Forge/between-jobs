@@ -17,7 +17,7 @@ Requires Python 3.12+.
 ```
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env  # fill in Supabase + Telegram values, see comments in the file
+cp .env.example .env  # fill in the Supabase values (Telegram is optional), see comments in the file
 ```
 
 Run the API locally: `uvicorn between_jobs.api.app:app --reload`

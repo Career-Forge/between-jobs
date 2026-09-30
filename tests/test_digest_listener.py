@@ -388,13 +388,20 @@ async def test_job_match_found_skips_the_push_when_no_telegram_identity_is_linke
     assert telegram.sent == []
 
 
-async def test_job_match_found_never_pushes_without_a_telegram_client() -> None:
+async def test_job_match_found_never_pushes_without_a_telegram_client(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A server run without a bot (P2.4) hands the listener `telegram=None`: the
+    Today item is still written, and nothing is logged as a problem -- not
+    having a bot is a configuration, not a failure."""
+    caplog.set_level(logging.INFO)
     supabase = _FakeSupabaseClient(applications=[], telegram_chat_id=555)
     row = _job_match_row()
 
-    inserted = await handle_batch(supabase, [row])  # type: ignore[arg-type]
+    inserted = await handle_batch(supabase, [row], telegram=None)  # type: ignore[arg-type]
 
     assert inserted == 1
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
 async def test_job_match_found_push_failure_does_not_affect_the_insert_count() -> None:
