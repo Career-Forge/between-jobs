@@ -214,26 +214,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="between-jobs", version="0.0.1", lifespan=lifespan)
-# The browser extension (browser-extension.md) calls this API directly
-# from a chrome-extension:// origin -- unlike the web frontend, which
-# never triggers a real CORS check at all (Vite's dev proxy makes its
-# requests same-origin from the browser's own point of view). Permissive
-# by design, not an oversight: every route here is already gated by a
-# verified Supabase JWT (auth.require_user_id) -- CORS only controls
-# which browser-page origins may READ a response via fetch/XHR, it is not
-# this API's authorization boundary, and no route here ever relies on a
-# cookie (allow_credentials stays False, so this can't be combined with
-# credentialed requests to leak a session).
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    # Lets the extension read the request id it can quote in a bug report.
-    expose_headers=["X-Request-ID"],
-)
-
 # A caller-supplied id is kept only when it looks like one; anything else is
 # replaced, so a request can't inject arbitrary text into every log line.
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._\-]{8,64}$")
@@ -263,6 +243,33 @@ async def request_id_middleware(
     response.headers["X-Request-ID"] = request_id
     return response
 
+
+# The browser extension (browser-extension.md) calls this API directly from a
+# chrome-extension:// origin, and so does the deployed web frontend: its bundle
+# is served from a different host than the API (launch plan P2.3). Only
+# `npm run dev`, through Vite's proxy, is same-origin. Permissive by design, not
+# an oversight: every route here is already gated by a verified Supabase JWT
+# (auth.require_user_id) -- CORS only controls which browser-page origins may
+# READ a response via fetch/XHR, it is not this API's authorization boundary, and
+# no route here ever relies on a cookie (allow_credentials stays False, so this
+# can't be combined with credentialed requests to leak a session).
+#
+# Registered AFTER request_id_middleware so it is the OUTERMOST middleware.
+# Anything that middleware answers itself -- its fallback 500 for an unhandled
+# error -- then still passes through here and carries the CORS headers; without
+# them a cross-origin browser discards the JSON error envelope and the caller
+# sees an opaque network failure ("Failed to fetch") instead of the message and
+# the request id it could quote in a bug report.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    # Lets the extension and the web app read the request id they can quote in a
+    # bug report.
+    expose_headers=["X-Request-ID"],
+)
 
 app.include_router(capabilities_router)
 app.include_router(telegram_router)
