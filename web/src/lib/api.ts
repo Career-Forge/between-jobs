@@ -1,8 +1,14 @@
+import { buildApiUrl, resolveApiBase } from "./apiUrl";
 import { supabase } from "./supabase";
 
+// The API's origin: VITE_API_BASE_URL in a deployed build (scripts/apiBaseGuard.ts
+// refuses to build without it), the dev proxy's /api otherwise -- see apiUrl.ts.
+const API_BASE = resolveApiBase(import.meta.env.VITE_API_BASE_URL as string | undefined);
+
 // Thin fetch wrapper for the spine. Attaches the user's Supabase access
-// token (verified server-side against JWKS -- auth.py) and prefixes /api,
-// which the Vite dev proxy rewrites to the spine's root.
+// token (verified server-side against JWKS -- auth.py) and prefixes the API
+// base: /api in development, where the Vite dev proxy rewrites it to the
+// spine's root, or the deployed API's origin (apiUrl.ts).
 //
 // The spine's error shape is Proposal Appendix B's structured contract
 // (Sprint 2.6a): `{"error": {code, message, ...}}`. `code` is exposed
@@ -33,7 +39,7 @@ async function accessToken(): Promise<string> {
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await accessToken();
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(buildApiUrl(API_BASE, path), {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -66,7 +72,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 // the same way `apiFetch` does.
 export async function apiFetchBlob(path: string): Promise<Blob> {
   const token = await accessToken();
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(buildApiUrl(API_BASE, path), {
     headers: { Authorization: `Bearer ${token}` },
   });
 
