@@ -17,6 +17,37 @@ describe("apiBaseProblem", () => {
     expect(apiBaseProblem("api.between-jobs.tech")).toMatch(/not a valid absolute URL/);
   });
 
+  it("accepts a path on the origin, because route paths are appended to it", () => {
+    expect(apiBaseProblem("https://example.com/api/v1")).toBeNull();
+    expect(apiBaseProblem("https://example.com/api/v1/")).toBeNull();
+  });
+
+  it.each([
+    ["a query string", "https://api.example.com?x=1"],
+    ["a query string after a path", "https://api.example.com/v1?x=1"],
+    ["an empty query", "https://api.example.com/v1?"],
+    ["a fragment", "https://api.example.com#top"],
+    ["an empty fragment", "https://api.example.com/v1#"],
+  ])("rejects %s, since paths are appended to the string and would land inside it", (_l, raw) => {
+    expect(apiBaseProblem(raw)).toMatch(/query string or fragment/);
+  });
+
+  it.each([
+    ["userinfo", "https://user:pass@api.example.com"],
+    ["a bare username", "https://user@api.example.com"],
+  ])("rejects %s, which would put credentials in every request", (_l, raw) => {
+    expect(apiBaseProblem(raw)).toMatch(/credentials/);
+  });
+
+  it.each([
+    "https:api.example.com",
+    "https:/api.example.com",
+    "https:///api.example.com",
+    "https://",
+  ])("rejects a spelling the URL parser forgives but a string base cannot use (%s)", (raw) => {
+    expect(apiBaseProblem(raw)).not.toBeNull();
+  });
+
   it("rejects a cleartext origin, since the session token goes to it", () => {
     expect(apiBaseProblem("http://api.between-jobs.tech")).toMatch(/not https/);
   });

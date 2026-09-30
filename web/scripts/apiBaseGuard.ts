@@ -18,9 +18,10 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"
 export function apiBaseProblem(raw: string | undefined): string | null {
   const name = "VITE_API_BASE_URL";
   if (raw === undefined || raw.trim() === "") return `${name} is not set.`;
+  const trimmed = raw.trim();
   let url: URL;
   try {
-    url = new URL(raw.trim());
+    url = new URL(trimmed);
   } catch {
     return `${name}=${JSON.stringify(raw)} is not a valid absolute URL.`;
   }
@@ -28,6 +29,20 @@ export function apiBaseProblem(raw: string | undefined): string | null {
   // send it unencrypted.
   if (url.protocol !== "https:") {
     return `${name}=${JSON.stringify(raw)} is not https:// (the session token is sent to this origin).`;
+  }
+  // `new URL` is forgiving -- it reads "https:api.example.com" as a host, and
+  // drops a query or fragment into fields nobody checks -- but the bundle inlines
+  // this STRING and appends route paths to it (src/lib/apiUrl.ts), so what must be
+  // usable is the string as written: an origin, optionally with a path, and
+  // nothing a path could land inside of.
+  if (!/^https:\/\/[^/\s]/i.test(trimmed)) {
+    return `${name}=${JSON.stringify(raw)} is not of the form https://host[/path].`;
+  }
+  if (url.username !== "" || url.password !== "") {
+    return `${name}=${JSON.stringify(raw)} carries credentials in the URL.`;
+  }
+  if (trimmed.includes("?") || trimmed.includes("#")) {
+    return `${name}=${JSON.stringify(raw)} has a query string or fragment; route paths are appended to it.`;
   }
   const host = url.hostname.toLowerCase();
   if (LOCAL_HOSTS.has(host) || host.endsWith(".localhost") || host.endsWith(".local")) {
