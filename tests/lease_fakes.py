@@ -10,6 +10,7 @@ SQL it stands in for."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Protocol
 
 
@@ -21,13 +22,20 @@ class LeaseUnderTest(Protocol):
 
 
 class FakeLeaseStore:
-    def __init__(self) -> None:
-        self.now = 0.0
+    def __init__(self, clock: Callable[[], float] | None = None) -> None:
+        """`clock` lets the store follow someone else's time (a test's virtual
+        clock); without one it has its own, moved by `advance`."""
+        self._clock = clock
+        self._own_now = 0.0
         self.rows: dict[str, tuple[str, float]] = {}
         self.claims = 0
 
+    @property
+    def now(self) -> float:
+        return self._clock() if self._clock is not None else self._own_now
+
     def advance(self, seconds: float) -> None:
-        self.now += seconds
+        self._own_now += seconds
 
     async def claim(self, worker: str, holder: str, ttl_seconds: int) -> bool:
         self.claims += 1

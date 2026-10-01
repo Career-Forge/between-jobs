@@ -15,6 +15,12 @@ has failed for longer than `FAILING_AFTER_MAX_SECONDS` (failing), so a worker
 with a 6-hour interval that keeps failing is caught in 30 minutes, not 18
 hours.
 
+A worker may also hold a LEASE (worker_lease.py, launch plan P2.19): then a tick
+starts only while this process holds it. A process that does not is `standby` --
+alive and healthy, simply not the one doing the work -- and one that cannot tell is
+`lease_unknown`, which fails the check, so a deploy whose lease path is broken is
+caught by the platform's healthcheck instead of idling behind a 200.
+
 A worker's own tick must contain failures of individual items (one search,
 one draft, one company) so that a supervised retry only ever repeats work
 that hadn't happened yet -- the matcher's and the reply checker's ticks spend
@@ -25,10 +31,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +46,27 @@ BACKOFF_MAX_SECONDS = 300.0
 MIN_STALE_AFTER_SECONDS = 60.0
 FAILING_AFTER_MAX_SECONDS = 1800.0
 
+LEASE_POLL_SECONDS = 1.0
+"""How often a leased worker that may not tick re-reads its lease. The read is
+local (the keeper does the I/O), so this is as cheap as a loop gets."""
+
 Sleep = Callable[[float], Awaitable[Any]]
+
+
+class Lease(Protocol):
+    """What the supervisor needs from a lease: local reads only, so this module
+    stays free of any database client. Implemented by worker_lease.WorkerLease."""
+
+    @property
+    def crashed(self) -> bool: ...
+
+    def status(self) -> str: ...
+
+    def may_tick(self) -> bool: ...
+
+    def report(self) -> dict[str, Any]: ...
+
+    async def stop(self) -> None: ...
 
 
 def _now() -> datetime:
@@ -62,6 +89,13 @@ class WorkerState:
     last_error_type: str | None = None
     failing_since: datetime | None = None
     consecutive_failures: int = 0
+    # Set only for a worker that holds a lease. Last, with defaults, so positional
+    # construction elsewhere is unchanged and a lease-less worker is untouched.
+    lease: Lease | None = None
+    active_since: datetime | None = None
+    waiting_for_lease: bool = False
+    # time.monotonic() when the tick now running began; None between ticks.
+    current_tick_started: float | None = None
 
     @property
     def stale_after(self) -> timedelta:
@@ -78,6 +112,13 @@ class WorkerState:
         )
         return timedelta(seconds=seconds)
 
+    def tick_running_too_long(self) -> bool:
+        """Whether the tick now running has outlived this worker's own stale
+        window. The keeper stops renewing the lease then, so a holder that is
+        stuck but still heartbeating cannot block every standby forever."""
+        started = self.current_tick_started
+        return started is not None and time.monotonic() - started > self.stale_after.total_seconds()
+
     def next_retry_delay(self) -> float:
         """Capped exponential backoff, never more than half the stale window,
         so a recovered dependency is noticed before /health would 503."""
@@ -89,13 +130,32 @@ class WorkerState:
         """disabled, dead (its task ended), stale (no finished tick for too
         long), failing (every tick has failed for too long), retrying (the
         last tick failed, still within the window), starting (no tick finished
-        yet) or running. Dead, stale and failing fail /health."""
+        yet) or running. Dead, stale and failing fail /health.
+
+        A leased worker adds two: `standby` (another process holds the lease; this
+        one is alive and idle on purpose, so it is healthy and is checked BEFORE
+        staleness, which would otherwise condemn it for not ticking) and
+        `lease_unknown` (no definite answer from the lease, so no tick can start;
+        unhealthy, and immediately, because a delayed status could not stop a
+        deploy whose workers can never tick)."""
         now = now or _now()
         if not self.enabled:
             return "disabled"
         if self.task is not None and self.task.done():
             return "dead"
-        reference = self.last_success_at or self.started_at
+        if self.lease is not None:
+            if self.lease.crashed:
+                return "dead"
+            lease_state = self.lease.status()
+            if lease_state == "standby":
+                return "standby"
+            if lease_state == "unknown":
+                return "lease_unknown"
+        # A worker that has just taken over a lease has not ticked for as long as it
+        # stood by: staleness runs from whenever it last started, succeeded or
+        # acquired, whichever is latest.
+        moments = [m for m in (self.last_success_at, self.active_since, self.started_at) if m]
+        reference = max(moments) if moments else None
         if reference is None:
             return "starting"
         if now - reference > self.stale_after:
@@ -104,22 +164,31 @@ class WorkerState:
             return "failing"
         if self.consecutive_failures:
             return "retrying"
-        return "running" if self.last_success_at is not None else "starting"
+        if self.last_success_at is None or (
+            self.active_since is not None and self.last_success_at < self.active_since
+        ):
+            return "starting"
+        return "running"
 
     def healthy(self, now: datetime | None = None) -> bool:
-        return self.status(now) not in ("dead", "stale", "failing")
+        return self.status(now) not in ("dead", "stale", "failing", "lease_unknown")
 
     def to_report(self, now: datetime | None = None) -> dict[str, Any]:
         def iso(value: datetime | None) -> str | None:
             return value.isoformat(timespec="seconds") if value else None
 
-        return {
+        report: dict[str, Any] = {
             "status": self.status(now),
             "last_success_at": iso(self.last_success_at),
             "last_error_at": iso(self.last_error_at),
             "last_error_type": self.last_error_type,
             "consecutive_failures": self.consecutive_failures,
         }
+        if self.lease is not None:
+            # The state and the failure kind only -- never the holder's id, which
+            # this unauthenticated body must not carry.
+            report["lease"] = self.lease.report()
+        return report
 
 
 @dataclass
@@ -166,6 +235,12 @@ class WorkerRegistry:
                         "worker ended with an error at shutdown",
                         extra={"ctx": {"worker": state.name}},
                     )
+        # Only now, with every worker task fully unwound, stop the keepers: a tick
+        # that was mid-way when it was cancelled is still finishing its cleanup, and
+        # the lease must keep excluding other processes until it has.
+        for state in self.workers.values():
+            if state.lease is not None:
+                await state.lease.stop()
 
 
 def backoff_seconds(consecutive_failures: int, *, base: float = BACKOFF_BASE_SECONDS) -> float:
@@ -189,8 +264,27 @@ async def run_supervised(
     else cancelled -- counts as a failed tick, not the end of the worker."""
     state.started_at = state.started_at or _now()
     while True:
+        lease = state.lease
+        if lease is not None:
+            # No `await` between this check and starting the tick below: the
+            # answer cannot go stale in between.
+            if not lease.may_tick():
+                state.waiting_for_lease = True
+                await sleep(LEASE_POLL_SECONDS)
+                continue
+            if state.waiting_for_lease or state.active_since is None:
+                # (Re)acquired: any failure streak belongs to the previous hold,
+                # and staleness now counts from this moment.
+                state.waiting_for_lease = False
+                state.active_since = _now()
+                state.consecutive_failures = 0
+                state.failing_since = None
         try:
-            await tick()
+            state.current_tick_started = time.monotonic()
+            try:
+                await tick()
+            finally:
+                state.current_tick_started = None
         except asyncio.CancelledError as e:
             current = asyncio.current_task()
             if current is None or current.cancelling():
@@ -199,12 +293,21 @@ async def run_supervised(
         except Exception as e:
             _log_failure(state, e)
         else:
+            _warn_if_lease_lapsed(state)
             state.last_success_at = _now()
             state.consecutive_failures = 0
             state.failing_since = None
             await sleep(state.interval_seconds)
             continue
         await sleep(state.next_retry_delay())
+
+
+def _warn_if_lease_lapsed(state: WorkerState) -> None:
+    if state.lease is not None and state.lease.status() != "held":
+        logger.warning(
+            "worker lease lapsed while a tick was running",
+            extra={"ctx": {"worker": state.name, "lease": state.lease.status()}},
+        )
 
 
 def _log_failure(state: WorkerState, error: BaseException) -> None:
