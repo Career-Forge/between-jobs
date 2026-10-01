@@ -49,14 +49,36 @@ _SALARY_SYMBOL_RX = re.compile(
     + r")?",
     re.IGNORECASE,
 )
+# Linear in the length of the text. The n8n original of this pattern is
+# `(\d+(?:\.\d+)?)\s*(?:dash|to)?\s*(\d+(?:\.\d+)?)?\s*(lakh|...)`, which is CUBIC on
+# two ordinary shapes: a run of n digits (the engine tries every split of the run
+# between the two number groups, from every start position) and a number followed by
+# a run of n spaces (the three adjacent `\s*` share the run every possible way). At
+# n = 800 either takes seconds; at 2000 over a minute -- all of it on the event loop,
+# so it stalls every request, the lease heartbeat included. Job descriptions
+# stripped from HTML carry long whitespace runs as a matter of course, and a
+# posting's text is written by whoever posted it.
+# Nothing is lost by making the quantifiers possessive: giving a digit or a space
+# back can never let the next token match (the tokens after them start with a
+# letter, a dash, or the digits that were just given up, and the continuation from
+# the same point is identical), and `(?<!\d)` keeps a match from restarting inside
+# a digit run it already failed to match from the front of. The one thing that
+# changes: "1.30.1l", where the old pattern backtracked into reading 1.3 and 0.1.
 _LAKH_CRORE_RX = re.compile(
-    r"(?:\u20b9\s*)?(\d+(?:\.\d+)?)\s*(?:-|\u2013|\u2014|&ndash;|&mdash;|to)?\s*"
-    r"(\d+(?:\.\d+)?)?\s*(lakh|lac|lpa|l\b|cr|crore)\b",
+    r"(?:\u20b9\s*+)?(?<!\d)(\d++(?:\.\d++)?+)\s*+(?:-|\u2013|\u2014|&ndash;|&mdash;|to)?+\s*+"
+    r"(\d++(?:\.\d++)?+)?+\s*+(lakh|lac|lpa|l\b|cr|crore)\b",
     re.IGNORECASE,
 )
 _HAS_K_SUFFIX_RX = re.compile(r"[kK]\s*$")
 _PERIOD_HOUR_RX = re.compile(r"\b(?:per\s*hour|/\s*hr|hourly)\b", re.IGNORECASE)
 _PERIOD_MONTH_RX = re.compile(r"\b(?:per\s*month|/\s*mo|monthly)\b", re.IGNORECASE)
+
+
+_MAX_TEXT_CHARS = 200_000
+"""Only the first 200,000 characters of a text are searched. A real job description
+is a few thousand; a posting's text is written by whoever posted it, and a cap keeps
+the work bounded no matter what pattern is added next. Defense in depth: the
+patterns here are linear on their own."""
 
 
 @dataclass(frozen=True)
@@ -78,7 +100,7 @@ class ExtractionResult:
 
 
 def extract_sponsorship(text: str | None) -> str:
-    s = text or ""
+    s = (text or "")[:_MAX_TEXT_CHARS]
     if not s:
         return "unknown"
     if _SPONSOR_NEG_RX.search(s):
@@ -155,7 +177,7 @@ def _extract_salary_lakh_crore(text: str) -> list[SalaryHit]:
 
 
 def extract_salary(text: str | None) -> SalaryHit | None:
-    s = text or ""
+    s = (text or "")[:_MAX_TEXT_CHARS]
     if not s:
         return None
     hits = [*_extract_salary_lakh_crore(s), *_extract_salary_currency_symbol(s)]
