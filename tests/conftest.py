@@ -26,6 +26,9 @@ def _disable_outbox_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DISABLE_SAVED_SEARCH_MATCHER", "1")
     monkeypatch.setenv("DISABLE_GMAIL_REPLY_CHECKER", "1")
     monkeypatch.setenv("DISABLE_HIRING_SIGNAL_CACHE_PURGE", "1")
+    # The leased workers would claim a lease over the stubbed, unreachable database
+    # at startup (tests/test_worker_lease_lifespan.py turns it on where it matters).
+    monkeypatch.setenv("WORKER_LEASES", "off")
     # /health would otherwise call Supabase, forge-engines and the LaTeX
     # service for real on every hit; it reports them as not_checked instead.
     monkeypatch.setenv("DISABLE_HEALTH_DEPENDENCY_CHECKS", "1")

@@ -73,6 +73,9 @@ from .telegram_client import TelegramClient, parse_bot_username
 from .telegram_webhook import router as telegram_router
 from .today_routes import router as today_router
 from .warm_path_events_routes import router as warm_path_events_router
+from .worker_lease import TTL_SECONDS as WORKER_LEASE_TTL_SECONDS
+from .worker_lease import WorkerLease
+from .worker_leases_store import claim_worker_lease
 from .worker_supervision import WorkerRegistry, WorkerState
 
 load_dotenv()
@@ -87,6 +90,28 @@ _FOREIGN_KEY_VIOLATION = "23503"
 
 # Per-phase timeout for /health's dependency probes (see `_probe_dependency`).
 _DEPENDENCY_TIMEOUT_SECONDS = 2.0
+
+
+LEASED_WORKERS = frozenset({"job_registry_poller", "saved_search_matcher", "gmail_reply_checker"})
+"""The workers that hold a lease (P2.19, v1): the three whose ticks select their work
+with no claim, so two copies of the API would each do all of it -- and, for the
+matcher and the Gmail checker, spend the user's own LLM credit twice. The outbox
+claims its rows with FOR UPDATE SKIP LOCKED behind idempotent consumers, and the
+cache purge converges, so neither needs one (tests/integration/test_local_outbox_claim.py
+runs two real claimers to show it). Adding a worker here is the whole change."""
+
+
+def _worker_leases_enabled() -> bool:
+    """WORKER_LEASES=on|off, default on. Parsed strictly -- anything else stops the
+    boot -- because this is a safety switch: the DISABLE_* flags read "any non-empty
+    value" as true, so `WORKER_LEASES=false` handled that way would silently turn
+    the guard OFF. A blank value counts as unset."""
+    raw = (os.environ.get("WORKER_LEASES") or "on").strip().lower()
+    if raw == "on":
+        return True
+    if raw == "off":
+        return False
+    raise RuntimeError("WORKER_LEASES must be 'on' or 'off'")
 
 
 @asynccontextmanager
@@ -150,6 +175,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     #   the feature is switched on (see `hiring_signal_cache`, "Lifetime").
     workers = WorkerRegistry()
     app.state.workers = workers
+    leases_on = _worker_leases_enabled()
+    # One id per process, made here (so it is post-fork and unique per process) and
+    # never the bare Railway deployment id, which every replica of a deployment
+    # shares: two replicas would both pass the lease's holder check. The deployment
+    # prefix is only a label for the logs.
+    holder = f"{(os.environ.get('RAILWAY_DEPLOYMENT_ID') or 'local')[:8]}:{uuid.uuid4().hex}"
+    leases: list[WorkerLease] = []
 
     async def start_worker(
         name: str,
@@ -170,44 +202,73 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # Stamped here as well as by the loop, so a worker that never
             # starts its loop still goes stale instead of "starting" forever.
             state.started_at = datetime.now(UTC)
+            if name in LEASED_WORKERS and leases_on:
+                lease = WorkerLease(
+                    name,
+                    claim=partial(
+                        claim_worker_lease, worker_supabase, name, holder, WORKER_LEASE_TTL_SECONDS
+                    ),
+                    holder=holder,
+                    wants_lease=lambda: not state.tick_running_too_long(),
+                )
+                state.lease = lease
+                lease.start()
+                leases.append(lease)
             state.task = asyncio.create_task(run(worker_supabase, state))
 
-    await start_worker(
-        "outbox",
-        interval_seconds=OUTBOX_POLL_INTERVAL_SECONDS,
-        disable_env="DISABLE_OUTBOX_WORKER",
-        run=lambda sb, state: run_worker_forever(
-            sb,
-            listeners=[partial(handle_digest_batch, telegram=app.state.telegram_client)],
-            state=state,
-        ),
-    )
-    await start_worker(
-        "job_registry_poller",
-        interval_seconds=POLLER_INTERVAL_SECONDS,
-        disable_env="DISABLE_JOB_REGISTRY_POLLER",
-        run=lambda sb, state: run_poller_forever(app.state.http, sb, state=state),
-        # A retry re-fetches every due board, so it starts at a minute, not 5s.
-        backoff_base_seconds=60.0,
-    )
-    await start_worker(
-        "saved_search_matcher",
-        interval_seconds=MATCHER_INTERVAL_SECONDS,
-        disable_env="DISABLE_SAVED_SEARCH_MATCHER",
-        run=lambda sb, state: run_matcher_forever(sb, state=state),
-    )
-    await start_worker(
-        "gmail_reply_checker",
-        interval_seconds=REPLY_CHECK_INTERVAL_SECONDS,
-        disable_env="DISABLE_GMAIL_REPLY_CHECKER",
-        run=lambda sb, state: run_reply_check_forever(app.state.http, sb, state=state),
-    )
-    await start_worker(
-        "hiring_signal_cache_purge",
-        interval_seconds=PURGE_INTERVAL_SECONDS,
-        disable_env="DISABLE_HIRING_SIGNAL_CACHE_PURGE",
-        run=lambda sb, state: run_hiring_cache_purge_forever(sb, state=state),
-    )
+    async def start_workers() -> None:
+        await start_worker(
+            "outbox",
+            interval_seconds=OUTBOX_POLL_INTERVAL_SECONDS,
+            disable_env="DISABLE_OUTBOX_WORKER",
+            run=lambda sb, state: run_worker_forever(
+                sb,
+                listeners=[partial(handle_digest_batch, telegram=app.state.telegram_client)],
+                state=state,
+            ),
+        )
+        await start_worker(
+            "job_registry_poller",
+            interval_seconds=POLLER_INTERVAL_SECONDS,
+            disable_env="DISABLE_JOB_REGISTRY_POLLER",
+            run=lambda sb, state: run_poller_forever(app.state.http, sb, state=state),
+            # A retry re-fetches every due board, so it starts at a minute, not 5s.
+            backoff_base_seconds=60.0,
+        )
+        await start_worker(
+            "saved_search_matcher",
+            interval_seconds=MATCHER_INTERVAL_SECONDS,
+            disable_env="DISABLE_SAVED_SEARCH_MATCHER",
+            run=lambda sb, state: run_matcher_forever(sb, state=state),
+        )
+        await start_worker(
+            "gmail_reply_checker",
+            interval_seconds=REPLY_CHECK_INTERVAL_SECONDS,
+            disable_env="DISABLE_GMAIL_REPLY_CHECKER",
+            run=lambda sb, state: run_reply_check_forever(app.state.http, sb, state=state),
+        )
+        await start_worker(
+            "hiring_signal_cache_purge",
+            interval_seconds=PURGE_INTERVAL_SECONDS,
+            disable_env="DISABLE_HIRING_SIGNAL_CACHE_PURGE",
+            run=lambda sb, state: run_hiring_cache_purge_forever(sb, state=state),
+        )
+        # Each leased worker's keeper has made its first claim by now, or failed
+        # and said so (every attempt is bounded at 10 s, and they run in parallel):
+        # /health therefore never answers on a state nobody has asked about yet. A
+        # claim that cannot be made reads `lease_unknown` (503), which is what
+        # makes a platform's first-2xx healthcheck refuse a deploy whose lease path
+        # is broken -- a missing migration, a missing grant -- instead of cutting
+        # over to a container whose three workers can never tick.
+        if leases:
+            await asyncio.gather(*(lease.first_answer() for lease in leases))
+
+    try:
+        await start_workers()
+    except BaseException:
+        # A half-started set of workers and keepers must not outlive a failed boot.
+        await workers.stop_all()
+        raise
 
     # /health's dependency probes get their own small pool, so a flood of
     # health checks can't take connections from the workers or requests.
@@ -438,6 +499,15 @@ async def health(request: Request) -> JSONResponse:
     interval, or failed every tick for too long -- the check UptimeRobot
     watches (use the status code, or the keyword `"status":"ok"`). A worker
     switched off with DISABLE_* reports `disabled`, which is not a failure.
+
+    The three leased workers (LEASED_WORKERS) add two states. `standby`: another
+    process holds the lease, so this one is alive and idle on purpose -- healthy,
+    which is what lets a new container pass a platform's deploy healthcheck while
+    the old one still works. `lease_unknown`: the lease could not be asked, so no
+    tick can start -- a failure, immediately, so a deploy whose lease path is broken
+    is refused instead of cutting over to workers that can never run. Their body
+    carries `lease: {state, claim_failures, last_claim_error}`, never the holder's id.
+
     Dependencies are reported for diagnosis and never change the status."""
     workers: WorkerRegistry = getattr(request.app.state, "workers", WorkerRegistry())
     now = datetime.now(UTC)
