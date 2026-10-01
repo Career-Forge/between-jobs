@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from collections.abc import Awaitable, Callable
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
 
@@ -42,18 +44,21 @@ _DISABLE_FLAGS = (
 class StrictClient:
     """Records every RPC; fails the test on any it was not told to expect."""
 
-    def __init__(self, answer: bool | Exception | object) -> None:
+    def __init__(self, answer: bool | Exception | object, *, delay: float = 0.0) -> None:
         self.answer = answer
+        self.delay = delay  # real seconds each claim takes: a database round trip
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def rpc(self, name: str, params: dict[str, Any]) -> Any:
         self.calls.append((name, params))
         if name != "claim_worker_lease":
             raise AssertionError(f"unexpected rpc {name!r}")
-        answer = self.answer
+        answer, delay = self.answer, self.delay
 
         class _Call:
             async def execute(self) -> Any:
+                if delay:
+                    await asyncio.sleep(delay)
                 if isinstance(answer, Exception):
                     raise answer
                 return SimpleNamespace(data=answer)
@@ -173,6 +178,109 @@ def test_a_leased_worker_that_is_switched_off_claims_nothing(
 
     assert _claimed_workers(client) == ["job_registry_poller", "saved_search_matcher"]
     assert body["workers"]["gmail_reply_checker"]["status"] == "disabled"
+
+
+def test_the_first_health_request_waits_for_a_claim_that_takes_real_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With an instant fake the keeper's first claim is over before any request, so
+    deleting the lifespan's wait for it changes nothing. A claim that takes a moment
+    -- as every real database round trip does -- is what the wait is for: the first
+    /health after boot must report the answer, not a state nobody has asked about."""
+    client = StrictClient(False, delay=0.3)
+    _boot_with(monkeypatch, client)
+
+    started = time.monotonic()
+    with TestClient(app) as test_client:
+        booted_after = time.monotonic() - started
+        response = test_client.get("/health")  # the very first request
+
+    assert booted_after >= 0.3  # startup really did wait for the claims
+    assert response.status_code == 200
+    for worker in THE_THREE:
+        assert response.json()["workers"][worker]["status"] == "standby"
+
+
+async def test_a_normal_shutdown_stops_every_worker_and_every_keeper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = StrictClient(True)
+    _boot_with(monkeypatch, client)
+    fresh = FastAPI()
+
+    async with app_module.lifespan(fresh):
+        registry = fresh.state.workers
+        assert any(
+            not t.done() for t in asyncio.all_tasks() if t.get_name().startswith("worker-lease:")
+        )
+
+    assert all(state.task is None or state.task.done() for state in registry.workers.values())
+    assert [
+        t for t in asyncio.all_tasks() if t.get_name().startswith("worker-lease:") and not t.done()
+    ] == []
+
+
+def test_each_leased_loop_is_given_the_state_that_carries_its_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The loops are idle in these tests, so nothing else would notice one of them
+    losing `state=state`: that worker would build its own lease-less state, tick on
+    every replica unconditionally -- the exact failure the lease exists to prevent --
+    while the keeper went on claiming and /health went on saying `held`."""
+    client = StrictClient(True)
+    _boot_with(monkeypatch, client)
+    seen: dict[str, Any] = {}
+
+    def recorder(name: str) -> Any:
+        async def loop(*_args: Any, **kwargs: Any) -> None:
+            seen[name] = kwargs.get("state")
+            await asyncio.Event().wait()
+
+        return loop
+
+    for loop_name, worker in (
+        ("run_worker_forever", "outbox"),
+        ("run_poller_forever", "job_registry_poller"),
+        ("run_matcher_forever", "saved_search_matcher"),
+        ("run_reply_check_forever", "gmail_reply_checker"),
+        ("run_hiring_cache_purge_forever", "hiring_signal_cache_purge"),
+    ):
+        monkeypatch.setattr(app_module, loop_name, recorder(worker))
+
+    with TestClient(app) as test_client:
+        registry = test_client.app.state.workers.workers  # type: ignore[attr-defined]
+        deadline = time.monotonic() + 5
+        while len(seen) < 5 and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    assert set(seen) == THE_THREE | OTHERS
+    for worker in THE_THREE:
+        assert seen[worker] is registry[worker] and seen[worker].lease is not None
+    for worker in OTHERS:
+        assert seen[worker] is registry[worker] and seen[worker].lease is None
+
+
+def test_the_keeper_stops_renewing_when_that_workers_tick_has_outrun_its_stale_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wedge gate as app.py wires it (`wants_lease`), for each leased worker: a
+    tick that has been running longer than the worker's own stale window must make the
+    keeper stop renewing, or a stuck holder blocks every standby forever; a tick well
+    inside the window must not."""
+    client = StrictClient(True)
+    _boot_with(monkeypatch, client)
+
+    with TestClient(app) as test_client:
+        registry = test_client.app.state.workers.workers  # type: ignore[attr-defined]
+        for worker in THE_THREE:
+            state = registry[worker]
+            window = state.stale_after.total_seconds()
+            assert state.lease._wants()  # idle: nothing running
+            state.current_tick_started = time.monotonic() - 5
+            assert state.lease._wants()  # a short tick
+            state.current_tick_started = time.monotonic() - window - 1
+            assert not state.lease._wants()  # one that has outrun the window
+            state.current_tick_started = None
 
 
 # -- fail closed ---------------------------------------------------------------------

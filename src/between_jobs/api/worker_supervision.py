@@ -151,6 +151,14 @@ class WorkerState:
                 return "standby"
             if lease_state == "unknown":
                 return "lease_unknown"
+            if lease_state == "held" and (self.waiting_for_lease or self.active_since is None):
+                # The keeper has just got (or got back) the lease, but the loop has
+                # not yet noticed -- it looks every LEASE_POLL_SECONDS -- so the
+                # moment staleness is measured from (active_since) is not stamped
+                # and the failure streak from the last hold is not yet cleared.
+                # Reading the old clocks here would report a healthy takeover as
+                # stale or failing for that second.
+                return "starting"
         # A worker that has just taken over a lease has not ticked for as long as it
         # stood by: staleness runs from whenever it last started, succeeded or
         # acquired, whichever is latest.

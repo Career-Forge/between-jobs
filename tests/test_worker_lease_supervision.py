@@ -35,6 +35,17 @@ from between_jobs.api.worker_supervision import (
 WORKER = "job_registry_poller"
 
 
+@pytest.fixture(autouse=True)
+def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The /health tests boot the real lifespan, which requires these. Without them
+    the file only passed where a developer's gitignored .env supplied real ones --
+    and would fail on a fresh clone, in CI, or in a worktree."""
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-key-not-real")
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -153,6 +164,71 @@ async def test_acquiring_the_lease_forgives_a_failure_streak_from_the_last_hold(
     assert not state.waiting_for_lease
 
 
+async def test_a_new_holders_first_failed_tick_is_retrying_not_failing() -> None:
+    """It stood by after seven failures over two hours. Its first tick as the new
+    holder fails once: that is `retrying`, one failure -- not `failing`, which a
+    leftover failing_since would make it (and /health a 503). The earlier test of the
+    reset used a tick that succeeds, which clears both fields on its own."""
+    state = WorkerState(name=WORKER, interval_seconds=900, lease=StubLease("held", True))
+    state.waiting_for_lease = True
+    state.consecutive_failures = 7
+    state.failing_since = _now() - timedelta(hours=2)
+
+    async def tick() -> None:
+        raise RuntimeError("one blip")
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_supervised(tick, state=state, sleep=StopAfter(1))
+
+    assert state.consecutive_failures == 1
+    assert state.status() == "retrying"
+
+
+async def test_no_other_task_can_run_between_the_lease_check_and_the_tick() -> None:
+    """The check is only worth anything if the answer cannot go stale before the tick
+    starts. A task that revokes the lease on every turn of the event loop would catch
+    any suspension between the two: the tick would find it already revoked."""
+    lease = StubLease("held", True)
+    seen_at_tick: list[bool] = []
+
+    async def revoke_on_every_turn() -> None:
+        # Flip first, then yield: the very first time this task gets a turn is the
+        # first suspension in run_supervised, wherever that is, and it revokes at once.
+        while True:
+            lease.may = False
+            await asyncio.sleep(0)
+
+    async def tick() -> None:
+        seen_at_tick.append(lease.may)
+
+    state = WorkerState(name=WORKER, interval_seconds=900, lease=lease)
+    revoker = asyncio.create_task(revoke_on_every_turn())
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await run_supervised(tick, state=state, sleep=StopAfter(1))
+    finally:
+        revoker.cancel()
+
+    assert seen_at_tick == [True]
+
+
+async def test_a_lease_that_is_held_but_inside_the_tick_start_margin_does_not_tick() -> None:
+    """`status() == "held"` is not enough to start a tick: the 15 s margin lives in
+    may_tick, and the supervisor has to ask that."""
+    ticks: list[int] = []
+
+    async def tick() -> None:
+        ticks.append(1)
+
+    state = WorkerState(name=WORKER, interval_seconds=900, lease=StubLease("held", False))
+    sleep = StopAfter(stop_after=3)
+    with pytest.raises(asyncio.CancelledError):
+        await run_supervised(tick, state=state, sleep=sleep)
+
+    assert ticks == []
+    assert sleep.delays == [LEASE_POLL_SECONDS] * 3
+
+
 async def test_a_tick_is_timed_and_the_clock_is_cleared_even_when_it_raises() -> None:
     state = WorkerState(name=WORKER, interval_seconds=900)
     seen: list[float | None] = []
@@ -265,6 +341,29 @@ def test_a_worker_that_has_just_acquired_the_lease_is_starting_not_stale() -> No
 
     assert state.status() == "starting"
     assert state.healthy()
+
+
+def test_a_takeover_the_loop_has_not_noticed_yet_is_starting_not_stale_or_failing() -> None:
+    """The keeper gets the lease; the loop notices up to a second later and only then
+    stamps active_since and clears the failure streak. In that second a monitor must
+    not read a healthy takeover as an outage."""
+    state = _leased(
+        "held",
+        started_at=_now() - timedelta(hours=5),
+        last_success_at=_now() - timedelta(hours=4),
+        failing_since=_now() - timedelta(hours=3),
+        consecutive_failures=9,
+    )
+    state.waiting_for_lease = True  # the loop last saw it refused
+
+    assert state.status() == "starting"
+    assert state.healthy()
+
+
+def test_a_leased_worker_the_loop_has_never_acted_on_is_starting_not_stale() -> None:
+    state = _leased("held", started_at=_now() - timedelta(hours=5))
+
+    assert state.status() == "starting"
 
 
 def test_it_goes_stale_from_the_acquisition_if_it_then_never_ticks() -> None:
@@ -548,3 +647,55 @@ async def test_a_worker_wedged_in_a_tick_stops_renewing_so_the_other_can_take_ov
     finally:
         await a.crash()
         await b.crash()
+
+
+async def test_a_lease_outage_longer_than_the_stale_window_does_not_strand_the_worker() -> None:
+    """An earlier design stopped renewing once the worker read `stale`, so after an
+    outage longer than the stale window the keeper never claimed again and only a
+    restart helped. The wedge gate looks at how long the TICK has run, not at status,
+    so: unreachable for 3000 s (the window for a 900 s worker is 2700 s), restored,
+    and the same process claims again and ticks again."""
+    vt = VirtualTime()
+    outage = {"over": False}
+    attempts: list[float] = []
+
+    async def claim() -> bool:
+        attempts.append(vt.now)
+        if not outage["over"]:
+            raise RuntimeError("database unreachable")
+        return True
+
+    state = WorkerState(name=WORKER, interval_seconds=900)
+    lease = WorkerLease(
+        WORKER,
+        claim=claim,
+        holder="A",
+        monotonic=vt.monotonic,
+        sleep=vt.sleep,
+        wants_lease=lambda: not state.tick_running_too_long(),
+    )
+    state.lease = lease
+    ticks: list[float] = []
+
+    async def tick() -> None:
+        ticks.append(vt.now)
+
+    lease.start()
+    runner = asyncio.create_task(run_supervised(tick, state=state, sleep=vt.sleep))
+    try:
+        for _ in range(30):  # 3000 s in 100 s steps
+            await vt.advance(100)
+        assert ticks == [] and lease.status() == "unknown"
+        assert state.status() == "lease_unknown"
+
+        outage["over"] = True
+        await vt.advance(30)
+
+        assert lease.status() == "held"
+        assert ticks, "the worker must tick again without a restart"
+        assert ticks[0] > 3000
+        assert state.status() in ("running", "starting") and state.healthy()
+    finally:
+        runner.cancel()
+        await lease.stop()
+        await asyncio.gather(runner, return_exceptions=True)

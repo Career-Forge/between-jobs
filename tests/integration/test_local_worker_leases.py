@@ -7,8 +7,10 @@ Run with `pytest -m local_supabase` after `supabase start` and
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -183,3 +185,84 @@ async def test_only_the_backend_can_call_it_and_nobody_can_touch_the_table(world
                 .execute()
             )
         assert write.value.code == "42501"
+
+
+_MIGRATION = next(
+    (Path(__file__).parents[2] / "supabase" / "migrations").glob("*_create_worker_leases.sql")
+)
+
+
+def _grant_and_revoke_statements() -> list[str]:
+    """The migration's own GRANT and REVOKE statements, in file order. The function
+    body contains semicolons, but nothing inside it starts with either keyword."""
+    sql = re.sub(r"--[^\n]*", "", _MIGRATION.read_text())
+    return [
+        statement.strip()
+        for statement in sql.split(";")
+        if statement.strip().lower().startswith(("revoke", "grant"))
+    ]
+
+
+class _Rollback(Exception):
+    """Raised to end the test's transaction so it is always rolled back."""
+
+
+async def test_the_migrations_own_revokes_close_everything_even_when_the_project_grants_by_default(
+    world: World,
+) -> None:
+    """A fresh local stack grants new objects to nobody, so the other tests here would
+    pass even if the migration revoked nothing. Prod's default privileges grant new
+    tables and functions to anon, authenticated and service_role -- which is how two
+    internal link helpers ended up callable by service_role there. So: put these two
+    objects in prod's state, replay exactly the statements the migration contains, and
+    check what is left.
+
+    All of it inside one transaction that is always rolled back (GRANT and REVOKE are
+    transactional), so neither a pass nor a failure can leave this stack's ACLs changed
+    for the tests that follow."""
+    pg = world.pg
+    table = "public.worker_leases"
+    function = "public.claim_worker_lease(text, text, integer)"
+
+    try:
+        async with pg.transaction():
+            await pg.execute(f"grant all on table {table} to anon, authenticated, service_role")
+            await pg.execute(
+                f"grant execute on function {function} to public, anon, authenticated, service_role"
+            )
+            assert await pg.fetchval("select has_table_privilege('anon', $1, 'select')", table)
+            assert await pg.fetchval(
+                "select has_function_privilege('authenticated', $1, 'execute')", function
+            )
+
+            statements = _grant_and_revoke_statements()
+            assert len(statements) == 3  # revoke table, revoke function, grant function
+            for statement in statements:
+                await pg.execute(statement)
+
+            for role in ("anon", "authenticated", "service_role"):
+                for privilege in ("select", "insert", "update", "delete"):
+                    assert not await pg.fetchval(
+                        "select has_table_privilege($1, $2, $3)", role, table, privilege
+                    ), f"{role} can still {privilege} {table}"
+            for role in ("anon", "authenticated"):
+                assert not await pg.fetchval(
+                    "select has_function_privilege($1, $2, 'execute')", role, function
+                ), f"{role} can still execute the function"
+            assert await pg.fetchval(
+                "select has_function_privilege('service_role', $1, 'execute')", function
+            )
+            public_can_execute = await pg.fetchval(
+                """
+                select exists (
+                  select 1 from pg_proc p, aclexplode(p.proacl) a
+                  where p.oid = $1::regprocedure and a.grantee = 0
+                    and a.privilege_type = 'EXECUTE'
+                )
+                """,
+                function,
+            )
+            assert not public_can_execute  # PUBLIC, which every role inherits
+            raise _Rollback
+    except _Rollback:
+        pass

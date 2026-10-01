@@ -16,9 +16,14 @@
 --
 -- Table: not readable or writable through the API by any role. The one function
 -- below is SECURITY DEFINER, so the backend needs no table privileges at all.
--- Operator view and break-glass, as the owner role:
+-- Operator view, as the owner role:
 --   select * from public.worker_leases;
+-- To hand a lease over from a holder that has STOPPED renewing (a crashed or wedged
+-- process), bring its expiry forward:
 --   update public.worker_leases set expires_at = now() where worker = '<name>';
+-- That does NOT evict a holder that is still heartbeating: the same holder may
+-- always renew, so its next renewal simply takes it back. Stop that process (or
+-- start it with WORKER_LEASES=off) instead.
 
 create table public.worker_leases (
   worker     text primary key check (worker <> ''),
