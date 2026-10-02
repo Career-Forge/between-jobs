@@ -1,37 +1,24 @@
-# The Docker build context is uploaded to the daemon whole, whatever the Dockerfile
-# COPYs, so this keeps secrets, private notes and bulk out of it. The image itself
-# gets only what the Dockerfile names: pyproject.toml, README.md, LICENSE and src/
-# (hatchling's metadata needs the readme and the license file to build the wheel, so
-# those three must NOT be listed here).
+# An ALLOW-LIST: everything is ignored except the few things the image is built from.
+#
+# This is not a deny-list on purpose. Docker's ignore matching is not .gitignore's: a
+# bare `.env` matches only at the root of the build context, where .gitignore's matches
+# at any depth. So a deny-list that names `.env`, `CLAUDE.local.md` or `*.pem` keeps
+# them out of the root and lets `src/between_jobs/api/.env` straight through into the
+# image -- where `load_dotenv()` would then read it at runtime. (Found in review; a
+# stray .env with `WORKER_LEASES=off` silently turned the leases off.) Listing what IS
+# wanted cannot miss a file nobody thought of. The Dockerfile COPYs exactly these.
+*
 
-# Secrets and private notes -- never in a context, never in an image.
-.env
-.env.*
-!.env.example
-CLAUDE.local.md
-AGENTS.md
+# hatchling builds the wheel from these; the readme and the license file are metadata
+# it reads, so they must stay.
+!pyproject.toml
+!README.md
+!LICENSE
 
-# Version control, tooling, local environments and caches.
-.git
-.github
-.claude
-.venv
-**/.venv
-node_modules
-**/node_modules
-.mypy_cache
-.pytest_cache
-.ruff_cache
+# The package: its Python, its type marker, and the one data file it reads at run time
+# (api/geo_gazetteer.py, via importlib.resources). A new data file under the package
+# has to be allowed here too -- tests/test_container_static.py fails until it is.
+!src/between_jobs/**/*.py
+!src/between_jobs/py.typed
+!src/between_jobs/api/data/geo_country_aliases.json
 **/__pycache__
-**/*.pyc
-.DS_Store
-**/.DS_Store
-
-# Other parts of the repo: the API image runs none of them.
-web
-extension
-tests
-docs
-latex-service
-supabase
-scripts

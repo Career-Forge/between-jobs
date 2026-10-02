@@ -27,13 +27,15 @@ recognize as the product.
 ## Run the API with Docker
 
 ```bash
+cp .env.example .env   # then fill in SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
 docker build -t between-jobs-api .
-docker run --rm -p 8000:8000 \
-  -e SUPABASE_URL=https://<your-project>.supabase.co \
-  -e SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key> \
-  between-jobs-api
+docker run --rm -p 8000:8000 --env-file .env between-jobs-api
 curl localhost:8000/health
 ```
+
+`--env-file` keeps the service-role key out of your shell history and out of `ps`. Docker
+reads it as plain `KEY=value` lines (no quotes, no `export`), and the image never
+contains it: the build copies only the package.
 
 - **Apply the database migrations first** (`supabase db push`). Until they are there the
   background workers that need them report it and `/health` answers 503, on purpose.

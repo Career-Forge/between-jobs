@@ -41,7 +41,7 @@ from .contact_research_routes import router as contact_research_router
 from .credentials_routes import router as credentials_router
 from .digest_listener import handle_batch as handle_digest_batch
 from .discovery_routes import router as discovery_router
-from .env import optional_env
+from .env import optional_env, refuse
 from .errors import ApiError
 from .extension_routes import router as extension_router
 from .forge_engines_client import _base_url as forge_engines_base_url
@@ -111,7 +111,7 @@ def _worker_leases_enabled() -> bool:
         return True
     if raw == "off":
         return False
-    raise RuntimeError("WORKER_LEASES must be 'on' or 'off'")
+    refuse("WORKER_LEASES must be 'on' or 'off'")
 
 
 @asynccontextmanager
@@ -135,7 +135,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     telegram_token = optional_env("TELEGRAM_BOT_TOKEN")
     telegram_secret = optional_env("TELEGRAM_WEBHOOK_SECRET")
     if (telegram_token is None) != (telegram_secret is None):
-        raise RuntimeError(
+        refuse(
             "TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET must be set together, "
             "or both left unset to run without Telegram"
         )

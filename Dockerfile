@@ -11,7 +11,7 @@
 # platform's load balancer if it ever comes to that.
 #
 # Configuration is environment variables (see .env.example); nothing is baked in, and
-# .dockerignore keeps .env out of the build. SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+# .dockerignore is an allow-list, so no .env or private note can reach the build. SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
 # are required; Telegram is optional. The database migrations are not run here -- apply
 # them first (`supabase db push`), or the leased workers report `lease_unknown` and
 # /health answers 503, on purpose.
@@ -54,11 +54,16 @@ EXPOSE 8000
 # For `docker run` / compose users (a platform such as Railway runs its own check).
 # /health is 503 when a worker has died, gone stale, or cannot ask its lease.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ['PORT'], timeout=4)"]
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % (os.environ.get('PORT') or '8000'), timeout=4)"]
 
 # `exec` makes uvicorn PID 1, so the platform's SIGTERM reaches it directly instead of
 # a shell that would swallow it. --timeout-graceful-shutdown is how long uvicorn waits
 # for open requests after SIGTERM before the lifespan shutdown stops the workers; keep
 # it below the platform's SIGTERM-to-SIGKILL window (on Railway:
 # RAILWAY_DEPLOYMENT_DRAINING_SECONDS, whose default is 0 -- set it, e.g. to 30).
-CMD ["sh", "-c", "exec uvicorn between_jobs.api.app:app --host 0.0.0.0 --port ${PORT} --timeout-graceful-shutdown 20"]
+# `${PORT:-8000}`: a blank PORT (docker run -e PORT=) counts as unset, as it does for
+# every other variable here, instead of swallowing the next flag as the port.
+# `--workers 1` is spelled out because uvicorn otherwise takes its worker count from
+# $WEB_CONCURRENCY, which some platforms set; each extra process would run all five
+# background workers again (see the note at the top).
+CMD ["sh", "-c", "exec uvicorn between_jobs.api.app:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --timeout-graceful-shutdown 20"]
