@@ -1,0 +1,71 @@
+name: Migration drift
+
+# Fails if the migration files on main and the hosted project's recorded history disagree
+# (scripts/check_migration_drift.py). CLAUDE.md: migrations ship only through the CLI,
+# because SQL run in the dashboard records no version at all.
+#
+# THIS IS THE ONE WORKFLOW THAT HOLDS A REAL CREDENTIAL, so it is locked down:
+#   - It runs only on a push to main from this repository, or by hand on main. It is never
+#     triggered by a pull_request, so a fork cannot reach it.
+#   - The token and the project ref are an ENVIRONMENT secret and variable, not repository
+#     ones: only a job that names the environment can read them, and the environment's own
+#     protection rules apply first.
+#   - Every action is pinned to a full commit SHA, so a moved tag cannot swap in other code.
+#
+# Until the environment is set up (see claude/P2.15-ci-notes.md in the private repo, or
+# the checklist in CONTRIBUTING.md) the job finds no token and skips with a notice instead
+# of failing.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+      - "scripts/check_migration_drift.py"
+      - ".github/workflows/migration-drift.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migration-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: Local migrations match the hosted project
+    if: github.repository == 'Career-Forge/between-jobs' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Create this environment in Settings -> Environments, with required reviewers and
+    # "Deployment branches: main only", and put SUPABASE_ACCESS_TOKEN in it as a secret and
+    # SUPABASE_PROJECT_REF as a variable. The token is account-wide: it can reach every
+    # project in the organisation, so prefer a project-scoped one if Supabase offers it.
+    environment: supabase-drift
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    steps:
+      - name: Is the check set up?
+        id: configured
+        run: |
+          if [ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$SUPABASE_PROJECT_REF" ]; then
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "yes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Migration drift check skipped::The supabase-drift environment has no SUPABASE_ACCESS_TOKEN secret and SUPABASE_PROJECT_REF variable yet."
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.configured.outputs.yes == 'true'
+        with:
+          persist-credentials: false
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        if: steps.configured.outputs.yes == 'true'
+        with:
+          version: 2.113.0
+      - name: Compare local and remote migration history
+        if: steps.configured.outputs.yes == 'true'
+        run: |
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase migration list --linked | tee /tmp/migrations.txt
+          python3 scripts/check_migration_drift.py < /tmp/migrations.txt

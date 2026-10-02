@@ -1,0 +1,10 @@
+# Actions are pinned to full commit SHAs (a moved tag cannot swap in other code), which
+# means nothing updates them unless something does. This opens one pull request when an
+# action has a new release, with the new SHA and the version in the comment.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
