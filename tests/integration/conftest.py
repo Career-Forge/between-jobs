@@ -17,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import uuid
@@ -24,7 +25,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 from urllib.parse import urlparse
 
 import asyncpg
@@ -40,10 +41,18 @@ _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 _BUCKET = "artifacts"
 
 
+def _cannot_run(reason: str) -> NoReturn:
+    """Skip on a developer's machine; fail in CI, where a silent skip is a green build that
+    tested nothing (GitHub sets CI=true)."""
+    if os.environ.get("CI"):
+        pytest.fail(f"CI must run the local-stack tests, but: {reason}")
+    pytest.skip(reason)
+
+
 @pytest.fixture(scope="session")
 def local_stack() -> dict[str, str]:
     if shutil.which("supabase") is None:
-        pytest.skip("the supabase CLI isn't installed")
+        _cannot_run("the supabase CLI isn't installed")
     proc = subprocess.run(
         ["supabase", "status", "-o", "json"],
         capture_output=True,
@@ -55,7 +64,7 @@ def local_stack() -> dict[str, str]:
     try:
         status = cast(dict[str, str], json.loads(proc.stdout))
     except ValueError:
-        pytest.skip("no local Supabase stack is running (supabase start)")
+        _cannot_run("no local Supabase stack is running (supabase start)")
     for key in ("API_URL", "DB_URL"):
         host = urlparse(status[key]).hostname
         assert host in _LOOPBACK, f"{key} is not a loopback address; refusing to run: {host}"

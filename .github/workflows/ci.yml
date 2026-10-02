@@ -13,9 +13,11 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels the run before it; runs on main are never cancelled.
+# A new push to a pull request cancels the run before it. Every other run gets a group
+# of its own: a shared group would let a newer main commit replace an older one that is
+# still waiting, and that commit would never get a CI result.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -153,6 +155,7 @@ jobs:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
           echo "results: $RESULTS"
+          [ -n "$RESULTS" ] || { echo "no job results at all"; exit 1; }
           for result in $RESULTS; do
             [ "$result" = "success" ] || { echo "a job did not succeed: $result"; exit 1; }
           done

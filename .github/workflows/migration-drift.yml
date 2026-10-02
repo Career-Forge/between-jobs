@@ -2,19 +2,26 @@ name: Migration drift
 
 # Fails if the migration files on main and the hosted project's recorded history disagree
 # (scripts/check_migration_drift.py). CLAUDE.md: migrations ship only through the CLI,
-# because SQL run in the dashboard records no version at all.
+# because SQL run in the dashboard records no version at all. A migration merged but not
+# yet pushed to the project shows up here as drift too; that is the reminder to push it.
 #
-# THIS IS THE ONE WORKFLOW THAT HOLDS A REAL CREDENTIAL, so it is locked down:
-#   - It runs only on a push to main from this repository, or by hand on main. It is never
-#     triggered by a pull_request, so a fork cannot reach it.
-#   - The token and the project ref are an ENVIRONMENT secret and variable, not repository
-#     ones: only a job that names the environment can read them, and the environment's own
-#     protection rules apply first.
+# THIS IS THE ONE WORKFLOW THAT HOLDS A REAL CREDENTIAL. What actually protects it:
+#   - The GitHub environment `supabase-drift`, configured with "Deployment branches:
+#     selected branches -> main" and required reviewers. The environment's secrets are
+#     released only to a run on main that a reviewer approved. This is the control: the
+#     `if:` below and the `on:` filters live in this file, which anyone with write access
+#     can change on a branch, so they are not.
+#   - Not triggering on pull_request at all, so a fork's code never runs with it.
+#   - The token goes to one step, which runs only the Supabase CLI. The step that runs
+#     code from this repository (the Python check) gets no secret.
 #   - Every action is pinned to a full commit SHA, so a moved tag cannot swap in other code.
+# Set the environment up in this order: create it, set the branch rule and reviewers, and
+# only then add the secret and the variable. SUPABASE_ACCESS_TOKEN is account-wide (it
+# reaches every project in the organisation), so never also create a repository or
+# organisation secret with that name: a secret of the same name outside the environment
+# is readable by any workflow.
 #
-# Until the environment is set up (see claude/P2.15-ci-notes.md in the private repo, or
-# the checklist in CONTRIBUTING.md) the job finds no token and skips with a notice instead
-# of failing.
+# Until the environment holds both values the job warns and skips instead of failing.
 on:
   push:
     branches: [main]
@@ -37,13 +44,7 @@ jobs:
     if: github.repository == 'Career-Forge/between-jobs' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Create this environment in Settings -> Environments, with required reviewers and
-    # "Deployment branches: main only", and put SUPABASE_ACCESS_TOKEN in it as a secret and
-    # SUPABASE_PROJECT_REF as a variable. The token is account-wide: it can reach every
-    # project in the organisation, so prefer a project-scoped one if Supabase offers it.
     environment: supabase-drift
-    # The token is given to the two steps that need it and to no other: not to checkout,
-    # not to the CLI installer.
     steps:
       - name: Is the check set up?
         id: configured
@@ -55,7 +56,7 @@ jobs:
             echo "yes=true" >> "$GITHUB_OUTPUT"
           else
             echo "yes=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Migration drift check skipped::The supabase-drift environment has no SUPABASE_ACCESS_TOKEN secret and SUPABASE_PROJECT_REF variable yet."
+            echo "::warning title=Migration drift check NOT RUN::The supabase-drift environment has no SUPABASE_ACCESS_TOKEN secret and SUPABASE_PROJECT_REF variable, so nothing was compared."
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.configured.outputs.yes == 'true'
@@ -65,12 +66,20 @@ jobs:
         if: steps.configured.outputs.yes == 'true'
         with:
           version: 2.113.0
-      - name: Compare local and remote migration history
+      # The only step with the token, and the only thing it runs is the Supabase CLI. Written
+      # to a file, not piped: a failing CLI then fails this step instead of being masked by
+      # the pipe's last command.
+      - name: Fetch the project's migration history
         if: steps.configured.outputs.yes == 'true'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         run: |
+          set -euo pipefail
           supabase link --project-ref "$SUPABASE_PROJECT_REF"
-          supabase migration list --linked | tee /tmp/migrations.txt
-          python3 scripts/check_migration_drift.py < /tmp/migrations.txt
+          supabase migration list --linked > "$RUNNER_TEMP/migrations.txt"
+          cat "$RUNNER_TEMP/migrations.txt"
+      # No secret here. Exit 0 no drift, 1 drift, 2 could not tell; the last two are red.
+      - name: Compare it with the files
+        if: steps.configured.outputs.yes == 'true'
+        run: python3 scripts/check_migration_drift.py < "$RUNNER_TEMP/migrations.txt"
