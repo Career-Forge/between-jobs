@@ -1,0 +1,37 @@
+# The Docker build context is uploaded to the daemon whole, whatever the Dockerfile
+# COPYs, so this keeps secrets, private notes and bulk out of it. The image itself
+# gets only what the Dockerfile names: pyproject.toml, README.md, LICENSE and src/
+# (hatchling's metadata needs the readme and the license file to build the wheel, so
+# those three must NOT be listed here).
+
+# Secrets and private notes -- never in a context, never in an image.
+.env
+.env.*
+!.env.example
+CLAUDE.local.md
+AGENTS.md
+
+# Version control, tooling, local environments and caches.
+.git
+.github
+.claude
+.venv
+**/.venv
+node_modules
+**/node_modules
+.mypy_cache
+.pytest_cache
+.ruff_cache
+**/__pycache__
+**/*.pyc
+.DS_Store
+**/.DS_Store
+
+# Other parts of the repo: the API image runs none of them.
+web
+extension
+tests
+docs
+latex-service
+supabase
+scripts

@@ -24,6 +24,29 @@ recognize as the product.
   auto-applies or auto-sends anything on your behalf.
 - **Privacy.** Self-hosted means your resume and your data never leave your machine.
 
+## Run the API with Docker
+
+```bash
+docker build -t between-jobs-api .
+docker run --rm -p 8000:8000 \
+  -e SUPABASE_URL=https://<your-project>.supabase.co \
+  -e SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key> \
+  between-jobs-api
+curl localhost:8000/health
+```
+
+- **Apply the database migrations first** (`supabase db push`). Until they are there the
+  background workers that need them report it and `/health` answers 503, on purpose.
+- Configuration is environment variables; `.env.example` lists them all. Telegram is
+  optional -- leave `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` unset to run
+  web-only.
+- **One container, one process.** The API runs its own background workers, so do not
+  pass `--workers`. If a second copy ever starts (an overlapping deploy, a stray
+  replica), the workers that would otherwise do the same work twice stand by instead.
+- The container exits cleanly on SIGTERM. Give your platform a grace period longer than
+  20 seconds before it escalates to SIGKILL (on Railway, set
+  `RAILWAY_DEPLOYMENT_DRAINING_SECONDS`; its default is 0).
+
 ## License
 
 AGPL-3.0 -- see [LICENSE](LICENSE).
