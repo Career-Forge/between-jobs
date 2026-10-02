@@ -1,5 +1,6 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import type { Plugin } from "vite";
+import { defineConfig } from "vitest/config";
 import { assertApiBase } from "./scripts/apiBaseGuard.ts";
 
 // Fails `vite build` unless VITE_API_BASE_URL is a usable production value
@@ -26,6 +27,15 @@ function requireApiBaseForBuilds(): Plugin {
 // different origin, named by VITE_API_BASE_URL (src/lib/apiUrl.ts).
 export default defineConfig({
   plugins: [react(), requireApiBaseForBuilds()],
+  test: {
+    // src/lib/supabase.ts throws at import without these, and several components reach it
+    // through api.ts. Placeholders, so `npm test` passes on a clean clone and in CI
+    // instead of only on a machine that has a .env.local. Nothing in the suite connects.
+    env: {
+      VITE_SUPABASE_URL: "http://localhost:54321",
+      VITE_SUPABASE_PUBLISHABLE_KEY: "test-publishable-key",
+    },
+  },
   server: {
     proxy: {
       "/api": {
