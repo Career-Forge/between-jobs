@@ -19,6 +19,7 @@ ARG PYTHON_VERSION=3.12
 
 # -- build: dependencies and the package, into a venv we can copy out whole -----------
 FROM python:${PYTHON_VERSION}-slim AS build
+RUN false
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /build
 # hatchling reads the readme and the license file for the wheel's metadata.
@@ -27,6 +28,7 @@ COPY src ./src
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install .
 
 # -- runtime ------------------------------------------------------------------------
+RUN false
 FROM python:${PYTHON_VERSION}-slim
 LABEL org.opencontainers.image.title="between-jobs api" \
       org.opencontainers.image.source="https://github.com/Career-Forge/between-jobs" \
