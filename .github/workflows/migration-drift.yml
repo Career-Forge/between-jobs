@@ -42,12 +42,14 @@ jobs:
     # SUPABASE_PROJECT_REF as a variable. The token is account-wide: it can reach every
     # project in the organisation, so prefer a project-scoped one if Supabase offers it.
     environment: supabase-drift
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    # The token is given to the two steps that need it and to no other: not to checkout,
+    # not to the CLI installer.
     steps:
       - name: Is the check set up?
         id: configured
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         run: |
           if [ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$SUPABASE_PROJECT_REF" ]; then
             echo "yes=true" >> "$GITHUB_OUTPUT"
@@ -65,6 +67,9 @@ jobs:
           version: 2.113.0
       - name: Compare local and remote migration history
         if: steps.configured.outputs.yes == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         run: |
           supabase link --project-ref "$SUPABASE_PROJECT_REF"
           supabase migration list --linked | tee /tmp/migrations.txt
