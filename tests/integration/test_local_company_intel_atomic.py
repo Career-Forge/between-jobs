@@ -203,10 +203,15 @@ async def test_only_the_backend_can_call_it(world: World) -> None:
     }
 
     for client in (anon, signed_in):
-        with pytest.raises(APIError):
+        with pytest.raises(APIError) as denied:
             await client.rpc("create_company_intel_run", args).execute()
+        assert denied.value.code == "42501"  # insufficient_privilege, not some other failure
 
     assert await _counts(world, application) == (0, 0)
+    # The same call from the backend succeeds, so the denials above were the permission and
+    # not bad arguments.
+    await world.sb.rpc("create_company_intel_run", args).execute()
+    assert await _counts(world, application) == (1, 0)
 
 
 class _Rollback(Exception):
