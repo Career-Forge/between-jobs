@@ -163,7 +163,7 @@
    "freshness_window": "qdr:m",
    "query_shape": "CJK / Hindi / Arabic hiring vocabulary, month window",
    "hits": [
-    {"url": "https://cn.linkedin.com/posts/lina-wu_%E4%BC%81%E4%B8%9A%E5%87%BA%E6%B5%B7-%E5%87%BA%E6%B5%B7%E6%8B%9B%E8%81%98-%E8%B7%A8%E5%A2%83%E6%8B%9B%E8%81%98-activity-7049780632804790034-mPX-", "title": "Lina W. - 企业出海#出海招聘#跨境招聘#海外招聘#东南亚招聘 - 领英", "snippet": "... 核心团队有多个海外岗位开放中，有兴趣欢迎私信我了解更多，也欢迎推荐合适的人选#企业出海#出海招聘#跨境招聘#海外招聘#东南亚招聘."},
+    {"url": "https://cn.linkedin.com/posts/lina-wu_%E4%BC%81%E4%B8%9A%E5%87%BA%E6%B5%B7-%E5%87%BA%E6%B5%B7%E6%8B%9B%E8%81%98-%E8%B7%A8%E5%A2%83%E6%8B%9B%E8%81%98-activity-7049780632804790034-mPX-", "title": "Lina W. - 企业出海#出海招聘#跨境招聘#海外招聘#东南亚招聘 - 领英", "snippet": "... 我们的核心团队正在开放多个海外职位，欢迎私信咨询，也欢迎内推合适人选#企业出海#出海招聘#跨境招聘#海外招聘#东南亚招聘."},
     {"url": "https://www.linkedin.com/posts/mika-tanabe-c204a71_creative-director-storytelling-japan-activity-7326531298827638696-D_fk", "title": "Creative Director, Storytelling - Japan - 採用情報 (日本) | Mika Tanabe - LinkedIn", "snippet": "Creative Director, Storytelling - Japan - 採用情報 (日本) jobs.example.com · 69 2 Comments · Like ..."},
     {"url": "https://www.linkedin.com/posts/felix-brandner_acclime%E6%AD%A3%E5%9C%A8%E6%8B%9B%E8%81%98senior-erp-consultant-%E6%B7%B1%E5%9C%B3-%E9%A2%86%E8%8B%B1-activity-7701163300950654585-Jm87", "title": "Acclime正在招聘Senior ERP Consultant (深圳) | 领英 - LinkedIn", "snippet": "4 days ago · Acclime正在招聘Senior ERP Consultant (深圳) | 领英 cn.linkedin.com · 16 · Like Comment. Share."},
     {"url": "https://www.linkedin.com/posts/hr-rahul-desai-2e5b84c17_sbi-sboss-2026-%E0%A4%95-%E0%A4%B8%E0%A4%AC%E0%A4%B8-%E0%A4%AC%E0%A4%A1-%E0%A4%AD%E0%A4%B0%E0%A4%A4-activity-7187945159203673806-OzOm", "title": "HR RAHUL DESAI - SBI SBOSS 2026: अब तक की सबसे बड़ी भर्ती - LinkedIn", "snippet": "Close menu. https://example.com/l/0386a2 …more. SBI SBOSS 2026: अब तक की सबसे बड़ी भर्ती. https://example.com/l/fef0e9. Like Comment. Share. Copy; LinkedIn"},
@@ -178,9 +178,9 @@
    "freshness_window": null,
    "query_shape": "inurl:ugcPost probe",
    "hits": [
-    {"url": "https://www.linkedin.com/posts/arjunk-academy_linkedins-new-ai-feature-might-be-hiding-ugcPost-7638652164202138324-bFYn/", "title": "Turning off LinkedIn's new AI job search | Arjun Kapoor posted ...", "snippet": "Software Engineer | Web | React, Node.js | Building ... LinkedIn is moving quickly — its new Hiring Assistant has just launched ..."},
+    {"url": "https://www.linkedin.com/posts/arjunk-academy_linkedins-new-ai-feature-might-be-hiding-ugcPost-7638652164202138324-bFYn/", "title": "Opting out of the AI job-search feature on LinkedIn | Arjun Kapoor posted ...", "snippet": "Software Engineer | Web | React, Node.js | Building ... A new Hiring Assistant is rolling out across LinkedIn ..."},
     {"url": "https://www.linkedin.com/posts/zaid-farooqui-38c1a5e04_infosys-freshers-offcampusdrive-ugcPost-7314568013009524307--_8X/", "title": "Zaid Farooqui - infosys #freshers #offcampusdrive #itjobs - LinkedIn", "snippet": "Infosys Off-Campus Hiring Drive 2026 | Freshers Opportunity Great opportunity for fresh graduates ... Software Engineer | Spring Boot ..."},
-    {"url": "https://www.linkedin.com/posts/sharma-neelam_clay-automate-n8n-ugcPost-7482373691399071308-Very/?utm_source=share&utm_medium=member_desktop&rcm=ACoAAEXAMPLE0000000000000000000000000", "title": "clay #automate #n8n #claude #gtmengineering #revops #hubspot ...", "snippet": "Software Engineer | M.Tech AI @ Example Institute | Full-Stack & Data ... hiring the similar kind of profiles recently or not so. I have only ..."}
+    {"url": "https://www.linkedin.com/posts/sharma-neelam_clay-automate-n8n-ugcPost-7482373691399071308-Very/?utm_source=share&utm_medium=member_desktop&rcm=ACoAAEXAMPLE0000000000000000000000000", "title": "clay #automate #n8n #claude #gtmengineering #revops #hubspot ...", "snippet": "Software Engineer | Full-Stack & Data ... curious whether teams have been hiring comparable profiles lately. I have only ..."}
    ]
   },
   {
@@ -191,8 +191,8 @@
    "query_shape": "first-person hiring vocabulary + ML/founding roles + San Francisco",
    "hits": [
     {"url": "https://www.linkedin.com/posts/yusufrahman_sr-genai-strategist-startups-generative-activity-7653469631689304406-JNPV", "title": "Sr. GenAI Strategist | Yusuf (Yuz) Rahman, Ph.D. - LinkedIn", "snippet": "2 days ago · I'm hiring a Sr. GenAI Strategist for startups on my team at the AWS Generative AI Innovation Center. San Francisco ... AI engineer, building AI products ..."},
-    {"url": "https://www.linkedin.com/posts/gordon-ellery-7d20b4_oceans-ventures-job-board-activity-7616950956202676412-sMUm", "title": "VC AI role for new investors | Gordon Ellery posted on the topic", "snippet": "5 days ago · A founding engineer at a $5B fintech startup. Think about what that title ... we're hiring tomorrow's leaders.\" No argument there. Both true. But ..."},
-    {"url": "https://www.linkedin.com/posts/y-combinator_kastle-is-building-ai-employees-for-banks-activity-7841582905390147786-Mfxk", "title": "Kastle is building AI employees for banks. Its agents automate ...", "snippet": "14 hours ago · And so it was actually at one of the conferences here in San Francisco where we learned about. ... Yeah, so we're hiring across the stack with the Series A."}
+    {"url": "https://www.linkedin.com/posts/gordon-ellery-7d20b4_oceans-ventures-job-board-activity-7616950956202676412-sMUm", "title": "An AI seat for junior investors at VCs | Gordon Ellery posted on the topic", "snippet": "5 days ago · Founding engineer at a fintech startup worth billions. Consider what that title carries ... we are hiring the next generation of leaders.\" Fair point. Both sides have it. Yet ..."},
+    {"url": "https://www.linkedin.com/posts/y-combinator_kastle-is-building-ai-employees-for-banks-activity-7841582905390147786-Mfxk", "title": "Kastle is building AI employees for banks. Its agents automate ...", "snippet": "14 hours ago · We first heard about it at an event in San Francisco. ... Honestly, we're hiring across the stack now that the Series A is closed."}
    ]
   },
   {
@@ -225,7 +225,7 @@
    "freshness_window": "qdr:w",
    "query_shape": "non-English hiring vocabulary (es/pt/fr/de), second pull rows",
    "hits": [
-    {"url": "https://fr.linkedin.com/posts/aur%C3%A9lie-roche-4d6b93e1f_nous-recrutons-un-d%C3%A9veloppeur-web-prestataire-activity-7451578259781208337-kI1p", "title": "Post de Aurélie ROCHE - LinkedIn", "snippet": "Nous cherchons un développeur web indépendant ou une agence web, de préférence basée au Bénin, pour un projet digital d'envergure. Demandez le cahier des ..."},
+    {"url": "https://fr.linkedin.com/posts/aur%C3%A9lie-roche-4d6b93e1f_nous-recrutons-un-d%C3%A9veloppeur-web-prestataire-activity-7451578259781208337-kI1p", "title": "Post de Aurélie ROCHE - LinkedIn", "snippet": "Nous recrutons un prestataire web, développeur ou agence, basé au Bénin ... Demandez le cahier des ..."},
     {"url": "https://pt.linkedin.com/posts/grupo-lamonica-log%C3%ADstica_vaga-aberta-venha-fazer-parte-do-activity-7560995383094172560-yejZ", "title": "Publicação de Grupo Lamonica Logística - LinkedIn", "snippet": "VAGA ABERTA! Venha fazer parte do nosso time! Estamos com uma nova oportunidade para quem busca crescimento profissional e deseja fazer parte da nossa ..."}
    ]
   },

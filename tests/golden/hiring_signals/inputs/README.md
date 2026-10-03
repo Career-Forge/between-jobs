@@ -86,11 +86,12 @@ Consistent replacement, so parsing paths still exercise the same shapes:
   headline -- were replaced with generic ones. Commenter and profile headlines that
   sat verbatim next to synthetic names (`... @ Example Institute` and four
   others: a mentor tagline, an infrastructure-engineer headline, a finance headline,
-  a college name) were generalized to a bare role.
+  a college name) were generalized to a bare role; the last of them, a profile headline
+  in an `ugcPost` probe row, still carried it until P0.13.
 - **Kept**: company names, company pages and their handles, role text, locations,
   salary text, and one public job id -- company and role facts are what the ATS-echo
   matching tests need. `HireHub.io` is a company page name, not a domain to hide.
-- **Person-authored prose was paraphrased by hand** (launch plan P0.13). Twenty-nine rows are
+- **Person-authored prose was paraphrased by hand** (launch plan P0.13). 33 rows are
   snippets or titles written by an individual -- a recruiter's or employee's own post,
   a referral offer, a walk-in announcement, an event invite, a comment, a profile
   headline -- and, kept verbatim next to a synthetic name, each could be found by
@@ -115,7 +116,7 @@ Consistent replacement, so parsing paths still exercise the same shapes:
 
 ```
 grep -o '[A-Za-z0-9._+-]*@[A-Za-z0-9. -]\{0,20\}' search_hits.json | sort | uniq -c
-    -> careers@example.com (x2), "@ Example Institute" (x1)
+    -> careers@example.com (x2)
 grep -c 'linkedin.com/in/' search_hits.json                                  -> 0
 grep -ciE 'wa\.me|bit\.ly|lnkd\.in|t\.me/|whatsapp' search_hits.json         -> 0
 grep -oE 'https?://[^/" ]+' search_hits.json | sort | uniq -c
