@@ -716,6 +716,10 @@ async def fetch_smartrecruiters(http: httpx.AsyncClient, company: DueCompany) ->
         # poller reads a 304 as "the whole board is unchanged" and refreshes every active
         # posting's last_seen (P0.8) -- which would keep a gone posting on an unfetched
         # page looking live for ever. Only single-request adapters send If-None-Match.
+        # Consequence, accepted: a quiet board now answers 200 'ok' with nothing new instead of
+        # the 304 sentinel, so a non-dream one steps down the tier ladder like every other
+        # adapter without an etag (Workday, Oracle, ...). On prod that is 4 SmartRecruiters
+        # boards with 63 postings; the other 28 and Amazon are 'dream', which never demotes.
         response = await _get_with_conditional_etag(http, url, "")
         if response is None:
             if page == 0:
@@ -845,6 +849,10 @@ async def fetch_amazon(http: httpx.AsyncClient, company: DueCompany) -> AdapterR
         # poller reads a 304 as "the whole board is unchanged" and refreshes every active
         # posting's last_seen (P0.8) -- which would keep a gone posting on an unfetched
         # page looking live for ever. Only single-request adapters send If-None-Match.
+        # Consequence, accepted: a quiet board now answers 200 'ok' with nothing new instead of
+        # the 304 sentinel, so a non-dream one steps down the tier ladder like every other
+        # adapter without an etag (Workday, Oracle, ...). On prod that is 4 SmartRecruiters
+        # boards with 63 postings; the other 28 and Amazon are 'dream', which never demotes.
         response = await _get_with_conditional_etag(http, url, "")
         if response is None:
             if page == 0:

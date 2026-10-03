@@ -6,6 +6,7 @@ Aggregate Jobs node (aggregate_jobs.js)."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -20,6 +21,7 @@ from between_jobs.api.search_aggregation import (
     apply_search_filters,
     expand_cohort,
     fetch_registry_lane,
+    fetch_registry_last_polled_at,
     filter_by_companies,
     filter_by_location,
     filter_by_role,
@@ -549,15 +551,55 @@ async def test_fetch_registry_lane_link_checked_follows_the_databases_link_fresh
     assert all(r.provider == "registry" and r.source_tier == 1.0 for r in results)
 
 
-async def test_fetch_registry_lane_row_without_link_fresh_fails_loudly() -> None:
-    """A function that stops returning the column must break the lane, not quietly turn every
-    posting into "not verified" (or, worse, back into "verified")."""
+async def test_fetch_registry_lane_on_an_unmigrated_database_degrades_to_unverified(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Until the P0.8 migration is applied the function returns no link_fresh column. That
+    must show every posting as unverified (never verified), not crash the Discover request --
+    and say so in the log, so a missing migration does not hide."""
     row = _registry_row()
     del row["link_fresh"]
     supabase = _FakeSupabase([row])
 
-    with pytest.raises(KeyError, match="link_fresh"):
-        await fetch_registry_lane(supabase, query="engineer")  # type: ignore[arg-type]
+    with caplog.at_level("WARNING"):
+        results = await fetch_registry_lane(supabase, query="engineer")  # type: ignore[arg-type]
+
+    assert [r.link_checked for r in results] == [False]
+    assert "link_fresh" in caplog.text
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true", "yes"])
+async def test_only_a_real_true_makes_a_registry_result_checked(value: object) -> None:
+    supabase = _FakeSupabase([_registry_row(link_fresh=value)])
+
+    results = await fetch_registry_lane(supabase, query="engineer")  # type: ignore[arg-type]
+
+    assert results[0].link_checked is False
+
+
+async def test_fetch_registry_last_polled_at_parses_the_timestamp() -> None:
+    supabase = _FakeSupabase("2026-10-01T12:00:00+00:00")  # type: ignore[arg-type]
+
+    got = await fetch_registry_last_polled_at(supabase)  # type: ignore[arg-type]
+
+    assert got == datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+    assert supabase.rpc_calls == [("registry_last_polled_at", {})]
+
+
+async def test_fetch_registry_last_polled_at_treats_a_naive_timestamp_as_utc() -> None:
+    got = await fetch_registry_last_polled_at(_FakeSupabase("2026-10-01T12:00:00"))  # type: ignore[arg-type]
+
+    assert got == datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+
+
+async def test_fetch_registry_last_polled_at_is_none_when_nothing_was_ever_polled() -> None:
+    assert await fetch_registry_last_polled_at(_FakeSupabase(None)) is None  # type: ignore[arg-type]
+
+
+async def test_fetch_registry_last_polled_at_refuses_an_answer_that_is_not_a_timestamp() -> None:
+    """ "I could not read it" must not be reported as "never polled"."""
+    with pytest.raises(TypeError):
+        await fetch_registry_last_polled_at(_FakeSupabase(12345))  # type: ignore[arg-type]
 
 
 async def test_fetch_registry_lane_passes_query_and_limit_through() -> None:

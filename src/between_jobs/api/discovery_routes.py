@@ -25,7 +25,9 @@ budget (~18s) as a deliberately-accepted tail, not the common case.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import httpx
@@ -46,10 +48,42 @@ from .llm_client import generate as llm_generate
 from .models import TrackDiscoveredJobRequest
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
-from .search_aggregation import aggregate_jobs, apply_search_filters, fetch_registry_lane
+from .search_aggregation import (
+    aggregate_jobs,
+    apply_search_filters,
+    fetch_registry_lane,
+    fetch_registry_last_polled_at,
+)
 from .search_providers import ProviderCredentials, SearchResult, search_jobs
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/discover")
+
+_REGISTRY_STALE_AFTER = timedelta(hours=48)
+
+
+async def _empty_registry_lane_note(supabase: AsyncClient) -> str | None:
+    """Why the registry lane returned nothing, when the answer is "it is out of date" rather
+    than "nothing matched" (P0.8: postings last seen more than 7 days ago are not shown, so a
+    poller that has been down empties the lane). None when the registry was polled recently
+    (an honest empty result), and None when we could not find out -- "I could not ask" is not
+    a reason to tell the user something. Optional by design: it never fails the search."""
+    try:
+        last_polled = await fetch_registry_last_polled_at(supabase)
+    except Exception:
+        logger.warning("could not tell whether the job registry is out of date", exc_info=True)
+        return None
+    if last_polled is None:
+        return "The company job-board listings have not been refreshed yet, so none are shown."
+    age = datetime.now(UTC) - last_polled
+    if age <= _REGISTRY_STALE_AFTER:
+        return None
+    return (
+        f"The company job-board listings were last refreshed {age.days} days ago, "
+        "so none are shown until they are refreshed."
+    )
+
 
 _LIVENESS_CANDIDATE_CAP = 50
 """How many LIVE-SEARCH-LANE (non-registry) aggregated/filtered results
@@ -198,6 +232,11 @@ async def search_discover(
         ),
         fetch_registry_lane(supabase, query=q),
     )
+
+    if not registry_results:
+        stale_note = await _empty_registry_lane_note(supabase)
+        if stale_note:
+            warnings = [*warnings, stale_note]
 
     combined = aggregate_jobs(live_results + registry_results, sort_by="relevance")
     combined, gazetteer_active = await apply_search_filters(

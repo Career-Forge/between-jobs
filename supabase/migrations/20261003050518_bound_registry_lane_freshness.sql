@@ -7,18 +7,18 @@
 -- 1. Freshness is a bounded scan, not a bare filter. `last_seen` is in no index on
 --    purpose (P0.6a, 20260926060736: an indexed `last_seen` made every poll touch a
 --    non-HOT update that re-inserted the whole tsvector into the GIN index). So a
---    `last_seen > now() - 7 days` predicate is a heap-side filter, and measured on the
---    real table with every row stale (which is what the table looks like whenever the
---    poller has been down) it cost 1.8 s on the browse branch and 7.8 s on a text
---    query -- past the API role's 8 s statement timeout, the same 57014 that P5c fixed.
---    So each branch first takes a CANDIDATE window from the index it already walks
---    (ten times the result limit), then filters that window by freshness, then
---    limits. Postgres streams the nested limits, so the healthy case stops after
---    about `result_limit` rows exactly as before; the all-stale case reads at most the
---    window and returns fewer rows (measured 38 ms for the text branch). The price is
---    stated plainly: if fewer than a tenth of a query's candidates are fresh, the lane
---    returns fewer rows than exist. That only happens while the poller is behind, and
---    it heals as the poller catches up.
+--    `last_seen > now() - 7 days` predicate is a heap-side filter. Measured on the real
+--    table on 2026-10-03 (EXPLAIN ANALYZE, with every row treated as stale, which is what
+--    the table looks like whenever the poller has been down) it cost 1.8 s on the browse
+--    branch and 7.8 s on a text query -- past the API role's 8 s statement timeout, the same
+--    57014 that P5c fixed. So each branch first takes a CANDIDATE window from the index it
+--    already walks (ten times the result limit), then filters that window by freshness,
+--    then limits. In the healthy case Postgres stops fetching heap rows as soon as
+--    `result_limit` have passed the filter, so the cost stays close to the old one; in the
+--    all-stale case it reads at most the window and returns fewer rows (38 ms for the text
+--    branch on the same table). The price is stated plainly: if fewer than a tenth of a
+--    query's candidates are fresh, the lane returns fewer rows than exist. That only
+--    happens while the poller is behind, and the lane fills again once a poller is running.
 --
 -- 2. The browse branch never used its index. `job_registry_postings_active_posted_idx`
 --    is `(posted_at desc)`, which sorts NULLs FIRST; the query orders `posted_at desc
@@ -36,6 +36,13 @@
 --    is 7 days; a daily refresh is plenty and keeps the write volume small). It is only
 --    called for adapters whose 304 covers the WHOLE board in one request; SmartRecruiters
 --    and Amazon are paginated and stop sending If-None-Match in the same change.
+--    Write cost: this is strictly lighter than what a board that returns 200 already
+--    costs, because a complete poll's upsert rewrites every row of the board on every poll
+--    (every 3 hours for the hot and dream tiers), while a confirmed row is written at most
+--    once a day. The rows sit on pages written before fillfactor 85 (P0.6a), so many of those
+--    updates are not HOT and re-insert into the GIN index; the first pass after the poller
+--    comes back from an outage is one normal poll cycle's worth. Watch the HOT ratio
+--    (cohort_queries.sql in the private repo) when it does.
 --
 -- `search_job_registry_postings` also returns `link_fresh`: true only if the posting was
 -- seen within 3 days AND its company's last poll was within 48 hours AND that company
@@ -44,8 +51,9 @@
 -- polled within 48 hours has therefore been confirmed within 1 + 2 days. `last_polled_at`
 -- alone is not a confirmation -- a failed poll advances it too (penalize), and a capped
 -- board's unfetched tail keeps an old `last_seen` while the board shows as just polled.
--- A row past 3 days but inside the 7-day window is still returned, unverified: that is a
--- genuine "we do not know", and the UI already has the copy for it.
+-- So `link_fresh` means "listed on the company's own board recently", not "the link was
+-- fetched". A row past 3 days but inside the 7-day window is still returned, unverified:
+-- a genuine "we do not know", and the UI already has the copy for it.
 --
 -- Plpgsql note: every column of the inner subqueries is qualified (`jp.`). The function's
 -- output columns share names with table columns (`title`, `location`, `posted_at`, ...),
@@ -235,3 +243,20 @@ $$;
 revoke execute on function public.confirm_job_registry_boards(text[])
   from public, anon, authenticated;
 grant execute on function public.confirm_job_registry_boards(text[]) to service_role;
+
+-- The newest successful-or-not poll across active boards. Discover uses it only to explain
+-- an EMPTY registry lane: no rows because nothing matched, or no rows because the whole
+-- registry is out of date (the poller has been down) -- two situations that look identical
+-- to the user otherwise. Reads the ~16k-row companies table, never the postings table.
+create function public.registry_last_polled_at()
+returns timestamptz
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select max(last_polled_at) from public.job_registry_companies where is_active;
+$$;
+
+revoke execute on function public.registry_last_polled_at() from public, anon, authenticated;
+grant execute on function public.registry_last_polled_at() to service_role;

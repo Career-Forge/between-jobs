@@ -163,10 +163,13 @@ class _PaginatedTable:
 
 
 class _FakeRpcBuilder:
-    def __init__(self, data: Any) -> None:
+    def __init__(self, data: Any, *, raises: Exception | None = None) -> None:
         self._data = data
+        self._raises = raises
 
     async def execute(self) -> SimpleNamespace:
+        if self._raises is not None:
+            raise self._raises
         return SimpleNamespace(data=self._data)
 
 
@@ -180,6 +183,7 @@ class _FakeSupabaseClient:
         registry_postings: list[dict[str, Any]] | None = None,
         registry_posting_details: dict[str, dict[str, Any]] | None = None,
         registry_companies: dict[str, str] | None = None,
+        registry_last_polled: Any = "recent",
         jobs: _FakeTable | None = None,
         job_snapshots: _FakeTable | None = None,
         applications: _FakeTable | None = None,
@@ -201,6 +205,8 @@ class _FakeSupabaseClient:
         self._registry_postings = registry_postings if registry_postings is not None else []
         self._registry_posting_details = registry_posting_details or {}
         self._registry_companies = registry_companies or {}
+        self._registry_last_polled = registry_last_polled
+        self.rpc_names: list[str] = []
         self.jobs = jobs or _FakeTable(select_rows=[])
         self.job_snapshots = job_snapshots or _FakeTable(select_rows=[])
         self.applications = applications or _FakeTable(select_rows=[])
@@ -225,10 +231,18 @@ class _FakeSupabaseClient:
         }[name]
 
     def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
+        self.rpc_names.append(fn)
         if fn == "decrypt_secret":
             return _FakeRpcBuilder("decrypted-secret")
         if fn == "search_job_registry_postings":
             return _FakeRpcBuilder(self._registry_postings)
+        if fn == "registry_last_polled_at":
+            value = self._registry_last_polled
+            if isinstance(value, Exception):
+                return _FakeRpcBuilder(None, raises=value)
+            if value == "recent":
+                value = datetime.now(UTC).isoformat()
+            return _FakeRpcBuilder(value)
         raise AssertionError(f"unexpected rpc: {fn}")
 
 
@@ -626,6 +640,71 @@ def test_search_discover_with_no_registry_or_live_results_returns_empty() -> Non
     assert body["scored"] == []
     assert body["more"] == []
     assert body["dead_removed"] == 0
+
+
+# -- an empty registry lane says why when the registry is out of date (P0.8) ------------------
+
+
+def _ago(**delta: float) -> str:
+    return (datetime.now(UTC) - timedelta(**delta)).isoformat()
+
+
+def test_an_empty_registry_lane_on_an_out_of_date_registry_says_so() -> None:
+    """From the day the poller has been down for a week, every posting is past the 7-day
+    window and the lane is empty. That must not read as "your search found nothing"."""
+    supabase = _FakeSupabaseClient(registry_postings=[], registry_last_polled=_ago(days=6, hours=1))
+    client = _client(supabase, _FakeHttpClient())
+
+    body = client.get("/discover", params={"q": "backend engineer"}).json()
+
+    assert body["scored"] == []
+    assert any("last refreshed 6 days ago" in w for w in body["warnings"]), body["warnings"]
+
+
+def test_an_empty_registry_lane_on_a_registry_that_was_never_refreshed_says_so() -> None:
+    supabase = _FakeSupabaseClient(registry_postings=[], registry_last_polled=None)
+    client = _client(supabase, _FakeHttpClient())
+
+    body = client.get("/discover", params={"q": "backend engineer"}).json()
+
+    assert any("have not been refreshed yet" in w for w in body["warnings"]), body["warnings"]
+
+
+def test_an_empty_registry_lane_on_a_fresh_registry_is_just_no_matches() -> None:
+    """The registry was polled an hour ago: an empty lane is an honest "nothing matched"."""
+    supabase = _FakeSupabaseClient(registry_postings=[], registry_last_polled=_ago(hours=1))
+    client = _client(supabase, _FakeHttpClient())
+
+    body = client.get("/discover", params={"q": "backend engineer"}).json()
+
+    assert not any("refreshed" in w for w in body["warnings"]), body["warnings"]
+
+
+def test_not_being_able_to_tell_is_not_a_warning_and_does_not_fail_the_search() -> None:
+    """The explanation is optional. A database without the function (not migrated yet) or a
+    timeout must not turn a search into an error, and "could not ask" is not "out of date"."""
+    supabase = _FakeSupabaseClient(registry_postings=[], registry_last_polled=RuntimeError("boom"))
+    client = _client(supabase, _FakeHttpClient())
+
+    response = client.get("/discover", params={"q": "backend engineer"})
+
+    assert response.status_code == 200
+    assert not any("refreshed" in w for w in response.json()["warnings"])
+
+
+def test_a_non_empty_registry_lane_never_asks_when_the_registry_was_polled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_llm(monkeypatch, _SCORE_LLM_RESPONSE)
+    supabase = _FakeSupabaseClient(
+        registry_postings=[_REGISTRY_POSTING_ROW], registry_last_polled=_ago(days=30)
+    )
+    client = _client(supabase, _FakeHttpClient())
+
+    body = client.get("/discover", params={"q": "backend engineer"}).json()
+
+    assert "registry_last_polled_at" not in supabase.rpc_names
+    assert not any("refreshed" in w for w in body["warnings"])
 
 
 def test_search_discover_location_param_is_a_no_op_against_an_empty_gazetteer(

@@ -401,7 +401,7 @@ async def test_confirming_no_boards_does_nothing(world: World) -> None:
 # -- the new functions are callable by the backend, and by nobody else -------------------
 
 
-async def test_the_backend_can_call_all_three_through_the_api_and_the_shape_is_right(
+async def test_the_backend_can_call_all_four_through_the_api_and_the_shape_is_right(
     world: World,
 ) -> None:
     """The plpgsql bodies are only compiled when first called: a name clash between an
@@ -419,12 +419,15 @@ async def test_the_backend_can_call_all_three_through_the_api_and_the_shape_is_r
         ).execute()
     confirmed = await world.sb.rpc("confirm_job_registry_boards", {"boards": []}).execute()
     assert confirmed.data == 0
+    polled = await world.sb.rpc("registry_last_polled_at", {}).execute()
+    assert polled.data is None or isinstance(polled.data, str)
 
 
 _FUNCTIONS = (
     "public.search_job_registry_postings(text, integer)",
     "public.search_new_job_registry_postings(text, timestamp with time zone, integer)",
     "public.confirm_job_registry_boards(text[])",
+    "public.registry_last_polled_at()",
 )
 
 
@@ -432,7 +435,7 @@ class _Rollback(Exception):
     """Raised to end the test's transaction so it is always rolled back."""
 
 
-async def test_the_migrations_own_revokes_close_all_three_even_when_the_project_grants_by_default(
+async def test_the_migrations_own_revokes_close_all_four_even_when_the_project_grants_by_default(
     world: World,
 ) -> None:
     """Prod grants new functions to anon, authenticated and service_role by default, and
@@ -445,7 +448,7 @@ async def test_the_migrations_own_revokes_close_all_three_even_when_the_project_
         for statement in sql.split(";")
         if statement.strip().lower().startswith(("revoke", "grant"))
     ]
-    assert len(statements) == 6  # a revoke and a grant for each of the three functions
+    assert len(statements) == 8  # a revoke and a grant for each of the four functions
     pg = world.pg
     try:
         async with pg.transaction():
@@ -478,3 +481,27 @@ async def test_the_migrations_own_revokes_close_all_three_even_when_the_project_
             raise _Rollback
     except _Rollback:
         pass
+
+
+# -- registry_last_polled_at: the empty-lane explanation ----------------------------------
+
+
+async def test_registry_last_polled_at_is_the_newest_poll_of_an_active_board(world: World) -> None:
+    async with _rolled_back(world.pg):
+        await world.pg.execute("delete from public.job_registry_companies")
+        assert await world.pg.fetchval("select public.registry_last_polled_at()") is None
+
+        await _company(world.pg, polled_ago="5 days")
+        await _company(world.pg, polled_ago="2 days")
+        await _company(world.pg, polled_ago=None)
+        inactive, _ = await _company(world.pg, polled_ago="1 hour")
+        await world.pg.execute(
+            "update public.job_registry_companies set is_active = false where id = $1::uuid",
+            inactive,
+        )
+
+        age = await world.pg.fetchval("select now() - public.registry_last_polled_at()")
+
+        assert (
+            47 < age.total_seconds() / 3600 < 49
+        )  # the 2-day board; the inactive hour-old one does not count

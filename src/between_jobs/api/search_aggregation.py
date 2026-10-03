@@ -86,10 +86,11 @@ is caller-supplied here, defaulting to none.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
 from supabase import AsyncClient
@@ -431,6 +432,8 @@ def filter_by_role(
 
 # ── P5c: registry-lane query ──────────────────────────────────────────────
 
+logger = logging.getLogger(__name__)
+
 _REGISTRY_LANE_PROVIDER = "registry"
 _REGISTRY_LANE_LIMIT = 150
 
@@ -449,16 +452,28 @@ async def fetch_registry_lane(
     `link_checked` comes from the database (`link_fresh`, P0.8), not from this
     code: True only if the posting was seen within 3 days, its company was polled
     within 48 hours, and that company has no consecutive failures -- all judged on
-    the database clock. A posting last seen more than 7 days ago is never returned
-    at all. A posting between the two is returned unverified: a real "we do not
-    know", shown as "not yet link-verified". Registry-lane results never reach
-    `ats_liveness.verify_liveness`, verified or not: the poller's own absence-based
-    tracking is the liveness signal for them, and that module is explicitly never
-    meant to duplicate it. Callers route on `provider == "registry"`."""
+    the database clock. It means "listed on the company's own board recently", not
+    "the link was fetched". A posting last seen more than 7 days ago is never
+    returned at all. A posting between the two is returned unverified: a real "we
+    do not know", shown as "not yet link-verified". Registry-lane results never
+    reach `ats_liveness.verify_liveness`, verified or not: the poller's own
+    absence-based tracking is the liveness signal for them, and that module is
+    explicitly never meant to duplicate it. Callers route on
+    `provider == "registry"`.
+
+    A database that has not had the P0.8 migration applied yet returns no
+    `link_fresh` column. That degrades to "unverified" (with a warning in the log),
+    never to "verified" and never to an error that takes the whole Discover request
+    down with it -- the old behaviour, stamping everything verified, is the bug."""
     result = await supabase.rpc(
         "search_job_registry_postings", {"search_query": query, "result_limit": limit}
     ).execute()
     rows = cast("list[dict[str, Any]]", result.data)
+    if rows and "link_fresh" not in rows[0]:
+        logger.warning(
+            "search_job_registry_postings returned no link_fresh column; every registry "
+            "result is shown as unverified until the P0.8 migration is applied"
+        )
     return [
         SearchResult(
             provider=_REGISTRY_LANE_PROVIDER,
@@ -474,10 +489,27 @@ async def fetch_registry_lane(
             salary_currency=row["salary_currency"],
             sponsorship_signal=row["sponsorship_signal"],
             source_tier=1.0,
-            link_checked=bool(row["link_fresh"]),
+            link_checked=row.get("link_fresh") is True,
         )
         for row in rows
     ]
+
+
+async def fetch_registry_last_polled_at(supabase: AsyncClient) -> datetime | None:
+    """When any active company board was last polled (`registry_last_polled_at`, P0.8), or
+    None if none ever was. Used only to explain an EMPTY registry lane: nothing matched, or
+    the registry is out of date because the poller has been down -- two situations that
+    otherwise look identical to the user. Raises if the call fails (the function missing on
+    an unmigrated database, a timeout): "I could not ask" is not "never polled", and the
+    caller decides that the explanation is optional."""
+    result = await supabase.rpc("registry_last_polled_at", {}).execute()
+    value = result.data
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"registry_last_polled_at returned {type(value).__name__}, not a timestamp")
+    parsed = datetime.fromisoformat(value)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 # ── P5d: gazetteer-backed 3-state location filter ────────────────────────
