@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from between_jobs.api.company_intel_pipeline import Claim
 from between_jobs.api.company_intel_store import create_run, get_claims_for_run, get_latest_run
 
@@ -69,12 +71,44 @@ class _FakeSupabaseClient:
             select_rows=[], insert_row={"id": _RUN_ID, "application_id": _APPLICATION_ID}
         )
         self.company_intel_claims = claims or _FakeTable(select_rows=[])
+        self.rpc_calls: list[tuple[str, dict[str, Any]]] = []
 
     def table(self, name: str) -> Any:
         return {
             "company_intel_runs": self.company_intel_runs,
             "company_intel_claims": self.company_intel_claims,
         }[name]
+
+    def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
+        self.rpc_calls.append((fn, params))
+        if fn == "create_company_intel_run":
+            return self._create_company_intel_run(params)
+        raise AssertionError(f"unexpected rpc: {fn}")
+
+    def _create_company_intel_run(self, params: dict[str, Any]) -> _FakeRpcBuilder:
+        """What `create_company_intel_run` does in one transaction: the run, then its claims."""
+        run = self.company_intel_runs.insert(
+            {
+                "user_id": params["p_user_id"],
+                "application_id": params["p_application_id"],
+                "company_name": params["p_company_name"],
+                "providers_used": params["p_providers_used"],
+                "warnings": params["p_warnings"],
+            }
+        )._rows[0]
+        if params["p_claims"]:
+            self.company_intel_claims.insert(
+                [{"run_id": run["id"], **claim} for claim in params["p_claims"]]
+            )
+        return _FakeRpcBuilder(run)
+
+
+class _FakeRpcBuilder:
+    def __init__(self, data: Any) -> None:
+        self._data = data
+
+    async def execute(self) -> SimpleNamespace:
+        return SimpleNamespace(data=self._data)
 
 
 def _claim() -> Claim:
@@ -134,7 +168,42 @@ async def test_create_run_persists_claims_with_distinct_ids_even_when_identical(
     assert len(set(ids)) == len(ids)
 
 
-async def test_create_run_with_no_claims_skips_the_claims_insert() -> None:
+async def test_create_run_is_one_database_call_and_never_writes_a_table_itself() -> None:
+    """P0.10: the run and its claims are written by ONE function, in one transaction. A second
+    request for the claims is how an empty dossier used to be left behind."""
+    supabase = _FakeSupabaseClient()
+
+    await create_run(
+        supabase,  # type: ignore[arg-type]
+        _USER_ID,
+        application_id=_APPLICATION_ID,
+        company_name="Acme",
+        claims=[_claim()],
+        providers_used=["you_com", "firecrawl"],
+        warnings=["note"],
+    )
+
+    assert [name for name, _ in supabase.rpc_calls] == ["create_company_intel_run"]
+    params = supabase.rpc_calls[0][1]
+    assert params == {
+        "p_user_id": _USER_ID,
+        "p_application_id": _APPLICATION_ID,
+        "p_company_name": "Acme",
+        "p_providers_used": ["you_com", "firecrawl"],
+        "p_warnings": ["note"],
+        "p_claims": [
+            {
+                "category": "product_and_mission",
+                "claim_text": "Acme builds banking software.",
+                "source_url": "https://acme.example",
+                "source_title": "About Acme",
+                "confidence": "high",
+            }
+        ],
+    }
+
+
+async def test_create_run_with_no_claims_sends_an_empty_list_not_null() -> None:
     supabase = _FakeSupabaseClient()
 
     await create_run(
@@ -147,7 +216,25 @@ async def test_create_run_with_no_claims_skips_the_claims_insert() -> None:
         warnings=["You.com key missing"],
     )
 
+    assert supabase.rpc_calls[0][1]["p_claims"] == []
     assert supabase.company_intel_claims.insert_calls == []
+
+
+async def test_create_run_lets_a_failure_from_the_database_propagate() -> None:
+    class _Failing(_FakeSupabaseClient):
+        def rpc(self, fn: str, params: dict[str, Any]) -> Any:
+            raise RuntimeError("claims insert failed")
+
+    with pytest.raises(RuntimeError, match="claims insert failed"):
+        await create_run(
+            _Failing(),  # type: ignore[arg-type]
+            _USER_ID,
+            application_id=_APPLICATION_ID,
+            company_name="Acme",
+            claims=[_claim()],
+            providers_used=[],
+            warnings=[],
+        )
 
 
 async def test_get_latest_run_returns_none_when_nothing_exists() -> None:

@@ -175,10 +175,29 @@ class _FakeSupabaseClient:
             "interview_process_registry": self.interview_process_registry,
         }[name]
 
-    def rpc(self, fn: str, _params: dict[str, Any]) -> _FakeRpcBuilder:
+    def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
         if fn == "decrypt_secret":
             return _FakeRpcBuilder("decrypted-secret")
+        if fn == "create_company_intel_run":
+            return self._create_company_intel_run(params)
         raise AssertionError(f"unexpected rpc: {fn}")
+
+    def _create_company_intel_run(self, params: dict[str, Any]) -> _FakeRpcBuilder:
+        """What `create_company_intel_run` does in one transaction: the run, then its claims."""
+        run = self.company_intel_runs.insert(
+            {
+                "user_id": params["p_user_id"],
+                "application_id": params["p_application_id"],
+                "company_name": params["p_company_name"],
+                "providers_used": params["p_providers_used"],
+                "warnings": params["p_warnings"],
+            }
+        )._rows[0]
+        if params["p_claims"]:
+            self.company_intel_claims.insert(
+                [{"run_id": run["id"], **claim} for claim in params["p_claims"]]
+            )
+        return _FakeRpcBuilder(run)
 
 
 _HIT_JSON = {
