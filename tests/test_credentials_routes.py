@@ -94,16 +94,21 @@ class _FakeSupabaseClient:
 
 
 class _FakeHttpClient:
-    def __init__(self, *, status_code: int = 200, raise_error: bool = False) -> None:
+    def __init__(
+        self, *, status_code: int = 200, raise_error: bool = False, content: bytes = b""
+    ) -> None:
         self.status_code = status_code
         self.raise_error = raise_error
+        self.content = content
         self.requests: list[tuple[str, dict[str, Any]]] = []
 
     async def get(self, url: str, **kwargs: Any) -> httpx.Response:
         self.requests.append((url, kwargs))
         if self.raise_error:
             raise httpx.ConnectError("connection refused")
-        return httpx.Response(status_code=self.status_code, request=httpx.Request("GET", url))
+        return httpx.Response(
+            status_code=self.status_code, content=self.content, request=httpx.Request("GET", url)
+        )
 
     async def post(self, url: str, **kwargs: Any) -> httpx.Response:
         self.requests.append((url, kwargs))
@@ -362,15 +367,18 @@ def test_save_jsearch_credential_validates_via_a_real_search_call() -> None:
     assert kwargs["headers"]["X-RapidAPI-Host"] == "jsearch.p.rapidapi.com"
 
 
-def test_save_apollo_credential_validates_via_the_free_health_endpoint() -> None:
-    supabase = _FakeSupabaseClient()
-    http = _FakeHttpClient(status_code=200)
-
-    with _client(supabase, http) as client:
-        response = client.post(
+def _save_apollo(http: _FakeHttpClient, secret: str = "apollo-key") -> Any:
+    with _client(_FakeSupabaseClient(), http) as client:
+        return client.post(
             "/credentials",
-            json=_save_body(service="search", provider="apollo", secret="apollo-key", model=None),
+            json=_save_body(service="search", provider="apollo", secret=secret, model=None),
         )
+
+
+def test_save_apollo_credential_validates_via_the_free_health_endpoint() -> None:
+    http = _FakeHttpClient(status_code=200, content=b'{"healthy": true, "is_logged_in": true}')
+
+    response = _save_apollo(http)
 
     assert response.status_code == 201
     url, kwargs = http.requests[0]
@@ -379,17 +387,38 @@ def test_save_apollo_credential_validates_via_the_free_health_endpoint() -> None
 
 
 def test_save_apollo_credential_rejects_an_invalid_key() -> None:
-    supabase = _FakeSupabaseClient()
-    http = _FakeHttpClient(status_code=401)
-
-    with _client(supabase, http) as client:
-        response = client.post(
-            "/credentials",
-            json=_save_body(service="search", provider="apollo", secret="bad-key", model=None),
-        )
+    response = _save_apollo(_FakeHttpClient(status_code=401), "bad-key")
 
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
+
+
+def test_save_apollo_credential_rejects_a_made_up_key_that_gets_http_200() -> None:
+    """The real behaviour, checked live: Apollo answers 200 {"healthy": true,
+    "is_logged_in": false} for a key it has never heard of. Before P0.11 that saved as valid."""
+    http = _FakeHttpClient(status_code=200, content=b'{"healthy":true,"is_logged_in":false}')
+
+    response = _save_apollo(http, "made-up")
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b"", b"<html>maintenance</html>", b"[]", b'{"healthy": true}', b'{"is_logged_in": "true"}'],
+)
+def test_save_apollo_credential_does_not_guess_when_the_answer_is_unreadable(
+    content: bytes,
+) -> None:
+    """Not JSON, no is_logged_in, or not a real boolean: that is "could not tell" -- retryable,
+    and neither a saved-as-valid key nor a rejection of a key that may be fine."""
+    response = _save_apollo(_FakeHttpClient(status_code=200, content=content))
+
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "PROVIDER_UNAVAILABLE"
+    assert error["retryable"] is True
 
 
 def test_save_hunter_credential_validates_via_the_free_account_endpoint() -> None:

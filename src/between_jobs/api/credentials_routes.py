@@ -168,7 +168,13 @@ async def _validate_apollo_key(http: httpx.AsyncClient, secret: str) -> None:
     """Apollo has a real, free, non-billed health-check endpoint
     (confirmed against its current developer docs before writing this,
     not assumed) -- unlike You.com/Serper/Brave/JSearch/Adzuna/USAJobs,
-    validating an Apollo key costs nothing."""
+    validating an Apollo key costs nothing.
+
+    It answers HTTP 200 for ANY key, including a missing or made-up one
+    (checked live, P0.11: `{"healthy": true, "is_logged_in": false}`), so
+    the status code proves nothing. The verdict is `is_logged_in`: true is
+    a valid key, false is a rejected one, and anything else -- not JSON,
+    no such field -- is "could not tell", which is not a verdict."""
     try:
         response = await http.get(
             "https://api.apollo.io/api/v1/auth/health",
@@ -190,6 +196,20 @@ async def _validate_apollo_key(http: httpx.AsyncClient, secret: str) -> None:
             "Apollo couldn't validate that key right now. Try again in a moment.",
             retryable=True,
         )
+
+    try:
+        logged_in = response.json().get("is_logged_in")
+    except (ValueError, AttributeError):
+        logged_in = None
+    if logged_in is True:
+        return
+    if logged_in is False:
+        raise ApiError("PROVIDER_REJECTED", "Apollo rejected that key.")
+    raise ApiError(
+        "PROVIDER_UNAVAILABLE",
+        "Apollo's answer couldn't be read, so that key wasn't validated. Try again in a moment.",
+        retryable=True,
+    )
 
 
 async def _validate_serper_key(http: httpx.AsyncClient, secret: str) -> None:
