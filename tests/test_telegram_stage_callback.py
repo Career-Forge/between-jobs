@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
+from update_ledger_fakes import UPDATE_RPCS, FakeUpdateLedger
 
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_supabase, get_telegram_client
@@ -78,13 +79,16 @@ class _FakeSupabaseClient:
         self.rpc_data = rpc_data
         self.rpc_error = rpc_error
         self.rpc_calls: list[tuple[str, dict[str, Any]]] = []
+        self.update_ledger = FakeUpdateLedger()
 
     def table(self, name: str) -> Any:
         if name == "channel_identities":
             return self.channel_identities
         raise AssertionError(f"unexpected table: {name}")
 
-    def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
+    def rpc(self, fn: str, params: dict[str, Any]) -> Any:
+        if fn in UPDATE_RPCS:
+            return self.update_ledger.rpc(fn, params)
         self.rpc_calls.append((fn, params))
         if fn != "change_application_stage":
             raise AssertionError(f"unexpected rpc: {fn}")
@@ -158,7 +162,7 @@ def test_mark_applied_callback_changes_stage_and_confirms() -> None:
     assert params["p_application_id"] == _APPLICATION_ID
     assert params["p_new_status"] == "applied"
     assert params["p_user_id"] == _USER_ID
-    assert "Marked as *applied*." in telegram.sent[0][1]
+    assert "Marked as <b>applied</b>." in telegram.sent[0][1]
 
 
 def test_mark_applied_callback_application_not_found_sends_honest_error() -> None:

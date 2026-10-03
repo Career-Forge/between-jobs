@@ -9,6 +9,7 @@ test_api.py.
 
 from __future__ import annotations
 
+import html
 import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -17,6 +18,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
+from update_ledger_fakes import UPDATE_RPCS, FakeUpdateLedger
 
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_supabase, get_telegram_client
@@ -232,6 +234,9 @@ class _FakeSupabaseClient:
         self.rpc_data = rpc_data
         self.rpc_error = rpc_error
         self.rpc_calls: list[tuple[str, dict[str, Any]]] = []
+        # The P0.9 dedup claim is bookkeeping around every update, not part of what a
+        # handler test asserts about its own RPCs, so it has its own ledger.
+        self.update_ledger = FakeUpdateLedger()
 
     def table(self, name: str) -> Any:
         if name == "channel_identities":
@@ -254,7 +259,9 @@ class _FakeSupabaseClient:
             return self.working_sets
         raise AssertionError(f"unexpected table: {name}")
 
-    def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
+    def rpc(self, fn: str, params: dict[str, Any]) -> Any:
+        if fn in UPDATE_RPCS:
+            return self.update_ledger.rpc(fn, params)
         self.rpc_calls.append((fn, params))
         return _FakeRpcBuilder(self.rpc_data, self.rpc_error)
 
@@ -408,13 +415,15 @@ def test_setup_help_gives_work_authorization_real_guidance() -> None:
     for us_only_phrase in ("H-1B", "OPT", "green card", "United States"):
         assert us_only_phrase not in _SETUP_HELP_TEXT
 
-    fence = "```"
-    start = _SETUP_HELP_TEXT.index(fence) + len(fence)
-    end = _SETUP_HELP_TEXT.index(fence, start)
-    json_block = _SETUP_HELP_TEXT[start:end].strip()
+    # The block people copy is a <pre> with the "<...>" placeholders escaped; what lands in
+    # their clipboard is the unescaped text, so unescape it the way Telegram does.
+    start = _SETUP_HELP_TEXT.index("<pre>") + len("<pre>")
+    end = _SETUP_HELP_TEXT.index("</pre>", start)
+    json_block = html.unescape(_SETUP_HELP_TEXT[start:end]).strip()
 
     parsed = json.loads(json_block)  # still valid JSON with the new placeholder in place
     assert parsed["personal"]["work_authorization"] != ""
+    assert parsed["personal"]["name"] == "<Your Name>"
 
 
 def test_json_paste_creates_pending_version_and_sends_preview_with_buttons() -> None:
@@ -1165,3 +1174,130 @@ def test_unlink_from_a_telegram_only_account_changes_nothing() -> None:
     assert response.status_code == 200
     assert fake_supabase.channel_identities.delete_calls == 0
     assert "isn't linked" in fake_telegram.sent[0][1]
+
+
+# -- redelivered updates (P0.9) ------------------------------------------------------------
+# Telegram redelivers an update it got no 2xx for, and stops waiting on a slow handler (a
+# resume generation takes a minute) and sends it again while the first is still running.
+
+_JOB_PASTE = "Title: Staff AI Engineer\nCompany: Acme\n\nWe need a Python engineer."
+
+
+def _with_update_id(update: dict[str, Any], update_id: int) -> dict[str, Any]:
+    return {**update, "update_id": update_id}
+
+
+def test_the_same_update_delivered_twice_creates_exactly_one_application() -> None:
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    fake_telegram = _FakeTelegramClient()
+    update = _with_update_id(_message_update(_JOB_PASTE), 777)
+
+    first = _post(fake_supabase, fake_telegram, update)
+    second = _post(fake_supabase, fake_telegram, update)
+
+    assert first.json() == {"status": "ok"}
+    assert second.status_code == 200
+    assert second.json() == {"status": "duplicate"}
+    assert len(fake_supabase.jobs.insert_calls) == 1
+    assert len(fake_supabase.applications.insert_calls) == 1
+    assert len(fake_telegram.sent) == 1  # the user is answered once, not twice
+
+
+def test_different_updates_are_each_processed() -> None:
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    fake_telegram = _FakeTelegramClient()
+
+    _post(fake_supabase, fake_telegram, _with_update_id(_message_update(_JOB_PASTE), 1001))
+    _post(fake_supabase, fake_telegram, _with_update_id(_message_update(_JOB_PASTE), 1002))
+
+    assert len(fake_supabase.applications.insert_calls) == 2
+
+
+def test_a_finished_update_is_recorded_as_complete() -> None:
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+
+    _post(
+        fake_supabase,
+        _FakeTelegramClient(),
+        _with_update_id(_message_update(_JOB_PASTE), 5),
+    )
+
+    assert fake_supabase.update_ledger.rows[5]["completed"] is True
+
+
+def test_an_update_that_fails_is_released_so_telegrams_retry_is_processed() -> None:
+    """A 500 is how Telegram is asked to retry (the /link flow depends on it to finish a
+    half-done link). If the failed delivery's claim stayed, the retry would be dropped as a
+    duplicate and the user's message lost."""
+
+    class _FailsOnce(_FakeSimpleTable):
+        def __init__(self) -> None:
+            super().__init__()
+            self.failures_left = 1
+
+        def insert(self, data: dict[str, Any]) -> Any:
+            if self.failures_left:
+                self.failures_left -= 1
+                raise RuntimeError("supabase went away")
+            return super().insert(data)
+
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}], jobs=_FailsOnce()
+    )
+    fake_telegram = _FakeTelegramClient()
+    update = _with_update_id(_message_update(_JOB_PASTE), 42)
+
+    failed = _post(fake_supabase, fake_telegram, update)
+    assert failed.status_code == 500  # the app answers an unexpected error with a 500
+    assert 42 not in fake_supabase.update_ledger.rows  # released, not left claimed
+
+    retry = _post(fake_supabase, fake_telegram, update)
+
+    assert retry.json() == {"status": "ok"}
+    assert len(fake_supabase.applications.insert_calls) == 1
+    assert fake_supabase.update_ledger.rows[42]["completed"] is True
+
+
+def test_an_update_without_an_id_is_processed_and_never_touches_the_ledger() -> None:
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    update = _message_update(_JOB_PASTE)
+    del update["update_id"]
+
+    response = _post(fake_supabase, _FakeTelegramClient(), update)
+
+    assert response.json() == {"status": "ok"}
+    assert fake_supabase.update_ledger.claim_calls == []
+
+
+def test_dedup_that_cannot_be_asked_never_costs_the_user_their_message() -> None:
+    """The dedup is a safety net, not a gate: a database without the migration yet, or a
+    timeout, must not turn into dropped messages."""
+
+    class _LedgerDown:
+        def __init__(self) -> None:
+            self.claim_calls: list[int] = []
+
+        def rpc(self, name: str, params: dict[str, Any]) -> Any:
+            raise RuntimeError("function claim_telegram_update does not exist")
+
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    fake_supabase.update_ledger = _LedgerDown()  # type: ignore[assignment]
+
+    response = _post(
+        fake_supabase, _FakeTelegramClient(), _with_update_id(_message_update(_JOB_PASTE), 9)
+    )
+
+    assert response.json() == {"status": "ok"}
+    assert len(fake_supabase.applications.insert_calls) == 1
+
+
+def test_a_callback_query_update_is_deduplicated_too() -> None:
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    fake_telegram = _FakeTelegramClient()
+    update = _with_update_id(_callback_update("profile:cancel:nothing"), 321)
+
+    _post(fake_supabase, fake_telegram, update)
+    again = _post(fake_supabase, fake_telegram, update)
+
+    assert again.json() == {"status": "duplicate"}
+    assert fake_telegram.answered_callback_ids == ["cbq-1"]  # answered once

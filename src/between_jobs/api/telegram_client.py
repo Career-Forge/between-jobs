@@ -13,10 +13,14 @@ file API.
 
 from __future__ import annotations
 
+import html
+import logging
 import re
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 _BOT_USERNAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{4,31}")
 """Telegram's rule for a username: 5-32 characters, letters, digits and
@@ -35,6 +39,79 @@ def parse_bot_username(raw: str | None) -> str | None:
     return name
 
 
+# -- message text ---------------------------------------------------------------------
+#
+# Every message is sent with parse_mode "HTML", never left to Telegram's default. HTML only
+# needs three characters escaped (& < >), where MarkdownV2 needs eighteen, and a message
+# whose text Telegram cannot parse is rejected outright. So:
+#   - a plain `str` is TEXT: the client escapes it. Names, titles, error messages and
+#     anything else that came from outside can be passed as they are and can never be read
+#     as markup.
+#   - `Html` is MARKUP written by us (a template with <b>, <i>, <code>, <pre>), checked when
+#     it is built, so a template with a stray "<" or an unclosed tag fails at import and in
+#     the test run, not in a user's chat. Values go into a template through `render`, which
+#     escapes them.
+# <pre> and <code> render as tap-to-copy blocks in Telegram, which is what the resume
+# template message needs.
+
+_TAG = re.compile(r"<(/?)([a-z]+)>")
+_ALLOWED_TAGS = frozenset({"b", "i", "code", "pre"})
+_BARE_AMPERSAND = re.compile(r"&(?!(?:amp|lt|gt|quot|#\d+);)")
+
+
+def _check_markup(value: str) -> None:
+    open_tags: list[str] = []
+    for match in _TAG.finditer(value):
+        closing, name = match.group(1) == "/", match.group(2)
+        if name not in _ALLOWED_TAGS:
+            raise ValueError(f"<{name}> is not a tag Telegram messages here may use")
+        if not closing:
+            open_tags.append(name)
+        elif not open_tags or open_tags.pop() != name:
+            raise ValueError(f"</{name}> closes nothing that is open")
+    if open_tags:
+        raise ValueError(f"<{open_tags[-1]}> is never closed")
+    remainder = _TAG.sub("", value)
+    if "<" in remainder or ">" in remainder:
+        raise ValueError("a literal < or > must be written &lt; or &gt;")
+    if _BARE_AMPERSAND.search(remainder):
+        raise ValueError("a literal & must be written &amp;")
+
+
+class Html(str):
+    """Message text that is already Telegram HTML. See the note above."""
+
+    __slots__ = ()
+
+    def __new__(cls, value: str) -> Html:
+        _check_markup(value)
+        return super().__new__(cls, value)
+
+
+def escape(value: object) -> str:
+    """`value` as text that is safe to put inside an `Html` message."""
+    return html.escape(str(value), quote=False)
+
+
+def render(template: Html, **values: object) -> Html:
+    """Fills `template`'s {placeholders} with escaped `values`; the result is `Html`."""
+    return Html(template.format(**{key: escape(value) for key, value in values.items()}))
+
+
+def _plain_text_of(markup: str) -> str:
+    return html.unescape(_TAG.sub("", markup))
+
+
+def _is_entity_error(response: httpx.Response) -> bool:
+    if response.status_code != 400:
+        return False
+    try:
+        description = str(response.json().get("description", ""))
+    except ValueError:
+        return False
+    return "can't parse entities" in description
+
+
 class TelegramClient:
     def __init__(self, http: httpx.AsyncClient, bot_token: str) -> None:
         self._http = http
@@ -44,10 +121,20 @@ class TelegramClient:
     async def send_message(
         self, chat_id: int, text: str, *, reply_markup: dict[str, Any] | None = None
     ) -> None:
-        payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+        """Sends `text` as an HTML-mode message: escaped if it is a plain `str`, as written if
+        it is `Html`. If Telegram still cannot parse it (a bug in a template or a value that
+        slipped past `render`) the message is sent once more as plain text instead of being
+        lost -- a user who is told nothing is worse off than one who sees a stray tag."""
+        body = str(text) if isinstance(text, Html) else html.escape(text, quote=False)
+        payload: dict[str, Any] = {"chat_id": chat_id, "text": body, "parse_mode": "HTML"}
         if reply_markup is not None:
             payload["reply_markup"] = reply_markup
         response = await self._http.post(f"{self._base_url}/sendMessage", json=payload)
+        if _is_entity_error(response):
+            logger.warning("telegram could not parse a message; resending it as plain text")
+            payload["text"] = _plain_text_of(body)
+            del payload["parse_mode"]
+            response = await self._http.post(f"{self._base_url}/sendMessage", json=payload)
         response.raise_for_status()
 
     async def send_document(

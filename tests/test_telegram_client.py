@@ -16,7 +16,7 @@ from typing import Any
 import httpx
 import pytest
 
-from between_jobs.api.telegram_client import TelegramClient
+from between_jobs.api.telegram_client import Html, TelegramClient, escape, render
 
 _BOT_TOKEN = "test-token-not-real"
 
@@ -39,7 +39,7 @@ async def test_send_message_posts_chat_id_and_text() -> None:
     await telegram.send_message(123, "hello")
 
     assert captured["url"] == f"https://api.telegram.org/bot{_BOT_TOKEN}/sendMessage"
-    assert captured["body"] == {"chat_id": 123, "text": "hello"}
+    assert captured["body"] == {"chat_id": 123, "text": "hello", "parse_mode": "HTML"}
 
 
 async def test_send_message_includes_reply_markup_when_given() -> None:
@@ -173,3 +173,156 @@ async def test_download_document_chains_get_file_path_and_download_file() -> Non
     assert len(calls) == 2
     assert "bot" in calls[0] and "getFile" in calls[0]
     assert "file/bot" in calls[1]
+
+
+# -- parse_mode and escaping (P0.9) ---------------------------------------------------------
+
+
+async def test_every_message_is_sent_in_html_mode() -> None:
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"ok": True, "result": {}})
+
+    telegram = _client(handler)
+    await telegram.send_message(1, "plain")
+    await telegram.send_message(1, Html("<b>marked up</b>"))
+    await telegram.send_message(1, "with a keyboard", reply_markup={"inline_keyboard": []})
+
+    assert [b["parse_mode"] for b in bodies] == ["HTML", "HTML", "HTML"]
+
+
+async def test_plain_text_is_escaped_so_it_can_never_be_read_as_markup() -> None:
+    """Names, titles and error messages come from outside; `<b>` in a job title is text."""
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"ok": True, "result": {}})
+
+    await _client(handler).send_message(1, "C++ <Lead> & more: <b>x</b>")
+
+    assert captured["body"]["text"] == "C++ &lt;Lead&gt; &amp; more: &lt;b&gt;x&lt;/b&gt;"
+
+
+async def test_html_is_sent_as_written() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"ok": True, "result": {}})
+
+    await _client(handler).send_message(1, Html("Tap <code>this</code> &amp; copy"))
+
+    assert captured["body"]["text"] == "Tap <code>this</code> &amp; copy"
+
+
+async def test_a_message_telegram_cannot_parse_is_resent_once_as_plain_text() -> None:
+    """A user told nothing is worse off than one who sees a stray tag."""
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        if len(bodies) == 1:
+            return httpx.Response(
+                400,
+                json={
+                    "ok": False,
+                    "description": "Bad Request: can't parse entities: Unsupported start tag",
+                },
+            )
+        return httpx.Response(200, json={"ok": True, "result": {}})
+
+    await _client(handler).send_message(1, Html("Hello <b>there</b> &amp; welcome"))
+
+    assert len(bodies) == 2
+    assert bodies[1]["text"] == "Hello there & welcome"
+    assert "parse_mode" not in bodies[1]
+
+
+async def test_the_plain_text_retry_happens_once_and_a_second_failure_raises() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            400, json={"ok": False, "description": "Bad Request: can't parse entities"}
+        )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await _client(handler).send_message(1, "hello")
+
+    assert calls == 2  # the message, one plain-text retry, then it gives up
+
+
+async def test_a_different_bad_request_is_not_retried() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(400, json={"ok": False, "description": "chat not found"})
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await _client(handler).send_message(1, "hello")
+
+    assert calls == 1
+
+
+async def test_a_document_caption_stays_plain_text() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content
+        return httpx.Response(200, json={"ok": True, "result": {}})
+
+    await _client(handler).send_document(1, "r.pdf", b"%PDF", caption="Resume -- 1 < 2 & done")
+
+    assert b'name="parse_mode"' not in captured["body"]
+    assert b"1 < 2 & done" in captured["body"]
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        "<b>never closed",
+        "closed too early</b>",
+        "<i><b>crossed</i></b>",
+        '<a href="https://example.com">link</a>',
+        "<script>alert(1)</script>",
+        "1 < 2",
+        "a > b",
+        "fish & chips",
+        "<b >spaced</b>",
+    ],
+)
+def test_html_that_telegram_would_reject_fails_when_it_is_built(markup: str) -> None:
+    with pytest.raises(ValueError):
+        Html(markup)
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        "plain",
+        "<b>bold</b> and <i>italic</i> and <code>code</code>",
+        "<pre>a &lt;block&gt; &amp; more</pre>",
+        "caf\u00e9 &#38; &quot;quoted&quot;",
+        "{placeholders} are fine until rendered",
+    ],
+)
+def test_valid_html_is_accepted(markup: str) -> None:
+    assert Html(markup) == markup
+
+
+def test_render_escapes_every_value_and_returns_html() -> None:
+    out = render(Html("<b>{title}</b> at <b>{company}</b>"), title="A <Lead> & Co", company="x>y")
+
+    assert isinstance(out, Html)
+    assert out == "<b>A &lt;Lead&gt; &amp; Co</b> at <b>x&gt;y</b>"
+
+
+def test_escape_leaves_quotes_alone() -> None:
+    assert escape('say "hi" it\'s') == 'say "hi" it\'s'

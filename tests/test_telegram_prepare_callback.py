@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from update_ledger_fakes import UPDATE_RPCS, FakeUpdateLedger
 
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase, get_telegram_client
@@ -223,6 +224,7 @@ class _FakeSupabaseClient:
         self.resume_documents = _FakeTable(select_rows=[])
         self.bucket = _FakeBucket()
         self.storage = _FakeStorage(self.bucket)
+        self.update_ledger = FakeUpdateLedger()
 
     def table(self, name: str) -> Any:
         return {
@@ -238,7 +240,9 @@ class _FakeSupabaseClient:
             "resume_documents": self.resume_documents,
         }[name]
 
-    def rpc(self, fn: str, _params: dict[str, Any]) -> _FakeRpcBuilder:
+    def rpc(self, fn: str, _params: dict[str, Any]) -> Any:
+        if fn in UPDATE_RPCS:
+            return self.update_ledger.rpc(fn, _params)
         if fn == "decrypt_secret":
             return _FakeRpcBuilder("sk-or-v1-real-secret")
         raise AssertionError(f"unexpected rpc: {fn}")

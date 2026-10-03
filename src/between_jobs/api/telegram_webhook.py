@@ -31,7 +31,14 @@ Sprint 2.3/2.4 bridge never handled at all.
 
 Always returns 200 for a well-authenticated request, even for update
 shapes it doesn't handle -- Telegram retries on non-2xx, and there's
-nothing to retry here since not every update needs an action.
+nothing to retry here since not every update needs an action. (An
+unexpected exception still surfaces as a 500, which is how Telegram is
+asked to retry; see `telegram_webhook`'s claim of each update_id, P0.9,
+which stops a redelivery of an update that is still running or already
+done from being processed a second time.)
+
+Every message goes out in Telegram's HTML mode (`telegram_client`): a plain
+`str` is escaped, an `Html` template is sent as written.
 """
 
 from __future__ import annotations
@@ -79,9 +86,10 @@ from .profile_store import (
     delete_pending_version,
     get_active_version,
 )
-from .telegram_client import TelegramClient
+from .telegram_client import Html, TelegramClient, escape, render
 from .telegram_identity import CHANNEL, is_auto_provisioned, resolve_or_create_user_id
 from .telegram_identity import unlink as unlink_telegram_identity
+from .telegram_updates_store import claim_update, complete_update, release_update
 from .working_sets_store import (
     ReferenceOutOfRange,
     WorkingSetExpired,
@@ -158,18 +166,9 @@ application_events, event_outbox, artifact_versions, working_sets, and
 link_codes move too, but naming them in a chat message would just be
 noise."""
 
-_SETUP_HELP_TEXT = """🗂️ *Set up your resume (one-time)*
-
-I read resumes from a fixed JSON template -- deterministic, private, no AI guessing in the loop.
-
-*How:*
-1️⃣ Copy the JSON below.
-2️⃣ Paste it into ChatGPT/Claude with your real resume, and ask it to fill \
-the template in with your actual info.
-3️⃣ Send the filled JSON back to me -- as pasted text, or as a *.json* file.
-
-```
-{
+# The resume template people copy. Kept as plain text and escaped when the message is built,
+# so the "<...>" placeholders in it reach the user as "<...>" and not as markup.
+_RESUME_TEMPLATE_JSON = """{
   "personal": {
     "name": "<Your Name>",
     "headline": "<e.g. Software Engineer>",
@@ -213,41 +212,53 @@ the template in with your actual info.
   "achievements": [],
   "languages": [],
   "volunteering": []
-}
-```
-Sections shown empty above (publications, patents, certifications, \
-languages, volunteering, and links.scholar) are optional -- fill in \
-whichever apply to you and delete the rest. At least one of experience, \
-projects, publications, patents, or volunteering needs a real entry.
+}"""
 
-`work_authorization` wants your actual situation, not just your \
-citizenship -- a citizenship or nationality alone isn't a complete \
-answer, and what counts as complete looks different in every country.
+# Telegram HTML (see telegram_client): <b> for headings, <pre> and <code> for the blocks the
+# user is meant to copy, which Telegram renders as tap-to-copy.
+_SETUP_HELP_TEXT = Html(
+    "🗂️ <b>Set up your resume (one-time)</b>\n\n"
+    "I read resumes from a fixed JSON template -- deterministic, private, no AI guessing in "
+    "the loop.\n\n"
+    "<b>How:</b>\n"
+    "1️⃣ Copy the JSON below.\n"
+    "2️⃣ Paste it into ChatGPT/Claude with your real resume, and ask it to fill the template "
+    "in with your actual info.\n"
+    "3️⃣ Send the filled JSON back to me -- as pasted text, or as a <b>.json</b> file.\n\n"
+    "<pre>" + escape(_RESUME_TEMPLATE_JSON) + "</pre>\n"
+    "Sections shown empty above (publications, patents, certifications, languages, "
+    "volunteering, and links.scholar) are optional -- fill in whichever apply to you and "
+    "delete the rest. At least one of experience, projects, publications, patents, or "
+    "volunteering needs a real entry.\n\n"
+    "<code>work_authorization</code> wants your actual situation, not just your citizenship "
+    "-- a citizenship or nationality alone isn't a complete answer, and what counts as "
+    "complete looks different in every country.\n\n"
+    '<code>"pin"</code> on an experience/project/education entry (shown above as '
+    "<code>null</code>) is a manual choice, not something to fill in from your resume: set "
+    "it to <code>" + escape('{"mandatory": true, "min_bullets": 3}') + "</code> (min_bullets "
+    "1-6, optional) to force that entry into every generated resume regardless of relevance "
+    "-- up to 6 pinned entries total."
+)
 
-`"pin"` on an experience/project/education entry (shown above as `null`) \
-is a manual choice, not something to fill in from your resume: set it to \
-`{"mandatory": true, "min_bullets": 3}` (min_bullets 1-6, optional) to \
-force that entry into every generated resume regardless of relevance -- \
-up to 6 pinned entries total."""
+_TRACK_JOB_HELP_TEXT = Html(
+    "📋 <b>Track a job</b>\n\n"
+    "Send me the job in this format -- Title and Company are required, Location and URL are "
+    "optional:\n\n"
+    "<pre>"
+    + escape(
+        "Title: Staff AI Engineer\n"
+        "Company: Acme\n"
+        "Location: Remote\n"
+        "URL: https://example.com/jobs/123\n"
+        "\n"
+        "<paste the full job description here>"
+    )
+    + "</pre>\n"
+    "I don't fetch job postings from a link yet -- paste the description text along with the "
+    "URL, and I'll track both."
+)
 
-_TRACK_JOB_HELP_TEXT = """📋 *Track a job*
-
-Send me the job in this format -- Title and Company are required, \
-Location and URL are optional:
-
-```
-Title: Staff AI Engineer
-Company: Acme
-Location: Remote
-URL: https://example.com/jobs/123
-
-<paste the full job description here>
-```
-
-I don't fetch job postings from a link yet -- paste the description text \
-along with the URL, and I'll track both."""
-
-_JOB_TRACKED_TEXT = "✅ Tracking *{title}* at *{company}*."
+_JOB_TRACKED_TEXT = Html("✅ Tracking <b>{title}</b> at <b>{company}</b>.")
 _GENERATING_TEXT = "⏳ Generating your resume for this job -- this can take a minute..."
 _PREPARE_DECLINED_TEXT = "The resume engine didn't produce a resume for this job.\n\n{warnings}"
 _PREPARE_SUCCESS_CAPTION = "📄 Resume -- ATS score {score}/100{warnings}"
@@ -261,7 +272,7 @@ _REFERENCE_OUT_OF_RANGE_TEXT = '#{index} isn\'t on your list -- send "list" to s
 _STAGE_APPLIED_STATUS = "applied"
 _MARK_APPLIED_BUTTON_TEXT = "✅ Mark as applied"
 _MARK_APPLIED_PROMPT_TEXT = "Applying with this one?"
-_STAGE_CHANGED_TEXT = "✅ Marked as *{status}*."
+_STAGE_CHANGED_TEXT = Html("✅ Marked as <b>{status}</b>.")
 
 
 def _verify_webhook_secret(request: Request, expected: str = Depends(get_webhook_secret)) -> None:
@@ -422,7 +433,7 @@ async def _handle_job_paste(
     )
     await telegram.send_message(
         chat_id,
-        _JOB_TRACKED_TEXT.format(title=parsed["title"], company=parsed["company_name"]),
+        render(_JOB_TRACKED_TEXT, title=parsed["title"], company=parsed["company_name"]),
         reply_markup=_build_prepare_keyboard(application["id"]),
     )
 
@@ -785,7 +796,7 @@ async def _handle_callback(
                 new_status=new_status,
                 idempotency_key=f"telegram-stage:{uuid.uuid4()}",
             )
-            await telegram.send_message(chat_id, _STAGE_CHANGED_TEXT.format(status=new_status))
+            await telegram.send_message(chat_id, render(_STAGE_CHANGED_TEXT, status=new_status))
         except ApplicationNotFound:
             await telegram.send_message(chat_id, "❌ Couldn't find that application anymore.")
         except InvalidApplicationStatus:
@@ -798,15 +809,12 @@ async def _handle_callback(
     await telegram.answer_callback_query(callback_query["id"])
 
 
-@router.post("/telegram/webhook", dependencies=[Depends(_verify_webhook_secret)])
-async def telegram_webhook(
-    request: Request,
-    supabase: AsyncClient = Depends(get_supabase),
-    telegram: TelegramClient = Depends(get_telegram_client),
-    http: httpx.AsyncClient = Depends(get_http_client),
+async def _process_update(
+    supabase: AsyncClient,
+    telegram: TelegramClient,
+    http: httpx.AsyncClient,
+    update: dict[str, Any],
 ) -> dict[str, str]:
-    update = cast(dict[str, Any], await request.json())
-
     callback_query = update.get("callback_query")
     if isinstance(callback_query, dict):
         telegram_user_id = callback_query["from"]["id"]
@@ -825,3 +833,36 @@ async def telegram_webhook(
     user_id = await resolve_or_create_user_id(supabase, telegram_user_id)
     await _handle_message(supabase, http, user_id, telegram_user_id, telegram, chat_id, message)
     return {"status": "ok"}
+
+
+@router.post("/telegram/webhook", dependencies=[Depends(_verify_webhook_secret)])
+async def telegram_webhook(
+    request: Request,
+    supabase: AsyncClient = Depends(get_supabase),
+    telegram: TelegramClient = Depends(get_telegram_client),
+    http: httpx.AsyncClient = Depends(get_http_client),
+) -> dict[str, str]:
+    update = cast(dict[str, Any], await request.json())
+
+    # P0.9: Telegram redelivers an update it got no 2xx for, and gives up waiting on a
+    # slow handler too. The claim makes the second delivery a quick 200 instead of a
+    # second job, application and paid generation. It is released again if this delivery
+    # fails or is cancelled, so the retry a 500 asks for is processed, not dropped.
+    update_id = update.get("update_id")
+    claimed: bool | None = None
+    if isinstance(update_id, int) and not isinstance(update_id, bool):
+        claimed = await claim_update(supabase, update_id)
+        if claimed is False:
+            return {"status": "duplicate"}
+
+    finished = False
+    try:
+        response = await _process_update(supabase, telegram, http, update)
+        finished = True
+        return response
+    finally:
+        if claimed is True and isinstance(update_id, int):
+            if finished:
+                await complete_update(supabase, update_id)
+            else:
+                await release_update(supabase, update_id)
