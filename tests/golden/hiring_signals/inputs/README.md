@@ -90,12 +90,26 @@ Consistent replacement, so parsing paths still exercise the same shapes:
 - **Kept**: company names, company pages and their handles, role text, locations,
   salary text, and one public job id -- company and role facts are what the ATS-echo
   matching tests need. `HireHub.io` is a company page name, not a domain to hide.
-- **Everything else is verbatim public text.** Company and page names, role and
-  location text, hashtags, recruiter copy and search-snippet wording are as the index
-  returned them; the sanitization replaces identities, links and identifiers, not
-  prose. A snippet of a company's own hiring post can therefore be found by searching
-  its words, which is fine for an organization advertising a job and is the reason the
-  personal-text rows above were rewritten instead of only renamed.
+- **Person-authored prose was paraphrased by hand** (launch plan P0.13). Twenty-nine rows are
+  snippets or titles written by an individual -- a recruiter's or employee's own post,
+  a referral offer, a walk-in announcement, an event invite, a comment, a profile
+  headline -- and, kept verbatim next to a synthetic name, each could be found by
+  searching its words. They were rewritten so that what the parser keys on survives
+  (the relative-age prefix, hiring / referral / walk-in cues, role, company and
+  location text, dates, ellipses, link placeholders, the template shapes) and the prose
+  around it does not. Role titles, company names and places are facts and are shared
+  with the original; a rewritten row has no run of more than six words in common with
+  its source apart from the interface text LinkedIn itself adds ("Close menu.",
+  "Report this comment", "Like Comment. Share."), placeholders and hashtags. The
+  originals stay outside the repository. Templated copy that many different authors
+  post unchanged (the `Hiring for ... Job Requirements: 1 ... Apply Link:` aggregator
+  template, the Stripe internship text) and organization pages posting as themselves
+  were not rewritten: neither is one person's words.
+- **Everything else is public text as the index returned it.** Company and page names,
+  role and location text, hashtags, and an organization's own hiring copy; the
+  sanitization replaces identities, links and identifiers. A snippet of a company's own
+  hiring post can therefore be found by searching its words, which is fine for an
+  organization advertising a job.
 
 ## Audit of the committed file (and of what surrounds it)
 
@@ -111,7 +125,7 @@ grep -oE 'https?://[^/" ]+' search_hits.json | sort | uniq -c
 plus a scripted pass over every title and snippet for non-LinkedIn bare domains
 (only `example.com` variants and `HireHub.io`) and for digit runs of 7 or more
 (`20.09.2026`, a date, and `200040449`, a public job id -- no phone numbers), and a
-by-eye read of all 98 records. The scripts that build and edit the fixture assert
+by-eye read of all 98 records (re-done after the P0.13 paraphrase). The scripts that build and edit the fixture assert
 that no replaced real name, handle or id survives anywhere in the output, and a
 scratch-only denylist of every real name and handle seen in any capture was grepped
 across this fixture, this README, the parser module and the test file (the denylist
