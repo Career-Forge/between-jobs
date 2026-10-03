@@ -39,11 +39,21 @@ class _Answers:
         return _Call()
 
 
-async def test_the_first_claim_wins_and_a_second_is_a_duplicate() -> None:
+async def test_a_claim_is_exclusive_until_the_update_is_done() -> None:
     supabase = _Supabase(FakeUpdateLedger())
 
-    assert await claim_update(supabase, 1) is True  # type: ignore[arg-type]
-    assert await claim_update(supabase, 1) is False  # type: ignore[arg-type]
+    assert await claim_update(supabase, 1, lease_seconds=120) == "claimed"  # type: ignore[arg-type]
+    assert await claim_update(supabase, 1, lease_seconds=120) == "in_progress"  # type: ignore[arg-type]
+    await complete_update(supabase, 1)  # type: ignore[arg-type]
+    assert await claim_update(supabase, 1, lease_seconds=120) == "done"  # type: ignore[arg-type]
+
+
+async def test_the_lease_is_sent_with_the_claim() -> None:
+    answers = _Answers(data="claimed")
+
+    await claim_update(answers, 5, lease_seconds=600)  # type: ignore[arg-type]
+
+    assert answers.calls == [("claim_telegram_update", {"p_update_id": 5, "p_lease_seconds": 600})]
 
 
 async def test_complete_and_release_use_the_update_id() -> None:
@@ -59,17 +69,19 @@ async def test_complete_and_release_use_the_update_id() -> None:
     ]
 
 
-@pytest.mark.parametrize("data", [None, [], "true", 1, 0, {"claimed": True}])
-async def test_an_answer_that_is_not_a_boolean_means_could_not_tell(data: object) -> None:
-    """None must not read as "duplicate": that would drop a message because the bookkeeping
-    answered oddly."""
-    assert await claim_update(_Answers(data=data), 1) is None  # type: ignore[arg-type]
+@pytest.mark.parametrize(
+    "data", [None, [], True, False, "true", "CLAIMED", "expired", 1, 0, {"state": "claimed"}]
+)
+async def test_an_answer_that_is_not_a_known_state_means_could_not_tell(data: object) -> None:
+    """None, or the booleans the function used to return, must not read as "done" or
+    "in progress": that would drop a message because the bookkeeping answered oddly."""
+    assert await claim_update(_Answers(data=data), 1, lease_seconds=120) is None  # type: ignore[arg-type]
 
 
 async def test_a_failing_claim_means_could_not_tell_not_an_exception() -> None:
     answers = _Answers(error=RuntimeError("function does not exist"))
 
-    assert await claim_update(answers, 1) is None  # type: ignore[arg-type]
+    assert await claim_update(answers, 1, lease_seconds=120) is None  # type: ignore[arg-type]
 
 
 async def test_a_failing_complete_or_release_is_swallowed() -> None:

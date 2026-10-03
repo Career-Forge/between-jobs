@@ -9,6 +9,7 @@ test_api.py.
 
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 from datetime import UTC, datetime, timedelta
@@ -1301,3 +1302,109 @@ def test_a_callback_query_update_is_deduplicated_too() -> None:
 
     assert again.json() == {"status": "duplicate"}
     assert fake_telegram.answered_callback_ids == ["cbq-1"]  # answered once
+
+
+# -- an update that is still being processed (P0.9 review) ----------------------------------
+
+
+def test_a_redelivery_while_the_first_is_unfinished_is_not_answered_with_a_200() -> None:
+    """If the delivery holding the claim died with its process, nothing will ever finish the
+    update, and a 200 would tell Telegram to stop redelivering it -- losing the update and
+    defeating the /link resume. A non-2xx keeps Telegram retrying."""
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    fake_telegram = _FakeTelegramClient()
+    asyncio.run(fake_supabase.update_ledger.claim(55))  # the first delivery, unfinished
+
+    response = _post(fake_supabase, fake_telegram, _with_update_id(_message_update(_JOB_PASTE), 55))
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "30"
+    assert fake_supabase.applications.insert_calls == []  # nothing processed
+    assert fake_telegram.sent == []
+    assert 55 in fake_supabase.update_ledger.rows  # and the first delivery's claim is untouched
+
+
+def test_a_redelivery_after_the_lease_ran_out_takes_the_update_over() -> None:
+    """The process that held the claim is gone; Telegram is still retrying; the lease has run
+    out, so this delivery is processed."""
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    ledger = fake_supabase.update_ledger
+    asyncio.run(ledger.claim(56))
+    asyncio.run(ledger.age(56, 121))  # past the 120 s lease of an ordinary update
+
+    response = _post(
+        fake_supabase, _FakeTelegramClient(), _with_update_id(_message_update(_JOB_PASTE), 56)
+    )
+
+    assert response.json() == {"status": "ok"}
+    assert len(fake_supabase.applications.insert_calls) == 1
+    assert ledger.rows[56]["completed"] is True
+
+
+def test_ordinary_updates_get_a_short_lease_and_a_resume_generation_a_long_one() -> None:
+    """A lease must outlast the handler it protects (a generation can run 4-5 minutes) and
+    still expire while Telegram is retrying a crashed quick one."""
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    telegram = _FakeTelegramClient()
+
+    _post(fake_supabase, telegram, _with_update_id(_message_update(_JOB_PASTE), 61))
+    _post(fake_supabase, telegram, _with_update_id(_message_update("list"), 62))
+    _post(fake_supabase, telegram, _with_update_id(_message_update("apply to #3"), 63))
+
+    leases = dict(
+        zip(
+            fake_supabase.update_ledger.claim_calls,
+            fake_supabase.update_ledger.leases,
+            strict=True,
+        )
+    )
+    assert leases == {61: 120, 62: 120, 63: 600}
+
+
+def test_the_generate_button_gets_the_long_lease() -> None:
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+
+    _post(
+        fake_supabase,
+        _FakeTelegramClient(),
+        _with_update_id(_callback_update("app:prepare:not-a-real-application"), 71),
+    )
+
+    assert fake_supabase.update_ledger.leases == [600]
+
+
+async def test_the_claim_is_settled_even_when_the_request_is_already_cancelled() -> None:
+    """A client disconnect cancels the request through an anyio scope, where an unshielded
+    await in `finally` is cancelled again at once -- the release would never run and the
+    claim would sit out its lease, making Telegram's retry wait."""
+    import anyio
+
+    from between_jobs.api.telegram_webhook import _settle_claim
+
+    ledger = FakeUpdateLedger()
+
+    class _Network:
+        """Real calls have await points where a cancelled scope raises again; the in-memory
+        ledger has none, so give it one."""
+
+        def rpc(self, name: str, params: dict[str, Any]) -> Any:
+            inner = ledger.rpc(name, params)
+
+            class _Call:
+                async def execute(self) -> Any:
+                    await anyio.sleep(0)
+                    return await inner.execute()
+
+            return _Call()
+
+    supabase = _Network()
+    await ledger.claim(1)
+    await ledger.claim(2)
+
+    with anyio.CancelScope() as scope:
+        scope.cancel()
+        await _settle_claim(supabase, 1, finished=False)  # type: ignore[arg-type]
+        await _settle_claim(supabase, 2, finished=True)  # type: ignore[arg-type]
+
+    assert 1 not in ledger.rows  # released
+    assert ledger.rows[2]["completed"] is True

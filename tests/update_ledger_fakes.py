@@ -19,7 +19,8 @@ _DAY = 86400.0
 
 
 class LedgerUnderTest(Protocol):
-    async def claim(self, update_id: int, lease_seconds: int = 600) -> bool: ...
+    async def claim(self, update_id: int, lease_seconds: int = 600) -> str:
+        """'claimed', 'done' or 'in_progress'."""
 
     async def complete(self, update_id: int) -> None: ...
 
@@ -37,11 +38,13 @@ class FakeUpdateLedger:
         self.rows: dict[int, dict[str, Any]] = {}
         self.now = 0.0
         self.claim_calls: list[int] = []
+        self.leases: list[int] = []
 
-    async def claim(self, update_id: int, lease_seconds: int = 600) -> bool:
+    async def claim(self, update_id: int, lease_seconds: int = 600) -> str:
         if not 1 <= lease_seconds <= 86400:
             raise ValueError("p_lease_seconds must be between 1 and 86400")
         self.claim_calls.append(update_id)
+        self.leases.append(lease_seconds)
         for stale in [
             uid for uid, row in self.rows.items() if row["claimed_at"] < self.now - 7 * _DAY
         ][:200]:
@@ -49,11 +52,11 @@ class FakeUpdateLedger:
         row = self.rows.get(update_id)
         if row is None:
             self.rows[update_id] = {"claimed_at": self.now, "completed": False}
-            return True
+            return "claimed"
         if not row["completed"] and row["claimed_at"] <= self.now - lease_seconds:
             row["claimed_at"] = self.now
-            return True
-        return False
+            return "claimed"
+        return "done" if row["completed"] else "in_progress"
 
     async def complete(self, update_id: int) -> None:
         if update_id in self.rows:
@@ -91,10 +94,10 @@ class FakeUpdateLedger:
         return _Call()
 
 
-async def run_scenario(ledger: LedgerUnderTest) -> list[tuple[str, int, bool | None]]:
+async def run_scenario(ledger: LedgerUnderTest) -> list[tuple[str, int, str | bool]]:
     """Drives `ledger` through every rule; returns what it answered to each claim as
     (step, update id, answer) for the caller to compare with SCENARIO_EXPECTED."""
-    seen: list[tuple[str, int, bool | None]] = []
+    seen: list[tuple[str, int, str | bool]] = []
 
     async def claim(step: str, uid: int, lease: int = 600) -> None:
         seen.append((step, uid, await ledger.claim(uid, lease)))
@@ -142,21 +145,21 @@ async def run_scenario(ledger: LedgerUnderTest) -> list[tuple[str, int, bool | N
     return seen
 
 
-SCENARIO_EXPECTED: list[tuple[str, int, bool | None]] = [
-    ("first delivery", 1, True),
-    ("redelivery while running", 1, False),
-    ("redelivery after completion", 1, False),
-    ("before release", 2, True),
-    ("after release", 2, True),
-    ("crashed delivery", 3, True),
-    ("inside the lease", 3, False),
-    ("lease run out", 3, True),
-    ("short lease", 4, True),
-    ("short lease run out", 4, True),
-    ("never claimed", 5, True),
-    ("to complete", 6, True),
-    ("release after completion", 6, False),
-    ("old row", 7, True),
-    ("triggers the purge", 8, True),
+SCENARIO_EXPECTED: list[tuple[str, int, str | bool]] = [
+    ("first delivery", 1, "claimed"),
+    ("redelivery while running", 1, "in_progress"),
+    ("redelivery after completion", 1, "done"),
+    ("before release", 2, "claimed"),
+    ("after release", 2, "claimed"),
+    ("crashed delivery", 3, "claimed"),
+    ("inside the lease", 3, "in_progress"),
+    ("lease run out", 3, "claimed"),
+    ("short lease", 4, "claimed"),
+    ("short lease run out", 4, "claimed"),
+    ("never claimed", 5, "claimed"),
+    ("to complete", 6, "claimed"),
+    ("release after completion", 6, "done"),
+    ("old row", 7, "claimed"),
+    ("triggers the purge", 8, "claimed"),
     ("old row is gone", 7, False),
 ]

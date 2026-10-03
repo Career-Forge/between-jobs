@@ -44,13 +44,13 @@ class _RealLedger:
     def _id(self, update_id: int) -> int:
         return self.base + update_id
 
-    async def claim(self, update_id: int, lease_seconds: int = 600) -> bool:
+    async def claim(self, update_id: int, lease_seconds: int = 600) -> str:
         result = await self._world.sb.rpc(
             "claim_telegram_update",
             {"p_update_id": self._id(update_id), "p_lease_seconds": lease_seconds},
         ).execute()
-        assert result.data is True or result.data is False, result.data
-        return bool(result.data)
+        assert result.data in ("claimed", "done", "in_progress"), result.data
+        return str(result.data)
 
     async def complete(self, update_id: int) -> None:
         await self._world.sb.rpc(
@@ -106,7 +106,7 @@ async def test_eight_deliveries_of_the_same_update_at_once_produce_one_owner(
     and then find the WHERE false. No 23505 may escape."""
     answers = await asyncio.gather(*(ledger.claim(1) for _ in range(8)))
 
-    assert sorted(answers) == [False] * 7 + [True]
+    assert sorted(answers) == ["claimed"] + ["in_progress"] * 7
 
 
 async def test_eight_deliveries_racing_for_an_expired_claim_produce_one_owner(
@@ -117,7 +117,7 @@ async def test_eight_deliveries_racing_for_an_expired_claim_produce_one_owner(
 
     answers = await asyncio.gather(*(ledger.claim(1) for _ in range(8)))
 
-    assert sorted(answers) == [False] * 7 + [True]
+    assert sorted(answers) == ["claimed"] + ["in_progress"] * 7
 
 
 async def test_a_completed_update_is_never_taken_over_however_old(ledger: _RealLedger) -> None:
@@ -125,7 +125,7 @@ async def test_a_completed_update_is_never_taken_over_however_old(ledger: _RealL
     await ledger.complete(1)
     await ledger.age(1, 6 * 86400)  # still inside the 7 days a row is kept
 
-    assert await ledger.claim(1, 1) is False  # even with a 1 second lease
+    assert await ledger.claim(1, 1) == "done"  # even with a 1 second lease
 
 
 @pytest.mark.parametrize("lease", [0, -1, 86401, None])
@@ -142,15 +142,29 @@ async def test_an_absurd_lease_is_an_error_not_a_claim(
 
 
 async def test_the_default_lease_is_ten_minutes(ledger: _RealLedger, world: World) -> None:
-    result = await world.sb.rpc("claim_telegram_update", {"p_update_id": ledger.base + 1}).execute()
-    assert result.data is True
+    async def claim_with_default() -> Any:
+        result = await world.sb.rpc(
+            "claim_telegram_update", {"p_update_id": ledger.base + 1}
+        ).execute()
+        return result.data
+
+    assert await claim_with_default() == "claimed"
     await ledger.age(1, 599)
-    assert await ledger.claim(1, 600) is False  # explicit 600 agrees: not yet expired
-    again = await world.sb.rpc("claim_telegram_update", {"p_update_id": ledger.base + 1}).execute()
-    assert again.data is False  # the default lease: 599 s old is still inside it
+    assert await claim_with_default() == "in_progress"  # 599 s old is inside the default
     await ledger.age(1, 2)
-    final = await world.sb.rpc("claim_telegram_update", {"p_update_id": ledger.base + 1}).execute()
-    assert final.data is True  # 601 s old: expired under the default
+    assert await claim_with_default() == "claimed"  # 601 s old: expired under the default
+
+
+async def test_a_claim_released_between_the_conflict_and_the_lookup_reads_as_in_progress(
+    ledger: _RealLedger, world: World
+) -> None:
+    """The function looks the row up after losing the insert; if the holder released it in
+    between, the row is gone. That must read as "not done" (Telegram's next retry claims it),
+    never as "done"."""
+    assert await ledger.claim(1) == "claimed"
+    await ledger.release(1)
+
+    assert await ledger.claim(1) == "claimed"  # the plain case: released means free
 
 
 async def test_the_purge_is_bounded_per_claim(ledger: _RealLedger, world: World) -> None:

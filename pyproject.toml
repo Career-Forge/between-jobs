@@ -18,6 +18,7 @@ dependencies = [
     "asyncpg>=0.29",
     "openai>=1.50",
     "cryptography>=43",
+    "anyio>=4.0",
 ]
 
 [project.urls]

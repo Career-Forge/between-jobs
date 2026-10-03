@@ -48,6 +48,7 @@ import logging
 import uuid
 from typing import Any, cast
 
+import anyio
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from postgrest.exceptions import APIError
@@ -253,7 +254,7 @@ _TRACK_JOB_HELP_TEXT = Html(
         "\n"
         "<paste the full job description here>"
     )
-    + "</pre>\n"
+    + "</pre>\n\n"
     "I don't fetch job postings from a link yet -- paste the description text along with the "
     "URL, and I'll track both."
 )
@@ -617,7 +618,10 @@ async def _handle_link_command(
     # emptied source account -- is finished before replying, so a crash in
     # it means no reply, Telegram redelivers, and the same code resumes it
     # (consume_link_code recognizes it) instead of leaving the source
-    # stranded behind a "Linked!" nobody will ever resend.
+    # stranded behind a "Linked!" nobody will ever resend. (The update's
+    # claim, P0.9, keeps that working: until the crashed delivery's lease runs
+    # out Telegram's retries are answered 503, not 200, so it keeps retrying;
+    # then the retry takes the update over.)
     completion = await _finish_link(
         supabase,
         source_user_id=source_user_id,
@@ -809,6 +813,42 @@ async def _handle_callback(
     await telegram.answer_callback_query(callback_query["id"])
 
 
+# How long an unfinished claim holds before a redelivery may take the update over (see
+# `claim_telegram_update`). Long enough that a live handler is never taken over, short enough
+# that a handler whose process died is picked up while Telegram is still retrying. Most updates
+# finish in a second or two; the resume generation does an engine call of up to 180 s and up to
+# two 30 s compiles, so it gets a lease that clears all of that.
+_LEASE_SECONDS = 120
+_SLOW_LEASE_SECONDS = 600
+_SETTLE_TIMEOUT_SECONDS = 10.0
+
+
+def _lease_seconds_for(update: dict[str, Any]) -> int:
+    callback_query = update.get("callback_query")
+    if isinstance(callback_query, dict):
+        data = callback_query.get("data")
+        if isinstance(data, str) and data.startswith(_PREPARE_PREFIX):
+            return _SLOW_LEASE_SECONDS
+    message = update.get("message")
+    if isinstance(message, dict):
+        text = message.get("text") or message.get("caption") or ""
+        if isinstance(text, str) and parse_apply_reference(text) is not None:
+            return _SLOW_LEASE_SECONDS
+    return _LEASE_SECONDS
+
+
+async def _settle_claim(supabase: AsyncClient, update_id: int, *, finished: bool) -> None:
+    """Completes the update's claim, or releases it if the handler did not finish. Shielded
+    and bounded: this runs in a `finally` that a client disconnect can reach through a
+    cancelled anyio scope, where an unshielded await is cancelled again at once and the claim
+    would be left to wait out its lease. Neither call raises (the store swallows and logs)."""
+    with anyio.CancelScope(shield=True), anyio.move_on_after(_SETTLE_TIMEOUT_SECONDS):
+        if finished:
+            await complete_update(supabase, update_id)
+        else:
+            await release_update(supabase, update_id)
+
+
 async def _process_update(
     supabase: AsyncClient,
     telegram: TelegramClient,
@@ -845,15 +885,26 @@ async def telegram_webhook(
     update = cast(dict[str, Any], await request.json())
 
     # P0.9: Telegram redelivers an update it got no 2xx for, and gives up waiting on a
-    # slow handler too. The claim makes the second delivery a quick 200 instead of a
+    # slow handler too. The claim makes the second delivery a quick answer instead of a
     # second job, application and paid generation. It is released again if this delivery
     # fails or is cancelled, so the retry a 500 asks for is processed, not dropped.
     update_id = update.get("update_id")
-    claimed: bool | None = None
+    claimed = False
     if isinstance(update_id, int) and not isinstance(update_id, bool):
-        claimed = await claim_update(supabase, update_id)
-        if claimed is False:
+        state = await claim_update(supabase, update_id, lease_seconds=_lease_seconds_for(update))
+        if state == "done":
             return {"status": "duplicate"}
+        if state == "in_progress":
+            # NOT a 200: if the delivery that holds the claim died with its process, nothing
+            # will ever finish this update, and a 200 would tell Telegram to stop
+            # redelivering it. A non-2xx keeps it retrying until that delivery completes
+            # (then 'done') or its lease runs out (then this update is claimed and processed).
+            raise HTTPException(
+                status_code=503,
+                detail="this update is still being processed",
+                headers={"Retry-After": "30"},
+            )
+        claimed = state == "claimed"
 
     finished = False
     try:
@@ -861,8 +912,5 @@ async def telegram_webhook(
         finished = True
         return response
     finally:
-        if claimed is True and isinstance(update_id, int):
-            if finished:
-                await complete_update(supabase, update_id)
-            else:
-                await release_update(supabase, update_id)
+        if claimed and isinstance(update_id, int):
+            await _settle_claim(supabase, update_id, finished=finished)
