@@ -512,6 +512,7 @@ def _registry_row(**overrides: Any) -> dict[str, Any]:
         "salary_currency": "USD",
         "sponsorship_signal": "unknown",
         "snippet": "Great backend role.",
+        "link_fresh": True,
     }
     base.update(overrides)
     return base
@@ -529,7 +530,34 @@ async def test_fetch_registry_lane_maps_fields_and_forces_tier_1() -> None:
     assert r.company == "Acme"
     assert r.source_tier == 1.0  # always tier 1, unconditionally
     assert r.salary_min == 120000
-    assert r.link_checked is True  # never routed through ats_liveness
+    assert r.link_checked is True  # the database said the link is fresh (P0.8)
+
+
+async def test_fetch_registry_lane_link_checked_follows_the_databases_link_fresh() -> None:
+    """P0.8: a fresh posting on a recently polled board is checked; one on a board that
+    was not polled in time (or has been failing) is still returned, just not checked."""
+    supabase = _FakeSupabase(
+        [
+            _registry_row(apply_url="https://boards.greenhouse.io/acme/jobs/1", link_fresh=True),
+            _registry_row(apply_url="https://boards.greenhouse.io/acme/jobs/2", link_fresh=False),
+        ]
+    )
+
+    results = await fetch_registry_lane(supabase, query="engineer")  # type: ignore[arg-type]
+
+    assert [(r.apply_url[-1], r.link_checked) for r in results] == [("1", True), ("2", False)]
+    assert all(r.provider == "registry" and r.source_tier == 1.0 for r in results)
+
+
+async def test_fetch_registry_lane_row_without_link_fresh_fails_loudly() -> None:
+    """A function that stops returning the column must break the lane, not quietly turn every
+    posting into "not verified" (or, worse, back into "verified")."""
+    row = _registry_row()
+    del row["link_fresh"]
+    supabase = _FakeSupabase([row])
+
+    with pytest.raises(KeyError, match="link_fresh"):
+        await fetch_registry_lane(supabase, query="engineer")  # type: ignore[arg-type]
 
 
 async def test_fetch_registry_lane_passes_query_and_limit_through() -> None:

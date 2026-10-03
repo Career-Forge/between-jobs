@@ -56,8 +56,9 @@ _LIVENESS_CANDIDATE_CAP = 50
 get a real per-platform liveness check -- comfortably above P6's own
 30-job scoring cap so a scored batch of 30 ALIVE jobs is still likely
 even if several of the top candidates turn out dead. Registry-lane
-results never count against this cap and are never probed at all (see
-`fetch_registry_lane`'s own `link_checked=True`) -- registry results
+results never count against this cap and are never probed at all (they are
+routed on `provider == "registry"`, whether or not `fetch_registry_lane` marked them
+link-checked) -- registry results
 sort ahead of most live-search-lane results (tier 1.0), so counting them
 against this cap would silently starve the live-search-lane's own
 liveness budget, the one thing this cap actually exists to protect.
@@ -208,11 +209,11 @@ async def search_discover(
         remote_only=remote_only,
     )
 
-    # Registry-lane results (`link_checked=True` already, stamped by
-    # fetch_registry_lane) never go through verify_liveness -- they
-    # already get liveness for free from the poller's own absence-based
-    # mechanism, and ats_liveness's own module docstring says it's never
-    # meant to run on them. Only the live-search-lane subset competes for
+    # Registry-lane results never go through verify_liveness, whether or not
+    # fetch_registry_lane marked them link-checked (P0.8: that depends on how
+    # recently their board was polled) -- the poller's own absence-based
+    # mechanism is their liveness signal, and ats_liveness's own module
+    # docstring says it's never meant to run on them. Only the live-search-lane subset competes for
     # _LIVENESS_CANDIDATE_CAP, so registry volume can never dilute the
     # budget the live-search-lane actually needs it for.
     live_candidates = [r for r in combined if r.provider != "registry"]

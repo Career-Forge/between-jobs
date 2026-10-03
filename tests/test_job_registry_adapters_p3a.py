@@ -568,3 +568,35 @@ async def test_fetch_deshaw_server_error_is_failed() -> None:
         _http(lambda r: httpx.Response(500)), _company(ats_type="deshaw", slug="deshaw")
     )
     assert result.status == "failed"
+
+
+# ── No conditional requests on paginated adapters (P0.8) ─────────────────
+# The poller reads a 304 as "the whole board is unchanged" and refreshes every active
+# posting's last_seen. A 304 on page 0 of a paged listing says nothing about page 1, so
+# these two never send If-None-Match -- even when an etag is stored from before.
+
+
+async def test_fetch_smartrecruiters_never_sends_if_none_match() -> None:
+    seen: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("if-none-match"))
+        return httpx.Response(
+            200, headers={"etag": '"new"'}, json={"content": [], "totalFound": 0, "offset": 0}
+        )
+
+    await fetch_smartrecruiters(_http(handler), _company(etag='"stored"'))
+
+    assert seen == [None]
+
+
+async def test_fetch_amazon_never_sends_if_none_match() -> None:
+    seen: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("if-none-match"))
+        return httpx.Response(200, json={"jobs": []})
+
+    await fetch_amazon(_http(handler), _company(ats_type="amazon", etag='"stored"'))
+
+    assert seen == [None]

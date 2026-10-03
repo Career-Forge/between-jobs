@@ -64,6 +64,7 @@ _REGISTRY_POSTING_ROW = {
     "salary_max": None,
     "salary_currency": None,
     "sponsorship_signal": "unknown",
+    "link_fresh": True,
 }
 
 
@@ -467,6 +468,31 @@ def test_search_discover_never_probes_a_registry_result_for_liveness(
     assert body["dead_removed"] == 0
     assert len(body["scored"]) == 1
     assert body["scored"][0]["link_checked"] is True
+    registry_url = str(_REGISTRY_POSTING_ROW["apply_url"])
+    assert not any(registry_url in call for call in http.get_calls)
+    assert not any(registry_url in url for _method, url in http.request_calls)
+
+
+def test_search_discover_unverified_registry_result_is_scored_unverified_and_never_probed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P0.8: a registry posting whose board has not been polled recently comes back from the
+    database with link_fresh false. It is still a real (inside-the-window) result, shown as
+    "not yet link-verified" -- and, like every registry result, never sent to the live-search
+    lane's per-platform liveness probe, which would waste that lane's budget on it."""
+    _patch_llm(monkeypatch, _SCORE_LLM_RESPONSE)
+    row = {**_REGISTRY_POSTING_ROW, "link_fresh": False}
+    supabase = _FakeSupabaseClient(registry_postings=[row])
+    http = _FakeHttpClient(liveness_status=404)
+    client = _client(supabase, http)
+
+    response = client.get("/discover", params={"q": "backend engineer"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dead_removed"] == 0
+    assert len(body["scored"]) == 1
+    assert body["scored"][0]["link_checked"] is False
     registry_url = str(_REGISTRY_POSTING_ROW["apply_url"])
     assert not any(registry_url in call for call in http.get_calls)
     assert not any(registry_url in url for _method, url in http.request_calls)

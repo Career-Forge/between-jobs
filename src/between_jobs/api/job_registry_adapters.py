@@ -712,8 +712,11 @@ async def fetch_smartrecruiters(http: httpx.AsyncClient, company: DueCompany) ->
             f"https://api.smartrecruiters.com/v1/companies/{company.slug}/postings"
             f"?limit={_SMARTRECRUITERS_PAGE_SIZE}&offset={offset}"
         )
-        etag = company.etag if page == 0 else ""
-        response = await _get_with_conditional_etag(http, url, etag)
+        # Never conditional. A 304 on page 0 says nothing about the later pages, and the
+        # poller reads a 304 as "the whole board is unchanged" and refreshes every active
+        # posting's last_seen (P0.8) -- which would keep a gone posting on an unfetched
+        # page looking live for ever. Only single-request adapters send If-None-Match.
+        response = await _get_with_conditional_etag(http, url, "")
         if response is None:
             if page == 0:
                 return _failed()
@@ -838,8 +841,11 @@ async def fetch_amazon(http: httpx.AsyncClient, company: DueCompany) -> AdapterR
     offset = 0
     for page in range(_AMAZON_MAX_PAGES):
         url = f"https://www.amazon.jobs/en/search.json?offset={offset}&result_limit={_AMAZON_PAGE_SIZE}"
-        etag = company.etag if page == 0 else ""
-        response = await _get_with_conditional_etag(http, url, etag)
+        # Never conditional. A 304 on page 0 says nothing about the later pages, and the
+        # poller reads a 304 as "the whole board is unchanged" and refreshes every active
+        # posting's last_seen (P0.8) -- which would keep a gone posting on an unfetched
+        # page looking live for ever. Only single-request adapters send If-None-Match.
+        response = await _get_with_conditional_etag(http, url, "")
         if response is None:
             if page == 0:
                 return _failed()

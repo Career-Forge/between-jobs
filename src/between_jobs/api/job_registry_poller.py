@@ -149,6 +149,16 @@ _EIGHTFOLD_JD_BACKFILL_MIN_JD_LENGTH = 50
 # then closes nothing.
 _PAGINATED_ATS_TYPES = frozenset({"google"})
 
+# The adapters whose whole listing is one request, so a 304 on it means every posting the
+# board still lists is unchanged and confirmed live. SmartRecruiters and Amazon page their
+# listing and never send If-None-Match (a 304 on page 0 says nothing about page 1); a new
+# etag-sending adapter belongs here only if that holds for it too.
+_ETAG_COVERS_WHOLE_BOARD = frozenset({"greenhouse", "lever", "ashby", "workable", "recruitee"})
+
+# Boards per `confirm_job_registry_boards` call, so one very large board cannot use the
+# whole 60 s statement budget that a call shares between its boards.
+_CONFIRM_BOARDS_PER_CALL = 20
+
 
 async def select_due_companies(supabase: AsyncClient) -> list[DueCompany]:
     result = await supabase.rpc("select_due_job_registry_companies", {}).execute()
@@ -222,6 +232,23 @@ async def _upsert_batch_with_retry(
     return await retry_on_statement_timeout(_op, max_attempts=_MAX_UPSERT_ATTEMPTS)
 
 
+async def _confirm_unchanged_boards(supabase: AsyncClient, boards: list[str]) -> None:
+    """Refreshes `last_seen` on the active postings of boards that answered 304 (P0.8):
+    without it a perfectly live, quiet board would age out of the registry lane's
+    7-day freshness window. Best effort, deliberately: if it fails the postings merely
+    keep their older `last_seen`, the next 304 tick tries again, and failing here must
+    not stop this tick's poll-state bookkeeping from running."""
+    for start in range(0, len(boards), _CONFIRM_BOARDS_PER_CALL):
+        chunk = boards[start : start + _CONFIRM_BOARDS_PER_CALL]
+        try:
+            await _bookkeeping_rpc(supabase, "confirm_job_registry_boards", {"boards": chunk})
+        except Exception:
+            logger.exception(
+                "could not refresh last_seen for boards that answered not-modified",
+                extra={"ctx": {"boards": len(chunk)}},
+            )
+
+
 async def _bookkeeping_rpc(supabase: AsyncClient, name: str, params: dict[str, Any]) -> None:
     """One of the tick's bookkeeping calls, retried on a statement timeout
     like the upsert. A timed-out statement was cancelled and rolled back, so
@@ -291,6 +318,7 @@ async def run_poll_tick(http: httpx.AsyncClient, supabase: AsyncClient) -> int:
     poll_state_results: list[dict[str, Any]] = []
     failed_boards: list[str] = []
     gone_boards: list[str] = []
+    confirmed_boards: list[str] = []
 
     for company, outcome in zip(companies, results, strict=True):
         if outcome.status in ("ok", "partial"):
@@ -336,6 +364,8 @@ async def run_poll_tick(http: httpx.AsyncClient, supabase: AsyncClient) -> int:
                 }
             )
         elif outcome.status == "not_modified":
+            if company.ats_type in _ETAG_COVERS_WHOLE_BOARD:
+                confirmed_boards.append(company.board)
             # Matches n8n's own 304 sentinel exactly: -1 falls through
             # every tier/interval CASE branch untouched, but still resets
             # last_polled_at/consecutive_failures.
@@ -363,6 +393,8 @@ async def run_poll_tick(http: httpx.AsyncClient, supabase: AsyncClient) -> int:
         await _bookkeeping_rpc(
             supabase, "close_stale_job_registry_postings", {"close_targets": close_targets}
         )
+    if confirmed_boards:
+        await _confirm_unchanged_boards(supabase, confirmed_boards)
     if poll_state_results:
         await _bookkeeping_rpc(
             supabase, "advance_job_registry_poll_state", {"results": poll_state_results}

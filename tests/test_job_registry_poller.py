@@ -793,3 +793,114 @@ async def test_a_bookkeeping_statement_timeout_is_retried_and_the_tick_completes
     assert supabase.failed
     assert len(supabase.calls_named(failing_rpc)) == 2  # the timeout, then the retry
     assert supabase.calls_named("advance_job_registry_poll_state")  # poll state moved on
+
+
+# ── 304 confirmation (P0.8) ───────────────────────────────────────────────
+# A board that answered 304 is unchanged, so its active postings are still live. Without
+# refreshing their last_seen a quiet board would age out of the registry lane's 7-day
+# freshness window while being perfectly live.
+
+
+def _fake_adapter(status: str) -> Any:
+    async def fetch(_http: Any, _company: Any) -> AdapterResult:
+        return AdapterResult(status=status)  # type: ignore[arg-type]
+
+    return fetch
+
+
+@pytest.mark.parametrize("ats_type", ["greenhouse", "lever", "ashby", "workable", "recruitee"])
+async def test_a_not_modified_board_has_its_postings_confirmed(
+    ats_type: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(ADAPTERS, ats_type, _fake_adapter("not_modified"))
+    board = f"{ats_type}:acme"
+    supabase = _FakeSupabase(due_rows=[_due_row(ats_type=ats_type, board=board)])
+
+    await run_poll_tick(_http(), supabase)  # type: ignore[arg-type]
+
+    assert supabase.calls_named("confirm_job_registry_boards") == [{"boards": [board]}]
+    # Poll state advances exactly as before: the 304 sentinel, untouched.
+    assert (
+        supabase.calls_named("advance_job_registry_poll_state")[0]["results"][0]["relevant"] == -1
+    )
+
+
+@pytest.mark.parametrize("ats_type", ["smartrecruiters", "amazon", "workday", "google", "oracle"])
+async def test_a_not_modified_board_of_a_paged_adapter_is_never_confirmed(
+    ats_type: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 304 on page 0 of a paged listing says nothing about the later pages; confirming
+    every active posting would keep a gone one on an unfetched page looking live."""
+    monkeypatch.setitem(ADAPTERS, ats_type, _fake_adapter("not_modified"))
+    supabase = _FakeSupabase(due_rows=[_due_row(ats_type=ats_type, board=f"{ats_type}:acme")])
+
+    await run_poll_tick(_http(), supabase)  # type: ignore[arg-type]
+
+    assert supabase.calls_named("confirm_job_registry_boards") == []
+    assert supabase.calls_named("advance_job_registry_poll_state")  # still bookkept
+
+
+@pytest.mark.parametrize("status", ["ok", "partial", "failed", "gone"])
+async def test_only_a_not_modified_outcome_confirms_a_board(
+    status: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(ADAPTERS, "greenhouse", _fake_adapter(status))
+    supabase = _FakeSupabase(due_rows=[_due_row()])
+
+    await run_poll_tick(_http(), supabase)  # type: ignore[arg-type]
+
+    assert supabase.calls_named("confirm_job_registry_boards") == []
+
+
+async def test_confirmations_are_sent_in_bounded_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One huge board must not be able to use the whole statement budget for 20 others."""
+    monkeypatch.setitem(ADAPTERS, "greenhouse", _fake_adapter("not_modified"))
+    rows = [_due_row(slug=f"co{i}", board=f"greenhouse:co{i}") for i in range(45)]
+    supabase = _FakeSupabase(due_rows=rows)
+
+    await run_poll_tick(_http(), supabase)  # type: ignore[arg-type]
+
+    sizes = [len(call["boards"]) for call in supabase.calls_named("confirm_job_registry_boards")]
+    assert sizes == [20, 20, 5]
+    confirmed = [
+        b for call in supabase.calls_named("confirm_job_registry_boards") for b in call["boards"]
+    ]
+    assert confirmed == [f"greenhouse:co{i}" for i in range(45)]
+
+
+async def test_a_failed_confirmation_does_not_stop_the_polls_bookkeeping(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The confirmation is best effort: if it fails the postings keep their older last_seen
+    and the next 304 tick tries again; the tick must still advance every board's poll state."""
+
+    class _ConfirmFails(_FakeSupabase):
+        def rpc(self, name: str, params: dict[str, Any]) -> Any:
+            if name == "confirm_job_registry_boards":
+                self.rpc_calls.append((name, params))
+                raise APIError({"message": "boom", "code": "XX000", "hint": None, "details": None})
+            return super().rpc(name, params)
+
+    monkeypatch.setitem(ADAPTERS, "greenhouse", _fake_adapter("not_modified"))
+    supabase = _ConfirmFails(due_rows=[_due_row()])
+
+    processed = await run_poll_tick(_http(), supabase)  # type: ignore[arg-type]
+
+    assert processed == 1
+    assert supabase.calls_named("advance_job_registry_poll_state")
+    assert "could not refresh last_seen" in caplog.text
+
+
+async def test_a_confirmation_statement_timeout_is_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+    monkeypatch.setitem(ADAPTERS, "greenhouse", _fake_adapter("not_modified"))
+    supabase = _TimeoutOnceSupabase([_due_row()], "confirm_job_registry_boards")
+
+    await run_poll_tick(_http(), supabase)  # type: ignore[arg-type]
+
+    assert supabase.failed
+    assert (
+        len(supabase.calls_named("confirm_job_registry_boards")) == 2
+    )  # the timeout, then the retry

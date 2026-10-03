@@ -446,13 +446,15 @@ async def fetch_registry_lane(
     own existing "no query -> browse recent" behavior rather than
     returning nothing.
 
-    Stamps `link_checked=True` on every result -- a registry-lane posting
-    is only ever returned here because `job_registry_poller.py`'s own
-    absence-based mechanism (P1-P3e) still sees it as `status='active'`
-    on its board, a real liveness signal `ats_liveness.verify_liveness`
-    (P7) is explicitly never meant to duplicate (see that module's own
-    docstring). Registry-lane results must never reach `verify_liveness`
-    at all -- this flag is what a caller checks to route around it."""
+    `link_checked` comes from the database (`link_fresh`, P0.8), not from this
+    code: True only if the posting was seen within 3 days, its company was polled
+    within 48 hours, and that company has no consecutive failures -- all judged on
+    the database clock. A posting last seen more than 7 days ago is never returned
+    at all. A posting between the two is returned unverified: a real "we do not
+    know", shown as "not yet link-verified". Registry-lane results never reach
+    `ats_liveness.verify_liveness`, verified or not: the poller's own absence-based
+    tracking is the liveness signal for them, and that module is explicitly never
+    meant to duplicate it. Callers route on `provider == "registry"`."""
     result = await supabase.rpc(
         "search_job_registry_postings", {"search_query": query, "result_limit": limit}
     ).execute()
@@ -472,7 +474,7 @@ async def fetch_registry_lane(
             salary_currency=row["salary_currency"],
             sponsorship_signal=row["sponsorship_signal"],
             source_tier=1.0,
-            link_checked=True,
+            link_checked=bool(row["link_fresh"]),
         )
         for row in rows
     ]
