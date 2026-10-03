@@ -51,6 +51,19 @@ _RESUME_MEDIA_TYPE = "application/x-tex"
 _COVER_LETTER_MEDIA_TYPE = "application/x-tex"
 
 
+def saved_header_layout(
+    per_application_doc: dict[str, Any] | None, master_doc: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """The saved Header Composer layout to generate with: the per-application document's if it
+    has one, else the master document's, else None. A document that never saved a layout stores
+    `{}`, which counts as none -- so does anything that is not a JSON object."""
+    for document in (per_application_doc, master_doc):
+        layout = (document or {}).get("header_layout")
+        if isinstance(layout, dict) and layout:
+            return layout
+    return None
+
+
 async def run_prepare_application(
     supabase: AsyncClient,
     http: httpx.AsyncClient,
@@ -171,6 +184,12 @@ async def run_prepare_application(
     # the master one.
     dealbreaker_assertions = (per_app_doc or {}).get("assertions") or []
 
+    # P0.12: the Header Composer layout the candidate saved. Like the other document
+    # settings the per-application document wins and the master document is the default; a
+    # layout is one whole object (chip order, labels, separator), so there is nothing to merge
+    # field by field. Before this nothing sent it, and every real generation got the default.
+    header_layout = saved_header_layout(per_app_doc, master_doc)
+
     forge_result = await call_apply(
         http,
         resume_template=profile_version["canonical_json"],
@@ -187,6 +206,7 @@ async def run_prepare_application(
         generate_cover_letter=generate_cover_letter,
         dealbreaker_assertions=dealbreaker_assertions,
         force_generate=force_generate,
+        header_layout=header_layout,
     )
 
     warnings = list(forge_result.gate.cautions)

@@ -143,6 +143,7 @@ async def test_call_apply_sends_the_expected_request_body() -> None:
     assert body["generate_cover_letter"] is False
     assert body["dealbreaker_assertions"] is None
     assert body["force_generate"] is False
+    assert body["header_layout"] is None
 
 
 async def test_call_apply_sends_dealbreaker_assertions_when_provided() -> None:
@@ -549,3 +550,19 @@ def test_violation_messages_formats_each_violation_with_a_validation_prefix() ->
     assert result.violation_messages == [
         "validation: experience entry at 'Fake LLC' has no matching company"
     ]
+
+
+async def test_call_apply_sends_the_saved_header_layout_when_given() -> None:
+    http = _FakeHttpClient()
+    layout = {"chips": [{"field": "github"}, {"field": "email"}], "separator": "dot"}
+
+    await call_apply(
+        http,  # type: ignore[arg-type]
+        resume_template=_RESUME_TEMPLATE,
+        job_snapshot=_SNAPSHOT,
+        credential=_CREDENTIAL,
+        now="2026-08-15T00:00:00.000Z",
+        header_layout=layout,
+    )
+
+    assert http.requests[0][1]["json"]["header_layout"] == layout

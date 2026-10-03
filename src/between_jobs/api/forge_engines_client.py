@@ -193,6 +193,7 @@ async def call_apply(
     generate_cover_letter: bool = False,
     dealbreaker_assertions: list[str] | None = None,
     force_generate: bool = False,
+    header_layout: dict[str, Any] | None = None,
 ) -> ForgeApplyResult:
     """Calls forge-engines' `POST /apply` and returns a typed result.
 
@@ -205,7 +206,10 @@ async def call_apply(
     platform's system default ("off"/`False`) -- a caller that omits them
     gets unchanged output, matching `ApplyRequest`'s own defaults; the real
     `/prepare` flow (`prepare_orchestrator.py`) always passes explicit,
-    resolved values. `dealbreaker_assertions` (S2) is the per-application
+    resolved values. `header_layout` (P0.12) is the candidate's saved Header
+    Composer layout, already chosen by the caller (the per-application
+    document's, else the master document's, else None); an engine that
+    predates the field ignores it. `dealbreaker_assertions` (S2) is the per-application
     document's own `assertions` list, read straight through with no
     precedence chain of its own -- an assertion has no master/default
     concept, see `prepare_orchestrator.py`. `force_generate` (S4c) is the
@@ -239,6 +243,7 @@ async def call_apply(
         "generate_cover_letter": generate_cover_letter,
         "dealbreaker_assertions": dealbreaker_assertions,
         "force_generate": force_generate,
+        "header_layout": header_layout,
     }
     data = await _post(http, "/apply", body, timeout=_APPLY_TIMEOUT_SECONDS)
     return ForgeApplyResult.model_validate(data)

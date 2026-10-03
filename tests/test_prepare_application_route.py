@@ -373,6 +373,40 @@ def test_prepare_application_defaults_force_generate_to_false() -> None:
     assert apply_call["json"]["force_generate"] is False
 
 
+def test_prepare_application_sends_the_saved_header_layout_to_forge_engines() -> None:
+    """P0.12: the Header Composer layout a candidate saved has to reach the engine on the real
+    /prepare path. Before this nothing sent it and every generation used the default header."""
+    layout = {"chips": [{"field": "github"}, {"field": "email"}], "separator": "dot"}
+    supabase = _FakeSupabaseClient(
+        resume_documents=_FakeTable(select_rows=[{"id": "doc-1", "header_layout": layout}])
+    )
+    http = _FakeHttpClient()
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/prepare", json=_prepare_body())
+
+    assert response.status_code == 201
+    apply_call = next(kwargs for url, kwargs in http.post_calls if url.endswith("/apply"))
+    assert apply_call["json"]["header_layout"] == layout
+
+
+@pytest.mark.parametrize(
+    "documents",
+    [[], [{"id": "doc-1", "header_layout": {}}], [{"id": "doc-1"}]],
+)
+def test_prepare_application_sends_no_layout_when_none_was_saved(
+    documents: list[dict[str, Any]],
+) -> None:
+    supabase = _FakeSupabaseClient(resume_documents=_FakeTable(select_rows=documents))
+    http = _FakeHttpClient()
+
+    with _client(supabase, http) as client:
+        client.post(f"/applications/{_APPLICATION_ID}/prepare", json=_prepare_body())
+
+    apply_call = next(kwargs for url, kwargs in http.post_calls if url.endswith("/apply"))
+    assert apply_call["json"]["header_layout"] is None
+
+
 def test_prepare_application_sends_generate_cover_letter_to_forge_engines() -> None:
     supabase = _FakeSupabaseClient()
     http = _FakeHttpClient()
