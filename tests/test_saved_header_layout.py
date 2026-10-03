@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from between_jobs.api.prepare_orchestrator import saved_header_layout
+from between_jobs.api.resume_documents_store import saved_header_layout
 
 _PER_APP: dict[str, Any] = {"chips": [{"field": "github"}], "separator": "dot"}
 _MASTER: dict[str, Any] = {"chips": [{"field": "email"}], "separator": "pipe"}

@@ -38,6 +38,19 @@ async def get_document_for(
     return cast(dict[str, Any], result.data[0]) if result.data else None
 
 
+def saved_header_layout(
+    per_application_doc: dict[str, Any] | None, master_doc: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """The saved Header Composer layout to generate with: the per-application document's if it
+    has one, else the master document's, else None. A document that never saved a layout stores
+    `{}`, which counts as none -- so does anything that is not a JSON object."""
+    for document in (per_application_doc, master_doc):
+        layout = (document or {}).get("header_layout")
+        if isinstance(layout, dict) and layout:
+            return layout
+    return None
+
+
 async def get_document(supabase: AsyncClient, user_id: str, document_id: str) -> dict[str, Any]:
     result = (
         await supabase.table("resume_documents")

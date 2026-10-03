@@ -573,3 +573,105 @@ def test_get_gap_interview_document_not_found_returns_404() -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
+# -- the Composer shows the layout generation will use (P0.12 review) -----------------------
+
+
+class _DocumentsByApplication:
+    """resume_documents rows keyed by application_id, honouring the two filters
+    `get_document_for` uses: `.is_("application_id", None)` for the master document and
+    `.eq("application_id", id)` for an application's own."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = rows
+        self._application: Any = "unset"
+        self.insert_calls: list[dict[str, Any]] = []
+
+    def select(self, *_: Any, **__: Any) -> _DocumentsByApplication:
+        self._application = "unset"
+        return self
+
+    def eq(self, column: str, value: Any) -> _DocumentsByApplication:
+        if column == "application_id":
+            self._application = value
+        return self
+
+    def is_(self, column: str, value: Any) -> _DocumentsByApplication:
+        if column == "application_id" and value is None:
+            self._application = None
+        return self
+
+    async def execute(self) -> SimpleNamespace:
+        if self._application == "unset":
+            return SimpleNamespace(data=self._rows)
+        return SimpleNamespace(
+            data=[r for r in self._rows if r["application_id"] == self._application]
+        )
+
+    def insert(self, data: dict[str, Any]) -> _ChainBuilder:
+        self.insert_calls.append(data)
+        return _ChainBuilder([{**data, "id": _DOCUMENT_ID, "header_layout": {}}])
+
+
+_MASTER_LAYOUT = {"chips": [{"field": "github"}, {"field": "email"}], "separator": "dot"}
+_OWN_LAYOUT = {"chips": [{"field": "phone"}], "separator": "bullet"}
+
+
+def _documents(*, master_layout: Any, application_layout: Any) -> _DocumentsByApplication:
+    rows = [{**_MASTER_DOCUMENT_ROW, "id": "master-doc", "header_layout": master_layout}]
+    if application_layout is not None:
+        rows.append({**_DOCUMENT_ROW, "id": "app-doc", "header_layout": application_layout})
+    return _DocumentsByApplication(rows)
+
+
+def _load_for_application(documents: _DocumentsByApplication) -> dict[str, Any]:
+    supabase = _FakeSupabaseClient(resume_documents=documents)  # type: ignore[arg-type]
+    with _client(supabase) as client:
+        response = client.get(f"/resume-documents/mine?application_id={_APPLICATION_ID}")
+    assert response.status_code == 200
+    return response.json()  # type: ignore[no-any-return]
+
+
+def test_an_application_with_no_layout_of_its_own_shows_the_masters() -> None:
+    """Generation falls back to the master document's layout; the Composer has to start from
+    the same one, or the candidate previews a header the resume will not have."""
+    body = _load_for_application(_documents(master_layout=_MASTER_LAYOUT, application_layout={}))
+
+    assert body["header_layout"] == _MASTER_LAYOUT
+    assert body["header_layout_inherited"] is True
+
+
+def test_an_application_with_its_own_layout_keeps_it() -> None:
+    body = _load_for_application(
+        _documents(master_layout=_MASTER_LAYOUT, application_layout=_OWN_LAYOUT)
+    )
+
+    assert body["header_layout"] == _OWN_LAYOUT
+    assert "header_layout_inherited" not in body
+
+
+def test_nothing_to_inherit_leaves_the_document_alone() -> None:
+    body = _load_for_application(_documents(master_layout={}, application_layout={}))
+
+    assert body["header_layout"] == {}
+    assert "header_layout_inherited" not in body
+
+
+def test_a_newly_created_application_document_also_shows_the_masters() -> None:
+    documents = _documents(master_layout=_MASTER_LAYOUT, application_layout=None)
+
+    body = _load_for_application(documents)
+
+    assert documents.insert_calls[0]["application_id"] == _APPLICATION_ID
+    assert body["header_layout"] == _MASTER_LAYOUT
+
+
+def test_the_master_document_itself_is_never_marked_inherited() -> None:
+    documents = _documents(master_layout=_MASTER_LAYOUT, application_layout=None)
+    supabase = _FakeSupabaseClient(resume_documents=documents)  # type: ignore[arg-type]
+    with _client(supabase) as client:
+        body = client.get("/resume-documents/mine").json()
+
+    assert body["header_layout"] == _MASTER_LAYOUT
+    assert "header_layout_inherited" not in body

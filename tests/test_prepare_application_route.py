@@ -407,6 +407,64 @@ def test_prepare_application_sends_no_layout_when_none_was_saved(
     assert apply_call["json"]["header_layout"] is None
 
 
+class _DocumentsByApplication:
+    """resume_documents rows keyed by application_id: `.is_("application_id", None)` is the
+    master document, `.eq("application_id", id)` an application's own."""
+
+    def __init__(self, master: Any, own: Any) -> None:
+        self._rows = [{"application_id": None, "header_layout": master}]
+        if own is not None:
+            self._rows.append({"application_id": _APPLICATION_ID, "header_layout": own})
+        self._application: Any = "unset"
+
+    def select(self, *_: Any, **__: Any) -> _DocumentsByApplication:
+        self._application = "unset"
+        return self
+
+    def eq(self, column: str, value: Any) -> _DocumentsByApplication:
+        if column == "application_id":
+            self._application = value
+        return self
+
+    def is_(self, column: str, value: Any) -> _DocumentsByApplication:
+        if column == "application_id" and value is None:
+            self._application = None
+        return self
+
+    async def execute(self) -> SimpleNamespace:
+        return SimpleNamespace(
+            data=[r for r in self._rows if r["application_id"] == self._application]
+        )
+
+
+_MASTER_LAYOUT = {"chips": [{"field": "github"}], "separator": "dot"}
+_OWN_LAYOUT = {"chips": [{"field": "phone"}], "separator": "bullet"}
+
+
+@pytest.mark.parametrize(
+    ("master", "own", "expected"),
+    [
+        (_MASTER_LAYOUT, _OWN_LAYOUT, _OWN_LAYOUT),  # the application's own layout wins
+        (_MASTER_LAYOUT, {}, _MASTER_LAYOUT),  # nothing saved for it: the master is the default
+        (_MASTER_LAYOUT, None, _MASTER_LAYOUT),  # no document for it yet at all
+        ({}, _OWN_LAYOUT, _OWN_LAYOUT),
+        ({}, {}, None),
+    ],
+)
+def test_prepare_application_picks_the_right_document_for_the_header_layout(
+    master: Any, own: Any, expected: Any
+) -> None:
+    supabase = _FakeSupabaseClient(resume_documents=_DocumentsByApplication(master, own))  # type: ignore[arg-type]
+    http = _FakeHttpClient()
+
+    with _client(supabase, http) as client:
+        response = client.post(f"/applications/{_APPLICATION_ID}/prepare", json=_prepare_body())
+
+    assert response.status_code == 201
+    apply_call = next(kwargs for url, kwargs in http.post_calls if url.endswith("/apply"))
+    assert apply_call["json"]["header_layout"] == expected
+
+
 def test_prepare_application_sends_generate_cover_letter_to_forge_engines() -> None:
     supabase = _FakeSupabaseClient()
     http = _FakeHttpClient()

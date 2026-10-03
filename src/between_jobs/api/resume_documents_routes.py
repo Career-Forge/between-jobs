@@ -52,7 +52,9 @@ from .profile_store import get_active_version, get_version
 from .resume_documents_store import (
     DocumentNotFound,
     get_document,
+    get_document_for,
     get_or_create_document,
+    saved_header_layout,
     update_assertions,
     update_header_layout,
     update_sections,
@@ -121,13 +123,24 @@ async def get_my_document(
             settings_path="/profile",
         )
 
-    return await get_or_create_document(
+    document = await get_or_create_document(
         supabase,
         user_id,
         application_id=application_id,
         profile_version_id=profile_version["id"],
         job_snapshot_id=job_snapshot_id,
     )
+    if application_id is not None and not document.get("header_layout"):
+        # P0.12: generation uses the master document's header layout for an application that
+        # has not saved its own (`saved_header_layout`). Show the Composer that same layout, so
+        # what the candidate sees and previews is what the resume will have; it is stored on
+        # this document only if they save it.
+        inherited = saved_header_layout(
+            None, await get_document_for(supabase, user_id, application_id=None)
+        )
+        if inherited is not None:
+            return {**document, "header_layout": inherited, "header_layout_inherited": True}
+    return document
 
 
 @router.patch("/{document_id}/header")

@@ -37,7 +37,7 @@ from .jobs_store import SnapshotNotFound, get_snapshot
 from .latex_service_client import call_compile
 from .locale_resolver import resolve_locale_for_prepare
 from .profile_store import get_active_version
-from .resume_documents_store import get_document_for
+from .resume_documents_store import get_document_for, saved_header_layout
 from .shape_overrides import merge as merge_shape_overrides
 from .shape_overrides import resolve as resolve_shape_overrides
 
@@ -49,19 +49,6 @@ and forge-engines exposes no dedicated version endpoint to query yet."""
 
 _RESUME_MEDIA_TYPE = "application/x-tex"
 _COVER_LETTER_MEDIA_TYPE = "application/x-tex"
-
-
-def saved_header_layout(
-    per_application_doc: dict[str, Any] | None, master_doc: dict[str, Any] | None
-) -> dict[str, Any] | None:
-    """The saved Header Composer layout to generate with: the per-application document's if it
-    has one, else the master document's, else None. A document that never saved a layout stores
-    `{}`, which counts as none -- so does anything that is not a JSON object."""
-    for document in (per_application_doc, master_doc):
-        layout = (document or {}).get("header_layout")
-        if isinstance(layout, dict) and layout:
-            return layout
-    return None
 
 
 async def run_prepare_application(
