@@ -264,21 +264,10 @@ async def test_get_claims_for_run_returns_the_rows() -> None:
     assert result == rows
 
 
-# -- a database without the migration yet (TRANSITIONAL, delete with the fallback) ----------
+# -- no fallback: a database without the function is a deploy error, not something to paper over --
 
 
-def _not_found() -> APIError:
-    return APIError(
-        {
-            "message": "Could not find the function public.create_company_intel_run",
-            "code": "PGRST202",
-            "hint": None,
-            "details": None,
-        }
-    )
-
-
-class _NoFunctionYet(_FakeSupabaseClient):
+class _RpcFails(_FakeSupabaseClient):
     def __init__(self, error: APIError) -> None:
         super().__init__()
         self._error = error
@@ -294,34 +283,22 @@ class _NoFunctionYet(_FakeSupabaseClient):
         return _Call()
 
 
-async def test_a_database_without_the_function_falls_back_to_the_two_step_write(
-    caplog: pytest.LogCaptureFixture,
+@pytest.mark.parametrize(
+    "code",
+    [
+        "PGRST202",  # the function is not in this database
+        "23502",  # any other database error
+    ],
+)
+async def test_a_database_error_propagates_and_nothing_is_written_outside_the_function(
+    code: str,
 ) -> None:
-    supabase = _NoFunctionYet(_not_found())
+    error = APIError({"message": "boom", "code": code, "hint": None, "details": None})
+    supabase = _RpcFails(error)
 
-    with caplog.at_level("WARNING"):
-        run = await create_run(
-            supabase,  # type: ignore[arg-type]
-            _USER_ID,
-            application_id=_APPLICATION_ID,
-            company_name="Acme",
-            claims=[_claim()],
-            providers_used=["you_com"],
-            warnings=[],
-        )
-
-    assert run["id"] == _RUN_ID
-    assert supabase.company_intel_runs.insert_calls[0]["company_name"] == "Acme"
-    assert supabase.company_intel_claims.insert_calls[0][0]["run_id"] == _RUN_ID
-    assert "P0.10 migration" in caplog.text
-
-
-async def test_any_other_database_error_still_propagates() -> None:
-    other = APIError({"message": "boom", "code": "23502", "hint": None, "details": None})
-
-    with pytest.raises(APIError):
+    with pytest.raises(APIError) as raised:
         await create_run(
-            _NoFunctionYet(other),  # type: ignore[arg-type]
+            supabase,  # type: ignore[arg-type]
             _USER_ID,
             application_id=_APPLICATION_ID,
             company_name="Acme",
@@ -329,3 +306,7 @@ async def test_any_other_database_error_still_propagates() -> None:
             providers_used=[],
             warnings=[],
         )
+
+    assert raised.value.code == code
+    assert supabase.company_intel_runs.insert_calls == []
+    assert supabase.company_intel_claims.insert_calls == []
