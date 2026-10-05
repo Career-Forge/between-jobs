@@ -7,6 +7,13 @@ import type { ShapeOverrides } from "./headerComposerTypes";
 // produce. Per the plan's own "over-configurability trap" citation, this
 // is deliberately a small, fixed catalog rather than a user-authored
 // preset system.
+//
+// A preset is ONLY a `ShapeOverrides` value: clicking one sends those
+// overrides and nothing else, and no preset key is ever stored (the panel
+// persists the overrides, not which button produced them), so a label or key
+// can change without affecting anyone's saved settings. Section order is a
+// different document field with its own editor, so a preset cannot reorder
+// sections.
 export interface ShapePreset {
   key: string;
   label: string;
@@ -16,10 +23,17 @@ export interface ShapePreset {
 
 export const SHAPE_PRESETS: ShapePreset[] = [
   {
-    key: "ai_engineer",
-    label: "AI Engineer",
-    description: "Technical, experience-first -- no summary, plain bullets.",
+    key: "technical",
+    label: "Technical, experience-first",
+    description: "No summary, plain bullets -- lets your experience lead the page.",
     overrides: { summary: "off", bullet_style: "plain", density: "balanced", show_gpa: false },
+  },
+  {
+    key: "data_analytics",
+    label: "Data / Analytics",
+    description:
+      "Leads with a summary; bold keyword lead-ins make tools and metrics easy to scan.",
+    overrides: { summary: "on", bullet_style: "bold_lead_in", density: "balanced", show_gpa: false },
   },
   {
     key: "research",

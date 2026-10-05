@@ -115,6 +115,15 @@ Rules:
   ones that apply to me. If I have none, leave those as empty arrays.
 - Leave every "pin" field as null -- that's a manual choice I make myself afterward, not
   something to infer from my resume text.
+- Sort my skills into the six "skills" categories by what each one is, not by my job title:
+  programming languages (Python, SQL, Java) go under "programming"; ML libraries and models under
+  "ai_ml"; data platforms, warehouses and pipelines (Snowflake, Airflow, dbt, Spark) under
+  "data_mlops" (shown to me as "Data & Pipelines"); cloud and infrastructure tooling (AWS,
+  Kubernetes, Terraform) under "cloud_devops"; any other tool under "tools"; and practices that
+  are not a tool or a technology (statistics, A/B testing, incident response) under "other".
+  In particular, BI, analytics, test-automation, load-testing and observability tools -- for
+  example Tableau, Power BI, Looker, Selenium, Cypress, JMeter and Datadog -- belong under
+  "tools". Put each skill in exactly one category.
 - Return ONLY the filled JSON, nothing else.
 
 Template:

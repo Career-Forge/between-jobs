@@ -47,8 +47,9 @@ The query asks for the core phrase and, when the phrase ends in a known role
 noun (`engineer`, `scientist`, `manager`, ...), that noun alone as well, so a
 company's post for a NEIGHBOURING role is still retrieved -- that post is a
 warm-path signal too, and ranking (not the query) is what puts the exact role
-first. There is no synonym table: none exists in this codebase and this rule
-does not invent one.
+first. This rule does not expand synonyms: the registry lane keeps its own role
+vocabulary (`role_synonyms.py`) and Hiring Signals deliberately does not use it,
+so role terms pass through as given after sanitizing.
 """
 
 from __future__ import annotations

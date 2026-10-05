@@ -51,6 +51,7 @@ from .job_fit_scoring import ScoredJob, score_jobs
 from .llm_client import generate as llm_generate
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
+from .role_synonyms import registry_search_text
 from .search_aggregation import apply_search_filters
 from .search_providers import SearchResult
 from .worker_supervision import Sleep, WorkerState, run_supervised
@@ -94,7 +95,11 @@ async def _fetch_new_registry_postings(
 ) -> list[SearchResult]:
     result = await supabase.rpc(
         "search_new_job_registry_postings",
-        {"search_query": query, "since_timestamp": since, "result_limit": limit},
+        {
+            "search_query": registry_search_text(query),
+            "since_timestamp": since,
+            "result_limit": limit,
+        },
     ).execute()
     rows = cast("list[dict[str, Any]]", result.data)
     return [

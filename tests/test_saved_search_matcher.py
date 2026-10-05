@@ -235,6 +235,7 @@ class _FakeSupabase:
         )
         self.event_outbox = event_outbox or _EventOutboxTable()
         self._company_tiers = _FakeSavedSearchesTable([])
+        self.registry_rpc_params: list[dict[str, Any]] = []
 
     def table(self, name: str) -> Any:
         return {
@@ -248,6 +249,7 @@ class _FakeSupabase:
 
     def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
         if fn == "search_new_job_registry_postings":
+            self.registry_rpc_params.append(params)
             return _FakeRpcBuilder(self._registry_postings)
         if fn == "decrypt_secret":
             return _FakeRpcBuilder(params["p_ciphertext"])
@@ -313,6 +315,36 @@ async def test_strong_match_publishes_an_event_and_advances_the_watermark(
     assert event["payload"]["score100"] >= 70
     # Watermark always advances, whether or not a match was found.
     assert supabase.saved_searches.rows[0]["last_matched_at"] != "2026-08-01T00:00:00Z"
+
+
+async def test_a_role_synonym_search_retrieves_and_keeps_the_other_spelling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A saved search for "sde" must send the registry the expanded text and must not then
+    discard a "Software Engineer" posting in its own role filter."""
+    posting = {**_POSTING_ROW, "title": "Software Engineer II"}
+    _patch_llm(monkeypatch, _score_response(str(posting["apply_url"]), 80))
+    supabase = _FakeSupabase(
+        saved_searches=[_saved_search(query="sde")], registry_postings=[posting]
+    )
+
+    await run_match_tick(supabase)  # type: ignore[arg-type]
+
+    assert supabase.registry_rpc_params[0]["search_query"] == (
+        'sde or swe or "software engineer" or "software developer"'
+        ' or "software development engineer"'
+    )
+    assert len(supabase.event_outbox.insert_calls) == 1
+
+
+async def test_a_plain_saved_search_still_sends_its_query_unchanged() -> None:
+    supabase = _FakeSupabase(
+        saved_searches=[_saved_search(query="platform engineer")], registry_postings=[]
+    )
+
+    await run_match_tick(supabase)  # type: ignore[arg-type]
+
+    assert supabase.registry_rpc_params[0]["search_query"] == "platform engineer"
 
 
 async def test_weak_match_does_not_publish_but_still_advances_watermark(

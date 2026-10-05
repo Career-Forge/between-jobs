@@ -1319,8 +1319,8 @@ def build_query(
     """`site:linkedin.com/posts (hiring vocabulary OR'd) ["company"]
     (role terms OR'd) ["metro"]`.
 
-    `role_terms` is supplied by the caller -- no role-synonym expansion
-    table exists in this codebase, and this module does not invent one.
+    `role_terms` is supplied by the caller -- this module does not expand
+    synonyms (the registry lane's `role_synonyms.py` is not applied here).
     The tab path passes a `metro` and no company (company-less discovery is
     its whole point); the per-JD path passes a `company` and no metro
     (the company name is what makes it precise). Passing both is a

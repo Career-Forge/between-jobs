@@ -479,6 +479,35 @@ def test_submit_answer_scores_and_records_the_next_question(
     assert update_calls[0]["score"] == 7
 
 
+def test_submit_answer_to_a_technical_question_stores_no_star_coverage_and_no_star_rate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The scorer's reply carries STAR flags; for a technical question they are discarded (the
+    route stores and returns null), and the completing report has no STAR rate to show."""
+    supabase = _FakeSupabaseClient(
+        interview_sessions=_FakeTable(select_rows=[_session_row()]),
+        interview_session_questions=_QuestionsTable(
+            [_question_row(question_type="technical", question_text="How does a B-tree balance?")]
+        ),
+    )
+    http = _FakeHttpClient()
+    _patch_llm(monkeypatch, _SCORE_LLM_RESPONSE)
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            f"/applications/{_APPLICATION_ID}/interview-practice/sessions/{_SESSION_ID}/answers",
+            json={"answer_text": "Splits and merges."},
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["feedback"]["score"] == 7
+    assert body["feedback"]["star_coverage"] is None
+    assert body["session_report"]["average_score"] == 7.0
+    assert body["session_report"]["star_coverage_rate"] is None
+    assert supabase.interview_session_questions.update_calls[0]["feedback"]["star_coverage"] is None
+
+
 def test_submit_answer_leaves_session_in_progress_when_more_questions_remain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

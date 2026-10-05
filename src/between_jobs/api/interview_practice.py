@@ -44,6 +44,8 @@ LlmGenerate = Callable[..., Awaitable[LLMResponse]]
 QuestionType = Literal["behavioral", "technical", "situational"]
 _VALID_QUESTION_TYPES: frozenset[str] = frozenset(("behavioral", "technical", "situational"))
 
+_STAR_QUESTION_TYPES: frozenset[str] = frozenset(("behavioral", "situational"))
+
 _QUESTION_COUNT = 5
 _QUESTION_GENERATION_MAX_TOKENS = 2000
 _ANSWER_SCORING_MAX_TOKENS = 800
@@ -188,6 +190,16 @@ def coerce_question_type(value: object) -> QuestionType:
     return cast("QuestionType", value if value in _VALID_QUESTION_TYPES else "behavioral")
 
 
+def star_applies(question_type: QuestionType) -> bool:
+    """STAR (situation, task, action, result) is the shape of a story, so it is only a fair
+    measure of a behavioral or situational answer. A technical answer is judged on correctness
+    and depth, and "you did not tell a story" is not a flaw in it. Decided here, by the
+    question's own type, never by the model: whether a measure applies is structure, and
+    structure belongs to deterministic code. An unrecognized or missing type was already
+    coerced to "behavioral" (`coerce_question_type`), so older rows are scored as before."""
+    return question_type in _STAR_QUESTION_TYPES
+
+
 class StarCoverage(TypedDict):
     situation: bool
     task: bool
@@ -200,7 +212,11 @@ class AnswerFeedback(TypedDict):
     """0-10, clamped -- never trusted verbatim from the model's own output."""
     structure_feedback: str
     specificity_feedback: str
-    star_coverage: StarCoverage
+    star_coverage: StarCoverage | None
+    """`None` -- not "all false" -- when STAR does not apply to the question (`star_applies`):
+    not evaluated is a different fact from evaluated and absent. Rows stored before this
+    existed carry the model's own flags for technical questions; both are ignored the same way,
+    by the question's type."""
     improved_answer: NotRequired[str]
 
 
@@ -220,7 +236,8 @@ Return exactly this schema:
 CRITICAL RULES:
 - Score and feedback must be grounded ONLY in what the candidate's answer actually said -- never reward or penalize based on assumptions about what they "probably" meant.
 - "improved_answer" may restructure, tighten, or better-frame what the candidate already said -- it must NEVER introduce a new achievement, metric, technology, or fact that wasn't already present in the candidate's own answer or resume evidence. A more articulate answer, not a more impressive fictional one.
-- star_coverage reflects only what's actually present in the answer -- do not mark a component true because the candidate could plausibly have meant it."""  # noqa: E501
+- star_coverage reflects only what's actually present in the answer -- do not mark a component true because the candidate could plausibly have meant it.
+- STAR is the shape of a story, so it only applies to "behavioral" and "situational" questions. When question_type is "technical", star_coverage is not used: return all four as false, and do not lower the score or the structure feedback because the answer lacks a STAR shape -- judge a technical answer on correctness, depth, and clarity."""  # noqa: E501
 
 
 def _build_answer_scoring_user(
@@ -261,10 +278,10 @@ async def score_answer(
         user_prompt=_build_answer_scoring_user(question, answer_text, resume_evidence),
         max_tokens=_ANSWER_SCORING_MAX_TOKENS,
     )
-    return _parse_feedback(response.content)
+    return _parse_feedback(response.content, score_star=star_applies(question["type"]))
 
 
-def _parse_feedback(raw: str) -> AnswerFeedback | None:
+def _parse_feedback(raw: str, *, score_star: bool = True) -> AnswerFeedback | None:
     try:
         parsed = json.loads(_strip_code_fence(raw))
     except json.JSONDecodeError:
@@ -277,14 +294,16 @@ def _parse_feedback(raw: str) -> AnswerFeedback | None:
         return None
     score = max(0, min(10, round(raw_score)))
 
-    star_raw = parsed.get("star_coverage")
-    star_raw = star_raw if isinstance(star_raw, dict) else {}
-    star_coverage = StarCoverage(
-        situation=bool(star_raw.get("situation")),
-        task=bool(star_raw.get("task")),
-        action=bool(star_raw.get("action")),
-        result=bool(star_raw.get("result")),
-    )
+    star_coverage: StarCoverage | None = None
+    if score_star:
+        star_raw = parsed.get("star_coverage")
+        star_raw = star_raw if isinstance(star_raw, dict) else {}
+        star_coverage = StarCoverage(
+            situation=bool(star_raw.get("situation")),
+            task=bool(star_raw.get("task")),
+            action=bool(star_raw.get("action")),
+            result=bool(star_raw.get("result")),
+        )
 
     structure_feedback = parsed.get("structure_feedback")
     specificity_feedback = parsed.get("specificity_feedback")
@@ -314,8 +333,10 @@ class SessionReport(TypedDict):
     answered_count: int
     average_score: float | None
     star_coverage_rate: float | None
-    """Fraction of scored answers with all four STAR components present --
-    `None`, not `0.0`, when nothing has been scored yet."""
+    """Fraction of the behavioral and situational answers with all four STAR components
+    present. Technical answers are left out of the numerator AND the denominator (STAR does
+    not apply to them, `star_applies`). `None`, not `0.0`, when there is nothing to measure:
+    no answer yet, or only technical ones."""
 
 
 def build_session_report(total_questions: int, scored_answers: list[ScoredAnswer]) -> SessionReport:
@@ -332,10 +353,18 @@ def build_session_report(total_questions: int, scored_answers: list[ScoredAnswer
         )
 
     scores = [a["feedback"]["score"] for a in scored_answers]
-    full_star_count = sum(1 for a in scored_answers if all(a["feedback"]["star_coverage"].values()))
+    star_measured = [
+        coverage
+        for a in scored_answers
+        if star_applies(a["question"]["type"])
+        and (coverage := a["feedback"]["star_coverage"]) is not None
+    ]
+    full_star_count = sum(1 for coverage in star_measured if all(coverage.values()))
     return SessionReport(
         question_count=total_questions,
         answered_count=answered_count,
         average_score=round(sum(scores) / answered_count, 2),
-        star_coverage_rate=round(full_star_count / answered_count, 2),
+        star_coverage_rate=(
+            round(full_star_count / len(star_measured), 2) if star_measured else None
+        ),
     )

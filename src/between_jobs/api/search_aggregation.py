@@ -88,7 +88,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
@@ -96,6 +96,7 @@ from typing import Any, Literal, cast
 from supabase import AsyncClient
 
 from .geo_gazetteer import Gazetteer, check_location_state, get_gazetteer, resolve_location
+from .role_synonyms import RoleTermSlot, parse_role_query, registry_search_text
 from .search_providers import SearchResult
 
 _AGGREGATOR_COMPANIES = frozenset(
@@ -399,6 +400,29 @@ def matches_all_role_terms(haystack: str, term_patterns: Sequence[re.Pattern[str
     return all(p.search(lowered) for p in term_patterns)
 
 
+def _role_phrase_pattern(phrase: str) -> re.Pattern[str]:
+    """A synonym phrase as a whole-phrase pattern, with the same boundary rules as
+    `_role_term_pattern`. Words of a phrase may be separated by whitespace or a hyphen,
+    so "front end" also finds "Front-End"."""
+    words = phrase.split()
+    left = r"(?<!\w)" if re.match(r"\w", words[0]) else ""
+    return re.compile(left + r"[\s\-]+".join(re.escape(w) for w in words) + r"(?!\w)")
+
+
+def _slot_matcher(slot: RoleTermSlot) -> Callable[[str], bool]:
+    """A slot is satisfied by ALL of the user's own words (anywhere in the title) or by
+    ANY one synonym phrase. A slot with no synonyms is exactly the old per-term AND."""
+    word_patterns = [_role_term_pattern(w) for w in slot.words]
+    phrase_patterns = [_role_phrase_pattern(a) for a in slot.alternatives]
+
+    def matches(lowered: str) -> bool:
+        return all(p.search(lowered) for p in word_patterns) or any(
+            p.search(lowered) for p in phrase_patterns
+        )
+
+    return matches
+
+
 def filter_by_role(
     results: list[SearchResult], query: str, *, excluded_terms: list[str] | None = None
 ) -> list[SearchResult]:
@@ -407,15 +431,21 @@ def filter_by_role(
     discipline from n8n's own real F2 fix (a naive substring match let
     "AI Engineering Intern" match "AI Engineer" via "engineer" inside
     "engineering"). ALL of `query`'s own terms (length > 1) must match,
-    the same AND semantics n8n's own role_families check uses. An empty
-    query is a no-op (matches everything), mirroring n8n's own "no
-    role_families -> filter never runs" behavior. `excluded_terms`
+    the same AND semantics n8n's own role_families check uses -- except that a
+    term may also be satisfied by a synonym of it (`role_synonyms.py`: "sde" is
+    also "software engineer", "ml" is also "machine learning"), matched as a whole
+    phrase. An empty query is a no-op (matches everything), mirroring n8n's own
+    "no role_families -> filter never runs" behavior. `excluded_terms`
     entries can be multi-word phrases (a literal space in the pattern
     matches a literal space in the haystack) -- unlike n8n, this has no
-    hardcoded default list; see module docstring for why."""
-    term_patterns = role_term_patterns(query)
-    if not term_patterns:
+    hardcoded default list; see module docstring for why.
+
+    Hiring Signals shares `role_term_patterns`/`matches_all_role_terms`, not this
+    function, so its matching is unchanged by the synonyms."""
+    slots = parse_role_query(query).slots
+    if not slots:
         return results
+    slot_matchers = [_slot_matcher(slot) for slot in slots]
     excluded_patterns = [
         re.compile(r"\b" + re.escape(t.lower()) + r"\b") for t in (excluded_terms or []) if t
     ]
@@ -425,7 +455,7 @@ def filter_by_role(
         haystack = r.title.lower()
         if excluded_patterns and any(p.search(haystack) for p in excluded_patterns):
             continue
-        if matches_all_role_terms(haystack, term_patterns):
+        if all(matches(haystack) for matches in slot_matchers):
             kept.append(r)
     return kept
 
@@ -447,7 +477,11 @@ async def fetch_registry_lane(
     search providers already produce. An empty `query` returns the most
     recent active postings unfiltered, matching `discovery_store.py`'s
     own existing "no query -> browse recent" behavior rather than
-    returning nothing.
+    returning nothing. The query is expanded with role synonyms before it is
+    sent (`role_synonyms.registry_search_text`), so "SDE" also retrieves
+    "Software Engineer" postings and "ML Engineer" also retrieves "Machine
+    Learning Engineer" ones; `filter_by_role` applies the same synonyms to the
+    titles that come back.
 
     `link_checked` comes from the database (`link_fresh`, P0.8), not from this
     code: True only if the posting was seen within 3 days, its company was polled
@@ -466,7 +500,8 @@ async def fetch_registry_lane(
     never to "verified" and never to an error that takes the whole Discover request
     down with it -- the old behaviour, stamping everything verified, is the bug."""
     result = await supabase.rpc(
-        "search_job_registry_postings", {"search_query": query, "result_limit": limit}
+        "search_job_registry_postings",
+        {"search_query": registry_search_text(query), "result_limit": limit},
     ).execute()
     rows = cast("list[dict[str, Any]]", result.data)
     if rows and "link_fresh" not in rows[0]:

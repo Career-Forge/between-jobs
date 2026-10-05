@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, ApiError } from "../lib/api";
-import { buildSessionReport } from "../lib/interviewPracticeReport";
+import { buildSessionReport, starApplies, starSummary } from "../lib/interviewPracticeReport";
 import type {
   AnswerFeedback,
   InterviewQuestion,
@@ -198,24 +198,34 @@ export function InterviewPracticePanel({ applicationId }: { applicationId: strin
 
           if (pendingFeedback) {
             const star = pendingFeedback.star_coverage;
+            // The question this feedback belongs to: submitAnswer stores the very same feedback
+            // object on it, so identity finds it. Whether STAR applies depends on its type.
+            const answered = state.questions.find((q) => q.feedback === pendingFeedback);
+            const showStar = star !== null && (answered ? starApplies(answered.question_type) : true);
             const report = lastSessionReport ?? (question ? null : buildSessionReport(state.questions));
             return (
               <div className="bj-interview-feedback">
                 <ScoreBar label="Your answer" value={pendingFeedback.score} max={10} />
                 <div className="bj-muted bj-small">{pendingFeedback.structure_feedback}</div>
                 <div className="bj-muted bj-small">{pendingFeedback.specificity_feedback}</div>
-                <div className="bj-actions">
-                  <span className={star.situation ? "bj-badge-emerald" : "bj-badge-muted"}>
-                    Situation
-                  </span>
-                  <span className={star.task ? "bj-badge-emerald" : "bj-badge-muted"}>Task</span>
-                  <span className={star.action ? "bj-badge-emerald" : "bj-badge-muted"}>
-                    Action
-                  </span>
-                  <span className={star.result ? "bj-badge-emerald" : "bj-badge-muted"}>
-                    Result
-                  </span>
-                </div>
+                {showStar && star ? (
+                  <div className="bj-actions">
+                    <span className={star.situation ? "bj-badge-emerald" : "bj-badge-muted"}>
+                      Situation
+                    </span>
+                    <span className={star.task ? "bj-badge-emerald" : "bj-badge-muted"}>Task</span>
+                    <span className={star.action ? "bj-badge-emerald" : "bj-badge-muted"}>
+                      Action
+                    </span>
+                    <span className={star.result ? "bj-badge-emerald" : "bj-badge-muted"}>
+                      Result
+                    </span>
+                  </div>
+                ) : (
+                  <div className="bj-muted bj-small">
+                    STAR structure is not scored for technical questions.
+                  </div>
+                )}
                 {pendingFeedback.improved_answer && (
                   <div>
                     <div className="bj-checklist-label">Improved answer</div>
@@ -226,6 +236,7 @@ export function InterviewPracticePanel({ applicationId }: { applicationId: strin
                 {report ? (
                   <SessionReportSummary
                     report={report}
+                    questions={state.questions}
                     onPracticeAgain={() => void startSession()}
                     starting={starting}
                   />
@@ -283,6 +294,7 @@ export function InterviewPracticePanel({ applicationId }: { applicationId: strin
           return (
             <SessionReportSummary
               report={report}
+              questions={state.questions}
               onPracticeAgain={() => void startSession()}
               starting={starting}
             />
@@ -294,21 +306,23 @@ export function InterviewPracticePanel({ applicationId }: { applicationId: strin
 
 function SessionReportSummary({
   report,
+  questions,
   onPracticeAgain,
   starting,
 }: {
   report: SessionReport;
+  questions: InterviewQuestion[];
   onPracticeAgain: () => void;
   starting: boolean;
 }) {
+  const star = starSummary(report, questions);
   return (
     <div className="bj-interview-report">
       <div className="bj-checklist-label">Session complete</div>
       <div className="bj-muted bj-small">
         {report.answered_count} of {report.question_count} answered
         {report.average_score !== null && ` · average score ${report.average_score} / 10`}
-        {report.star_coverage_rate !== null &&
-          ` · full STAR coverage on ${Math.round(report.star_coverage_rate * 100)}%`}
+        {star !== null && ` · ${star}`}
       </div>
       <div className="bj-actions">
         <button className="bj-primary" onClick={onPracticeAgain} disabled={starting}>

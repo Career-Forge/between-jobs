@@ -2949,9 +2949,9 @@ def test_query_overlong_term_is_an_error_not_a_silent_cut() -> None:
         build_query(role_terms=["x" * 61], locale=Locale.GLOBAL, freshness=Freshness.DAY)
 
 
-def test_query_module_ships_no_role_synonym_table() -> None:
-    # No expansion table exists in the codebase to reuse, so none was invented:
-    # role terms pass through exactly as given (after sanitizing).
+def test_query_module_does_not_expand_role_synonyms() -> None:
+    # Hiring Signals does not apply the registry lane's `role_synonyms` map, so role
+    # terms pass through exactly as given (after sanitizing).
     q = build_query(role_terms=["sde"], locale=Locale.GLOBAL, freshness=Freshness.DAY)
     assert q.role_terms == ("sde",)
 

@@ -24,7 +24,9 @@ export interface AnswerFeedback {
   score: number;
   structure_feedback: string;
   specificity_feedback: string;
-  star_coverage: StarCoverage;
+  // null -- not "all false" -- when STAR does not apply to the question (a technical one): it
+  // was not evaluated. See `starApplies` in interviewPracticeReport.ts.
+  star_coverage: StarCoverage | null;
   improved_answer?: string;
 }
 

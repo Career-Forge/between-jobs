@@ -33,3 +33,27 @@ describe("RESUME_TEMPLATE.personal.work_authorization", () => {
     expect(CONVERSION_PROMPT).toContain(RESUME_TEMPLATE.personal.work_authorization);
   });
 });
+
+// The importer sorts skills into six categories, and a model left to guess put BI,
+// test-automation and observability tools under "programming" or "other". The prompt has to say
+// where they go.
+describe("CONVERSION_PROMPT skill sorting", () => {
+  it("names the tools category for BI, test-automation and observability tools", () => {
+    const lines = CONVERSION_PROMPT.replace(/\s+/g, " ");
+    for (const tool of ["Tableau", "Power BI", "Looker", "Selenium", "Cypress", "JMeter", "Datadog"]) {
+      expect(lines).toContain(tool);
+    }
+    expect(lines).toMatch(/Tableau, Power BI, Looker, Selenium, Cypress, JMeter and Datadog -- belong under "tools"/);
+  });
+
+  it("mentions every category key the template actually has", () => {
+    for (const key of Object.keys(RESUME_TEMPLATE.skills)) {
+      expect(CONVERSION_PROMPT).toContain(`"${key}"`);
+    }
+  });
+
+  it("introduces the renamed label for data_mlops, not the old one", () => {
+    expect(CONVERSION_PROMPT).toContain('"data_mlops" (shown to me as "Data & Pipelines")');
+    expect(CONVERSION_PROMPT).not.toContain("MLOps\"");
+  });
+});

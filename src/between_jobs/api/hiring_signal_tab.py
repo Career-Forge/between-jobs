@@ -270,6 +270,10 @@ def role_phrase(text: str) -> str:
     return phrase
 
 
+# These spellings overlap with the registry lane's `role_synonyms.py` (full stack, front end,
+# back end, dev ops, machine learning, quality assurance). The two tables are kept separate on
+# purpose: this one lists forms a post uses for one word of a role phrase, the other lists
+# alternative phrases for a whole role in a job title, and the two match under different rules.
 _EQUIVALENT_WORDS: tuple[tuple[tuple[str, ...], ...], ...] = (
     (("full", "stack"), ("fullstack",)),
     (("front", "end"), ("frontend",)),

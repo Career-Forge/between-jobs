@@ -158,7 +158,10 @@ export interface CanonicalProfile {
 export const SKILL_CATEGORY_LABELS: Record<keyof Skills, string> = {
   programming: "Programming",
   ai_ml: "AI / ML",
-  data_mlops: "Data & MLOps",
+  // The key stays `data_mlops` (it is the stored schema); only the label changed, because
+  // "MLOps" read as an AI specialty to the analysts and data engineers who file their
+  // warehouses, orchestrators and pipelines here.
+  data_mlops: "Data & Pipelines",
   cloud_devops: "Cloud & DevOps",
   tools: "Tools",
   other: "Other",
