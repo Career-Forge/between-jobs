@@ -88,14 +88,15 @@ async def _company(pg: Any) -> tuple[str, str]:
 
 
 async def _posting(pg: Any, company_id: str, board: str, title: str) -> str:
-    """A fresh, active posting whose whole text is its title, so the tsquery is judged on the
-    title alone."""
+    """A fresh, active posting whose indexed text is its title and nothing else (an empty
+    description), so the tsquery is judged on the title alone. Repeating the title as the
+    description would let a phrase such as "engineer in test" match across the repeat."""
     posting_id = await pg.fetchval(
         """
         insert into public.job_registry_postings
           (company_id, board, external_id, title, jd_text, apply_url, status, posted_at,
            first_seen, last_seen)
-        values ($1::uuid, $2, $3, $4, $4, $5, 'active',
+        values ($1::uuid, $2, $3, $4, '', $5, 'active',
                 now() - interval '1 day', now() - interval '1 day', now() - interval '1 day')
         returning id
         """,

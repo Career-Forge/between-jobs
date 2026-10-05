@@ -1,3 +1,11 @@
+-- Performance note (measured on the hosted registry with a cold cache, sequential scan chosen by
+-- the planner): the candidate query for "software engineer" as a plain AND took about 4 s; the
+-- expanded OR query for "sde" took about 13 s, and 7 s with sequential scans disabled. The API
+-- role's statement timeout is 8 s, so a cold, broad query can be cut off. The backend answers
+-- from the live-search lane when that happens (the registry lane fails open), but the structural
+-- fix is to search the title only: a title tsvector with its own GIN index, built while the poller
+-- is stopped. That is a separate, larger migration on a table of over 100,000 rows.
+--
 -- The registry lane's text search understands role synonyms.
 --
 -- Both search functions built their tsquery with plainto_tsquery, which ANDs every word

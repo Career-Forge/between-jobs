@@ -64,6 +64,28 @@ router = APIRouter(prefix="/discover")
 _REGISTRY_STALE_AFTER = timedelta(hours=48)
 
 
+_REGISTRY_UNAVAILABLE_NOTE = (
+    "The job registry could not be searched just now, so these results come from the "
+    "live search providers only. Try again in a moment."
+)
+
+
+async def _registry_lane_or_nothing(
+    supabase: AsyncClient, query: str
+) -> tuple[list[SearchResult], str | None]:
+    """The registry lane, or an empty lane plus a note when it fails.
+
+    The registry search is one database call that can be slow on a cold cache and is
+    cut off by the API role's statement timeout. That must cost the person the registry
+    results for this search, not the whole search: the live-search lane has already done
+    its work. Cancellation still propagates (it is not an `Exception`)."""
+    try:
+        return await fetch_registry_lane(supabase, query=query), None
+    except Exception:
+        logger.exception("registry lane failed; answering from the live-search lane only")
+        return [], _REGISTRY_UNAVAILABLE_NOTE
+
+
 async def _empty_registry_lane_note(supabase: AsyncClient) -> str | None:
     """Why the registry lane returned nothing, when the answer is "it is out of date" rather
     than "nothing matched" (P0.8: postings last seen more than 7 days ago are not shown, so a
@@ -222,7 +244,7 @@ async def search_discover(
     # the other a single Supabase RPC -- so the registry-lane call rides
     # for free inside the live-search fan-out's own window instead of
     # adding its own latency on top.
-    (live_results, warnings), registry_results = await asyncio.gather(
+    (live_results, warnings), (registry_results, registry_failure) = await asyncio.gather(
         search_jobs(
             http,
             query=q,
@@ -231,10 +253,12 @@ async def search_discover(
             remote_only=remote_only,
             credentials=provider_credentials,
         ),
-        fetch_registry_lane(supabase, query=q),
+        _registry_lane_or_nothing(supabase, q),
     )
+    if registry_failure is not None:
+        warnings = [*warnings, registry_failure]
 
-    if not registry_results:
+    if registry_failure is None and not registry_results:
         stale_note = await _empty_registry_lane_note(supabase)
         if stale_note:
             warnings = [*warnings, stale_note]

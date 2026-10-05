@@ -180,7 +180,7 @@ class _FakeSupabaseClient:
         profile_versions: list[dict[str, Any]] | None = None,
         capability_preferences: list[dict[str, Any]] | None = None,
         provider_credentials: dict[tuple[str, str], dict[str, Any]] | None = None,
-        registry_postings: list[dict[str, Any]] | None = None,
+        registry_postings: list[dict[str, Any]] | Exception | None = None,
         registry_posting_details: dict[str, dict[str, Any]] | None = None,
         registry_companies: dict[str, str] | None = None,
         registry_last_polled: Any = "recent",
@@ -202,7 +202,9 @@ class _FakeSupabaseClient:
             else {("llm", "openrouter"): _LLM_CREDENTIAL_ROW}
         )
         self._company_tiers = _PaginatedTable([])
-        self._registry_postings = registry_postings if registry_postings is not None else []
+        self._registry_postings: list[dict[str, Any]] | Exception = (
+            registry_postings if registry_postings is not None else []
+        )
         self._registry_posting_details = registry_posting_details or {}
         self._registry_companies = registry_companies or {}
         self._registry_last_polled = registry_last_polled
@@ -235,6 +237,8 @@ class _FakeSupabaseClient:
         if fn == "decrypt_secret":
             return _FakeRpcBuilder("decrypted-secret")
         if fn == "search_job_registry_postings":
+            if isinstance(self._registry_postings, Exception):
+                return _FakeRpcBuilder(None, raises=self._registry_postings)
             return _FakeRpcBuilder(self._registry_postings)
         if fn == "registry_last_polled_at":
             value = self._registry_last_polled
@@ -690,6 +694,46 @@ def test_not_being_able_to_tell_is_not_a_warning_and_does_not_fail_the_search() 
 
     assert response.status_code == 200
     assert not any("refreshed" in w for w in response.json()["warnings"])
+
+
+def test_a_registry_lane_that_fails_costs_the_registry_results_not_the_search() -> None:
+    """The registry call is cut off by the API role's statement timeout when it is slow on a
+    cold cache. The live-search lane already did its work, so the search still answers, says
+    the registry was not searched, and does not claim the registry is out of date."""
+    supabase = _FakeSupabaseClient(registry_postings=RuntimeError("canceling statement"))
+    client = _client(supabase, _FakeHttpClient())
+
+    response = client.get("/discover", params={"q": "backend engineer"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert any("could not be searched just now" in w for w in body["warnings"]), body["warnings"]
+    assert not any("refreshed" in w for w in body["warnings"])
+    assert "registry_last_polled_at" not in supabase.rpc_names
+
+
+def test_a_registry_lane_that_fails_still_runs_the_whole_live_search_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Proof that the live lane carried on: its own liveness probe ran and dropped the dead
+    result, exactly as it does when the registry answers."""
+    _patch_llm(monkeypatch, _SCORE_LLM_RESPONSE)
+    supabase = _FakeSupabaseClient(
+        registry_postings=RuntimeError("boom"),
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+        },
+    )
+    http = _FakeHttpClient(liveness_status=404, you_com_body=_LIVE_LANE_YOU_COM_BODY)
+    client = _client(supabase, http)
+
+    response = client.get("/discover", params={"q": "backend engineer"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dead_removed"] == 1
+    assert any("could not be searched just now" in w for w in body["warnings"])
 
 
 def test_a_non_empty_registry_lane_never_asks_when_the_registry_was_polled(
