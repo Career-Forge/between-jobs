@@ -7,23 +7,44 @@ and commit messages accordingly.
 ## Stack
 
 - Python 3.12+ with FastAPI -- the core service (orchestrator, agents, channel adapters).
-- Supabase -- auth, Postgres (+ pgvector), RLS multi-tenancy, storage, Realtime.
-- Web frontend (later phase): React + TypeScript, strictly a thin client. Channels
-  (web, Telegram, and whatever comes next) are renderers; logic lives in the core service.
-- Tooling: ruff (lint + format), mypy (strict), pytest.
+- Supabase -- auth, Postgres with RLS multi-tenancy, and storage. The pgvector extension
+  is installed but no table uses it yet, and nothing subscribes to Realtime.
+- Web frontend (`web/`, live): React + TypeScript on Vite, strictly a thin client.
+  Channels (web, Telegram, the browser extension, and whatever comes next) are
+  renderers; logic lives in the core service.
+- Browser extension (`extension/`): Chrome, WXT + React + TypeScript. Deterministic ATS
+  autofill from the user's own prepared documents; it never clicks submit.
+- LaTeX service (`latex-service/`): a small, separate Python service that compiles LaTeX
+  to PDF, with its own `pyproject.toml` and toolchain.
+- Tooling: ruff (lint + format), mypy (strict) and pytest for Python; `tsc`, vitest and
+  Vite/WXT for `web/` and `extension/`.
 
 ## Commands
 
 ```
+# API (repository root)
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 pytest                      # tests
+pytest -m local_supabase    # integration tests; need a local Supabase stack (supabase start)
 ruff check . && ruff format --check .   # lint + formatting
 mypy                        # types (strict)
+
+# Web app (web/)
+npm ci
+npm run typecheck && npm test
+VITE_API_BASE_URL=https://api.example.com npm run build   # needs an https, non-local API origin
+
+# Browser extension (extension/)
+npm ci
+npm run typecheck && npm test && npm run build
 ```
 
-All of the above must pass before any commit.
+All of the above must pass before any commit (the local-Supabase tests when the change
+touches SQL or the background workers). CI runs every one of them on each pull request,
+plus a build of the API container image. The LaTeX service has its own commands in
+`latex-service/README.md`.
 
 ## Database migrations
 

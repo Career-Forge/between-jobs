@@ -3,9 +3,8 @@
 Deterministic ATS autofill from your own prepared résumé and cover letter.
 **The human always clicks submit -- this extension never does.**
 
-Scoped in `~/.claude/plans/browser-extension.md` (private planning doc,
-not in this repo). Supports Lever, Greenhouse, and Ashby (E2/E4/E5).
-Workday and other ATSs are explicitly out of scope for this phase.
+Supports Lever, Greenhouse, and Ashby. Workday support is planned; no other
+ATS is supported yet.
 
 ## What's open source vs. hosted
 
@@ -18,8 +17,8 @@ The genuinely ATS-idiosyncratic parts of a field map (Lever's
 custom-question prefix, the `.application-field`/`.application-label`
 DOM-nesting shape, the cover-letter label pattern) are hosted-service
 data, never committed here, for the same reason this repo never commits
-ATS registry data or scoring rubrics -- see the root `CLAUDE.md`. As of
-E3c, this data is fetched at runtime from `GET
+ATS registry data or scoring rubrics -- see the root `CLAUDE.md`. This data
+is fetched at runtime from `GET
 /extension/field-maps/{ats_type}` as an Ed25519-signed, versioned JSON
 payload and verified client-side (`lib/ats-field-map.ts`) before this
 extension trusts anything in it -- a failed or missing signature means
@@ -34,23 +33,25 @@ are plain, unremarkable HTML-form conventions, not curated ATS-specific
 IP -- those ship open source and unsigned as `GENERIC_FIELD_DEFAULTS` in
 `lib/lever.ts`/`lib/greenhouse.ts`/`lib/ashby.ts`, so a fresh self-hosted
 clone gets baseline autofill with zero setup, before anyone has published
-a signed map at all. **Greenhouse and Ashby (E4/E5) go further than that
+a signed map at all. **Greenhouse and Ashby go further than that
 split for now**: no real signed map has ever been curated or published
-for either (that's a maintainer/secret-custody step, not done as part of
-E4/E5), so their entire engine -- including custom-question extraction
-and, for Greenhouse, cover-letter attach -- is open source and unsigned
-today, exactly the state Lever itself was in between E2 and E3c. See each
-file's own top-of-file comment for the real, live-confirmed DOM research
-behind it, and the disclosed follow-up needed to close the same
-CLAUDE.md compliance gap E3c already closed for Lever.
+for either (that's a maintainer/secret-custody step), so their entire
+engine -- including custom-question extraction and, for Greenhouse,
+cover-letter attach -- is open source and unsigned today, exactly the
+state Lever itself was in before it got a signed map. See each file's own
+top-of-file comment for the live-confirmed DOM research behind it, and the
+follow-up needed to move that curated data out of the repository the way
+Lever's already is, so it complies with the root `CLAUDE.md`.
 
 ## Dev setup
 
-Requires Node 20+.
+Requires Node 22.22.2 or newer on the 22 line, 24.15 or newer on the 24 line, or 26 or
+newer (CI uses Node 24). Other releases, such as 23 or 25, make `npm ci` print engine
+warnings from the test tooling.
 
 ```
 cd extension
-npm install
+npm ci
 cp .env.example .env.local  # fill in the same Supabase project values web/.env.local uses, plus the API base URL
 ```
 
@@ -75,9 +76,8 @@ unpacked" -> select that directory. After any code change, `npm run
 build` again and click the reload icon on the extension's card.
 
 Needs the between-jobs API running locally (`uvicorn
-between_jobs.api.app:app --reload --port 8012` from the repo root, or the
-`between-jobs-api` entry in `.claude/launch.json`) for anything beyond
-the sign-in screen to work.
+between_jobs.api.app:app --reload --port 8012` from the repo root) for
+anything beyond the sign-in screen to work.
 
 ## Building for the store
 
@@ -132,7 +132,7 @@ veteran status and the like) are never listed, drafted or filled.
   (`boards.greenhouse.io/embed/job_app?...` inside an iframe) aren't
   reached: content scripts don't run in subframes here, and an embed URL
   never matches a tracked posting anyway.
-- Workday and every other ATS are out of scope.
+- Only Lever, Greenhouse and Ashby are supported. Workday support is planned.
 
 ## Chrome Web Store readiness
 
@@ -145,8 +145,8 @@ advice):
 - `store/PERMISSIONS.md` -- one justification per permission and host permission, and the
   remote-code answer (none: signed data only).
 - `store/LISTING.md` -- name, summary, description, category, single-purpose statement,
-  the Privacy practices data-usage answers row by row, draft in-product disclosure copy,
-  reviewer test instructions, and the screenshot shot list.
+  the Privacy practices data-usage answers row by row, the in-product disclosure copy as
+  shipped, reviewer test instructions, and the screenshot shot list.
 
 What still needs a person:
 
@@ -154,18 +154,20 @@ What still needs a person:
   build the zip against (see "Building for the store").
 - Every `[MAINTAINER TO FILL: ...]` placeholder in `store/`, and the policy hosted at a
   public https URL.
-- An in-product disclosure and consent screen. Chrome requires the disclosure inside the
-  extension with an explicit agree action; the side panel has none yet. This is a code
-  change (draft copy in `store/LISTING.md`, section 4).
 - A real icon (the current one is a placeholder), 1 to 5 screenshots at 1280x800, and a
   440x280 promo tile.
 - A reviewer test account, with tracked postings on each service and a spend-capped AI
   provider key (`store/LISTING.md`, section 5).
-- Real-browser verification that no earlier phase could do: E3b (Draft answer, Fill and
-  Fill & remember against a live Greenhouse or Ashby page and a real provider key) and
-  E3c (a signed Lever field map on a live Lever page), plus a smoke test on Chrome 148 or
-  newer of the E6 changes -- the side panel recognized by `sender.url`, a single-page
-  navigation on Greenhouse or Ashby refreshing the panel, and the draft box sizing.
+- Real-browser verification that no earlier work could do: Draft answer, Fill and
+  Fill & remember against a live Greenhouse or Ashby page and a real provider key, and
+  a signed Lever field map on a live Lever page, plus a smoke test on Chrome 148 or
+  newer of the side panel being recognized by `sender.url`, a single-page navigation on
+  Greenhouse or Ashby refreshing the panel, and the draft box sizing.
+- A real-browser check of the first-run disclosure and consent screen (`ConsentGate` in
+  `entrypoints/sidepanel/App.tsx`). It is built, shows before sign-in and needs an
+  explicit agree action, as Chrome requires, but only the toolchain has checked it. Its
+  privacy-policy link is still a `[MAINTAINER TO FILL: ...]` placeholder until the policy
+  is hosted.
 - A decision on `host_permissions` (redundant with the content-script matches today) and
   on the wildcard CORS the extension's API access relies on (`store/PERMISSIONS.md`,
   note 1).
@@ -182,23 +184,23 @@ What still needs a person:
   (`lib/lever.ts`/`lib/greenhouse.ts`/`lib/ashby.ts`), fills only the
   fields it was explicitly told to fill, and never touches anything else
   on the page -- no checkbox, no button, no submit, on any of the three.
-- `entrypoints/sidepanel/` -- the UI. Shows sign-in, detection status, a
-  manual "Fill this page" trigger, and which fields still need your own
-  answer.
+- `entrypoints/sidepanel/` -- the UI. A first-run disclosure and consent gate,
+  then sign-in, detection status, a manual "Fill this page" trigger, and which
+  fields still need your own answer.
 - `lib/standardFields.ts` -- the shared, ATS-agnostic fill mechanics
-  (field-fill planning, D5 idempotency, file attach) every ATS engine
+  (field-fill planning, idempotent fills, file attach) every ATS engine
   reuses, plus `setReactControlledValue`/`applyReactControlledFillPlan`
-  (E4/E5) -- the native-setter workaround Greenhouse's and Ashby's own
+  -- the native-setter workaround Greenhouse's and Ashby's own
   React-controlled inputs need, confirmed live neither Lever needs nor
   breaks anything by not using.
 - `lib/lever.ts` / `lib/greenhouse.ts` / `lib/ashby.ts` -- each ATS's own
   fill logic (DOM traversal, event dispatch, custom-question extraction),
   kept pure and DOM-testable on purpose (`tests/lever.test.ts`,
   `tests/greenhouse.test.ts`, `tests/ashby.test.ts`). Lever's takes the
-  verified field map as a parameter (E3c); Greenhouse's and Ashby's are
+  verified field map as a parameter; Greenhouse's and Ashby's are
   fully self-contained today (see the note above).
 - `lib/questionSafety.ts` -- the guards every ATS's custom-question path
-  shares, at extraction and again at fill: the D6 self-identification
+  shares, at extraction and again at fill: the self-identification
   classifier (gender, race, disability and accommodation, veteran status and
   so on -- never listed, drafted or filled; work-authorization questions are
   deliberately not in scope), fail-closed control classification (only a

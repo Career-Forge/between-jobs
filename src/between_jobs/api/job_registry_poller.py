@@ -1,4 +1,5 @@
-"""The Job Finder registry poller worker (P2, job-finder-port.md D2/D8).
+"""The Job Finder registry poller worker: a port of an upstream scheduling
+pipeline that stores every posting from a board.
 
 A faithful port of n8n's own `CareerForge_ATS_Poller.json` tick pipeline
 (`Select Due Companies` -> `Build Requests`/`Fetch ATS`/`Parse Jobs` ->
@@ -8,9 +9,8 @@ the SQL in this migration's own functions and the CASE-based tier state
 machine are unchanged from the reference. Two things are genuinely
 adapted, not copied:
 
-- D8 (Pranav, 2026-08-30): between-jobs stores every posting, not just
-  ones matching n8n's own AI/ML title regex (see job_registry_adapters.py
-  for the full rationale). That regex was also what made n8n's own
+- Every posting is stored, not just ones matching n8n's own AI/ML title regex
+  (see job_registry_adapters.py for the full rationale). That regex was also what made n8n's own
   `relevant` count meaningful -- "count of AI/ML-title-matching postings
   on the board, capped at 25" stays small for almost every board.
   Without a title filter, a raw "how many postings are on this board"
@@ -23,14 +23,13 @@ adapted, not copied:
   genuine hiring-activity signal that behaves like n8n's own small
   thresholds expect, computed in the SAME upsert statement as the write,
   no extra query and no race.
-- Sweep-start-cutoff bookkeeping (the "microsoft lost all 85" fix) isn't
-  needed here -- confirmed in this plan's own P1 research that it only
-  matters for n8n's two adapters that persist a page cursor across
-  multiple 15-minute ticks (google/microsoft, deferred to P3+). All four
-  of P2's adapters return (or, for Workday, page through) a complete
-  listing within a single tick, so every close-target here uses that
-  tick's own `run_start` as the cutoff, exactly like n8n's own
-  non-paginated adapters.
+- Sweep-start-cutoff bookkeeping (the "microsoft lost all 85" fix) only
+  matters for an adapter that persists a page cursor across multiple
+  15-minute ticks, which in this registry is Google alone (see below).
+  Every other adapter returns (or, for Workday, pages through) a complete
+  listing within a single tick, so its close-target uses that tick's own
+  `run_start` as the cutoff, exactly like n8n's own non-paginated
+  adapters.
 
 Mirrors outbox_store.py's own shape (`run_*_once`/`run_*_forever`, a
 plain sleep loop, no scheduler library) rather than introducing a new
@@ -38,7 +37,7 @@ worker pattern into this codebase.
 
 A real board-collision bug was found and fixed via this module's own
 live verification, not caught by any unit test: `job_registry_postings
-.board` was `ats_type:slug` only (P1's schema, matching n8n's own
+.board` was `ats_type:slug` only (the original schema, matching n8n's own
 `jobs.board` shape exactly), and Workday tenants turned out to routinely
 reuse generic site slugs ("External", "external_careers", "careers", ...)
 across totally unrelated companies -- confirmed live, not assumed: 18
@@ -54,22 +53,21 @@ already uses to disambiguate itself, applied both to the 4 SQL functions
 here and as a one-time backfill of every already-imported posting
 (including resolving 313 real duplicate pairs the backfill surfaced --
 the same real posting, double-counted under two casing variants of the
-old 2-part board string). `scripts/import_job_registry_seed.py` was
-fixed in the same pass so a future re-run doesn't regress this.
+old 2-part board string).
 
-P3c adds Eightfold's own JD-backfill lane (`run_eightfold_jd_backfill`),
+Eightfold has its own JD-backfill lane (`run_eightfold_jd_backfill`),
 run every tick alongside `run_poll_tick` rather than on a separate
 schedule -- mirrors n8n's own real architecture, where `Select JD
 Backfill Batch -> Fetch Eightfold JDs -> Update Job Descriptions` is a
 second branch off the exact same 15-minute `Poll Schedule` trigger, not
-a standalone cron. Confirmed live (P3c research) this lane is load-
+a standalone cron. Confirmed live, this lane is load-
 bearing, not a nicety, for Eightfold specifically: its list endpoint
 NEVER returns real description text on either of its two tiers, so
 without this lane Eightfold rows would carry a permanently empty
 jd_text and never qualify for salary/sponsorship extraction at all.
 
-P3e adds Google's own sweep-start-cutoff bookkeeping (the real "microsoft
-lost all 85 postings this way" fix, s151) -- confirmed live its board is
+Google gets its own sweep-start-cutoff bookkeeping (the real "microsoft
+lost all 85 postings this way" fix) -- confirmed live its board is
 far too large (85+ pages, 20 cards each) to fully re-walk in one 15-
 minute tick, unlike every other adapter here. `fetch_google` itself has
 zero awareness of "sweep" as a multi-tick concept -- it only reports
@@ -126,7 +124,7 @@ _MIN_EXTRACTABLE_JD_LENGTH = 50  # matches n8n's own push() gate on jd_text leng
 # A real 72-company tick against the live registry (dream/hot/warm lanes
 # all due at once) hit Postgres's own statement timeout (57014) batching
 # every posting from every company into one upsert call -- the identical
-# failure mode P1's seed-import script hit against this same table, for
+# failure mode the original seed import hit against this same table, for
 # the same reason (a GIN tsvector index + an HNSW vector index to
 # maintain per row). Same fix: smaller batches plus a bounded
 # retry-with-backoff on that specific SQLSTATE, matching this project's
@@ -233,7 +231,7 @@ async def _upsert_batch_with_retry(
 
 
 async def _confirm_unchanged_boards(supabase: AsyncClient, boards: list[str]) -> None:
-    """Refreshes `last_seen` on the active postings of boards that answered 304 (P0.8):
+    """Refreshes `last_seen` on the active postings of boards that answered 304:
     without it a perfectly live, quiet board would age out of the registry lane's
     7-day freshness window. Best effort, deliberately: if it fails the postings merely
     keep their older `last_seen`, the next 304 tick tries again, and failing here must
@@ -254,7 +252,7 @@ async def _bookkeeping_rpc(supabase: AsyncClient, name: str, params: dict[str, A
     like the upsert. A timed-out statement was cancelled and rolled back, so
     running it again can't apply it twice -- even penalize, which increments
     a counter. A close-stale timeout after the postings were written is how
-    the poller died on 2026-08-31 (see launch plan P0.6a)."""
+    the poller died on 2026-08-31."""
 
     async def _op() -> None:
         await supabase.rpc(name, params).execute()
@@ -263,7 +261,7 @@ async def _bookkeeping_rpc(supabase: AsyncClient, name: str, params: dict[str, A
 
 
 def _dedupe_postings(postings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """A real live tick (P3a) hit Postgres error 21000 ("ON CONFLICT DO
+    """A real live tick hit Postgres error 21000 ("ON CONFLICT DO
     UPDATE command cannot affect row a second time") -- a single
     company's own paginated fetch (SmartRecruiters) produced two rows
     with the same external_id in one tick, almost certainly because the
@@ -411,7 +409,7 @@ async def run_poll_tick(http: httpx.AsyncClient, supabase: AsyncClient) -> int:
 
 async def run_eightfold_jd_backfill(http: httpx.AsyncClient, supabase: AsyncClient) -> int:
     """Drip-feeds real job-description text into Eightfold rows the main
-    list-fetch can never populate (confirmed live, P3c research: jd_text
+    list-fetch can never populate (confirmed live: jd_text
     is ALWAYS empty on Eightfold's own list endpoint, both tiers) --
     mirrors n8n's own "Select JD Backfill Batch -> Fetch Eightfold
     JDs -> Update Job Descriptions" branch. Confirmed live: the detail

@@ -7,32 +7,26 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
-class ErrorResponse(BaseModel):
-    error: str
-    message: str
-
-
 class GapInterviewDraftRequest(BaseModel):
-    """S4b (honest-score-surfaces.md): the question that was asked and the
-    candidate's freeform answer to it -- everything the draft endpoint
-    needs from the caller; it resolves the candidate-entity list itself
-    from the user's own active profile."""
+    """The question that was asked and the candidate's freeform answer to it --
+    everything the draft endpoint needs from the caller; it resolves the
+    candidate-entity list itself from the user's own active profile."""
 
     question: str
     answer: str
 
 
 class SubmitInterviewAnswerRequest(BaseModel):
-    """InterviewForge R3 (interviewforge-v1.md): the candidate's freeform
-    answer to whichever question the session's own state says is next --
-    the route resolves which question, never a caller-supplied question id,
-    matching the platform's own "next unanswered, in order" session model."""
+    """The candidate's freeform answer to whichever question the session's
+    own state says is next -- the route resolves which question, never a
+    caller-supplied question id, matching the platform's own "next
+    unanswered, in order" session model."""
 
     answer_text: str
 
 
 class GapInterviewApproveRequest(BaseModel):
-    """S4b: the candidate's final, explicitly-approved bullet + target
+    """The candidate's final, explicitly-approved bullet + target
     entity -- may differ from what the draft endpoint proposed (the
     candidate can edit the bullet or pick a different entity before
     approving; this is the one and only value actually applied)."""
@@ -52,18 +46,18 @@ class ImportProfileRequest(BaseModel):
 
 
 class MintLinkCodeRequest(BaseModel):
-    """Sprint 2.8c. `channel` matches channel_identities' own vocabulary
-    (Proposal §14) -- only "telegram" is actually wired to a bot command
-    yet (the route rejects anything else), but the field isn't narrowed
-    to a single literal so the shape doesn't need to change when a second
-    channel's bot integration arrives."""
+    """`channel` matches channel_identities' own vocabulary -- only
+    "telegram" is actually wired to a bot command yet (the route rejects
+    anything else), but the field isn't narrowed to a single literal so the
+    shape doesn't need to change when a second channel's bot integration
+    arrives."""
 
     channel: str = Field(min_length=1)
 
 
 class CreateApplicationFromPasteRequest(BaseModel):
-    """Sprint 2.6f's manual-paste lane (Proposal §18) -- no URL scraping,
-    the caller supplies the job content directly. `canonical_url` is
+    """The manual-paste lane -- no URL scraping, the caller supplies the
+    job content directly. `canonical_url` is
     optional: some pastes (forwarded emails, screenshots retyped by hand)
     have no URL at all, and a job with no URL always gets its own row
     rather than being deduped against anything (jobs_store's own rule)."""
@@ -76,8 +70,8 @@ class CreateApplicationFromPasteRequest(BaseModel):
 
 
 class CreateApplicationFromUrlRequest(BaseModel):
-    """outreach-v2-search-first.md Phase J -- the URL-ingest sibling of
-    `CreateApplicationFromPasteRequest`. Deliberately just the one field
+    """The URL-ingest sibling of `CreateApplicationFromPasteRequest`.
+    Deliberately just the one field
     the user actually has: title/company/location/description are all
     resolved server-side (a real registry lookup, or a real Firecrawl
     scrape) rather than trusted from the caller, matching this project's
@@ -91,19 +85,19 @@ class CreateApplicationFromUrlRequest(BaseModel):
 ApplicationStatus = Literal[
     "saved", "applied", "screening", "interviewing", "offer", "rejected", "withdrawn"
 ]
-"""Applications Kanban K1 (applications-kanban.md D1/D2) -- the 7 values
-already live in the web frontend's own STATUS_OPTIONS, now the single
-enforced vocabulary. Membership-only enforcement, not a gated state
-machine (D2) -- any-to-any moves among these 7 stay legal. The Postgres
-`applications_status_check` CHECK constraint and `change_application_
-stage`'s own copy of this same check are the real, load-bearing
-enforcement; this Literal just gives the HTTP boundary a friendly 422
-before ever reaching the DB, matching `QuestionType`'s own precedent."""
+"""The seven application stages (the same values the web frontend's
+STATUS_OPTIONS lists), and the single enforced vocabulary. Membership-only
+enforcement, not a gated state machine -- any-to-any moves among these 7
+stay legal. The Postgres `applications_status_check` CHECK constraint and
+`change_application_stage`'s own copy of this same check are the real,
+load-bearing enforcement; this Literal just gives the HTTP boundary a
+friendly 422 before ever reaching the DB, matching `QuestionType`'s own
+precedent."""
 
 
 class ChangeApplicationStageRequest(BaseModel):
     """`idempotency_key` is caller-supplied, not server-generated --
-    Proposal's own "idempotency keys on all commands" guardrail means the
+    the platform's "idempotency keys on all commands" rule means the
     caller (the one who can actually retry) owns picking it, e.g. a fresh
     uuid per click of a "Mark as Applied" button, so a network retry of
     the same click doesn't double-record the transition."""
@@ -113,18 +107,18 @@ class ChangeApplicationStageRequest(BaseModel):
 
 
 class SaveCredentialRequest(BaseModel):
-    """Sprint 2.7e. `model` is free-text, not a dropdown of known models --
-    Proposal §11: "Every model identifier is configuration, never durable
-    domain data," and a hardcoded model list goes stale exactly the way
-    this project's own model-currency discipline warns against.
+    """`model` is free-text, not a dropdown of known models -- every model
+    identifier is configuration, never durable domain data, and a hardcoded
+    model list goes stale exactly the way this project's own model-currency
+    discipline warns against.
 
-    `model` is optional as of Horizon Sprint 5.0 -- an LLM credential
-    needs one (which model to call), but a search-provider credential
-    (You.com, Firecrawl) doesn't have a "model" concept at all; forcing
-    one would mean either a placeholder value or a second request shape,
-    neither of which is honest.
+    `model` is optional -- an LLM credential needs one (which model to
+    call), but a search-provider credential (You.com, Firecrawl) doesn't
+    have a "model" concept at all; forcing one would mean either a
+    placeholder value or a second request shape, neither of which is
+    honest.
 
-    `secret_2` is optional as of Job Finder P4c -- a generic second-value
+    `secret_2` is optional -- a generic second-value
     slot for the rare provider whose BYOK credential genuinely needs two
     real values (Adzuna: app_id + app_key; USAJobs: an Authorization-Key
     AND a registered email). Every other provider leaves it unset."""
@@ -138,8 +132,8 @@ class SaveCredentialRequest(BaseModel):
 
 
 class PrepareApplicationRequest(BaseModel):
-    """Sprint 3.0e. No profile_version_id/job_snapshot_id here, unlike
-    Proposal §9's MCP-facing `PrepareApplicationInput` -- this HTTP route
+    """No profile_version_id/job_snapshot_id here, unlike the MCP-facing
+    `PrepareApplicationInput` in `engine_contract.py` -- this HTTP route
     resolves both itself (the user's active profile, the application's
     current active_job_snapshot_id) rather than trusting a caller-supplied
     id, matching this project's "resolve server-side, don't trust a
@@ -147,25 +141,22 @@ class PrepareApplicationRequest(BaseModel):
 
     idempotency_key: str = Field(min_length=16, max_length=128)
     force_generate: bool = False
-    """S4c (honest-score-surfaces.md): "Generate anyway" -- an explicit
-    human override of the pre-generation gate, after seeing its own
-    honest `fit` read (Honest Floor). Defaults False; every existing
-    caller is unaffected."""
+    """"Generate anyway" -- an explicit human override of the pre-generation
+    gate, after seeing its own honest `fit` read (the Honest Floor).
+    Defaults False; every existing caller is unaffected."""
     generate_cover_letter: bool = False
-    """C1/C2 (coverforge-port.md): opt-in, defaults False. D1's decision --
-    bundled into this same `/prepare` call rather than a separate
-    endpoint, matching n8n's real parallel resume+cover generation and
-    Proposal §7.3's "share one profile/job-snapshot/artifact transaction"
-    note. A boolean, not the unwired `PrepareApplicationInput.
-    requested_artifacts` list (Proposal §9's MCP-facing schema, a separate
-    model this HTTP route has never used) -- same shape as `force_generate`
-    above."""
+    """Opt-in, defaults False. The cover letter is bundled into this same
+    `/prepare` call rather than a separate endpoint, so one request produces
+    both documents. A boolean, not the unwired
+    `PrepareApplicationInput.requested_artifacts` list (the MCP-facing
+    schema, a separate model this HTTP route has never used) -- same shape
+    as `force_generate` above."""
 
 
 class UpdateHeaderLayoutRequest(BaseModel):
-    """Sprint 3.2c. `header_layout` stays `dict[str, Any]` rather than a
-    typed model -- its shape is forge-engines' `HeaderLayout` (Sprint
-    3.2b), which this platform treats as opaque configuration it stores
+    """`header_layout` stays `dict[str, Any]` rather than a
+    typed model -- its shape is forge-engines' `HeaderLayout`,
+    which this platform treats as opaque configuration it stores
     and forwards, the same way `resume_template`/`pass1`/`pass2` are
     opaque dicts at the forge-engines HTTP boundary itself."""
 
@@ -181,7 +172,7 @@ class PreviewHeaderRequest(BaseModel):
 
 
 class UpdateSectionsRequest(BaseModel):
-    """Sprint 3.2d. `section_order` is unconstrained here (not a Literal
+    """`section_order` is unconstrained here (not a Literal
     enum of known section names) -- the resume_documents row itself has
     no CHECK constraint on it either, matching this project's usual
     unconstrained-status-text posture, and validating against forge-
@@ -193,7 +184,7 @@ class UpdateSectionsRequest(BaseModel):
 
 
 class UpdateSelectedEvidenceRequest(BaseModel):
-    """Sprint 3.3e's evidence picker -- the full set of career_fact ids
+    """The evidence picker -- the full set of career_fact ids
     the user wants considered evidence for this document, replacing
     whatever was selected before."""
 
@@ -201,7 +192,7 @@ class UpdateSelectedEvidenceRequest(BaseModel):
 
 
 class ShapeOverrides(BaseModel):
-    """R6 (resumeforge-shape-and-fit.md): resume settings, stored as one
+    """Resume settings, stored as one
     jsonb blob on `resume_documents.shape_overrides` -- both the master
     document (defaults) and a per-application document (overrides) use
     this exact same shape, merged by `shape_overrides.merge` before a
@@ -220,32 +211,28 @@ class ShapeOverrides(BaseModel):
 
     page_count: Literal["auto", "1", "2"] | None = None
     density: Literal["compact", "balanced", "spacious"] | None = None
-    """S6 (honest-score-surfaces.md): all three values render distinctly --
-    forge-engines has its own Spacious LaTeX macro family (looser vspace,
-    same font size as Balanced) and a density-aware page-line-budget scale.
-    See `shape_overrides.py`."""
+    """All three values render distinctly -- forge-engines has its own
+    Spacious LaTeX macro family (looser vspace, same font size as Balanced)
+    and a density-aware page-line-budget scale. See `shape_overrides.py`."""
     summary: Literal["auto", "on", "off"] | None = None
-    """Decision #3 (resumeforge-shape-and-fit.md §4): the system DEFAULT
-    (applied when this is unset all the way down the chain) is "off", not
-    "auto" -- summary is opt-in. See `shape_overrides.py`'s `resolve()`."""
+    """The system DEFAULT (applied when this is unset all the way down the
+    chain) is "off", not "auto" -- a summary is opt-in. See
+    `shape_overrides.py`'s `resolve()`."""
     bullet_style: Literal["plain", "bold_lead_in"] | None = None
-    """Decision #2: forge-engines' own `bullet_lead_in` defaults to "none"
-    (the wiki-recommended default) -- "plain" here maps onto that."""
+    """forge-engines' own `bullet_lead_in` defaults to "none" (no bold
+    lead-in) -- "plain" here maps onto that."""
     region: str | None = None
     """A country code forge-engines' locale profiles understand (or any
     string -- an unrecognized one resolves to forge-engines' own DEFAULT
-    profile, same as today). Merged into `locale_resolver.
-    resolve_locale_for_prepare`'s existing `document_override`/
-    `user_default` parameters, which have accepted real values since R4b
-    but were fed `None` until this sprint gave them a source."""
+    profile). Merged into `locale_resolver.resolve_locale_for_prepare`'s
+    `document_override`/`user_default` parameters, which accept real
+    values but were fed `None` until this setting gave them a source."""
     show_gpa: bool | None = None
-    """GPA renders unconditionally whenever present in the profile today
-    (Resume Hard Rules: never GPA on Pranav's OWN resume, but this is a
-    BYOK platform for every user, not just him) -- system default is
-    `False` (Pranav's own rule, generalized as the platform default, not
-    hardcoded as HIS rule specifically)."""
+    """Opt-in: the system default is `False` for every user (it is a
+    platform-wide default, not any one person's preference). See
+    `shape_overrides.py`'s `resolve()`."""
     show_nationality: bool | None = None
-    """S5 (honest-score-surfaces.md, D1): opt-in only -- system default
+    """Opt-in only -- system default
     `False`. Even when on, forge-engines only actually renders a nationality
     chip when the RESOLVED locale's `effective_fields` also says
     "expected" (today: DE/AT) -- this flag alone is never sufficient. The
@@ -260,7 +247,7 @@ class UpdateShapeOverridesRequest(BaseModel):
 
 
 class UpdateAssertionsRequest(BaseModel):
-    """S2 (honest-score-surfaces.md) -- the full set of dealbreaker
+    """The full set of dealbreaker
     requirement strings the candidate has personally confirmed are true
     for them (e.g. "on-site work is fine"), replacing whatever was
     asserted before -- same full-replace convention as
@@ -274,13 +261,13 @@ class UpdateAssertionsRequest(BaseModel):
 
 
 class TrackDiscoveredJobRequest(BaseModel):
-    """Job Finder P8 -- the frontend already has the full `SearchResult`
+    """The frontend already has the full `SearchResult`
     (and, when scored, `ScoredJob`) data from its own last `/discover`
     response; tracking just resubmits the fields needed to create a real
     `jobs`/`job_snapshots` row, mirroring `CreateApplicationFromPasteRequest`'s
     own shape. Deliberately NOT reused directly: this route needs
     `provider` to decide whether a real full `jd_text` can be looked up
-    from the registry (Job Finder P1-P3e) server-side, since neither
+    from the job registry server-side, since neither
     `SearchResult` nor `ScoredJob` carries full JD text (only a 500-char
     snippet) for a live-search-lane result."""
 
@@ -302,7 +289,7 @@ would."""
 
 
 class CreateSavedSearchRequest(BaseModel):
-    """Job Finder P9a -- mirrors `/discover`'s own filter shape exactly
+    """Mirrors `/discover`'s own filter shape exactly
     (`GET /discover?q=...&location=...&companies=...&remote_only=...`),
     since the real UX is "save the search I already ran", not a second
     form asking the user to re-specify criteria.
@@ -326,7 +313,7 @@ HiringSignalFreshness = Literal["day", "3days", "week"]
 
 
 class SearchHiringSignalsRequest(BaseModel):
-    """Hiring Signals P3 -- how recent the posts must be. The whole body is
+    """How recent the posts must be. The whole body is
     optional (a bare POST means the default window); anything but the three
     windows, or any other field, is a 422 rather than silently ignored."""
 
@@ -336,7 +323,7 @@ class SearchHiringSignalsRequest(BaseModel):
 
 
 class SaveHiringSignalRequest(BaseModel):
-    """Hiring Signals P3 -- save a post the search returned. ONLY the numeric
+    """Save a post the search returned. ONLY the numeric
     activity id and the label of the search that found it: a url, author,
     title or text is not a field here and `extra="forbid"` turns one into a
     422 instead of an ignored extra, so nothing but the id can ever reach the
@@ -358,7 +345,7 @@ _TypedLocation = Annotated[str, StringConstraints(strip_whitespace=True, max_len
 
 
 class SearchHiringTabRequest(BaseModel):
-    """Hiring Signals P4 -- the standalone tab's search: a typed role and,
+    """The standalone tab's search: a typed role and,
     optionally, a metro, with NO company. Both are the user's own typing and
     are treated as untrusted (see `hiring_signal_tab`); the provider query is
     built server-side and is never a field here, and neither is a provider or a
@@ -377,7 +364,7 @@ class SearchHiringTabRequest(BaseModel):
 
 
 class CreateHiringSearchRequest(BaseModel):
-    """Hiring Signals P4 -- save a tab search. ONLY the user's own typed role
+    """Save a tab search. ONLY the user's own typed role
     and metro: a saved search does not run, schedule or watch anything, so there
     is no window, locale or provider to store."""
 
@@ -406,7 +393,7 @@ above any real answer, not a tight fit around one."""
 
 
 class MatchApprovedAnswerRequest(BaseModel):
-    """browser-extension.md E1 -- the extension sends a screening
+    """The extension sends a screening
     question's own normalized label text (never the raw DOM id/uuid,
     which live DOM research found carries no semantic meaning on any of
     Greenhouse/Lever/Ashby); `canonical_intent` is optional, populated
@@ -421,7 +408,7 @@ class MatchApprovedAnswerRequest(BaseModel):
 class SaveApprovedAnswerRequest(BaseModel):
     """Upserts on `(user_id, normalized_question)` -- approving the same
     question a second time replaces the stored answer. `sensitive_category`
-    (D6) marks an EEO/demographic/work-authorization-class answer so the
+    marks an EEO/demographic/work-authorization-class answer so the
     extension's own per-field opt-in gate has something to check against;
     left None for an ordinary factual answer."""
 
@@ -435,7 +422,7 @@ class SaveApprovedAnswerRequest(BaseModel):
 
 
 class DraftAnswerRequest(BaseModel):
-    """browser-extension.md E3b -- `question_text` is the raw rendered
+    """`question_text` is the raw rendered
     label the extension read off the page (not yet normalized; the
     extension normalizes separately when it later saves an approved
     answer via SaveApprovedAnswerRequest). `application_id` scopes the

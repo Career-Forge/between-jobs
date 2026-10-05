@@ -1,9 +1,8 @@
 # latex-service
 
-Stateless LaTeX-to-PDF compile service. Built for Sprint 3.2e's renderer
-spike (Resume Studio's Structure mode preview) -- see
-`docs/UNIFIED_CAPABILITY_MAP.md` in the parent repo for the decision this
-service supports.
+Stateless LaTeX-to-PDF compile service. When the Between Jobs API produces a
+resume or cover-letter PDF it sends the LaTeX here and gets the PDF back (set
+`LATEX_SERVICE_BASE_URL` on the API to point at this service).
 
 One endpoint that matters: `POST /compile` with `{"latex": "..."}`,
 returns the compiled PDF bytes (`application/pdf`) or a structured error

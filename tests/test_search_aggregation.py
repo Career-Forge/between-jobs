@@ -1,6 +1,5 @@
-"""Tests for Job Finder P5a-d (live-search-track.md's own P5 scoping) --
-canonical dedup, aggregator demotion, tier filtering, sort, cohort/role
-filtering, the registry lane, and (see the dedicated P5d section) the
+"""Tests for canonical dedup, aggregator demotion, tier filtering, sort,
+cohort/role filtering, the registry lane, and (see the dedicated section) the
 gazetteer-backed location filter. Ported verbatim from n8n's real
 Aggregate Jobs node (aggregate_jobs.js)."""
 
@@ -307,7 +306,7 @@ def test_aggregate_jobs_empty_input_returns_empty() -> None:
     assert aggregate_jobs([]) == []
 
 
-# ── P5b: cohort lookup ───────────────────────────────────────────────────
+# ── cohort lookup ───────────────────────────────────────────────────
 
 
 def test_expand_cohort_maango() -> None:
@@ -332,7 +331,7 @@ def test_expand_cohort_dream_has_36_companies() -> None:
     assert len(dream) == 36
 
 
-# ── P5b: company filter ──────────────────────────────────────────────────
+# ── company filter ──────────────────────────────────────────────────
 
 
 def test_filter_by_companies_matches_fuzzy_both_directions() -> None:
@@ -362,7 +361,7 @@ def test_filter_by_companies_normalizes_punctuation() -> None:
     assert filter_by_companies([result], ["p g"]) == [result]
 
 
-# ── P5b: role filter ──────────────────────────────────────────────────────
+# ── role filter ──────────────────────────────────────────────────────
 
 
 def test_filter_by_role_requires_all_query_terms() -> None:
@@ -480,7 +479,7 @@ def test_matches_all_role_terms_requires_every_pattern_and_lowercases_the_haysta
     assert matches_all_role_terms("anything", [])  # vacuous: callers check for emptiness first
 
 
-# ── P5c: registry-lane query ─────────────────────────────────────────────
+# ── registry-lane query ─────────────────────────────────────────────
 
 
 class _FakeRpcBuilder:
@@ -613,9 +612,8 @@ async def test_fetch_registry_lane_passes_query_and_limit_through() -> None:
 
 
 async def test_fetch_registry_lane_empty_query_still_calls_through() -> None:
-    """An empty query means "browse recent," matching discovery_store.py's
-    own existing no-query behavior -- the SQL function itself (not this
-    Python layer) decides to skip the tsvector filter."""
+    """An empty query means "browse recent": the SQL function itself (not
+    this Python layer) decides to skip the tsvector filter."""
     supabase = _FakeSupabase([_registry_row()])
 
     results = await fetch_registry_lane(supabase, query="")  # type: ignore[arg-type]
@@ -632,7 +630,7 @@ async def test_fetch_registry_lane_no_results() -> None:
     assert results == []
 
 
-# ── P5d: gazetteer-backed location filter ────────────────────────────────
+# ── gazetteer-backed location filter ────────────────────────────────
 
 
 def _test_gazetteer() -> Gazetteer:
@@ -727,7 +725,7 @@ def test_aggregate_jobs_sorts_location_verified_first() -> None:
     assert [r.company for r in result] == ["B", "A"]  # verified wins even over a better tier
 
 
-# ── apply_search_filters: the shared 3-step chain (code-review-fixes.md 4c) ──
+# ── apply_search_filters: the shared 3-step chain ──
 
 
 class _FakeGazetteerTable:
@@ -810,7 +808,7 @@ async def test_apply_search_filters_gazetteer_active_true_when_populated() -> No
 
 
 async def test_apply_search_filters_gazetteer_active_false_when_empty() -> None:
-    """The fail-open case (code-review-fixes.md 2c): a location was
+    """The fail-open case: a location was
     requested, but the gazetteer table is empty/unreachable, so the
     filter genuinely never ran -- gazetteer_active must reflect that
     honestly rather than claim a filter happened."""

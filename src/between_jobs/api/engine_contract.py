@@ -1,22 +1,20 @@
-"""Proposal §24.2's public engine contract types (Sprint 3.0d).
+"""The public engine contract types: what the prepare flow hands to, and gets back from, a
+resume engine.
 
-These are between-jobs' OWN public shapes, not a copy of forge-engines'
-wire format. `AtsAttempt` isn't spelled out anywhere in the Proposal --
-`PrepareApplicationResult` only forward-references `list["AtsAttempt"]` --
-so its fields mirror forge-engines' `AtsScore` TypedDict one-for-one
-(that's the only thing this type wraps), translated to this project's own
-snake_case convention. forge-engines' `AtsScoreBreakdown` keeps camelCase
-because it mirrors n8n's `calculateATSScore` return object exactly (see
-forge-engines/src/forge_engines/ats_score.py); this contract has no such
-parity obligation to an external JS object, so it follows the same
-field-naming convention as every other model in this codebase.
+These are between-jobs' OWN public shapes, not a copy of forge-engines' wire format.
+`AtsAttempt` has no shape defined anywhere else -- `PrepareApplicationResult` only
+forward-references `list["AtsAttempt"]` -- so its fields mirror forge-engines' `AtsScore`
+TypedDict one-for-one (that's the only thing this type wraps), translated to this project's
+own snake_case convention. forge-engines' `AtsScoreBreakdown` keeps camelCase because it
+mirrors the reference `calculateATSScore` return object exactly (see
+forge-engines/src/forge_engines/ats_score.py); this contract has no such parity obligation
+to an external JS object, so it follows the same field-naming convention as every other
+model in this codebase.
 
-`PrepareApplicationInput` is Proposal §9's MCP tool input, reused here as
-the internal command shape per the v12 plan's own description of this
-sprint ("IDs + idempotency_key, never raw text") -- the same shape works
-for both an MCP tool call and this platform's own internal command, since
-neither should ever trust caller-supplied profile/job text over a
-resolved, authorized snapshot id.
+`PrepareApplicationInput` is the MCP tool input, reused here as the internal command shape
+(IDs + idempotency_key, never raw text) -- the same shape works for both an MCP tool call
+and this platform's own internal command, since neither should ever trust caller-supplied
+profile/job text over a resolved, authorized snapshot id.
 """
 
 from __future__ import annotations
@@ -46,10 +44,9 @@ class AtsScoreBreakdown(BaseModel):
 
 
 class ClusterContribution(BaseModel):
-    """Mirrors forge-engines' `ClusterContribution` (ats_score.py, S3 --
-    honest-score-surfaces.md). New field, not an n8n-original one, so plain
-    snake_case on the wire already -- no alias needed, unlike
-    `AtsScoreBreakdown`."""
+    """Mirrors forge-engines' `ClusterContribution` (ats_score.py). New field,
+    not one the reference had, so plain snake_case on the wire already -- no
+    alias needed, unlike `AtsScoreBreakdown`."""
 
     cluster_name: str
     coverage_score: float
@@ -87,7 +84,7 @@ class AtsAttempt(BaseModel):
     """One ATS scoring pass. `PrepareApplicationResult.ats_attempts` holds
     one entry per attempt, in order -- pre-regen, then post-regen when a
     regeneration happened -- mirroring forge-engines'
-    `PipelineResult.ats_attempts` (Sprint 3.0b)."""
+    `PipelineResult.ats_attempts`."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -97,12 +94,12 @@ class AtsAttempt(BaseModel):
     rating: str
     gaps: list[str] = Field(default_factory=list)
     page_count: float = 1
-    """R7: the ATS-extraction LLM's own self-reported page count -- an
+    """The ATS-extraction LLM's own self-reported page count -- an
     informational cross-check value, not authoritative for anything (see
     forge-engines' `AtsScore.page_count` docstring). Defaults to 1 so
     responses from a not-yet-updated forge-engines deploy still validate."""
     detail: AtsScoreDetail | None = None
-    """S3: sub-signals behind the breakdown totals (see forge-engines'
+    """Sub-signals behind the breakdown totals (see forge-engines'
     `AtsScoreDetail` docstring). Optional, same rationale as `page_count` --
     a not-yet-updated forge-engines deploy simply omits it."""
 
@@ -138,9 +135,9 @@ class Step0Cluster(BaseModel):
 
 
 class GapQuestion(BaseModel):
-    """Mirrors forge-engines' `gap_interview.GapQuestion` field for field
-    (S4a, honest-score-surfaces.md) -- already snake_case-compatible on
-    the wire, no alias translation needed."""
+    """Mirrors forge-engines' `gap_interview.GapQuestion` field for field --
+    already snake_case-compatible on the wire, no alias translation
+    needed."""
 
     cluster_name: str
     question: str
@@ -148,7 +145,7 @@ class GapQuestion(BaseModel):
 
 class GapAnswerDraft(BaseModel):
     """Mirrors forge-engines' `gap_interview.GapAnswerDraft` field for
-    field (S4b, honest-score-surfaces.md)."""
+    field."""
 
     bullet: str
     entity_pointer: str
@@ -181,14 +178,14 @@ class ForgeScoreDimensions(BaseModel):
 
 class ForgeFitResult(BaseModel):
     """Mirrors forge-engines' `forge_score.ForgeScoreResult` field for
-    field (S4c, honest-score-surfaces.md) -- the pre-generation fit read
-    that was already computed on every real `/apply` call and silently
-    dropped here until now (`ForgeApplyResult`'s own `extra="ignore"`
-    config). 0-10 scale, deliberately NOT converted to a fake "/100" --
-    this measures something different from `AtsScoreBreakdown`'s own
-    honest 0-100 (pre- vs. post-generation, LLM read vs. deterministic
-    formula), and dressing it up as directly comparable would be exactly
-    the fabricated-looking precision this whole plan refuses elsewhere."""
+    field -- the pre-generation fit read, computed on every real `/apply`
+    call (it would be silently dropped by `ForgeApplyResult`'s own
+    `extra="ignore"` config if it were not typed here). 0-10 scale,
+    deliberately NOT converted to a fake "/100" -- this measures something
+    different from `AtsScoreBreakdown`'s own honest 0-100 (pre- vs.
+    post-generation, LLM read vs. deterministic formula), and dressing it
+    up as directly comparable would be exactly the fabricated-looking
+    precision this platform refuses elsewhere."""
 
     overall_score: float
     dimensions: ForgeScoreDimensions = Field(default_factory=ForgeScoreDimensions)
@@ -211,21 +208,21 @@ class PrepareApplicationResult(BaseModel):
     final_score: float | None
     score_scale: str = "0-100"
     fit: ForgeFitResult | None = None
-    """S4c: the pre-generation Honest Floor read -- present on every real
+    """The pre-generation Honest Floor read -- present on every real
     `/apply` run (proceeded, cautioned, or declined alike), optional only
     so a response from a not-yet-updated forge-engines deploy still
     validates, same forward-compat rationale as `AtsAttempt.detail`."""
     gate_outcome: str | None = None
     gate_reason: str = ""
     gate_cautions: list[str] = Field(default_factory=list)
-    """outreach-v2-search-first.md Phase I: the gate's own literal verdict
-    (`GateInfo.outcome` -- "proceed", or a decline code like
-    REJECT_MISMATCH/SKIP_LOW_SCORE) was previously discarded after being
-    folded into plain `warnings` text -- reconstructable only by checking
-    whether `resume` is null. `record_event` already persists this whole
-    result into `application_events.payload` on every prepare call
-    regardless of gate outcome (fit is computed before the gate check
-    runs), so capturing the literal outcome here is the entire fix: no
-    new table, this rides the same durable row that already exists."""
+    """The gate's own literal verdict (`GateInfo.outcome` -- "proceed", or a
+    decline code like REJECT_MISMATCH/SKIP_LOW_SCORE), kept as its own field
+    because folding it into plain `warnings` text would make it
+    reconstructable only by checking whether `resume` is null.
+    `record_event` already persists this whole result into
+    `application_events.payload` on every prepare call regardless of gate
+    outcome (fit is computed before the gate check runs), so capturing the
+    literal outcome here needs no new table: it rides the same durable row
+    that already exists."""
     warnings: list[str]
     evidence_fact_ids: list[str]

@@ -1,25 +1,17 @@
-"""HTTP surface for job discovery (Job Finder P8, job-finder-port.md's
-own build order) -- the full native search pipeline, wiring together
-every prior Job Finder phase into one request: P4 (9 BYOK live-search
-providers) + P5c (the registry lane, P1-P3e's own ATS poller) merged via
-P5a/b/d (dedup/tier/cohort/location filtering) -> P7 (per-platform
-liveness verification) -> P6 (batch fit-scoring).
+"""HTTP surface for job discovery: one request runs the whole native search pipeline.
 
-Replaces Horizon Sprint 4.1's discovery facade, which read n8n's own
-live Postgres directly (`discovery_store.py`, `N8N_JOBS_DATABASE_URL`) --
-dead code now that this platform owns its full, independent search
-pipeline end to end, exactly as job-finder-port.md's own D1 always
-intended. `discovery_store.py` and the `n8n_pool` app-state wiring are
-removed in the same change, not left dangling.
+Two lanes are searched in parallel -- the BYOK live-search providers (`search_providers`)
+and this platform's own job registry, the postings its ATS poller keeps
+(`fetch_registry_lane`). The results are merged, de-duplicated and filtered
+(`search_aggregation`), the live-search-lane links are checked for liveness
+(`ats_liveness`), and the survivors are scored against the candidate's profile in one
+batched LLM call (`job_fit_scoring`).
 
-Pipeline order matches n8n's own real node graph, confirmed directly
-(`Filter Applied Jobs -> Verify Job Links -> Experience Filter -> Build
-Scorer Input -> JobScorer`): liveness verification runs BEFORE scoring,
-so a confirmed-dead posting never wastes an LLM scoring call. Runs fully
-synchronously in one request (Pranav's own call, 2026-08-31) rather than
-a two-phase fast-preview-then-enrich design -- simpler, one round trip;
-typical latency is a few seconds, with `ats_liveness`'s own worst-case
-budget (~18s) as a deliberately-accepted tail, not the common case.
+Liveness verification runs BEFORE scoring, so a confirmed-dead posting never wastes an LLM
+scoring call. The pipeline runs fully synchronously in one request rather than as a fast
+preview followed by an enrichment pass: one round trip is simpler, and typical latency is a
+few seconds, with `ats_liveness`'s own worst-case budget (~18s) as a deliberately accepted
+tail, not the common case.
 """
 
 from __future__ import annotations
@@ -88,7 +80,7 @@ async def _registry_lane_or_nothing(
 
 async def _empty_registry_lane_note(supabase: AsyncClient) -> str | None:
     """Why the registry lane returned nothing, when the answer is "it is out of date" rather
-    than "nothing matched" (P0.8: postings last seen more than 7 days ago are not shown, so a
+    than "nothing matched" (postings last seen more than 7 days ago are not shown, so a
     poller that has been down empties the lane). None when the registry was polled recently
     (an honest empty result), and None when we could not find out -- "I could not ask" is not
     a reason to tell the user something. Optional by design: it never fails the search."""
@@ -110,7 +102,7 @@ async def _empty_registry_lane_note(supabase: AsyncClient) -> str | None:
 
 _LIVENESS_CANDIDATE_CAP = 50
 """How many LIVE-SEARCH-LANE (non-registry) aggregated/filtered results
-get a real per-platform liveness check -- comfortably above P6's own
+get a real per-platform liveness check -- comfortably above the
 30-job scoring cap so a scored batch of 30 ALIVE jobs is still likely
 even if several of the top candidates turn out dead. Registry-lane
 results never count against this cap and are never probed at all (they are
@@ -274,7 +266,7 @@ async def search_discover(
     )
 
     # Registry-lane results never go through verify_liveness, whether or not
-    # fetch_registry_lane marked them link-checked (P0.8: that depends on how
+    # fetch_registry_lane marked them link-checked (that depends on how
     # recently their board was polled) -- the poller's own absence-based
     # mechanism is their liveness signal, and ats_liveness's own module
     # docstring says it's never meant to run on them. Only the live-search-lane subset competes for
@@ -339,7 +331,7 @@ async def track_discovered_job(
     supabase: AsyncClient = Depends(get_supabase),
 ) -> dict[str, Any]:
     """Hands the tracked posting to `create_job_from_paste` exactly as if
-    the user had pasted it manually (Sprint 2.6f's own write path, no
+    the user had pasted it manually (the existing write path, no
     second one invented for this). A live-search-lane result (anything
     other than `provider="registry"`) has no full JD text available
     anywhere -- using the 500-char `snippet` as-is is a real, disclosed

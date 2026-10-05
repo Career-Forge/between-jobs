@@ -1,8 +1,7 @@
-"""Company intelligence pipeline (Horizon Sprint 5.0) -- Proposal §26.1,
-scoped to Stage 1 (role fingerprint), Stage 2 (query plan), Stage 3
-(broad retrieval), and Stage 7 (synthesis) only. Stage 4 (Firecrawl
-selective full-page crawl) and Stages 5-6 (candidate extraction/identity
-resolution/evidence graph) are §27's contact-finding territory -- this
+"""Company intelligence pipeline, scoped to Stage 1 (role fingerprint), Stage 2
+(query plan), Stage 3 (broad retrieval), and Stage 7 (synthesis) only. The stages in
+between -- selective full-page crawl, candidate extraction, identity resolution and the
+evidence graph -- are contact-finding territory (`contact_research.py`): this
 module never resolves or stores a named individual, only company-level
 facts (product, funding, hiring activity, culture, interview process,
 news), each claim carrying the real source URL it came from.
@@ -38,7 +37,7 @@ LlmGenerate = Callable[..., Awaitable[LLMResponse]]
 class RoleFingerprint(TypedDict):
     """Stage 1 -- deterministic from the immutable job snapshot only, no
     LLM, no parsing of unstructured JD text into a controlled taxonomy.
-    Proposal §26.1's own fingerprint example also has `role_family`,
+    A fuller fingerprint would also carry `role_family`,
     `level`, `teams`, `hiring_signals` -- extracting those needs either
     an LLM call (which Stage 1 is supposed to be free of) or a keyword
     taxonomy this v0 doesn't build. A real, stated scope cut, not
@@ -64,11 +63,10 @@ class ResearchQuery(TypedDict):
 
 def build_query_plan(fingerprint: RoleFingerprint) -> list[ResearchQuery]:
     """Stage 2 -- a fixed, bounded set of company-level query templates
-    (Proposal §26.1: "The planner cannot generate an unbounded loop").
-    Deliberately excludes §26.1's own team/recruiter/hiring-manager query
-    families ("exact requisition and recruiter", "team hiring manager",
-    etc.) -- those exist to find named people, §27's job, not this
-    module's."""
+    (the planner cannot generate an unbounded loop). Deliberately excludes
+    the team/recruiter/hiring-manager query families ("exact requisition
+    and recruiter", "team hiring manager", etc.) -- those exist to find
+    named people, which is `contact_research.py`'s job, not this module's."""
     company = fingerprint["company"]
     return [
         ResearchQuery(
@@ -97,9 +95,8 @@ async def run_research(
     firecrawl_key: str | None,
 ) -> tuple[QueryResults, list[str], list[str]]:
     """Stage 3 -- runs each query against whichever provider is
-    available, per §26.1's own "Provider failure behavior" table: You.com
-    is primary when present (broad discovery is its stated role);
-    Firecrawl search is the fallback when You.com isn't configured.
+    available: You.com is primary when present (broad discovery is its
+    role); Firecrawl search is the fallback when You.com isn't configured.
     Returns (per-query hits, providers actually used, warnings) --  one
     failed query becomes a warning, not a reason to abandon the whole
     dossier."""

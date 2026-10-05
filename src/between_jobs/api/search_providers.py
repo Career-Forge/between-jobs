@@ -1,74 +1,56 @@
-"""Live-search providers for Job Finder P4 (live-search-track.md).
+"""Live-search providers: the job-search lanes that call third-party APIs per request.
 
-A faithful port of n8n's real `find_jobs` fan-out (read directly from
-`CareerForge_Master_local.json`'s `Build <X> Queries -> <X> Fetch ->
-Normalize <X>` node chains, not redesigned from a description of what it
-does) for the providers n8n actually has (Serper/You.com/Firecrawl/
-RemoteOK/Adzuna), plus this session's own additions with no n8n
-precedent (Arbeitnow, USAJobs, Brave -- see live-search-track.md for
-why).
+The fan-out, query builders and normalizers are a faithful port of a proven reference
+implementation (read directly from its node chains, not redesigned from a description of
+what it does) for Serper, You.com, Firecrawl, RemoteOK and Adzuna, plus Arbeitnow, USAJobs
+and Brave, which the reference never had.
 
-All 9 providers are now genuinely usable end-to-end (P4a+P4b+P4c):
-RemoteOK and Arbeitnow (no auth at all); You.com and Firecrawl (BYOK,
-reusing the credential slots already saved for company-intel); Serper,
-Brave, and JSearch (BYOK, single-secret `("search", provider)`
-credentials); Adzuna and USAJobs (BYOK, the two providers needing a
-SECOND real value -- `credentials.secret_2`, added in P4c -- Adzuna's
-`app_key` alongside `app_id`, USAJobs' registered email alongside its
-Authorization-Key). All credential registration/validation lives in
-`credentials_routes.py`; this module only ever receives already-resolved
-plaintext values (`try_get_secret`/`try_get_secret_pair`), same
-separation of concerns as `research_clients.py`.
+All 9 providers are usable end-to-end: RemoteOK and Arbeitnow (no auth at all); You.com
+and Firecrawl (BYOK, reusing the credential slots already saved for company research);
+Serper, Brave, and JSearch (BYOK, single-secret `("search", provider)` credentials);
+Adzuna and USAJobs (BYOK, the two providers needing a SECOND real value --
+`credentials.secret_2`: Adzuna's `app_key` alongside `app_id`, USAJobs' registered email
+alongside its Authorization-Key). All credential registration/validation lives in
+`credentials_routes.py`; this module only ever receives already-resolved plaintext values
+(`try_get_secret`/`try_get_secret_pair`), same separation of concerns as
+`research_clients.py`.
 
-JSearch deliberately sends no remote-filter request param: live research
-(live-search-track.md) found RapidAPI's own listing may have renamed it
-(`remote_jobs_only` -> `work_from_home`) since n8n's own port, unconfirmed
-against the live playground. Rather than risk a wrong/deprecated param
-name, `fetch_jsearch` relies on the response's own `job_is_remote` field
-instead -- add the request-side filter later once the rename is verified
-against a real key.
+JSearch deliberately sends no remote-filter request param: RapidAPI's own listing may have
+renamed it (`remote_jobs_only` -> `work_from_home`) since the reference was written, and
+that was not confirmed against the live playground. Rather than risk a wrong/deprecated
+param name, `fetch_jsearch` relies on the response's own `job_is_remote` field instead --
+add the request-side filter later once the rename is verified against a real key.
 
-Two providers here have no n8n source to port from (USAJobs, Arbeitnow --
-n8n's own reference never wired USAJobs at all, "Parked - Lanes not
-wired" per its SETUP.md, and never used Arbeitnow either) -- their
-request/response shapes were verified directly against each provider's
-real live API before writing this, same live-first discipline the
-registry adapters (job_registry_adapters.py) already established.
+Two providers here have no reference implementation to port from (USAJobs and Arbeitnow:
+the reference never wired USAJobs and never used Arbeitnow) -- their request/response
+shapes were verified directly against each provider's real live API before writing this,
+the same live-first discipline the registry adapters (job_registry_adapters.py) follow.
 
-Deliberately NOT ported from n8n: the gazetteer-driven free-text location
-extraction (`extractLocationFromText`/`ngramLocationScan` in n8n's real
-Normalize Serper/You.com/Firecrawl nodes) -- it depends on a 34k-city
-GeoNames dataset living in n8n's own private file storage, not something
-this project has or should bundle for a first cut. Serper/You.com/
-Firecrawl results carry `location=None` here rather than a best-effort
-guess -- this is the honest "unknown means labeled as unknown, never
-guessed" call, not a shortcut: P5's own 3-state location filter already
-treats unknown as "kept but flagged," so nothing downstream breaks,
-it just means more search-lane results carry that flag than n8n's own
-gazetteer-assisted version would. The URL-tier classifier and
-company-from-URL extractor ARE ported verbatim (pure regex, no external
-dataset needed).
+Deliberately NOT ported: the gazetteer-driven free-text location extraction -- it depends
+on a 34k-city GeoNames dataset the reference kept in its own private file storage, not
+something this project has or should bundle for a first cut. Serper/You.com/Firecrawl
+results carry `location=None` here rather than a best-effort guess -- this is the honest
+"unknown means labeled as unknown, never guessed" call, not a shortcut: the 3-state
+location filter in `search_aggregation` already treats unknown as "kept but flagged," so
+nothing downstream breaks, it just means more search-lane results carry that flag than a
+gazetteer-assisted version would. The URL-tier classifier and company-from-URL extractor
+ARE ported verbatim (pure regex, no external dataset needed).
 
-Fan-out shape mirrors `company_intel_pipeline.run_research` (fail-open,
-per-provider try/except swallowed into a `warnings: list[str]`, never
-aborts the whole search on one provider's failure) rather than the
-registry's own `AdapterResult`/board-keyed dispatch -- that shape is
-built around poll-cycle/ETag/pagination state a live, per-query search
-call doesn't have. Applies the fix n8n's own real bug needed (You.com is
-the one provider missing `onError: continueRegularOutput` there) to
-every provider uniformly from the start, not just the one that needed
-patching.
+Fan-out shape mirrors `company_intel_pipeline.run_research` (fail-open, per-provider
+try/except swallowed into a `warnings: list[str]`, never aborts the whole search on one
+provider's failure) rather than the registry's own `AdapterResult`/board-keyed dispatch --
+that shape is built around poll-cycle/ETag/pagination state a live, per-query search call
+doesn't have. Applies the fix the reference's own real bug needed (You.com is the one
+provider missing `onError: continueRegularOutput` there) to every provider uniformly from
+the start, not just the one that needed patching.
 
-No LLM query-expansion stage exists here (deliberately, see
-live-search-track.md's own architecture-decisions section) -- callers
-pass a free-text `query` (used as the literal role/keyword phrase),
-optional `location`, and optional `companies` list directly, matching
-`discovery_routes.py`'s own existing simple `q`-param shape. Deterministic
-`site:`-scoped sub-queries are built per-provider from that input, porting
-n8n's real per-provider domain groupings and caps verbatim (they're not
-identical across providers in the reference, so this keeps 3 small
-per-provider builders rather than forcing one shared "unified" builder
-that would lose that fidelity).
+No LLM query-expansion stage exists here, deliberately -- callers pass a free-text `query`
+(used as the literal role/keyword phrase), optional `location`, and optional `companies`
+list directly, matching `discovery_routes.py`'s own existing simple `q`-param shape.
+Deterministic `site:`-scoped sub-queries are built per-provider from that input, porting
+the reference's per-provider domain groupings and caps verbatim (they're not identical
+across providers in the reference, so this keeps 3 small per-provider builders rather than
+forcing one shared "unified" builder that would lose that fidelity).
 """
 
 from __future__ import annotations
@@ -132,21 +114,20 @@ class SearchResult:
     source_tier: float = 4.0
     location_verified: bool | None = None
     """None (default) means location filtering wasn't applied at all --
-    a no-op sort key, matching n8n's own real behavior where this field
-    is undefined on every job until location filtering is actually
-    active (Job Finder P5d). True/False only ever get set by
+    a no-op sort key: the field stays unset on every job until location
+    filtering is actually active. True/False only ever get set by
     `search_aggregation.filter_by_location`."""
     link_checked: bool = False
     """True once a real liveness signal has confirmed this result --
-    either `ats_liveness.verify_liveness` (Job Finder P7) ran a live
+    either `ats_liveness.verify_liveness` ran a live
     per-platform probe against it (live-search-lane results), or it's a
     registry-lane result, which `search_aggregation.fetch_registry_lane`
     always stamps `True` at construction -- the ATS poller's own
-    absence-based mechanism (P1-P3e) already re-confirms these on every
+    absence-based mechanism already re-confirms these on every
     poll tick, a real liveness signal `verify_liveness` is explicitly
     never meant to duplicate (registry-lane results must never reach it
-    at all). Only a live-search-lane result that predates P7 running
-    keeps the default `False`."""
+    at all). Only a live-search-lane result that never went through the
+    liveness check keeps the default `False`."""
 
 
 # ── URL-tier classifier (ported verbatim from n8n's real classifyUrlTier,
@@ -946,10 +927,10 @@ async def fetch_firecrawl(
     freshness: str = "qdr:w",
 ) -> list[SearchResult]:
     """Wires `limit`/`tbs` into the real request body -- a genuine, small
-    improvement over n8n's own reference, not just a note: live research
-    (live-search-track.md) confirmed n8n's own Firecrawl node computes
-    this exact `bodyObj` shape and then never sends it (a real, still-live
-    gap in the reference, `useCustomBody: true` with no body wired). Since
+    improvement over the reference, not just a note: live research
+    confirmed the reference's own Firecrawl node computes
+    this exact `bodyObj` shape and then never sends it (a real gap
+    there: `useCustomBody: true` with no body wired). Since
     between-jobs calls Firecrawl's raw API directly rather than through
     that node, there's no reason to reproduce the omission -- `limit`/
     `tbs` are real, current Firecrawl v2 params, confirmed live. Domain
@@ -989,7 +970,7 @@ async def fetch_firecrawl(
 
 
 # ── Serper (BYOK, new credential: service="search", provider="serper")
-# Google SERP proxy -- confirmed live (live-search-track.md's own research)
+# Google SERP proxy -- confirmed live that
 # it has NO dedicated Google-Jobs endpoint (that's a different company,
 # SerpApi) -- reuses the same deterministic site:-scoped query pattern as
 # You.com/Firecrawl. ────────────────────────────────────────────────────────
@@ -1177,9 +1158,9 @@ async def fetch_brave(
 
 
 # ── JSearch / RapidAPI (BYOK, new credential: service="search",
-# provider="jsearch") -- confirmed live (live-search-track.md) the
-# remote-filter param may have been renamed remote_jobs_only ->
-# work_from_home since n8n's own port; rather than risk sending a wrong/
+# provider="jsearch") -- the remote-filter param may have been renamed
+# remote_jobs_only -> work_from_home since the reference was written (not
+# confirmed against the live playground); rather than risk sending a wrong/
 # deprecated param name, this deliberately sends NO remote-filter param at
 # all and relies on the response's own job_is_remote field instead --
 # verify the request-side param name directly before adding it later. ─────
@@ -1266,7 +1247,7 @@ class ProviderCredentials:
     contract -- this module never resolves credentials itself, that's
     the caller's job (mirroring research_clients.py's own
     `api_key: str` parameter shape). `adzuna_app_id`/`adzuna_app_key`
-    both come from `try_get_secret_pair` (Job Finder P4c's 2-value
+    both come from `try_get_secret_pair` (the 2-value
     credential) -- either both are set or neither is, never partial."""
 
     you_com_key: str | None = None

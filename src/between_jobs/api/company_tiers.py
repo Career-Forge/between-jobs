@@ -1,21 +1,15 @@
-"""Job Finder P6b (live-search-track.md's own P6 scoping) -- the
-`company_health` half of P6a's batch fit-scorer composite. Real
-Fortune-500-based tier data (n8n's real `data/reference/
-company_tiers.json`, CC BY 4.0 base + a hand-curated MAANGO/top-
-fintech-quant/hot-AI-startup/other-dream/Big-4 overlay -- ALREADY
-merged into the file by n8n's own build step, confirmed directly
-rather than assumed: `company_tier_overrides.json` is n8n's build-time
-INPUT, not something this project re-merges itself), imported via the
-same "algorithm=code, data=private Supabase import" precedent P5d's
-gazetteer already established -- `scripts/import_company_tiers.py`
-mirrors `import_geo_gazetteer.py` structurally.
+"""The `company_health` half of the batch fit-scorer composite: a lookup from a
+company name to a 0-1 tier weight, backed by the `company_tiers` table.
 
-`normalize_company_name` is ported verbatim from n8n's own real
-`normalizeCompanyName` (duplicated in n8n's own source between `Parse
-Scorer Output.js` and `seed_company_tier_weights.js`, kept in sync by a
-code comment there -- between-jobs has exactly one copy, used both to
-build the lookup at import time and to look a job's company name up at
-score time, closing the duplication n8n's own reference never did)."""
+The table is reference data, loaded by `scripts/import_company_tiers.py` from a
+file the operator supplies (none ships with this repository), the same
+"algorithm is code, data is the operator's own Supabase import" split the city
+gazetteer uses (`scripts/import_geo_gazetteer.py` mirrors it structurally).
+
+`normalize_company_name` is ported verbatim from the reference implementation's
+`normalizeCompanyName`. There is exactly one copy here, used both to check the
+lookup keys at import time and to look a job's company name up at score time, so
+a stored key and a looked-up name are never normalized two different ways."""
 
 from __future__ import annotations
 
@@ -61,11 +55,11 @@ _FETCH_PAGE_SIZE = 1000
 
 
 async def _fetch_all_rows(supabase: AsyncClient) -> list[dict[str, Any]]:
-    """Same PostgREST-1000-row-default bug class already found and fixed
-    for `import_job_registry_seed.py` and `geo_gazetteer._fetch_all_
-    city_rows` -- 576 rows today is well under that cap, but the fix
-    costs nothing and this project has been burned by trusting a
-    row count "for now" before."""
+    """PostgREST silently caps an unranged `.select()` at 1,000 rows -- the
+    same bug class `geo_gazetteer._fetch_all_city_rows` pages around, and
+    one that once made a bulk import silently skip most of its rows. The
+    table is well under that cap today, but the fix costs nothing and a
+    row count that is fine "for now" is how this bug ships."""
 
     async def _page(start: int, end: int) -> list[dict[str, Any]]:
         result = (

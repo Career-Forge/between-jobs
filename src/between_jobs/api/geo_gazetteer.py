@@ -1,7 +1,6 @@
-"""Job Finder P5d (live-search-track.md) -- the gazetteer-backed 3-state
-location filter. A faithful port of n8n's real `resolveLocation`/
-`checkLocationState` (read directly from `aggregate_jobs.js`, lines
-109-301, not paraphrased).
+"""The gazetteer-backed 3-state location filter (match, mismatch, unknown). A
+faithful port of n8n's real `resolveLocation`/`checkLocationState` (read directly
+from `aggregate_jobs.js`, not paraphrased).
 
 Two real, disclosed simplifications from the reference:
 
@@ -35,8 +34,8 @@ a guessed match or mismatch -- a fresh BYOK self-host deployment that
 hasn't run `scripts/import_geo_gazetteer.py` simply gets no location
 filtering, not an error.
 
-**A real, disclosed characteristic surfaced by this phase's own live
-verification, not a bug**: a city-level request like "New York" resolves
+**A real, disclosed characteristic surfaced by live verification, not a
+bug**: a city-level request like "New York" resolves
 BOTH a city ("New York City") AND that city's own home country ("US").
 `check_location_state`'s country-match branch (`request_country in
 job_geo.countries`) then means a job in, say, "Palo Alto, California"
@@ -51,10 +50,9 @@ that's the intent -- confirmed via real production data (a "New York"
 search legitimately surfacing "Palo Alto, California" and "Charlotte,
 North Carolina" postings as verified matches), not a hypothetical.
 Documented here rather than silently accepted or silently "fixed" --
-this project's own D2 discipline is to port proven logic faithfully and
-diverge only where something is PROVEN wrong (like n8n's own s96
-incident), not to unilaterally redesign behavior on a hunch it might be
-too broad.
+this project's own discipline is to port proven logic faithfully and
+diverge only where something is PROVEN wrong, not to unilaterally redesign
+behavior on a hunch it might be too broad.
 """
 
 from __future__ import annotations
@@ -152,16 +150,15 @@ _FETCH_PAGE_SIZE = 1000
 
 async def _fetch_all_city_rows(supabase: AsyncClient) -> list[dict[str, Any]]:
     """PostgREST caps an unranged `.select()` at its own default row
-    limit (1,000) -- the identical bug class `import_job_registry_seed.
-    py`'s own `_select_all_companies` already found and fixed for a
-    different table (P1's real ~16k-row registry, silently resolving
-    only the first page). Confirmed live here too, not assumed: a plain
-    unranged select against the real 34,006-row gazetteer table returned
-    exactly 1,000 rows. Same fix -- page via `.range()` until a short
-    page confirms there's nothing left, preserving the same `order by
-    population desc` on every page so the overall row sequence this
-    function returns stays correctly population-descending throughout,
-    not just within each page."""
+    limit (1,000). This is a bug class that has bitten before: a bulk
+    import that resolved row ids back from a ~16k-row table silently saw
+    only the first page and skipped most of its rows. Confirmed live here
+    too, not assumed: a plain unranged select against the real 34,006-row
+    gazetteer table returned exactly 1,000 rows. The fix is to page via
+    `.range()` until a short page confirms there's nothing left,
+    preserving the same `order by population desc` on every page so the
+    overall row sequence this function returns stays correctly
+    population-descending throughout, not just within each page."""
 
     async def _page(start: int, end: int) -> list[dict[str, Any]]:
         result = (

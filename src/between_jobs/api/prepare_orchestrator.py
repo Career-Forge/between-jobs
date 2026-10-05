@@ -1,7 +1,7 @@
 """The prepare_application + PDF-compile orchestration, shared across
-channels (Sprint 3.4b).
+channels.
 
-Originally lived directly in `applications_routes.py` (Sprint 3.0e/3.3f) --
+Originally lived directly in `applications_routes.py` --
 extracted here once the Telegram bridge needed the exact same "run the
 engine, store the artifact, compile a PDF" logic the web route already
 had. Per this repo's own channel principle (CLAUDE.md: "Channels are
@@ -61,7 +61,7 @@ async def run_prepare_application(
     force_generate: bool = False,
     generate_cover_letter: bool = False,
 ) -> dict[str, Any]:
-    """Proposal §24.1's end-to-end flow, headless (no PDF compilation in
+    """The end-to-end prepare flow, headless (no PDF compilation in
     this step -- see `latest_resume_pdf` for that). Resolves the user's
     active profile and the application's current job snapshot itself
     rather than trusting a caller-supplied id -- neither the web route
@@ -80,7 +80,7 @@ async def run_prepare_application(
     shape as `applications_store.create_application`'s own accepted
     unatomic gap.
 
-    `force_generate` (S4c, honest-score-surfaces.md): "Generate anyway" --
+    `force_generate`: "Generate anyway" --
     threaded straight through to `call_apply`; see `pipeline.run_apply`'s
     own docstring for exactly what it does and doesn't override. Each
     click sends its own fresh `idempotency_key` (the frontend generates
@@ -88,7 +88,7 @@ async def run_prepare_application(
     -- that's about not double-spending on a RETRY of the same click, an
     orthogonal concern to whether the gate was overridden.
 
-    `generate_cover_letter` (C1/C2, coverforge-port.md): opt-in, defaults
+    `generate_cover_letter`: opt-in, defaults
     False, threaded straight through to `call_apply`. When true, a
     `cover_letter` artifact is written the same way `resume` is (own
     `document_kind`, own version row) -- forge-engines has no
@@ -101,7 +101,7 @@ async def run_prepare_application(
     resume_template it sends -- guessing at either now would be worse
     than leaving this an honest, labeled gap.
 
-    Claim verification (C4, coverforge-port.md) runs unconditionally on
+    Claim verification runs unconditionally on
     every real generation, resume and cover letter alike -- unlike
     `generate_cover_letter`, there is no request-level opt-out.
     `forge_result.claim_warnings` (already-formatted "unsupported claim
@@ -138,7 +138,7 @@ async def run_prepare_application(
 
     credential = await resolve(supabase, user_id, capability="prepare_application")
 
-    # R6: master document = defaults, per-application document = overrides
+    # Master document = defaults, per-application document = overrides
     # -- same `application_id is null` convention resume_documents itself
     # uses. Neither document is required to exist yet (a user who has
     # never opened Studio/the profile editor has created neither) --
@@ -164,14 +164,14 @@ async def run_prepare_application(
         merge_shape_overrides(master_overrides, per_app_overrides)
     )
 
-    # S2 (honest-score-surfaces.md): unlike shape_overrides, an assertion has
+    # Unlike shape_overrides, an assertion has
     # no master/default concept -- "on-site work is fine" is inherently a
     # claim about THIS job, not a standing preference to merge in for every
     # application -- so this reads only the per-application document, never
     # the master one.
     dealbreaker_assertions = (per_app_doc or {}).get("assertions") or []
 
-    # P0.12: the Header Composer layout the candidate saved. Like the other document
+    # The Header Composer layout the candidate saved. Like the other document
     # settings the per-application document wins and the master document is the default; a
     # layout is one whole object (chip order, labels, separator), so there is nothing to merge
     # field by field. Before this nothing sent it, and every real generation got the default.
@@ -201,7 +201,7 @@ async def run_prepare_application(
         warnings = [forge_result.gate.reason, *warnings]
     warnings += forge_result.shape_warnings
     warnings += forge_result.violation_messages
-    # C4 (coverforge-port.md): claim-verification findings ride this SAME
+    # Claim-verification findings ride this SAME
     # shared channel -- `export_checklist._no_unsupported_claims` reads
     # them back off the stored `artifact_versions.warnings` by their
     # `"unsupported claim"` prefix rather than a separate stored field.
@@ -304,8 +304,8 @@ async def _latest_document_pdf(
     """Looks up the latest artifact of `document_kind` for this application
     and compiles it. Compiling on every call (not caching a PDF copy) keeps
     the stored LaTeX artifact as the one source of truth -- LaTeX in, PDF
-    out, always freshly derived from it, per §24.5.8's "exactly one
-    authoritative renderer" rule."""
+    out, always freshly derived from it, so there is exactly one
+    authoritative renderer."""
     try:
         await get_application(supabase, user_id, application_id)
     except ApplicationNotFound as e:
@@ -336,7 +336,7 @@ async def latest_resume_pdf(
 async def latest_cover_letter_pdf(
     supabase: AsyncClient, http: httpx.AsyncClient, user_id: str, application_id: str
 ) -> tuple[dict[str, Any], bytes]:
-    """C1/C2 (coverforge-port.md): same shape as `latest_resume_pdf`, own
+    """Same shape as `latest_resume_pdf`, with its own
     `document_kind`."""
     return await _latest_document_pdf(
         supabase,

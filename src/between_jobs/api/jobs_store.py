@@ -1,14 +1,13 @@
-"""Persistence for jobs and job snapshots (Sprint 2.6b) -- Proposal §18.
+"""Persistence for jobs and job snapshots.
 
-Manual-paste job creation only, this sprint -- a client submits a
-title/company/description[/url] directly. Firecrawl-driven URL scraping
-(`ingest_job_url`) is Stage B / Sprint 3.0's job, layered on top of this
-same store later, not a replacement for it: manual paste stays the real
-fallback lane for postings a scraper can't reach (behind an auth wall,
-forwarded by email, screenshotted), the same way the profile contract
-keeps a manual-paste lane alongside anything more automated.
+Manual-paste job creation -- a client submits a title/company/description[/url]
+directly. Firecrawl-driven URL import (in `applications_routes.py`) is layered on top
+of this same store, not a replacement for it: manual paste stays the real fallback lane
+for postings a scraper can't reach (behind an auth wall, forwarded by email,
+screenshotted), the same way the profile contract keeps a manual-paste lane alongside
+anything more automated.
 
-`jobs`/`job_snapshots` carry no user_id (Proposal §18's own DDL) -- shared
+`jobs`/`job_snapshots` carry no user_id (see the schema) -- shared
 reference data, not per-user rows. This backend always uses the
 service-role client, which bypasses RLS, same as every other store in
 this project; RLS on these tables is defense-in-depth for a hypothetical
@@ -26,10 +25,6 @@ from urllib.parse import urlparse
 from supabase import AsyncClient
 
 
-class JobNotFound(Exception):
-    """No job exists for that id."""
-
-
 class SnapshotNotFound(Exception):
     """No job snapshot exists for that id."""
 
@@ -45,17 +40,16 @@ async def lookup_registry_posting(
     supabase: AsyncClient, apply_url: str
 ) -> RegistryPostingDetails | None:
     """Extracted out of `discovery_routes.py`'s own private `_lookup_
-    registry_posting_details` (Job Finder P8) once outreach-v2-search-
-    first.md Phase J needed the identical "does this exact URL already
-    exist in the registry" check -- moved here, not duplicated, since
-    `jobs_store.py`'s own docstring already anticipated Phase J needing
-    real job data by URL. A plain equality match against `apply_url`,
-    same as the original: no unique constraint exists on that column
-    (only `(board, external_id)` is unique) and no canonicalization is
-    applied on either side -- a pasted URL differing from the stored one
-    only by tracking params, trailing slash, or case won't match. A real,
-    disclosed limitation inherited unchanged from the P8 precedent this
-    mirrors, not a new gap Phase J introduces."""
+    registry_posting_details` once the outreach contact-finder flow needed
+    the identical "does this exact URL already exist in the registry" check
+    -- moved here, not duplicated, since both callers need real job data by
+    URL. A plain equality match against `apply_url`, same as the original:
+    no unique constraint exists on that column (only `(board, external_id)`
+    is unique) and no canonicalization is applied on either side -- a pasted
+    URL differing from the stored one only by tracking params, trailing
+    slash, or case won't match. A real, disclosed limitation inherited
+    unchanged from the original lookup this mirrors, not a new gap the
+    outreach flow introduces."""
     posting_result = (
         await supabase.table("job_registry_postings")
         .select("title, location, jd_text, company_id")
@@ -103,7 +97,7 @@ just gets whatever its own domain's first label is."""
 
 
 def guess_company_name_from_url(url: str) -> str:
-    """Deterministic, no LLM -- outreach-v2-search-first.md Phase J.
+    """Deterministic, no LLM -- used by the outreach contact-finder flow.
     A real Firecrawl scrape response carries no clean, structured
     "company name" field (verified live against a real Coinbase
     Greenhouse posting: `metadata.title` is a human-readable page title,
@@ -166,8 +160,8 @@ async def create_job_from_paste(
 
     `source_kind` defaults to this function's own original, only value
     ("manual_paste") so every existing caller (web paste, Telegram paste,
-    Job Finder P8's track route) is unaffected -- outreach-v2-search-
-    first.md Phase J is the first caller to pass a real, distinct value
+    the Discover track route) is unaffected -- the outreach contact-finder
+    flow is the first caller to pass a real, distinct value
     ("url_ingest") for a snapshot that came from a live Firecrawl scrape
     or a registry hit rather than a human pasting text directly. No CHECK
     constraint exists on this column, so no migration is needed for a new
@@ -221,13 +215,6 @@ async def create_job_from_paste(
     return job, cast(dict[str, Any], result.data[0])
 
 
-async def get_job(supabase: AsyncClient, job_id: str) -> dict[str, Any]:
-    result = await supabase.table("jobs").select("*").eq("id", job_id).execute()
-    if not result.data:
-        raise JobNotFound(job_id)
-    return cast(dict[str, Any], result.data[0])
-
-
 async def get_snapshot(supabase: AsyncClient, snapshot_id: str) -> dict[str, Any]:
     result = await supabase.table("job_snapshots").select("*").eq("id", snapshot_id).execute()
     if not result.data:
@@ -246,7 +233,7 @@ async def get_snapshots(supabase: AsyncClient, snapshot_ids: list[str]) -> list[
 
 
 async def get_jobs(supabase: AsyncClient, job_ids: list[str]) -> list[dict[str, Any]]:
-    """Batch fetch, mirroring `get_snapshots` -- browser-extension.md E1's
+    """Batch fetch, mirroring `get_snapshots` -- the browser extension's
     URL-to-application lookup needs `canonical_url` across a user's whole
     application list in one round trip, not per-application."""
     if not job_ids:

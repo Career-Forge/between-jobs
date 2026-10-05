@@ -15,7 +15,6 @@ dependencies = [
     "httpx>=0.27",
     "python-dotenv>=1.0",
     "pypdf>=5.0",
-    "asyncpg>=0.29",
     "openai>=1.50",
     "cryptography>=43",
     "anyio>=4.0",
@@ -27,6 +26,10 @@ Repository = "https://github.com/Career-Forge/between-jobs"
 
 [project.optional-dependencies]
 dev = [
+    # Not used by the API itself (it talks to Postgres through Supabase). The integration
+    # tests open direct Postgres connections to the local Supabase stack -- to run SQL,
+    # and to hold transactions open and race them -- which the Supabase client cannot do.
+    "asyncpg>=0.29",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
@@ -43,11 +46,11 @@ packages = ["src/between_jobs"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-# latex-service (Sprint 3.2e) is an independent sub-project -- its own
-# pyproject.toml/.venv/toolchain, deployed as its own service. Without
-# this, `ruff check .`/`ruff format .` run from this repo's root sweep it
-# up too (ruff recurses the whole tree by default); it stays linted, just
-# under its own `latex-service/pyproject.toml` config, not this one.
+# latex-service is an independent sub-project -- its own pyproject.toml/.venv/
+# toolchain, deployed as its own service. Without this, `ruff check .`/
+# `ruff format .` run from this repo's root sweep it up too (ruff recurses the
+# whole tree by default); it stays linted, just under its own
+# `latex-service/pyproject.toml` config, not this one.
 extend-exclude = ["latex-service"]
 
 [tool.ruff.lint]
@@ -76,11 +79,9 @@ strict = true
 files = ["src", "tests"]
 
 [[tool.mypy.overrides]]
-# asyncpg ships no py.typed marker/stubs (Horizon Sprint 4.1) and no
-# third-party stub package exists for it either -- everything this
-# project's own code passes to/receives from it is still typed at the
-# discovery_store.py boundary (dict[str, Any] rows), so this stays a
-# narrow, single-library exception, not a general relaxation.
+# asyncpg ships no py.typed marker or stubs, and no third-party stub package exists
+# for it either. Only the integration tests import it (it is a dev dependency), so
+# this stays a narrow, single-library exception, not a general relaxation.
 module = "asyncpg.*"
 ignore_missing_imports = true
 
@@ -93,8 +94,8 @@ markers = [
     "local_supabase: runs against a local Supabase stack (never a hosted project)",
 ]
 asyncio_mode = "auto"
-# Job Finder P1's one-time import script lives at the repo root (scripts/),
-# not inside the installed between_jobs package -- it's a standalone,
-# by-hand-run migration tool, not an API module. This is what makes
-# `from scripts.import_job_registry_seed import ...` resolvable in tests.
+# The standalone operator scripts live at the repo root (scripts/), not inside the
+# installed between_jobs package -- they are run by hand, not served by the API.
+# Putting the root on sys.path is what makes `from scripts.<name> import ...`
+# resolvable in the tests that exercise them.
 pythonpath = ["."]

@@ -1,4 +1,4 @@
-"""Persistence for company-intel research runs (Horizon Sprint 5.0) --
+"""Persistence for company-intel research runs --
 immutable, like artifact_versions: a run is a point-in-time result, never
 edited in place. "The current dossier" for an application is whichever
 run is most recent.
@@ -13,10 +13,6 @@ from supabase import AsyncClient
 from .company_intel_pipeline import Claim
 
 
-class CompanyIntelRunNotFound(Exception):
-    """No research run exists yet for this application."""
-
-
 async def create_run(
     supabase: AsyncClient,
     user_id: str,
@@ -27,8 +23,8 @@ async def create_run(
     providers_used: list[str],
     warnings: list[str],
 ) -> dict[str, Any]:
-    """Writes the run and all its claims in ONE database transaction (P0.10,
-    `create_company_intel_run`). Two separate inserts left an empty run behind
+    """Writes the run and all its claims in ONE database transaction
+    (`create_company_intel_run`). Two separate inserts left an empty run behind
     whenever the second failed, and `get_latest_run` then returned that empty
     dossier in place of the previous good one."""
     claim_rows = [

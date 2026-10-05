@@ -1,38 +1,36 @@
-"""Job Finder P5a/P5b/P5c/P5d -- canonical aggregation, filtering,
-registry-lane merge, and location filtering for live-search results
-(live-search-track.md's own P5 scoping). A faithful port of n8n's real
+"""Canonical aggregation, filtering, registry-lane merge, and location
+filtering for live-search results. A faithful port of n8n's real
 `Aggregate Jobs` node (read directly from `aggregate_jobs.js`, not
 paraphrased): composite-key dedup, aggregator demotion, tier filtering,
-tier+recency sort (P5a); role-word-boundary filtering and the tiny
-hardcoded cohort/target-company lookup (P5b); the registry-lane tsvector
-query (P5c) -- merging `job_registry_postings` (the ATS-poller's own
-registry, P1-P3e) into the same `SearchResult` pipeline the 9
+tier+recency sort; role-word-boundary filtering and the tiny
+hardcoded cohort/target-company lookup; the registry-lane tsvector
+query -- merging `job_registry_postings` (the ATS poller's own
+registry) into the same `SearchResult` pipeline the 9
 live-search providers already produce; and the gazetteer-backed 3-state
-location filter (P5d, `filter_by_location`, backed by `geo_gazetteer.
+location filter (`filter_by_location`, backed by `geo_gazetteer.
 py`). The sponsorship hard-exclude n8n bundles alongside its own
 location filter is deliberately NOT ported -- see `geo_gazetteer.py`'s
 own module docstring for the real reason (no structured work-
 authorization-country field exists yet to build it against without
 guessing).
 
-**Registry lane (P5c)**: unlike n8n's own "hybrid pgvector+tsvector RRF"
+**Registry lane**: unlike n8n's own "hybrid pgvector+tsvector RRF"
 hybrid-cache lane, this ships with tsvector full-text search only --
 `job_registry_postings.jd_tsv` already exists, already GIN-indexed,
 already populated on every row by the poller. Full pgvector+RRF stays a
-later refinement once embedding population (deferred since P1) is
-separately justified, not a blocker to a first useful registry-lane
-merge. Every registry-lane result gets `source_tier=1.0` unconditionally
--- the registry only ever contains postings ingested via direct ATS
-adapters, structurally the same "direct ATS domain" signal the URL-tier
-classifier assigns external-provider tier-1 hits, and `provider=
-"registry"` (a new sentinel value, not one of the 9 external providers)
-so a future freshness-exemption rule (P5d+, once a caller-configurable
-freshness window exists) can identify these rows the same way n8n's own
-`source === 'cache'` check does.
+later refinement once embeddings exist and are separately justified, not
+a blocker to a first useful registry-lane merge. Every registry-lane
+result gets `source_tier=1.0` unconditionally -- the registry only ever
+contains postings ingested via direct ATS adapters, structurally the same
+"direct ATS domain" signal the URL-tier classifier assigns external-provider
+tier-1 hits, and `provider="registry"` (a new sentinel value, not one of the
+9 external providers) so a future freshness-exemption rule (once a
+caller-configurable freshness window exists) can identify these rows the
+same way n8n's own `source === 'cache'` check does.
 
 The SQL side (`search_job_registry_postings`, `supabase/migrations/
 20260831112543_fix_job_registry_search_performance.sql`) needed a real
-fix, found by this phase's own live verification, not a unit test: the
+fix, found by live verification against a real registry, not a unit test: the
 first version hit a genuine statement timeout (57014) against the real
 89,000+-row registry. Root cause was two real, distinct query-planning
 issues, not one -- a partial GIN index scoped to `where status='active'`
@@ -43,7 +41,7 @@ joining to `job_registry_companies` (joining the full candidate set
 first forced an expensive hash join across tens of thousands of rows).
 The search-query branch also drops its own `ORDER BY posted_at`
 entirely, on purpose -- this function's own result order was never
-load-bearing, since `aggregate_jobs()` (P5a) always re-sorts the full
+load-bearing, since `aggregate_jobs()` always re-sorts the full
 merged multi-lane result set by tier+recency before a caller ever sees
 it, so returning an unordered-but-correct candidate set here costs
 nothing downstream, while sorting a scattered multi-thousand-row match
@@ -51,8 +49,8 @@ set before slicing to 150 was the single most expensive part of the
 original query.
 
 `Aggregate Jobs` also does a freshness-cutoff DROP, deliberately left
-out of this phase (unlike the location-verified sort key, which P5d now
-makes genuinely reachable -- see `aggregate_jobs()` itself). Nothing in
+out of this port (unlike the location-verified sort key, which
+`filter_by_location` makes genuinely reachable -- see `aggregate_jobs()` itself). Nothing in
 this codebase yet exposes a caller-configurable freshness window to drop
 against -- adding an unreachable-by-any-caller drop would be dead
 machinery, not a faithful port of a real capability.
@@ -67,12 +65,12 @@ Small enough to hardcode directly here, verbatim, no data file needed.
 Separately, n8n's `data/reference/company_tiers.json` (572 Fortune-500-
 based companies) is NOT this cohort lookup and NOT referenced by
 `Aggregate Jobs` at all -- confirmed by reading the actual node source --
-it's a different, later-stage input (almost certainly P6's own batch
-fit-scoring "company-health" factor), out of scope here.
+it's a different, later-stage input (almost certainly the batch
+fit-scorer's "company-health" factor), out of scope here.
 
 **Role filtering, one real simplification from the reference**: n8n
 matches word-boundary terms against `title + department`; `SearchResult`
-(this project's own P4 design) carries no `department` field, so this
+(this project's own design) carries no `department` field, so this
 matches against `title` alone. n8n's own `excluded_roles` default list
 (Technical Support/Customer Success/QA Engineer/Intern/Internship) is
 deliberately NOT hardcoded here -- n8n only applies that default when its
@@ -156,8 +154,8 @@ def _backfill(keep: SearchResult, drop: SearchResult) -> SearchResult:
     """Fills gaps on the kept result from the dropped duplicate --
     salary, sponsorship signal, location -- verbatim from n8n's own
     collision-merge logic. `SearchResult` has no `salary_period` field
-    (a smaller shape than n8n's own job objects, decided when P4 first
-    designed this dataclass), so nothing to backfill there."""
+    (a smaller shape than n8n's own job objects, decided when this
+    dataclass was first designed), so nothing to backfill there."""
     updates: dict[str, object] = {}
     if keep.salary_min is None and drop.salary_min is not None:
         updates["salary_min"] = drop.salary_min
@@ -242,7 +240,7 @@ def aggregate_jobs(
     correct demoted tier into the tier-collision comparison). Sort is
     location-verified-first, then (tier, recency) or pure recency per
     `sort_by` -- verbatim from n8n's own real sort, now genuinely
-    reachable since P5d's `filter_by_location` can set
+    reachable since `filter_by_location` can set
     `location_verified`."""
     demoted = _demote_aggregators(results)
     deduped = _dedupe(demoted)
@@ -258,7 +256,7 @@ def aggregate_jobs(
     return filtered[:150]
 
 
-# ── P5b: cohort/target-company lookup + filter ──────────────────────────
+# ── cohort/target-company lookup + filter ──────────────────────────
 
 _COHORTS: dict[str, tuple[str, ...]] = {
     "maango": ("Meta", "Anthropic", "Amazon", "Nvidia", "Google", "OpenAI"),
@@ -355,7 +353,7 @@ def filter_by_companies(results: list[SearchResult], companies: list[str]) -> li
     return kept
 
 
-# ── P5b: role-word-boundary filter ───────────────────────────────────────
+# ── role-word-boundary filter ───────────────────────────────────────
 
 
 def _role_term_pattern(term: str) -> re.Pattern[str]:
@@ -460,7 +458,7 @@ def filter_by_role(
     return kept
 
 
-# ── P5c: registry-lane query ──────────────────────────────────────────────
+# ── registry-lane query ──────────────────────────────────────────────
 
 logger = logging.getLogger(__name__)
 
@@ -472,18 +470,17 @@ async def fetch_registry_lane(
     supabase: AsyncClient, *, query: str, limit: int = _REGISTRY_LANE_LIMIT
 ) -> list[SearchResult]:
     """The registry lane: `job_registry_postings` (the ATS poller's own
-    registry, P1-P3e), full-text searched via its existing `jd_tsv`
+    registry), full-text searched via its existing `jd_tsv`
     column, converted into the same `SearchResult` shape the 9 live-
     search providers already produce. An empty `query` returns the most
-    recent active postings unfiltered, matching `discovery_store.py`'s
-    own existing "no query -> browse recent" behavior rather than
+    recent active postings unfiltered ("browse recent") rather than
     returning nothing. The query is expanded with role synonyms before it is
     sent (`role_synonyms.registry_search_text`), so "SDE" also retrieves
     "Software Engineer" postings and "ML Engineer" also retrieves "Machine
     Learning Engineer" ones; `filter_by_role` applies the same synonyms to the
     titles that come back.
 
-    `link_checked` comes from the database (`link_fresh`, P0.8), not from this
+    `link_checked` comes from the database (`link_fresh`), not from this
     code: True only if the posting was seen within 3 days, its company was polled
     within 48 hours, and that company has no consecutive failures -- all judged on
     the database clock. It means "listed on the company's own board recently", not
@@ -495,7 +492,7 @@ async def fetch_registry_lane(
     explicitly never meant to duplicate it. Callers route on
     `provider == "registry"`.
 
-    A database that has not had the P0.8 migration applied yet returns no
+    A database that has not had the migration that adds `link_fresh` applied yet returns no
     `link_fresh` column. That degrades to "unverified" (with a warning in the log),
     never to "verified" and never to an error that takes the whole Discover request
     down with it -- the old behaviour, stamping everything verified, is the bug."""
@@ -531,7 +528,7 @@ async def fetch_registry_lane(
 
 
 async def fetch_registry_last_polled_at(supabase: AsyncClient) -> datetime | None:
-    """When any active company board was last polled (`registry_last_polled_at`, P0.8), or
+    """When any active company board was last polled (the `registry_last_polled_at` function), or
     None if none ever was. Used only to explain an EMPTY registry lane: nothing matched, or
     the registry is out of date because the poller has been down -- two situations that
     otherwise look identical to the user. Raises if the call fails (the function missing on
@@ -547,7 +544,7 @@ async def fetch_registry_last_polled_at(supabase: AsyncClient) -> datetime | Non
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-# ── P5d: gazetteer-backed 3-state location filter ────────────────────────
+# ── gazetteer-backed 3-state location filter ────────────────────────
 
 
 def filter_by_location(

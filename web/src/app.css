@@ -152,7 +152,7 @@
 /* Emerald = completed/verified; gold = review/pending; cyan = active/
  * in-flight; violet = elevated/in-process; danger = closed-out negative
  * -- per the semantic contract in tokens.css, extended for application
- * status (Sprint 2.6f) rather than inventing new meanings per status. */
+ * status rather than inventing new meanings per status. */
 .bj-badge-emerald,
 .bj-badge-gold,
 .bj-badge-cyan,
@@ -201,7 +201,7 @@
   color: var(--bj-text-muted);
 }
 
-/* R5: mandatory-pin marker (self-contained, not combined with .bj-badge-danger
+/* Mandatory-pin marker (self-contained, not combined with .bj-badge-danger
    -- that class sets shape AND a later color rule, so pairing it with
    .bj-badge-gold would lose the cascade tie to source order). */
 .bj-badge-pin {
@@ -260,7 +260,7 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Sectioned Profile (Sprint 3.1d)                                     */
+/* Sectioned Profile                                                   */
 /* ------------------------------------------------------------------ */
 
 .bj-profile-header {
@@ -300,7 +300,7 @@ a.bj-contact-chip {
   color: var(--bj-cyan);
 }
 
-/* Header Composer (Sprint 3.2c) */
+/* Header Composer */
 .bj-header-composer {
   display: flex;
   flex-direction: column;
@@ -340,7 +340,7 @@ a.bj-contact-chip {
   font-size: 13px;
 }
 
-/* Section Order Editor (Sprint 3.2d) -- reuses the composer row/handle/
+/* Section Order Editor -- reuses the composer row/handle/
    field classes above; only the hidden-state dimming and the toggle
    label are section-specific. */
 .bj-section-editor {
@@ -368,7 +368,7 @@ a.bj-contact-chip {
   cursor: pointer;
 }
 
-/* Resume settings (R6) -- reuses the header-composer row/field classes'
+/* Resume settings -- reuses the header-composer row/field classes'
    visual style but WITHOUT their `cursor: grab` (these rows aren't
    draggable, unlike the header composer's chip list). */
 .bj-shape-settings {
@@ -395,7 +395,7 @@ a.bj-contact-chip {
   background: var(--bj-surface-raised);
 }
 
-/* S5 (honest-score-surfaces.md): a toggle whose visibility can't be
+/* A toggle whose visibility can't be
    locale-gated client-side needs a caption explaining the backend gate
    instead -- stacks the checkbox row above the explanatory line rather
    than fighting the row's own align-items: center. */
@@ -773,7 +773,7 @@ a.bj-contact-chip {
 }
 
 /* ------------------------------------------------------------------ */
-/* Per-section editing (Sprint 3.1e)                                   */
+/* Per-section editing                                                 */
 /* ------------------------------------------------------------------ */
 
 .bj-section-heading {
@@ -801,7 +801,7 @@ a.bj-contact-chip {
   color: var(--bj-danger);
 }
 
-/* Account deletion card (P4.5): the card border and the button are danger-
+/* Account deletion card: the card border and the button are danger-
    colored, and the button also carries a text label, so nothing is color-only. */
 .bj-account-delete {
   border-color: var(--bj-danger);
@@ -1017,7 +1017,7 @@ button.bj-danger {
 }
 
 /* ------------------------------------------------------------------ */
-/* Applications (Sprint 2.6f)                                          */
+/* Applications                                                        */
 /* ------------------------------------------------------------------ */
 
 .bj-application-list {
@@ -1041,7 +1041,7 @@ button.bj-danger {
 }
 
 /* ------------------------------------------------------------------ */
-/* Applications Kanban board (K2)                                      */
+/* Applications Kanban board                                           */
 /* ------------------------------------------------------------------ */
 
 /* Horizontal scroll rather than the app's usual collapse-to-1fr grid
@@ -1132,7 +1132,7 @@ button.bj-danger {
   font-size: 12px;
 }
 
-/* K3 cross-nav menu -- same layout treatment as .bj-kanban-card-move
+/* Cross-nav menu -- same layout treatment as .bj-kanban-card-move
    (align items, shrink the select's font size to fit the card), kept as
    its own class since it's a separate row/action, not a variant of the
    move control. */
@@ -1146,7 +1146,7 @@ button.bj-danger {
 }
 
 /* ------------------------------------------------------------------ */
-/* Integrations -- Telegram link (Sprint 2.8f)                         */
+/* Integrations -- Telegram link                                       */
 /* ------------------------------------------------------------------ */
 
 .bj-link-code {
@@ -1162,7 +1162,7 @@ button.bj-danger {
 }
 
 /* ------------------------------------------------------------------ */
-/* Application workspace (Sprint 3.3d/3.3e)                            */
+/* Application workspace                                               */
 /* ------------------------------------------------------------------ */
 
 .bj-breadcrumb {
@@ -1310,7 +1310,7 @@ button.bj-danger {
   color: var(--bj-text-muted);
 }
 
-/* R5: pin-conflict banner -- distinct from the plain warnings list since a
+/* Pin-conflict banner -- distinct from the plain warnings list since a
    pin is the candidate's own explicit choice failing to be fully honored. */
 .bj-pin-conflict-banner {
   border: 1px solid var(--bj-gold);
@@ -1325,7 +1325,7 @@ button.bj-danger {
   color: var(--bj-text-muted);
 }
 
-/* C4 (coverforge-port.md): claim-verification banner -- danger, not gold,
+/* Claim-verification banner -- danger, not gold,
    since a flagged claim is a possible fabrication, a different severity
    than a pin simply not fully fitting. */
 .bj-claim-warning-banner {
@@ -1364,7 +1364,7 @@ button.bj-danger {
   font-size: 13px;
 }
 
-/* S1 (honest-score-surfaces.md): the Headroom Ledger -- an honest number plus
+/* The Headroom Ledger -- an honest number plus
    exactly what's movable and what isn't, replacing the old bare "ATS score:
    X/100" line. Gold throughout per tokens.css's own contract ("gold =
    evidence, provenance, scores, review, uncertainty"). */
@@ -1426,7 +1426,7 @@ button.bj-danger {
   background: var(--bj-gold);
 }
 
-/* S3: the one exact, discrete lever behind experience_quality (the
+/* The one exact, discrete lever behind experience_quality (the
    management-bonus points) -- a hatched segment past the solid fill, never
    solid gold, so it never reads as "already earned." */
 .bj-score-bar-headroom {
@@ -1480,7 +1480,7 @@ button.bj-danger {
   color: var(--bj-text-muted);
 }
 
-/* Personal details -- work authorization (work-authorization-status.md).
+/* Personal details -- work authorization.
    Same expand/collapse idiom as .bj-score-disclosure above (ScoreBreakdown.
    tsx) -- forked rather than shared, since this is its own "Examples"
    affordance rather than a score detail, even though the visual language
@@ -1566,17 +1566,15 @@ button.bj-danger {
   font-weight: 600;
 }
 
-/* S2: a session-local what-if, never the stored score -- emerald because
+/* A session-local what-if, never the stored score -- emerald because
    this is a candidate-confirmed fact (verified), not evidence/uncertainty
    (gold, the rest of this panel) or a model having acted (violet). */
 .bj-score-adjusted {
   color: var(--bj-emerald);
 }
 
-/* Gap Interview (S4, honest-score-surfaces.md) -- ported from the reviewed
-   design canvas (GapInterview.dc.html / EvidenceApproval.dc.html), colors
-   and spacing carried over exactly since every value there already used
-   this file's own tokens. Violet = the LLM worded a question (it never
+/* Gap Interview -- colors and spacing use this file's own tokens
+   throughout. Violet = the LLM worded a question (it never
    decides which gaps get asked -- that's deterministic, tokens.css's own
    contract); emerald = a candidate-confirmed fact ready to become a real
    profile version, same meaning .bj-score-adjusted already uses it for. */
@@ -1719,8 +1717,7 @@ button.bj-danger {
   }
 }
 
-/* Honest Floor (S4c, honest-score-surfaces.md) -- ported from the reviewed
-   design canvas (StretchState.dc.html). Muted/neutral throughout on
+/* Honest Floor. Muted/neutral throughout on
    purpose: this is a decline, not an error (bj-danger) or an achievement
    (bj-emerald) -- tokens.css's own contract reserves red for actual
    failure, and there's no failure here, just an honest "not yet." */
@@ -1823,7 +1820,7 @@ button.bj-danger {
 }
 
 /* ------------------------------------------------------------------ */
-/* Interview practice (InterviewForge R4, interviewforge-v1.md)        */
+/* Interview practice                                                 */
 /* ------------------------------------------------------------------ */
 
 .bj-interview-practice-panel {
@@ -1841,7 +1838,7 @@ button.bj-danger {
 }
 
 /* ------------------------------------------------------------------ */
-/* Discover (Job Finder P8, job-finder-port.md's own build order)      */
+/* Discover                                                           */
 /* ------------------------------------------------------------------ */
 
 .bj-discover-list {
@@ -1892,7 +1889,7 @@ button.bj-danger {
 }
 
 /* ------------------------------------------------------------------ */
-/* Hiring posts (Hiring Signals P3) -- per-application panel           */
+/* Hiring posts -- per-application panel                               */
 /* ------------------------------------------------------------------ */
 
 /* When the feature is switched off the panel renders nothing, leaving its
@@ -2044,7 +2041,7 @@ button.bj-danger {
 }
 
 /* ------------------------------------------------------------------ */
-/* Hiring signals tab (Hiring Signals P4) -- standalone, no company    */
+/* Hiring signals tab -- standalone, no company                        */
 /* ------------------------------------------------------------------ */
 
 /* Everything below reuses the bj-hs- classes above (cards, list, embed, the

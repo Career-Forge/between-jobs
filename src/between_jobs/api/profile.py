@@ -1,5 +1,5 @@
-"""The canonical resume contract (Sprint 2.5, schema v1.1 in Sprint 3.1d) --
-Proposal.md §15-16.
+"""The canonical resume contract: the fixed JSON template a candidate fills
+in, its deterministic importer, and the `career_facts` rows derived from it.
 
 Deterministic only -- no LLM anywhere in this module. A user (or an LLM
 they've pasted their resume into, per the onboarding instructions) supplies
@@ -9,29 +9,29 @@ ids, computes a content hash, and derives normalized `career_facts` rows.
 Scope deliberately stops here: this module produces the platform's OWN
 canonical_json + career_facts. It does not call forge-engines, and it does
 not produce forge-engines' resume_doc/bubbles shape -- that stays engine-
-side, wired up in Stage B (Sprint 3.0) when `prepare_application` actually
-calls the service. This is the engine's INPUT, not its output.
+side, wired up when `prepare_application` actually calls the service. This
+is the engine's INPUT, not its output.
 
 Fact derivation is deliberately narrow for v1: experience, projects,
-education, publication, and patent entries only -- the evidence Proposal
-§15 says generated claims must cite. Summary bullets, achievements,
+education, publication, and patent entries only -- the evidence generated
+claims must cite. Summary bullets, achievements,
 certifications, languages, and volunteering stay queryable inside
 canonical_json without their own fact rows for now -- add them the day
 something downstream actually needs to cite one.
 
-v1.3 (resumeforge-shape-and-fit.md, Patents+Publications) adds `Patent` --
+v1.3 adds `Patent` --
 the same citable-evidence shape `Publication` already has, and the reason
 `Publication` got promoted to a real `fact_type` in the first place.
 Deliberately not pinnable, same reasoning as v1.2's note above: neither is
 a bubble.
 
-v1.1 (Sprint 3.1d) widens the schema for career shapes v1.0 couldn't
+v1.1 widens the schema for career shapes v1.0 couldn't
 represent: a PhD-track profile with publications and no work experience
 was REJECTED by v1.0's business rule ("no experience or projects"), which
 was simply wrong -- publications and volunteering are evidence too. Every
 new section is optional; nothing about v1.0 profiles changes shape.
 
-v1.2 (resumeforge-shape-and-fit.md R5) adds an optional `pin` field to
+v1.2 adds an optional `pin` field to
 Experience/Project/Education entries: a candidate-set hard guarantee that
 the entry survives resume generation regardless of relevance ranking, with
 an optional `min_bullets` floor (experience/projects only -- forge-engines
@@ -43,11 +43,11 @@ at all yet, so a pin there would validate but silently do nothing -- worse
 than not offering it.
 
 Stable-id preservation across re-imports ("content and structural
-matching," Proposal §16) is deliberately NOT implemented: every import
-assigns fresh ids. Nothing downstream references a fact id across versions
-yet (no resume_documents, no Resume Studio) -- implementing fuzzy matching
-before anything consumes it risks guessing at the wrong algorithm. Revisit
-when Sprint 3.2 gives it a real consumer.
+matching") is deliberately NOT implemented: every import assigns fresh ids.
+Nothing downstream references a fact id across versions yet --
+implementing fuzzy matching before anything consumes it risks guessing at
+the wrong algorithm. Revisit when something needs to cite a fact across
+versions.
 """
 
 from __future__ import annotations
@@ -130,7 +130,7 @@ class Personal(BaseModel):
     links: Links = Field(default_factory=Links)
     location: Location = Field(default_factory=Location)
     work_authorization: str = ""
-    # Locale-specific, render-only fields (Proposal §17) -- never enter any
+    # Locale-specific, render-only fields -- never enter any
     # LLM prompt, kept here only so the canonical JSON can round-trip them.
     dob: str = ""
     nationality: str = ""
@@ -146,7 +146,7 @@ class Personal(BaseModel):
 
 
 class Pin(BaseModel):
-    """R5: a candidate-set hard guarantee this entry survives generation
+    """A candidate-set hard guarantee this entry survives generation
     regardless of relevance ranking. `min_bullets` is interpreted only for
     experience/projects; forge-engines ignores it harmlessly elsewhere."""
 
@@ -224,7 +224,7 @@ class Publication(BaseModel):
 
 class Patent(BaseModel):
     """A citable, invention-disclosure-style output -- the same evidence
-    shape `Publication` already has (Proposal §15), for the case a
+    shape `Publication` already has, for the case a
     candidate's most relevant output is a patent rather than a paper."""
 
     model_config = ConfigDict(extra="forbid")
@@ -259,8 +259,8 @@ class VolunteerEntry(BaseModel):
 
 
 class ResumeTemplate(BaseModel):
-    """The exact shape a user (or an LLM they've briefed) fills in --
-    Proposal §16. `extra="forbid"` everywhere catches drift/typos as a
+    """The exact shape a user (or an LLM they've briefed) fills in.
+    `extra="forbid"` everywhere catches drift/typos as a
     validation error rather than silently dropping data.
 
     publications/languages/certifications/volunteering (v1.1) are all
@@ -316,8 +316,8 @@ def parse_and_validate(raw_text: str) -> ResumeTemplate:
     """Stage 1: JSON syntax + shape. Raises ProfileImportError with a
     specific, human-readable reason -- never a raw pydantic traceback."""
     text = raw_text.strip()
-    # Strip a UTF-8 BOM if present -- the same class of encoding gotcha
-    # n8n's file-upload path had to handle.
+    # Strip a UTF-8 BOM if present -- a file saved by some editors starts
+    # with one, and `json.loads` rejects it.
     if text.startswith("﻿"):
         text = text[1:]
 
@@ -382,7 +382,7 @@ def _check_business_rules(template: ResumeTemplate) -> None:
             "publications, patents, or volunteering. Fill in one and resend."
         )
 
-    # R5: pins are a hard guarantee, not a soft nudge -- capped so a
+    # Pins are a hard guarantee, not a soft nudge -- capped so a
     # candidate can't pin their whole resume and defeat the point (every
     # pin must still fit on the page).
     pinned_count = sum(
@@ -570,7 +570,7 @@ def _resolve_entity_pointer(canonical_json: dict[str, Any], entity_pointer: str)
 def append_bullet_to_entity(
     canonical_json: dict[str, Any], entity_pointer: str, bullet_text: str
 ) -> ImportedProfile:
-    """S4b (honest-score-surfaces.md): builds a new ImportedProfile with
+    """Builds a new ImportedProfile with
     exactly one bullet appended to one existing experience/project entry --
     the Gap Interview's deterministic apply step, once a candidate has
     explicitly approved a drafted fact. Reuses this module's own

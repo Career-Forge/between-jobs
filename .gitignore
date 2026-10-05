@@ -31,5 +31,6 @@ MASTER_PLAN.md
 # CLAUDE.md, CONTRIBUTING.md, and README.md stay at repo root and ARE committed --
 # they're public-safe by design, not planning material.
 docs/
+
+# Node (web/, extension/)
 node_modules/
-dist/

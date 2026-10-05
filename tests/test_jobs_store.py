@@ -1,4 +1,4 @@
-"""Tests for job/job-snapshot persistence (Sprint 2.6b)."""
+"""Tests for job/job-snapshot persistence."""
 
 from __future__ import annotations
 
@@ -8,10 +8,8 @@ from typing import Any
 import pytest
 
 from between_jobs.api.jobs_store import (
-    JobNotFound,
     SnapshotNotFound,
     create_job_from_paste,
-    get_job,
     get_snapshot,
     guess_company_name_from_url,
     lookup_registry_posting,
@@ -156,7 +154,7 @@ async def test_create_job_from_paste_without_a_url_always_creates_a_new_job() ->
 
 
 async def test_create_job_from_paste_accepts_a_different_source_kind() -> None:
-    """outreach-v2-search-first.md Phase J: a real caller other than
+    """The outreach contact-finder flow: a real caller other than
     manual paste passes its own source_kind, and it's the value actually
     persisted -- not silently overridden back to "manual_paste"."""
     new_job = {"id": _JOB_ID, "canonical_url": "https://acme.example/jobs/1"}
@@ -281,19 +279,6 @@ def test_guess_company_name_from_url_handles_a_scheme_less_url() -> None:
     the real behavior."""
     assert guess_company_name_from_url("acme.example/jobs/1") == "Unknown Company"
     assert guess_company_name_from_url("job-boards.greenhouse.io/acme/jobs/1") == "Unknown Company"
-
-
-async def test_get_job_found() -> None:
-    row = {"id": _JOB_ID}
-    client = _FakeSupabaseClient(_FakeTable(select_rows=[row]), _FakeTable(select_rows=[]))
-    result = await get_job(client, _JOB_ID)  # type: ignore[arg-type]
-    assert result == row
-
-
-async def test_get_job_not_found_raises() -> None:
-    client = _FakeSupabaseClient(_FakeTable(select_rows=[]), _FakeTable(select_rows=[]))
-    with pytest.raises(JobNotFound):
-        await get_job(client, _JOB_ID)  # type: ignore[arg-type]
 
 
 async def test_get_snapshot_found() -> None:

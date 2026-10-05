@@ -1,38 +1,28 @@
-"""ContactFinder / Outreach evidence-graph core (outreach-contactfinder.md
-Phase A) -- Proposal §26.1 stages 4-6 and §27. Finds and ranks named
+"""ContactFinder / outreach evidence-graph core. Finds and ranks named
 individuals (recruiters, hiring managers, engineering leaders) publicly
 tied to a company/role, each claim carrying the real source it came from.
-Never resolves or stores an email or phone number -- that's Phase C's
-job, opt-in and human-gated, layered on top of what this module produces.
+Never resolves or stores an email or phone number -- that is a separate
+step, opt-in and human-gated, layered on top of what this module produces.
 
-Deliberately NOT ported from n8n's own thin single-pass ContactFinder the
-way most of this codebase's prior ports work -- Proposal's own stage-6
-ranking-factor list (team proximity, active hiring evidence, role/
-location relevance, decision influence, source authority, recency,
-identity confidence, warm-path strength) reads as a near-paraphrase of
-careerforge-command-center's actual `scoreCandidatePortfolio()`, so that
-engine is this module's primary design source. n8n is mined for two
-narrower, still load-bearing things: its anti-fabrication rule ("Only
-Real People From Provided Sources" -- must ONLY include people whose full
-names appear explicitly in the provided sources, empty list if none) and
-the `s154` incident lesson (a Postgres node there silently dropped
-context fields downstream, causing a real billed search for a company
-literally named "Unknown" -- read fields explicitly from where they were
-produced, never trust passthrough state across pipeline stages).
+Two rules from earlier reference implementations are kept because they are
+load-bearing. The anti-fabrication rule ("only real people from provided
+sources"): a candidate is kept only if their full name appears explicitly
+in the provided sources, and the result is an empty list if none do. And
+"read fields explicitly from where they were produced, never trust
+passthrough state across pipeline stages": a past incident had a database
+node silently drop context fields downstream, causing a real billed search
+for a company literally named "Unknown".
 
-Candidate extraction needs one real LLM call per run (same shape as
-`company_intel_pipeline.py`'s own Stage 7 synthesis, and what both
-reference repos actually do) -- the plan's L1(fetch)/L2(resolve+ground+
-rank)/L3(hook-write) split describes deterministic fetch and
-deterministic RE-VALIDATION wrapping this one narrow, always-re-grounded
-extraction call, not a zero-LLM identity step. Phase E's own outreach-hook
-phrasing is the separate, later LLM call the "L3" framing centrally means.
+Candidate extraction needs one real LLM call per run (the same shape as
+`company_intel_pipeline.py`'s synthesis step). The design is deterministic
+fetch plus deterministic RE-VALIDATION wrapped around that one narrow,
+always-re-grounded extraction call, not a zero-LLM identity step. Writing an
+outreach hook from the result is a separate, later LLM call.
 
-No LinkedIn-targeted fetching anywhere in this module, on purpose -- see
-outreach-contactfinder.md's own "Rejected outright" section. A LinkedIn
-URL may surface as one ordinary search hit among several from the general
-web-search fetchers below; it is never specifically targeted, never
-crawled, and never structurally parsed.
+No LinkedIn-targeted fetching anywhere in this module, on purpose: this
+platform never crawls LinkedIn. A LinkedIn URL may surface as one ordinary
+search hit among several from the general web-search fetchers below; it is
+never specifically targeted, never crawled, and never structurally parsed.
 """
 
 from __future__ import annotations
@@ -73,13 +63,12 @@ _PERSONA_WEIGHT: dict[Persona, float] = {
     "senior_leader": 15.0,
     "senior_ic": 10.0,
 }
-"""Proposal §27.1's own priority order, as base scores -- "a recruiter
-publicly hiring for the exact role can outrank a VP with no role
-connection" (§26.1 stage 6's own rule) falls directly out of this plus
-`_hiring_language_bonus` below, without needing seniority to dominate.
-Tier 6 (alumni/warm connectors) is opt-in and needs a signal (the user's
-own alma mater) this module doesn't have wired yet -- a real, disclosed
-scope cut for Phase A, not silently dropped."""
+"""The persona priority order, as base scores -- "a recruiter publicly
+hiring for the exact role can outrank a VP with no role connection" falls
+directly out of this plus `_hiring_language_bonus` below, without needing
+seniority to dominate. A further tier of alumni/warm connectors is opt-in and
+needs a signal (the user's own alma mater) this module doesn't have wired
+yet -- a real, disclosed scope cut, not silently dropped."""
 
 
 class ContactQuery(TypedDict):
@@ -116,11 +105,11 @@ _TITLE_STOPWORDS = {
 
 def _extract_role_keywords(role_title: str, *, limit: int = 3) -> str:
     """Deterministic, no LLM. A short, UNQUOTED keyword phrase -- never
-    the full exact title. The 2026-09-04 empirical trial found that
+    the full exact title. An empirical trial found that
     quoting the exact job title as a strict phrase returns ZERO Firecrawl
     results the moment the title has any real specificity (a listing's
-    own exact wording essentially never repeats anywhere else) -- the
-    root cause of 3 of the 5 original queries being dead weight. Splits
+    own exact wording essentially never repeats anywhere else), which had
+    made 3 of the 5 original queries dead weight. Splits
     on the title's own punctuation (a dash, colon, or comma almost always
     separates the core role from a sub-specialization or level, e.g.
     "AI Engineer - Model Optimization & Acceleration" -> "AI Engineer"),
@@ -142,13 +131,14 @@ def build_contact_query_plan(
 ) -> list[ContactQuery]:
     """A fixed, bounded query plan, same discipline as
     `company_intel_pipeline.build_query_plan` ("the planner cannot
-    generate an unbounded loop") -- covers Proposal §27.1's tiers 1-5.
+    generate an unbounded loop") -- covers the persona tiers from hiring
+    lead down to senior IC.
 
-    Rewritten 2026-09-04 (outreach-v2-search-first.md Phase G) off a real
-    5-strategy empirical trial against the live AMD application: the
-    original plan's control group returned 1 LinkedIn profile out of 47
-    results (2%) because 3 of its 5 queries quoted the exact role title
-    (see `_extract_role_keywords`) -- this is a replacement, not a tweak.
+    Built from a real 5-strategy empirical trial against a live
+    application: the earlier plan's control group returned 1 LinkedIn
+    profile out of 47 results (2%) because 3 of its 5 queries quoted the
+    exact role title (see `_extract_role_keywords`) -- this is a
+    replacement, not a tweak.
     Every query here is a *search-endpoint* query, including the
     `site:linkedin.com/...` ones -- reading only the snippet/title/URL
     the provider returns. That's the same treatment every other search
@@ -156,15 +146,15 @@ def build_contact_query_plan(
     into Google) and is explicitly distinct from ever pointing a
     scrape/crawl endpoint at linkedin.com, which this module never does.
 
-    `product_terms` is Phase H's own output (a company's flagship
-    software product + sub-area, extracted from the JD and Company
-    Intel) -- not yet built, so it defaults to None here and the two
-    product-anchored manager queries are simply omitted when it's empty.
+    `product_terms` is the product-term picker's output (a company's
+    flagship software product + sub-area, extracted from the JD and Company
+    Intel); it defaults to None here and the two product-anchored manager
+    queries are simply omitted when it's empty.
     The trial confirmed the remaining four queries "still work" without
     it (the recruiter/TA/hiring-post/director-VP lane), so this is a
     graceful degrade, not a broken state.
 
-    `include_x_lane` is Phase K's own optional X/Twitter "we're hiring"
+    `include_x_lane` is the optional X/Twitter "we're hiring"
     lane, gated by the caller (contact_research_routes.py) to companies
     NOT found in `company_tiers`' Fortune-500-based index -- a startup
     founder's own hiring tweet is real signal; a random employee's tweet
@@ -246,7 +236,7 @@ async def fetch_github_org_members(
     """A dedicated L1 fetcher, distinct from the general web-search
     lanes below -- GitHub's public org-members API needs no auth for
     public orgs and is exactly the kind of purpose-built, ToS-clean
-    source outreach-contactfinder.md's own source strategy calls for.
+    source this module wants.
     Tries the company name's own likely org slug directly; a 404 just
     means no org exists there, handled as an empty result like any other
     L1 miss, never an error -- no LLM guessing, no search-engine lookup
@@ -396,7 +386,7 @@ and disclosed rather than tuned: a hiring post over a year old is very
 likely for a req that's since closed or been reposted under a new
 activity/status id, but there's no live-verified data yet suggesting a
 tighter number is safe. Shared between the LinkedIn-posts lane and
-Phase K's X/Twitter lane -- no evidence either platform needs a
+the X/Twitter lane -- no evidence either platform needs a
 different cutoff."""
 
 _SNOWFLAKE_EPOCH_MS = 1288834974657  # 2010-11-04, the LinkedIn/Twitter Snowflake epoch
@@ -504,7 +494,7 @@ def apply_l2_search_filters(
     `extract_and_rank_candidates` already does -- two different queries
     can and do return the same URL.
 
-    Phase K's X/Twitter lane reuses the hiring-intent check and the
+    The X/Twitter lane reuses the hiring-intent check and the
     Snowflake-id freshness cutoff (X status ids use the identical scheme)
     but deliberately NOT the brand-account-post check -- that one is
     anchored to LinkedIn's own `/posts/{slug}_.../` URL shape, which has
@@ -589,8 +579,7 @@ _FORMER_EMPLOYMENT_MARKER_TEMPLATES = (
 
 def _is_former_employee_evidence(evidence: list[ContactEvidence], company: str) -> bool:
     """Deterministic, no-LLM current-employer guard -- the same spirit as
-    command-center's `classifyCurrentEmployerEvidence` (noted in the
-    original Phase A research, never ported until now), applied at the
+    command-center's `classifyCurrentEmployerEvidence`, applied at the
     evidence-text level since this module has no structured "current
     employer" field to check. Markers are anchored to the target
     `company` name specifically (both the full name and its first word,
@@ -611,7 +600,8 @@ def _is_former_employee_evidence(evidence: list[ContactEvidence], company: str) 
 
 
 class ContactEvidence(TypedDict):
-    """Proposal §27.3's exact schema, field-for-field."""
+    """One piece of evidence behind a candidate: the real source it came
+    from, what was observed there and when, and how confident the match is."""
 
     source_url: str
     source_title: str
@@ -713,8 +703,8 @@ def extract_and_rank_candidates(
     retrieved before it survives; candidates sharing a normalized name
     within this one run are merged into one, with multiple evidence rows.
     `company` is a required parameter, not read from `results` or patched
-    on afterward -- the s154 lesson this module's own docstring names:
-    pass values explicitly rather than threading them implicitly."""
+    on afterward -- the "pass values explicitly" rule the module docstring
+    names, rather than threading them implicitly."""
     text = raw.strip()
     if text.startswith("```"):
         text = text.strip("`")
@@ -779,10 +769,10 @@ def extract_and_rank_candidates(
         # Merge on normalized name only, never on name+arbitrary text --
         # every query in a single run already targets one company (see
         # build_contact_query_plan), so a within-run name collision
-        # across two different companies can't happen here. Proposal's
-        # own "never merge two people merely because they share a name"
-        # rule is about avoiding a false merge across DIFFERENT runs/
-        # companies, which a fresh `merged` dict per call already can't do.
+        # across two different companies can't happen here. The "never merge
+        # two people merely because they share a name" rule is about avoiding
+        # a false merge across DIFFERENT runs/companies, which a fresh
+        # `merged` dict per call already can't do.
         key = _normalize_name(person_name)
 
         if key in merged:
@@ -826,8 +816,8 @@ async def find_contacts(
 ) -> list[ContactCandidate]:
     """The one LLM call this module makes, plus the deterministic
     re-grounding/ranking wrapped around it. Reads `company` from its own
-    parameter, not from anywhere inside `results` -- the s154 lesson,
-    applied here: never trust a value threaded implicitly through a
+    parameter, not from anywhere inside `results` -- the same rule applied
+    here: never trust a value threaded implicitly through a
     prior stage's own data when it can be passed explicitly instead."""
     evidence_text = _format_evidence(results)
     if not evidence_text.strip():
@@ -939,13 +929,12 @@ prompt an unbounded token cost."""
 
 
 def extract_product_term_candidates(company: str, *texts: str | None) -> list[str]:
-    """Deterministic, no LLM (outreach-v2-search-first.md Phase H).
-    Builds the bounded candidate list `pick_product_terms` is only ever
+    """Deterministic, no LLM. Builds the bounded candidate list `pick_product_terms` is only ever
     allowed to choose from -- a real per-request candidate SET built
     fresh from this company's own JD text and Company Intel claims,
     mirroring `company_intel_pipeline._parse_claims`'s own `hits_by_url`
     membership-check pattern rather than a fixed global enum like
-    `_CATEGORIES`: Phase H's candidates are inherently per-company, not a
+    `_CATEGORIES`: these candidates are inherently per-company, not a
     known-in-advance vocabulary.
 
     Matches capitalized/technical-looking tokens -- a real product or
@@ -1025,7 +1014,7 @@ async def pick_product_terms(
     llm_base_url: str | None,
     generate: LlmGenerate = llm_generate,
 ) -> list[str]:
-    """The one bounded LLM call Phase H makes -- skipped entirely (zero
+    """The one bounded LLM call the product-term picker makes -- skipped entirely (zero
     cost) when there's nothing to pick from, since `build_contact_query_
     plan` already degrades cleanly to its 4-query core without product
     terms. Deterministic re-validation mirrors `company_intel_pipeline.

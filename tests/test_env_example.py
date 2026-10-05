@@ -1,4 +1,4 @@
-"""`.env.example` lists every environment variable the API reads.
+"""`.env.example` lists every environment variable the API and the operator scripts read.
 
 The README sends people there for the full list, and a self-hoster running the container
 has nothing else to go on: a variable that is read but not listed (a service address
@@ -23,10 +23,25 @@ def _variables_read_by_the_code() -> dict[str, set[str]]:
 
     def record(name: object, path: Path) -> None:
         if isinstance(name, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{2,}", name):
-            found.setdefault(name, set()).add(str(path.relative_to(_ROOT / "src")))
+            found.setdefault(name, set()).add(str(path.relative_to(_ROOT)))
 
-    for path in sorted((_ROOT / "src").rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text())):
+    paths = sorted([*(_ROOT / "src").rglob("*.py"), *(_ROOT / "scripts").rglob("*.py")])
+    for path in paths:
+        tree = ast.parse(path.read_text())
+        # A module-level constant named like `_SOMETHING_ENV` / `_SOMETHING_ENV_VAR` holds
+        # a variable name that is read through the constant (`os.environ.get(_X_ENV)`),
+        # which the call matching below cannot see.
+        for statement in tree.body:
+            if (
+                isinstance(statement, ast.Assign)
+                and isinstance(statement.value, ast.Constant)
+                and any(
+                    isinstance(target, ast.Name) and target.id.endswith(("_ENV", "_ENV_VAR"))
+                    for target in statement.targets
+                )
+            ):
+                record(statement.value.value, path)
+        for node in ast.walk(tree):
             if (
                 isinstance(node, ast.Subscript)
                 and ast.unparse(node.value).endswith("environ")
@@ -68,6 +83,11 @@ def test_the_scan_finds_the_variables_it_should() -> None:
         "WORKER_LEASES",
         "LATEX_SERVICE_BASE_URL",
         "DISABLE_OUTBOX_WORKER",
+        # read through a module-level constant, not a string literal at the call
+        "JOB_SCORING_SYSTEM_PROMPT_PATH",
+        # read only by a script under scripts/
+        "ATS_FIELD_MAP_SIGNING_KEY",
+        "SAMPLE_SOURCE_SUPABASE_URL",
     } <= set(read)
 
 

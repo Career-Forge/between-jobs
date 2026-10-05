@@ -1,5 +1,4 @@
-"""Tests for Job Finder P6b (live-search-track.md's own P6 scoping) --
-the company-tier normalizer, the in-memory lookup index, and its
+"""Tests for the company-tier normalizer, the in-memory lookup index, and its
 fail-open PostgREST-paginated loader. Ported from n8n's real Parse
 Scorer Output / seed_company_tier_weights.js `normalizeCompanyName`."""
 
@@ -160,11 +159,10 @@ async def test_get_company_tier_index_caches_across_calls() -> None:
 
 
 async def test_get_company_tier_index_pages_past_the_first_1000_rows() -> None:
-    """Regression test for the same PostgREST default-cap bug class
-    already found and fixed for `import_job_registry_seed.py` and
-    `geo_gazetteer.get_gazetteer` -- 576 real companies today is well
-    under the cap, but a fixture bigger than one page is what actually
-    proves the pagination loop works, not just that it compiles."""
+    """Regression test for PostgREST's silent default row cap (the same bug
+    class `geo_gazetteer.get_gazetteer` pages around) -- 576 real companies
+    today is well under the cap, but a fixture bigger than one page is what
+    actually proves the pagination loop works, not just that it compiles."""
     import between_jobs.api.company_tiers as tiers_module
 
     tiers_module._cached_index = None

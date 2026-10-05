@@ -1,6 +1,5 @@
-"""Tests for the gazetteer-backed 3-state location filter (Job Finder
-P5d, live-search-track.md). A faithful port of n8n's real
-`resolveLocation`/`checkLocationState` -- fixtures use a small synthetic
+"""Tests for the gazetteer-backed 3-state location filter. A faithful
+port of n8n's real `resolveLocation`/`checkLocationState` -- fixtures use a small synthetic
 city set (not the real 34k-city import) except where a test explicitly
 exercises the real bundled country-alias data file."""
 
@@ -294,10 +293,10 @@ async def test_get_gazetteer_pages_past_the_first_1000_rows() -> None:
     """Regression test for a real bug this module hit on its own first
     live verification: a plain unranged `.select()` against the real
     34,006-row table returned exactly 1,000 rows (PostgREST's own
-    default cap), the identical bug class `import_job_registry_seed.py`
-    already found and fixed for a different table. A fixture bigger than
-    one page is what actually catches this -- every other test here uses
-    a 5-row fixture that couldn't have."""
+    default cap), the same bug class that once made a bulk import skip
+    most of its rows. A fixture bigger than one page is what actually
+    catches this -- every other test here uses a 5-row fixture that
+    couldn't have."""
     import between_jobs.api.geo_gazetteer as geo_module
 
     geo_module._cached_gazetteer = None

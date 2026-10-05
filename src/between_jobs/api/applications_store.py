@@ -1,9 +1,8 @@
-"""Persistence for applications and their event log (Sprint 2.6c/2.6d) --
-Proposal §19-20.
+"""Persistence for applications and their event log.
 
 `applications` is the current projection; `application_events` is the
-append-only audit trail -- "never try to reconstruct history from
-updated_at" (§19's own words).
+append-only audit trail -- never try to reconstruct history from
+updated_at.
 
 `create_application` stays as two sequential Postgrest calls (insert
 application, insert its "created" event) -- a real but small and explicit
@@ -12,19 +11,18 @@ gap versus true atomicity, same spirit as this project's existing
 failure between the two calls only costs the audit-trail row, never
 invents an application from nothing.
 
-`change_stage`, below, is different: Proposal §20 shows a status
-transition and its emitted event committing in the SAME transaction as an
-outbox append, and this platform's whole event-driven design depends on
-that pairing never drifting apart. This backend only has Postgrest
+`change_stage`, below, is different: a status transition and its emitted
+event commit in the SAME transaction as an outbox append, and this
+platform's whole event-driven design depends on that pairing never
+drifting apart. This backend only has Postgrest
 (HTTP), not a raw connection to wrap several statements in
 `async with db.transaction()` -- the real equivalent is a Postgres
 function called via `.rpc(...)`, so the whole body runs as one
-transaction. `change_application_stage` (Sprint 2.6d's migration) is that
-function; this module just calls it.
+transaction. `change_application_stage` (a Postgres function, created by a
+migration) is that function; this module just calls it.
 
-`status` was originally unconstrained text at the DB layer (Proposal's own
-DDL choice) but is now a real enforced vocabulary of 7 values, membership-
-only (Applications Kanban K1, applications-kanban.md D1/D2) -- a Postgres
+`status` was originally unconstrained text at the DB layer but is now a real
+enforced vocabulary of 7 values, membership-only -- a Postgres
 CHECK constraint plus `change_application_stage`'s own copy of that same
 check, not a gated state machine; any-to-any moves among the 7 stay legal.
 _DEFAULT_STATUS below is just the value a freshly created application
@@ -53,7 +51,7 @@ _DEFAULT_STATUS = "saved"
 _RAISED_EXCEPTION_SQLSTATE = "P0001"
 
 # invalid_parameter_value -- change_application_stage's OWN status-check
-# raises with this explicit errcode (K1), distinct from the plain P0001
+# raises with this explicit errcode, distinct from the plain P0001
 # above, so a bad status and a missing application never get confused with
 # each other here.
 _INVALID_STATUS_SQLSTATE = "22023"
@@ -65,8 +63,8 @@ class ApplicationNotFound(Exception):
 
 
 class InvalidApplicationStatus(Exception):
-    """`new_status` isn't one of the 7 enforced values (K1, applications-
-    kanban.md D2) -- raised by `change_application_stage`'s own check, the
+    """`new_status` isn't one of the 7 enforced values -- raised by
+    `change_application_stage`'s own check, the
     load-bearing enforcement for callers that never go through
     `ChangeApplicationStageRequest`'s Pydantic Literal (the Telegram
     bridge's stage-change callback parses `new_status` straight out of a
@@ -158,14 +156,14 @@ def _canonical_for_comparison(url: str) -> str:
 async def find_application_by_url(
     supabase: AsyncClient, user_id: str, url: str
 ) -> dict[str, Any] | None:
-    """browser-extension.md E1 -- resolves a browser tab's current URL back
+    """Resolves a browser tab's current URL back
     to an existing tracked application, so the extension's hybrid page-
-    detection (D3) can tell "already tracked" from "offer to track" before
+    detection can tell "already tracked" from "offer to track" before
     fetching a prepared payload.
 
     Compares `job_snapshots.source_url` and `jobs.canonical_url` for this
     user's own applications against the lookup URL after both sides go
-    through `_canonical_for_comparison` (E6 continuation -- closes a real
+    through `_canonical_for_comparison` (which closes a real
     regression where a job tracked via a URL carrying a query string no
     longer matched an otherwise-identical lookup URL without one). Still
     not a byte-exact match and still a real, disclosed limitation beyond
@@ -232,8 +230,8 @@ async def get_event_by_idempotency_key(
     supabase: AsyncClient, user_id: str, idempotency_key: str
 ) -> dict[str, Any] | None:
     """Pre-check for a caller that needs to know *before* doing expensive
-    work whether this exact command already ran (Sprint 3.0e's
-    prepare_application, which would otherwise re-spend LLM tokens on a
+    work whether this exact command already ran (the prepare_application
+    flow, which would otherwise re-spend LLM tokens on a
     retried request) -- `record_event`'s own idempotent insert-or-return
     only helps once the work is already done."""
     result = (
@@ -249,7 +247,7 @@ async def get_event_by_idempotency_key(
 async def get_latest_prepare_result(
     supabase: AsyncClient, user_id: str, application_id: str
 ) -> dict[str, Any] | None:
-    """outreach-v2-search-first.md Phase I: reads the most recent real
+    """Reads the most recent real
     `application.prepared` event's payload back out -- the durable home
     for `fit`/`gate_outcome` (engine_contract.PrepareApplicationResult),
     computed live on every `/prepare` call and previously never re-
@@ -292,8 +290,8 @@ async def record_event(
     one-off system note) can omit it; a random key still satisfies the
     unique constraint without protecting against retries.
 
-    `outbox_event_type` (Horizon Sprint 4.0) additionally appends a real
-    `event_outbox` row -- Appendix A's versioned form (e.g.
+    `outbox_event_type` additionally appends a real
+    `event_outbox` row -- the versioned event name (e.g.
     `"application.created.v1"`), distinct from `event_type`'s own
     unversioned timeline label, since a timeline entry and a bus event
     don't have to share a name (`run_prepare_application` uses one
@@ -403,14 +401,14 @@ async def change_stage(
     actor_type: str = "user",
     actor_id: str | None = None,
 ) -> dict[str, Any]:
-    """Transactional stage change (Sprint 2.6d) -- calls the
+    """Transactional stage change -- calls the
     `change_application_stage` Postgres function, which updates the
     application, records the paired application_events row, and appends
     to event_outbox all in one database transaction. Idempotent on
     `idempotency_key`: a retried call returns the current row without
     writing a second event or outbox row.
 
-    `new_status` is plain `str`, not `models.ApplicationStatus` (K1) --
+    `new_status` is plain `str`, not `models.ApplicationStatus` --
     this function is also called from the Telegram bridge with a value
     parsed straight out of a callback_data string, never validated as a
     Literal. `change_application_stage` itself is the real enforcement

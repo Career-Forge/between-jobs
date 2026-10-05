@@ -1,25 +1,34 @@
-"""One-time reference-data import: n8n's real GeoNames-derived city
-gazetteer -> between-jobs' own `geo_gazetteer_cities` (Job Finder P5d,
-live-search-track.md).
+"""One-time reference-data import: a GeoNames-derived city gazetteer -> the
+`geo_gazetteer_cities` table, which the location filter (Job Finder location
+filtering) uses to resolve free-text locations such as "Austin, TX" or "Remote -
+Germany".
 
-Unlike `import_job_registry_seed.py` (a live, growing system this
-platform now owns and polls independently), this is STATIC reference
-data with no natural per-row key worth deduplicating on (city names
-aren't unique, and GeoNames doesn't expose a stable external id this
-project already tracks) -- re-running this script TRUNCATES the table
-and reinserts fresh from the source file, the honest choice for "this
-reference dataset was regenerated, replace it wholesale" rather than
-inventing upsert semantics reference data doesn't need.
+Optional. Without this table Discover still works: every location resolves to
+"unknown" and the filter drops nothing.
 
-Reads directly from n8n's own frozen reference repo
-(`data/reference/geonames_cities.json`, real, CC BY 4.0-licensed GeoNames
-data, already built by n8n's own `scripts/build_reference_data.js`) --
-this project never modifies that repo, only reads real data out of it,
-same precedent as `import_job_registry_seed.py`'s own registry-seed
-import. The 34,006 city rows land ONLY in the real Supabase project,
-never as a git-tracked file in this repo, per this project's own "never
-commit registry or interview-intel datasets" rule -- only this script
-and the schema migration are public.
+No data file ships with this repository. Build one yourself, for example from
+GeoNames' `cities15000` dump (https://www.geonames.org, CC BY 4.0, so keep the
+attribution), and pass its path as `--source`. The expected shape is:
+
+    {"cities": [
+      {"n": "Munich", "a": "Munich", "alt": ["Muenchen", "Munchen"],
+       "cc": "DE", "p": 1260391, "lat": 48.13743, "lon": 11.57549}
+    ]}
+
+`n` is the city name, `a` its ASCII name and `cc` its upper-case ISO 3166-1 alpha-2
+country code; all three are required. `alt` (alternate names and spellings), `p`
+(population, which breaks ties between cities sharing a name: the bigger one wins),
+`lat` and `lon` are optional.
+
+Unlike the job registry (a live, growing dataset the API's own poller keeps current),
+this is STATIC reference data with no natural per-row key worth deduplicating on (city
+names are not unique) -- re-running this script TRUNCATES the table and reinserts fresh
+from the source file, the honest choice for "this reference dataset was regenerated,
+replace it wholesale" rather than inventing upsert semantics it does not need.
+
+The rows land only in your own Supabase project. Do not commit the data file to this
+repository: it is reference data, not code, and the repository policy keeps datasets out.
+`--dry-run` only counts the cities in the file; it validates nothing else.
 """
 
 from __future__ import annotations
@@ -42,7 +51,7 @@ _MAX_INSERT_ATTEMPTS = 4
 
 
 def city_row_to_insert(city: dict[str, Any]) -> dict[str, Any]:
-    """A GeoNames city entry (n8n's own compact field names: n/a/alt/cc/
+    """One city entry from the source file (compact field names n/a/alt/cc/
     p/lat/lon) -> a `geo_gazetteer_cities` insert payload with real
     column names -- pure and total, every field the source provides maps
     directly, nothing guessed or defaulted beyond the schema's own
@@ -67,14 +76,13 @@ async def _insert_in_batches(
 
 
 async def _insert_batch_with_retry(supabase: AsyncClient, batch: list[dict[str, Any]]) -> None:
-    """Same bounded retry-with-backoff this codebase already leans on for
-    every real bulk write against a Supabase table with index-maintenance
-    cost (job_registry_postings' own seed import hit this first) -- a
-    plain insert into a fresh table is unlikely to need it at this row
-    count, but the table carries a real index and cheap insurance costs
-    nothing when every insert here is naturally idempotent-safe to retry
-    (a partial batch failure just means retrying the same rows, no
-    unique-constraint risk since there's no conflict target)."""
+    """Bounded retry-with-backoff on a statement timeout, the same guard this
+    codebase uses for every bulk write against a table with index-maintenance
+    cost (the job registry's upserts hit it first). A plain insert into a fresh
+    table is unlikely to need it at this row count, but cheap insurance costs
+    nothing when every insert here is naturally safe to retry (a partial batch
+    failure just means retrying the same rows, no unique-constraint risk since
+    there is no conflict target)."""
     for attempt in range(1, _MAX_INSERT_ATTEMPTS + 1):
         try:
             await supabase.table("geo_gazetteer_cities").insert(batch).execute()
@@ -116,7 +124,9 @@ async def import_gazetteer(
 async def _main() -> None:
     load_dotenv()
 
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -126,7 +136,7 @@ async def _main() -> None:
         "--source",
         type=Path,
         required=True,
-        help="Path to n8n's real geonames_cities.json (the frozen reference repo's own copy).",
+        help="Path to a JSON file in the shape described above.",
     )
     args = parser.parse_args()
 
