@@ -801,6 +801,19 @@ a.bj-contact-chip {
   color: var(--bj-danger);
 }
 
+/* Account deletion card (P4.5): the card border and the button are danger-
+   colored, and the button also carries a text label, so nothing is color-only. */
+.bj-account-delete {
+  border-color: var(--bj-danger);
+}
+
+button.bj-danger {
+  background: var(--bj-danger);
+  border-color: var(--bj-danger);
+  color: #ffffff;
+  font-weight: 600;
+}
+
 .bj-project-body {
   flex: 1;
   min-width: 0;

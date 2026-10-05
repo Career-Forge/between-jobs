@@ -500,6 +500,13 @@ CASES = [
 
 
 NOT_USER_SCOPED: dict[str, NotUserScoped] = {
+    "POST /account/delete": NotUserScoped(
+        "own-identity",
+        "takes no id: it deletes the caller's own account and nothing else (the user comes from "
+        "the token), and only after the caller types the confirmation phrase. A stranger cannot "
+        "name another user. It is also destructive, so it cannot be a case in a module whose two "
+        "users persist; it has its own drill in tests/integration/test_local_account_deletion.py",
+    ),
     "GET /capabilities": NotUserScoped(
         "public",
         "signed-in only, but returns two server-wide switches (telegram on/off, the bot's public "

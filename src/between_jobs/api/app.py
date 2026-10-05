@@ -32,6 +32,7 @@ from postgrest.exceptions import APIError
 
 from supabase import AsyncClient
 
+from .account_routes import router as account_router
 from .app_state import get_supabase
 from .applications_routes import router as applications_router
 from .auth import create_jwks_client, require_user_id
@@ -360,6 +361,7 @@ app.include_router(warm_path_events_router)
 app.include_router(gmail_oauth_router)
 app.include_router(interview_practice_router)
 app.include_router(saved_searches_router)
+app.include_router(account_router)
 app.include_router(extension_router)
 app.include_router(hiring_signal_router)
 app.include_router(hiring_signal_status_router)

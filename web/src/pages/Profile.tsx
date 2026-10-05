@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { AccountCard } from "../components/AccountCard";
 import { HeaderComposer } from "../components/HeaderComposer";
 import { PersonalDetailsCard } from "../components/PersonalDetailsCard";
 import { SectionedProfile } from "../components/SectionedProfile";
@@ -142,6 +143,7 @@ export default function Profile() {
         error={importError}
         onImport={(text) => void importJson(text)}
       />
+      <AccountCard />
     </PageFrame>
   );
 }
