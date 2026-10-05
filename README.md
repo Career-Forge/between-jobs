@@ -22,7 +22,7 @@ you start.
 - **Your data lives in your own Supabase project.** Resume content, job descriptions and
   similar text are also sent to the LLM and search providers whose keys you supply, and
   if you connect Gmail, the text of replies to the drafts the app created also goes to
-  your LLM provider. There is no analytics or telemetry code in this repository.
+  your LLM provider. There are no third-party analytics or tracking SDKs in this repository.
 
 ## What works today
 
