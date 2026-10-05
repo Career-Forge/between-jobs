@@ -68,6 +68,11 @@ async def create_pending_version(
     if existing.data:
         return cast(dict[str, Any], existing.data[0])
 
+    if supersedes_id is not None:
+        # The foreign key only needs that row to exist, so without this check any caller could
+        # point its version at somebody else's. Raises VersionNotFound for a stranger's id.
+        await get_version(supabase, user_id, supersedes_id)
+
     row: dict[str, Any] = {
         "user_id": user_id,
         "schema_version": imported.schema_version,

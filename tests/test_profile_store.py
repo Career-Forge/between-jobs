@@ -64,17 +64,25 @@ class _FakeProfileVersionsTable:
         insert_row: dict[str, Any] | None = None,
         update_row: dict[str, Any] | None = None,
         select_count: int | None = None,
+        select_sequence: list[list[dict[str, Any]]] | None = None,
     ) -> None:
         self.select_rows = select_rows
         self.insert_row = insert_row
         self.update_row = update_row
         self.select_count = select_count
+        self._select_sequence = select_sequence
+        self._select_calls = 0
         self.insert_calls: list[dict[str, Any]] = []
         self.update_calls: list[dict[str, Any]] = []
         self.delete_calls: int = 0
 
     def select(self, columns: str, **_: Any) -> _ChainBuilder:
-        return _ChainBuilder(self.select_rows, count=self.select_count)
+        self._select_calls += 1
+        rows = self.select_rows
+        if self._select_sequence is not None:
+            # The Nth select() answers with the Nth list (the last one repeats).
+            rows = self._select_sequence[min(self._select_calls, len(self._select_sequence)) - 1]
+        return _ChainBuilder(rows, count=self.select_count)
 
     def insert(self, data: dict[str, Any]) -> _ChainBuilder:
         self.insert_calls.append(data)
@@ -161,7 +169,11 @@ async def test_create_pending_version_omits_supersedes_id_by_default() -> None:
 
 async def test_create_pending_version_sets_supersedes_id_when_given() -> None:
     inserted_row = {"id": _VERSION_ID, "user_id": _USER_ID, "activated_at": None}
-    table = _FakeProfileVersionsTable(select_rows=[], insert_row=inserted_row)
+    previous = {"id": "previous-version-id", "user_id": _USER_ID}
+    # the dedup lookup finds nothing; the ownership check on the superseded version finds it
+    table = _FakeProfileVersionsTable(
+        select_rows=[], insert_row=inserted_row, select_sequence=[[], [previous]]
+    )
     client = _FakeSupabaseClient(table)
 
     await create_pending_version(
@@ -174,6 +186,27 @@ async def test_create_pending_version_sets_supersedes_id_when_given() -> None:
 
     assert table.insert_calls[0]["supersedes_id"] == "previous-version-id"
     assert table.insert_calls[0]["source_kind"] == "gap_interview"
+
+
+async def test_create_pending_version_refuses_a_version_that_is_not_the_callers() -> None:
+    """The foreign key only needs the superseded row to exist, so without the check any caller
+    could point its version at somebody else's."""
+    inserted_row = {"id": _VERSION_ID, "user_id": _USER_ID, "activated_at": None}
+    table = _FakeProfileVersionsTable(
+        select_rows=[], insert_row=inserted_row, select_sequence=[[], []]
+    )
+    client = _FakeSupabaseClient(table)
+
+    with pytest.raises(VersionNotFound):
+        await create_pending_version(
+            client,  # type: ignore[arg-type]
+            _USER_ID,
+            _imported(),
+            "gap_interview",
+            supersedes_id="someone-elses-version-id",
+        )
+
+    assert table.insert_calls == []
 
 
 async def test_create_pending_version_dedupes_on_identical_content_hash() -> None:

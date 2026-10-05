@@ -109,7 +109,9 @@ async def create_application(
     )
     application = cast(dict[str, Any], result.data[0])
 
-    await record_event(
+    # The application was made for this user a moment ago, so the ownership check
+    # `record_event` makes would only re-read it.
+    await _write_event(
         supabase,
         user_id,
         application_id=application["id"],
@@ -309,7 +311,40 @@ async def record_event(
     `create_application`'s own two-sequential-call gap: low-stakes for a
     human-paced action, and this whole function already short-circuits on
     a retried idempotency_key before ever reaching this second insert, so
-    a retry can't double-publish either."""
+    a retry can't double-publish either.
+
+    The application must be the caller's: this writes with the service role, and the foreign
+    key only needs the row to exist, so without the check any user id could attach events
+    (and an outbox event) to anyone's application. Raises `ApplicationNotFound` for a
+    stranger's id."""
+    await get_application(supabase, user_id, application_id)
+    return await _write_event(
+        supabase,
+        user_id,
+        application_id=application_id,
+        event_type=event_type,
+        payload=payload,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        idempotency_key=idempotency_key,
+        outbox_event_type=outbox_event_type,
+    )
+
+
+async def _write_event(
+    supabase: AsyncClient,
+    user_id: str,
+    *,
+    application_id: str,
+    event_type: str,
+    payload: dict[str, Any],
+    actor_type: str,
+    actor_id: str,
+    idempotency_key: str | None = None,
+    outbox_event_type: str | None = None,
+) -> dict[str, Any]:
+    """`record_event` without its ownership check, for a caller that just created the
+    application for `user_id` itself. Never expose this to an id that came from outside."""
     key = idempotency_key or f"{event_type}:{uuid.uuid4()}"
     existing = (
         await supabase.table("application_events")

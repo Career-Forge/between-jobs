@@ -297,7 +297,9 @@ async def test_get_latest_prepare_result_ignores_other_event_types() -> None:
 async def test_record_event_inserts_when_no_existing_key() -> None:
     new_event = {"id": "event-1"}
     events = _FakeTable(select_rows=[], insert_row=new_event)
-    client = _FakeSupabaseClient(_FakeTable(select_rows=[]), events)
+    client = _FakeSupabaseClient(
+        _FakeTable(select_rows=[{"id": _APPLICATION_ID, "user_id": _USER_ID}]), events
+    )
 
     result = await record_event(
         client,  # type: ignore[arg-type]
@@ -318,7 +320,9 @@ async def test_record_event_inserts_when_no_existing_key() -> None:
 async def test_record_event_is_idempotent_on_existing_key() -> None:
     existing_event = {"id": "event-1", "idempotency_key": "change-1"}
     events = _FakeTable(select_rows=[existing_event])
-    client = _FakeSupabaseClient(_FakeTable(select_rows=[]), events)
+    client = _FakeSupabaseClient(
+        _FakeTable(select_rows=[{"id": _APPLICATION_ID, "user_id": _USER_ID}]), events
+    )
 
     result = await record_event(
         client,  # type: ignore[arg-type]
@@ -338,7 +342,9 @@ async def test_record_event_is_idempotent_on_existing_key() -> None:
 async def test_record_event_generates_a_key_when_none_given() -> None:
     new_event = {"id": "event-1"}
     events = _FakeTable(select_rows=[], insert_row=new_event)
-    client = _FakeSupabaseClient(_FakeTable(select_rows=[]), events)
+    client = _FakeSupabaseClient(
+        _FakeTable(select_rows=[{"id": _APPLICATION_ID, "user_id": _USER_ID}]), events
+    )
 
     await record_event(
         client,  # type: ignore[arg-type]
@@ -352,6 +358,30 @@ async def test_record_event_generates_a_key_when_none_given() -> None:
 
     assert len(events.insert_calls) == 1
     assert events.insert_calls[0]["idempotency_key"].startswith("application.note_added:")
+
+
+async def test_record_event_refuses_an_application_that_is_not_the_callers() -> None:
+    """The foreign key only needs the application to exist, and this writes with the service
+    role: without the check any user id could attach events (and an outbox event) to anyone's
+    application."""
+    events = _FakeTable(select_rows=[], insert_row={"id": "event-1"})
+    outbox = _FakeTable(select_rows=[], insert_row={"id": "outbox-1"})
+    client = _FakeSupabaseClient(_FakeTable(select_rows=[]), events, event_outbox=outbox)
+
+    with pytest.raises(ApplicationNotFound):
+        await record_event(
+            client,  # type: ignore[arg-type]
+            _USER_ID,
+            application_id=_APPLICATION_ID,
+            event_type="application.note_added",
+            payload={},
+            actor_type="user",
+            actor_id=_USER_ID,
+            outbox_event_type="application.note.v1",
+        )
+
+    assert events.insert_calls == []
+    assert outbox.insert_calls == []
 
 
 async def test_change_stage_calls_the_rpc_with_expected_params() -> None:

@@ -77,6 +77,7 @@ class _FakeProfileVersionsTable:
         update_row: dict[str, Any] | None = None,
         select_count: int | None = None,
         select_rows_after_first: list[dict[str, Any]] | None = None,
+        select_sequence: list[list[dict[str, Any]]] | None = None,
     ) -> None:
         self.select_rows = select_rows
         self.insert_row = insert_row
@@ -84,15 +85,22 @@ class _FakeProfileVersionsTable:
         self.select_count = select_count
         self.delete_calls = 0
         self._select_rows_after_first = select_rows_after_first
+        self._select_sequence = select_sequence
         self._select_call_count = 0
 
     def select(self, columns: str, **_: Any) -> _ChainBuilder:
         self._select_call_count += 1
-        rows = (
-            self._select_rows_after_first
-            if self._select_call_count > 1 and self._select_rows_after_first is not None
-            else self.select_rows
-        )
+        if self._select_sequence is not None:
+            # The Nth select() answers with the Nth list (the last one repeats).
+            rows = self._select_sequence[
+                min(self._select_call_count, len(self._select_sequence)) - 1
+            ]
+        else:
+            rows = (
+                self._select_rows_after_first
+                if self._select_call_count > 1 and self._select_rows_after_first is not None
+                else self.select_rows
+            )
         return _ChainBuilder(rows, count=self.select_count)
 
     def insert(self, data: dict[str, Any]) -> _ChainBuilder:
@@ -459,12 +467,11 @@ def test_approve_gap_interview_fact_success() -> None:
         _FakeProfileVersionsTable(
             select_rows=[_ACTIVE_VERSION_ROW],
             insert_row=inserted_row,
-            # First select() is the route's own get_active_version lookup
-            # (finds the row); the second is create_pending_version's own
-            # dedup-by-content-hash check, which the real filtered query
-            # would find nothing for -- appending a bullet changes the
-            # content_hash, so no existing row would ever match it.
-            select_rows_after_first=[],
+            # First select() is the route's own get_active_version lookup (finds the row); the
+            # second is create_pending_version's dedup-by-content-hash check, which the real
+            # filtered query would find nothing for (appending a bullet changes the hash); the
+            # third is its check that the version being superseded is the caller's own.
+            select_sequence=[[_ACTIVE_VERSION_ROW], [], [_ACTIVE_VERSION_ROW]],
         )
     )
 
