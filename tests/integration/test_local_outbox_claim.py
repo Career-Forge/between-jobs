@@ -53,13 +53,31 @@ async def _seed(world: World, count: int) -> tuple[str, set[str]]:
     return user, {str(r["id"]) for r in rows}
 
 
-async def test_two_workers_claiming_at_the_same_moment_get_disjoint_batches(world: World) -> None:
+# The claim is `UPDATE ... WHERE id IN (SELECT ... LIMIT n FOR UPDATE SKIP LOCKED)`. Which join the
+# planner uses for that IN depends on the table's statistics, and a nested-loop semi join re-runs
+# the limited subquery, so a call can return more rows than its limit (33 for a limit of 20 was
+# seen). The test therefore runs under the default planner and with the other join strategies
+# switched off, which forces the nested loop whatever the statistics happen to be.
+_PLANNER_SETTINGS = {
+    "default planner": "",
+    "forced nested loop": "set enable_hashjoin = off; set enable_mergejoin = off; "
+    "set enable_hashagg = off",
+}
+
+
+@pytest.mark.parametrize("settings", list(_PLANNER_SETTINGS), ids=list(_PLANNER_SETTINGS))
+async def test_two_workers_claiming_at_the_same_moment_get_disjoint_batches(
+    world: World, settings: str
+) -> None:
     """Worker A claims and holds its transaction open -- its row locks are live --
     while worker B claims. B must neither block on A's rows nor take any of them."""
     user, seeded = await _seed(world, 40)
     a: Any = await asyncpg.connect(world.stack["DB_URL"])
     b: Any = await asyncpg.connect(world.stack["DB_URL"])
     try:
+        for connection in (a, b):
+            if _PLANNER_SETTINGS[settings]:
+                await connection.execute(_PLANNER_SETTINGS[settings])
         ta, tb = a.transaction(), b.transaction()
         await ta.start()
         claimed_by_a = {str(r["id"]) for r in await a.fetch(_CLAIM, 20)}
