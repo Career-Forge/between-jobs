@@ -412,3 +412,12 @@ async def world(sb: AsyncClient, pg: Any, local_stack: dict[str, str]) -> AsyncI
         yield world
     finally:
         await world.cleanup()
+
+
+# The two-user fixtures the cross-tenant suites share. Imported last: they import `World` from here.
+from .cross_tenant.fixtures import (  # noqa: E402, F401
+    tenant_client,
+    tenant_env,
+    tenant_pair,
+    tenant_world,
+)
