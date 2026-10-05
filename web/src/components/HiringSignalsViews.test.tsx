@@ -67,6 +67,23 @@ describe("FailureView", () => {
     expect(visibleText(html)).not.toContain("Try again");
   });
 
+  it("links to the page the server named, under its label, instead of the fallback", () => {
+    const html = renderInRouter(
+      <FailureView
+        failure={{
+          kind: "setup_required",
+          message: "Add a search key.",
+          linkTo: "/profile/integrations?capability=hiring_signals",
+          linkLabel: "Add a search key in Integrations",
+        }}
+        onRetry={noop}
+      />,
+    );
+    expect(html).toContain('href="/profile/integrations?capability=hiring_signals"');
+    expect(visibleText(html)).toContain("Add a search key in Integrations");
+    expect(visibleText(html)).not.toContain("Open Integrations settings");
+  });
+
   it("does not present setup-required as a failure (red) -- it is a to-do", () => {
     const html = renderInRouter(
       <FailureView failure={{ kind: "setup_required", message: "x" }} onRetry={noop} />,

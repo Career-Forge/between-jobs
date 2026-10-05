@@ -3,9 +3,11 @@ import { Link } from "react-router-dom";
 import { apiFetch, apiFetchBlob } from "../lib/api";
 import type { ChecklistItem, PrepareApplicationResult } from "../lib/generateTypes";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
+import { type SetupNotice, failureOf } from "../lib/setupRequired";
 import { GapInterview } from "./GapInterview";
 import { HonestFloor } from "./HonestFloor";
 import { ScoreBreakdown } from "./ScoreBreakdown";
+import { SetupRequiredNotice } from "./SetupRequiredNotice";
 
 // R5 (resumeforge-shape-and-fit.md): pin-conflict messages ride the same
 // generic `warnings: string[]` channel as everything else (no new backend
@@ -44,6 +46,7 @@ type GenerateState =
   | { kind: "idle" }
   | { kind: "generating" }
   | { kind: "ready"; result: PrepareApplicationResult }
+  | { kind: "setup"; notice: SetupNotice }
   | { kind: "error"; message: string };
 
 type ChecklistState =
@@ -142,10 +145,9 @@ export function GeneratePanel({
       );
       setGenerate({ kind: "ready", result });
     } catch (e) {
-      setGenerate({
-        kind: "error",
-        message: friendlyApiMessage(e, "Failed to generate"),
-      });
+      // No profile yet, or no model key: the first thing a new account hits here, and
+      // the fix is a page away, so a setup failure keeps its link to it.
+      setGenerate(failureOf(e, "Failed to generate"));
     }
   }
 
@@ -246,6 +248,7 @@ export function GeneratePanel({
       </label>
 
       {generate.kind === "error" && <div className="bj-error">{generate.message}</div>}
+      {generate.kind === "setup" && <SetupRequiredNotice notice={generate.notice} />}
 
       {generate.kind === "ready" && (
         <div className="bj-generate-result">

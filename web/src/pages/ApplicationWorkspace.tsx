@@ -64,9 +64,11 @@ export default function ApplicationWorkspace() {
     setState({ kind: "loading" });
     try {
       const application = await apiFetch<Application>(`/applications/${id}`);
-      // Company intel, header, and generation all work without a profile --
-      // only section reordering needs one, so a missing profile scopes down
-      // to that one card instead of blocking the whole workspace.
+      // A missing profile does not block the workspace. Company intel and the other
+      // research panels do not read it, and generation says what is missing and links
+      // to the fix. The panels that edit the resume's own document (header, structure,
+      // settings, and Tailor) cannot work without one -- the server answers them with
+      // SETUP_REQUIRED -- so with no profile they give way to a single note, below.
       let profile: CanonicalProfile | null = null;
       try {
         const profileVersion = await apiFetch<ProfileVersion>("/profile/current");
@@ -120,38 +122,42 @@ export default function ApplicationWorkspace() {
     <WorkspaceFrame title={snapshot?.title} company={snapshot?.company_name}>
       <div className="bj-workspace-layout">
         <div className="bj-workspace-studio">
-          <div className="bj-card">
-            <h2>Header</h2>
-            <HeaderComposer applicationId={application.id} />
-          </div>
-          <div className="bj-card">
-            <h2>Resume structure</h2>
-            {profile ? (
-              <>
+          {profile ? (
+            <>
+              <div className="bj-card">
+                <h2>Header</h2>
+                <HeaderComposer applicationId={application.id} />
+              </div>
+              <div className="bj-card">
+                <h2>Resume structure</h2>
                 <p className="bj-muted bj-small">Drag to reorder, or hide a section.</p>
                 <SectionOrderEditor profile={profile} applicationId={application.id} />
-              </>
-            ) : (
+              </div>
+              <div className="bj-card">
+                <h2>Resume settings</h2>
+                <p className="bj-muted bj-small">
+                  Overrides for this application only -- unset fields fall back to your
+                  profile's defaults.
+                </p>
+                <ShapeSettingsPanel applicationId={application.id} />
+              </div>
+            </>
+          ) : (
+            <div className="bj-card">
+              <h2>Resume</h2>
               <p className="bj-muted bj-small">
-                No active profile yet -- <Link to="/profile">import one</Link> to edit resume
-                structure here.
+                No active profile yet -- <Link to="/profile">import one</Link> to edit this
+                resume's header, structure and settings, and to see how your profile covers the
+                posting.
               </p>
-            )}
-          </div>
-          <div className="bj-card">
-            <h2>Resume settings</h2>
-            <p className="bj-muted bj-small">
-              Overrides for this application only -- unset fields fall back to your profile's
-              defaults.
-            </p>
-            <ShapeSettingsPanel applicationId={application.id} />
-          </div>
+            </div>
+          )}
           <div id={CROSS_NAV_HASH.generate}>
             <GeneratePanel applicationId={application.id} initialHasResume={application.resume_exists} />
           </div>
         </div>
         <div className="bj-workspace-tailor">
-          <TailorPanel applicationId={application.id} />
+          {profile && <TailorPanel applicationId={application.id} />}
           <div id={CROSS_NAV_HASH.companyIntel}>
             <CompanyIntelPanel applicationId={application.id} />
           </div>

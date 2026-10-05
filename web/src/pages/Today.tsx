@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { FirstRunChecklist } from "../components/FirstRunChecklist";
+import { TodayEmptyState } from "../components/TodayEmptyState";
 import { apiFetch } from "../lib/api";
 import type { TrackDiscoveredJobBody } from "../lib/discoverTypes";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
@@ -214,6 +216,8 @@ export default function Today() {
     <div>
       <h1>Today</h1>
 
+      <FirstRunChecklist />
+
       {state.kind === "loading" && <div className="bj-muted bj-small">Loading...</div>}
 
       {state.kind === "error" && (
@@ -224,16 +228,7 @@ export default function Today() {
       )}
 
       {state.kind === "ready" && state.items.length === 0 && (
-        <div className="bj-empty">
-          <h2>Nothing here yet</h2>
-          <p>
-            Today shows what actually happened: a job you tracked, a resume that generated (or
-            didn't), a stage change, a high-fit new job found for one of your saved searches, or a
-            Gmail reply worth a second look -- on either Telegram or web. It doesn't yet cover
-            interview prep or stale-application nudges, since those don't exist yet. Track a job,
-            generate a resume, or save a search on the Discover page to see something here.
-          </p>
-        </div>
+        <TodayEmptyState />
       )}
 
       {trackError && <div className="bj-error">{trackError}</div>}

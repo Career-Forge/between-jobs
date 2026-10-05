@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { apiFetch, ApiError } from "../lib/api";
+import { apiFetch } from "../lib/api";
 import { buildSessionReport, starApplies, starSummary } from "../lib/interviewPracticeReport";
 import type {
   AnswerFeedback,
@@ -14,7 +13,9 @@ import type {
 } from "../lib/interviewPracticeTypes";
 import { QUESTION_TYPE_LABELS } from "../lib/interviewPracticeTypes";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
+import { type SetupNotice, setupRequiredNotice } from "../lib/setupRequired";
 import { ScoreBar } from "./ScoreBreakdown";
+import { SetupRequiredNotice } from "./SetupRequiredNotice";
 
 // Interview practice panel (InterviewForge R4, interviewforge-v1.md) -- the
 // frontend for R1-R3's already-shipped, live-verified engine: a fixed
@@ -34,7 +35,7 @@ import { ScoreBar } from "./ScoreBreakdown";
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "error"; message: string; setupRequired?: boolean; retry: () => void }
+  | { kind: "error"; message: string; setup?: SetupNotice; retry: () => void }
   | { kind: "idle" }
   | { kind: "active"; session: InterviewSession; questions: InterviewQuestion[] };
 
@@ -94,11 +95,12 @@ export function InterviewPracticePanel({ applicationId }: { applicationId: strin
       setSubmitError(null);
       setState({ kind: "active", session: result.session, questions: result.questions });
     } catch (e) {
-      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
+      const setup = setupRequiredNotice(e);
+      if (setup !== null) {
         setState({
           kind: "error",
-          message: e.message,
-          setupRequired: true,
+          message: setup.message,
+          setup,
           retry: () => void startSession(),
         });
       } else {
@@ -172,14 +174,12 @@ export function InterviewPracticePanel({ applicationId }: { applicationId: strin
       {state.kind === "loading" && <div className="bj-muted bj-small">Loading...</div>}
 
       {state.kind === "error" && (
-        <div className="bj-error">
-          {state.message}
-          {state.setupRequired && (
-            <>
-              {" "}
-              <Link to="/profile">Set up your profile</Link>
-            </>
-          )}{" "}
+        <div>
+          {state.setup ? (
+            <SetupRequiredNotice notice={state.setup} />
+          ) : (
+            <div className="bj-error">{state.message}</div>
+          )}
           <button onClick={() => state.retry()}>Try again</button>
         </div>
       )}

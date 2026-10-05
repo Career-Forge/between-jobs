@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch, ApiError } from "../lib/api";
+import { apiFetch } from "../lib/api";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
+import { type SetupNotice, setupRequiredNotice } from "../lib/setupRequired";
+import { SetupRequiredNotice } from "./SetupRequiredNotice";
 
 // Company Intel panel (Horizon Sprint 5.0) -- Proposal §26, §37.4
 // ("Company intelligence... a contextual capability inside the
@@ -36,6 +38,7 @@ interface CompanyIntelResponse {
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
+  | { kind: "setup"; notice: SetupNotice }
   | { kind: "ready"; run: Run | null; claims: Claim[] };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -89,8 +92,9 @@ export function CompanyIntelPanel({ applicationId }: { applicationId: string }) 
       );
       setState({ kind: "ready", run: result.run, claims: result.claims });
     } catch (e) {
-      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
-        setState({ kind: "error", message: `${e.message} Add a key in Integrations.` });
+      const setup = setupRequiredNotice(e);
+      if (setup !== null) {
+        setState({ kind: "setup", notice: setup });
         return;
       }
       setState({ kind: "error", message: friendlyApiMessage(e, "Failed to generate") });
@@ -114,6 +118,7 @@ export function CompanyIntelPanel({ applicationId }: { applicationId: string }) 
 
       {state.kind === "loading" && <div className="bj-muted bj-small">Loading...</div>}
       {state.kind === "error" && <div className="bj-error">{state.message}</div>}
+      {state.kind === "setup" && <SetupRequiredNotice notice={state.notice} />}
 
       {state.kind === "ready" && state.run === null && (
         <div className="bj-muted bj-small">No dossier yet -- generate one above.</div>

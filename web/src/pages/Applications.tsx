@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApplicationActionsSelect } from "../components/ApplicationActionsSelect";
 import ApplicationsBoard from "../components/ApplicationsBoard";
+import { ProblemView } from "../components/SetupRequiredNotice";
 import { apiFetch } from "../lib/api";
 import { ALL_STATUSES, type Application, type ApplicationStatus } from "../lib/applicationsTypes";
+import { type Problem, problemOf } from "../lib/setupRequired";
 
 // Applications (Sprint 2.6f) -- the first real surface over Sprint 2.6's
 // schema (jobs/job_snapshots/applications/application_events/event_outbox/
@@ -201,7 +203,7 @@ function statusBadgeClass(status: ApplicationStatus): string {
 function UrlIngestForm({ onCreated }: { onCreated: () => Promise<void> }) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Problem | null>(null);
 
   async function submit() {
     setBusy(true);
@@ -214,7 +216,8 @@ function UrlIngestForm({ onCreated }: { onCreated: () => Promise<void> }) {
       setUrl("");
       await onCreated();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to fetch that posting");
+      // A URL that is not in the registry needs the person's own Firecrawl key to fetch.
+      setError(problemOf(e, "Failed to fetch that posting"));
     } finally {
       setBusy(false);
     }
@@ -237,7 +240,7 @@ function UrlIngestForm({ onCreated }: { onCreated: () => Promise<void> }) {
           onChange={(e) => setUrl(e.target.value)}
         />
       </label>
-      {error && <div className="bj-error">{error}</div>}
+      <ProblemView problem={error} />
       <div className="bj-actions">
         <button
           className="bj-primary"

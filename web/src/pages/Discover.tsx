@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "../auth";
 import { ScoreBar } from "../components/ScoreBreakdown";
-import { apiFetch, ApiError } from "../lib/api";
+import { SetupRequiredNotice } from "../components/SetupRequiredNotice";
+import { apiFetch } from "../lib/api";
 import {
   binBadgeClass,
   formatPostedDate,
@@ -12,7 +14,9 @@ import {
   trackRequestBody,
 } from "../lib/discover";
 import type { DiscoverResponse, JobCard, SavedSearch } from "../lib/discoverTypes";
+import { browserStorage, markSearched } from "../lib/firstRun";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
+import { type SetupNotice, failureOf } from "../lib/setupRequired";
 
 // Discover (Job Finder P8, job-finder-port.md's own build order) -- the
 // full native search pipeline: P4's 9 BYOK live-search providers + P1-P3e's
@@ -25,11 +29,13 @@ import { friendlyApiMessage } from "../lib/rateLimitMessage";
 type State =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "not_configured"; message: string }
+  | { kind: "setup"; notice: SetupNotice }
   | { kind: "error"; message: string }
   | { kind: "ready"; result: DiscoverResponse };
 
 export default function Discover() {
+  const { session } = useAuth();
+  const userId = session?.user.id ?? null;
   const [state, setState] = useState<State>({ kind: "idle" });
   const [query, setQuery] = useState("");
   const [location, setLocation] = useState("");
@@ -53,15 +59,14 @@ export default function Discover() {
       try {
         const result = await apiFetch<DiscoverResponse>(`/discover?${qs.toString()}`);
         setState({ kind: "ready", result });
+        // A search leaves no row, so the first-run checklist (Today) remembers that this
+        // person has run one, per user, in this browser (see lib/firstRun.ts).
+        if (userId !== null) markSearched(browserStorage(), userId);
       } catch (e) {
-        if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
-          setState({ kind: "not_configured", message: e.message });
-          return;
-        }
-        setState({ kind: "error", message: friendlyApiMessage(e, "Failed to search") });
+        setState(failureOf(e, "Failed to search"));
       }
     },
-    [],
+    [userId],
   );
 
   const loadSavedSearches = useCallback(async () => {
@@ -243,10 +248,10 @@ export default function Discover() {
 
       {state.kind === "loading" && <div className="bj-muted bj-small">Searching...</div>}
 
-      {state.kind === "not_configured" && (
+      {state.kind === "setup" && (
         <div className="bj-empty">
           <h2>Set up your profile and a job-scoring model first</h2>
-          <p>{state.message}</p>
+          <SetupRequiredNotice notice={state.notice} />
         </div>
       )}
 

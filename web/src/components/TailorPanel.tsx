@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type { ResumeDocument } from "../lib/headerComposerTypes";
+import { failureOf, type SetupNotice } from "../lib/setupRequired";
 import {
   SKILL_STATE_LABELS,
   type ClusterCoverage,
   type CoverageResponse,
   type SkillState,
 } from "../lib/tailorTypes";
+import { SetupRequiredNotice } from "./SetupRequiredNotice";
 
 // Tailor panel (Sprint 3.3e) -- Proposal §24.5.4. "Match display is
 // coverage counts, never an unexplained percentage ring" -- every cluster
@@ -44,6 +46,9 @@ function skillBadgeClass(state: SkillState): string {
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
+  // No active profile, or no model key for the coverage match: the notice links to the
+  // page that fixes it (no Retry).
+  | { kind: "setup"; notice: SetupNotice }
   | {
       kind: "ready";
       documentId: string;
@@ -84,7 +89,7 @@ export function TailorPanel({ applicationId }: { applicationId: string }) {
         saving: false,
       });
     } catch (e) {
-      setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to load" });
+      setState(failureOf(e, "Failed to load"));
     }
   }, [applicationId]);
 
@@ -94,6 +99,9 @@ export function TailorPanel({ applicationId }: { applicationId: string }) {
 
   if (state.kind === "loading") {
     return <div className="bj-muted bj-small">Loading tailor panel...</div>;
+  }
+  if (state.kind === "setup") {
+    return <SetupRequiredNotice notice={state.notice} />;
   }
   if (state.kind === "error") {
     return (
@@ -116,7 +124,7 @@ export function TailorPanel({ applicationId }: { applicationId: string }) {
       });
       setState((prev) => (prev.kind === "ready" ? { ...prev, saving: false } : prev));
     } catch (e) {
-      setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to save" });
+      setState(failureOf(e, "Failed to save"));
     }
   }
 

@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 // nothing else (the package has no DOM test setup, and the import stays used by the other
 // call sites, so tsc stays quiet) would notice. So this reads the source of every component
 // whose action is rate limited and requires each to still route its failures through
-// `friendlyApiMessage`, at least as many times as it did when it was wired up.
+// `friendlyApiMessage` -- or through `failureOf`, which calls it after checking for a setup
+// failure (lib/setupRequired.ts) -- at least as many times as it did when it was wired up.
 //
 // vite's `?raw` import, not `node:fs`: @types/node is not installed here.
 const sources = import.meta.glob(
@@ -19,8 +20,8 @@ const sources = import.meta.glob(
   { query: "?raw", import: "default", eager: true },
 ) as Record<string, string>;
 
-// Call sites of `friendlyApiMessage(`, per file. A new call site is fine; one fewer is a
-// revert.
+// Call sites of `friendlyApiMessage(` (or `failureOf(`), per file. A new call site is
+// fine; one fewer is a revert.
 const MINIMUM_CALL_SITES: Record<string, number> = {
   "../components/GeneratePanel.tsx": 4, // generate, two downloads, the export checklist
   "../components/CompanyIntelPanel.tsx": 1,
@@ -39,9 +40,9 @@ describe("components whose actions are rate limited", () => {
     (file, minimum) => {
       const source = sources[file];
       expect(source).toBeTypeOf("string");
-      const calls = source.match(/\bfriendlyApiMessage\(/g) ?? [];
+      const calls = source.match(/\b(friendlyApiMessage|failureOf)\(/g) ?? [];
       expect(calls.length).toBeGreaterThanOrEqual(minimum);
-      expect(source).toContain('from "../lib/rateLimitMessage"');
+      expect(source).toMatch(/from "\.\.\/lib\/(rateLimitMessage|setupRequired)"/);
     },
   );
 });

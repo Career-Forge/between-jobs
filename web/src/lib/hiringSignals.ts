@@ -34,6 +34,7 @@ import {
   type SearchProvider,
   type SignalCounts,
 } from "./hiringSignalsTypes";
+import { setupRequiredNotice } from "./setupRequired";
 
 // ── embed and post urls ────────────────────────────────────────────────────
 
@@ -504,9 +505,14 @@ export const APPLICATION_MISSING_MESSAGE =
 //                      missing is a 500 that retrying can never fix -- and the
 //                      status is the fallback (a 422 is a request the server
 //                      rejected as invalid, and would fail the same way again)
+//
+// A setup_required failure also carries `linkTo` / `linkLabel` when the server
+// named a page that fixes it AND that page passed lib/setupRequired.ts's check
+// (an internal, routed path); with neither, `setupFailureLink` below says where
+// to send the person.
 export type PanelFailure =
   | { kind: "disabled" }
-  | { kind: "setup_required"; message: string }
+  | { kind: "setup_required"; message: string; linkTo?: string; linkLabel?: string }
   | { kind: "not_found"; message: string }
   | { kind: "error"; message: string; retryable: boolean };
 
@@ -534,8 +540,12 @@ export function classifyFailure(error: unknown, unreachableMessage: string): Pan
   switch (error.code) {
     case "FEATURE_DISABLED":
       return { kind: "disabled" };
-    case "SETUP_REQUIRED":
-      return { kind: "setup_required", message: error.message };
+    case "SETUP_REQUIRED": {
+      const link = setupRequiredNotice(error);
+      return link !== null && link.linkTo !== null && link.linkLabel !== null
+        ? { kind: "setup_required", message: error.message, linkTo: link.linkTo, linkLabel: link.linkLabel }
+        : { kind: "setup_required", message: error.message };
+    }
     case "NOT_FOUND":
       return { kind: "not_found", message: error.message };
     default:
@@ -548,6 +558,23 @@ export function classifyFailure(error: unknown, unreachableMessage: string): Pan
             : !(error.status === 422 || NOT_RETRYABLE_CODES.has(error.code ?? "")),
       };
   }
+}
+
+// What a hiring-signals search needs is always a search key, and those are saved on
+// the Integrations page, so a setup failure whose reply named no usable link still
+// goes there rather than leaving the person with a sentence and nowhere to go.
+export const SETUP_FALLBACK_PATH = "/profile/integrations";
+export const SETUP_FALLBACK_LABEL = "Open Integrations settings";
+
+// Where a setup_required failure's link goes: the server's own (already checked), else
+// the Integrations page.
+export function setupFailureLink(failure: Extract<Failure, { kind: "setup_required" }>): {
+  to: string;
+  label: string;
+} {
+  return failure.linkTo !== undefined && failure.linkLabel !== undefined
+    ? { to: failure.linkTo, label: failure.linkLabel }
+    : { to: SETUP_FALLBACK_PATH, label: SETUP_FALLBACK_LABEL };
 }
 
 // The one line of text for a failure shown inside a card or the saved list.

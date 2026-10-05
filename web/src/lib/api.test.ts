@@ -111,3 +111,66 @@ describe("other error replies", () => {
     expect(await apiFetch("/x")).toBeUndefined();
   });
 });
+
+describe("a 409 SETUP_REQUIRED reply", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("carries where to fix it and what is missing, from the envelope", async () => {
+    stubFetch(
+      409,
+      envelope({
+        code: "SETUP_REQUIRED",
+        message: "No openrouter key configured for 'job_scoring'.",
+        retryable: false,
+        capability: "job_scoring",
+        missing: ["credential"],
+        settings_path: "/profile/integrations?capability=job_scoring",
+        details: {},
+      }),
+    );
+
+    const error = await failure(apiFetch("/discover"));
+
+    expect(error.code).toBe("SETUP_REQUIRED");
+    expect(error.settingsPath).toBe("/profile/integrations?capability=job_scoring");
+    expect(error.capability).toBe("job_scoring");
+    expect(error.missing).toEqual(["credential"]);
+  });
+
+  it("is the same through the PDF download path", async () => {
+    stubFetch(
+      409,
+      envelope({ code: "SETUP_REQUIRED", message: "x", settings_path: "/profile", capability: "profile" }),
+    );
+
+    const error = await failure(apiFetchBlob("/applications/x/resume.pdf"));
+
+    expect(error.settingsPath).toBe("/profile");
+    expect(error.capability).toBe("profile");
+  });
+
+  it("reads a field of the wrong type as absent, and the nulls of an ordinary error as absent", async () => {
+    stubFetch(
+      409,
+      envelope({ code: "SETUP_REQUIRED", message: "x", settings_path: 12, capability: ["a"], missing: "credential" }),
+    );
+    const odd = await failure(apiFetch("/x"));
+    expect(odd.settingsPath).toBeUndefined();
+    expect(odd.capability).toBeUndefined();
+    expect(odd.missing).toBeUndefined();
+
+    stubFetch(404, envelope({ code: "NOT_FOUND", message: "gone", settings_path: null }));
+    const ordinary = await failure(apiFetch("/x"));
+    expect(ordinary.settingsPath).toBeUndefined();
+    expect(ordinary.capability).toBeUndefined();
+    expect(ordinary.missing).toBeUndefined();
+  });
+
+  it("has none of them when the body is not the envelope at all", async () => {
+    stubFetch(409, "<html>bad gateway</html>");
+    const error = await failure(apiFetch("/x"));
+    expect(error.settingsPath).toBeUndefined();
+    expect(error.capability).toBeUndefined();
+    expect(error.missing).toBeUndefined();
+  });
+});

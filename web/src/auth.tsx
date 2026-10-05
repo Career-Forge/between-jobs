@@ -1,5 +1,13 @@
 import type { Session } from "@supabase/supabase-js";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  RECOVERY_COMPLETED,
+  changePassword,
+  recoveryAfterEvent,
+  requestPasswordReset,
+  type ChangeOutcome,
+  type ResetOutcome,
+} from "./lib/passwordReset";
 import { supabase } from "./lib/supabase";
 
 // Session state via supabase-js's own listener -- the same pattern the
@@ -14,6 +22,16 @@ interface AuthState {
   signUp: (email: string, password: string) => Promise<SignUpResult>;
   signInWithGoogle: () => Promise<string | null>;
   signOut: () => Promise<void>;
+  // Forgot password. Both go through lib/passwordReset.ts, which holds the checks and the
+  // wording and takes the Supabase calls as an argument.
+  resetPassword: (email: string) => Promise<ResetOutcome>;
+  updatePassword: (password: string, confirmation: string) => Promise<ChangeOutcome>;
+  // True from the moment supabase-js reports a PASSWORD_RECOVERY (the person followed an
+  // emailed link) until they sign out or set the new password -- reported by supabase-js as
+  // USER_UPDATED, in every tab, and by `clearRecovery` in the tab that set it. While it is
+  // set, App sends them to /update-password wherever they land.
+  recovery: boolean;
+  clearRecovery: () => void;
 }
 
 export type SignUpResult =
@@ -26,14 +44,16 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recovery, setRecovery] = useState(false);
 
   useEffect(() => {
     void supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
     });
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
+      setRecovery((current) => recoveryAfterEvent(current, event));
     });
     return () => subscription.subscription.unsubscribe();
   }, []);
@@ -68,9 +88,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }
 
+  // The redirect is built from this page's own origin and nothing else (passwordReset.ts).
+  function resetPassword(email: string): Promise<ResetOutcome> {
+    return requestPasswordReset(supabase.auth, email, window.location.origin);
+  }
+
+  function updatePassword(password: string, confirmation: string): Promise<ChangeOutcome> {
+    return changePassword(supabase.auth, password, confirmation);
+  }
+
+  // The same rule as the auth event for a completed update, so the two cannot disagree.
+  function clearRecovery(): void {
+    setRecovery((current) => recoveryAfterEvent(current, RECOVERY_COMPLETED));
+  }
+
   return (
     <AuthContext.Provider
-      value={{ session, loading, signIn, signUp, signInWithGoogle, signOut }}
+      value={{
+        session,
+        loading,
+        signIn,
+        signUp,
+        signInWithGoogle,
+        signOut,
+        resetPassword,
+        updatePassword,
+        recovery,
+        clearRecovery,
+      }}
     >
       {children}
     </AuthContext.Provider>

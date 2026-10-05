@@ -6,6 +6,8 @@ import {
   FRESHNESS_OPTIONS,
   NOTHING_SHOWN_NOTE,
   NO_POSTS_SEEN_NOTE,
+  SETUP_FALLBACK_LABEL,
+  SETUP_FALLBACK_PATH,
   UNREACHABLE_MESSAGE,
   UNREADABLE_MESSAGE,
   YOU_COM_NO_LINKEDIN_NOTE,
@@ -30,6 +32,7 @@ import {
   savedLabel,
   savesByActivity,
   searchCardKey,
+  setupFailureLink,
   speciesInfo,
   speciesLegendLines,
   upsertSave,
@@ -594,6 +597,37 @@ describe("classifyFailure", () => {
     ).toEqual({ kind: "not_found", message: "No such application." });
   });
 
+  it("keeps the link the server gave for a setup failure, once it has been checked", () => {
+    class SetupError extends FakeApiError {
+      constructor(
+        message: string,
+        public readonly settingsPath?: string,
+        public readonly capability?: string,
+        public readonly missing?: readonly string[],
+      ) {
+        super(409, message, "SETUP_REQUIRED");
+      }
+    }
+    expect(
+      classifyFailure(
+        new SetupError("Add a search key.", "/profile/integrations", "hiring_signals", ["search_credential"]),
+        unreachable,
+      ),
+    ).toEqual({
+      kind: "setup_required",
+      message: "Add a search key.",
+      linkTo: "/profile/integrations",
+      linkLabel: "Add a search key in Integrations",
+    });
+    // A path that is not one of the app's own routes is dropped, not passed on.
+    for (const path of ["https://evil.example", "//evil.example", "javascript:alert(1)", "/admin"]) {
+      expect(classifyFailure(new SetupError("Add a search key.", path), unreachable)).toEqual({
+        kind: "setup_required",
+        message: "Add a search key.",
+      });
+    }
+  });
+
   it("does not confuse a plain 404 or a missing code with the disabled feature", () => {
     expect(classifyFailure(new FakeApiError(404, "Request failed (404)"), unreachable)).toEqual({
       kind: "error",
@@ -802,6 +836,30 @@ describe("classifyFailure honors the server's retryable flag", () => {
     });
     expect(classifyFailure(new ApiErrorLike(500, "x"), unreachable)).toMatchObject({
       retryable: true,
+    });
+  });
+});
+
+describe("setupFailureLink", () => {
+  it("is the server's own link and label when it gave one", () => {
+    expect(
+      setupFailureLink({
+        kind: "setup_required",
+        message: "x",
+        linkTo: "/profile/integrations?capability=hiring_signals",
+        linkLabel: "Add a search key in Integrations",
+      }),
+    ).toEqual({
+      to: "/profile/integrations?capability=hiring_signals",
+      label: "Add a search key in Integrations",
+    });
+  });
+
+  it("is the Integrations page when it gave none, because the missing thing is always a search key", () => {
+    expect(SETUP_FALLBACK_PATH).toBe("/profile/integrations");
+    expect(setupFailureLink({ kind: "setup_required", message: "x" })).toEqual({
+      to: SETUP_FALLBACK_PATH,
+      label: SETUP_FALLBACK_LABEL,
     });
   });
 });

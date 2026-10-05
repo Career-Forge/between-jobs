@@ -10,6 +10,7 @@ import {
   isSignalSaved,
   resultSource,
   searchCardKey,
+  setupFailureLink,
   speciesLegendLines,
   widerFreshness,
 } from "../lib/hiringSignals";
@@ -45,9 +46,9 @@ import { SignalCard } from "./HiringPostCard";
 //     it means no known post pattern matched, not that the post is a hiring
 //     call. Every other tag on screen is explained in visible text too (the
 //     tooltip alone is out of reach of keyboard, touch and screen-reader users).
-//   - Setup-needed is a to-do, so it links to where the fix is (the
-//     Integrations page, the route credential_resolver's settings_path points
-//     at) instead of just describing it. Try again is offered only when trying
+//   - Setup-needed is a to-do, so it links to where the fix is (the page the
+//     server's settings_path names, checked by lib/setupRequired.ts; the
+//     Integrations page when it named none) instead of just describing it. Try again is offered only when trying
 //     again can change the outcome.
 
 export function FailureView({
@@ -58,6 +59,7 @@ export function FailureView({
   onRetry: () => void;
 }) {
   if (failure.kind === "setup_required") {
+    const link = setupFailureLink(failure);
     return (
       <div className="bj-hs-callout" role="alert">
         {/* The server's own message already says what is missing; only fall
@@ -67,7 +69,7 @@ export function FailureView({
             ? failure.message
             : "Connect a search provider to find hiring posts."}
         </div>
-        <Link to="/profile/integrations">Open Integrations settings</Link>
+        <Link to={link.to}>{link.label}</Link>
       </div>
     );
   }

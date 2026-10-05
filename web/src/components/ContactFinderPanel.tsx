@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "../lib/api";
+import { type Problem, type SetupNotice, setupRequiredNotice } from "../lib/setupRequired";
+import { ProblemView, SetupRequiredNotice } from "./SetupRequiredNotice";
 
 // ContactFinder panel (outreach-contactfinder.md Phase B/C) -- Proposal
 // §27, §37.4 ("Company Intel and ContactFinder are not competing
@@ -82,6 +84,7 @@ interface ContactsResponse {
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
+  | { kind: "setup"; notice: SetupNotice }
   | { kind: "ready"; run: Run | null; candidates: Candidate[] };
 
 const PERSONA_LABELS: Record<string, string> = {
@@ -109,15 +112,15 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
   const [state, setState] = useState<State>({ kind: "loading" });
   const [generating, setGenerating] = useState(false);
   const [enrichingId, setEnrichingId] = useState<string | null>(null);
-  const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [enrichError, setEnrichError] = useState<Problem | null>(null);
   const [findingLinkedInId, setFindingLinkedInId] = useState<string | null>(null);
-  const [linkedInError, setLinkedInError] = useState<string | null>(null);
+  const [linkedInError, setLinkedInError] = useState<Problem | null>(null);
   const [draftingId, setDraftingId] = useState<string | null>(null);
-  const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftError, setDraftError] = useState<Problem | null>(null);
   const [drafts, setDrafts] = useState<Record<string, OutreachDraft>>({});
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [pushingId, setPushingId] = useState<string | null>(null);
-  const [pushError, setPushError] = useState<string | null>(null);
+  const [pushError, setPushError] = useState<Problem | null>(null);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -141,8 +144,9 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
       });
       setState({ kind: "ready", run: result.run, candidates: result.candidates });
     } catch (e) {
-      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
-        setState({ kind: "error", message: `${e.message} Add a key in Integrations.` });
+      const setup = setupRequiredNotice(e);
+      if (setup !== null) {
+        setState({ kind: "setup", notice: setup });
         return;
       }
       setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to generate" });
@@ -181,8 +185,9 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
           : prev,
       );
     } catch (e) {
-      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
-        setEnrichError(`${e.message} Add an Apollo or Hunter key in Integrations.`);
+      const setup = setupRequiredNotice(e);
+      if (setup !== null) {
+        setEnrichError(setup);
         return;
       }
       setEnrichError(e instanceof Error ? e.message : "Enrichment failed");
@@ -217,8 +222,9 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
           : prev,
       );
     } catch (e) {
-      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
-        setLinkedInError(`${e.message} Add an Exa key in Integrations.`);
+      const setup = setupRequiredNotice(e);
+      if (setup !== null) {
+        setLinkedInError(setup);
         return;
       }
       setLinkedInError(e instanceof Error ? e.message : "LinkedIn lookup failed");
@@ -237,8 +243,9 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
       );
       setDrafts((prev) => ({ ...prev, [candidate.id]: result.draft }));
     } catch (e) {
-      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
-        setDraftError(`${e.message} Add a key in Integrations.`);
+      const setup = setupRequiredNotice(e);
+      if (setup !== null) {
+        setDraftError(setup);
         return;
       }
       if (e instanceof ApiError && e.code === "INSUFFICIENT_EVIDENCE") {
@@ -267,8 +274,9 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
       );
       setDrafts((prev) => ({ ...prev, [candidate.id]: updated }));
     } catch (e) {
-      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
-        setPushError(`${e.message} Connect Gmail in Integrations.`);
+      const setup = setupRequiredNotice(e);
+      if (setup !== null) {
+        setPushError(setup);
         return;
       }
       setPushError(e instanceof Error ? e.message : "Couldn't create that Gmail draft.");
@@ -297,10 +305,11 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
 
       {state.kind === "loading" && <div className="bj-muted bj-small">Loading...</div>}
       {state.kind === "error" && <div className="bj-error">{state.message}</div>}
-      {enrichError && <div className="bj-error">{enrichError}</div>}
-      {linkedInError && <div className="bj-error">{linkedInError}</div>}
-      {draftError && <div className="bj-error">{draftError}</div>}
-      {pushError && <div className="bj-error">{pushError}</div>}
+      {state.kind === "setup" && <SetupRequiredNotice notice={state.notice} />}
+      <ProblemView problem={enrichError} />
+      <ProblemView problem={linkedInError} />
+      <ProblemView problem={draftError} />
+      <ProblemView problem={pushError} />
 
       {state.kind === "ready" && state.run === null && (
         <div className="bj-muted bj-small">No contacts found yet -- run a search above.</div>

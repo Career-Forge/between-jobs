@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "../lib/api";
+import { type SetupNotice, setupRequiredNotice } from "../lib/setupRequired";
+import { SetupRequiredNotice } from "./SetupRequiredNotice";
 
 // "Your play" positioning brief (outreach-v2-search-first.md Phase I) --
 // Proposal §27.6's "gap-analysis sleeper feature." Every sentence here
@@ -24,6 +26,7 @@ interface PositioningBrief {
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
+  | { kind: "setup"; notice: SetupNotice }
   | { kind: "empty" }
   | { kind: "ready"; brief: PositioningBrief };
 
@@ -56,8 +59,9 @@ export function PositioningBriefPanel({ applicationId }: { applicationId: string
       );
       setState({ kind: "ready", brief: result.brief });
     } catch (e) {
-      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
-        setState({ kind: "error", message: `${e.message} Add a key in Integrations.` });
+      const setup = setupRequiredNotice(e);
+      if (setup !== null) {
+        setState({ kind: "setup", notice: setup });
         return;
       }
       if (e instanceof ApiError && e.code === "INSUFFICIENT_EVIDENCE") {
@@ -92,6 +96,7 @@ export function PositioningBriefPanel({ applicationId }: { applicationId: string
 
       {state.kind === "loading" && <div className="bj-muted bj-small">Loading...</div>}
       {state.kind === "error" && <div className="bj-error">{state.message}</div>}
+      {state.kind === "setup" && <SetupRequiredNotice notice={state.notice} />}
       {state.kind === "empty" && (
         <div className="bj-muted bj-small">No brief yet -- build one above.</div>
       )}

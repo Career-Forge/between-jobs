@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch, ApiError } from "../lib/api";
+import { ProblemView } from "../components/SetupRequiredNotice";
+import { apiFetch } from "../lib/api";
 import { isTelegramAvailable, telegramBotUsername } from "../lib/capabilities";
+import { type Problem, problemOf } from "../lib/setupRequired";
 import { useCapabilities } from "../lib/useCapabilities";
 
 // Integrations (Sprint 2.7f, widened Horizon Sprint 5.0) -- the web
 // surface over Sprint 2.7's BYOK credential broker (Proposal §11).
 // Reachable at /profile/integrations, matching credential_resolver.py's
-// own settings_path convention exactly (SETUP_REQUIRED errors will one
-// day deep-link straight here). Not a top-level nav item -- the design
+// own settings_path convention exactly: a SETUP_REQUIRED error's link lands
+// here (lib/setupRequired.ts). Not a top-level nav item -- the design
 // book's information architecture is a fixed five: Today/Discover/
 // Applications/Practice/Profile: this is a sub-page of Profile, not a
 // sixth destination.
@@ -422,7 +424,7 @@ function GmailConnectCard({
   const needsReconnect = credential !== null && !credential.scope?.includes(_GMAIL_READONLY_SCOPE);
   const [connecting, setConnecting] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Problem | null>(null);
 
   async function connect() {
     setConnecting(true);
@@ -431,11 +433,10 @@ function GmailConnectCard({
       const result = await apiFetch<{ authorize_url: string }>("/profile/integrations/gmail/connect");
       window.location.href = result.authorize_url;
     } catch (e) {
-      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
-        setError("Gmail draft integration isn't configured on this server yet.");
-        return;
-      }
-      setError(e instanceof Error ? e.message : "Failed to start connecting Gmail.");
+      // A setup failure is the server's own sentence ("Gmail draft integration isn't
+      // configured on this server yet."): an operator's setting, so it carries no link
+      // to fix it here.
+      setError(problemOf(e, "Failed to start connecting Gmail."));
     } finally {
       setConnecting(false);
     }
@@ -477,7 +478,7 @@ function GmailConnectCard({
           Connected before reply-checking existed -- reconnect to grant the extra read access.
         </p>
       )}
-      {error && <div className="bj-error">{error}</div>}
+      <ProblemView problem={error} />
       <div className="bj-actions">
         {needsReconnect ? (
           <button className="bj-primary" onClick={() => void connect()} disabled={connecting}>

@@ -1,6 +1,7 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
 import { PrimaryNav } from "./components/PrimaryNav";
+import { UPDATE_PASSWORD_PATH, recoveryRedirect } from "./lib/passwordReset";
 import Applications from "./pages/Applications";
 import ApplicationWorkspace from "./pages/ApplicationWorkspace";
 import Discover from "./pages/Discover";
@@ -10,9 +11,11 @@ import Login from "./pages/Login";
 import Practice from "./pages/Practice";
 import Profile from "./pages/Profile";
 import Today from "./pages/Today";
+import UpdatePassword from "./pages/UpdatePassword";
 
 export default function App() {
-  const { session, loading, signOut } = useAuth();
+  const { session, loading, signOut, recovery } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return <div className="bj-boot" />;
@@ -20,6 +23,13 @@ export default function App() {
 
   if (!session) {
     return <Login />;
+  }
+
+  // Someone who followed a password-reset link is in a recovery session: whichever page the
+  // link landed them on, they set the new password first.
+  const recoveryTarget = recoveryRedirect(recovery, location.pathname);
+  if (recoveryTarget !== null) {
+    return <Navigate to={recoveryTarget} replace />;
   }
 
   return (
@@ -41,6 +51,7 @@ export default function App() {
           <Route path="/practice" element={<Practice />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/integrations" element={<Integrations />} />
+          <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
         </Routes>
       </main>
     </div>

@@ -9,7 +9,9 @@ import type {
   SummaryMode,
 } from "../lib/headerComposerTypes";
 import { REGION_OPTIONS } from "../lib/regionOptions";
+import { failureOf, type SetupNotice } from "../lib/setupRequired";
 import { SHAPE_PRESETS } from "../lib/shapePresets";
+import { SetupRequiredNotice } from "./SetupRequiredNotice";
 
 // Resume settings (R6, resumeforge-shape-and-fit.md) -- page count,
 // density, summary, bullet style, region, show GPA. Same load/persist
@@ -23,6 +25,8 @@ import { SHAPE_PRESETS } from "../lib/shapePresets";
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
+  // No active profile yet: the notice links to the page that fixes it (no Retry).
+  | { kind: "setup"; notice: SetupNotice }
   | { kind: "ready"; documentId: string; overrides: ShapeOverrides; saving: boolean };
 
 export function ShapeSettingsPanel({ applicationId }: { applicationId?: string }) {
@@ -42,7 +46,7 @@ export function ShapeSettingsPanel({ applicationId }: { applicationId?: string }
         saving: false,
       });
     } catch (e) {
-      setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to load" });
+      setState(failureOf(e, "Failed to load"));
     }
   }, [applicationId]);
 
@@ -59,12 +63,15 @@ export function ShapeSettingsPanel({ applicationId }: { applicationId?: string }
       });
       setState({ kind: "ready", documentId, overrides, saving: false });
     } catch (e) {
-      setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to save" });
+      setState(failureOf(e, "Failed to save"));
     }
   }
 
   if (state.kind === "loading") {
     return <div className="bj-muted bj-small">Loading resume settings...</div>;
+  }
+  if (state.kind === "setup") {
+    return <SetupRequiredNotice notice={state.notice} />;
   }
   if (state.kind === "error") {
     return (

@@ -8,6 +8,8 @@ import {
   type ResolvedChip,
   type ResumeDocument,
 } from "../lib/headerComposerTypes";
+import { failureOf, type SetupNotice } from "../lib/setupRequired";
+import { SetupRequiredNotice } from "./SetupRequiredNotice";
 
 // Header Composer (Sprint 3.2c) -- Proposal §24.5.3. Deterministic,
 // zero-LLM: every edit re-previews via POST /header/preview, which calls
@@ -31,6 +33,9 @@ const DEFAULT_LAYOUT: Required<HeaderLayout> = {
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
+  // No active profile yet (the document is made from one): the notice links to the page
+  // that fixes it. No Retry: asking again cannot succeed until it is fixed.
+  | { kind: "setup"; notice: SetupNotice }
   | {
       kind: "ready";
       documentId: string;
@@ -69,7 +74,7 @@ export function HeaderComposer({ applicationId }: { applicationId?: string } = {
       const chips = await preview(document.id, layout);
       setState({ kind: "ready", documentId: document.id, layout, chips, saving: false });
     } catch (e) {
-      setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to load" });
+      setState(failureOf(e, "Failed to load"));
     }
   }, [applicationId]);
 
@@ -88,12 +93,15 @@ export function HeaderComposer({ applicationId }: { applicationId?: string } = {
       });
       setState({ kind: "ready", documentId, layout, chips, saving: false });
     } catch (e) {
-      setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to save" });
+      setState(failureOf(e, "Failed to save"));
     }
   }
 
   if (state.kind === "loading") {
     return <div className="bj-muted bj-small">Loading header...</div>;
+  }
+  if (state.kind === "setup") {
+    return <SetupRequiredNotice notice={state.notice} />;
   }
   if (state.kind === "error") {
     return (

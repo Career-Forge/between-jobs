@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch, ApiError } from "../lib/api";
+import { apiFetch } from "../lib/api";
+import { type SetupNotice, setupRequiredNotice } from "../lib/setupRequired";
+import { SetupRequiredNotice } from "./SetupRequiredNotice";
 
 // Events warm-path panel (outreach-contactfinder.md Phase D) -- Proposal
 // §27.5 / MASTER_PLAN §5.10b, "the best idea of the session." Three-state
@@ -42,6 +44,7 @@ interface WarmPathEventsResponse {
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
+  | { kind: "setup"; notice: SetupNotice }
   | { kind: "ready"; run: Run | null; events: WarmPathEvent[] };
 
 const CERTAINTY_LABELS: Record<Certainty, string> = {
@@ -90,8 +93,9 @@ export function WarmPathEventsPanel({ applicationId }: { applicationId: string }
       );
       setState({ kind: "ready", run: result.run, events: result.events });
     } catch (e) {
-      if (e instanceof ApiError && e.code === "SETUP_REQUIRED") {
-        setState({ kind: "error", message: `${e.message} Add a key in Integrations.` });
+      const setup = setupRequiredNotice(e);
+      if (setup !== null) {
+        setState({ kind: "setup", notice: setup });
         return;
       }
       setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to generate" });
@@ -120,6 +124,7 @@ export function WarmPathEventsPanel({ applicationId }: { applicationId: string }
 
       {state.kind === "loading" && <div className="bj-muted bj-small">Loading...</div>}
       {state.kind === "error" && <div className="bj-error">{state.message}</div>}
+      {state.kind === "setup" && <SetupRequiredNotice notice={state.notice} />}
 
       {state.kind === "ready" && state.run === null && (
         <div className="bj-muted bj-small">No events found yet -- run a search above.</div>

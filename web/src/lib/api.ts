@@ -1,6 +1,7 @@
 import type { ApiErrorCode } from "./apiErrorCodes";
 import { buildApiUrl, resolveApiBase } from "./apiUrl";
 import { parseRetryAfterSeconds } from "./rateLimitMessage";
+import { parseSetupFields } from "./setupRequired";
 import { supabase } from "./supabase";
 
 // The API's origin: VITE_API_BASE_URL in a deployed build (scripts/apiBaseGuard.ts
@@ -28,6 +29,12 @@ export class ApiError extends Error {
     // For a 429 RATE_LIMITED: the whole seconds the server asks the caller to wait
     // (the envelope's details, or the Retry-After header). Undefined otherwise.
     public readonly retryAfterSeconds?: number,
+    // For a 409 SETUP_REQUIRED: where the fix is (`settings_path`, an app route -- not yet
+    // checked, see setupRequired.ts before it goes into a link), which capability needed
+    // it, and what is missing. Undefined when the reply carried none.
+    public readonly settingsPath?: string,
+    public readonly capability?: string,
+    public readonly missing?: readonly string[],
   ) {
     super(message);
   }
@@ -43,12 +50,16 @@ interface ErrorBody {
 }
 
 function apiErrorFrom(response: Response, body: ErrorBody | null): ApiError {
+  const setup = parseSetupFields(body?.error);
   return new ApiError(
     response.status,
     body?.error?.message ?? `Request failed (${response.status})`,
     body?.error?.code,
     typeof body?.error?.retryable === "boolean" ? body.error.retryable : undefined,
     parseRetryAfterSeconds(body?.error?.details, response.headers.get("Retry-After")),
+    setup.settingsPath,
+    setup.capability,
+    setup.missing,
   );
 }
 
