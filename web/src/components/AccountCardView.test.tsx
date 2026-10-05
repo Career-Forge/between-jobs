@@ -79,7 +79,26 @@ describe("the error", () => {
   });
 });
 
+describe("accessibility", () => {
+  it("announces the status text politely and makes the alert focusable", () => {
+    const { actions } = recorder();
+    const nodes = tree({ error: "x" }, actions);
+    const status = findAll(nodes, (el) => el.type === "p" && prop(el, "aria-live") === "polite");
+    expect(status).toHaveLength(1);
+    const alert = findAll(nodes, (el) => prop(el, "role") === "alert")[0];
+    expect(prop(alert, "tabIndex")).toBe(-1);
+  });
+});
+
 describe("the copy", () => {
+  it("links to Google's permissions page safely", () => {
+    const { actions } = recorder();
+    const links = findAll(tree({}, actions), (el) => el.type === "a");
+    expect(links).toHaveLength(1);
+    expect(prop(links[0], "href")).toBe("https://myaccount.google.com/permissions");
+    expect(prop(links[0], "rel")).toBe("noopener noreferrer");
+  });
+
   it("states what is removed, that it is permanent, the Telegram note and the export pointer", () => {
     const { actions } = recorder();
     const text = tree({}, actions).map(textOf).join(" ");
@@ -89,7 +108,8 @@ describe("the copy", () => {
       "resumes and cover letters",
       "saved searches",
       "saved provider keys",
-      "revoked at Google",
+      "ask Google to revoke the connection",
+      "Drafts we already created in your Gmail stay in your mailbox",
       "browser-extension sign-in",
       "cannot be undone",
       "starts a new, empty account",

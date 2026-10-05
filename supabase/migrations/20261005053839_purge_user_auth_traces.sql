@@ -8,13 +8,18 @@
 -- by the service role (the API calls it right after it deletes the user, with the email it read
 -- beforehand: the entry written by the deletion itself carries it). It matches the log's own
 -- keys exactly and never by a substring, so another user's entries are never touched.
+--
+-- The payload predicates cannot use an index (and an index on a table Supabase Auth owns is not
+-- ours to add), so this reads the whole log: milliseconds for the log of a young service, tens of
+-- seconds at around ten million entries, hence the generous timeout. If it ever fails the API logs
+-- it, and sending the deletion request again repeats it by id.
 
 create or replace function public.purge_user_auth_traces(p_user_id uuid, p_email text)
 returns integer
 language plpgsql
 security definer
 set search_path = ''
-set statement_timeout = '30s'
+set statement_timeout = '120s'
 as $$
 declare
   v_deleted integer;

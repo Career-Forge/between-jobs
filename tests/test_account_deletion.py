@@ -70,6 +70,7 @@ class _Admin:
         self.sign_out_error: Exception | None = None
         self.email: str | None = "leaving@example.com"
         self.lookup_error: Exception | None = None
+        self.on_delete: Any = None  # called when the user is deleted: a generation still running
 
     async def sign_out(self, jwt: str, scope: str) -> None:
         self.events.append(("sign_out", jwt, scope))
@@ -86,6 +87,8 @@ class _Admin:
         self.events.append(("delete_user", user_id))
         if self.delete_error:
             raise self.delete_error
+        if self.on_delete:
+            self.on_delete()
 
 
 class _Query:
@@ -119,8 +122,11 @@ class _Table:
         self.events = events
         self.name = name
         self.rows = rows
+        self.select_error: Exception | None = None
 
     def select(self, *args: Any) -> _Query:
+        if self.select_error:
+            raise self.select_error
         return _Query(self).select(*args)
 
     def delete(self) -> _Query:
@@ -476,3 +482,58 @@ async def test_an_email_that_cannot_be_read_still_purges_by_id(events: list[Any]
 
     assert ("purge_audit", _USER, None) in events
     assert report.audit_entries_purged == 4
+
+
+# -- uploads that race the deletion ------------------------------------------------------------
+
+
+async def test_a_file_uploaded_while_the_account_is_being_deleted_is_swept_afterwards(
+    events: list[Any],
+) -> None:
+    """A generation still running when deletion began uploads after the first listing; its row
+    cascades away with the user, so the file is all that is left."""
+    supabase = _Supabase(events, files=[f"{_USER}/a.pdf"])
+    supabase.admin.on_delete = lambda: supabase.bucket.files.append(f"{_USER}/late/b.pdf")
+
+    report = await delete_account(supabase, _google(events), _USER)  # type: ignore[arg-type]
+
+    assert report.files_removed == 1
+    assert report.late_files_removed == 1
+    assert supabase.bucket.files == []
+    # the sweep is after the deletion, and before the audit log and the final check
+    kinds = _kinds(events)
+    assert kinds.index("delete_user") < kinds.index("purge_audit")
+    assert events.index(("delete_user", _USER)) < events.index(
+        ("remove", 1), events.index(("delete_user", _USER))
+    )
+
+
+async def test_a_sweep_that_fails_is_logged_loudly_and_never_undoes_the_deletion(
+    events: list[Any], caplog: pytest.LogCaptureFixture
+) -> None:
+    supabase = _Supabase(events)
+
+    def late_upload_and_storage_down() -> None:
+        supabase.bucket.files.append(f"{_USER}/late.pdf")
+        supabase.bucket.fail_on_remove = True
+
+    supabase.admin.on_delete = late_upload_and_storage_down
+
+    with caplog.at_level("ERROR"):
+        report = await delete_account(supabase, _google(events), _USER)  # type: ignore[arg-type]
+
+    assert report.user_deleted is True
+    assert report.late_files_removed == 0
+    assert "files may remain" in caplog.text
+
+
+async def test_a_lockout_counter_that_cannot_be_forgotten_does_not_stop_the_deletion(
+    events: list[Any],
+) -> None:
+    supabase = _Supabase(events)
+    supabase.tables["channel_identities"].select_error = RuntimeError("postgrest is down")
+
+    report = await delete_account(supabase, _google(events), _USER)  # type: ignore[arg-type]
+
+    assert report.link_attempts_purged == 0
+    assert report.user_deleted is True

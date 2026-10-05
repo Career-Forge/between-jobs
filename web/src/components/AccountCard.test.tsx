@@ -5,10 +5,13 @@ import type { AccountCardActions } from "./AccountCardView";
 
 // Wiring only, same split as PersonalDetailsCard.test.tsx: the view is
 // mocked to capture what the container hands it. Static rendering never
-// re-renders, so busy/error are checked through apiFetch and signOut calls.
+// re-renders, so this file only proves what is observable through apiFetch and
+// signOut calls: the request body and the in-flight guard. The outcome logic
+// (signOut once, swallowed signOut failure, messages) and the busy/error
+// state transitions are tested as pure functions in lib/accountDeletion.test.ts.
 
 const captured = vi.hoisted(() => ({
-  props: null as null | { typed: string; busy: boolean; error: string | null; actions: AccountCardActions },
+  props: null as null | { typed: string; busy: boolean; error: string | null; errorRef?: unknown; actions: AccountCardActions },
 }));
 const apiFetch = vi.hoisted(() => vi.fn());
 const signOut = vi.hoisted(() => vi.fn());
@@ -43,14 +46,14 @@ beforeEach(() => {
 });
 
 describe("AccountCard wiring", () => {
-  it("starts empty, idle and without an error", () => {
+  it("hands the view an empty, idle initial state", () => {
     const props = mount();
     expect(props.typed).toBe("");
     expect(props.busy).toBe(false);
     expect(props.error).toBeNull();
   });
 
-  it("posts the exact confirmation body, then signs out", async () => {
+  it("posts the exact confirmation body", async () => {
     apiFetch.mockResolvedValue(undefined);
     mount().actions.confirm();
     await flush();
@@ -62,7 +65,7 @@ describe("AccountCard wiring", () => {
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 
-  it("does not sign out on a retryable 503, and allows trying again", async () => {
+  it("releases the double-submit guard after a failure, so a retry sends a second request", async () => {
     apiFetch.mockRejectedValueOnce(new ApiError(503, "down", "PROVIDER_UNAVAILABLE", true));
     const { actions } = mount();
     actions.confirm();
@@ -85,14 +88,6 @@ describe("AccountCard wiring", () => {
     await flush();
     expect(apiFetch).toHaveBeenCalledTimes(1);
     finish();
-    await flush();
-    expect(signOut).toHaveBeenCalledTimes(1);
-  });
-
-  it("still ends after a failed signOut without reporting a false failure", async () => {
-    apiFetch.mockResolvedValue(undefined);
-    signOut.mockRejectedValue(new Error("session already gone"));
-    mount().actions.confirm();
     await flush();
     expect(signOut).toHaveBeenCalledTimes(1);
   });

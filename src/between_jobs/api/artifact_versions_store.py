@@ -23,6 +23,7 @@ dedicated RPC function the way `change_application_stage` (2.6d) or
 from __future__ import annotations
 
 import hashlib
+import logging
 import uuid
 from typing import Any, cast
 
@@ -34,6 +35,8 @@ works here; what matters is that it never changes (changing it would
 silently orphan every artifact_id ever derived from it)."""
 
 _BUCKET = "artifacts"
+
+logger = logging.getLogger(__name__)
 
 
 def artifact_id_for(application_id: str, document_kind: str) -> str:
@@ -128,29 +131,45 @@ async def create_version(
     sha256 = hashlib.sha256(content).hexdigest()
     storage_key = f"{user_id}/{artifact_id}/{version}"
 
-    await supabase.storage.from_(_BUCKET).upload(storage_key, content, {"content-type": media_type})
+    bucket = supabase.storage.from_(_BUCKET)
+    await bucket.upload(storage_key, content, {"content-type": media_type})
 
-    result = (
-        await supabase.table("artifact_versions")
-        .insert(
-            {
-                "user_id": user_id,
-                "application_id": application_id,
-                "artifact_id": artifact_id,
-                "version": version,
-                "document_kind": document_kind,
-                "storage_key": storage_key,
-                "media_type": media_type,
-                "sha256": sha256,
-                "generator": generator,
-                "generator_version": generator_version,
-                "profile_version_id": profile_version_id,
-                "job_snapshot_id": job_snapshot_id,
-                "evidence_fact_ids": evidence_fact_ids,
-                "warnings": warnings,
-                "shape_report": shape_report or {},
-            }
+    try:
+        result = (
+            await supabase.table("artifact_versions")
+            .insert(
+                {
+                    "user_id": user_id,
+                    "application_id": application_id,
+                    "artifact_id": artifact_id,
+                    "version": version,
+                    "document_kind": document_kind,
+                    "storage_key": storage_key,
+                    "media_type": media_type,
+                    "sha256": sha256,
+                    "generator": generator,
+                    "generator_version": generator_version,
+                    "profile_version_id": profile_version_id,
+                    "job_snapshot_id": job_snapshot_id,
+                    "evidence_fact_ids": evidence_fact_ids,
+                    "warnings": warnings,
+                    "shape_report": shape_report or {},
+                }
+            )
+            .execute()
         )
-        .execute()
-    )
+    except Exception:
+        # No row names this object, so nothing will ever read or remove it. An account deleted
+        # while this was generating is one way here (the row's foreign key to the user fails
+        # after the upload): take the file back out instead of leaving it for somebody who may
+        # be gone.
+        try:
+            await bucket.remove([storage_key])
+        except Exception:
+            logger.warning(
+                "could not remove an artifact whose row was never written",
+                extra={"ctx": {"storage_key": storage_key}},
+                exc_info=True,
+            )
+        raise
     return cast(dict[str, Any], result.data[0])

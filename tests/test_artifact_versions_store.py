@@ -6,6 +6,8 @@ import hashlib
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from between_jobs.api.artifact_versions_store import (
     artifact_id_for,
     create_version,
@@ -44,6 +46,7 @@ class _FakeTable:
     ) -> None:
         self.select_rows = select_rows
         self.insert_row = insert_row
+        self.insert_error: Exception | None = None
         self.insert_calls: list[dict[str, Any]] = []
 
     def select(self, *_: Any, **__: Any) -> _ChainBuilder:
@@ -51,6 +54,8 @@ class _FakeTable:
 
     def insert(self, data: dict[str, Any]) -> _ChainBuilder:
         self.insert_calls.append(data)
+        if self.insert_error:
+            raise self.insert_error
         rows = [{**data, "id": "version-row-1"}] if self.insert_row is None else [self.insert_row]
         return _ChainBuilder(rows)
 
@@ -59,7 +64,14 @@ class _FakeBucket:
     def __init__(self, *, download_bytes: bytes = b"") -> None:
         self.uploads: list[tuple[str, bytes, dict[str, Any]]] = []
         self.downloads: list[str] = []
+        self.removed: list[list[str]] = []
+        self.remove_error: Exception | None = None
         self._download_bytes = download_bytes
+
+    async def remove(self, paths: list[str]) -> None:
+        if self.remove_error:
+            raise self.remove_error
+        self.removed.append(list(paths))
 
     async def upload(self, path: str, file: bytes, file_options: dict[str, Any]) -> None:
         self.uploads.append((path, file, file_options))
@@ -245,3 +257,57 @@ async def test_download_content_reads_from_the_artifacts_bucket() -> None:
 
     assert content == b"\\begin{document}hello\\end{document}"
     assert bucket.downloads == ["some/storage/key"]
+
+
+def _create_kwargs() -> dict[str, Any]:
+    return {
+        "application_id": _APPLICATION_ID,
+        "document_kind": "resume",
+        "content": b"%PDF",
+        "media_type": "application/pdf",
+        "generator": "t",
+        "generator_version": "1",
+        "profile_version_id": "pv",
+        "job_snapshot_id": None,
+        "evidence_fact_ids": [],
+        "warnings": [],
+    }
+
+
+async def test_a_file_whose_row_was_never_written_is_taken_back_out() -> None:
+    """The row's foreign key to the user fails when the account was deleted while this was
+    generating; nothing would ever name the file, so it must not be left in the bucket."""
+    table = _FakeTable(select_rows=[])
+    table.insert_error = RuntimeError("violates foreign key constraint")
+    bucket = _FakeBucket()
+    client = _FakeSupabaseClient(table, bucket)
+
+    with pytest.raises(RuntimeError, match="foreign key"):
+        await create_version(client, _USER_ID, **_create_kwargs())  # type: ignore[arg-type]
+
+    assert len(bucket.uploads) == 1
+    assert bucket.removed == [[bucket.uploads[0][0]]]
+
+
+async def test_the_original_error_wins_when_the_cleanup_fails_too(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    table = _FakeTable(select_rows=[])
+    table.insert_error = RuntimeError("violates foreign key constraint")
+    bucket = _FakeBucket()
+    bucket.remove_error = RuntimeError("storage is down")
+    client = _FakeSupabaseClient(table, bucket)
+
+    with caplog.at_level("WARNING"), pytest.raises(RuntimeError, match="foreign key"):
+        await create_version(client, _USER_ID, **_create_kwargs())  # type: ignore[arg-type]
+
+    assert "never written" in caplog.text
+
+
+async def test_a_file_whose_row_was_written_is_left_alone() -> None:
+    bucket = _FakeBucket()
+    client = _FakeSupabaseClient(_FakeTable(select_rows=[]), bucket)
+
+    await create_version(client, _USER_ID, **_create_kwargs())  # type: ignore[arg-type]
+
+    assert bucket.removed == []

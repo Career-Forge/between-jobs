@@ -12,15 +12,20 @@ The order matters, and so does which steps may fail:
    honouring a token nobody can use any more.
 3. End their sessions (best effort): extension tokens issued so far are rejected from now on, and
    every Supabase session for the user is signed out.
-4. Forget the Telegram lockout counters kept for the user's linked chats (they are keyed by the
-   Telegram subject, not by the user, so deleting the user does not reach them).
+4. Forget the Telegram lockout counters kept for the user's linked chats (best effort; they are
+   keyed by the Telegram subject, not by the user, so deleting the user does not reach them).
 5. Delete the user. Every table that references the user does so with `on delete cascade`, so this
    removes every row they own in one step. It cannot be undone and afterwards there is nobody left
    who could retry anything, so it comes after every step that needs the user to still exist.
-6. Remove what no cascade reaches: Supabase Auth's own audit log names the user, with their email,
+6. Sweep the folder once more (best effort). A generation still running when deletion began can
+   upload after step 1's last listing. If its row lands before step 5 it was cascaded away and the
+   file is still here, so this removes it; if the upload comes later still, the row's insert fails
+   (the user is gone) and `artifact_versions_store.create_version` takes its own file back out.
+7. Remove what no cascade reaches: Supabase Auth's own audit log names the user, with their email,
    in its logins and in the entry the deletion itself writes. This runs after the deletion for
-   that reason, with the email read before it. Best effort and reported.
-7. Check, and log if anything is left. This should be impossible; the check is for a table added
+   that reason, with the email read before it. Best effort and reported. If it fails, sending the
+   request again finishes it by id alone (every audit entry carries the id).
+8. Check, and log if anything is left. This should be impossible; the check is for a table added
    later without a cascade.
 
 Every step is safe to run again, so a request that failed part-way is retried by sending it again.
@@ -73,6 +78,8 @@ class DeletionReport:
     gmail_revoked: bool | None
     """None: no Gmail connection. False: Google could not be reached or refused."""
     files_removed: int
+    late_files_removed: int
+    """Files that appeared after the first sweep and were removed after the user was deleted."""
     link_attempts_purged: int
     user_deleted: bool
     """False when the user was already gone (a request sent a second time)."""
@@ -95,10 +102,11 @@ async def delete_account(
     purged = await _forget_link_attempts(supabase, user_id)
     email = await _email_of(supabase, user_id)
     user_deleted = await _delete_user(supabase, user_id)
+    late_files = await _sweep_late_files(supabase, user_id)
     audit_purged = await _purge_audit_log(supabase, user_id, email)
     leftovers = await _leftovers(supabase, user_id)
     report = DeletionReport(
-        gmail_revoked, files_removed, purged, user_deleted, audit_purged, leftovers
+        gmail_revoked, files_removed, late_files, purged, user_deleted, audit_purged, leftovers
     )
     logger.info(
         "account deleted",
@@ -107,6 +115,7 @@ async def delete_account(
                 "user_id": user_id,
                 "gmail_revoked": gmail_revoked,
                 "files_removed": files_removed,
+                "late_files_removed": late_files,
                 "link_attempts_purged": purged,
                 "already_gone": not user_deleted,
                 "audit_entries_purged": audit_purged,
@@ -219,25 +228,31 @@ async def _remove_files(supabase: AsyncClient, user_id: str) -> int:
 
 
 async def _forget_link_attempts(supabase: AsyncClient, user_id: str) -> int:
-    identities = cast(
-        list[dict[str, Any]],
-        (
-            await supabase.table("channel_identities")
-            .select("channel, external_subject")
-            .eq("user_id", user_id)
-            .execute()
-        ).data,
-    )
-    purged = 0
-    for identity in identities:
-        deleted = (
-            await supabase.table("link_code_attempts")
-            .delete()
-            .eq("channel", identity["channel"])
-            .eq("external_subject", identity["external_subject"])
-            .execute()
+    try:
+        identities = cast(
+            list[dict[str, Any]],
+            (
+                await supabase.table("channel_identities")
+                .select("channel, external_subject")
+                .eq("user_id", user_id)
+                .execute()
+            ).data,
         )
-        purged += len(deleted.data)
+        purged = 0
+        for identity in identities:
+            deleted = (
+                await supabase.table("link_code_attempts")
+                .delete()
+                .eq("channel", identity["channel"])
+                .eq("external_subject", identity["external_subject"])
+                .execute()
+            )
+            purged += len(deleted.data)
+    except Exception:
+        # A lockout counter is not worth stopping the deletion for, and a failure here must not
+        # leave the person with a revoked Gmail and no way to see why.
+        logger.warning("could not forget the Telegram lockout counters", exc_info=True)
+        return 0
     return purged
 
 
@@ -254,7 +269,27 @@ async def _delete_user(supabase: AsyncClient, user_id: str) -> bool:
     return True
 
 
-# -- 6. the audit log ------------------------------------------------------------------------
+# -- 6. the late-file sweep -------------------------------------------------------------------
+
+
+async def _sweep_late_files(supabase: AsyncClient, user_id: str) -> int:
+    """One more look at the folder after the user is gone (see the module docstring, step 6)."""
+    bucket = supabase.storage.from_(_BUCKET)
+    try:
+        paths = await _list_paths(bucket, user_id)
+        for start in range(0, len(paths), _REMOVE_BATCH):
+            await bucket.remove(paths[start : start + _REMOVE_BATCH])
+    except Exception:
+        logger.error(
+            "could not sweep a deleted account's folder; files may remain",
+            extra={"ctx": {"user_id": user_id}},
+            exc_info=True,
+        )
+        return 0
+    return len(paths)
+
+
+# -- 7. the audit log ------------------------------------------------------------------------
 
 
 async def _email_of(supabase: AsyncClient, user_id: str) -> str | None:
@@ -274,12 +309,17 @@ async def _purge_audit_log(supabase: AsyncClient, user_id: str, email: str | Non
             "purge_user_auth_traces", {"p_user_id": user_id, "p_email": email}
         ).execute()
     except Exception:
-        logger.error("could not remove a deleted account from the auth audit log", exc_info=True)
+        logger.error(
+            "could not remove a deleted account from the auth audit log; sending the request "
+            "again finishes it",
+            extra={"ctx": {"user_id": user_id}},
+            exc_info=True,
+        )
         return None
     return cast(int, result.data)
 
 
-# -- 7. the check -----------------------------------------------------------------------------
+# -- 8. the check -----------------------------------------------------------------------------
 
 
 async def _leftovers(supabase: AsyncClient, user_id: str) -> dict[str, int]:

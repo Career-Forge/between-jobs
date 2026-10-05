@@ -114,6 +114,7 @@ export default function Profile() {
     return (
       <PageFrame>
         <div className="bj-error">{state.message}</div>
+        <AccountCard />
       </PageFrame>
     );
   }
@@ -128,6 +129,7 @@ export default function Profile() {
           onActivate={() => void activate(state.version.id)}
           onCancel={() => void cancel(state.version.id)}
         />
+        <AccountCard />
       </PageFrame>
     );
   }

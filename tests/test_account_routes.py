@@ -18,7 +18,7 @@ from between_jobs.api.app_state import get_http_client, get_supabase
 from between_jobs.api.auth import require_user_id
 
 _USER = "00000000-0000-0000-0000-0000000000a1"
-_REPORT = DeletionReport(None, 0, 0, True, 0, {})
+_REPORT = DeletionReport(None, 0, 0, 0, True, 0, {})
 
 
 @pytest.fixture(autouse=True)
