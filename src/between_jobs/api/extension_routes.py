@@ -42,6 +42,7 @@ from .models import DraftAnswerRequest, MatchApprovedAnswerRequest, SaveApproved
 from .prepare_orchestrator import latest_cover_letter_pdf, latest_resume_pdf
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
+from .rate_limits import limit
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,10 @@ async def sign_out(
     await record_extension_sign_out(supabase, user_id)
 
 
-@router.get("/{application_id}/resume.pdf")
+@router.get(
+    "/{application_id}/resume.pdf",
+    dependencies=[Depends(limit("pdf_compile", auth=require_active_extension_user_id))],
+)
 async def download_resume_pdf(
     application_id: str,
     user_id: str = Depends(require_active_extension_user_id),
@@ -107,7 +111,10 @@ async def download_resume_pdf(
     )
 
 
-@router.get("/{application_id}/cover-letter.pdf")
+@router.get(
+    "/{application_id}/cover-letter.pdf",
+    dependencies=[Depends(limit("pdf_compile", auth=require_active_extension_user_id))],
+)
 async def download_cover_letter_pdf(
     application_id: str,
     user_id: str = Depends(require_active_extension_user_id),

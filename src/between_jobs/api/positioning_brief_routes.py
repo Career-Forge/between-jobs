@@ -23,6 +23,7 @@ from .llm_client import generate as llm_generate
 from .positioning_brief import generate_positioning_brief
 from .positioning_brief_store import create_brief, get_latest_brief
 from .profile_store import get_active_version
+from .rate_limits import limit
 from .resume_documents_store import get_or_create_document
 from .skills import canonicalize_skill, classify_skill
 from .tailor_coverage import load_coverage_context
@@ -40,7 +41,7 @@ async def get_brief(
     return {"brief": brief}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(limit("positioning_brief"))])
 async def generate_brief(
     application_id: str,
     user_id: str = Depends(require_user_id),

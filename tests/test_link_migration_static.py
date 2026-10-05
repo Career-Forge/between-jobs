@@ -63,7 +63,16 @@ def _tables_referencing_auth_users() -> set[str]:
 
 
 def _merge_function_body() -> str:
-    sql = _without_comments(_MERGE.read_text())
+    """The function as it stands now: the LAST migration that defines it. A migration that has
+    been applied is never edited, so a change to the merge ships as a new file that redefines
+    the whole function (20260928000000_fix_merge_user_data.sql was the first full rewrite)."""
+    latest = [
+        path
+        for path in sorted(_MIGRATIONS.glob("*.sql"))
+        if "create or replace function public.merge_user_data("
+        in _without_comments(path.read_text())
+    ][-1]
+    sql = _without_comments(latest.read_text())
     start = sql.index("create or replace function public.merge_user_data(")
     end = sql.index("revoke execute on function public.merge_user_data")
     return sql[start:end]

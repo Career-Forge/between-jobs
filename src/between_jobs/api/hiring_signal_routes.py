@@ -102,6 +102,7 @@ from .models import (
     SearchHiringSignalsRequest,
     SearchHiringTabRequest,
 )
+from .rate_limits import limit
 
 
 def require_hiring_signals_enabled() -> None:
@@ -146,7 +147,10 @@ async def _require_application(supabase: AsyncClient, user_id: str, application_
         raise ApiError("NOT_FOUND", f"no application found for id {application_id!r}") from e
 
 
-@router.post("/applications/{application_id}/hiring-signals/search")
+@router.post(
+    "/applications/{application_id}/hiring-signals/search",
+    dependencies=[Depends(limit("hiring_signal_search"))],
+)
 async def search_hiring_signals(
     application_id: str,
     body: SearchHiringSignalsRequest | None = None,
@@ -219,7 +223,7 @@ async def hiring_signals_status() -> dict[str, bool]:
     return {"enabled": not os.environ.get("DISABLE_HIRING_SIGNALS")}
 
 
-@router.post("/hiring-signals/search")
+@router.post("/hiring-signals/search", dependencies=[Depends(limit("hiring_signal_search"))])
 async def search_hiring_signals_tab(
     body: SearchHiringTabRequest,
     user_id: str = Depends(require_user_id),

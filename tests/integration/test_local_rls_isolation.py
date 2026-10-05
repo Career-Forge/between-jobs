@@ -59,6 +59,7 @@ OWNED_WITH_POLICIES = [
 # Owned tables with RLS on and no policy at all: a user token reads and writes nothing, only
 # the service role does. The catalog test checks that stays true.
 SERVICE_ROLE_ONLY = [
+    "api_rate_limits",
     "event_outbox",
     "extension_draft_answer_rate_limits",
     "extension_sign_outs",

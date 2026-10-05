@@ -70,3 +70,22 @@ async def seed_channel_identity(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
 @seeder("rls_link_code", tables=("link_codes",))
 async def seed_link_code(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
     return {"code": await ctx.world.mint(tenant.user_id)}
+
+
+@seeder("rls_rate_limit_counter", tables=("api_rate_limits",))
+async def seed_rate_limit_counter(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
+    """A counter row, made by the real function the way the backend makes one. It is
+    service-role-only (no policy at all), so no route reads it; the account-deletion drill fills
+    every seeder, which is what makes "deleting the account leaves no counter behind" a checked
+    claim."""
+    bucket = ctx.tag("rl")
+    await ctx.sb.rpc(
+        "claim_rate_limit_slot",
+        {
+            "p_user_id": tenant.user_id,
+            "p_bucket": bucket,
+            "p_window_seconds": 3600,
+            "p_max_requests": 10,
+        },
+    ).execute()
+    return {"bucket": bucket}

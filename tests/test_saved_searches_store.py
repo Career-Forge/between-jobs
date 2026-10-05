@@ -6,7 +6,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+from postgrest.exceptions import APIError
+
 from between_jobs.api.saved_searches_store import (
+    MAX_SAVED_SEARCHES,
+    SavedSearchLimitReached,
     SavedSearchNotFound,
     create_saved_search,
     delete_saved_search,
@@ -34,15 +39,28 @@ class _ChainBuilder:
         return SimpleNamespace(data=self._rows)
 
 
+class _FailingInsert:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def execute(self) -> SimpleNamespace:
+        raise self._error
+
+
 class _FakeTable:
-    def __init__(self, *, rows: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self, *, rows: list[dict[str, Any]] | None = None, insert_error: Exception | None = None
+    ) -> None:
         self.rows = rows if rows is not None else []
         self._next_id = 1
+        self.insert_error = insert_error
 
     def select(self, *_: Any, **__: Any) -> _ChainBuilder:
         return _ChainBuilder(self.rows)
 
-    def insert(self, data: dict[str, Any]) -> _ChainBuilder:
+    def insert(self, data: dict[str, Any]) -> Any:
+        if self.insert_error is not None:
+            return _FailingInsert(self.insert_error)
         row = {"id": f"row-{self._next_id}", **data}
         self._next_id += 1
         self.rows.append(row)
@@ -220,3 +238,43 @@ async def test_get_saved_search_cannot_see_another_user_s_search() -> None:
         raise AssertionError("expected SavedSearchNotFound")
     except SavedSearchNotFound:
         pass
+
+
+def _api_error(code: str) -> APIError:
+    return APIError({"message": "m", "code": code, "details": None, "hint": None})
+
+
+async def test_create_past_the_cap_raises_the_limit_error() -> None:
+    supabase = _FakeSupabase()
+    supabase._table.insert_error = _api_error("BJ009")
+
+    with pytest.raises(SavedSearchLimitReached):
+        await create_saved_search(
+            supabase,  # type: ignore[arg-type]
+            _USER_ID,
+            query="a",
+            location=None,
+            companies=[],
+            remote_only=False,
+        )
+
+
+async def test_create_lets_any_other_database_error_through_unchanged() -> None:
+    supabase = _FakeSupabase()
+    supabase._table.insert_error = _api_error("23503")
+
+    with pytest.raises(APIError) as raised:
+        await create_saved_search(
+            supabase,  # type: ignore[arg-type]
+            _USER_ID,
+            query="a",
+            location=None,
+            companies=[],
+            remote_only=False,
+        )
+
+    assert raised.value.code == "23503"
+
+
+def test_the_cap_is_twenty() -> None:
+    assert MAX_SAVED_SEARCHES == 20

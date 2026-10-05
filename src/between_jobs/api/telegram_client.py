@@ -27,6 +27,14 @@ _BOT_USERNAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{4,31}")
 underscores, starting with a letter."""
 
 
+class DownloadTooLarge(Exception):
+    """A file Telegram would send is larger than the caller said it would accept."""
+
+    def __init__(self, max_bytes: int) -> None:
+        super().__init__(f"the file is larger than {max_bytes} bytes")
+        self.max_bytes = max_bytes
+
+
 def parse_bot_username(raw: str | None) -> str | None:
     """The bot's public username, without a leading "@", or None when none was
     given. Raises ValueError (naming no value) for something that can't be one.
@@ -168,11 +176,25 @@ class TelegramClient:
         response.raise_for_status()
         return str(response.json()["result"]["file_path"])
 
-    async def download_file(self, file_path: str) -> bytes:
-        response = await self._http.get(f"{self._file_base_url}/{file_path}")
-        response.raise_for_status()
-        return response.content
+    async def download_file(self, file_path: str, *, max_bytes: int | None = None) -> bytes:
+        """The file's bytes. With `max_bytes`, raises `DownloadTooLarge` as soon as the file is
+        known to be (by its Content-Length) or turns out to be (by counting the bytes as they
+        arrive) larger than that, without holding the rest of it in memory; the size Telegram
+        reports for a file is only advisory, so it is never the only check."""
+        async with self._http.stream("GET", f"{self._file_base_url}/{file_path}") as response:
+            response.raise_for_status()
+            if max_bytes is None:
+                return await response.aread()
+            declared = response.headers.get("content-length", "")
+            if declared.isascii() and declared.isdigit() and int(declared) > max_bytes:
+                raise DownloadTooLarge(max_bytes)
+            received = bytearray()
+            async for chunk in response.aiter_bytes():
+                received += chunk
+                if len(received) > max_bytes:
+                    raise DownloadTooLarge(max_bytes)
+            return bytes(received)
 
-    async def download_document(self, file_id: str) -> bytes:
+    async def download_document(self, file_id: str, *, max_bytes: int | None = None) -> bytes:
         file_path = await self.get_file_path(file_id)
-        return await self.download_file(file_path)
+        return await self.download_file(file_path, max_bytes=max_bytes)

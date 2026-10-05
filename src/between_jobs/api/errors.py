@@ -4,12 +4,12 @@ One exception type, one FastAPI handler, applied across every client-
 facing route at once. `profile_routes.py` shipped with plain
 HTTPException mapping and said so in its own docstring, flagging this
 exact migration as Sprint 2.6's job rather than something to do
-piecemeal per endpoint. `app.py`'s original `/sessions` handler also had
-a real instance of the thing Appendix B explicitly warns against: on an
-unrecognized Postgrest error it forwarded the raw `f"{e.code}: {e.message}"`
-straight into the response `detail` -- a raw database error string leaking
-to the client. That path now raises INTERNAL_ERROR with a generic message
-instead.
+piecemeal per endpoint. One early handler also had a real instance of the
+thing Appendix B explicitly warns against: on an unrecognized Postgrest
+error it forwarded the raw `f"{e.code}: {e.message}"` straight into the
+response `detail` -- a raw database error string leaking to the client.
+The fallback for an unmapped database error is INTERNAL_ERROR with a
+generic message instead.
 
 The Telegram webhook is deliberately NOT part of this migration --
 Telegram calls that endpoint, not this platform's own clients, and it
@@ -39,9 +39,11 @@ ErrorCode = Literal[
     "CONFLICT",
     "INTERNAL_ERROR",
     "FEATURE_DISABLED",
+    "RATE_LIMITED",
+    "PAYLOAD_TOO_LARGE",
 ]
-"""Every code but INTERNAL_ERROR and FEATURE_DISABLED is Appendix B's own core
-list, verbatim. INTERNAL_ERROR isn't in the appendix -- it's this platform's
+"""Every code but INTERNAL_ERROR, FEATURE_DISABLED, RATE_LIMITED and PAYLOAD_TOO_LARGE is
+Appendix B's own core list, verbatim. INTERNAL_ERROR isn't in the appendix -- it's this platform's
 own fallback for failures that don't fit any named code (an unmapped database
 error, a genuine bug), so those still reach the client as the documented
 envelope shape instead of FastAPI's default unstructured 500 body.
@@ -49,7 +51,14 @@ FEATURE_DISABLED is the other platform-own code: a feature an operator has
 switched off with a `DISABLE_*` environment flag (Hiring Signals is the first
 to answer with it). It is a 404 -- from the client's side the route does not
 exist -- but a distinct code, so a UI can tell "turned off" from "no such
-thing"."""
+thing".
+RATE_LIMITED is this platform's own per-user limit (api/rate_limits.py): the caller
+has used up their budget for an action and should wait. It is a 429 like
+PROVIDER_RATE_LIMITED but means something different -- that one says an upstream
+provider throttled us -- so a client must not conflate them. Its `details` carry
+`retry_after_seconds` and the `bucket`, and the response has a `Retry-After` header.
+PAYLOAD_TOO_LARGE is a request body over the size cap (api/body_limit.py): a 413 that
+retrying unchanged cannot fix."""
 
 _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "AUTH_REQUIRED": 401,
@@ -69,6 +78,8 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "CONFLICT": 409,
     "INTERNAL_ERROR": 500,
     "FEATURE_DISABLED": 404,
+    "RATE_LIMITED": 429,
+    "PAYLOAD_TOO_LARGE": 413,
 }
 
 

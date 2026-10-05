@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, apiFetchBlob } from "../lib/api";
 import type { ChecklistItem, PrepareApplicationResult } from "../lib/generateTypes";
+import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { GapInterview } from "./GapInterview";
 import { HonestFloor } from "./HonestFloor";
 import { ScoreBreakdown } from "./ScoreBreakdown";
@@ -143,7 +144,7 @@ export function GeneratePanel({
     } catch (e) {
       setGenerate({
         kind: "error",
-        message: e instanceof Error ? e.message : "Failed to generate",
+        message: friendlyApiMessage(e, "Failed to generate"),
       });
     }
   }
@@ -160,7 +161,7 @@ export function GeneratePanel({
       link.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setDownloadError(e instanceof Error ? e.message : "Failed to download");
+      setDownloadError(friendlyApiMessage(e, "Failed to download"));
     } finally {
       setDownloading(false);
     }
@@ -186,7 +187,7 @@ export function GeneratePanel({
       link.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setDownloadError(e instanceof Error ? e.message : "Failed to download");
+      setDownloadError(friendlyApiMessage(e, "Failed to download"));
     } finally {
       setDownloadingCoverLetter(false);
     }
@@ -202,7 +203,7 @@ export function GeneratePanel({
     } catch (e) {
       setChecklist({
         kind: "error",
-        message: e instanceof Error ? e.message : "Failed to load checklist",
+        message: friendlyApiMessage(e, "Failed to load checklist"),
       });
     }
   }

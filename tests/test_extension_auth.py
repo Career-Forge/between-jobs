@@ -73,9 +73,9 @@ def _request_with(jwks_client: Any, token: str) -> Any:
 
 # ---- a small, self-contained fake Supabase for both the store functions ---
 # and the full-app end-to-end tests below. `extension_sign_outs` supports
-# exactly what extension_auth.py itself uses (select .eq, upsert); `sessions`
-# supports exactly what POST /sessions (app.py) uses (insert) -- the one
-# ordinary, non-extension route these tests use to prove scope isolation.
+# exactly what extension_auth.py itself uses (select .eq, upsert). The one
+# ordinary, non-extension route these tests use to prove scope isolation,
+# GET /capabilities, reads no table at all.
 
 
 class _EqSelectBuilder:
@@ -112,20 +112,6 @@ class _SignOutsTable:
         return SimpleNamespace(execute=_execute)
 
 
-class _SessionsTable:
-    def __init__(self) -> None:
-        self.rows: list[dict[str, Any]] = []
-
-    def insert(self, data: dict[str, Any]) -> Any:
-        row = {"id": f"session-{len(self.rows) + 1}", **data}
-        self.rows.append(row)
-
-        async def _execute() -> SimpleNamespace:
-            return SimpleNamespace(data=[row])
-
-        return SimpleNamespace(execute=_execute)
-
-
 class _EmptyChain:
     """Always empty, whatever chain of `.eq`/`.in_`/`.order` is called on
     it -- enough for `/extension/lookup`'s `applications`/`jobs`/
@@ -153,7 +139,6 @@ class _EmptyTable:
 class _FakeSupabase:
     def __init__(self, *, extension_sign_outs: list[dict[str, Any]] | None = None) -> None:
         self._extension_sign_outs = _SignOutsTable(extension_sign_outs)
-        self._sessions = _SessionsTable()
         # /extension/lookup needs these; empty is a valid, fully-exercised
         # state ("untracked").
         self._empty = _EmptyTable()
@@ -161,8 +146,6 @@ class _FakeSupabase:
     def table(self, name: str) -> Any:
         if name == "extension_sign_outs":
             return self._extension_sign_outs
-        if name == "sessions":
-            return self._sessions
         if name in ("applications", "jobs", "job_snapshots"):
             return self._empty
         raise AssertionError(f"unexpected table: {name}")
@@ -369,12 +352,12 @@ def test_extension_route_rejects_a_token_issued_before_a_real_sign_out(
 def test_a_non_extension_route_is_completely_unaffected_by_an_extension_sign_out(
     client: Any, private_key: EllipticCurvePrivateKey
 ) -> None:
-    """The whole point of "scoped": POST /sessions depends on plain
+    """The whole point of "scoped": GET /capabilities depends on plain
     require_user_id, never require_active_extension_user_id, so a real
     recorded extension sign-out must have zero effect on it -- confirmed
     here by hitting the real route with a token issued well before a real
     sign-out, not assumed from reading the code."""
-    test_client, supabase = client
+    test_client, _supabase = client
     now = int(time.time())
     token = _sign(private_key, _base_claims(iat=now - 60))
 
@@ -383,12 +366,11 @@ def test_a_non_extension_route_is_completely_unaffected_by_an_extension_sign_out
     )
     assert sign_out_response.status_code == 204
 
-    # The exact same, now-extension-stale token still creates a session.
-    session_response = test_client.post(
-        "/sessions", json={"context": {}}, headers={"Authorization": f"Bearer {token}"}
+    # The exact same, now-extension-stale token still works on an ordinary route.
+    ordinary_response = test_client.get(
+        "/capabilities", headers={"Authorization": f"Bearer {token}"}
     )
-    assert session_response.status_code == 201
-    assert supabase.table("sessions").rows[0]["user_id"] == _USER_ID
+    assert ordinary_response.status_code == 200
 
 
 async def test_require_user_id_itself_never_reads_the_sign_out_table(

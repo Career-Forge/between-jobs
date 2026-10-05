@@ -12,6 +12,7 @@ import {
   trackRequestBody,
 } from "../lib/discover";
 import type { DiscoverResponse, JobCard, SavedSearch } from "../lib/discoverTypes";
+import { friendlyApiMessage } from "../lib/rateLimitMessage";
 
 // Discover (Job Finder P8, job-finder-port.md's own build order) -- the
 // full native search pipeline: P4's 9 BYOK live-search providers + P1-P3e's
@@ -22,13 +23,14 @@ import type { DiscoverResponse, JobCard, SavedSearch } from "../lib/discoverType
 // use -- one write path, several ways to reach it.
 
 type State =
+  | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "not_configured"; message: string }
   | { kind: "error"; message: string }
   | { kind: "ready"; result: DiscoverResponse };
 
 export default function Discover() {
-  const [state, setState] = useState<State>({ kind: "loading" });
+  const [state, setState] = useState<State>({ kind: "idle" });
   const [query, setQuery] = useState("");
   const [location, setLocation] = useState("");
   const [companies, setCompanies] = useState("");
@@ -56,7 +58,7 @@ export default function Discover() {
           setState({ kind: "not_configured", message: e.message });
           return;
         }
-        setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to search" });
+        setState({ kind: "error", message: friendlyApiMessage(e, "Failed to search") });
       }
     },
     [],
@@ -72,10 +74,13 @@ export default function Discover() {
     }
   }, []);
 
+  // Opening the page must NOT search: a search is a full discovery (provider calls, liveness
+  // probes, an LLM scoring call) and spends one slot of the per-user "discover" limit, so a
+  // search on mount would use the budget up on page visits (two a visit under StrictMode in
+  // development). Only the Search button runs one. A test pins this (Discover.test.ts).
   useEffect(() => {
-    void search({ q: "", location: "", companies: "", remoteOnly: false });
     void loadSavedSearches();
-  }, [search, loadSavedSearches]);
+  }, [loadSavedSearches]);
 
   function runSearch() {
     void search({ q: query, location, companies, remoteOnly });
@@ -138,7 +143,7 @@ export default function Discover() {
       });
       setTracked((prev) => ({ ...prev, [job.apply_url]: application.id }));
     } catch (e) {
-      setTrackError(e instanceof Error ? e.message : "Failed to track");
+      setTrackError(friendlyApiMessage(e, "Failed to track"));
     } finally {
       setTracking(null);
     }
@@ -154,6 +159,7 @@ export default function Discover() {
           <input
             type="text"
             value={query}
+            maxLength={200}
             placeholder="e.g. staff ai engineer, RAG, python"
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && runSearch()}
@@ -164,6 +170,7 @@ export default function Discover() {
           <input
             type="text"
             value={location}
+            maxLength={100}
             placeholder="e.g. New York, NY"
             onChange={(e) => setLocation(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && runSearch()}
@@ -221,6 +228,16 @@ export default function Discover() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {state.kind === "idle" && (
+        <div className="bj-empty">
+          <h2>Find a job</h2>
+          <p>
+            Enter a search above, or leave the filters empty and press Search to browse the latest
+            postings.
+          </p>
         </div>
       )}
 

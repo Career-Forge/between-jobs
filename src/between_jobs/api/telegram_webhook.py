@@ -63,6 +63,7 @@ from .applications_store import (
     create_application,
     list_applications,
 )
+from .body_limit import describe_bytes, max_request_body_bytes
 from .errors import ApiError
 from .intents import (
     Intent,
@@ -87,7 +88,8 @@ from .profile_store import (
     delete_pending_version,
     get_active_version,
 )
-from .telegram_client import Html, TelegramClient, escape, render
+from .rate_limits import rate_limit_error_or_none
+from .telegram_client import DownloadTooLarge, Html, TelegramClient, escape, render
 from .telegram_identity import CHANNEL, is_auto_provisioned, resolve_or_create_user_id
 from .telegram_identity import unlink as unlink_telegram_identity
 from .telegram_updates_store import claim_update, complete_update, release_update
@@ -282,6 +284,13 @@ def _verify_webhook_secret(request: Request, expected: str = Depends(get_webhook
         raise HTTPException(status_code=401, detail="invalid webhook secret")
 
 
+def _document_too_large_text(limit: int) -> str:
+    return (
+        f"❌ That file is too large to import (the limit is {describe_bytes(limit)}). "
+        "A resume JSON is far smaller than that -- check it is the right file."
+    )
+
+
 def _is_json_document(document: dict[str, Any]) -> bool:
     file_name = str(document.get("file_name", ""))
     mime_type = str(document.get("mime_type", ""))
@@ -456,7 +465,16 @@ async def _run_prepare_and_deliver(
     Telegram-triggered prepare, the same role `errors.py`'s FastAPI
     handler plays for the web route. Shared by both triggers so "tap the
     button on a just-created job" and "apply to #N from your list" behave
-    identically -- one prepare flow, two ways to reach it."""
+    identically -- one prepare flow, two ways to reach it.
+
+    The bot has no route dependency to carry the per-user limit, so it claims the
+    "prepare" bucket itself, the same one `POST /applications/{id}/prepare` uses: the
+    bot is no way round the limit on the web. A refusal is a chat message, like every
+    other failure here."""
+    limited = await rate_limit_error_or_none(supabase, user_id, "prepare")
+    if limited is not None:
+        await telegram.send_message(chat_id, f"❌ {limited.message}")
+        return
     await telegram.send_message(chat_id, _GENERATING_TEXT)
     try:
         result = await run_prepare_application(
@@ -691,7 +709,19 @@ async def _handle_message(
 ) -> None:
     document = message.get("document")
     if isinstance(document, dict) and _is_json_document(document):
-        raw_bytes = await telegram.download_document(document["file_id"])
+        # The same size cap a pasted profile gets on the web (body_limit.py): this upload
+        # never passes through that middleware, so it is checked here, against the size
+        # Telegram reports (advisory, so the download is bounded too).
+        limit = max_request_body_bytes()
+        declared_size = document.get("file_size")
+        if isinstance(declared_size, int) and declared_size > limit:
+            await telegram.send_message(chat_id, _document_too_large_text(limit))
+            return
+        try:
+            raw_bytes = await telegram.download_document(document["file_id"], max_bytes=limit)
+        except DownloadTooLarge:
+            await telegram.send_message(chat_id, _document_too_large_text(limit))
+            return
         raw_text = _decode_uploaded_bytes(raw_bytes)
         await _handle_json_import(
             supabase, user_id, raw_text, "telegram_json_upload", telegram, chat_id

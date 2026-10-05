@@ -19,23 +19,22 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from functools import partial
-from typing import Any, cast
+from typing import Any
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from postgrest.exceptions import APIError
 
 from supabase import AsyncClient
 
 from .account_routes import router as account_router
-from .app_state import get_supabase
 from .applications_routes import router as applications_router
-from .auth import create_jwks_client, require_user_id
+from .auth import create_jwks_client
+from .body_limit import BodyLimitMiddleware, max_request_body_bytes
 from .capabilities_routes import router as capabilities_router
 from .company_intel_routes import router as company_intel_router
 from .contact_research_routes import router as contact_research_router
@@ -58,9 +57,9 @@ from .interview_practice_routes import router as interview_practice_router
 from .job_registry_poller import _DEFAULT_POLL_INTERVAL_SECONDS as POLLER_INTERVAL_SECONDS
 from .job_registry_poller import run_poller_forever
 from .latex_service_client import _base_url as latex_service_base_url
+from .latex_service_client import latex_max_concurrency
 from .link_routes import router as link_router
 from .logging_setup import configure_logging, request_id_var
-from .models import CreateSessionRequest
 from .outbox_store import _DEFAULT_POLL_INTERVAL_SECONDS as OUTBOX_POLL_INTERVAL_SECONDS
 from .outbox_store import run_worker_forever
 from .positioning_brief_routes import router as positioning_brief_router
@@ -83,11 +82,6 @@ load_dotenv()
 configure_logging()
 
 logger = logging.getLogger(__name__)
-
-# Postgres error code for a foreign-key violation -- raised here when the
-# verified user_id doesn't match a real auth.users row (shouldn't happen
-# in practice once auth is real, but a deleted-user race is possible).
-_FOREIGN_KEY_VIOLATION = "23503"
 
 # Per-phase timeout for /health's dependency probes (see `_probe_dependency`).
 _DEPENDENCY_TIMEOUT_SECONDS = 2.0
@@ -117,6 +111,11 @@ def _worker_leases_enabled() -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Both are read lazily (the body cap on every request, the compile limit when the first
+    # PDF is compiled); reading them once here makes a bad value stop the boot with a message
+    # instead of failing requests later, one by one.
+    max_request_body_bytes()
+    latex_max_concurrency()
     app.state.supabase, app.state.supabase_url = await create_supabase_client()
     app.state.jwks_client = create_jwks_client(app.state.supabase_url)
 
@@ -288,6 +287,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="between-jobs", version="0.0.1", lifespan=lifespan)
+
+# Refuses a request body over MAX_REQUEST_BODY_BYTES (body_limit.py). Registered BEFORE
+# the request-id middleware and CORS below, because each `add_middleware` call wraps
+# everything added so far: this ends up innermost, so the 413 it answers with passes back
+# out through the request-id middleware (X-Request-ID) and CORS (the browser can read it).
+app.add_middleware(BodyLimitMiddleware)
+
 # A caller-supplied id is kept only when it looks like one; anything else is
 # replaced, so a request can't inject arbitrary text into every log line.
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._\-]{8,64}$")
@@ -341,8 +347,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     # Lets the extension and the web app read the request id they can quote in a
-    # bug report.
-    expose_headers=["X-Request-ID"],
+    # bug report, and how long a 429 asks them to wait.
+    expose_headers=["X-Request-ID", "Retry-After"],
 )
 
 app.include_router(capabilities_router)
@@ -401,7 +407,13 @@ async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
     else:
         level = logging.ERROR
     logger.log(level, "api error %s", exc.code, extra={"ctx": ctx})
-    return JSONResponse(status_code=exc.status_code, content=exc.to_body())
+    headers: dict[str, str] = {}
+    if exc.code == "RATE_LIMITED":
+        # Whole seconds, as the HTTP header wants; the same number is in `details`.
+        retry_after = exc.details.get("retry_after_seconds")
+        if isinstance(retry_after, int) and retry_after >= 1:
+            headers["Retry-After"] = str(retry_after)
+    return JSONResponse(status_code=exc.status_code, content=exc.to_body(), headers=headers)
 
 
 @app.exception_handler(RequestValidationError)
@@ -520,25 +532,3 @@ async def health(request: Request) -> JSONResponse:
         "dependencies": await _check_dependencies(request),
     }
     return JSONResponse(status_code=200 if healthy else 503, content=body)
-
-
-@app.post("/sessions", status_code=201)
-async def create_session(
-    body: CreateSessionRequest,
-    user_id: str = Depends(require_user_id),
-    supabase: AsyncClient = Depends(get_supabase),
-) -> dict[str, Any]:
-    try:
-        result = (
-            await supabase.table("sessions")
-            .insert({"user_id": user_id, "context": body.context})
-            .execute()
-        )
-    except APIError as e:
-        if e.code == _FOREIGN_KEY_VIOLATION:
-            raise ApiError("NOT_FOUND", f"no user found for user_id {user_id!r}") from e
-        # Appendix B: "Do not leak database error strings to the user" --
-        # the cause's type and SQLSTATE go to the server log (the ApiError
-        # handler logs `__cause__`), never into the response body.
-        raise ApiError("INTERNAL_ERROR", "Something went wrong creating that session.") from e
-    return cast(dict[str, Any], result.data[0])

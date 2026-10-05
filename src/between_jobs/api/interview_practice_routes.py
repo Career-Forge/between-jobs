@@ -50,6 +50,7 @@ from .jobs_store import SnapshotNotFound, get_snapshot
 from .llm_client import generate as llm_generate
 from .models import SubmitInterviewAnswerRequest
 from .profile_store import get_active_version
+from .rate_limits import limit
 
 router = APIRouter(prefix="/applications/{application_id}/interview-practice")
 
@@ -121,7 +122,9 @@ async def _application_and_snapshot(
     return application, job_snapshot
 
 
-@router.post("/sessions", status_code=201)
+@router.post(
+    "/sessions", status_code=201, dependencies=[Depends(limit("interview_practice_session"))]
+)
 async def start_practice_session(
     application_id: str,
     user_id: str = Depends(require_user_id),
@@ -202,7 +205,11 @@ async def _owned_session(
     return session
 
 
-@router.post("/sessions/{session_id}/answers", status_code=201)
+@router.post(
+    "/sessions/{session_id}/answers",
+    status_code=201,
+    dependencies=[Depends(limit("interview_practice_answer"))],
+)
 async def submit_practice_answer(
     application_id: str,
     session_id: str,

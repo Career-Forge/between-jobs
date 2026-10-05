@@ -53,7 +53,6 @@ from .profile import ResumeTemplate
 from .profile_store import get_active_version
 from .search_aggregation import apply_search_filters
 from .search_providers import SearchResult
-from .supabase_helpers import fetch_all_pages
 from .worker_supervision import Sleep, WorkerState, run_supervised
 
 logger = logging.getLogger(__name__)
@@ -66,26 +65,28 @@ _MAX_MATCHES_PER_SEARCH_PER_RUN = 5
 _CANDIDATE_LIMIT = 30
 """Mirrors `job_fit_scoring._BATCH_SIZE` -- `score_jobs` would only ever
 score the first 30 of whatever it's given anyway."""
-_FETCH_PAGE_SIZE = 1000
-"""The same PostgREST-1000-row-default guard already proven necessary
-three times in this codebase (`import_job_registry_seed.py`, `geo_
-gazetteer.get_gazetteer`, `company_tiers.get_company_tier_index`) --
-`saved_searches` is expected to stay small for a long while, but this
-project has been burned by trusting that "for now" before."""
+_MAX_SEARCHES_PER_TICK = 200
+"""The most saved searches one tick processes. The matcher runs inside the API process and
+every search it takes can cost a full-text query and an LLM call on its owner's key, so how
+much one tick may do is a number chosen here, not however many rows happen to exist. The ones
+matched least recently go first, so a search not reached this tick is first in line for the
+next (its watermark has not moved, so no posting is missed, only delayed)."""
+_SEARCH_COLUMNS = "id, user_id, query, location, companies, remote_only, last_matched_at"
+"""Exactly the columns `_match_one_search` reads, not `*`: nothing else about a row is held in
+memory for the whole tick."""
 
 
 async def _select_active_saved_searches(supabase: AsyncClient) -> list[dict[str, Any]]:
-    async def _page(start: int, end: int) -> list[dict[str, Any]]:
-        result = (
-            await supabase.table("saved_searches")
-            .select("*")
-            .eq("is_active", True)
-            .range(start, end)
-            .execute()
-        )
-        return cast("list[dict[str, Any]]", result.data)
-
-    return await fetch_all_pages(_page, page_size=_FETCH_PAGE_SIZE)
+    """At most `_MAX_SEARCHES_PER_TICK` active saved searches, oldest watermark first."""
+    result = await (
+        supabase.table("saved_searches")
+        .select(_SEARCH_COLUMNS)
+        .eq("is_active", True)
+        .order("last_matched_at")
+        .limit(_MAX_SEARCHES_PER_TICK)
+        .execute()
+    )
+    return cast("list[dict[str, Any]]", result.data)
 
 
 async def _fetch_new_registry_postings(
@@ -258,6 +259,11 @@ async def run_match_tick(supabase: AsyncClient) -> int:
     searches = await _select_active_saved_searches(supabase)
     if not searches:
         return 0
+    if len(searches) >= _MAX_SEARCHES_PER_TICK:
+        logger.warning(
+            "saved search matcher is at its per-tick limit; the rest wait for the next tick",
+            extra={"ctx": {"limit": _MAX_SEARCHES_PER_TICK}},
+        )
 
     tier_index = await get_company_tier_index(supabase)
     semaphore = asyncio.Semaphore(_MAX_CONCURRENT_SEARCHES)

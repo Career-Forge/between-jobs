@@ -63,6 +63,7 @@ from .capability_preferences_store import DEFAULT_CAPABILITY, set_preference
 from .errors import ApiError
 from .models import SaveCredentialRequest
 from .provider_credentials_store import delete_credential, list_credentials, save_credential
+from .rate_limits import limit
 
 router = APIRouter(prefix="/credentials")
 
@@ -440,7 +441,7 @@ def _redact(row: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in row.items() if k not in ("secret_encrypted", "secret_2_encrypted")}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(limit("credential_save"))])
 async def save_credential_route(
     body: SaveCredentialRequest,
     user_id: str = Depends(require_user_id),

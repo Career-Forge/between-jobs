@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../lib/api";
 import type { TrackDiscoveredJobBody } from "../lib/discoverTypes";
+import { friendlyApiMessage } from "../lib/rateLimitMessage";
 
 // Today (Horizon Sprint 4.0) -- Proposal §37.1's daily control surface,
 // scoped to the three items the digest listener could genuinely produce
@@ -203,7 +204,7 @@ export default function Today() {
       });
       setTracked((prev) => ({ ...prev, [match.apply_url]: application.id }));
     } catch (e) {
-      setTrackError(e instanceof Error ? e.message : "Failed to track");
+      setTrackError(friendlyApiMessage(e, "Failed to track"));
     } finally {
       setTracking(null);
     }

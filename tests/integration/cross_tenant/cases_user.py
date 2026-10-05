@@ -556,11 +556,6 @@ NOT_USER_SCOPED: dict[str, NotUserScoped] = {
         "no id: mints a one-time code for the caller's own user id and returns it only to the "
         "caller (only its hash is stored)",
     ),
-    "POST /sessions": NotUserScoped(
-        "own-identity",
-        "takes no id: CreateSessionRequest has only `context`, and the row's user_id comes from "
-        "the verified token, never from the body",
-    ),
     "GET /oauth/gmail/callback": NotUserScoped(
         "secret",
         "authenticated by the single-use `state` minted for a signed-in user (not a bearer "

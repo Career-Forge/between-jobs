@@ -48,6 +48,7 @@ from .llm_client import generate as llm_generate
 from .models import TrackDiscoveredJobRequest
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
+from .rate_limits import limit
 from .search_aggregation import (
     aggregate_jobs,
     apply_search_filters,
@@ -191,7 +192,7 @@ def _result_to_card(result: SearchResult, scored: ScoredJob | None) -> dict[str,
     return card
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(limit("discover"))])
 async def search_discover(
     q: str = Query(default=""),
     location: str | None = Query(default=None),
@@ -307,7 +308,7 @@ async def search_discover(
     }
 
 
-@router.post("/track", status_code=201)
+@router.post("/track", status_code=201, dependencies=[Depends(limit("job_ingest"))])
 async def track_discovered_job(
     body: TrackDiscoveredJobRequest,
     user_id: str = Depends(require_user_id),

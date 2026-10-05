@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from postgrest.exceptions import APIError
 
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_supabase
@@ -68,15 +69,28 @@ class _DeleteBuilder:
         return SimpleNamespace(data=matched)
 
 
+class _FailingInsert:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def execute(self) -> SimpleNamespace:
+        raise self._error
+
+
 class _FakeTable:
-    def __init__(self, *, rows: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self, *, rows: list[dict[str, Any]] | None = None, insert_error: Exception | None = None
+    ) -> None:
         self.rows = rows if rows is not None else []
         self._next_id = 1
+        self._insert_error = insert_error
 
     def select(self, *_: Any, **__: Any) -> _ChainBuilder:
         return _ChainBuilder(self.rows)
 
-    def insert(self, data: dict[str, Any]) -> _ChainBuilder:
+    def insert(self, data: dict[str, Any]) -> Any:
+        if self._insert_error is not None:
+            return _FailingInsert(self._insert_error)
         row = {"id": f"row-{self._next_id}", **data}
         self._next_id += 1
         self.rows.append(row)
@@ -90,8 +104,10 @@ class _FakeTable:
 
 
 class _FakeSupabase:
-    def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
-        self.saved_searches = _FakeTable(rows=rows)
+    def __init__(
+        self, rows: list[dict[str, Any]] | None = None, insert_error: Exception | None = None
+    ) -> None:
+        self.saved_searches = _FakeTable(rows=rows, insert_error=insert_error)
 
     def table(self, name: str) -> _FakeTable:
         assert name == "saved_searches"
@@ -202,3 +218,83 @@ def test_delete_saved_search_404s_when_missing() -> None:
     response = client.delete("/saved-searches/nope")
 
     assert response.status_code == 404
+
+
+# -- the bounds: what one saved search may hold, and how many a user may have --------------
+
+
+def _post(body: dict[str, Any]) -> Any:
+    return _client(_FakeSupabase()).post("/saved-searches", json=body)
+
+
+def test_a_search_at_every_limit_is_accepted() -> None:
+    response = _post(
+        {
+            "query": "q" * 200,
+            "location": "l" * 100,
+            "companies": ["c" * 100] * 20,
+        }
+    )
+
+    assert response.status_code == 201
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"query": "q" * 201},
+        {"query": "q" * 900_000},  # the shape of the abuse: far under the 1 MiB body cap
+        {"location": "l" * 101},
+        {"companies": ["c"] * 21},
+        {"companies": ["c" * 101]},
+        {"companies": ["ok", "c" * 101]},
+    ],
+)
+def test_a_search_past_any_limit_is_refused_before_anything_is_stored(
+    body: dict[str, Any],
+) -> None:
+    supabase = _FakeSupabase()
+
+    response = _client(supabase).post("/saved-searches", json=body)
+
+    assert response.status_code == 422
+    assert supabase.saved_searches.rows == []
+
+
+def test_the_limits_are_the_numbers_the_database_holds() -> None:
+    """The migration's CHECK constraints and trigger carry the same numbers (the integration
+    suite proves the database side); a change here has to be a change there."""
+    from between_jobs.api import models
+    from between_jobs.api.saved_searches_store import MAX_SAVED_SEARCHES
+
+    assert models.SAVED_SEARCH_MAX_QUERY_CHARS == 200
+    assert models.SAVED_SEARCH_MAX_LOCATION_CHARS == 100
+    assert models.SAVED_SEARCH_MAX_COMPANIES == 20
+    assert models.SAVED_SEARCH_MAX_COMPANY_CHARS == 100
+    assert MAX_SAVED_SEARCHES == 20
+
+
+def test_past_the_per_user_cap_is_a_409_that_says_to_delete_one() -> None:
+    refused = APIError(
+        {"message": "saved search limit reached", "code": "BJ009", "details": None, "hint": None}
+    )
+    client = _client(_FakeSupabase(insert_error=refused))
+
+    response = client.post("/saved-searches", json={"query": "backend"})
+
+    assert response.status_code == 409
+    error = response.json()["error"]
+    assert error["code"] == "CONFLICT"
+    assert "at most 20 saved searches" in error["message"]
+    assert "Delete one" in error["message"]
+
+
+def test_any_other_database_error_is_not_mistaken_for_the_cap() -> None:
+    other = APIError({"message": "boom", "code": "23503", "details": None, "hint": None})
+    client = TestClient(app, raise_server_exceptions=False)
+    app.dependency_overrides[get_supabase] = lambda: _FakeSupabase(insert_error=other)
+    app.dependency_overrides[require_user_id] = lambda: _USER_ID
+
+    response = client.post("/saved-searches", json={"query": "backend"})
+
+    assert response.status_code != 409

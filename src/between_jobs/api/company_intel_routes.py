@@ -26,6 +26,7 @@ from .interview_registry import synthesize_interview_process_model
 from .interview_registry_store import create_registry_entry
 from .jobs_store import SnapshotNotFound, get_snapshot
 from .llm_client import generate as llm_generate
+from .rate_limits import limit
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ async def get_company_intel(
     return {"run": run, "claims": claims}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(limit("company_intel"))])
 async def generate_company_intel(
     application_id: str,
     user_id: str = Depends(require_user_id),

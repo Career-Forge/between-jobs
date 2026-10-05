@@ -16,7 +16,7 @@ from typing import Any
 import httpx
 import pytest
 
-from between_jobs.api.telegram_client import Html, TelegramClient, escape, render
+from between_jobs.api.telegram_client import DownloadTooLarge, Html, TelegramClient, escape, render
 
 _BOT_TOKEN = "test-token-not-real"
 
@@ -173,6 +173,77 @@ async def test_download_document_chains_get_file_path_and_download_file() -> Non
     assert len(calls) == 2
     assert "bot" in calls[0] and "getFile" in calls[0]
     assert "file/bot" in calls[1]
+
+
+async def test_a_download_within_the_cap_is_returned_whole() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"x" * 100)
+
+    assert await _client(handler).download_file("documents/x.json", max_bytes=100) == b"x" * 100
+
+
+async def test_a_download_that_declares_itself_over_the_cap_is_not_read() -> None:
+    read: list[int] = []
+
+    async def body() -> Any:
+        for _ in range(10):
+            read.append(1)
+            yield b"x" * 100
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"Content-Length": "1000"}, content=body())
+
+    with pytest.raises(DownloadTooLarge) as refused:
+        await _client(handler).download_file("documents/x.json", max_bytes=500)
+
+    assert refused.value.max_bytes == 500
+    assert read == []  # refused on the header, before a byte of the body
+
+
+async def test_a_download_that_streams_past_the_cap_is_cut_off_early() -> None:
+    """No Content-Length (chunked), or one that lies: the bytes are counted as they arrive and
+    the rest of the file is never pulled in."""
+    produced: list[int] = []
+
+    async def body() -> Any:
+        for _ in range(1000):
+            produced.append(1)
+            yield b"x" * 100
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body())  # an iterator: sent chunked, no length
+
+    with pytest.raises(DownloadTooLarge):
+        await _client(handler).download_file("documents/x.json", max_bytes=500)
+
+    assert len(produced) < 20  # nowhere near all 1000 chunks (100 kB)
+
+
+async def test_a_download_with_no_cap_is_unchanged() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"x" * 5000)
+
+    assert len(await _client(handler).download_file("documents/x.json")) == 5000
+
+
+async def test_a_download_error_status_still_raises_with_a_cap() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await _client(handler).download_file("documents/x.json", max_bytes=500)
+
+
+async def test_download_document_passes_the_cap_on() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "getFile" in str(request.url):
+            return httpx.Response(
+                200, json={"ok": True, "result": {"file_path": "documents/r.json"}}
+            )
+        return httpx.Response(200, content=b"x" * 600)
+
+    with pytest.raises(DownloadTooLarge):
+        await _client(handler).download_document("file-id", max_bytes=500)
 
 
 # -- parse_mode and escaping (P0.9) ---------------------------------------------------------

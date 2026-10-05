@@ -45,6 +45,7 @@ from .llm_client import generate as llm_generate
 from .outreach_writer import generate_outreach_draft
 from .outreach_writer_store import create_draft, get_latest_draft, mark_pushed_to_gmail
 from .provider_credentials_store import CredentialNotFound, get_decrypted_credential
+from .rate_limits import limit
 
 router = APIRouter(prefix="/applications/{application_id}/contacts")
 
@@ -62,7 +63,7 @@ async def get_contacts(
     return {"run": run, "candidates": candidates}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(limit("contact_research"))])
 async def generate_contacts(
     application_id: str,
     user_id: str = Depends(require_user_id),
@@ -165,7 +166,7 @@ async def generate_contacts(
     return {"run": run, "candidates": persisted_candidates}
 
 
-@router.post("/{candidate_id}/enrich")
+@router.post("/{candidate_id}/enrich", dependencies=[Depends(limit("contact_lookup"))])
 async def enrich_contact(
     application_id: str,
     candidate_id: str,
@@ -261,7 +262,7 @@ async def enrich_contact(
     return updated
 
 
-@router.post("/{candidate_id}/find-linkedin")
+@router.post("/{candidate_id}/find-linkedin", dependencies=[Depends(limit("contact_lookup"))])
 async def find_linkedin(
     application_id: str,
     candidate_id: str,
@@ -325,7 +326,11 @@ async def get_outreach_draft(
     return {"draft": draft}
 
 
-@router.post("/{candidate_id}/draft-outreach", status_code=201)
+@router.post(
+    "/{candidate_id}/draft-outreach",
+    status_code=201,
+    dependencies=[Depends(limit("outreach_draft"))],
+)
 async def generate_outreach(
     application_id: str,
     candidate_id: str,

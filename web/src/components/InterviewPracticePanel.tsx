@@ -13,6 +13,7 @@ import type {
   SubmitAnswerResponse,
 } from "../lib/interviewPracticeTypes";
 import { QUESTION_TYPE_LABELS } from "../lib/interviewPracticeTypes";
+import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { ScoreBar } from "./ScoreBreakdown";
 
 // Interview practice panel (InterviewForge R4, interviewforge-v1.md) -- the
@@ -103,7 +104,7 @@ export function InterviewPracticePanel({ applicationId }: { applicationId: strin
       } else {
         setState({
           kind: "error",
-          message: e instanceof Error ? e.message : "Failed to start a practice session",
+          message: friendlyApiMessage(e, "Failed to start a practice session"),
           retry: () => void startSession(),
         });
       }
@@ -149,7 +150,7 @@ export function InterviewPracticePanel({ applicationId }: { applicationId: strin
       }
       setAnswerDraft("");
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : "Failed to submit that answer");
+      setSubmitError(friendlyApiMessage(e, "Failed to submit that answer"));
     } finally {
       setSubmitting(false);
     }

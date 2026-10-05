@@ -49,6 +49,7 @@ from .models import (
     UpdateShapeOverridesRequest,
 )
 from .profile_store import get_active_version, get_version
+from .rate_limits import limit
 from .resume_documents_store import (
     DocumentNotFound,
     get_document,
@@ -184,7 +185,7 @@ async def update_document_assertions(
         raise ApiError("NOT_FOUND", f"no resume document found for id {document_id!r}") from e
 
 
-@router.post("/{document_id}/coverage")
+@router.post("/{document_id}/coverage", dependencies=[Depends(limit("tailor_coverage"))])
 async def get_coverage(
     document_id: str,
     user_id: str = Depends(require_user_id),
@@ -212,7 +213,7 @@ async def get_coverage(
     return {"step0": ctx.step0.model_dump(), "coverage": ctx.coverage, "skills": skills}
 
 
-@router.post("/{document_id}/gap-interview")
+@router.post("/{document_id}/gap-interview", dependencies=[Depends(limit("gap_interview"))])
 async def get_gap_interview(
     document_id: str,
     user_id: str = Depends(require_user_id),
@@ -247,7 +248,7 @@ async def get_gap_interview(
     return {"questions": [q.model_dump() for q in questions]}
 
 
-@router.post("/{document_id}/header/preview")
+@router.post("/{document_id}/header/preview", dependencies=[Depends(limit("header_preview"))])
 async def preview_header(
     document_id: str,
     body: PreviewHeaderRequest,

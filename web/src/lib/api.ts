@@ -1,4 +1,6 @@
+import type { ApiErrorCode } from "./apiErrorCodes";
 import { buildApiUrl, resolveApiBase } from "./apiUrl";
+import { parseRetryAfterSeconds } from "./rateLimitMessage";
 import { supabase } from "./supabase";
 
 // The API's origin: VITE_API_BASE_URL in a deployed build (scripts/apiBaseGuard.ts
@@ -19,13 +21,35 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
-    public readonly code?: string,
+    public readonly code?: ApiErrorCode,
     // The envelope's own `retryable` flag (errors.py): whether asking again can
     // change the outcome. Undefined when the reply carried none.
     public readonly retryable?: boolean,
+    // For a 429 RATE_LIMITED: the whole seconds the server asks the caller to wait
+    // (the envelope's details, or the Retry-After header). Undefined otherwise.
+    public readonly retryAfterSeconds?: number,
   ) {
     super(message);
   }
+}
+
+interface ErrorBody {
+  error?: {
+    code?: string;
+    message?: string;
+    retryable?: boolean;
+    details?: unknown;
+  };
+}
+
+function apiErrorFrom(response: Response, body: ErrorBody | null): ApiError {
+  return new ApiError(
+    response.status,
+    body?.error?.message ?? `Request failed (${response.status})`,
+    body?.error?.code,
+    typeof body?.error?.retryable === "boolean" ? body.error.retryable : undefined,
+    parseRetryAfterSeconds(body?.error?.details, response.headers.get("Retry-After")),
+  );
 }
 
 async function accessToken(): Promise<string> {
@@ -52,16 +76,9 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     return undefined as T;
   }
 
-  const body = (await response.json().catch(() => null)) as {
-    error?: { code?: string; message?: string; retryable?: boolean };
-  } | null;
+  const body = (await response.json().catch(() => null)) as ErrorBody | null;
   if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      body?.error?.message ?? `Request failed (${response.status})`,
-      body?.error?.code,
-      typeof body?.error?.retryable === "boolean" ? body.error.retryable : undefined,
-    );
+    throw apiErrorFrom(response, body);
   }
   return body as T;
 }
@@ -77,14 +94,8 @@ export async function apiFetchBlob(path: string): Promise<Blob> {
   });
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      error?: { code?: string; message?: string };
-    } | null;
-    throw new ApiError(
-      response.status,
-      body?.error?.message ?? `Request failed (${response.status})`,
-      body?.error?.code,
-    );
+    const body = (await response.json().catch(() => null)) as ErrorBody | null;
+    throw apiErrorFrom(response, body);
   }
   return response.blob();
 }

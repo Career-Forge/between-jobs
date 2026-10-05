@@ -25,6 +25,7 @@ import pytest
 from fastapi.testclient import TestClient
 from update_ledger_fakes import UPDATE_RPCS, FakeUpdateLedger
 
+from between_jobs.api import rate_limits
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase, get_telegram_client
 
@@ -435,3 +436,62 @@ def test_prepare_callback_compile_failure_sends_honest_error() -> None:
     assert telegram.documents_sent == []
     error_texts = [text for _cid, text, _rm in telegram.sent if text.startswith("❌")]
     assert len(error_texts) == 1
+
+
+# -- the per-user limit: the bot is no way round the web's limit ---------------------------
+
+
+def test_prepare_callback_claims_the_same_prepare_bucket_the_web_route_uses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claims: list[tuple[str, str]] = []
+
+    async def allow(_supabase: Any, user_id: str, bucket: str) -> rate_limits.RateLimitDecision:
+        claims.append((user_id, bucket))
+        return rate_limits.RateLimitDecision(True, 0)
+
+    monkeypatch.setattr(rate_limits, "claim_rate_limit_slot", allow)
+    supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _USER_ID}])
+    telegram = _FakeTelegramClient()
+
+    _post(supabase, telegram, _FakeHttpClient(), _callback_update(f"app:prepare:{_APPLICATION_ID}"))
+
+    assert claims == [(_USER_ID, "prepare")]
+    assert len(telegram.documents_sent) == 1
+
+
+def test_prepare_callback_over_the_limit_says_so_in_chat_and_spends_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def deny(_supabase: Any, _user_id: str, _bucket: str) -> rate_limits.RateLimitDecision:
+        return rate_limits.RateLimitDecision(False, 725)
+
+    monkeypatch.setattr(rate_limits, "claim_rate_limit_slot", deny)
+    supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _USER_ID}])
+    telegram = _FakeTelegramClient()
+    http = _FakeHttpClient()
+
+    response = _post(supabase, telegram, http, _callback_update(f"app:prepare:{_APPLICATION_ID}"))
+
+    assert response.status_code == 200
+    assert telegram.answered_callback_ids == ["cbq-1"]
+    assert http.post_calls == []  # neither the engine nor the LaTeX service was called
+    assert telegram.documents_sent == []
+    assert [text for _cid, text, _rm in telegram.sent] == [
+        "❌ You've reached the limit for this action (10 per hour). Try again in about 13 minutes."
+    ]
+
+
+def test_prepare_callback_goes_ahead_when_the_limiter_itself_is_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def broken(_supabase: Any, _user_id: str, _bucket: str) -> rate_limits.RateLimitDecision:
+        raise ConnectionError("the limiter is unreachable")
+
+    monkeypatch.setattr(rate_limits, "claim_rate_limit_slot", broken)
+    supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _USER_ID}])
+    telegram = _FakeTelegramClient()
+
+    _post(supabase, telegram, _FakeHttpClient(), _callback_update(f"app:prepare:{_APPLICATION_ID}"))
+
+    assert len(telegram.documents_sent) == 1

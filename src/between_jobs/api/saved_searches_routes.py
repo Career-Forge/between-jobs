@@ -14,6 +14,8 @@ from .auth import require_user_id
 from .errors import ApiError
 from .models import CreateSavedSearchRequest, SetSavedSearchActiveRequest
 from .saved_searches_store import (
+    MAX_SAVED_SEARCHES,
+    SavedSearchLimitReached,
     SavedSearchNotFound,
     create_saved_search,
     delete_saved_search,
@@ -38,14 +40,23 @@ async def create_my_saved_search(
     user_id: str = Depends(require_user_id),
     supabase: AsyncClient = Depends(get_supabase),
 ) -> dict[str, Any]:
-    return await create_saved_search(
-        supabase,
-        user_id,
-        query=body.query,
-        location=body.location,
-        companies=body.companies,
-        remote_only=body.remote_only,
-    )
+    """Past the per-user cap it is a 409 `CONFLICT` that says to delete one (the same answer a
+    saved hiring-signal search gives)."""
+    try:
+        return await create_saved_search(
+            supabase,
+            user_id,
+            query=body.query,
+            location=body.location,
+            companies=body.companies,
+            remote_only=body.remote_only,
+        )
+    except SavedSearchLimitReached as e:
+        raise ApiError(
+            "CONFLICT",
+            f"You can keep at most {MAX_SAVED_SEARCHES} saved searches. "
+            "Delete one to save another.",
+        ) from e
 
 
 @router.patch("/{search_id}")

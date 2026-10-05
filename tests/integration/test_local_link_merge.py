@@ -27,6 +27,7 @@ pytestmark = pytest.mark.local_supabase
 # and merge_user_data itself -- and this list is where that decision is recorded.
 _USER_OWNED_TABLES = frozenset(
     {
+        "api_rate_limits",
         "application_events",
         "application_status_proposals",
         "applications",

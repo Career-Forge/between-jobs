@@ -24,6 +24,7 @@ from update_ledger_fakes import UPDATE_RPCS, FakeUpdateLedger
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_supabase, get_telegram_client
 from between_jobs.api.link_completion import LinkCompletion
+from between_jobs.api.telegram_client import DownloadTooLarge
 
 _WEBHOOK_SECRET = "test-secret-not-real"
 _TELEGRAM_USER_ID = 987654321
@@ -272,6 +273,7 @@ class _FakeTelegramClient:
         self.sent: list[tuple[int, str, dict[str, Any] | None]] = []
         self.answered_callback_ids: list[str] = []
         self._document_bytes = document_bytes
+        self.downloads: list[int | None] = []  # the max_bytes each download was asked to enforce
 
     async def send_message(
         self, chat_id: int, text: str, *, reply_markup: dict[str, Any] | None = None
@@ -281,8 +283,11 @@ class _FakeTelegramClient:
     async def answer_callback_query(self, callback_query_id: str) -> None:
         self.answered_callback_ids.append(callback_query_id)
 
-    async def download_document(self, file_id: str) -> bytes:
+    async def download_document(self, file_id: str, *, max_bytes: int | None = None) -> bytes:
         assert self._document_bytes is not None, "no document configured for this test"
+        self.downloads.append(max_bytes)
+        if max_bytes is not None and len(self._document_bytes) > max_bytes:
+            raise DownloadTooLarge(max_bytes)  # what the real client does
         return self._document_bytes
 
 
@@ -659,6 +664,70 @@ def test_json_file_upload_downloads_decodes_and_imports() -> None:
     assert response.status_code == 200
     assert len(profile_versions.insert_calls) == 1
     assert profile_versions.insert_calls[0]["source_kind"] == "telegram_json_upload"
+
+
+def _upload_fixtures(
+    document_bytes: bytes,
+) -> tuple[_FakeProfileVersionsTable, _FakeSupabaseClient, _FakeTelegramClient]:
+    profile_versions = _FakeProfileVersionsTable(select_rows=[], insert_row={"id": _VERSION_ID})
+    supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}], profile_versions=profile_versions
+    )
+    return profile_versions, supabase, _FakeTelegramClient(document_bytes=document_bytes)
+
+
+def test_a_json_upload_is_downloaded_under_the_same_cap_a_pasted_profile_gets() -> None:
+    profile_versions, supabase, telegram = _upload_fixtures(_VALID_RESUME_JSON.encode("utf-8"))
+    profile_versions.insert_row = {
+        "id": _VERSION_ID,
+        "canonical_json": json.loads(_VALID_RESUME_JSON),
+        "activated_at": None,
+    }
+    document = {"file_id": "f", "file_name": "resume.json", "file_size": 2000}
+
+    response = _post(supabase, telegram, _message_update(document=document))
+
+    assert response.status_code == 200
+    assert telegram.downloads == [1_048_576]  # the default cap, handed to the download itself
+    assert len(profile_versions.insert_calls) == 1
+
+
+def test_an_upload_that_says_it_is_over_the_cap_is_refused_without_downloading_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MAX_REQUEST_BODY_BYTES", "4096")
+    profile_versions, supabase, telegram = _upload_fixtures(_VALID_RESUME_JSON.encode("utf-8"))
+    document = {"file_id": "f", "file_name": "resume.json", "file_size": 4097}
+
+    response = _post(supabase, telegram, _message_update(document=document))
+
+    assert response.status_code == 200
+    assert telegram.downloads == []  # never fetched
+    assert profile_versions.insert_calls == []
+    assert len(telegram.sent) == 1
+    assert "too large to import" in telegram.sent[0][1]
+    assert "(the limit is 4 KiB)" in telegram.sent[0][1]
+
+
+def test_an_upload_that_lies_about_its_size_is_cut_off_while_downloading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`file_size` is what the sender's client reports; the bytes are what count."""
+    monkeypatch.setenv("MAX_REQUEST_BODY_BYTES", "2000")
+    big = _VALID_RESUME_JSON.encode("utf-8") + b" " * 5000  # valid JSON, far over the cap
+    for document in (
+        {"file_id": "f", "file_name": "resume.json"},  # no size reported at all
+        {"file_id": "f", "file_name": "resume.json", "file_size": 10},  # a low one
+        {"file_id": "f", "file_name": "resume.json", "file_size": "huge"},  # not even a number
+    ):
+        profile_versions, supabase, telegram = _upload_fixtures(big)
+
+        response = _post(supabase, telegram, _message_update(document=document))
+
+        assert response.status_code == 200
+        assert telegram.downloads == [2000]  # it was asked to stop at the cap
+        assert profile_versions.insert_calls == []
+        assert "too large to import" in telegram.sent[0][1]
 
 
 def test_activate_callback_confirms_and_answers() -> None:

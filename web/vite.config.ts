@@ -23,7 +23,7 @@ function requireApiBaseForBuilds(): Plugin {
 // (Proposal §3: channels are renderers). In dev, /api/* proxies to the
 // spine so the browser never deals with CORS; the /api prefix is
 // stripped because the spine's routes are mounted at the root
-// (/profile/..., /sessions, /health). A deployed build has no proxy: the API is a
+// (/profile/..., /applications/..., /health). A deployed build has no proxy: the API is a
 // different origin, named by VITE_API_BASE_URL (src/lib/apiUrl.ts).
 export default defineConfig({
   plugins: [react(), requireApiBaseForBuilds()],

@@ -168,6 +168,7 @@ ALLOWED_PACKAGE_MODULES = frozenset(
         "geo_gazetteer",
         "jobs_store",
         "models",
+        "rate_limits",
         "search_aggregation",
         "search_providers",
         "worker_supervision",
@@ -176,8 +177,10 @@ ALLOWED_PACKAGE_MODULES = frozenset(
 """The rest of the package the feature may import, besides its own modules: the
 app wiring, the credential lookup, a read of an application and its job snapshot,
 the shared job-search helpers the query and the parser build on, the request
-models, and the loop runner every background worker shares (the cache purge's own
-loop runs on it; it publishes nothing and calls no model). Nothing that publishes,
+models, the per-user rate limiter (the two search routes carry it as a dependency;
+it counts requests in its own table and publishes nothing), and the loop runner
+every background worker shares (the cache purge's own loop runs on it; it
+publishes nothing and calls no model). Nothing that publishes,
 schedules work for the job side or calls a model is here, so adding one is a
 decision somebody has to make by editing this list."""
 ALLOWED_NAMES_FROM_MODULE = {

@@ -53,6 +53,7 @@ from .prepare_orchestrator import (
 )
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
+from .rate_limits import limit
 from .research_clients import scrape_firecrawl
 from .scrape_denylist import is_denied_scrape_host
 
@@ -136,7 +137,7 @@ async def create_application_from_paste(
     return {**application, "snapshot": snapshot}
 
 
-@router.post("/from-url", status_code=201)
+@router.post("/from-url", status_code=201, dependencies=[Depends(limit("job_ingest"))])
 async def create_application_from_url(
     body: CreateApplicationFromUrlRequest,
     user_id: str = Depends(require_user_id),
@@ -275,7 +276,7 @@ async def change_application_stage(
         raise ApiError("NOT_FOUND", f"no application found for id {application_id!r}") from e
 
 
-@router.post("/{application_id}/prepare", status_code=201)
+@router.post("/{application_id}/prepare", status_code=201, dependencies=[Depends(limit("prepare"))])
 async def prepare_application(
     application_id: str,
     body: PrepareApplicationRequest,
@@ -383,7 +384,7 @@ async def get_extension_payload(
     return {"prepare_result": prepare_result, "personal_info": personal_info}
 
 
-@router.get("/{application_id}/resume.pdf")
+@router.get("/{application_id}/resume.pdf", dependencies=[Depends(limit("pdf_compile"))])
 async def download_resume_pdf(
     application_id: str,
     user_id: str = Depends(require_user_id),
@@ -402,7 +403,7 @@ async def download_resume_pdf(
     )
 
 
-@router.get("/{application_id}/cover-letter.pdf")
+@router.get("/{application_id}/cover-letter.pdf", dependencies=[Depends(limit("pdf_compile"))])
 async def download_cover_letter_pdf(
     application_id: str,
     user_id: str = Depends(require_user_id),
@@ -419,7 +420,7 @@ async def download_cover_letter_pdf(
     )
 
 
-@router.get("/{application_id}/export-checklist")
+@router.get("/{application_id}/export-checklist", dependencies=[Depends(limit("pdf_compile"))])
 async def get_export_checklist(
     application_id: str,
     user_id: str = Depends(require_user_id),

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "../lib/api";
+import { friendlyApiMessage } from "../lib/rateLimitMessage";
 
 // Company Intel panel (Horizon Sprint 5.0) -- Proposal §26, §37.4
 // ("Company intelligence... a contextual capability inside the
@@ -92,7 +93,7 @@ export function CompanyIntelPanel({ applicationId }: { applicationId: string }) 
         setState({ kind: "error", message: `${e.message} Add a key in Integrations.` });
         return;
       }
-      setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to generate" });
+      setState({ kind: "error", message: friendlyApiMessage(e, "Failed to generate") });
     } finally {
       setGenerating(false);
     }

@@ -9,6 +9,7 @@ import io
 import json
 import logging
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from between_jobs.api.app import app
 from between_jobs.api.app_state import get_supabase
 from between_jobs.api.ats_liveness import verify_liveness
 from between_jobs.api.auth import require_user_id
+from between_jobs.api.errors import ApiError
 from between_jobs.api.logging_setup import (
     JsonFormatter,
     configure_logging,
@@ -253,36 +255,40 @@ def test_a_well_formed_incoming_request_id_is_kept_and_a_bad_one_replaced() -> N
 # --- error paths ------------------------------------------------------------------
 
 
-class _RaisingSessionsTable:
-    def insert(self, _row: dict[str, Any]) -> _RaisingSessionsTable:
-        return self
-
-    async def execute(self) -> Any:
-        raise APIError(
-            {
-                "message": f"connection string leaked {_FAKE_KEY}",
-                "code": "XX000",
-                "details": None,
-                "hint": None,
-            }
-        )
-
-
-class _RaisingSupabase:
-    def table(self, _name: str) -> _RaisingSessionsTable:
-        return _RaisingSessionsTable()
+@contextmanager
+def _route(path: str, endpoint: Any, *, methods: list[str]) -> Iterator[None]:
+    """A route that exists only for the test, so the handler paths can be driven by a request
+    that does exactly what the test needs and nothing else."""
+    app.add_api_route(path, endpoint, methods=methods)
+    try:
+        yield
+    finally:
+        app.router.routes[:] = [r for r in app.router.routes if getattr(r, "path", None) != path]
 
 
 def test_api_error_handler_logs_the_cause_type_and_never_the_request_body(
     caplog: pytest.LogCaptureFixture, json_log: io.StringIO
 ) -> None:
-    app.dependency_overrides[get_supabase] = lambda: _RaisingSupabase()
-    app.dependency_overrides[require_user_id] = lambda: "11111111-1111-1111-1111-111111111111"
+    """An ApiError raised `from` a database error: the cause's type and SQLSTATE are logged,
+    its message (which can quote the values involved) and the request body never are."""
 
-    with TestClient(app) as client:
+    async def endpoint(body: dict[str, Any]) -> None:
+        try:
+            raise APIError(
+                {
+                    "message": f"connection string leaked {_FAKE_KEY}",
+                    "code": "XX000",
+                    "details": None,
+                    "hint": None,
+                }
+            )
+        except APIError as e:
+            raise ApiError("INTERNAL_ERROR", "Something went wrong saving that.") from e
+
+    with _route("/__test_api_error", endpoint, methods=["POST"]), TestClient(app) as client:
         response = client.post(
-            "/sessions",
-            json={"context": {"openrouter_key": _FAKE_KEY}},
+            "/__test_api_error",
+            json={"openrouter_key": _FAKE_KEY},
             headers={"X-Request-ID": "req-api-error-1"},
         )
 
@@ -291,7 +297,7 @@ def test_api_error_handler_logs_the_cause_type_and_never_the_request_body(
     assert len(records) == 1
     ctx = records[0].ctx  # type: ignore[attr-defined]
     assert ctx["code"] == "INTERNAL_ERROR"
-    assert ctx["route"] == "/sessions"
+    assert ctx["route"] == "/__test_api_error"
     assert ctx["cause_type"] == "postgrest.exceptions.APIError"
     assert ctx["cause_code"] == "XX000"
     assert records[0].levelno == logging.ERROR
@@ -308,13 +314,13 @@ def test_an_unhandled_error_answers_500_with_the_request_id_and_logs_it(
     def boom() -> Any:
         raise RuntimeError(f"unexpected, with {_FAKE_KEY} in the message")
 
+    # GET /applications depends on get_supabase, which here raises while the request is being
+    # set up: an error no handler knows about.
     app.dependency_overrides[get_supabase] = boom
     app.dependency_overrides[require_user_id] = lambda: "11111111-1111-1111-1111-111111111111"
 
-    with TestClient(app) as client:
-        response = client.post(
-            "/sessions", json={"context": {}}, headers={"X-Request-ID": "req-unhandled-1"}
-        )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/applications", headers={"X-Request-ID": "req-unhandled-1"})
 
     assert response.status_code == 500
     assert response.headers["x-request-id"] == "req-unhandled-1"

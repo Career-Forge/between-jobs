@@ -41,6 +41,7 @@ from .profile_store import (
     get_version,
     list_career_facts,
 )
+from .rate_limits import limit
 
 router = APIRouter(prefix="/profile")
 
@@ -125,7 +126,7 @@ async def get_current_profile(
     return {**version, "version_count": version_count}
 
 
-@router.post("/gap-interview/draft")
+@router.post("/gap-interview/draft", dependencies=[Depends(limit("gap_interview"))])
 async def draft_gap_interview_fact(
     body: GapInterviewDraftRequest,
     user_id: str = Depends(require_user_id),

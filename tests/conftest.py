@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import pytest
 
+from between_jobs.api import rate_limits
+
 
 @pytest.fixture(autouse=True)
 def _disable_outbox_worker(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -32,3 +34,23 @@ def _disable_outbox_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     # /health would otherwise call Supabase, forge-engines and the LaTeX
     # service for real on every hit; it reports them as not_checked instead.
     monkeypatch.setenv("DISABLE_HEALTH_DEPENDENCY_CHECKS", "1")
+
+
+async def _allow_every_request(*_: object) -> rate_limits.RateLimitDecision:
+    return rate_limits.RateLimitDecision(allowed=True, retry_after_seconds=0)
+
+
+@pytest.fixture(autouse=True)
+def _no_rate_limit_database(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    """The per-user limiter (api/rate_limits.py) claims a slot through a Postgres RPC, which
+    the route tests' hand-made Supabase fakes do not have and must not need. So by default
+    every request is allowed without asking anyone; the limiter's own tests
+    (tests/test_rate_limits.py) put the real function back, and the tests that run against a
+    real local stack (marked `local_supabase`) never have it replaced at all.
+
+    This is a test double, not a switch: nothing in the running application can turn the
+    limits off."""
+    if request.node.get_closest_marker("local_supabase") is None:
+        monkeypatch.setattr(rate_limits, "claim_rate_limit_slot", _allow_every_request)

@@ -8,7 +8,20 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from postgrest.exceptions import APIError
+
 from supabase import AsyncClient
+
+MAX_SAVED_SEARCHES = 20
+"""Saved searches per user. The number is enforced by a trigger on the table (migration
+`bound_saved_searches`), atomically; this copy is for the message, and an integration test
+checks that the two agree."""
+
+_LIMIT_REACHED_SQLSTATE = "BJ009"
+
+
+class SavedSearchLimitReached(Exception):
+    """The user already has `MAX_SAVED_SEARCHES` saved searches."""
 
 
 class SavedSearchNotFound(Exception):
@@ -25,19 +38,27 @@ async def create_saved_search(
     companies: list[str],
     remote_only: bool,
 ) -> dict[str, Any]:
-    result = (
-        await supabase.table("saved_searches")
-        .insert(
-            {
-                "user_id": user_id,
-                "query": query,
-                "location": location,
-                "companies": companies,
-                "remote_only": remote_only,
-            }
+    """Raises `SavedSearchLimitReached` past the per-user cap. The cap is the database's to
+    enforce (a trigger that serializes one user's inserts), so there is no count-then-insert
+    here for two requests to race through."""
+    try:
+        result = (
+            await supabase.table("saved_searches")
+            .insert(
+                {
+                    "user_id": user_id,
+                    "query": query,
+                    "location": location,
+                    "companies": companies,
+                    "remote_only": remote_only,
+                }
+            )
+            .execute()
         )
-        .execute()
-    )
+    except APIError as e:
+        if e.code == _LIMIT_REACHED_SQLSTATE:
+            raise SavedSearchLimitReached(user_id) from e
+        raise
     return cast(dict[str, Any], result.data[0])
 
 

@@ -23,6 +23,7 @@ from .jobs_store import SnapshotNotFound, get_snapshot
 from .llm_client import generate as llm_generate
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
+from .rate_limits import limit
 from .warm_path_events import build_event_query_plan, find_warm_path_events, run_event_research
 from .warm_path_events_store import create_run, get_events_for_run, get_latest_run
 
@@ -58,7 +59,7 @@ async def get_warm_path_events(
     return {"run": run, "events": events}
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(limit("warm_path_events"))])
 async def generate_warm_path_events(
     application_id: str,
     user_id: str = Depends(require_user_id),

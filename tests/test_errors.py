@@ -8,7 +8,10 @@ the body shape matches Appendix B exactly and every code maps to a status.
 
 from __future__ import annotations
 
-from between_jobs.api.errors import _STATUS_BY_CODE, ApiError
+import re
+from pathlib import Path
+
+from between_jobs.api.errors import _STATUS_BY_CODE, ApiError, ErrorCode
 
 
 def test_to_body_matches_appendix_b_shape() -> None:
@@ -58,3 +61,25 @@ def test_status_code_property_reads_the_map() -> None:
     assert ApiError("AUTH_REQUIRED", "x").status_code == 401
     assert ApiError("CONFLICT", "x").status_code == 409
     assert ApiError("INTERNAL_ERROR", "x").status_code == 500
+
+
+def test_the_platforms_own_limit_codes_have_their_own_statuses() -> None:
+    limited = ApiError("RATE_LIMITED", "slow down", retryable=True)
+    too_large = ApiError("PAYLOAD_TOO_LARGE", "too big")
+
+    assert limited.status_code == 429
+    assert too_large.status_code == 413
+    assert too_large.retryable is False  # sending the same body again cannot succeed
+    # Both are 429s, but they mean different things and a client must be able to tell.
+    provider = ApiError("PROVIDER_RATE_LIMITED", "x")
+    assert provider.status_code == 429
+    assert provider.code != limited.code
+
+
+def test_the_web_apps_list_of_error_codes_is_the_servers() -> None:
+    """web/src/lib/apiErrorCodes.ts mirrors `ErrorCode`; adding a code means editing both."""
+    source = (Path(__file__).parent.parent / "web" / "src" / "lib" / "apiErrorCodes.ts").read_text()
+    body = source.split("KNOWN_API_ERROR_CODES = [", 1)[1].split("] as const", 1)[0]
+    in_web = set(re.findall(r'"([A-Z_]+)"', body))
+
+    assert in_web == set(ErrorCode.__args__)  # type: ignore[attr-defined]

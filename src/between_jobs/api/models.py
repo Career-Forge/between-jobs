@@ -7,23 +7,6 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
-class CreateSessionRequest(BaseModel):
-    """`user_id` is deliberately NOT a field here (Sprint 2.2) -- it comes
-    from the verified access token (`auth.require_user_id`), never from
-    caller-supplied input. A client cannot create a session for anyone
-    but themselves."""
-
-    context: dict[str, Any] = {}
-
-
-class SessionResponse(BaseModel):
-    id: str
-    user_id: str
-    context: dict[str, Any]
-    created_at: str
-    updated_at: str
-
-
 class ErrorResponse(BaseModel):
     error: str
     message: str
@@ -309,15 +292,29 @@ class TrackDiscoveredJobRequest(BaseModel):
     provider: str = "unknown"
 
 
+SAVED_SEARCH_MAX_QUERY_CHARS = 200
+SAVED_SEARCH_MAX_LOCATION_CHARS = 100
+SAVED_SEARCH_MAX_COMPANIES = 20
+SAVED_SEARCH_MAX_COMPANY_CHARS = 100
+"""The limits on one saved search. The table's CHECK constraints (migration
+`bound_saved_searches`) hold the same numbers, so the database refuses what the API
+would."""
+
+
 class CreateSavedSearchRequest(BaseModel):
     """Job Finder P9a -- mirrors `/discover`'s own filter shape exactly
     (`GET /discover?q=...&location=...&companies=...&remote_only=...`),
     since the real UX is "save the search I already ran", not a second
-    form asking the user to re-specify criteria."""
+    form asking the user to re-specify criteria.
 
-    query: str = ""
-    location: str | None = None
-    companies: list[str] = Field(default_factory=list)
+    Every field is bounded: a saved search is read by the background matcher on every
+    tick for as long as it is active, so its size is a cost the owner imposes on everyone."""
+
+    query: str = Field(default="", max_length=SAVED_SEARCH_MAX_QUERY_CHARS)
+    location: str | None = Field(default=None, max_length=SAVED_SEARCH_MAX_LOCATION_CHARS)
+    companies: list[
+        Annotated[str, StringConstraints(max_length=SAVED_SEARCH_MAX_COMPANY_CHARS)]
+    ] = Field(default_factory=list, max_length=SAVED_SEARCH_MAX_COMPANIES)
     remote_only: bool = False
 
 

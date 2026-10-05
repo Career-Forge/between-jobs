@@ -17,6 +17,7 @@ from postgrest.exceptions import APIError
 
 from between_jobs.api.llm_client import LLMResponse
 from between_jobs.api.saved_search_matcher import (
+    _MAX_SEARCHES_PER_TICK,
     _select_active_saved_searches,
     run_match_tick,
 )
@@ -70,20 +71,24 @@ def _saved_search(**overrides: Any) -> dict[str, Any]:
 
 
 class _ChainBuilder:
-    def __init__(self, rows: list[dict[str, Any]]) -> None:
+    def __init__(self, rows: list[dict[str, Any]], columns: list[str] | None = None) -> None:
         self._rows = rows
+        self._columns = columns  # None: every column; else only these come back from execute()
+
+    def _next(self, rows: list[dict[str, Any]]) -> _ChainBuilder:
+        return _ChainBuilder(rows, self._columns)
 
     def eq(self, column: str, value: Any) -> _ChainBuilder:
-        return _ChainBuilder([r for r in self._rows if r.get(column) == value])
+        return self._next([r for r in self._rows if r.get(column) == value])
 
     def range(self, start: int, end: int) -> _ChainBuilder:
-        return _ChainBuilder(self._rows[start : end + 1])
+        return self._next(self._rows[start : end + 1])
 
-    def order(self, *_: Any, **__: Any) -> _ChainBuilder:
-        return self
+    def order(self, column: str, *, desc: bool = False) -> _ChainBuilder:
+        return self._next(sorted(self._rows, key=lambda r: r.get(column) or "", reverse=desc))
 
-    def limit(self, *_: Any, **__: Any) -> _ChainBuilder:
-        return self
+    def limit(self, count: int) -> _ChainBuilder:
+        return self._next(self._rows[:count])
 
     @property
     def not_(self) -> _ChainBuilder:
@@ -93,7 +98,9 @@ class _ChainBuilder:
         return self
 
     async def execute(self) -> SimpleNamespace:
-        return SimpleNamespace(data=self._rows)
+        if self._columns is None:
+            return SimpleNamespace(data=self._rows)
+        return SimpleNamespace(data=[{c: row[c] for c in self._columns} for row in self._rows])
 
 
 class _UpdateBuilder:
@@ -118,12 +125,25 @@ class _UpdateBuilder:
 class _FakeSavedSearchesTable:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self.rows = rows
+        self.selected: list[str] = []
 
-    def select(self, *_: Any, **__: Any) -> _ChainBuilder:
+    def select(self, columns: str = "*", **__: Any) -> _ChainBuilder:
+        self.selected.append(columns)
         return _ChainBuilder(self.rows)
 
     def update(self, data: dict[str, Any]) -> _UpdateBuilder:
         return _UpdateBuilder(self, data)
+
+
+class _ProjectingSavedSearchesTable(_FakeSavedSearchesTable):
+    """The saved_searches table as PostgREST serves it: a select of named columns returns
+    only those columns, so code that reads a column it did not ask for fails here."""
+
+    def select(self, columns: str = "*", **__: Any) -> _ChainBuilder:
+        self.selected.append(columns)
+        if columns.strip() == "*":
+            return _ChainBuilder(self.rows)
+        return _ChainBuilder(self.rows, [c.strip() for c in columns.split(",")])
 
 
 class _CredentialTable:
@@ -178,6 +198,15 @@ class _FakeRpcBuilder:
         return SimpleNamespace(data=self._data)
 
 
+class _FakeSavedSearchesOnly:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.saved_searches = _ProjectingSavedSearchesTable(rows)
+
+    def table(self, name: str) -> _FakeSavedSearchesTable:
+        assert name == "saved_searches"
+        return self.saved_searches
+
+
 class _FakeSupabase:
     def __init__(
         self,
@@ -189,7 +218,7 @@ class _FakeSupabase:
         provider_credentials: dict[tuple[str, str], dict[str, Any]] | None = None,
         event_outbox: _EventOutboxTable | None = None,
     ) -> None:
-        self.saved_searches = _FakeSavedSearchesTable(
+        self.saved_searches = _ProjectingSavedSearchesTable(
             saved_searches if saved_searches is not None else [_saved_search()]
         )
         self._registry_postings = registry_postings if registry_postings is not None else []
@@ -420,13 +449,69 @@ async def test_duplicate_match_is_idempotently_skipped(monkeypatch: pytest.Monke
     assert supabase.event_outbox.insert_calls == []
 
 
-async def test_select_active_saved_searches_pages_past_the_first_1000_rows() -> None:
-    big_rows = [_saved_search(id=f"search-{i}") for i in range(1500)]
-    supabase = _FakeSupabase(saved_searches=big_rows)
+async def test_one_tick_reads_a_bounded_number_of_searches_oldest_watermark_first() -> None:
+    """The matcher lives in the API process and reads every active search on every tick, so
+    how many it takes is a limit, not however many rows exist; the least recently matched go
+    first so the ones left over are first in line next time."""
+    rows = [
+        _saved_search(id=f"search-{i}", last_matched_at=f"2026-08-{(i % 28) + 1:02d}T00:00:00Z")
+        for i in range(500)
+    ]
+    supabase = _FakeSavedSearchesOnly(rows)
 
-    rows = await _select_active_saved_searches(supabase)  # type: ignore[arg-type]
+    taken = await _select_active_saved_searches(supabase)  # type: ignore[arg-type]
 
-    assert len(rows) == 1500
+    assert len(taken) == _MAX_SEARCHES_PER_TICK == 200
+    watermarks = [r["last_matched_at"] for r in taken]
+    assert watermarks == sorted(watermarks)
+    assert max(watermarks) <= sorted(r["last_matched_at"] for r in rows)[_MAX_SEARCHES_PER_TICK]
+
+
+async def test_one_tick_reads_only_the_columns_it_uses() -> None:
+    """Not `select("*")`: nothing else about a row is held for the whole tick."""
+    supabase = _FakeSavedSearchesOnly([_saved_search()])
+
+    await _select_active_saved_searches(supabase)  # type: ignore[arg-type]
+
+    assert supabase.saved_searches.selected == [
+        "id, user_id, query, location, companies, remote_only, last_matched_at"
+    ]
+
+
+async def test_a_match_needs_nothing_but_the_columns_the_tick_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fake serves only the requested columns, so this fails if the per-search code ever
+    reads one the select did not ask for."""
+    _patch_llm(monkeypatch, _score_response(str(_POSTING_ROW["apply_url"]), 80))
+    supabase = _FakeSupabase(registry_postings=[_POSTING_ROW])
+
+    await run_match_tick(supabase)  # type: ignore[arg-type]
+
+    assert len(supabase.event_outbox.insert_calls) == 1
+
+
+async def test_only_active_searches_are_read() -> None:
+    supabase = _FakeSavedSearchesOnly(
+        [_saved_search(id="on"), _saved_search(id="off", is_active=False)]
+    )
+
+    taken = await _select_active_saved_searches(supabase)  # type: ignore[arg-type]
+
+    assert [r["id"] for r in taken] == ["on"]
+
+
+async def test_a_tick_that_hits_its_limit_says_so(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr("between_jobs.api.saved_search_matcher._MAX_SEARCHES_PER_TICK", 3)
+    supabase = _FakeSupabase(saved_searches=[_saved_search(id=f"s-{i}") for i in range(5)])
+
+    with caplog.at_level("WARNING", logger="between_jobs.api.saved_search_matcher"):
+        processed = await run_match_tick(supabase)  # type: ignore[arg-type]
+
+    assert processed == 3
+    assert any("per-tick limit" in r.getMessage() for r in caplog.records)
 
 
 async def test_run_match_tick_processes_searches_concurrently_but_bounded(

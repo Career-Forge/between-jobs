@@ -161,14 +161,12 @@ def client(_stub_env: None, private_key: EllipticCurvePrivateKey) -> Iterator[Te
 
 
 def test_missing_auth_header_rejected(client: TestClient) -> None:
-    response = client.post("/sessions", json={"context": {}})
+    response = client.get("/capabilities")
     assert response.status_code == 401
 
 
 def test_malformed_auth_header_rejected(client: TestClient) -> None:
-    response = client.post(
-        "/sessions", json={"context": {}}, headers={"Authorization": "NotBearer abc"}
-    )
+    response = client.get("/capabilities", headers={"Authorization": "NotBearer abc"})
     assert response.status_code == 401
 
 
@@ -177,10 +175,17 @@ def test_expired_token_rejected_end_to_end(
 ) -> None:
     now = int(time.time())
     token = _sign(private_key, _base_claims(iat=now - 7200, exp=now - 3600))
-    response = client.post(
-        "/sessions", json={"context": {}}, headers={"Authorization": f"Bearer {token}"}
-    )
+    response = client.get("/capabilities", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
+
+
+def test_valid_token_accepted_end_to_end(
+    client: TestClient, private_key: EllipticCurvePrivateKey
+) -> None:
+    token = _sign(private_key, _base_claims())
+    response = client.get("/capabilities", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert set(response.json()) == {"telegram", "telegram_bot_username"}
 
 
 # --- E6 hardening: unauthenticated forged-`kid` tokens ----------------------

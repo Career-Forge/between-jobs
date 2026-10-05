@@ -1,7 +1,7 @@
 """Tests for the profile HTTP endpoints (Sprint 2.5c).
 
 Exercises the real FastAPI routes via TestClient (like test_api.py does for
-/sessions) rather than calling profile_store.py directly -- this is what
+a protected route) rather than calling profile_store.py directly -- this is what
 proves request parsing, dependency wiring, and error-code mapping actually
 work, not just the underlying functions in isolation (those are covered in
 test_profile.py/test_profile_store.py).
@@ -374,8 +374,7 @@ def test_get_current_profile_none_yet() -> None:
 
 def test_get_current_profile_without_auth_header_returns_401() -> None:
     # No dependency override for require_user_id -- proves the route is
-    # actually protected, same reasoning as test_api.py's equivalent for
-    # /sessions.
+    # actually protected, same reasoning as test_api.py's equivalent.
     with TestClient(app) as client:
         response = client.get("/profile/current")
     assert response.status_code == 401
