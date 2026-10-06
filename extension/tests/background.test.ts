@@ -269,6 +269,23 @@ describe("what the lookup sends", () => {
     expect(lookup).not.toMatch(/SECRET|lever-source/);
   });
 
+  it("sends the posting address for an application form whether or not the job is tracked, and requests nothing else", async () => {
+    // The Privacy Policy says so ("whether or not you do"). The lookup is how tracking is found
+    // out, so it cannot wait for it: an untracked page's address reaches the API too.
+    mocks.apiFetch.mockImplementation(async (path: string) => {
+      if (path.startsWith("/extension/lookup")) return { application_id: null };
+      return {};
+    });
+    const harness = await loadBackground();
+
+    const state = await detect(harness, "greenhouse");
+
+    expect(state).toEqual({ status: "untracked" });
+    expect(apiPaths()).toEqual([
+      `/extension/lookup?url=${encodeURIComponent("https://job-boards.greenhouse.io/acme/jobs/1")}`,
+    ]);
+  });
+
   it("finds an Ashby application via its /application form route", async () => {
     const harness = await loadBackground();
     await detect(harness, "ashby");

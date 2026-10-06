@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -102,5 +102,23 @@ describe("assertStoreBuild", () => {
 
   it("passes silently for a good build", () => {
     expect(() => assertStoreBuild(GOOD_ENV, manifestWith("0.1.0"))).not.toThrow();
+  });
+});
+
+// The web app's Privacy Policy says the extension's STORE PACKAGE is refused at build time when
+// it points at a plain-HTTP or local address, and says nothing of the ordinary build, which is
+// how it is loaded unpacked against a local API. That is a statement about where the guard is
+// wired, so this reads the config that wires it.
+describe("where the guard is wired", () => {
+  const config = readFileSync(path.join(__dirname, "..", "wxt.config.ts"), "utf8");
+
+  it("runs when the store zip is built, from the zip:start hook", () => {
+    expect(config).toContain('"zip:start": (wxt) => assertStoreBuild(');
+  });
+
+  it("is used nowhere else, so the ordinary `wxt build` stays unguarded", () => {
+    // One import and one call.
+    expect((config.match(/assertStoreBuild/g) ?? []).length).toBe(2);
+    expect(config).not.toMatch(/"build:(start|done|before)"/);
   });
 });

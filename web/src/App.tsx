@@ -1,15 +1,23 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
+import { LegalLinks } from "./components/LegalLinks";
 import { PrimaryNav } from "./components/PrimaryNav";
+import { PublicLayout } from "./components/PublicLayout";
 import { UPDATE_PASSWORD_PATH, recoveryRedirect } from "./lib/passwordReset";
+import { PRIVACY_PATH, TERMS_PATH, appView, documentTitleFor } from "./lib/publicRoutes";
+import { useDocumentTitle } from "./lib/useDocumentTitle";
+import { useScrollToTopOnNavigate } from "./lib/useScrollToTopOnNavigate";
 import Applications from "./pages/Applications";
 import ApplicationWorkspace from "./pages/ApplicationWorkspace";
 import Discover from "./pages/Discover";
 import HiringSignals from "./pages/HiringSignals";
 import Integrations from "./pages/Integrations";
+import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Practice from "./pages/Practice";
+import Privacy from "./pages/Privacy";
 import Profile from "./pages/Profile";
+import Terms from "./pages/Terms";
 import Today from "./pages/Today";
 import UpdatePassword from "./pages/UpdatePassword";
 
@@ -17,19 +25,63 @@ export default function App() {
   const { session, loading, signOut, recovery } = useAuth();
   const location = useLocation();
 
-  if (loading) {
+  // Which screen this visitor gets is decided by one pure function (lib/publicRoutes.ts); this
+  // component draws the answer. A signed-out visitor reaches the landing page, the two legal
+  // pages and the sign-in page; any other address shows sign-in, so a deep link such as
+  // /applications/123 still lands there and, once signed in, opens that same page.
+  const view = appView({
+    signedIn: session !== null,
+    loading,
+    pathname: location.pathname,
+    search: location.search,
+    hash: location.hash,
+  });
+
+  // Both hooks sit above every early return, so the hook order is the same on every screen.
+  // A change of page starts at the top of it (the app has no scroll restoration of its own), and
+  // each public screen has a title of its own; the sign-in page names itself.
+  useScrollToTopOnNavigate();
+  useDocumentTitle(documentTitleFor(view, location.pathname));
+
+  if (view === "boot") {
     return <div className="bj-boot" />;
   }
-
-  if (!session) {
+  if (view === "login") {
     return <Login />;
   }
+  if (view === "landing") {
+    return (
+      <PublicLayout>
+        <Landing />
+      </PublicLayout>
+    );
+  }
+  if (view === "privacy") {
+    return (
+      <PublicLayout>
+        <Privacy />
+      </PublicLayout>
+    );
+  }
+  if (view === "terms") {
+    return (
+      <PublicLayout>
+        <Terms />
+      </PublicLayout>
+    );
+  }
+
+  // From here on the visitor is signed in: the view is "app" or "home_redirect".
 
   // Someone who followed a password-reset link is in a recovery session: whichever page the
   // link landed them on, they set the new password first.
   const recoveryTarget = recoveryRedirect(recovery, location.pathname);
   if (recoveryTarget !== null) {
     return <Navigate to={recoveryTarget} replace />;
+  }
+  // A signed-in person has no use for the sign-in form: "/" is Today for them.
+  if (view === "home_redirect") {
+    return <Navigate to="/" replace />;
   }
 
   return (
@@ -39,6 +91,7 @@ export default function App() {
         <PrimaryNav />
         <div className="bj-nav-footer">
           <button onClick={() => void signOut()}>Sign out</button>
+          <LegalLinks />
         </div>
       </aside>
       <main className="bj-main">
@@ -52,6 +105,8 @@ export default function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/integrations" element={<Integrations />} />
           <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
+          <Route path={PRIVACY_PATH} element={<Privacy />} />
+          <Route path={TERMS_PATH} element={<Terms />} />
         </Routes>
       </main>
     </div>

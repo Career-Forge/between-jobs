@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
+import { ConsentNotice } from "../components/ConsentNotice";
+import { LegalLinks } from "../components/LegalLinks";
 import { ResetRequestForm } from "../components/ResetRequestForm";
 import {
   MIN_PASSWORD_LENGTH,
@@ -10,6 +12,8 @@ import {
   shouldClearUrl,
   type LoginMode,
 } from "../lib/passwordReset";
+import { LOGIN_PATH, loginPageTitle } from "../lib/publicRoutes";
+import { useDocumentTitle } from "../lib/useDocumentTitle";
 
 export default function Login() {
   const { signIn, signUp, signInWithGoogle } = useAuth();
@@ -24,7 +28,11 @@ export default function Login() {
   const [linkProblem, setLinkProblem] = useState(() =>
     loginLinkProblem(window.location.hash, window.location.search, window.location.pathname),
   );
-  const [mode, setMode] = useState<LoginMode>(() => initialLoginMode(linkProblem));
+  // The landing page's Create account link opens this page on the registration form
+  // (?mode=register); a dead reset link still wins, so it is never hidden behind another form.
+  const [mode, setMode] = useState<LoginMode>(() =>
+    initialLoginMode(linkProblem, window.location.search),
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +40,15 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
 
+  // The tab says which form this is: Sign in, Create account or the password reset.
+  useDocumentTitle(loginPageTitle(mode));
+
   // Drops the dead link's error (and the /update-password path it arrived on) from the
-  // address bar, so a reload, or signing in afterwards, does not replay it.
+  // address bar, so a reload, or signing in afterwards, does not replay it. It goes to /login,
+  // not "/": the root is the public landing page for a signed-out visitor, and this page (with
+  // the dead-link sentence and the reset form) must stay on screen.
   useEffect(() => {
-    if (shouldClearUrl(linkProblem)) navigate("/", { replace: true });
+    if (shouldClearUrl(linkProblem)) navigate(LOGIN_PATH, { replace: true });
   }, [linkProblem, navigate]);
 
   async function onSubmit(e: FormEvent) {
@@ -146,6 +159,9 @@ export default function Login() {
             Forgot password?
           </button>
         )}
+        {/* Both buttons below the form create an account for a new person (Google sign-in does
+            too), so the one line that says what that means sits above Google, in either mode. */}
+        <ConsentNotice />
         <button
           className="bj-google-button"
           onClick={() => void onGoogleClick()}
@@ -163,6 +179,9 @@ export default function Login() {
         >
           {mode === "sign_in" ? "Need an account? Register" : "Already have an account? Sign in"}
         </button>
+        <div className="bj-login-legal">
+          <LegalLinks newTab />
+        </div>
       </div>
     </div>
   );

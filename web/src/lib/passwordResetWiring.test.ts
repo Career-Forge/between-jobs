@@ -40,11 +40,15 @@ describe("the recovery flag", () => {
   it("is taken from the auth context by the shell (not a constant), and acted on only for a signed-in person", () => {
     expect(app).toMatch(/const \{[^}]*\brecovery\b[^}]*\} = useAuth\(\);/);
     expect(app).not.toMatch(/\bconst recovery\b/);
-    const signedOutCheck = app.indexOf("if (!session)");
+    // The shell asks the routing rule (lib/publicRoutes.ts) with the real session, and every
+    // signed-out screen -- the last of them the terms page -- has returned before the recovery
+    // check, so a person with no session is never sent to the update page.
+    expect(app).toContain("signedIn: session !== null");
+    const lastSignedOutScreen = app.indexOf('if (view === "terms")');
     const redirect = app.indexOf("recoveryRedirect(recovery, location.pathname)");
     const route = app.indexOf("<Route path={UPDATE_PASSWORD_PATH}");
-    expect(signedOutCheck).toBeGreaterThan(-1);
-    expect(redirect).toBeGreaterThan(signedOutCheck);
+    expect(lastSignedOutScreen).toBeGreaterThan(-1);
+    expect(redirect).toBeGreaterThan(lastSignedOutScreen);
     expect(route).toBeGreaterThan(redirect);
     expect(app).toContain("<Navigate to={recoveryTarget} replace />");
   });
@@ -60,7 +64,7 @@ describe("the Login page", () => {
     expect(login).toContain(
       "loginLinkProblem(window.location.hash, window.location.search, window.location.pathname)",
     );
-    expect(login).toContain("initialLoginMode(linkProblem)");
+    expect(login).toContain("initialLoginMode(linkProblem, window.location.search)");
     expect(login).toContain("shouldClearUrl(linkProblem)");
     // No parsing of its own, and no text from the URL is stored or rendered.
     expect(login).not.toContain("parseRecoveryLinkProblem");

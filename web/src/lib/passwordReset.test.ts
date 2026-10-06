@@ -6,6 +6,7 @@ import {
   MIN_PASSWORD_LENGTH,
   RECOVERY_COMPLETED,
   RESET_SENT_MESSAGE,
+  LOGIN_REGISTER_QUERY,
   UPDATE_PASSWORD_PATH,
   buildResetRedirectUrl,
   changePassword,
@@ -26,6 +27,7 @@ import {
   submitResetRequest,
   updatePasswordActions,
   updatePasswordReducer,
+  urlCarriesAuthError,
   validateNewPassword,
   type ChangeOutcome,
   type InFlight,
@@ -420,6 +422,36 @@ describe("loginLinkProblem", () => {
     );
     expect(loginLinkProblem("", "", "/")).toBeNull();
     expect(loginLinkProblem("#error=access_denied&error_code=bad_oauth_callback", "", "/")).toBeNull();
+  });
+});
+
+describe("urlCarriesAuthError", () => {
+  it.each([
+    "#error=access_denied&error_code=otp_expired&error_description=x",
+    "#error=access_denied",
+    "#error_code=otp_expired",
+    "#error_description=something",
+    "?error=access_denied",
+    "?error_code=otp_expired",
+    "?error_description=User+cancelled",
+    "error=access_denied",
+  ])("sees an auth error in %s", (raw) => {
+    expect(urlCarriesAuthError(raw, "")).toBe(true);
+    expect(urlCarriesAuthError("", raw)).toBe(true);
+  });
+
+  it.each(["", "#", "?", "#features", "?utm_source=x", "#access_token=a&type=recovery", "?code=abc", "?q=error"])(
+    "sees none in %j",
+    (raw) => {
+      expect(urlCarriesAuthError(raw, "")).toBe(false);
+      expect(urlCarriesAuthError("", raw)).toBe(false);
+    },
+  );
+
+  it("looks in both the hash and the query string, and one is enough", () => {
+    expect(urlCarriesAuthError("#features", "?error=access_denied")).toBe(true);
+    expect(urlCarriesAuthError("#error=access_denied", "?utm_source=x")).toBe(true);
+    expect(urlCarriesAuthError("#features", "?utm_source=x")).toBe(false);
   });
 });
 
@@ -846,6 +878,25 @@ describe("the Login page's modes", () => {
   it("starts on sign-in, and on the reset form for a person who followed a dead link", () => {
     expect(initialLoginMode(null)).toBe("sign_in");
     expect(initialLoginMode("That link could not be used. Request a new one.")).toBe("reset");
+  });
+
+  it("opens on Create account for the one hint the landing page's link carries, and for nothing else", () => {
+    expect(LOGIN_REGISTER_QUERY).toBe("?mode=register");
+    expect(initialLoginMode(null, LOGIN_REGISTER_QUERY)).toBe("register");
+    expect(initialLoginMode(null, "mode=register")).toBe("register");
+    expect(initialLoginMode(null, "?mode=register&utm_source=landing")).toBe("register");
+    // Anything else starts on sign-in: another value, another case, another parameter, none.
+    for (const search of ["", "?", "?mode=sign_in", "?mode=reset", "?mode=Register", "?mode=", "?register=1", "?x=mode=register"]) {
+      expect(initialLoginMode(null, search), search).toBe("sign_in");
+    }
+  });
+
+  it("never lets the register hint hide a dead link: the reset form still wins", () => {
+    expect(initialLoginMode("That link could not be used. Request a new one.", LOGIN_REGISTER_QUERY)).toBe("reset");
+  });
+
+  it("reads the hint from the address the page was opened on, through that one rule", () => {
+    expect(loginSource).toContain("initialLoginMode(linkProblem, window.location.search)");
   });
 
   it.each<[LoginMode, LoginEvent, LoginMode]>([

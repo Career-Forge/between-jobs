@@ -194,6 +194,16 @@ export function parseRecoveryLinkProblem(
   return null;
 }
 
+// Whether a URL carries an auth error of ANY kind: a dead reset link, a cancelled Google
+// consent screen, a failed sign-in. The shell uses it to keep a signed-out visitor on the
+// sign-in page, rather than the public landing page, when the auth server has just sent them
+// back to the site's root with one of these in the URL (lib/publicRoutes.ts). It says nothing
+// about WHICH error: the sign-in page decides that from `parseRecoveryLinkProblem`, and shows
+// the ordinary sign-in for any error that is not a dead reset link.
+export function urlCarriesAuthError(hash: string, search: string): boolean {
+  return problemIn(hash) !== null || problemIn(search) !== null;
+}
+
 export function recoveryProblemMessage(problem: RecoveryLinkProblem): string {
   return problem.kind === "expired"
     ? "That link has expired or was already used. Request a new one."
@@ -417,9 +427,22 @@ export function loginLinkProblem(hash: string, search: string, pathname: string)
   return problem === null ? null : recoveryProblemMessage(problem);
 }
 
-// A person who followed a dead link starts on the reset form, to ask for a new one.
-export function initialLoginMode(linkProblem: string | null): LoginMode {
-  return linkProblem === null ? "sign_in" : "reset";
+// The query string that opens the sign-in page on its "Create account" form. The landing page's
+// Create account link carries it; nothing else in the app does. Only this one value is read, so
+// a link can never open the page on the reset form or on anything else.
+export const LOGIN_REGISTER_QUERY = "?mode=register";
+
+function registerHinted(search: string): boolean {
+  return paramsOf(search).get("mode") === "register";
+}
+
+// A person who followed a dead link starts on the reset form, to ask for a new one -- that
+// wins over a register hint, so a stale link is never hidden behind another form. Otherwise
+// the register hint (see LOGIN_REGISTER_QUERY) opens "Create account"; everything else
+// starts on sign-in.
+export function initialLoginMode(linkProblem: string | null, search = ""): LoginMode {
+  if (linkProblem !== null) return "reset";
+  return registerHinted(search) ? "register" : "sign_in";
 }
 
 export function loginModeAfter(mode: LoginMode, event: LoginEvent): LoginMode {
