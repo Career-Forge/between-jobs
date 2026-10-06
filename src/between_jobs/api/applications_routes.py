@@ -51,6 +51,7 @@ from .prepare_orchestrator import (
     latest_resume_pdf,
     run_prepare_application,
 )
+from .product_events import DOCUMENT_COVER_LETTER, DOCUMENT_RESUME, emit_event
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
 from .rate_limits import limit
@@ -388,6 +389,15 @@ async def download_resume_pdf(
     stored; see `prepare_orchestrator.latest_resume_pdf`'s docstring for
     why."""
     _version_row, pdf_bytes = await latest_resume_pdf(supabase, http, user_id, application_id)
+    # The PDF compiled, so the application is the caller's (the lookup above checks it).
+    emit_event(
+        supabase,
+        user_id,
+        "artifact_downloaded",
+        application_id=application_id,
+        outcome="ok",
+        n_a=DOCUMENT_RESUME,
+    )
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -405,6 +415,14 @@ async def download_cover_letter_pdf(
     """Same shape as `download_resume_pdf`, with its own
     `document_kind`."""
     _version_row, pdf_bytes = await latest_cover_letter_pdf(supabase, http, user_id, application_id)
+    emit_event(
+        supabase,
+        user_id,
+        "artifact_downloaded",
+        application_id=application_id,
+        outcome="ok",
+        n_a=DOCUMENT_COVER_LETTER,
+    )
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+from .product_events import AtsType
+
+MAX_URL_CHARS = 2048
+"""The longest URL any request field accepts (the practical limit browsers and servers honor).
+A job posting's URL is stored, matched against the registry and classified by pattern, so an
+unbounded one is an unbounded amount of work for every request that touches it."""
 
 
 class GapInterviewDraftRequest(BaseModel):
@@ -65,7 +73,7 @@ class CreateApplicationFromPasteRequest(BaseModel):
     title: str = Field(min_length=1)
     company_name: str = Field(min_length=1)
     description_text: str = Field(min_length=1)
-    canonical_url: str | None = None
+    canonical_url: str | None = Field(default=None, max_length=MAX_URL_CHARS)
     location_text: str | None = None
 
 
@@ -79,7 +87,7 @@ class CreateApplicationFromUrlRequest(BaseModel):
     reference" posture (see e.g. `PrepareApplicationRequest`'s own
     docstring)."""
 
-    url: str = Field(min_length=1)
+    url: str = Field(min_length=1, max_length=MAX_URL_CHARS)
 
 
 ApplicationStatus = Literal[
@@ -271,7 +279,7 @@ class TrackDiscoveredJobRequest(BaseModel):
     `SearchResult` nor `ScoredJob` carries full JD text (only a 500-char
     snippet) for a live-search-lane result."""
 
-    apply_url: str = Field(min_length=1)
+    apply_url: str = Field(min_length=1, max_length=MAX_URL_CHARS)
     title: str = Field(min_length=1)
     company: str | None = None
     location: str | None = None
@@ -438,3 +446,35 @@ class DraftAnswerRequest(BaseModel):
 
     application_id: str = Field(min_length=1)
     question_text: str = Field(min_length=1, max_length=_MAX_ANSWER_TEXT_CHARS)
+
+
+_MAX_FILL_FIELDS = 1000
+"""Far above the number of inputs on any real application form (the longest multi-page ones
+have a few hundred), so a legitimate report always fits and a nonsense one does not."""
+
+_FieldCount = Annotated[int, Field(strict=True, ge=0, le=_MAX_FILL_FIELDS)]
+
+
+class FillOutcomeRequest(BaseModel):
+    """What the browser extension reports when an autofill finishes: which applicant-tracking
+    system the form was on and HOW MANY fields it tried and filled. Counts only. It never carries
+    a field's value, a field's label, the page's URL or any page content, and `extra="forbid"`
+    makes that structural: a client that adds one is refused with a 422 instead of having it
+    silently ignored, so nothing of the kind can ever be sent through here by accident.
+
+    `ats_type` is a closed list (product_events.AtsType), and `application_id`, when the form is
+    one the person has tracked, must be one of their own (the route answers 404 otherwise)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ats_type: AtsType
+    application_id: UUID | None = None
+    fields_attempted: _FieldCount
+    fields_filled: _FieldCount
+    outcome: Literal["ok", "partial", "failed"]
+
+    @model_validator(mode="after")
+    def _cannot_fill_more_than_attempted(self) -> Self:
+        if self.fields_filled > self.fields_attempted:
+            raise ValueError("fields_filled cannot exceed fields_attempted")
+        return self

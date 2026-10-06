@@ -18,6 +18,7 @@ from between_jobs.api.intents import (
     parse_job_paste,
     parse_link_code,
 )
+from between_jobs.api.models import MAX_URL_CHARS
 
 
 @pytest.mark.parametrize(
@@ -173,6 +174,23 @@ def test_parse_job_paste_omits_optional_fields_when_absent() -> None:
     assert isinstance(result, dict)
     assert result["location_text"] is None
     assert result["canonical_url"] is None
+
+
+def test_parse_job_paste_refuses_a_url_past_the_length_limit() -> None:
+    """Same limit as the web form's: a URL is stored and pattern-matched, so it is bounded."""
+    url = "https://example.com/" + "a" * MAX_URL_CHARS
+    result = parse_job_paste(f"Title: Staff Engineer\nCompany: Acme\nURL: {url}\n\nBuild things.")
+
+    assert isinstance(result, list)
+    assert any("URL is too long" in error for error in result)
+
+
+def test_parse_job_paste_accepts_a_url_exactly_at_the_limit() -> None:
+    url = "https://example.com/" + "a" * (MAX_URL_CHARS - len("https://example.com/"))
+    result = parse_job_paste(f"Title: Staff Engineer\nCompany: Acme\nURL: {url}\n\nBuild things.")
+
+    assert not isinstance(result, list)
+    assert result["canonical_url"] == url
 
 
 def test_parse_job_paste_reports_missing_company() -> None:

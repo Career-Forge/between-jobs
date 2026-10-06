@@ -11,14 +11,18 @@ network call, no real spend, in any test here.
 
 from __future__ import annotations
 
+import asyncio
+import time
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
+from between_jobs.api import product_events
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase
 from between_jobs.api.auth import require_user_id
@@ -316,6 +320,7 @@ class _FakeHttpClient:
         self.you_com_body = you_com_body
         self.get_calls: list[str] = []
         self.request_calls: list[tuple[str, str]] = []
+        self.you_com_posts = 0
 
     async def get(self, url: str, **_kwargs: Any) -> httpx.Response:
         self.get_calls.append(url)
@@ -331,6 +336,7 @@ class _FakeHttpClient:
 
     async def post(self, url: str, **_kwargs: Any) -> httpx.Response:
         if self.you_com_body is not None and "ydc-index.io" in url:
+            self.you_com_posts += 1
             return httpx.Response(200, json=self.you_com_body, request=httpx.Request("POST", url))
         return httpx.Response(200, json={}, request=httpx.Request("POST", url))
 
@@ -586,7 +592,7 @@ def test_search_discover_registry_volume_does_not_starve_live_lane_liveness(
 
 
 def test_search_discover_alive_results_past_the_scoring_batch_still_appear_in_more(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, recorded_events: list[dict[str, Any]]
 ) -> None:
     """Regression test for the `alive[30:50]`-vanishes bug: the route
     used to pre-slice to `alive[:30]` before calling `score_jobs`, so
@@ -630,6 +636,11 @@ def test_search_discover_alive_results_past_the_scoring_batch_still_appear_in_mo
     for url in expected_unscored:
         assert url in more_urls, f"{url} vanished from both scored and more"
     assert more_urls == expected_unscored
+
+    # the event counts what was found and what was scored: the five that came back unscored in
+    # `more` are candidates, not scored results
+    (row,) = recorded_events
+    assert (row["n_a"], row["n_b"]) == (35, 1)
 
 
 def test_search_discover_with_no_registry_or_live_results_returns_empty() -> None:
@@ -888,3 +899,184 @@ def test_track_result_defaults_missing_company_and_description() -> None:
     assert inserted_job["company_name"] == "Unknown Company"
     inserted_snapshot = supabase.job_snapshots.select_rows[-1]
     assert inserted_snapshot["description_text"] == "(no description available)"
+
+
+# -- product events: one `discover_search` per search that gets past the limiter -------------
+
+
+def _signed_in_client(supabase: _FakeSupabaseClient, http: _FakeHttpClient) -> TestClient:
+    """Like `_client`, but the auth override leaves the user id on the request the way the real
+    dependency does, which is what the API error handler's `setup_required` event reads."""
+
+    async def signed_in(request: Request) -> str:
+        request.state.user_id = _USER_ID
+        return _USER_ID
+
+    client = _client(supabase, http)
+    app.dependency_overrides[require_user_id] = signed_in
+    return client
+
+
+def test_a_search_records_how_many_candidates_it_found_and_scored(
+    monkeypatch: pytest.MonkeyPatch, recorded_events: list[dict[str, Any]]
+) -> None:
+    _patch_llm(monkeypatch, _SCORE_LLM_RESPONSE)
+    supabase = _FakeSupabaseClient(registry_postings=[_REGISTRY_POSTING_ROW])
+    client = _client(supabase, _FakeHttpClient())
+
+    response = client.get("/discover", params={"q": "backend engineer"})
+
+    assert response.status_code == 200
+    (row,) = recorded_events
+    assert {k: v for k, v in row.items() if k != "duration_ms"} == {
+        "user_id": _USER_ID,
+        "event": "discover_search",
+        "outcome": "ok",
+        "n_a": 1,
+        "n_b": 1,
+    }
+    assert isinstance(row["duration_ms"], int) and row["duration_ms"] >= 0
+    # nothing of the query, the location or a result is in it
+    assert "backend engineer" not in str(row) and "example.com" not in str(row)
+
+
+def test_a_search_counts_candidates_from_both_lanes_apart_from_the_scored_ones(
+    monkeypatch: pytest.MonkeyPatch, recorded_events: list[dict[str, Any]]
+) -> None:
+    """One live-lane result per provider call plus two registry rows are all candidates; the
+    scorer scores only one of them, so the two counters differ, and neither can be swapped, copied
+    from the other, or lose a lane."""
+    _patch_llm(monkeypatch, _SCORE_LLM_RESPONSE)
+    registry_rows = [
+        _REGISTRY_POSTING_ROW,
+        {**_REGISTRY_POSTING_ROW, "apply_url": "https://example.com/careers/job-2"},
+    ]
+    supabase = _FakeSupabaseClient(
+        registry_postings=registry_rows,
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+        },
+    )
+    http = _FakeHttpClient(you_com_body=_LIVE_LANE_YOU_COM_BODY)
+    client = _client(supabase, http)
+
+    response = client.get("/discover", params={"q": "backend engineer"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["scored"]) == 1
+    # the live lane fans out into several provider calls that each return the same one result,
+    # counted before duplicates are merged
+    assert http.you_com_posts >= 1
+    (row,) = recorded_events
+    assert (row["n_a"], row["n_b"]) == (http.you_com_posts + len(registry_rows), 1)
+
+
+def test_a_search_that_came_back_with_a_note_is_recorded_as_partial(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    supabase = _FakeSupabaseClient(registry_postings=RuntimeError("canceling statement"))
+    client = _client(supabase, _FakeHttpClient())
+
+    response = client.get("/discover", params={"q": "backend engineer"})
+
+    assert response.status_code == 200 and response.json()["warnings"]
+    (row,) = recorded_events
+    assert (row["outcome"], row["n_a"], row["n_b"]) == ("partial", 0, 0)
+
+
+def test_a_search_with_nothing_to_say_and_nothing_found_is_still_a_complete_search(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    client = _client(_FakeSupabaseClient(registry_postings=[]), _FakeHttpClient())
+
+    assert client.get("/discover", params={"q": "backend engineer"}).status_code == 200
+
+    (row,) = recorded_events
+    assert (row["outcome"], row["n_a"], row["n_b"]) == ("ok", 0, 0)
+
+
+def test_a_search_stopped_on_a_missing_profile_records_both_events(
+    monkeypatch: pytest.MonkeyPatch, recorded_events: list[dict[str, Any]]
+) -> None:
+    """The search that could not run (outcome setup_required, naming the capability) and, from
+    the API error handler, the one `setup_required` event every route's setup error produces."""
+    monkeypatch.setattr(app.state, "supabase", object(), raising=False)
+    client = _signed_in_client(_FakeSupabaseClient(profile_versions=[]), _FakeHttpClient())
+
+    response = client.get("/discover", params={"q": "backend engineer"})
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "SETUP_REQUIRED"
+    assert [(r["event"], r["outcome"], r["capability"]) for r in recorded_events] == [
+        ("discover_search", "setup_required", "profile"),
+        ("setup_required", "setup_required", "profile"),
+    ]
+    assert all(r["user_id"] == _USER_ID for r in recorded_events)
+
+
+def test_a_search_stopped_on_a_missing_key_names_that_capability(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    client = _client(
+        _FakeSupabaseClient(capability_preferences=[], provider_credentials={}), _FakeHttpClient()
+    )
+
+    assert client.get("/discover", params={"q": "backend engineer"}).status_code == 409
+
+    (row,) = recorded_events  # no signed-in user on the request state: only the tracked event
+    assert (row["event"], row["outcome"], row["capability"]) == (
+        "discover_search",
+        "setup_required",
+        "job_scoring",
+    )
+
+
+def test_a_search_that_breaks_is_recorded_as_failed_and_still_a_500(
+    monkeypatch: pytest.MonkeyPatch, recorded_events: list[dict[str, Any]]
+) -> None:
+    async def broken(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("a provider blew up")
+
+    monkeypatch.setattr("between_jobs.api.discovery_routes.search_jobs", broken)
+    client = _client(_FakeSupabaseClient(), _FakeHttpClient())
+
+    response = client.get("/discover", params={"q": "backend engineer"})
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "INTERNAL_ERROR"
+    (row,) = recorded_events
+    assert (row["event"], row["outcome"]) == ("discover_search", "failed")
+    assert "n_a" not in row  # it never got as far as counting anything
+
+
+def _response_without_recording(
+    monkeypatch: pytest.MonkeyPatch, writer: Any
+) -> tuple[int, dict[str, Any], float]:
+    _patch_llm(monkeypatch, _SCORE_LLM_RESPONSE)
+    monkeypatch.setattr(product_events, "write_event", writer)
+    client = _client(
+        _FakeSupabaseClient(registry_postings=[_REGISTRY_POSTING_ROW]), _FakeHttpClient()
+    )
+    started = time.monotonic()
+    response = client.get("/discover", params={"q": "backend engineer"})
+    return response.status_code, response.json(), time.monotonic() - started
+
+
+def test_a_search_answers_the_same_whether_or_not_the_event_can_be_recorded(
+    monkeypatch: pytest.MonkeyPatch, recorded_events: list[dict[str, Any]]
+) -> None:
+    ok_status, ok_body, _ = _response_without_recording(monkeypatch, product_events.write_event)
+
+    def explode(*_: object) -> None:
+        raise RuntimeError("the writer itself is broken")
+
+    async def hang_forever(*_: object) -> bool:
+        await asyncio.Event().wait()
+        return True
+
+    for broken in (explode, hang_forever):
+        status, body, elapsed = _response_without_recording(monkeypatch, broken)
+        assert (status, body) == (ok_status, ok_body)
+        assert elapsed < 2.0, "the request waited for an event that was never going to be written"

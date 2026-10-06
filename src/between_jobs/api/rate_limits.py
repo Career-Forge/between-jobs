@@ -121,6 +121,11 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     # Saving a key makes a live call to the provider to check it. Without a bound this is a
     # way to test other people's stolen keys through this server.
     "credential_save": (30, HOUR),
+    # The extension reports one small count-only record each time an autofill finishes: a
+    # single insert, no model, provider or compile call. A person fills a handful of forms an
+    # hour; the bound is only there so a stuck client loop cannot grow the event log without
+    # limit, so it sits well above any real use.
+    "fill_outcome": (300, HOUR),
 }
 """bucket -> (max requests, window seconds). The only place these numbers live."""
 

@@ -38,6 +38,7 @@ from .job_fit_scoring import ScoredJob, score_jobs
 from .jobs_store import create_job_from_paste, lookup_registry_posting
 from .llm_client import generate as llm_generate
 from .models import TrackDiscoveredJobRequest
+from .product_events import EventDraft, tracked
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
 from .rate_limits import limit
@@ -216,6 +217,25 @@ async def search_discover(
     supabase: AsyncClient = Depends(get_supabase),
     http: httpx.AsyncClient = Depends(get_http_client),
 ) -> dict[str, Any]:
+    # Every search that gets this far is one product event, however it ends: how many candidates
+    # it found, how many it scored, how long it took, and whether it came back complete, with a
+    # note, failed, or stopped on a setup step. The recording never touches the response.
+    async with tracked(supabase, user_id, "discover_search") as event:
+        return await _search_discover(
+            q, location, companies, remote_only, user_id, supabase, http, event
+        )
+
+
+async def _search_discover(
+    q: str,
+    location: str | None,
+    companies: str | None,
+    remote_only: bool,
+    user_id: str,
+    supabase: AsyncClient,
+    http: httpx.AsyncClient,
+    event: EventDraft,
+) -> dict[str, Any]:
     profile_version = await get_active_version(supabase, user_id)
     if profile_version is None:
         raise ApiError(
@@ -247,6 +267,7 @@ async def search_discover(
         ),
         _registry_lane_or_nothing(supabase, q),
     )
+    event.n_a = len(live_results) + len(registry_results)
     if registry_failure is not None:
         warnings = [*warnings, registry_failure]
 
@@ -313,6 +334,10 @@ async def search_discover(
     more_cards = [_result_to_card(r, None) for r in unscored] + [
         _result_to_card(r, None) for r in rest
     ]
+
+    event.n_b = len(scored_cards)
+    if warnings:
+        event.outcome = "partial"
 
     return {
         "query": q,

@@ -495,3 +495,50 @@ def test_prepare_callback_goes_ahead_when_the_limiter_itself_is_down(
     _post(supabase, telegram, _FakeHttpClient(), _callback_update(f"app:prepare:{_APPLICATION_ID}"))
 
     assert len(telegram.documents_sent) == 1
+
+
+# -- product events: Telegram is a channel like the web ---------------------------------------
+
+
+def test_prepare_callback_success_is_recorded_like_a_web_generation(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _USER_ID}])
+
+    _post(
+        supabase,
+        _FakeTelegramClient(),
+        _FakeHttpClient(),
+        _callback_update(f"app:prepare:{_APPLICATION_ID}"),
+    )
+
+    (row,) = [r for r in recorded_events if r["event"] == "prepare_finished"]
+    assert (row["user_id"], row["application_id"], row["outcome"]) == (
+        _USER_ID,
+        _APPLICATION_ID,
+        "ok",
+    )
+
+
+def test_prepare_callback_setup_required_is_recorded_once_for_the_attempt_and_once_as_setup(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    """The bot catches the error itself, so the API error handler never sees it: the event is
+    recorded at the bot's own boundary, and the chat message is unchanged."""
+    supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _USER_ID}],
+        capability_preferences=_FakeTable(select_rows=[]),
+    )
+    telegram = _FakeTelegramClient()
+
+    response = _post(
+        supabase, telegram, _FakeHttpClient(), _callback_update(f"app:prepare:{_APPLICATION_ID}")
+    )
+
+    assert response.status_code == 200
+    assert len([t for _c, t, _rm in telegram.sent if t.startswith("❌")]) == 1
+    assert [(r["event"], r["outcome"], r["capability"]) for r in recorded_events] == [
+        ("prepare_finished", "setup_required", "prepare_application"),
+        ("setup_required", "setup_required", "prepare_application"),
+    ]
+    assert all(r["user_id"] == _USER_ID for r in recorded_events)

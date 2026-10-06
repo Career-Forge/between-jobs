@@ -63,6 +63,8 @@ from .logging_setup import configure_logging, request_id_var
 from .outbox_store import _DEFAULT_POLL_INTERVAL_SECONDS as OUTBOX_POLL_INTERVAL_SECONDS
 from .outbox_store import run_worker_forever
 from .positioning_brief_routes import router as positioning_brief_router
+from .product_events import emit_setup_required
+from .product_events import flush as flush_product_events
 from .profile_routes import router as profile_router
 from .resume_documents_routes import router as resume_documents_router
 from .saved_search_matcher import _DEFAULT_MATCH_INTERVAL_SECONDS as MATCHER_INTERVAL_SECONDS
@@ -281,6 +283,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
     await workers.stop_all()
+    # Product-event inserts still in flight finish (bounded) before the client they use goes.
+    await flush_product_events(timeout=5.0)
     await app.state.health_http.aclose()
     await app.state.http.aclose()
     await app.state.hiring_http.aclose()
@@ -407,6 +411,12 @@ async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
     else:
         level = logging.ERROR
     logger.log(level, "api error %s", exc.code, extra={"ctx": ctx})
+    # The one place every route's "set this up first" answer passes through, so the one place
+    # that records it as a product event. The user id is what the auth dependency stored once
+    # the token verified; an unauthenticated or overridden request has none and records nothing.
+    emit_setup_required(
+        getattr(request.app.state, "supabase", None), getattr(request.state, "user_id", None), exc
+    )
     headers: dict[str, str] = {}
     if exc.code == "RATE_LIMITED":
         # Whole seconds, as the HTTP header wants; the same number is in `details`.

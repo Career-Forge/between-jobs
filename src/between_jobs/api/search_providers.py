@@ -215,6 +215,16 @@ def _classify_url_tier(url: str) -> tuple[float, str]:
     return 4.0, "unknown"
 
 
+def ats_label_for_url(url: str) -> str | None:
+    """The applicant-tracking system a posting URL is on ("greenhouse", "lever", "workday", ...),
+    or None when the URL is not on a recognized one. The same table the tier classifier uses, so
+    there is one list of hosts to keep current; only the system's name is returned."""
+    tier, label = _classify_url_tier(url)
+    if tier == 1.0 and label.startswith("ats:"):
+        return label.removeprefix("ats:")
+    return None
+
+
 _COMPANY_FROM_URL_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?:boards|job-boards)\.greenhouse\.io/(?:embed/job_board\?for=)?([^/?&#]+)"),
     re.compile(r"jobs\.lever\.co/([^/?#]+)"),

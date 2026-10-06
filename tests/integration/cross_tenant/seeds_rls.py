@@ -89,3 +89,51 @@ async def seed_rate_limit_counter(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
         },
     ).execute()
     return {"bucket": bucket}
+
+
+@seeder("rls_tester_enrollment", tables=("tester_enrollments",))
+async def seed_tester_enrollment(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
+    """An enrollment row, written with the service role the way the API writes one. The tester
+    can read it (the one policy on the table) and nothing else, which the RLS suite checks. The
+    optional sponsorship answer is filled in, so the account-deletion drill has the sensitive
+    column to prove gone."""
+    version = ctx.mark(tenant, ctx.tag("consent"))
+    row = (
+        await ctx.sb.table("tester_enrollments")
+        .insert(
+            {
+                "user_id": tenant.user_id,
+                "role_cohort": "data_analyst",
+                "seniority": "mid",
+                "needs_sponsorship": True,
+                "consent_version": version,
+                "consented_at": datetime.now(UTC).isoformat(),
+            }
+        )
+        .execute()
+    ).data[0]
+    return {"user_id": row["user_id"], "consent_version": version}
+
+
+@seeder("rls_product_event", tables=("product_events",))
+async def seed_product_event(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
+    """A product event that names one of the tenant's applications, so the account-deletion drill
+    covers both foreign keys on the table (the user's cascade and the application's set-null).
+    The table is service-role-only (no policy at all): no route and no user token reads it."""
+    app = await ctx.need("application", tenant)
+    row = (
+        await ctx.sb.table("product_events")
+        .insert(
+            {
+                "user_id": tenant.user_id,
+                "event": "prepare_finished",
+                "application_id": app["id"],
+                "ats_type": "lever",
+                "outcome": "ok",
+                "n_a": 0,
+                "duration_ms": 1234,
+            }
+        )
+        .execute()
+    ).data[0]
+    return {"id": row["id"], "application_id": app["id"]}

@@ -19,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
+from between_jobs.api import product_events
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase
 from between_jobs.api.auth import require_user_id
@@ -269,3 +270,86 @@ def test_export_checklist_404s_when_nothing_generated_yet() -> None:
         response = client.get(f"/applications/{_APPLICATION_ID}/export-checklist")
 
     assert response.status_code == 404
+
+
+# -- product events: one `artifact_downloaded` per successful download ------------------------
+
+
+def test_downloading_a_resume_is_one_event_naming_the_application_and_the_document(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    with _client(_FakeSupabaseClient(), _FakeHttpClient()) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/resume.pdf")
+
+    assert response.status_code == 200
+    assert recorded_events == [
+        {
+            "user_id": _USER_ID,
+            "event": "artifact_downloaded",
+            "application_id": _APPLICATION_ID,
+            "outcome": "ok",
+            "n_a": 1,  # 1 = resume
+        }
+    ]
+
+
+def test_downloading_a_cover_letter_is_recorded_as_the_other_document(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    with _client(_FakeSupabaseClient(), _FakeHttpClient()) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/cover-letter.pdf")
+
+    assert response.status_code == 200
+    assert [(r["event"], r["n_a"]) for r in recorded_events] == [("artifact_downloaded", 2)]
+
+
+@pytest.mark.parametrize(
+    "supabase",
+    [
+        _FakeSupabaseClient(applications=[]),  # not the caller's application
+        _FakeSupabaseClient(artifact_versions=[]),  # nothing generated yet
+    ],
+    ids=["no application", "nothing generated"],
+)
+def test_a_download_that_does_not_happen_records_nothing(
+    recorded_events: list[dict[str, Any]], supabase: _FakeSupabaseClient
+) -> None:
+    with _client(supabase, _FakeHttpClient()) as client:
+        resume = client.get(f"/applications/{_APPLICATION_ID}/resume.pdf")
+        cover_letter = client.get(f"/applications/{_APPLICATION_ID}/cover-letter.pdf")
+
+    assert (resume.status_code, cover_letter.status_code) == (404, 404)
+    assert recorded_events == []
+
+
+def test_a_failed_compile_records_nothing(recorded_events: list[dict[str, Any]]) -> None:
+    with _client(_FakeSupabaseClient(), _FakeHttpClient(status_code=422)) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/resume.pdf")
+
+    assert response.status_code == 500
+    assert recorded_events == []
+
+
+def test_the_checklist_is_not_a_download(recorded_events: list[dict[str, Any]]) -> None:
+    """It compiles the same PDF, but nothing leaves the server."""
+    with _client(_FakeSupabaseClient(), _FakeHttpClient()) as client:
+        assert client.get(f"/applications/{_APPLICATION_ID}/export-checklist").status_code == 200
+
+    assert recorded_events == []
+
+
+def test_a_download_is_the_same_whether_or_not_the_event_can_be_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def explode(*_: object) -> None:
+        raise RuntimeError("the writer itself is broken")
+
+    monkeypatch.setattr(product_events, "write_event", explode)
+    http = _FakeHttpClient()
+
+    with _client(_FakeSupabaseClient(), http) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/resume.pdf")
+
+    assert response.status_code == 200
+    assert response.content == http.pdf_bytes
+    assert response.headers["content-type"] == "application/pdf"

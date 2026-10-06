@@ -193,6 +193,8 @@ async def test_a_deleted_account_leaves_nothing_behind_and_touches_nobody_else(
     before = await world.counts(victim.user_id)
     bystander_before = await world.counts(bystander.user_id)
     assert len(before) >= 18, f"the drill only filled {len(before)} tables: {sorted(before)}"
+    # the product-event log and the tester enrollment (with its sponsorship answer) are in it
+    assert {"public.product_events", "public.tester_enrollments"} <= set(before)
     assert await _stored(world, victim.user_id), "the drill put no files in the bucket"
 
     response = await tenant_client.post("/account/delete", json=_PHRASE, headers=victim.headers)

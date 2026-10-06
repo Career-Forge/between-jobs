@@ -31,6 +31,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
+from between_jobs.api import product_events, rate_limits
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase
 from between_jobs.api.artifact_versions_store import artifact_id_for
@@ -958,3 +959,229 @@ def test_extension_pdf_routes_are_gated_by_the_extensions_own_sign_out_aware_dep
     for response in (resume_response, cover_letter_response):
         assert response.status_code == 401
         assert response.json()["error"]["code"] == "AUTH_REQUIRED"
+
+
+# --- POST /extension/fill-outcome: the extension's count-only report of a finished autofill ---
+
+
+def _fill_body(**overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "ats_type": "lever",
+        "fields_attempted": 8,
+        "fields_filled": 7,
+        "outcome": "partial",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_a_fill_report_is_one_event_with_the_counts_and_answers_204(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    client = _client(_FakeSupabase())
+
+    response = client.post("/extension/fill-outcome", json=_fill_body())
+
+    assert response.status_code == 204
+    assert response.content == b""  # nothing is echoed back
+    assert recorded_events == [
+        {
+            "user_id": _USER_ID,
+            "event": "extension_fill",
+            "ats_type": "lever",
+            "outcome": "partial",
+            "n_a": 8,
+            "n_b": 7,
+        }
+    ]
+
+
+def test_a_fill_report_for_one_of_the_callers_applications_names_it(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    client = _client(_FakeSupabase(applications=[_application_row()]))
+
+    response = client.post(
+        "/extension/fill-outcome", json=_fill_body(application_id=_APPLICATION_ID)
+    )
+
+    assert response.status_code == 204
+    assert recorded_events[0]["application_id"] == _APPLICATION_ID
+
+
+@pytest.mark.parametrize(
+    "applications",
+    [
+        [{"id": _APPLICATION_ID, "user_id": _OTHER_USER_ID, "job_id": "job-1"}],  # someone else's
+        [],  # no such application
+    ],
+    ids=["another user's application", "no such application"],
+)
+def test_a_fill_report_naming_an_application_that_is_not_the_callers_is_a_404_and_records_nothing(
+    recorded_events: list[dict[str, Any]], applications: list[dict[str, Any]]
+) -> None:
+    """The same answer whichever it is, so the route cannot be used to find out which ids exist."""
+    client = _client(_FakeSupabase(applications=applications))
+
+    response = client.post(
+        "/extension/fill-outcome", json=_fill_body(application_id=_APPLICATION_ID)
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+    assert recorded_events == []
+
+
+def test_the_two_kinds_of_404_are_indistinguishable() -> None:
+    answers = []
+    for applications in (
+        [{"id": _APPLICATION_ID, "user_id": _OTHER_USER_ID, "job_id": "job-1"}],
+        [],
+    ):
+        client = _client(_FakeSupabase(applications=applications))
+        response = client.post(
+            "/extension/fill-outcome", json=_fill_body(application_id=_APPLICATION_ID)
+        )
+        answers.append((response.status_code, response.json()["error"]))
+
+    assert answers[0] == answers[1]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"value": "jane@example.com"},
+        {"label": "Email address"},
+        {"url": "https://jobs.lever.co/acme/123"},
+        {"page_url": "https://jobs.lever.co/acme/123"},
+        {"page_text": "Senior Engineer at Acme"},
+        {"field_values": {"email": "jane@example.com"}},
+        {"fields": [{"name": "email", "value": "jane@example.com"}]},
+        {"selector": "input#email"},
+        {"resume_attached": True},
+    ],
+    ids=lambda extra: next(iter(extra)),
+)
+def test_a_report_carrying_anything_beyond_the_counts_is_refused_not_trimmed(
+    recorded_events: list[dict[str, Any]], extra: dict[str, Any]
+) -> None:
+    client = _client(_FakeSupabase())
+
+    response = client.post("/extension/fill-outcome", json=_fill_body(**extra))
+
+    assert response.status_code == 422
+    assert recorded_events == []
+    # and the refusal does not repeat what was sent
+    text = response.text
+    assert "jane@example.com" not in text and "Acme" not in text and "lever.co" not in text
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"ats_type": "https://jobs.lever.co/acme"},  # a URL is not an ATS name
+        {"ats_type": "lever.co"},
+        {"ats_type": "Lever"},  # the list is exact
+        {"ats_type": "some-new-ats"},
+        {"ats_type": ""},
+        {"ats_type": None},
+        {"fields_attempted": -1},
+        {"fields_attempted": 1001},
+        {"fields_filled": -1},
+        {"fields_filled": 9},  # more filled than attempted (8)
+        {"fields_attempted": "8"},  # strict: a number, not text that looks like one
+        {"fields_filled": 7.0},
+        {"fields_attempted": True},
+        {"outcome": "setup_required"},  # not an outcome a fill can have
+        {"outcome": "done"},
+        {"application_id": "not-a-uuid"},
+        {"application_id": 12345},
+    ],
+)
+def test_a_malformed_report_is_a_422_and_records_nothing(
+    recorded_events: list[dict[str, Any]], overrides: dict[str, Any]
+) -> None:
+    client = _client(_FakeSupabase())
+
+    response = client.post("/extension/fill-outcome", json=_fill_body(**overrides))
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_INPUT"
+    assert recorded_events == []
+
+
+@pytest.mark.parametrize("missing", ["ats_type", "fields_attempted", "fields_filled", "outcome"])
+def test_every_part_of_a_report_but_the_application_is_required(
+    recorded_events: list[dict[str, Any]], missing: str
+) -> None:
+    client = _client(_FakeSupabase())
+    body = _fill_body()
+    del body[missing]
+
+    assert client.post("/extension/fill-outcome", json=body).status_code == 422
+    assert recorded_events == []
+
+
+@pytest.mark.parametrize(
+    ("attempted", "filled", "outcome"),
+    [(0, 0, "ok"), (12, 12, "ok"), (12, 0, "failed"), (1000, 1000, "ok")],
+)
+def test_the_edges_of_a_valid_report_are_accepted(
+    recorded_events: list[dict[str, Any]], attempted: int, filled: int, outcome: str
+) -> None:
+    client = _client(_FakeSupabase())
+
+    response = client.post(
+        "/extension/fill-outcome",
+        json=_fill_body(fields_attempted=attempted, fields_filled=filled, outcome=outcome),
+    )
+
+    assert response.status_code == 204
+    assert (recorded_events[0]["n_a"], recorded_events[0]["n_b"]) == (attempted, filled)
+
+
+def test_a_fill_report_is_a_204_even_when_the_event_cannot_be_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def explode(*_: object) -> None:
+        raise RuntimeError("the writer itself is broken")
+
+    monkeypatch.setattr(product_events, "write_event", explode)
+
+    response = _client(_FakeSupabase()).post("/extension/fill-outcome", json=_fill_body())
+
+    assert response.status_code == 204
+
+
+def test_a_fill_report_is_counted_against_its_own_bucket_for_the_extension_user(
+    monkeypatch: pytest.MonkeyPatch, recorded_events: list[dict[str, Any]]
+) -> None:
+    claims: list[tuple[str, str]] = []
+
+    async def deny(_supabase: Any, user_id: str, bucket: str) -> rate_limits.RateLimitDecision:
+        claims.append((user_id, bucket))
+        return rate_limits.RateLimitDecision(False, 600)
+
+    monkeypatch.setattr(rate_limits, "claim_rate_limit_slot", deny)
+
+    response = _client(_FakeSupabase()).post("/extension/fill-outcome", json=_fill_body())
+
+    assert claims == [(_USER_ID, "fill_outcome")]
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "RATE_LIMITED"
+    assert recorded_events == []  # the handler never ran
+
+
+def test_the_fill_report_is_gated_by_the_extensions_own_sign_out_aware_dependency(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    """Only `require_user_id` is overridden here, so a request with no Authorization header
+    reaches the extension dependency's own rejection."""
+    app.dependency_overrides[get_supabase] = lambda: _FakeSupabase()
+    app.dependency_overrides[require_user_id] = lambda: _USER_ID
+
+    response = TestClient(app).post("/extension/fill-outcome", json=_fill_body())
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "AUTH_REQUIRED"
+    assert recorded_events == []

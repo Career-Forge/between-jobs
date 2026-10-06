@@ -79,6 +79,7 @@ from .jobs_store import create_job_from_paste, get_snapshots
 from .link_codes_store import consume_link_code, link_schema_ready
 from .link_completion import LinkCompletion, finish_link
 from .prepare_orchestrator import latest_resume_pdf, run_prepare_application
+from .product_events import emit_setup_required
 from .profile import ProfileImportError, import_profile
 from .profile_store import (
     VersionAlreadyActivated,
@@ -481,6 +482,9 @@ async def _run_prepare_and_deliver(
             supabase, http, user_id, application_id, idempotency_key=f"telegram:{uuid.uuid4()}"
         )
     except ApiError as e:
+        # This is the bot's own error boundary, so the API error handler never sees the error;
+        # a person stuck on a setup step here is as much a funnel drop-off as one on the web.
+        emit_setup_required(supabase, user_id, e)
         await telegram.send_message(chat_id, f"❌ {e.message}")
         return
 

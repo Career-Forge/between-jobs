@@ -38,8 +38,14 @@ from .extension_rate_limit import claim_draft_answer_slot
 from .job_fit_scoring import summarize_profile
 from .jobs_store import SnapshotNotFound, get_snapshot
 from .llm_client import generate as llm_generate
-from .models import DraftAnswerRequest, MatchApprovedAnswerRequest, SaveApprovedAnswerRequest
+from .models import (
+    DraftAnswerRequest,
+    FillOutcomeRequest,
+    MatchApprovedAnswerRequest,
+    SaveApprovedAnswerRequest,
+)
 from .prepare_orchestrator import latest_cover_letter_pdf, latest_resume_pdf
+from .product_events import emit_event
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
 from .rate_limits import limit
@@ -76,6 +82,44 @@ async def sign_out(
     every other route are entirely unaffected -- see
     `tests/test_extension_auth.py`."""
     await record_extension_sign_out(supabase, user_id)
+
+
+@router.post(
+    "/fill-outcome",
+    status_code=204,
+    dependencies=[Depends(limit("fill_outcome", auth=require_active_extension_user_id))],
+)
+async def report_fill_outcome(
+    body: FillOutcomeRequest,
+    user_id: str = Depends(require_active_extension_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> None:
+    """The extension's report of one finished autofill: the applicant-tracking system, how many
+    fields it tried and how many it filled. Counts only -- the request model refuses anything
+    else (see `FillOutcomeRequest`), and nothing from it is echoed back. It is recorded as one
+    `extension_fill` product event (product_events.py) and answered 204.
+
+    When the report names an application it must be one of the caller's: anything else is a 404,
+    the same answer whether the application belongs to someone else or does not exist, so the
+    route cannot be used to find out which ids exist. Recording is fire-and-forget, so a
+    database hiccup never turns this into an error for the extension."""
+    application_id: str | None = None
+    if body.application_id is not None:
+        application_id = str(body.application_id)
+        try:
+            await get_application(supabase, user_id, application_id)
+        except ApplicationNotFound as e:
+            raise ApiError("NOT_FOUND", f"no application found for id {application_id!r}") from e
+    emit_event(
+        supabase,
+        user_id,
+        "extension_fill",
+        application_id=application_id,
+        ats_type=body.ats_type,
+        outcome=body.outcome,
+        n_a=body.fields_attempted,
+        n_b=body.fields_filled,
+    )
 
 
 @router.get(

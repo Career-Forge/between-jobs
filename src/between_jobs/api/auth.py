@@ -150,7 +150,7 @@ async def require_user_id(request: Request) -> str:
         # (cold cache, expired key set, a key rotation). Running it inline
         # in this coroutine would stall the whole event loop for every
         # other request for the duration of that network call.
-        return await run_in_threadpool(
+        user_id = await run_in_threadpool(
             verify_access_token,
             token,
             request.app.state.jwks_client,
@@ -160,3 +160,8 @@ async def require_user_id(request: Request) -> str:
         # PyJWT's own message names internals (which kid it looked for,
         # which claim failed) that an unauthenticated caller has no use for.
         raise ApiError("AUTH_REQUIRED", "invalid token") from e
+    # Remembered for code that runs where the dependency's return value is out of
+    # reach -- the API error handler, which records the "setup required" product event for
+    # the signed-in user (see product_events.py). Set only after the token verified.
+    request.state.user_id = user_id
+    return user_id

@@ -286,7 +286,9 @@ class _SlowJwksClient:
 def _request_with(jwks_client: Any, token: str) -> Any:
     state = SimpleNamespace(jwks_client=jwks_client, supabase_url=_ISSUER_URL)
     return SimpleNamespace(
-        headers={"authorization": f"Bearer {token}"}, app=SimpleNamespace(state=state)
+        headers={"authorization": f"Bearer {token}"},
+        app=SimpleNamespace(state=state),
+        state=SimpleNamespace(),  # the request's own state, which the dependency stamps
     )
 
 
@@ -332,3 +334,31 @@ async def test_an_invalid_token_error_does_not_echo_pyjwt_internals(
 
     assert excinfo.value.code == "AUTH_REQUIRED"
     assert excinfo.value.message == "invalid token"
+
+
+async def test_the_verified_user_id_is_left_on_the_request_state(
+    private_key: EllipticCurvePrivateKey,
+) -> None:
+    """The API error handler (which records a "setup required" product event) cannot see the
+    dependency's return value, so the dependency leaves the id where it can."""
+    request = _request_with(
+        _fake_jwks_client(private_key.public_key()), _sign(private_key, _base_claims())
+    )
+
+    assert await require_user_id(request) == _USER_ID
+
+    assert request.state.user_id == _USER_ID
+
+
+async def test_a_rejected_token_leaves_nothing_on_the_request_state(
+    private_key: EllipticCurvePrivateKey,
+) -> None:
+    attacker_key = ec.generate_private_key(ec.SECP256R1())
+    request = _request_with(
+        _fake_jwks_client(private_key.public_key()), _sign(attacker_key, _base_claims())
+    )
+
+    with pytest.raises(ApiError):
+        await require_user_id(request)
+
+    assert not hasattr(request.state, "user_id")

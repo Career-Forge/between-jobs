@@ -67,7 +67,9 @@ def _base_claims(**overrides: Any) -> dict[str, Any]:
 def _request_with(jwks_client: Any, token: str) -> Any:
     state = SimpleNamespace(jwks_client=jwks_client, supabase_url=_ISSUER_URL)
     return SimpleNamespace(
-        headers={"authorization": f"Bearer {token}"}, app=SimpleNamespace(state=state)
+        headers={"authorization": f"Bearer {token}"},
+        app=SimpleNamespace(state=state),
+        state=SimpleNamespace(),  # the request's own state, which the dependency stamps
     )
 
 
@@ -402,3 +404,34 @@ async def test_require_user_id_itself_never_reads_the_sign_out_table(
     # awareness of `extension_sign_outs` at all -- still succeeds.
     user_id = await require_user_id(request)
     assert user_id == _USER_ID
+
+
+async def test_the_verified_user_id_is_left_on_the_request_state(
+    private_key: EllipticCurvePrivateKey,
+) -> None:
+    """Same as `require_user_id`: the API error handler reads it from there."""
+    request = _request_with(
+        _fake_jwks_client(private_key.public_key()), _sign(private_key, _base_claims())
+    )
+
+    user_id = await require_active_extension_user_id(request, supabase=_FakeSupabase())  # type: ignore[arg-type]
+
+    assert user_id == _USER_ID
+    assert request.state.user_id == _USER_ID
+
+
+async def test_a_signed_out_token_leaves_nothing_on_the_request_state(
+    private_key: EllipticCurvePrivateKey,
+) -> None:
+    now = int(time.time())
+    signed_out_at_iso = datetime.fromtimestamp(now - 60, tz=UTC).isoformat()
+    token = _sign(private_key, _base_claims(iat=now - 600))
+    supabase = _FakeSupabase(
+        extension_sign_outs=[{"user_id": _USER_ID, "signed_out_at": signed_out_at_iso}]
+    )
+    request = _request_with(_fake_jwks_client(private_key.public_key()), token)
+
+    with pytest.raises(ApiError):
+        await require_active_extension_user_id(request, supabase=supabase)  # type: ignore[arg-type]
+
+    assert not hasattr(request.state, "user_id")

@@ -36,6 +36,7 @@ from .forge_engines_client import call_apply
 from .jobs_store import SnapshotNotFound, get_snapshot
 from .latex_service_client import call_compile
 from .locale_resolver import resolve_locale_for_prepare
+from .product_events import EventDraft, ats_type_of_url, tracked
 from .profile_store import get_active_version
 from .resume_documents_store import get_document_for, saved_header_layout
 from .shape_overrides import merge as merge_shape_overrides
@@ -111,7 +112,37 @@ async def run_prepare_application(
     `forge_engines.claim_verify`'s own module docstring for the full
     scope and the one accepted limitation (a verifier outage and "nothing
     to flag" are indistinguishable downstream).
+
+    Every real attempt is one `prepare_finished` product event (product_events.py), written when
+    it ends: whether it delivered a resume, how many unsupported-claim warnings it carried, which
+    applicant-tracking system the posting is on, how long it took. "Real" means the application
+    exists and is the caller's: a replayed idempotency key, or an application id that is not the
+    caller's, records nothing. The recording never changes what this returns or raises.
     """
+    async with tracked(supabase, user_id, "prepare_finished", armed=False) as event:
+        return await _prepare_application(
+            supabase,
+            http,
+            user_id,
+            application_id,
+            idempotency_key,
+            event,
+            force_generate=force_generate,
+            generate_cover_letter=generate_cover_letter,
+        )
+
+
+async def _prepare_application(
+    supabase: AsyncClient,
+    http: httpx.AsyncClient,
+    user_id: str,
+    application_id: str,
+    idempotency_key: str,
+    event: EventDraft,
+    *,
+    force_generate: bool,
+    generate_cover_letter: bool,
+) -> dict[str, Any]:
     existing = await get_event_by_idempotency_key(supabase, user_id, idempotency_key)
     if existing is not None:
         return cast(dict[str, Any], existing["payload"])
@@ -120,6 +151,9 @@ async def run_prepare_application(
         application = await get_application(supabase, user_id, application_id)
     except ApplicationNotFound as e:
         raise ApiError("NOT_FOUND", f"no application found for id {application_id!r}") from e
+    # From here the attempt is a real one: the application is the caller's.
+    event.application_id = application_id
+    event.armed = True
 
     profile_version = await get_active_version(supabase, user_id)
     if profile_version is None:
@@ -135,6 +169,7 @@ async def run_prepare_application(
         job_snapshot = await get_snapshot(supabase, application["active_job_snapshot_id"])
     except SnapshotNotFound as e:
         raise ApiError("INTERNAL_ERROR", "This application's job snapshot is missing.") from e
+    event.ats_type = ats_type_of_url(job_snapshot.get("source_url"))
 
     credential = await resolve(supabase, user_id, capability="prepare_application")
 
@@ -206,6 +241,10 @@ async def run_prepare_application(
     # them back off the stored `artifact_versions.warnings` by their
     # `"unsupported claim"` prefix rather than a separate stored field.
     warnings += forge_result.claim_warnings
+    event.n_a = len(forge_result.claim_warnings)
+    # The engine ran to the end: a resume is "ok"; a run that declined to write one (the honest
+    # floor gate) completed but delivered less than was asked, so it is "partial".
+    event.outcome = "ok" if forge_result.resume is not None else "partial"
 
     resume_ref: ArtifactRef | None = None
     if forge_result.resume is not None:

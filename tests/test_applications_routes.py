@@ -22,6 +22,12 @@ from between_jobs.api.app_state import get_http_client, get_supabase
 from between_jobs.api.artifact_versions_store import artifact_id_for
 from between_jobs.api.auth import require_user_id
 from between_jobs.api.extension_auth import require_active_extension_user_id
+from between_jobs.api.models import (
+    MAX_URL_CHARS,
+    CreateApplicationFromPasteRequest,
+    CreateApplicationFromUrlRequest,
+    TrackDiscoveredJobRequest,
+)
 
 _USER_ID = "00000000-0000-0000-0000-000000000001"
 _JOB_ID = "20000000-0000-0000-0000-000000000001"
@@ -444,6 +450,44 @@ def test_create_application_from_url_empty_url_returns_structured_422() -> None:
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/applications", _paste_body(canonical_url="https://acme.example/" + "a" * MAX_URL_CHARS)),
+        ("/applications/from-url", {"url": "https://acme.example/" + "a" * MAX_URL_CHARS}),
+        (
+            "/discover/track",
+            {"apply_url": "https://acme.example/" + "a" * MAX_URL_CHARS, "title": "Engineer"},
+        ),
+    ],
+)
+def test_a_url_past_the_length_limit_is_refused_before_anything_is_stored(
+    path: str, body: dict[str, Any]
+) -> None:
+    """A posting URL is stored and pattern-matched on every later request that touches the
+    application, so an unbounded one is unbounded work for the server. Every route that takes
+    one refuses it at the door, and nothing is written."""
+    supabase = _FakeSupabaseClient()
+    with _client(supabase) as client:
+        response = client.post(path, json=body)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_INPUT"
+    assert supabase.jobs.insert_calls == []
+    assert supabase.job_snapshots.insert_calls == []
+
+
+def test_a_url_exactly_at_the_length_limit_is_accepted() -> None:
+    url = "https://acme.example/" + "a" * (MAX_URL_CHARS - len("https://acme.example/"))
+    assert len(url) == MAX_URL_CHARS
+
+    CreateApplicationFromPasteRequest(
+        title="t", company_name="c", description_text="d", canonical_url=url
+    )
+    CreateApplicationFromUrlRequest(url=url)
+    TrackDiscoveredJobRequest(apply_url=url, title="t")
 
 
 def test_create_application_from_url_resolves_the_firecrawl_credential_specifically(

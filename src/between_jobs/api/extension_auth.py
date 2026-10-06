@@ -137,4 +137,7 @@ async def require_active_extension_user_id(
     # is unaffected either way -- it's still rejected.
     if signed_out_at is not None and signed_out_at > issued_at:
         raise ApiError("AUTH_REQUIRED", "signed out of the extension -- sign in again")
+    # Same as `auth.require_user_id`: for the API error handler, only once the caller is
+    # known to be a signed-in, not-signed-out user.
+    request.state.user_id = user_id
     return user_id

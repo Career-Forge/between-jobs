@@ -8,6 +8,8 @@ call to forge-engines is faked at the httpx client boundary
 
 from __future__ import annotations
 
+import asyncio
+import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -15,6 +17,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from between_jobs.api import product_events
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase
 from between_jobs.api.auth import require_user_id
@@ -628,3 +631,190 @@ def test_get_prepare_result_returns_none_when_never_prepared() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"result": None}
+
+
+# -- product events: one `prepare_finished` per real attempt ----------------------------------
+
+
+def _prepare(
+    supabase: _FakeSupabaseClient, http: _FakeHttpClient, **body: Any
+) -> httpx.Response | Any:
+    return _prepare_timed(supabase, http, **body)[0]
+
+
+def _prepare_timed(
+    supabase: _FakeSupabaseClient, http: _FakeHttpClient, **body: Any
+) -> tuple[Any, float]:
+    """The response, and how long the request itself took (not the app's startup and shutdown,
+    which sit either side of it inside the `with`)."""
+    with _client(supabase, http) as client:
+        started = time.monotonic()
+        response = client.post(
+            f"/applications/{_APPLICATION_ID}/prepare", json=_prepare_body(**body)
+        )
+        return response, time.monotonic() - started
+
+
+def _prepare_events(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [r for r in rows if r["event"] == "prepare_finished"]
+
+
+def test_a_generated_resume_is_one_ok_event_naming_the_application(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    response = _prepare(_FakeSupabaseClient(), _FakeHttpClient())
+
+    assert response.status_code == 201
+    (row,) = recorded_events
+    assert {k: v for k, v in row.items() if k != "duration_ms"} == {
+        "user_id": _USER_ID,
+        "event": "prepare_finished",
+        "application_id": _APPLICATION_ID,
+        "outcome": "ok",
+        "n_a": 0,  # no unsupported-claim warnings
+    }
+    assert isinstance(row["duration_ms"], int) and row["duration_ms"] >= 0
+    assert "ats_type" not in row  # example.com is not an applicant-tracking system we know
+
+
+def test_the_applicant_tracking_system_is_recorded_by_name_never_by_url(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    snapshot = {**_SNAPSHOT_ROW, "source_url": "https://jobs.lever.co/acme/1234-secret-path?x=1"}
+
+    _prepare(
+        _FakeSupabaseClient(job_snapshots=_FakeTable(select_rows=[snapshot])), _FakeHttpClient()
+    )
+
+    (row,) = recorded_events
+    assert row["ats_type"] == "lever"
+    assert "acme" not in str(row) and "secret-path" not in str(row)
+
+
+def test_the_number_of_unsupported_claim_warnings_is_recorded(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    body = {
+        **_FORGE_APPLY_RESPONSE_BODY,
+        "claim_warnings": [
+            'unsupported claim (contradicted): "Led 20 engineers" -- no match',
+            'unsupported claim (unverifiable): "Built it in Rust" -- not in the source',
+        ],
+    }
+
+    response = _prepare(_FakeSupabaseClient(), _FakeHttpClient(body=body))
+
+    assert response.status_code == 201
+    # the other warning (the gate's caution) is not a claim warning and is not counted
+    assert len(response.json()["warnings"]) == 3
+    assert recorded_events[0]["n_a"] == 2
+
+
+def test_a_run_that_declined_to_write_a_resume_is_recorded_as_partial(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    declined = {
+        **_FORGE_APPLY_RESPONSE_BODY,
+        "resume": None,
+        "ats_attempts": [],
+        "gate": {"outcome": "skip_low_score", "reason": "Fit score too low.", "cautions": []},
+    }
+
+    response = _prepare(_FakeSupabaseClient(), _FakeHttpClient(body=declined))
+
+    assert response.status_code == 201
+    assert _prepare_events(recorded_events)[0]["outcome"] == "partial"
+
+
+def test_a_missing_profile_is_recorded_as_a_setup_required_attempt(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    supabase = _FakeSupabaseClient(profile_versions=_FakeTable(select_rows=[]))
+
+    response = _prepare(supabase, _FakeHttpClient())
+
+    assert response.status_code == 409
+    (row,) = recorded_events
+    assert (row["event"], row["outcome"], row["capability"]) == (
+        "prepare_finished",
+        "setup_required",
+        "profile",
+    )
+    assert row["application_id"] == _APPLICATION_ID
+
+
+def test_an_engine_failure_is_recorded_as_failed_and_still_the_same_error(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    response = _prepare(_FakeSupabaseClient(), _FakeHttpClient(status_code=503, body={}))
+
+    assert response.status_code >= 500
+    (row,) = recorded_events
+    assert (row["event"], row["outcome"]) == ("prepare_finished", "failed")
+    assert row["application_id"] == _APPLICATION_ID
+
+
+def test_an_application_that_is_not_the_callers_records_nothing_at_all(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    """A stranger's application id must not leave a row that names it, and a typo'd id is not
+    an attempt: nothing is recorded until the application is known to be the caller's."""
+    response = _prepare(
+        _FakeSupabaseClient(applications=_FakeTable(select_rows=[])), _FakeHttpClient()
+    )
+
+    assert response.status_code == 404
+    assert recorded_events == []
+
+
+def test_a_replayed_request_records_nothing_a_second_time(
+    recorded_events: list[dict[str, Any]],
+) -> None:
+    already_prepared = {
+        "id": "event-1",
+        "idempotency_key": _prepare_body()["idempotency_key"],
+        "payload": {"run_id": "run-1", "resume": None, "final_score": None},
+    }
+    supabase = _FakeSupabaseClient(application_events=_FakeTable(select_rows=[already_prepared]))
+
+    response = _prepare(supabase, _FakeHttpClient())
+
+    assert response.status_code == 201
+    assert recorded_events == []
+
+
+def test_generating_answers_the_same_whether_or_not_the_event_can_be_recorded(
+    monkeypatch: pytest.MonkeyPatch, recorded_events: list[dict[str, Any]]
+) -> None:
+    normal = _prepare(_FakeSupabaseClient(), _FakeHttpClient())
+
+    def explode(*_: object) -> None:
+        raise RuntimeError("the writer itself is broken")
+
+    async def slow_database(*_: object) -> bool:
+        await asyncio.sleep(1.0)
+        return True
+
+    for broken in (explode, slow_database):
+        monkeypatch.setattr(product_events, "write_event", broken)
+        response, seconds = _prepare_timed(_FakeSupabaseClient(), _FakeHttpClient())
+        assert seconds < 0.5, "the request waited for the event to be written"
+        assert response.status_code == normal.status_code == 201
+        # the run id is fresh every time; everything else is the same
+        assert {**response.json(), "run_id": None} == {**normal.json(), "run_id": None}
+
+
+def test_a_failing_run_still_raises_its_own_error_when_the_event_cannot_be_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def explode(*_: object) -> None:
+        raise RuntimeError("the writer itself is broken")
+
+    monkeypatch.setattr(product_events, "write_event", explode)
+
+    response = _prepare(
+        _FakeSupabaseClient(profile_versions=_FakeTable(select_rows=[])), _FakeHttpClient()
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "SETUP_REQUIRED"

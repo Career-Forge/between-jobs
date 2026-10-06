@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from between_jobs.api import product_events
 from between_jobs.api.applications_store import find_application_by_url
 from between_jobs.api.extension_answers_store import match_approved_answer
 
@@ -344,6 +345,36 @@ async def _draft(ctx: Ctx) -> Req:
     )
 
 
+async def _fill_outcome(ctx: Ctx) -> Req:
+    """B reports a fill that names A's application."""
+    app = await ctx.need("application", ctx.a)
+    return Req(
+        "POST",
+        "/extension/fill-outcome",
+        json={
+            "ats_type": "lever",
+            "application_id": app["id"],
+            "fields_attempted": 4,
+            "fields_filled": 3,
+            "outcome": "partial",
+        },
+    )
+
+
+async def _fill_outcome_unchanged(ctx: Ctx) -> None:
+    """The refused report recorded nothing: no event of anyone's mentions A's application. (The
+    recording is a background task, so wait for any that is still in flight before looking.)"""
+    await product_events.flush()
+    app = await ctx.need("application", ctx.a)
+    rows = (
+        await ctx.sb.table("product_events")
+        .select("id, user_id")
+        .eq("application_id", app["id"])
+        .execute()
+    ).data
+    assert rows == [], f"B's refused fill report left an event behind: {rows}"
+
+
 CASES = [
     Case("GET /applications", _list, kind="list", foreign_status=200, b_seeds=("application",)),
     Case("GET /applications/{application_id}", _one),
@@ -434,6 +465,14 @@ CASES = [
         note="Creates for the caller: B saves an answer to the very question text A has an "
         "answer for (and cites A's career fact id as evidence). A's row must be untouched "
         "and B's must land under B.",
+    ),
+    Case(
+        "POST /extension/fill-outcome",
+        _fill_outcome,
+        owner_status=frozenset({204}),
+        unchanged=_fill_outcome_unchanged,
+        note="B names A's application in a fill report: the same 404 as for an id that does "
+        "not exist, and no event is recorded. The owner's own report is a 204.",
     ),
     Case(
         "POST /extension/draft-answer",

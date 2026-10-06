@@ -52,6 +52,7 @@ OWNED_WITH_POLICIES = [
     "resume_documents",
     "saved_searches",
     "sessions",
+    "tester_enrollments",
     "warm_path_runs",
     "working_sets",
 ]
@@ -64,6 +65,7 @@ SERVICE_ROLE_ONLY = [
     "extension_draft_answer_rate_limits",
     "extension_sign_outs",
     "oauth_states",
+    "product_events",
     "today_items",
 ]
 

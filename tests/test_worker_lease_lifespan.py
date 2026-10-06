@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
 
 from between_jobs.api import app as app_module
+from between_jobs.api import product_events
 from between_jobs.api.app import LEASED_WORKERS, app
 
 THE_THREE = {"job_registry_poller", "saved_search_matcher", "gmail_reply_checker"}
@@ -218,6 +219,36 @@ async def test_a_normal_shutdown_stops_every_worker_and_every_keeper(
     assert [
         t for t in asyncio.all_tasks() if t.get_name().startswith("worker-lease:") and not t.done()
     ] == []
+
+
+async def test_shutdown_waits_for_product_events_still_in_flight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An event whose insert is still running when the app shuts down (a deploy) is written, not
+    lost: the lifespan flushes before it closes the clients. The writer takes real time (0.2 s),
+    so a flush that is missing, or has a zero timeout, returns before the insert finishes."""
+    client = StrictClient(True)
+    _boot_with(monkeypatch, client)
+    written: list[dict[str, Any]] = []
+
+    async def slow_write(_supabase: object, row: dict[str, Any]) -> bool:
+        await asyncio.sleep(0.2)
+        written.append(row)
+        return True
+
+    # after the suite's autouse no-op writer, so this one is the one the emitter schedules
+    monkeypatch.setattr(product_events, "write_event", slow_write)
+
+    async with app_module.lifespan(FastAPI()):
+        product_events.emit_event(
+            client,  # type: ignore[arg-type]
+            "00000000-0000-0000-0000-0000000000a1",
+            "discover_search",
+            outcome="ok",
+        )
+        assert written == []  # still in flight while the app is running
+
+    assert [row["event"] for row in written] == ["discover_search"]
 
 
 def test_each_leased_loop_is_given_the_state_that_carries_its_lease(

@@ -79,6 +79,8 @@ LIMITED: dict[str, str] = {
     "POST /discover/track": "job_ingest",
     # Saving a key makes a live call to the provider to check it.
     "POST /credentials": "credential_save",
+    # One small insert per finished autofill, bounded so a stuck client cannot grow the log.
+    "POST /extension/fill-outcome": "fill_outcome",
 }
 """Route -> bucket. Routes authenticated with the extension's scoped token are listed too; the
 limiter on them reads the user from that token (see

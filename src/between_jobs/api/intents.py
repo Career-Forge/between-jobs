@@ -32,6 +32,8 @@ import re
 from enum import StrEnum
 from typing import TypedDict
 
+from .models import MAX_URL_CHARS
+
 _JSON_PAYLOAD_LENGTH_THRESHOLD = 800
 
 
@@ -133,6 +135,8 @@ def parse_job_paste(text: str) -> JobPasteFields | list[str]:
         errors.append("Missing required field: Company")
     if not description_text:
         errors.append("Missing the job description text after the header fields")
+    if len(fields.get("url", "")) > MAX_URL_CHARS:
+        errors.append(f"The URL is too long (the limit is {MAX_URL_CHARS} characters)")
     if errors:
         return errors
 
