@@ -288,6 +288,7 @@ function processorBlocks(): Block[] {
         ul(
           "Resumes, cover letters, the Tailor panel and the gap interview: your profile and the job posting text, sent through the resume engine, and for the gap interview the answers you type.",
           "Job fit scores in Discover and for saved searches: a text summary of your profile (name, headline, location, work-authorization note, summary, recent roles, projects, skills and education, but not your email address or phone number) and, for each job, its title, company, location and a short excerpt. Saved searches run in the background every few hours, without you clicking, and use your key when they do.",
+          "Importing a resume file (PDF or DOCX): the text read from the file, which is your resume as you wrote it, so the model can fill in a draft profile for you to review. We do not keep the file itself.",
           "Company research: excerpts of public web pages found by your search provider, which the model turns into short claims.",
           "Contact research, event research and outreach drafts: the company, a contact's name and job title, the role, and excerpts of public web pages. They do not send your profile. In event research the AI provider sees only the excerpts of public pages: your city goes to your search provider as part of the search words and is not sent to the AI provider.",
           "Positioning briefs: your skills as matched against a posting, and the company research you already have.",

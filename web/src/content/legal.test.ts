@@ -722,6 +722,8 @@ const MODEL_CALLERS: Record<string, string> = {
   job_fit_scoring: "Job fit scores",
   outreach_writer: "outreach drafts",
   positioning_brief: "Positioning briefs",
+  profile_import: "Importing a resume file",
+  profile_routes: "Importing a resume file",
   positioning_brief_routes: "Positioning briefs",
   saved_search_matcher: "Job fit scores",
   warm_path_events: "event research",
