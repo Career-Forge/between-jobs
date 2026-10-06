@@ -19,9 +19,21 @@ function sectionId(id: string): string {
   return `bj-legal-${id}`;
 }
 
-function InlineView({ part }: { part: Inline }) {
+// `newTabLinks` makes a link to a page of the app open in a new tab instead of leaving this one.
+// The Tester Agreement is read in the middle of a form (components/EnrollmentView.tsx): a link that
+// replaced the page would throw away what the person had already chosen and ticked, and the form
+// lives only in that page's state. The legal pages themselves keep the in-app link.
+function InlineView({ part, newTabLinks }: { part: Inline; newTabLinks: boolean }) {
   if (typeof part === "string") return <>{part}</>;
-  if ("to" in part) return <Link to={part.to}>{part.text}</Link>;
+  if ("to" in part) {
+    if (!newTabLinks) return <Link to={part.to}>{part.text}</Link>;
+    return (
+      <a href={part.to} target="_blank" rel="noopener noreferrer">
+        {part.text}
+        <span className="bj-visually-hidden"> (opens in a new tab)</span>
+      </a>
+    );
+  }
   if ("href" in part) {
     return (
       <a href={part.href} target="_blank" rel="noopener noreferrer">
@@ -33,22 +45,24 @@ function InlineView({ part }: { part: Inline }) {
   return <a href={`mailto:${part.email}`}>{part.email}</a>;
 }
 
-function InlineList({ parts }: { parts: readonly Inline[] }) {
+function InlineList({ parts, newTabLinks }: { parts: readonly Inline[]; newTabLinks: boolean }) {
   return (
     <>
       {parts.map((part, index) => (
-        <InlineView key={index} part={part} />
+        <InlineView key={index} part={part} newTabLinks={newTabLinks} />
       ))}
     </>
   );
 }
 
-function BlockView({ block }: { block: Block }) {
+// Exported for the Tester Agreement, which is drawn from the same kind of typed blocks
+// (components/EnrollmentView.tsx).
+export function BlockView({ block, newTabLinks = false }: { block: Block; newTabLinks?: boolean }) {
   switch (block.kind) {
     case "p":
       return (
         <p>
-          <InlineList parts={block.inline} />
+          <InlineList parts={block.inline} newTabLinks={newTabLinks} />
         </p>
       );
     case "h3":
@@ -58,7 +72,7 @@ function BlockView({ block }: { block: Block }) {
         <ul>
           {block.items.map((item, index) => (
             <li key={index}>
-              <InlineList parts={item} />
+              <InlineList parts={item} newTabLinks={newTabLinks} />
             </li>
           ))}
         </ul>
@@ -70,7 +84,7 @@ function BlockView({ block }: { block: Block }) {
             <Fragment key={item.term}>
               <dt>{item.term}</dt>
               <dd>
-                <InlineList parts={item.detail} />
+                <InlineList parts={item.detail} newTabLinks={newTabLinks} />
               </dd>
             </Fragment>
           ))}

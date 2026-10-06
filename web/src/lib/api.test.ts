@@ -8,7 +8,7 @@ vi.mock("./supabase", () => ({
   },
 }));
 
-import { ApiError, apiFetch, apiFetchBlob } from "./api";
+import { ApiError, apiFetch, apiFetchBlob, setEnrollmentRefusalListener } from "./api";
 
 function envelope(error: Record<string, unknown>): string {
   return JSON.stringify({ error: { capability: null, missing: null, ...error } });
@@ -172,5 +172,91 @@ describe("a 409 SETUP_REQUIRED reply", () => {
     expect(error.settingsPath).toBeUndefined();
     expect(error.capability).toBeUndefined();
     expect(error.missing).toBeUndefined();
+  });
+});
+
+// A server that requires the tester programme refuses the costly features to someone who has not
+// joined, and a tab that was enrolled when it opened can be refused later (a withdrawal in another
+// tab, a newer agreement, the programme switched on). The shell's gate listens, asks where the
+// person stands again, and puts the enrollment page where the feature was.
+describe("a 403 ENROLLMENT_REQUIRED reply", () => {
+  beforeEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setEnrollmentRefusalListener(null);
+  });
+
+  const refusal = () =>
+    envelope({
+      code: "ENROLLMENT_REQUIRED",
+      message: "Joining the tester programme comes first. Open the Between Jobs website, accept the tester agreement there, then try again.",
+      retryable: false,
+    });
+
+  it("tells the listener, and still throws the error, with its code, for the page that asked to show", async () => {
+    const listener = vi.fn();
+    setEnrollmentRefusalListener(listener);
+    stubFetch(403, refusal());
+
+    const error = await failure(apiFetch("/applications/x/prepare", { method: "POST" }));
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(error.status).toBe(403);
+    expect(error.code).toBe("ENROLLMENT_REQUIRED");
+    expect(error.retryable).toBe(false);
+  });
+
+  it("does the same through the PDF download path", async () => {
+    const listener = vi.fn();
+    setEnrollmentRefusalListener(listener);
+    stubFetch(403, refusal());
+
+    const error = await failure(apiFetchBlob("/applications/x/resume.pdf"));
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(error.code).toBe("ENROLLMENT_REQUIRED");
+  });
+
+  it("is not announced for any other failure, not even another 403", async () => {
+    const listener = vi.fn();
+    setEnrollmentRefusalListener(listener);
+
+    stubFetch(403, envelope({ code: "FORBIDDEN", message: "No." }));
+    await failure(apiFetch("/x"));
+    stubFetch(403, "not json");
+    await failure(apiFetch("/x"));
+    stubFetch(429, envelope({ code: "RATE_LIMITED", message: "x", retryable: true }));
+    await failure(apiFetch("/x"));
+    stubFetch(409, envelope({ code: "SETUP_REQUIRED", message: "x" }));
+    await failure(apiFetch("/x"));
+    stubFetch(200, JSON.stringify({ ok: true }));
+    await apiFetch("/x");
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("throws the same error when nothing is listening, and when the listener itself fails", async () => {
+    stubFetch(403, refusal());
+    expect((await failure(apiFetch("/x"))).code).toBe("ENROLLMENT_REQUIRED");
+
+    setEnrollmentRefusalListener(() => {
+      throw new Error("the listener broke");
+    });
+    expect((await failure(apiFetch("/x"))).code).toBe("ENROLLMENT_REQUIRED");
+  });
+
+  it("goes to the listener that is registered now, and to none once it is cleared", async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    stubFetch(403, refusal());
+
+    setEnrollmentRefusalListener(first);
+    setEnrollmentRefusalListener(second);
+    await failure(apiFetch("/x"));
+    setEnrollmentRefusalListener(null);
+    await failure(apiFetch("/x"));
+
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
   });
 });

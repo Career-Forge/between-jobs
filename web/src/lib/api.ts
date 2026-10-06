@@ -1,5 +1,6 @@
 import type { ApiErrorCode } from "./apiErrorCodes";
 import { buildApiUrl, resolveApiBase } from "./apiUrl";
+import { isEnrollmentRefusal } from "./enrollment";
 import { parseRetryAfterSeconds } from "./rateLimitMessage";
 import { parseSetupFields } from "./setupRequired";
 import { supabase } from "./supabase";
@@ -63,6 +64,33 @@ function apiErrorFrom(response: Response, body: ErrorBody | null): ApiError {
   );
 }
 
+// What to do when the server refuses a request for enrollment (403 ENROLLMENT_REQUIRED): one
+// listener, the signed-in shell's gate, which asks again where the person stands and puts the
+// enrollment page where the feature was (components/EnrollmentGate.tsx). Without it a tab that was
+// enrolled when it opened -- and has since withdrawn, or met a newer agreement, or a server that
+// switched the programme on -- would keep being refused for the rest of the visit with no way to
+// the page that fixes it. The error is still thrown, so the page that asked shows its own message.
+let enrollmentRefusalListener: (() => void) | null = null;
+
+export function setEnrollmentRefusalListener(listener: (() => void) | null): void {
+  enrollmentRefusalListener = listener;
+}
+
+// The error for a failed reply, after letting the listener know when it was a refusal for
+// enrollment. The listener only starts work, and its own failure must not replace the error the
+// caller is waiting for.
+function failedWith(response: Response, body: ErrorBody | null): ApiError {
+  const error = apiErrorFrom(response, body);
+  if (isEnrollmentRefusal(error)) {
+    try {
+      enrollmentRefusalListener?.();
+    } catch {
+      // not the caller's problem
+    }
+  }
+  return error;
+}
+
 async function accessToken(): Promise<string> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -89,7 +117,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
   const body = (await response.json().catch(() => null)) as ErrorBody | null;
   if (!response.ok) {
-    throw apiErrorFrom(response, body);
+    throw failedWith(response, body);
   }
   return body as T;
 }
@@ -106,7 +134,7 @@ export async function apiFetchBlob(path: string): Promise<Blob> {
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as ErrorBody | null;
-    throw apiErrorFrom(response, body);
+    throw failedWith(response, body);
   }
   return response.blob();
 }

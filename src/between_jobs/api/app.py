@@ -75,6 +75,8 @@ from .supabase_client import create_supabase_client
 from .telegram_adapter import build_notifier
 from .telegram_client import TelegramClient, parse_bot_username
 from .telegram_webhook import router as telegram_router
+from .tester_enrollment import tester_program_required
+from .tester_enrollment_routes import router as tester_enrollment_router
 from .today_routes import router as today_router
 from .warm_path_events_routes import router as warm_path_events_router
 from .worker_lease import TTL_SECONDS as WORKER_LEASE_TTL_SECONDS
@@ -120,6 +122,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # instead of failing requests later, one by one.
     max_request_body_bytes()
     latex_max_concurrency()
+    # The tester-programme gate reads its switch on every request; reading it here too makes a
+    # bad value stop the boot (it is a consent check, so no spelling is guessed at).
+    tester_program_required()
     app.state.supabase, app.state.supabase_url = await create_supabase_client()
     app.state.jwks_client = create_jwks_client(app.state.supabase_url)
 
@@ -385,6 +390,7 @@ app.include_router(account_router)
 app.include_router(extension_router)
 app.include_router(hiring_signal_router)
 app.include_router(hiring_signal_status_router)
+app.include_router(tester_enrollment_router)
 
 
 def _route_path(request: Request) -> str:

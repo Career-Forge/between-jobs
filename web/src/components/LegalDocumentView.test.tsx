@@ -7,11 +7,12 @@ import {
   LEGAL_WHAT_CHANGED,
   PRIVACY,
   TERMS,
+  type Block,
   type LegalDocument,
 } from "../content/legal";
 import { PRIVACY_EMAIL, REPO_URL, SUPPORT_EMAIL } from "../content/site";
 import { anchorsOf, headingLevels, tagsOf, textOfMarkup } from "../testing/markup";
-import { LegalDocumentView } from "./LegalDocumentView";
+import { BlockView, LegalDocumentView } from "./LegalDocumentView";
 
 // What a legal document looks like on the page: one title, which version and date, a table of
 // contents that points at real sections, and each section under its own heading.
@@ -113,5 +114,56 @@ describe("the Privacy Policy's definition lists", () => {
     const dd = (markup.match(/<dd>/g) ?? []).length;
     expect(dt).toBeGreaterThan(20);
     expect(dd).toBe(dt);
+  });
+});
+
+// The Tester Agreement is read in the middle of a form, so its blocks can be drawn with every link
+// to another page of the app opening in a new tab (components/EnrollmentView.tsx); the legal pages
+// themselves keep the in-app link.
+describe("BlockView's links", () => {
+  const block: Block = {
+    kind: "p",
+    inline: [
+      "Read the ",
+      { to: "/privacy", text: "Privacy Policy" },
+      ", the ",
+      { href: "https://example.com/x", text: "source" },
+      " or write to ",
+      { email: "privacy@between-jobs.tech" },
+      ".",
+    ],
+  };
+
+  function drawn(newTabLinks?: boolean): string {
+    return renderToStaticMarkup(
+      <MemoryRouter>
+        <BlockView block={block} newTabLinks={newTabLinks} />
+      </MemoryRouter>,
+    );
+  }
+
+  it("go to the page inside the app by default, leaving the page, as the legal pages do", () => {
+    for (const markup of [drawn(), drawn(false)]) {
+      const internal = anchorsOf(markup).find((anchor) => anchor.attributes.href === "/privacy");
+      expect(internal?.attributes.target).toBeUndefined();
+      expect(markup).toContain("data-discover");
+    }
+  });
+
+  it("open in a new tab, safely and with the words that say so, when asked", () => {
+    const markup = drawn(true);
+    const internal = anchorsOf(markup).find((anchor) => anchor.attributes.href === "/privacy");
+    expect(internal?.attributes.target).toBe("_blank");
+    expect(internal?.attributes.rel).toBe("noopener noreferrer");
+    expect(internal?.text).toBe("Privacy Policy (opens in a new tab)");
+    expect(markup).not.toContain("data-discover");
+  });
+
+  it("leave an outside link (already new-tab) and an email link as they are, either way", () => {
+    for (const markup of [drawn(), drawn(true)]) {
+      const anchors = anchorsOf(markup);
+      expect(anchors.find((anchor) => anchor.attributes.href === "https://example.com/x")?.attributes.target).toBe("_blank");
+      expect(anchors.find((anchor) => anchor.attributes.href === "mailto:privacy@between-jobs.tech")?.attributes.target).toBeUndefined();
+    }
   });
 });

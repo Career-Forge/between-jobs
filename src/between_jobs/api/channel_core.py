@@ -218,9 +218,10 @@ async def _start_prepare(turn: _Turn, application_id: str) -> None:
     place in the deferred-work registry (else "busy", or "still generating" when this person
     already has a generation running -- one at a time each, keyed on the verified user id so
     one person cannot hold every place), then the per-user "prepare" limit -- the same bucket
-    `POST /applications/{id}/prepare` uses, since the bot is no way round the limit on the web --
-    then the "this can take a minute" message. Only then is the slow part handed to a
-    background task, and the webhook answers its request.
+    `POST /applications/{id}/prepare` uses, since the bot is no way round the limit on the web
+    (and the same call is where a server that requires the tester programme turns an
+    unenrolled person away) -- then the "this can take a minute" message. Only then is the
+    slow part handed to a background task, and the webhook answers its request.
 
     The place is reserved before the limit is claimed, so a refusal for "busy" spends none of
     the person's hourly budget. It is given back as soon as nothing is going to run, before
@@ -248,7 +249,13 @@ async def _start_prepare(turn: _Turn, application_id: str) -> None:
             # Nothing will run for this request, so give the place back before the reply's
             # round trip: another person's tap meanwhile is not told "busy" for nothing.
             slot.release()
-            await turn.say(f"❌ {limited.message}")
+            # The same call also holds the tester-programme gate (see rate_limits.py). Its
+            # refusal gets the chat's own wording, which says how to join from here: a person
+            # who only ever used the bot has no web account to accept the agreement on yet.
+            if limited.code == "ENROLLMENT_REQUIRED":
+                await turn.say(messages.ENROLLMENT_REQUIRED_TEXT)
+            else:
+                await turn.say(f"❌ {limited.message}")
             return
         await turn.say(messages.GENERATING_TEXT)
         turn.deferred.start(

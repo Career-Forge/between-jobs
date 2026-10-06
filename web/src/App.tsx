@@ -1,15 +1,23 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
+import { EnrollmentGate } from "./components/EnrollmentGate";
 import { LegalLinks } from "./components/LegalLinks";
 import { PrimaryNav } from "./components/PrimaryNav";
 import { PublicLayout } from "./components/PublicLayout";
 import { UPDATE_PASSWORD_PATH, recoveryRedirect } from "./lib/passwordReset";
-import { PRIVACY_PATH, TERMS_PATH, appView, documentTitleFor } from "./lib/publicRoutes";
+import {
+  ENROLL_PATH,
+  PRIVACY_PATH,
+  TERMS_PATH,
+  appView,
+  documentTitleFor,
+} from "./lib/publicRoutes";
 import { useDocumentTitle } from "./lib/useDocumentTitle";
 import { useScrollToTopOnNavigate } from "./lib/useScrollToTopOnNavigate";
 import Applications from "./pages/Applications";
 import ApplicationWorkspace from "./pages/ApplicationWorkspace";
 import Discover from "./pages/Discover";
+import Enroll from "./pages/Enroll";
 import HiringSignals from "./pages/HiringSignals";
 import Integrations from "./pages/Integrations";
 import Landing from "./pages/Landing";
@@ -39,9 +47,12 @@ export default function App() {
 
   // Both hooks sit above every early return, so the hook order is the same on every screen.
   // A change of page starts at the top of it (the app has no scroll restoration of its own), and
-  // each public screen has a title of its own; the sign-in page names itself.
+  // each public screen has a title of its own; the sign-in page names itself. The signed-in shell
+  // does not: its tester-programme gate can draw the enrollment page at ANY address, so the gate
+  // alone knows what is on screen and titles it (components/EnrollmentGate.tsx). Were this hook to
+  // write the shell's title too, it would overwrite the gate's whenever the address changed.
   useScrollToTopOnNavigate();
-  useDocumentTitle(documentTitleFor(view, location.pathname));
+  useDocumentTitle(view === "app" ? null : documentTitleFor(view, location.pathname));
 
   if (view === "boot") {
     return <div className="bj-boot" />;
@@ -95,19 +106,24 @@ export default function App() {
         </div>
       </aside>
       <main className="bj-main">
-        <Routes>
-          <Route path="/" element={<Today />} />
-          <Route path="/discover" element={<Discover />} />
-          <Route path="/hiring-signals" element={<HiringSignals />} />
-          <Route path="/applications" element={<Applications />} />
-          <Route path="/applications/:id" element={<ApplicationWorkspace />} />
-          <Route path="/practice" element={<Practice />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/profile/integrations" element={<Integrations />} />
-          <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
-          <Route path={PRIVACY_PATH} element={<Privacy />} />
-          <Route path={TERMS_PATH} element={<Terms />} />
-        </Routes>
+        {/* When the server requires the tester programme, a person who has not joined sees the
+            enrollment page here instead of any page but the exempt ones (lib/enrollment.ts). */}
+        <EnrollmentGate>
+          <Routes>
+            <Route path="/" element={<Today />} />
+            <Route path="/discover" element={<Discover />} />
+            <Route path="/hiring-signals" element={<HiringSignals />} />
+            <Route path="/applications" element={<Applications />} />
+            <Route path="/applications/:id" element={<ApplicationWorkspace />} />
+            <Route path="/practice" element={<Practice />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/integrations" element={<Integrations />} />
+            <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
+            <Route path={PRIVACY_PATH} element={<Privacy />} />
+            <Route path={TERMS_PATH} element={<Terms />} />
+            <Route path={ENROLL_PATH} element={<Enroll />} />
+          </Routes>
+        </EnrollmentGate>
       </main>
     </div>
   );

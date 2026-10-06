@@ -55,7 +55,11 @@ describe("the shell", () => {
   });
 
   it("titles each screen from the routing module's rule, through the hook, above the first early return", () => {
-    const call = app.indexOf("useDocumentTitle(documentTitleFor(view, location.pathname));");
+    // The signed-in shell's title is the tester-programme gate's (it can draw the enrollment page
+    // at any address), so App asks for none there (null: "leave it alone").
+    const call = app.indexOf(
+      'useDocumentTitle(view === "app" ? null : documentTitleFor(view, location.pathname));',
+    );
     expect(call).toBeGreaterThan(-1);
     expect(call).toBeLessThan(app.indexOf('if (view === "boot")'));
     // The title follows the view, which is decided before it.

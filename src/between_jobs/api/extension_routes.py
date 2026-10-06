@@ -49,6 +49,7 @@ from .product_events import emit_event
 from .profile import ResumeTemplate
 from .profile_store import get_active_version
 from .rate_limits import limit
+from .tester_enrollment import require_enrollment
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +243,12 @@ async def save_answer(
     )
 
 
-@router.post("/draft-answer")
+@router.post(
+    "/draft-answer",
+    # Spends the person's AI key on every call and has its own, older limiter rather than the
+    # generic one, so it carries the tester-programme gate (tester_enrollment.py) on its own.
+    dependencies=[Depends(require_enrollment(auth=require_active_extension_user_id))],
+)
 async def draft_answer(
     body: DraftAnswerRequest,
     user_id: str = Depends(require_active_extension_user_id),

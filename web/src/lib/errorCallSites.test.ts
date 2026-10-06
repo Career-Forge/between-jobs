@@ -15,6 +15,7 @@ const sources = import.meta.glob(
     "../components/CompanyIntelPanel.tsx",
     "../components/InterviewPracticePanel.tsx",
     "../pages/Discover.tsx",
+    "../pages/Integrations.tsx",
     "../pages/Today.tsx",
   ],
   { query: "?raw", import: "default", eager: true },
@@ -27,6 +28,7 @@ const MINIMUM_CALL_SITES: Record<string, number> = {
   "../components/CompanyIntelPanel.tsx": 1,
   "../components/InterviewPracticePanel.tsx": 2, // start a session, submit an answer
   "../pages/Discover.tsx": 2, // search, track
+  "../pages/Integrations.tsx": 2, // saving a key (credential_save is behind the enrollment gate), two cards
   "../pages/Today.tsx": 1, // track
 };
 

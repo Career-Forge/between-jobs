@@ -31,6 +31,7 @@ import authSource from "../auth.tsx?raw";
 import hiringSignalsLib from "../lib/hiringSignals.ts?raw";
 import legalSource from "./legal.ts?raw";
 import { PRIVACY_PATH, TERMS_PATH } from "../lib/publicRoutes";
+import { columnsOfTable } from "../testing/migrationColumns";
 import {
   LEGAL_EFFECTIVE_DATE,
   LEGAL_VERSION,
@@ -44,6 +45,7 @@ import {
   type LegalDocument,
 } from "./legal";
 import { LANDING } from "./landing";
+import { TESTER_AGREEMENT } from "./testerAgreement";
 import { PRIVACY_EMAIL, REPO_URL, SUPPORT_EMAIL } from "./site";
 
 // Every module of the API, and every migration, as text: the guards below read what the code
@@ -862,6 +864,12 @@ describe("what we store names the small tables that hold something about you", (
   });
 });
 
+// The columns a table has, for the guards below that make the Privacy Policy name every one of
+// them (src/testing/migrationColumns.ts reads them, and tests that).
+function columnsOf(table: string): string[] {
+  return columnsOfTable(migrationSources, table);
+}
+
 // ── product usage events are described, column by column ───────────────────
 
 describe("product usage events", () => {
@@ -894,18 +902,6 @@ describe("product usage events", () => {
   // Tied to the account, which the section's introduction says of everything it lists.
   const TECHNICAL_COLUMNS = ["id", "user_id"];
 
-  function columnsOf(table: string): string[] {
-    const creators = Object.values(migrationSources).filter((sql) =>
-      new RegExp(`create\\s+table\\s+public\\.${table}\\s*\\(`, "i").test(sql),
-    );
-    expect(creators.length).toBe(1);
-    const body = creators[0].split(new RegExp(`create\\s+table\\s+public\\.${table}\\s*\\(`, "i"))[1].split(/\n\);/)[0];
-    return body
-      .split("\n")
-      .map((line) => /^\s{2}([a-z_]+)\s+(?:uuid|text|integer|timestamptz|boolean)\b/i.exec(line)?.[1])
-      .filter((name): name is string => name !== undefined);
-  }
-
   it("every table that records what people do is one the policy describes", () => {
     const undescribed = eventLikeTables().filter((table) => !DESCRIBED.includes(table));
     expect(
@@ -916,7 +912,10 @@ describe("product usage events", () => {
 
   it("the policy names every column product_events records, and a new column fails until it does", () => {
     const columns = columnsOf("product_events");
-    expect([...columns].sort()).toEqual([...TECHNICAL_COLUMNS, ...Object.keys(COLUMN_WORDS)].sort());
+    expect(
+      [...columns].sort(),
+      "product_events has a column the Privacy Policy does not name (or the policy names one it no longer has): update its 'Product usage events' paragraph and COLUMN_WORDS here",
+    ).toEqual([...TECHNICAL_COLUMNS, ...Object.keys(COLUMN_WORDS)].sort());
     const stored = sectionText(PRIVACY, "what-we-store");
     for (const [column, words] of Object.entries(COLUMN_WORDS)) {
       expect(stored, `${column} must be described as "${words}"`).toContain(words);
@@ -935,6 +934,118 @@ describe("product usage events", () => {
     expect(sectionText(PRIVACY, "keeping-deleting")).toContain("product usage events");
     expect(sectionText(PRIVACY, "what-we-store")).toContain("Product usage events hold no web addresses.");
     expect(sectionText(PRIVACY, "extension")).toContain("sends no usage events yet");
+  });
+});
+
+// ── the tester programme is described, column by column ────────────────────
+
+describe("the tester programme", () => {
+  // The tables that record whether someone joined a programme or what they agreed to. Each is
+  // described in the policy; a new one fails until it is.
+  const DESCRIBED = ["tester_enrollments"];
+
+  function programmeLikeTables(): string[] {
+    const found = new Set<string>();
+    for (const sql of Object.values(migrationSources)) {
+      for (const match of sql.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?([a-z_]+)/gi)) {
+        if (/enroll|consent|cohort|tester|program|beta_access|waitlist/i.test(match[1])) found.add(match[1].toLowerCase());
+      }
+    }
+    return [...found].sort();
+  }
+
+  // What each recorded column means to a reader, and the words the policy must use for it.
+  const COLUMN_WORDS: Record<string, string> = {
+    role_cohort: "the role you chose",
+    seniority: "your seniority band",
+    needs_sponsorship:
+      "an optional question about whether you would need an employer to sponsor your right to work",
+    consent_version: "which version of the Tester Agreement you accepted",
+    consented_at: "when you accepted it",
+    withdrawn_at: "when you withdrew",
+    created_at: "the day the record was first made",
+  };
+  // Tied to the account, which the section's introduction says of everything it lists.
+  const TECHNICAL_COLUMNS = ["user_id"];
+
+  const enrollmentMigration =
+    Object.entries(migrationSources).find(([path]) =>
+      path.endsWith("_create_product_events_and_tester_enrollments.sql"),
+    )?.[1] ?? "";
+
+  const stored = sectionText(PRIVACY, "what-we-store");
+  const definition = (() => {
+    const section = PRIVACY.sections.find((candidate) => candidate.id === "what-we-store");
+    for (const block of section?.blocks ?? []) {
+      if (block.kind !== "defs") continue;
+      const item = block.items.find((candidate) => candidate.term === "Tester programme");
+      if (item !== undefined) return item.detail.map(inlineText).join("");
+    }
+    throw new Error("no 'Tester programme' definition under 'What we store about you'");
+  })();
+
+  it("every table that records who joined a programme is one the policy describes", () => {
+    const undescribed = programmeLikeTables().filter((table) => !DESCRIBED.includes(table));
+    expect(
+      undescribed,
+      `${undescribed.join(", ")}: if this table records who joined a programme or what they agreed to, the Privacy Policy must describe it in the same change -- name every recorded column in plain words, say when it is deleted, add it under 'Keeping and deleting your data' -- then add it to DESCRIBED and give each column its words below. If it records nothing about people, add it to DESCRIBED.`,
+    ).toEqual([]);
+    expect(programmeLikeTables()).toContain("tester_enrollments");
+  });
+
+  it("names every column tester_enrollments records, and a new column fails until it does", () => {
+    const columns = columnsOf("tester_enrollments");
+    expect(
+      [...columns].sort(),
+      "tester_enrollments has a column the Privacy Policy does not name (or the policy names one it no longer has): update its 'Tester programme' paragraph and COLUMN_WORDS here",
+    ).toEqual([...TECHNICAL_COLUMNS, ...Object.keys(COLUMN_WORDS)].sort());
+    for (const [column, words] of Object.entries(COLUMN_WORDS)) {
+      expect(definition, `${column} must be described as "${words}"`).toContain(words);
+    }
+  });
+
+  it("is a definition of its own under 'What we store about you', which says the whole section is tied to the account", () => {
+    expect(stored).toContain("Everything below is tied to your account");
+  });
+
+  it("says it exists only if you join, that the sponsorship answer is optional and never used by the product, and that the Tester Agreement describes it", () => {
+    expect(definition).toContain("Only if you join the tester programme; nothing is recorded here unless you do.");
+    expect(definition).toContain("you can decline it");
+    expect(definition).toContain("the product never uses it");
+    expect(definition).toContain("The Tester Agreement, which you read before you join, describes it in full.");
+    // The column's own comment is where the promise about the answer is made.
+    expect(enrollmentMigration).toContain("optional (null = not asked or declined)");
+    expect(enrollmentMigration).toContain("never used for any product logic");
+  });
+
+  it("says when it goes: with the account, and 30 days after the programme ends unless you agree to keep it", () => {
+    expect(definition).toContain(
+      "It is deleted with your account, and in any case 30 days after the programme ends unless you have agreed that we may keep it.",
+    );
+    const keeping = sectionText(PRIVACY, "keeping-deleting");
+    // Other data goes earlier than the account too (the last bullet of the same list names some),
+    // so the tester programme is not "the one" exception to keeping data while the account exists.
+    expect(keeping).not.toMatch(/the (one|only) exception/i);
+    expect(keeping).toContain("Some data lives only briefly by design");
+    expect(keeping).toContain("tester programme");
+    expect(keeping).toContain("30 days after the programme ends");
+    expect(keeping).toContain("unless you have agreed that we may keep them");
+    expect(keeping).toContain("tester programme enrollment");
+    // The same 30 days, as the migration and the agreement say it.
+    expect(enrollmentMigration).toContain("30 days after the program ends");
+    expect(sectionText(TESTER_AGREEMENT, "deleting")).toContain("30 days after the programme ends");
+  });
+
+  it("is deleted with the account for a reason the schema gives: the table cascades from the user", () => {
+    expect(enrollmentMigration).toMatch(
+      /user_id uuid primary key references auth\.users \(id\) on delete cascade/,
+    );
+  });
+
+  it("does not say the usage records stop on withdrawal, which nothing in the code does (they are recorded for every account)", () => {
+    expect(definition).not.toMatch(/stop(s)? (recording|measur)/i);
+    expect(sectionText(TESTER_AGREEMENT, "leaving")).toContain("the same usage records it keeps for every account");
+    expect(stored).toContain("A short record each time you use a main feature");
   });
 });
 

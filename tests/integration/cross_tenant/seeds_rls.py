@@ -98,9 +98,12 @@ async def seed_tester_enrollment(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
     optional sponsorship answer is filled in, so the account-deletion drill has the sensitive
     column to prove gone."""
     version = ctx.mark(tenant, ctx.tag("consent"))
+    # An upsert, not an insert: the row's key is the user, a tenant keeps the same user across the
+    # cases of a module, and the enrollment routes' own cases join and withdraw them. Each seeding
+    # puts the row back to this state, withdrawal included.
     row = (
         await ctx.sb.table("tester_enrollments")
-        .insert(
+        .upsert(
             {
                 "user_id": tenant.user_id,
                 "role_cohort": "data_analyst",
@@ -108,7 +111,9 @@ async def seed_tester_enrollment(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
                 "needs_sponsorship": True,
                 "consent_version": version,
                 "consented_at": datetime.now(UTC).isoformat(),
-            }
+                "withdrawn_at": None,
+            },
+            on_conflict="user_id",
         )
         .execute()
     ).data[0]

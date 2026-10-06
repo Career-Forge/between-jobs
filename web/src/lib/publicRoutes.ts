@@ -45,6 +45,11 @@ export const LANDING_PATH = "/";
 export const LOGIN_PATH = "/login";
 export const PRIVACY_PATH = "/privacy";
 export const TERMS_PATH = "/terms";
+// The tester-programme enrollment page. Signed out, it is like any other deep link (sign in,
+// then the same address opens it); the gate that sends people to it is lib/enrollment.ts.
+export const ENROLL_PATH = "/enroll";
+// What that page is called in its heading and in the document title.
+export const ENROLL_PAGE_NAME = "Tester programme";
 
 // Where the landing page's "Create account" link goes: the sign-in page, opened on its
 // registration form.
@@ -130,6 +135,7 @@ export function documentTitleFor(view: AppView, pathname: string): string | null
       const path = normalizePath(pathname);
       if (path === PRIVACY_PATH) return pageTitle("Privacy Policy");
       if (path === TERMS_PATH) return pageTitle("Terms of Service");
+      if (path === ENROLL_PATH) return pageTitle(ENROLL_PAGE_NAME);
       return pageTitle(null);
     }
   }

@@ -89,6 +89,11 @@ GENERATING_TEXT = "⏳ Generating your resume for this job -- this can take a mi
 BUSY_TEXT = "⏳ I'm busy generating other resumes right now -- try again in a minute."
 ALREADY_GENERATING_TEXT = "⏳ Your resume is still generating -- it'll arrive here when it's done."
 PREPARE_FAILED_TEXT = "❌ Something went wrong while generating your resume. Try again in a minute."
+ENROLLMENT_REQUIRED_TEXT = (
+    "❌ Joining the tester programme comes first. On the website, accept the tester agreement, "
+    "and link this chat from the Integrations page (it gives you a code to send me with /link). "
+    "Then ask again."
+)
 PREPARE_DECLINED_TEXT = "The resume engine didn't produce a resume for this job.\n\n{warnings}"
 PREPARE_SUCCESS_CAPTION = "📄 Resume -- ATS score {score}/100{warnings}"
 

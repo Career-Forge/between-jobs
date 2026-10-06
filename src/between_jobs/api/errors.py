@@ -44,10 +44,11 @@ ErrorCode = Literal[
     "RATE_LIMITED",
     "PAYLOAD_TOO_LARGE",
     "UNSUPPORTED_MEDIA_TYPE",
+    "ENROLLMENT_REQUIRED",
 ]
-"""Every code but INTERNAL_ERROR, FEATURE_DISABLED, RATE_LIMITED, PAYLOAD_TOO_LARGE and
-UNSUPPORTED_MEDIA_TYPE is
-Appendix B's own core list, verbatim. INTERNAL_ERROR isn't in the appendix -- it's this platform's
+"""Every code but INTERNAL_ERROR, FEATURE_DISABLED, RATE_LIMITED, PAYLOAD_TOO_LARGE,
+UNSUPPORTED_MEDIA_TYPE and ENROLLMENT_REQUIRED is Appendix B's own core list, verbatim.
+INTERNAL_ERROR isn't in the appendix -- it's this platform's
 own fallback for failures that don't fit any named code (an unmapped database
 error, a genuine bug), so those still reach the client as the documented
 envelope shape instead of FastAPI's default unstructured 500 body.
@@ -64,7 +65,12 @@ provider throttled us -- so a client must not conflate them. Its `details` carry
 PAYLOAD_TOO_LARGE is a request body over the size cap (api/body_limit.py): a 413 that
 retrying unchanged cannot fix.
 UNSUPPORTED_MEDIA_TYPE is an uploaded file that is not one the route reads (a resume that is
-not a PDF or a DOCX, or whose bytes disagree with what it says it is): a 415."""
+not a PDF or a DOCX, or whose bytes disagree with what it says it is): a 415.
+ENROLLMENT_REQUIRED is a 403 from a server that has switched the tester programme on
+(TESTER_PROGRAM_REQUIRED): the caller has not accepted the current tester agreement, and the
+costly feature they asked for needs that first (api/tester_enrollment.py). It is not FORBIDDEN
+in the sense of "never": accepting the agreement (POST /tester/enrollment) makes the same
+request succeed, which is why a client gets a code of its own to send the person there."""
 
 _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "AUTH_REQUIRED": 401,
@@ -87,6 +93,7 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "RATE_LIMITED": 429,
     "PAYLOAD_TOO_LARGE": 413,
     "UNSUPPORTED_MEDIA_TYPE": 415,
+    "ENROLLMENT_REQUIRED": 403,
 }
 
 

@@ -17,8 +17,19 @@
 
 export const CAPABILITIES_PATH = "/capabilities";
 
+// How long the ask may take before it counts as failed. The signed-in shell draws nothing until
+// the answer is known (components/EnrollmentGate.tsx), so a server that hangs must become
+// "unavailable" in a bounded time rather than a blank page for as long as the browser waits.
+export const CAPABILITIES_TIMEOUT_MS = 8000;
+
 export interface Capabilities {
   telegram: boolean;
+  // The server requires the tester agreement before it will run the costly features
+  // (TESTER_PROGRAM_REQUIRED). False when the server says so and when it says nothing: a server
+  // that predates the switch has no gate, and one that sends something that is not a boolean has
+  // not said "required", which the server enforces anyway (a 403 ENROLLMENT_REQUIRED that says
+  // to join), so the page never has to guess it into existence.
+  testerProgramRequired: boolean;
   // The bot's public username, without the "@", when the server says which one
   // it is; null otherwise. A self-hosted server has its own bot, so the page
   // must not assume the hosted service's.
@@ -51,6 +62,7 @@ export function parseCapabilities(body: unknown): Capabilities | null {
   return {
     telegram: record.telegram,
     telegramBotUsername: typeof name === "string" && BOT_USERNAME.test(name) ? name : null,
+    testerProgramRequired: record.tester_program_required === true,
   };
 }
 
@@ -74,4 +86,11 @@ export function telegramBotUsername(state: CapabilitiesState): string | null {
   return state.kind === "ready" && state.capabilities.telegram
     ? state.capabilities.telegramBotUsername
     : null;
+}
+
+/** Whether the server requires the tester agreement: only for a definite yes. While the answer
+ *  is unknown, and when asking failed, nothing is required of the page (the server still
+ *  refuses the costly features, with a message that says to join). */
+export function isTesterProgramRequired(state: CapabilitiesState): boolean {
+  return state.kind === "ready" && state.capabilities.testerProgramRequired;
 }

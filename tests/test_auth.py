@@ -185,7 +185,11 @@ def test_valid_token_accepted_end_to_end(
     token = _sign(private_key, _base_claims())
     response = client.get("/capabilities", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
-    assert set(response.json()) == {"telegram", "telegram_bot_username"}
+    assert set(response.json()) == {
+        "telegram",
+        "telegram_bot_username",
+        "tester_program_required",
+    }
 
 
 # --- E6 hardening: unauthenticated forged-`kid` tokens ----------------------

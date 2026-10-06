@@ -41,3 +41,22 @@ def optional_env(name: str) -> str | None:
     the same, since a blank `KEY=` line in a .env file is how "not configured"
     usually looks."""
     return os.environ.get(name) or None
+
+
+def strict_on_off(name: str, *, default: bool) -> bool:
+    """A switch read as exactly `on` or `off` (any case, surrounding spaces ignored); unset or
+    blank is `default`. Anything else stops the API from starting (`refuse`), naming the setting
+    and never its value.
+
+    Strict on purpose, for a switch that guards something: the `DISABLE_*` flags read any
+    non-empty value as true, so a setting spelled `=false` or `=0` there means the opposite of
+    what it says. For a switch whose "on" is the safe state, or whose "off" skips a legal check,
+    that reading is a trap, so no spelling other than the two words is guessed at."""
+    raw = (os.environ.get(name) or "").strip().lower()
+    if raw == "":
+        return default
+    if raw == "on":
+        return True
+    if raw == "off":
+        return False
+    refuse(f"{name} must be 'on' or 'off'")

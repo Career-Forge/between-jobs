@@ -58,7 +58,10 @@ def _variables_read_by_the_code() -> dict[str, set[str]]:
                 and ast.unparse(func.value) in {"os", "os.environ"}
             )
             if (
-                (name in {"require_env", "optional_env", "getenv"} or reads_environ)
+                (
+                    name in {"require_env", "optional_env", "strict_on_off", "getenv"}
+                    or reads_environ
+                )
                 and node.args
                 and isinstance(node.args[0], ast.Constant)
             ):
@@ -81,6 +84,8 @@ def test_the_scan_finds_the_variables_it_should() -> None:
     assert {
         "SUPABASE_URL",
         "WORKER_LEASES",
+        # read through the strict on/off helper, from a module-level constant
+        "TESTER_PROGRAM_REQUIRED",
         "LATEX_SERVICE_BASE_URL",
         "DISABLE_OUTBOX_WORKER",
         # read through a module-level constant, not a string literal at the call

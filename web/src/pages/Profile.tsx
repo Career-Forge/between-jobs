@@ -6,6 +6,7 @@ import { PersonalDetailsCard } from "../components/PersonalDetailsCard";
 import { SectionedProfile } from "../components/SectionedProfile";
 import { SectionOrderEditor } from "../components/SectionOrderEditor";
 import { ShapeSettingsPanel } from "../components/ShapeSettingsPanel";
+import { TesterProgrammeLine } from "../components/TesterProgrammeLine";
 import { ApiError, apiFetch } from "../lib/api";
 import type { CanonicalProfile } from "../lib/profileTypes";
 import { CONVERSION_PROMPT, RESUME_TEMPLATE } from "../lib/template";
@@ -114,6 +115,7 @@ export default function Profile() {
     return (
       <PageFrame>
         <div className="bj-error">{state.message}</div>
+        <TesterProgrammeLine />
         <AccountCard />
       </PageFrame>
     );
@@ -129,6 +131,7 @@ export default function Profile() {
           onActivate={() => void activate(state.version.id)}
           onCancel={() => void cancel(state.version.id)}
         />
+        <TesterProgrammeLine />
         <AccountCard />
       </PageFrame>
     );
@@ -145,6 +148,7 @@ export default function Profile() {
         error={importError}
         onImport={(text) => void importJson(text)}
       />
+      <TesterProgrammeLine />
       <AccountCard />
     </PageFrame>
   );

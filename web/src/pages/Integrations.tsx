@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { SavedSearchesCard } from "../components/SavedSearchesCard";
 import { ProblemView } from "../components/SetupRequiredNotice";
 import { apiFetch } from "../lib/api";
 import { isTelegramAvailable, telegramBotUsername } from "../lib/capabilities";
+import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { type Problem, problemOf } from "../lib/setupRequired";
 import { useCapabilities } from "../lib/useCapabilities";
 
@@ -21,6 +23,10 @@ import { useCapabilities } from "../lib/useCapabilities";
 // key -- rather than forcing them through OpenRouterCard's shape. Hiring posts'
 // setup message names Brave, Serper, Firecrawl and You.com, so all four have a
 // card here: a step the page tells you to take has to be one you can take.
+//
+// The page is also where the tester-programme gate (lib/enrollment.ts) lets a person who has
+// not joined, or has withdrawn, switch things off: remove a key, disconnect Gmail, and pause or
+// delete a saved search (the last card), which keep running in the background on their key.
 //
 // Sprint 2.8f adds the Telegram-link card on the same page -- both cards
 // are "connect an external account to this one," the same loose theme
@@ -156,6 +162,7 @@ export default function Integrations() {
         <TelegramLinkCard botUsername={telegramBotUsername(capabilities)} />
       )}
       <GmailConnectCard credential={gmail} onChanged={load} />
+      <SavedSearchesCard />
     </div>
   );
 }
@@ -191,7 +198,7 @@ function SearchProviderCard({
       setSecret("");
       await onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save that key.");
+      setError(friendlyApiMessage(e, "Failed to save that key."));
     } finally {
       setSaving(false);
     }
@@ -278,7 +285,7 @@ function OpenRouterCard({
       setSecret("");
       await onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save that key.");
+      setError(friendlyApiMessage(e, "Failed to save that key."));
     } finally {
       setSaving(false);
     }

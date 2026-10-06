@@ -3,6 +3,7 @@ import {
   CAPABILITIES_PATH,
   type CapabilitiesFetcher,
   isTelegramAvailable,
+  isTesterProgramRequired,
   loadCapabilities,
   parseCapabilities,
   telegramBotUsername,
@@ -13,10 +14,12 @@ describe("parseCapabilities", () => {
     expect(parseCapabilities({ telegram: true })).toEqual({
       telegram: true,
       telegramBotUsername: null,
+      testerProgramRequired: false,
     });
     expect(parseCapabilities({ telegram: false })).toEqual({
       telegram: false,
       telegramBotUsername: null,
+      testerProgramRequired: false,
     });
   });
 
@@ -24,6 +27,7 @@ describe("parseCapabilities", () => {
     expect(parseCapabilities({ telegram: true, somethingNew: 1 })).toEqual({
       telegram: true,
       telegramBotUsername: null,
+      testerProgramRequired: false,
     });
   });
 
@@ -31,6 +35,7 @@ describe("parseCapabilities", () => {
     expect(parseCapabilities({ telegram: true, telegram_bot_username: "between_jobs_tech_bot" })).toEqual({
       telegram: true,
       telegramBotUsername: "between_jobs_tech_bot",
+      testerProgramRequired: false,
     });
   });
 
@@ -47,6 +52,7 @@ describe("parseCapabilities", () => {
     expect(parseCapabilities({ telegram: true, telegram_bot_username: name })).toEqual({
       telegram: true,
       telegramBotUsername: null,
+      testerProgramRequired: false,
     });
   });
 
@@ -73,7 +79,7 @@ describe("loadCapabilities", () => {
     };
     expect(await loadCapabilities(fetcher)).toEqual({
       kind: "ready",
-      capabilities: { telegram: false, telegramBotUsername: null },
+      capabilities: { telegram: false, telegramBotUsername: null, testerProgramRequired: false },
     });
     expect(asked).toEqual([CAPABILITIES_PATH]);
   });
@@ -93,11 +99,11 @@ describe("loadCapabilities", () => {
 
 describe("isTelegramAvailable", () => {
   it("shows the card only for a definite yes", () => {
-    expect(isTelegramAvailable({ kind: "ready", capabilities: { telegram: true, telegramBotUsername: null } })).toBe(true);
+    expect(isTelegramAvailable({ kind: "ready", capabilities: { telegram: true, telegramBotUsername: null, testerProgramRequired: false } })).toBe(true);
   });
 
   it("hides it when the server has no bot", () => {
-    expect(isTelegramAvailable({ kind: "ready", capabilities: { telegram: false, telegramBotUsername: null } })).toBe(false);
+    expect(isTelegramAvailable({ kind: "ready", capabilities: { telegram: false, telegramBotUsername: null, testerProgramRequired: false } })).toBe(false);
   });
 
   it("hides it while the answer is unknown, and when asking failed", () => {
@@ -111,19 +117,50 @@ describe("telegramBotUsername", () => {
     expect(
       telegramBotUsername({
         kind: "ready",
-        capabilities: { telegram: true, telegramBotUsername: "acme_jobs_bot" },
+        capabilities: { telegram: true, telegramBotUsername: "acme_jobs_bot", testerProgramRequired: false },
       }),
     ).toBe("acme_jobs_bot");
   });
 
   it("is null when the bot is not named, when there is no bot, and while unknown", () => {
     expect(
-      telegramBotUsername({ kind: "ready", capabilities: { telegram: true, telegramBotUsername: null } }),
+      telegramBotUsername({ kind: "ready", capabilities: { telegram: true, telegramBotUsername: null, testerProgramRequired: false } }),
     ).toBeNull();
     expect(
-      telegramBotUsername({ kind: "ready", capabilities: { telegram: false, telegramBotUsername: "acme_jobs_bot" } }),
+      telegramBotUsername({ kind: "ready", capabilities: { telegram: false, telegramBotUsername: "acme_jobs_bot", testerProgramRequired: false } }),
     ).toBeNull();
     expect(telegramBotUsername({ kind: "checking" })).toBeNull();
     expect(telegramBotUsername({ kind: "unavailable" })).toBeNull();
+  });
+});
+
+describe("the tester programme flag", () => {
+  it("is read when the server says it is required", () => {
+    expect(parseCapabilities({ telegram: false, tester_program_required: true })).toEqual({
+      telegram: false,
+      telegramBotUsername: null,
+      testerProgramRequired: true,
+    });
+  });
+
+  it("is not required when the server says so, says nothing (an older server), or sends something that is not a boolean", () => {
+    for (const body of [
+      { telegram: true, tester_program_required: false },
+      { telegram: true },
+      { telegram: true, tester_program_required: "true" },
+      { telegram: true, tester_program_required: 1 },
+      { telegram: true, tester_program_required: null },
+    ]) {
+      expect(parseCapabilities(body)?.testerProgramRequired, JSON.stringify(body)).toBe(false);
+    }
+  });
+
+  it("is required only for a definite yes: not while checking, and not when asking failed", () => {
+    const ready = (testerProgramRequired: boolean) =>
+      ({ kind: "ready", capabilities: { telegram: false, telegramBotUsername: null, testerProgramRequired } }) as const;
+    expect(isTesterProgramRequired(ready(true))).toBe(true);
+    expect(isTesterProgramRequired(ready(false))).toBe(false);
+    expect(isTesterProgramRequired({ kind: "checking" })).toBe(false);
+    expect(isTesterProgramRequired({ kind: "unavailable" })).toBe(false);
   });
 });

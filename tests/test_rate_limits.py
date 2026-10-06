@@ -76,6 +76,7 @@ _EXPECTED_LIMITS: dict[str, tuple[int, int]] = {
     "credential_save": (30, HOUR),
     "fill_outcome": (300, HOUR),
     "profile_import": (10, HOUR),
+    "tester_enrollment": (30, HOUR),
 }
 
 

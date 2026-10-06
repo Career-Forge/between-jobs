@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import {
+  ENROLLMENT_REQUIRED_MESSAGE,
   PAYLOAD_TOO_LARGE_MESSAGE,
   friendlyApiMessage,
   humanizeWait,
@@ -126,6 +127,24 @@ describe("friendlyApiMessage", () => {
       expected,
     );
     expect(friendlyApiMessage(new ApiError(413, "Request failed (413)"), "x")).toBe(expected);
+  });
+
+  it("tells a refusal for enrollment, by code, to open the tester programme page, not the website the person is already on", () => {
+    // The server's own sentence says "Open the Between Jobs website", written for clients that are
+    // not the website. Pinned as a literal, like the wordings above.
+    const expected =
+      "Joining the tester programme comes first. Open the tester programme page (/enroll), accept the agreement there, then try again.";
+    expect(ENROLLMENT_REQUIRED_MESSAGE).toBe(expected);
+    const fromServer = new ApiError(
+      403,
+      "Joining the tester programme comes first. Open the Between Jobs website, accept the tester agreement there, then try again.",
+      "ENROLLMENT_REQUIRED",
+    );
+    expect(friendlyApiMessage(fromServer, "x")).toBe(expected);
+    expect(friendlyApiMessage(fromServer, "x")).not.toContain("website");
+    // by code only: no other 403 is about enrollment
+    expect(friendlyApiMessage(new ApiError(403, "Forbidden", "FORBIDDEN"), "x")).toBe("Forbidden");
+    expect(friendlyApiMessage(new ApiError(403, "Request failed (403)"), "x")).toBe("Request failed (403)");
   });
 
   it("keeps the server's own message for every other API error", () => {

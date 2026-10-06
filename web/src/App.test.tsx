@@ -215,11 +215,14 @@ describe("App's page title and scroll", () => {
     expect(titleFor()).toBeNull();
   });
 
-  it("titles the legal pages inside the signed-in shell, and puts the plain title back on the other pages", () => {
-    current.pathname = "/privacy";
-    expect(titleFor()).toBe("Privacy Policy -- Between Jobs");
-    current.pathname = "/applications";
-    expect(titleFor()).toBe("Between Jobs");
+  it("asks for no title inside the signed-in shell, whose gate titles what it draws (it can draw the enrollment page at any address)", () => {
+    // Were App to write the shell's title as well, its effect would overwrite the gate's whenever
+    // the address changed (the gate's own rule is lib/enrollment.ts's enrollmentTitleFor, tested
+    // there, and the legal pages' titles inside the shell come from it).
+    for (const pathname of ["/privacy", "/terms", "/enroll", "/applications", "/discover"]) {
+      current.pathname = pathname;
+      expect(titleFor(), pathname).toBeNull();
+    }
   });
 
   it("calls both hooks on every render, whichever screen it ends in (so the hook order never changes)", () => {

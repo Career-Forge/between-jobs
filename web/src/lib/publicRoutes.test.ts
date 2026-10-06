@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PRIVACY, TERMS } from "../content/legal";
 import {
+  ENROLL_PATH,
   LANDING_PATH,
   LOGIN_PATH,
   PRIVACY_PATH,
@@ -277,6 +278,13 @@ describe("the document title", () => {
     expect(documentTitleFor("app", "/privacy")).toBe("Privacy Policy -- Between Jobs");
     expect(documentTitleFor("app", "/privacy/")).toBe("Privacy Policy -- Between Jobs");
     expect(documentTitleFor("app", "/terms")).toBe("Terms of Service -- Between Jobs");
+  });
+
+  it("titles the tester-programme page inside the signed-in shell", () => {
+    expect(ENROLL_PATH).toBe("/enroll");
+    expect(documentTitleFor("app", "/enroll")).toBe("Tester programme -- Between Jobs");
+    expect(documentTitleFor("app", "/enroll/")).toBe("Tester programme -- Between Jobs");
+    expect(documentTitleFor("app", "/Enroll")).toBe("Between Jobs");
   });
 
   it("puts the plain title back on every other page of the shell, so leaving the policy does not keep its title", () => {

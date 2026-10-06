@@ -83,6 +83,11 @@ LIMITED: dict[str, str] = {
     "POST /extension/fill-outcome": "fill_outcome",
     # Importing a resume file: server-side text extraction and one or two model calls.
     "POST /profile/import-document": "profile_import",
+    # Joining and leaving the tester programme: one small write on the caller's own row. The
+    # only limited routes that are NOT behind the tester-programme gate (they are how a person
+    # gets past it), see `rate_limits.UNGATED_BUCKETS`.
+    "POST /tester/enrollment": "tester_enrollment",
+    "POST /tester/enrollment/withdraw": "tester_enrollment",
 }
 """Route -> bucket. Routes authenticated with the extension's scoped token are listed too; the
 limiter on them reads the user from that token (see
@@ -105,7 +110,8 @@ UNLIMITED: dict[str, str] = {
         "exchange only happens for a valid state, so a stranger cannot reach it"
     ),
     # -- one cheap call or a database write
-    "GET /capabilities": "returns two process-wide flags; reads nothing of the user's",
+    "GET /capabilities": "returns process-wide flags; reads nothing of the user's",
+    "GET /tester/enrollment": _DB_ONLY,
     "GET /hiring-signals/status": "returns one process-wide flag; reads nothing of the user's",
     "POST /account/delete": (
         "deletes the caller's own account once, behind a typed confirmation, and is idempotent; "
@@ -671,3 +677,78 @@ def test_the_bots_resume_generation_is_only_reachable_through_the_limiter() -> N
         assert not {"run_prepare_application", "latest_resume_pdf"} & reached, name
         if name != "_start_prepare":
             assert "_prepare_and_deliver" not in reached, name
+
+
+# -- 3. the tester-programme gate ----------------------------------------------------------
+#
+# When the operator requires the tester programme (TESTER_PROGRAM_REQUIRED, tester_enrollment.py),
+# the costly routes refuse a person who has not accepted the tester agreement. The check is one
+# function, `enrollment_error_or_none`, called from the one place every limiter and the chat bot
+# already pass through (`rate_limits.rate_limit_error_or_none`), so the gate covers exactly the
+# routes above that carry a limiter. What follows pins that, and the two things outside it.
+
+
+def test_the_only_routes_that_skip_the_gate_are_the_ones_that_enroll() -> None:
+    """Every limited route is gated except the buckets in UNGATED_BUCKETS, and those are used by
+    exactly the routes under /tester/, which are how a person gets past the gate."""
+    from between_jobs.api.rate_limits import UNGATED_BUCKETS
+
+    enrolling = {bucket for route, bucket in LIMITED.items() if " /tester/" in route}
+    assert enrolling == {"tester_enrollment"}
+    assert set(UNGATED_BUCKETS) == enrolling
+    for route, bucket in LIMITED.items():
+        if bucket in UNGATED_BUCKETS:
+            assert " /tester/" in route, f"{route} skips the tester gate but does not enroll"
+
+
+def _calls_by_module(name: str) -> set[str]:
+    """The modules of the API that mention `name` as a call or a reference."""
+    users = set()
+    for path in sorted(_SRC.glob("*.py")):
+        if name in _names_in(ast.parse(path.read_text())):
+            users.add(path.name)
+    return users
+
+
+def test_the_gate_is_decided_in_one_place_and_only_the_limiter_asks_it() -> None:
+    """`enrollment_error_or_none` is called by the rate limiter's own claim (which the route
+    dependency and the chat bot share) and by the dependency `require_enrollment`, which wraps
+    it. No route handler or helper decides on its own, so there is nothing to forget."""
+    assert _calls_by_module("enrollment_error_or_none") == {
+        "rate_limits.py",
+        "tester_enrollment.py",
+    }
+    assert _calls_by_module("tester_program_required") >= {
+        "tester_enrollment.py",
+        "capabilities_routes.py",
+        "app.py",
+    }
+    # Only the one route with a limiter of its own uses the dependency (it is defined in
+    # tester_enrollment.py, which does not use it).
+    assert _calls_by_module("require_enrollment") == {"extension_routes.py"}
+
+
+def test_the_route_with_its_own_limiter_carries_the_gate_itself() -> None:
+    """`POST /extension/draft-answer` spends the person's AI key and has an older limiter of its
+    own, so the generic one (and the gate built into it) is not on it: it carries the gate as a
+    dependency instead, authenticated the way the route is."""
+    served = {s.key: s for s in _served_routes()}["POST /extension/draft-answer"]
+    gates = [
+        sub
+        for sub in _dependencies(served.dependant)
+        if getattr(sub.call, "__name__", "") == "enforce_enrollment"
+    ]
+    assert len(gates) == 1
+    assert require_active_extension_user_id in {sub.call for sub in gates[0].dependencies}
+    # It is exactly the exempt, expensive handler in the scan, and no other.
+    exempt_routes = [key for key in SCAN_EXEMPT if key.startswith("extension_routes.py::")]
+    assert exempt_routes == ["extension_routes.py::draft_answer"]
+
+
+def test_the_chat_bot_asks_the_same_place_before_it_starts_a_generation() -> None:
+    """The bot claims the 'prepare' bucket through `rate_limit_error_or_none`, which holds the
+    gate, so an unenrolled person is turned away in the chat as on the web (pinned further by
+    `test_the_bots_resume_generation_is_only_reachable_through_the_limiter`)."""
+    source = (_SRC / "channel_core.py").read_text()
+    assert 'rate_limit_error_or_none(turn.supabase, turn.user_id, "prepare")' in source
+    assert "ENROLLMENT_REQUIRED" in source

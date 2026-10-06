@@ -40,6 +40,17 @@ the window and the maximum are passed to the SQL function on every call. `/exten
 draft-answer` keeps its own older limiter (`extension_rate_limit.py`) and is not part of
 this table.
 
+The tester-programme gate. When the operator has switched the programme on
+(`TESTER_PROGRAM_REQUIRED`, see `tester_enrollment.py`), the same check that counts a request
+first asks whether the person has accepted the tester agreement, and refuses with 403
+`ENROLLMENT_REQUIRED` when they have not (a retryable 503 when it cannot find out: that gate
+fails CLOSED, unlike the limiter itself, because it is a consent check). It is here, in
+`rate_limit_error_or_none`, because this is the one place every costly route and the chat bot's
+resume generation already pass through: the gate covers exactly what carries a limiter, and a
+new costly route that gets a limiter (a test requires one) gets the gate with it. A refused
+request is not counted. With the programme off the gate does nothing and asks nothing. The
+buckets in `UNGATED_BUCKETS` are the routes that let a person enroll.
+
 Not a route dependency: work started through the Telegram webhook runs inside that route's
 own handler under the bot's own secret, not under a user session, so it cannot carry one.
 Its one expensive action, generating a resume, claims the same "prepare" bucket directly
@@ -62,6 +73,7 @@ from supabase import AsyncClient
 from .app_state import get_supabase
 from .auth import require_user_id
 from .errors import ApiError
+from .tester_enrollment import enrollment_error_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +141,17 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     # Importing a resume file: text extraction on the server plus one model call (two at
     # most) on the user's own key. Like the credential check, a real cost per click.
     "profile_import": (10, HOUR),
+    # Joining or leaving the tester programme: one small read and one write on the caller's own
+    # row. A person does each a handful of times at most; the bound is only there so a stuck
+    # client loop cannot hammer the table.
+    "tester_enrollment": (30, HOUR),
 }
 """bucket -> (max requests, window seconds). The only place these numbers live."""
+
+UNGATED_BUCKETS: frozenset[str] = frozenset({"tester_enrollment"})
+"""Buckets whose routes are NOT behind the tester-programme gate: the ones that enroll a person
+(and withdraw them), which the gate would otherwise lock everyone out of. Every other bucket is
+gated when the programme is required."""
 
 
 class RateLimitDecision(NamedTuple):
@@ -215,7 +236,16 @@ async def rate_limit_error_or_none(
     limiter could not answer -- see "Failing open" in the module docstring); the RATE_LIMITED
     error to answer with when the bucket is full, or AUTH_REQUIRED when the user id has no
     account any more. The one place that decides, shared by the route dependency and by
-    callers that are not routes (the Telegram bot's prepare)."""
+    callers that are not routes (the Telegram bot's prepare).
+
+    When the tester programme is required and the person is not enrolled, it answers 403
+    ENROLLMENT_REQUIRED (or a 503 when the lookup failed) BEFORE the limiter is asked, so a
+    refused request does not use up any of the budget. See "The tester-programme gate" in the
+    module docstring."""
+    if bucket not in UNGATED_BUCKETS:
+        refused = await enrollment_error_or_none(supabase, user_id)
+        if refused is not None:
+            return refused
     try:
         decision = await claim_rate_limit_slot(supabase, user_id, bucket)
     except APIError as e:

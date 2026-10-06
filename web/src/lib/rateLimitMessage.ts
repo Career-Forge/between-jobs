@@ -1,8 +1,8 @@
 import type { ApiErrorCode } from "./apiErrorCodes";
 
-// How a 429 RATE_LIMITED (the platform's own per-user limit) and a 413
-// PAYLOAD_TOO_LARGE reach the person. Pure functions, so every wording and every
-// rounding is a test, and the components that show an action's error call
+// How a 429 RATE_LIMITED (the platform's own per-user limit), a 413
+// PAYLOAD_TOO_LARGE and a 403 ENROLLMENT_REQUIRED reach the person. Pure functions, so every
+// wording and every rounding is a test, and the components that show an action's error call
 // `friendlyApiMessage` instead of each rewording the same sentence.
 //
 // The wait is rounded UP, like the server's own wording (describe_wait in
@@ -70,6 +70,14 @@ export function rateLimitedMessage(retryAfterSeconds: number | undefined): strin
 export const PAYLOAD_TOO_LARGE_MESSAGE =
   "That is too large to send. Shorten it and try again.";
 
+// The server's own sentence for this code tells the person to open the Between Jobs website, which
+// is right for a client that is not the website and wrong for the web app, which is where they
+// already are. So the web app words it itself and names the page. Normally the person never reads
+// it: a refusal makes the shell look their enrollment up again and put the enrollment page where
+// the feature was (components/EnrollmentGate.tsx); this is what stays when that could not be done.
+export const ENROLLMENT_REQUIRED_MESSAGE =
+  "Joining the tester programme comes first. Open the tester programme page (/enroll), accept the agreement there, then try again.";
+
 // What `ApiError` (api.ts) carries, read structurally so this module needs no
 // import of it (which would pull in the Supabase client).
 interface ApiErrorLike {
@@ -88,7 +96,8 @@ function looksLikeApiError(error: unknown): error is Error & ApiErrorLike {
 // envelope (an edge proxy's own 429 or 413 has no code), by status; anything
 // else keeps the server's own message (an Error with no code, such as a failed
 // fetch, keeps its message too), and a thrown value that is not an Error at all
-// gets `fallback`. PROVIDER_RATE_LIMITED (an upstream provider throttled the
+// gets `fallback`. A refusal for enrollment gets the web app's own sentence, by code only
+// (no other 403 is about enrollment). PROVIDER_RATE_LIMITED (an upstream provider throttled the
 // server) is a different thing and keeps its own message.
 export function friendlyApiMessage(error: unknown, fallback: string): string {
   if (looksLikeApiError(error)) {
@@ -97,6 +106,9 @@ export function friendlyApiMessage(error: unknown, fallback: string): string {
     }
     if (error.code === "PAYLOAD_TOO_LARGE" || (error.code === undefined && error.status === 413)) {
       return PAYLOAD_TOO_LARGE_MESSAGE;
+    }
+    if (error.code === "ENROLLMENT_REQUIRED") {
+      return ENROLLMENT_REQUIRED_MESSAGE;
     }
   }
   return error instanceof Error ? error.message : fallback;

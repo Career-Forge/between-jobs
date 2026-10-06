@@ -7,12 +7,13 @@
 // Where something could not be verified from this repository, it is worded so that it stays
 // true, and the maintainers' list of open questions says so.
 //
-// THE POLICY SAYS NOTHING ABOUT PRODUCT USAGE EVENTS BECAUSE NOTHING RECORDS THEM YET. The day a
-// table of them ships, the same change must add the paragraph here: it names every recorded
-// column (including any that says which application or which job-site platform an event is
-// about), says that an event is deleted with the account, and reconciles with 'What you browse'
-// under 'What we store about you'. legal.test.ts fails the moment such a migration exists
-// without that paragraph, on purpose.
+// PRODUCT USAGE EVENTS AND THE TESTER PROGRAMME ARE DESCRIBED COLUMN BY COLUMN under 'What we
+// store about you': each paragraph names every recorded column of its table in plain words, says
+// when the record is deleted, and reconciles with 'What you browse'. legal.test.ts reads the
+// migrations (the one that creates each table, and any later `alter table ... add / drop / rename
+// column`) and fails the moment either table has a column of any type that the text does not name,
+// or another table that records what people do or whether they joined a programme exists without a
+// paragraph of its own -- the change that adds one must add its paragraph here, on purpose.
 
 import { PRIVACY_EMAIL, REPO_URL, SOURCE_LICENSE, SUPPORT_EMAIL } from "./site";
 
@@ -26,6 +27,15 @@ import { PRIVACY_EMAIL, REPO_URL, SOURCE_LICENSE, SUPPORT_EMAIL } from "./site";
 export const LEGAL_VERSION = "2026-10-05";
 export const LEGAL_EFFECTIVE_DATE = { iso: "2026-10-05", label: "October 5, 2026" } as const;
 export const LEGAL_WHAT_CHANGED = "First version.";
+
+// When the operator would look at a person's data. The Privacy Policy says this to everyone and the
+// Tester Agreement says it to testers, and the two must say the same thing: a tester who is also
+// disclosing something sensitive must not be told a weaker limit than every other user. One
+// constant, used by both, so they cannot drift apart. Changing it changes both documents, so it
+// means a new LEGAL_VERSION and a new TESTER_AGREEMENT_VERSION (and legal.test.ts pins the literal,
+// so the change cannot be made by accident).
+export const OPERATOR_ACCESS_LIMIT =
+  "We would look at it only to fix a problem you ask us to help with, to investigate abuse or a security problem, or because the law requires it.";
 
 // ── the shape of a document ────────────────────────────────────────────────
 
@@ -381,6 +391,10 @@ export const PRIVACY: LegalDocument = {
             "A short record each time you use a main feature, so we can tell whether the product works for people. It says which feature you used (a search, preparing a resume or cover letter, downloading a PDF, a setup problem, or a form fill by the browser extension), which kind of feature it was (for example company research or interview practice), which application it concerned, which job-site platform it was (for example Greenhouse), whether it worked, a few counts (such as how many results were found or how many form fields were filled), how long it took, and when. It never contains what you typed, your resume or any job text, a web address, your IP address or details of your browser, and it is not sent to any analytics service. The browser extension does not send these records yet; when it does, the only thing it will report is how many fields it tried and filled, never their values.",
           ),
           def(
+            "Tester programme",
+            "Only if you join the tester programme; nothing is recorded here unless you do. It holds the role you chose (from a fixed list), your seniority band, your answer to an optional question about whether you would need an employer to sponsor your right to work (you can decline it, and the product never uses it: it is only counted in our reports on the programme), which version of the Tester Agreement you accepted, when you accepted it, when you withdrew if you did, and the day the record was first made. We use it to see how people in each role and level get on. It is deleted with your account, and in any case 30 days after the programme ends unless you have agreed that we may keep it. The Tester Agreement, which you read before you join, describes it in full.",
+          ),
+          def(
             "Technical records",
             "Counters that limit how often you can use costly features, a record of when you signed the browser extension out, short-lived codes for linking Telegram, a one-time token that ties a Gmail connect attempt to your account (valid for 10 minutes and removed when the attempt comes back, but kept until you delete your account if it never does), the numbered lists of applications the Telegram bot shows you when you ask it to list them (stored as application ids, so that 'apply to #3' means the one you saw: each is valid for 30 minutes, and it is kept until you delete your account), and a queue of internal events that feeds your Today feed.",
           ),
@@ -417,7 +431,7 @@ export const PRIVACY: LegalDocument = {
           "The Between Jobs API reaches the database with a privileged role (Supabase's 'service role'), which the per-user access rules do not limit. So the operator can technically read every table and every stored file, and can decrypt your saved provider keys and Gmail connection, because the API has to decrypt them to use them for you.",
         ),
         p(
-          "We do not read your data as a matter of routine. We would look at it only to fix a problem you ask us to help with, to investigate abuse or a security problem, or because the law requires it. We do not sell your data and we do not use it for advertising.",
+          `We do not read your data as a matter of routine. ${OPERATOR_ACCESS_LIMIT} We do not sell your data and we do not use it for advertising.`,
         ),
         p(
           "The API's own logs are written to carry request ids, route names, counts and error types, and to leave out request bodies, keys, resume and job text, and email contents. Our hosting providers keep their own logs of connections and, like any host, see the IP address of each connection.",
@@ -480,7 +494,8 @@ export const PRIVACY: LegalDocument = {
       blocks: [
         ul(
           "We keep your data while your account exists.",
-          "'Delete my account' on the Profile page removes your account and everything tied to it, immediately and for good: your profile, applications, documents and the files stored for them, saved searches, keys, connections, practice sessions, research, product usage events and the rest of what is listed above. It also asks Google to revoke a Gmail connection, signs out your sessions and the browser extension, clears Telegram link-attempt counters and removes your entries from our sign-in provider's audit log. Those extra steps are made on a best-effort basis.",
+          "The tester programme is an exception to that line. If you joined it, we delete your enrollment record and your usage records 30 days after the programme ends, even if your account stays, unless you have agreed that we may keep them. 'Delete my account' removes them straight away, as it does everything else.",
+          "'Delete my account' on the Profile page removes your account and everything tied to it, immediately and for good: your profile, applications, documents and the files stored for them, saved searches, keys, connections, practice sessions, research, product usage events, tester programme enrollment and the rest of what is listed above. It also asks Google to revoke a Gmail connection, signs out your sessions and the browser extension, clears Telegram link-attempt counters and removes your entries from our sign-in provider's audit log. Those extra steps are made on a best-effort basis.",
           [
             "You can also ask us to delete your account by email at ",
             privacyEmail,

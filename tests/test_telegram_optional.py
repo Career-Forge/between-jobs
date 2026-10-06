@@ -116,7 +116,11 @@ def test_capabilities_says_telegram_is_off() -> None:
     with _client() as client:
         response = client.get("/capabilities")
     assert response.status_code == 200
-    assert response.json() == {"telegram": False, "telegram_bot_username": None}
+    assert response.json() == {
+        "telegram": False,
+        "telegram_bot_username": None,
+        "tester_program_required": False,
+    }
 
 
 # -- on is unchanged --------------------------------------------------------
@@ -128,6 +132,7 @@ def test_capabilities_says_telegram_is_on(monkeypatch: pytest.MonkeyPatch) -> No
         assert client.get("/capabilities").json() == {
             "telegram": True,
             "telegram_bot_username": None,
+            "tester_program_required": False,
         }
 
 
@@ -159,6 +164,7 @@ def test_capabilities_names_the_bot_when_the_server_says_which(
         assert client.get("/capabilities").json() == {
             "telegram": True,
             "telegram_bot_username": "Acme_Jobs_bot",
+            "tester_program_required": False,
         }
 
 
@@ -168,6 +174,7 @@ def test_a_bot_name_with_no_bot_is_not_reported(monkeypatch: pytest.MonkeyPatch)
         assert client.get("/capabilities").json() == {
             "telegram": False,
             "telegram_bot_username": None,
+            "tester_program_required": False,
         }
 
 
@@ -181,7 +188,11 @@ def test_a_malformed_bot_name_is_ignored_not_fatal(
     monkeypatch.setenv("TELEGRAM_BOT_USERNAME", bad)
     with caplog.at_level("WARNING", logger="between_jobs.api.app"), _client() as client:
         body = client.get("/capabilities").json()
-    assert body == {"telegram": True, "telegram_bot_username": None}
+    assert body == {
+        "telegram": True,
+        "telegram_bot_username": None,
+        "tester_program_required": False,
+    }
     warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
     assert any("TELEGRAM_BOT_USERNAME" in message for message in warnings)
     assert not any(bad in message for message in warnings)

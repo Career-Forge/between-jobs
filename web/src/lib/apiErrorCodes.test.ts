@@ -8,6 +8,12 @@ describe("KNOWN_API_ERROR_CODES", () => {
     expect(KNOWN_API_ERROR_CODES).toContain("PROVIDER_RATE_LIMITED");
   });
 
+  it("includes the code a server that requires the tester programme answers with, and it is a code of its own", () => {
+    expect(KNOWN_API_ERROR_CODES).toContain("ENROLLMENT_REQUIRED");
+    expect(isKnownApiErrorCode("ENROLLMENT_REQUIRED")).toBe(true);
+    expect(isKnownApiErrorCode("FORBIDDEN")).toBe(true);
+  });
+
   it("lists each code once", () => {
     expect(new Set(KNOWN_API_ERROR_CODES).size).toBe(KNOWN_API_ERROR_CODES.length);
   });

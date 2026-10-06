@@ -2495,3 +2495,153 @@ a.bj-button-link-primary:hover {
   color: var(--bj-cyan-hover);
   text-decoration-thickness: 2px;
 }
+
+/* ------------------------------------------------------------------ */
+/* Tester programme enrollment (/enroll, and the gate's page)          */
+/* ------------------------------------------------------------------ */
+
+.bj-enroll {
+  max-width: 720px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bj-enroll h1 {
+  margin: 0 0 16px;
+  font-size: 32px;
+}
+
+.bj-enroll .bj-card {
+  max-width: none;
+}
+
+.bj-enroll-banner {
+  gap: 4px;
+}
+
+.bj-enroll-agreement-card p {
+  margin: 0;
+}
+
+/* The agreement scrolls inside its own box, which can take focus so a keyboard user can scroll it. */
+.bj-agreement {
+  max-height: 24rem;
+  overflow-y: auto;
+  padding: 4px 12px 4px 0;
+  border-top: 1px solid var(--bj-border);
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-agreement:focus-visible {
+  outline: 2px solid var(--bj-cyan);
+  outline-offset: 2px;
+}
+
+.bj-agreement section:first-child h3 {
+  margin-top: 12px;
+}
+
+/* A link inside a sentence carries an underline, as in the legal pages (WCAG 1.4.1). */
+.bj-agreement p a,
+.bj-agreement ul a,
+.bj-enroll-agree a,
+.bj-enroll-banner a {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.bj-enroll-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bj-enroll-fieldset legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--bj-text-muted);
+}
+
+.bj-enroll-fieldset p {
+  margin: 0;
+}
+
+.bj-enroll-radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.bj-enroll-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.bj-enroll-choice input {
+  margin-top: 3px;
+}
+
+.bj-enroll-agree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bj-enroll-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.bj-enroll-facts dt {
+  color: var(--bj-text-muted);
+}
+
+.bj-enroll-facts dd {
+  margin: 0;
+}
+
+.bj-enroll-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bj-enroll-confirm p {
+  margin: 0;
+}
+
+/* The tester-programme gate draws this while it waits for the server's settings or the person's
+   enrollment (components/EnrollmentGate.tsx). It stays invisible for the first 300ms, so a normal
+   answer, which comes well inside that, never flashes it; a slow one gets a sign of life instead of
+   an empty page. A near-zero-length animation: only its delay and its filled end state matter. */
+.bj-gate-wait {
+  opacity: 0;
+  animation: bj-gate-wait-in 0.01s linear 0.3s forwards;
+}
+
+@keyframes bj-gate-wait-in {
+  to {
+    opacity: 1;
+  }
+}
+
+/* One column on a narrow screen: the facts stack instead of squeezing the answer. */
+@media (max-width: 480px) {
+  .bj-enroll-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .bj-enroll-facts dd {
+    margin-bottom: 8px;
+  }
+}

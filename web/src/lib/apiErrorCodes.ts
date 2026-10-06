@@ -9,6 +9,11 @@
 // PAYLOAD_TOO_LARGE is a request body over the size cap (413).
 // UNSUPPORTED_MEDIA_TYPE is an uploaded file the route does not read (415): a resume that
 // is not a PDF or a DOCX.
+// ENROLLMENT_REQUIRED is a 403 from a server that has switched the tester programme on: the
+// person has not accepted the current tester agreement, and the costly feature they asked for
+// needs that first (the enrollment page is where they do it). api.ts reports one to the shell's
+// gate (components/EnrollmentGate.tsx), which asks again where the person stands and puts the
+// enrollment page where the feature was; friendlyApiMessage words it for the page that asked.
 export const KNOWN_API_ERROR_CODES = [
   "AUTH_REQUIRED",
   "FORBIDDEN",
@@ -30,6 +35,7 @@ export const KNOWN_API_ERROR_CODES = [
   "RATE_LIMITED",
   "PAYLOAD_TOO_LARGE",
   "UNSUPPORTED_MEDIA_TYPE",
+  "ENROLLMENT_REQUIRED",
 ] as const;
 
 export type KnownApiErrorCode = (typeof KNOWN_API_ERROR_CODES)[number];
