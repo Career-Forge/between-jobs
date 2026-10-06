@@ -16,10 +16,11 @@ Error handling here uses Proposal Appendix B's structured error contract
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Request
 
 from supabase import AsyncClient
 
@@ -28,8 +29,24 @@ from .auth import require_user_id
 from .credential_resolver import resolve
 from .errors import ApiError
 from .forge_engines_client import call_gap_answer_draft
+from .llm_client import generate as llm_generate
 from .models import GapInterviewApproveRequest, GapInterviewDraftRequest, ImportProfileRequest
 from .profile import ProfileImportError, append_bullet_to_entity, entity_candidates, import_profile
+from .profile_import import (
+    PROFILE_IMPORT_CAPABILITY,
+    ConversionRejected,
+    ModelAnswerUnusable,
+    convert_document_text,
+)
+from .profile_import_extract import (
+    ExtractionError,
+    check_declared_type,
+    clean_filename,
+    extract_document_text,
+    refuse_multipart,
+    sniff_document_kind,
+)
+from .profile_import_guard import utf16_offsets
 from .profile_store import (
     VersionAlreadyActivated,
     VersionNotFound,
@@ -39,9 +56,12 @@ from .profile_store import (
     delete_pending_version,
     get_active_version,
     get_version,
+    is_active_version,
     list_career_facts,
 )
 from .rate_limits import limit
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/profile")
 
@@ -59,6 +79,144 @@ async def import_profile_version(
 
     version = await create_pending_version(supabase, user_id, imported, "web_json_paste")
     return {**version, "stats": imported.stats, "warnings": list(imported.warnings)}
+
+
+_BUSY_RETRY_SECONDS = 5
+
+
+def _file_error(error: ExtractionError) -> ApiError:
+    """A file that could not be read, as the platform's error: 415 for a kind of file this
+    route does not take, 422 for a file of the right kind that cannot be used, and a retryable
+    429 when the readers are all busy (nothing is wrong with the file)."""
+    if error.reason == "unsupported_type":
+        return ApiError("UNSUPPORTED_MEDIA_TYPE", error.message)
+    if error.reason == "busy":
+        return ApiError(
+            "RATE_LIMITED",
+            error.message,
+            retryable=True,
+            details={"retry_after_seconds": _BUSY_RETRY_SECONDS},
+        )
+    return ApiError("INVALID_INPUT", error.message)
+
+
+@router.post("/import-document", status_code=201, dependencies=[Depends(limit("profile_import"))])
+async def import_profile_document(
+    request: Request,
+    filename: str | None = Query(default=None, max_length=300),
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> dict[str, Any]:
+    """Imports a resume FILE (PDF or DOCX) as a draft profile.
+
+    The body is the raw file bytes (no multipart), sent with Content-Type `application/pdf`
+    or the DOCX type and an optional `?filename=`. What the file is comes from its bytes; a
+    Content-Type or extension that disagrees is a 415. The text is extracted in a short-lived
+    child process with its own memory and time limits (profile_import_extract; a 429 when
+    every reader is busy), converted with the caller's own model (capability
+    `profile_import`, falling back to their default), and every value that is not in the
+    document is dropped and reported (profile_import_guard).
+
+    The result is stored as a PENDING profile version and returned for review, with the
+    extracted text and where each value came from. This route never activates anything: the
+    person reviews the draft and activates it, or cancels it, with the version routes."""
+    body = await request.body()
+    content_type = request.headers.get("content-type")
+    try:
+        refuse_multipart(content_type)
+        kind = await sniff_document_kind(body)
+        check_declared_type(kind, content_type, filename)
+    except ExtractionError as e:
+        raise _file_error(e) from e
+
+    # Before the work: a person with no model key set up learns that now, not after a
+    # file has been parsed.
+    credential = await resolve(supabase, user_id, capability=PROFILE_IMPORT_CAPABILITY)
+
+    try:
+        extracted = await extract_document_text(body, kind)
+    except ExtractionError as e:
+        raise _file_error(e) from e
+
+    try:
+        converted = await convert_document_text(
+            extracted.text,
+            llm_api_key=credential.secret,
+            llm_model=credential.model,
+            llm_base_url=credential.base_url,
+            generate=llm_generate,
+            page_breaks=extracted.page_breaks,
+        )
+    except ConversionRejected as e:
+        raise ApiError("INVALID_INPUT", e.message) from e
+    except ModelAnswerUnusable as e:
+        raise ApiError(
+            "RUN_FAILED",
+            "The model's answer couldn't be read as a profile. Try again, or paste the "
+            "JSON from your own AI tool instead.",
+            retryable=True,
+        ) from e
+
+    version = await create_pending_version(
+        supabase, user_id, converted.imported, f"web_{kind}_import"
+    )
+    # "Already active" means this IS the profile in use, not that it was once: a version that
+    # was activated and then replaced by a later one is a draft the person can re-activate.
+    # (A version that was never activated cannot be the active one, so that read is skipped.)
+    already_active = version.get("activated_at") is not None and await is_active_version(
+        supabase, user_id, version["id"]
+    )
+    # Counts only: never the document's text or anything in it.
+    logger.info(
+        "resume file imported as a pending profile",
+        extra={
+            "ctx": {
+                "kind": kind,
+                "characters": len(extracted.text),
+                "kept": converted.kept,
+                "dropped": len(converted.dropped),
+                "llm_attempts": converted.llm_attempts,
+            }
+        },
+    )
+    to_utf16 = utf16_offsets(extracted.text)
+    return {
+        "version_id": version["id"],
+        "already_active": already_active,
+        "profile": converted.imported.canonical_json,
+        # Where each value came from in `extracted_text`, in UTF-16 code units: what a browser's
+        # `String.prototype.slice` counts. (Python counts code points, which drift by one
+        # for every emoji before the value.)
+        "span_unit": "utf16",
+        "source_spans": {
+            path: {"start": to_utf16(span.start), "end": to_utf16(span.end)}
+            for path, span in converted.source_spans.items()
+        },
+        "dropped": [
+            {"path": d.path, "reason": d.reason, "detail": d.detail, "value": d.value}
+            for d in converted.dropped
+        ],
+        "assumptions": [
+            {"path": a.path, "value": a.value, "note": a.note} for a in converted.assumptions
+        ],
+        "extracted_text": extracted.text,
+        "stats": {
+            **converted.imported.stats,
+            "kept_fields": converted.kept,
+            "dropped_fields": len(converted.dropped),
+            "characters": len(extracted.text),
+            "llm_attempts": converted.llm_attempts,
+        },
+        "warnings": [*converted.imported.warnings, *extracted.notices],
+        "document": {
+            "kind": kind,
+            "filename": clean_filename(filename),
+            "pages_total": extracted.pages_total,
+            "pages_read": extracted.pages_read,
+            "truncated": extracted.truncated,
+            "column_pages": list(extracted.column_pages),
+        },
+    }
 
 
 @router.get("/versions/{version_id}")

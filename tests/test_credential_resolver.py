@@ -167,6 +167,44 @@ async def test_resolve_falls_back_to_default_capability() -> None:
     assert result.provider == "openrouter"
 
 
+async def test_the_resume_import_capability_falls_back_to_the_default_capability() -> None:
+    """`profile_import` has no row of its own until the person sets one: no key is needed
+    beyond the one they already saved for everything else."""
+    client = _FakeSupabaseClient(
+        preferences={"default": _preference_row(model="vendor/default-model")},
+        credentials={("llm", "openrouter"): _credential_row()},
+    )
+
+    result = await resolve(client, _USER_ID, capability="profile_import")  # type: ignore[arg-type]
+
+    assert result.model == "vendor/default-model"
+    assert result.secret == "decrypted:ciphertext-abc"
+
+
+async def test_a_preference_of_its_own_wins_for_the_resume_import_capability() -> None:
+    client = _FakeSupabaseClient(
+        preferences={
+            "default": _preference_row(model="vendor/default-model"),
+            "profile_import": _preference_row(model="vendor/import-model"),
+        },
+        credentials={("llm", "openrouter"): _credential_row()},
+    )
+
+    result = await resolve(client, _USER_ID, capability="profile_import")  # type: ignore[arg-type]
+
+    assert result.model == "vendor/import-model"
+
+
+async def test_the_resume_import_with_no_key_at_all_names_its_own_capability() -> None:
+    with pytest.raises(ApiError) as exc_info:
+        await resolve(_FakeSupabaseClient(), _USER_ID, capability="profile_import")  # type: ignore[arg-type]
+
+    error = exc_info.value
+    assert error.code == "SETUP_REQUIRED"
+    assert error.capability == "profile_import"
+    assert error.settings_path == "/profile/integrations?capability=profile_import"
+
+
 async def test_resolve_raises_setup_required_when_no_preference_at_all() -> None:
     client = _FakeSupabaseClient()
 

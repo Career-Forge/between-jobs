@@ -134,6 +134,14 @@ def test_the_log_line_has_the_causes_type_and_code_and_never_a_message(
     assert "jane@example.com" not in repr(record.__dict__)
 
 
+def test_a_file_the_route_does_not_read_is_a_415_that_retrying_cannot_fix() -> None:
+    refused = ApiError("UNSUPPORTED_MEDIA_TYPE", "Only PDF or DOCX is supported.")
+
+    assert refused.status_code == 415
+    assert refused.retryable is False
+    assert refused.to_body()["error"]["code"] == "UNSUPPORTED_MEDIA_TYPE"
+
+
 def test_the_web_apps_list_of_error_codes_is_the_servers() -> None:
     """web/src/lib/apiErrorCodes.ts mirrors `ErrorCode`; adding a code means editing both."""
     source = (Path(__file__).parent.parent / "web" / "src" / "lib" / "apiErrorCodes.ts").read_text()

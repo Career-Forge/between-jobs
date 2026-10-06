@@ -126,6 +126,9 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     # hour; the bound is only there so a stuck client loop cannot grow the event log without
     # limit, so it sits well above any real use.
     "fill_outcome": (300, HOUR),
+    # Importing a resume file: text extraction on the server plus one model call (two at
+    # most) on the user's own key. Like the credential check, a real cost per click.
+    "profile_import": (10, HOUR),
 }
 """bucket -> (max requests, window seconds). The only place these numbers live."""
 

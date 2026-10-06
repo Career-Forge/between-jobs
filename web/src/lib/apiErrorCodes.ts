@@ -7,6 +7,8 @@
 // in the envelope's details and a Retry-After header). It is not
 // PROVIDER_RATE_LIMITED, which says an upstream provider throttled the server.
 // PAYLOAD_TOO_LARGE is a request body over the size cap (413).
+// UNSUPPORTED_MEDIA_TYPE is an uploaded file the route does not read (415): a resume that
+// is not a PDF or a DOCX.
 export const KNOWN_API_ERROR_CODES = [
   "AUTH_REQUIRED",
   "FORBIDDEN",
@@ -27,6 +29,7 @@ export const KNOWN_API_ERROR_CODES = [
   "FEATURE_DISABLED",
   "RATE_LIMITED",
   "PAYLOAD_TOO_LARGE",
+  "UNSUPPORTED_MEDIA_TYPE",
 ] as const;
 
 export type KnownApiErrorCode = (typeof KNOWN_API_ERROR_CODES)[number];

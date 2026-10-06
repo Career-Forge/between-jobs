@@ -430,8 +430,53 @@ def test_a_prefix_matches_the_start_of_a_path_never_the_middle() -> None:
     assert limit_for_path("/upload", 1000, prefixes) == 5000
 
 
-def test_the_future_upload_hook_ships_empty() -> None:
-    assert PATH_PREFIX_LIMITS == {}
+def test_the_only_raised_cap_is_the_resume_upload() -> None:
+    assert PATH_PREFIX_LIMITS == {"/profile/import-document": 5 * 1024 * 1024}
+
+
+def test_the_resume_upload_path_gets_five_mebibytes_and_its_neighbours_the_default() -> None:
+    default = 1024 * 1024
+    five = 5 * 1024 * 1024
+    assert limit_for_path("/profile/import-document", default, PATH_PREFIX_LIMITS) == five
+    assert limit_for_path("/profile/versions", default, PATH_PREFIX_LIMITS) == default
+    assert limit_for_path("/profile/import", default, PATH_PREFIX_LIMITS) == default
+    assert limit_for_path("/profile/current", default, PATH_PREFIX_LIMITS) == default
+    assert limit_for_path("/applications", default, PATH_PREFIX_LIMITS) == default
+
+
+async def test_the_upload_path_takes_five_mebibytes_through_the_middleware(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    five = 5 * 1024 * 1024
+    monkeypatch.delenv("MAX_REQUEST_BODY_BYTES")  # the default (1 MiB) is what it overrides
+    path = "/profile/import-document"
+
+    at_cap = await _call(
+        _Handler(), chunks=[b"x" * five], content_length=[str(five)], path=path, prefix_limits=None
+    )
+    over = await _call(
+        _Handler(),
+        chunks=[b"x" * (five + 1)],
+        content_length=[str(five + 1)],
+        path=path,
+        prefix_limits=None,
+        receive_forbidden=True,
+    )
+    streamed = await _call(_Handler(), chunks=[b"x" * 1_048_576] * 6, path=path, prefix_limits=None)
+    elsewhere = await _call(
+        _Handler(),
+        chunks=[b"x" * 1_048_577],
+        content_length=["1048577"],
+        path="/profile/versions",
+        prefix_limits=None,
+        receive_forbidden=True,
+    )
+
+    assert at_cap.status == 200
+    assert over.status == 413 and over.json()["error"]["details"] == {"max_bytes": five}
+    assert streamed.status == 413  # 6 MiB with no declared length is cut off at the cap
+    assert elsewhere.status == 413
+    assert elsewhere.json()["error"]["details"] == {"max_bytes": 1024 * 1024}
 
 
 @pytest.mark.parametrize(

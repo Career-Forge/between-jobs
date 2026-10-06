@@ -43,8 +43,10 @@ ErrorCode = Literal[
     "FEATURE_DISABLED",
     "RATE_LIMITED",
     "PAYLOAD_TOO_LARGE",
+    "UNSUPPORTED_MEDIA_TYPE",
 ]
-"""Every code but INTERNAL_ERROR, FEATURE_DISABLED, RATE_LIMITED and PAYLOAD_TOO_LARGE is
+"""Every code but INTERNAL_ERROR, FEATURE_DISABLED, RATE_LIMITED, PAYLOAD_TOO_LARGE and
+UNSUPPORTED_MEDIA_TYPE is
 Appendix B's own core list, verbatim. INTERNAL_ERROR isn't in the appendix -- it's this platform's
 own fallback for failures that don't fit any named code (an unmapped database
 error, a genuine bug), so those still reach the client as the documented
@@ -60,7 +62,9 @@ PROVIDER_RATE_LIMITED but means something different -- that one says an upstream
 provider throttled us -- so a client must not conflate them. Its `details` carry
 `retry_after_seconds` and the `bucket`, and the response has a `Retry-After` header.
 PAYLOAD_TOO_LARGE is a request body over the size cap (api/body_limit.py): a 413 that
-retrying unchanged cannot fix."""
+retrying unchanged cannot fix.
+UNSUPPORTED_MEDIA_TYPE is an uploaded file that is not one the route reads (a resume that is
+not a PDF or a DOCX, or whose bytes disagree with what it says it is): a 415."""
 
 _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "AUTH_REQUIRED": 401,
@@ -82,6 +86,7 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "FEATURE_DISABLED": 404,
     "RATE_LIMITED": 429,
     "PAYLOAD_TOO_LARGE": 413,
+    "UNSUPPORTED_MEDIA_TYPE": 415,
 }
 
 

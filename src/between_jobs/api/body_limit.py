@@ -30,8 +30,9 @@ so a 413 carries the CORS headers (without them a browser shows a network error 
 the message) and the `X-Request-ID` header (so it can be quoted in a bug report).
 
 The default is 1 MiB, set by MAX_REQUEST_BODY_BYTES. `PATH_PREFIX_LIMITS` is the hook for a
-route that legitimately takes more (a resume upload, when there is one): a path prefix ->
-bytes mapping, longest matching prefix wins, empty today. The limit is read on every request,
+route that legitimately takes more: a path prefix -> bytes mapping, longest matching prefix
+wins. Today that is the resume file upload (5 MiB), and only that path; every other route keeps
+the default. The limit is read on every request,
 like the DISABLE_* flags, and validated at startup (`app.lifespan`), so a bad value stops the
 API from starting instead of failing requests one by one.
 """
@@ -53,12 +54,17 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024
 
-PATH_PREFIX_LIMITS: dict[str, int] = {}
-"""Path prefix -> the largest body, in bytes, that paths under it may send. Empty today; the
-place to raise the cap for a route that takes an upload, e.g. {"/resume-documents/upload":
-10 * 1024 * 1024}. The match is on the raw path string, so end a prefix where the route's
-path ends or on a slash ("/upload/" would not also raise "/uploads-other"). The longest
-matching prefix wins; anything unmatched gets the default."""
+RESUME_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+
+PATH_PREFIX_LIMITS: dict[str, int] = {
+    # A resume file (PDF or DOCX) sent as the raw request body. A real one is a few hundred
+    # kilobytes; 5 MiB leaves room for one with embedded images.
+    "/profile/import-document": RESUME_UPLOAD_MAX_BYTES,
+}
+"""Path prefix -> the largest body, in bytes, that paths under it may send: the place to raise
+the cap for a route that takes an upload. The match is on the raw path string, so end a prefix
+where the route's path ends or on a slash ("/upload/" would not also raise "/uploads-other").
+The longest matching prefix wins; anything unmatched gets the default."""
 
 _PLAIN_INTEGER = re.compile(r"[0-9]+")
 

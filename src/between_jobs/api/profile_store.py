@@ -159,6 +159,14 @@ async def get_active_version(supabase: AsyncClient, user_id: str) -> dict[str, A
     return cast(dict[str, Any], result.data[0])
 
 
+async def is_active_version(supabase: AsyncClient, user_id: str, version_id: str) -> bool:
+    """Whether `version_id` is the user's current profile right now. A version that was
+    activated once and has since been replaced by a later activation is not: it is a draft the
+    person could activate again."""
+    active = await get_active_version(supabase, user_id)
+    return active is not None and active["id"] == version_id
+
+
 async def count_versions(supabase: AsyncClient, user_id: str) -> int:
     """Every version ever imported for a user, pending or activated --
     lets the edit UI say "Saving creates version N" honestly instead of

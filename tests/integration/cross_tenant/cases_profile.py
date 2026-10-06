@@ -375,6 +375,13 @@ NOT_USER_SCOPED = {
         "imports the pasted text as a new pending version for the caller; takes no id of "
         "anyone else's, and the owner is always the authenticated user",
     ),
+    "POST /profile/import-document": NotUserScoped(
+        "own-identity",
+        "imports the uploaded file as a new pending version for the caller; takes no id of "
+        "anyone else's and reads nothing of anyone else's (the only database calls are the "
+        "caller's own credential lookup and `create_pending_version`, which the store cases "
+        "already cover), and the owner is always the authenticated user",
+    ),
     "GET /profile/integrations/gmail/connect": NotUserScoped(
         "own-identity",
         "mints an OAuth state for the caller and returns Google's authorize URL; no id, and "

@@ -81,6 +81,8 @@ LIMITED: dict[str, str] = {
     "POST /credentials": "credential_save",
     # One small insert per finished autofill, bounded so a stuck client cannot grow the log.
     "POST /extension/fill-outcome": "fill_outcome",
+    # Importing a resume file: server-side text extraction and one or two model calls.
+    "POST /profile/import-document": "profile_import",
 }
 """Route -> bucket. Routes authenticated with the extension's scoped token are listed too; the
 limiter on them reads the user from that token (see
@@ -387,6 +389,7 @@ EXPENSIVE_NAMES = frozenset(
         "find_warm_path_events",
         "generate_outreach_draft",
         "generate_practice_questions",
+        "convert_document_text",
         "score_answer",
         "score_jobs",
         # job search: provider fan-out and the registry lane
