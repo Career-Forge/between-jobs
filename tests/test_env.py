@@ -16,7 +16,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from between_jobs.api.app import app
-from between_jobs.api.env import ConfigurationError, optional_uuid_set, refuse, require_env
+from between_jobs.api.env import (
+    ConfigurationError,
+    https_url_or_refuse,
+    optional_uuid_set,
+    refuse,
+    require_env,
+    web_app_url,
+)
 
 _LOGGER = "between_jobs.api.env"
 
@@ -199,6 +206,116 @@ def test_booting_with_a_bad_hiring_signals_list_names_the_setting_and_not_the_va
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setenv("HIRING_SIGNALS_ALLOWED_USER_IDS", f"{_ID_A},a-person-not-an-id")
+
+
+# -- WEB_APP_URL: the web app's public address ---------------------------------------------------
+
+
+@pytest.mark.parametrize("unset", [None, "", "   "])
+def test_an_unset_or_blank_web_app_url_is_none(
+    monkeypatch: pytest.MonkeyPatch, unset: str | None
+) -> None:
+    if unset is None:
+        monkeypatch.delenv("WEB_APP_URL", raising=False)
+    else:
+        monkeypatch.setenv("WEB_APP_URL", unset)
+
+    assert web_app_url() is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("https://between-jobs.tech", "https://between-jobs.tech"),
+        ("https://between-jobs.tech/", "https://between-jobs.tech"),
+        ("  https://between-jobs.tech//  ", "https://between-jobs.tech"),
+        ("HTTPS://Between-Jobs.tech", "HTTPS://Between-Jobs.tech"),
+        ("https://app.example.com:8443", "https://app.example.com:8443"),
+        ("https://example.com/app", "https://example.com/app"),
+        ("https://example.com/app/", "https://example.com/app"),
+        ("https://[::1]:8443", "https://[::1]:8443"),
+        # an internationalised host and a non-ASCII path are not "invisible" characters
+        ("https://b\u00fccher.test", "https://b\u00fccher.test"),
+        ("https://between-jobs.tech/caf\u00e9", "https://between-jobs.tech/caf\u00e9"),
+    ],
+)
+def test_a_good_web_app_url_is_used_without_its_trailing_slash(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: str
+) -> None:
+    monkeypatch.setenv("WEB_APP_URL", raw)
+
+    assert web_app_url() == expected
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "http://between-jobs.tech",  # not https
+        "ftp://between-jobs.tech",
+        "between-jobs.tech",  # no scheme
+        "//between-jobs.tech",
+        "https:between-jobs.tech",  # urlsplit reads this as a path
+        "https:///profile",  # no host
+        "https://",
+        "https://user:pass@between-jobs.tech",  # credentials
+        "https://user@between-jobs.tech",
+        "https://:pass@between-jobs.tech",
+        "https://between-jobs.tech?x=1",  # a query
+        "https://between-jobs.tech/?",
+        "https://between-jobs.tech#top",  # a fragment
+        "https://between-jobs.tech/a b",  # whitespace inside
+        "https://between-jobs.tech/a\\b",  # a backslash
+        "https://between-jobs.tech/a\x01b",  # a control character that is not whitespace
+        "https://between-jobs.tech/a\x1bb",  # ESC
+        "https://betw\x01een-jobs.tech",  # ...in the host as well
+        "https://between-jobs.tech/\x7f",  # DEL
+        "https://between-jobs.tech/\u200babc",  # a zero-width space, as pasted from a chat
+        "https://between-jobs.tech/\u202eabc",  # a right-to-left override
+        "https://exa\u00admple.test",  # a soft hyphen inside the host
+        "https://between-jobs.tech/\ufeffabc",  # a byte order mark
+        "https://between-jobs.tech/\u200eabc",  # a left-to-right mark
+        "https://between-jobs.tech/\u00a0abc",  # a no-break space
+        "https://between-jobs.tech/\u2028abc",  # a line separator
+        "https://between-jobs.tech/\ue000abc",  # a private-use character
+        "https://between-jobs.tech/\u0085abc",  # a next-line control
+        "https://between-jobs.tech:notaport",
+        "https://between-jobs.tech:99999",
+        "javascript:alert(1)",
+    ],
+)
+def test_a_bad_web_app_url_stops_the_boot_and_names_the_setting_not_the_value(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, bad: str
+) -> None:
+    monkeypatch.setenv("WEB_APP_URL", bad)
+    with caplog.at_level(logging.CRITICAL, logger=_LOGGER), pytest.raises(ConfigurationError):
+        web_app_url()
+
+    [message] = _critical(caplog)
+    assert "WEB_APP_URL" in message
+    assert bad.strip() not in message  # a value can carry credentials: never logged
+
+
+def test_a_null_character_is_refused_too(caplog: pytest.LogCaptureFixture) -> None:
+    """The environment cannot carry one (the OS refuses), so it is checked on the helper."""
+    with caplog.at_level(logging.CRITICAL, logger=_LOGGER), pytest.raises(ConfigurationError):
+        https_url_or_refuse("SOME_ADDRESS", "https://between-jobs.tech/a\x00b")
+
+    assert "SOME_ADDRESS" in _critical(caplog)[0]
+
+
+def test_the_check_is_the_same_one_whatever_reads_the_setting(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.CRITICAL, logger=_LOGGER), pytest.raises(ConfigurationError):
+        https_url_or_refuse("SOME_ADDRESS", "http://example.com")
+
+    assert "SOME_ADDRESS" in _critical(caplog)[0]
+
+
+def test_booting_with_a_bad_web_app_url_names_it_and_never_its_value(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("WEB_APP_URL", "https://user:hunter2@between-jobs.tech")
     with (
         caplog.at_level(logging.CRITICAL, logger=_LOGGER),
         pytest.raises(ConfigurationError),
@@ -207,5 +324,11 @@ def test_booting_with_a_bad_hiring_signals_list_names_the_setting_and_not_the_va
         pass
 
     [message] = _critical(caplog)
-    assert "HIRING_SIGNALS_ALLOWED_USER_IDS" in message
-    assert "a-person-not-an-id" not in message and _ID_A not in message
+    assert "WEB_APP_URL" in message
+    assert "hunter2" not in message and "between-jobs.tech" not in message
+
+
+def test_booting_with_a_good_web_app_url_is_fine(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WEB_APP_URL", "https://between-jobs.tech")
+    with TestClient(app):
+        pass

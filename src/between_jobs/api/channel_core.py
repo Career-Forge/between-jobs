@@ -18,7 +18,11 @@ A message is dispatched on SEVEN things, checked in order:
      index against the working set "list" minted, then runs the same prepare-and-deliver
      flow the "Generate resume" button uses.
   7. Everything else -> the deterministic command classifier (`classify()`): setup help,
-     check-resume, track-job help, list applications, or a fallback.
+     check-resume, track-job help, list applications, the privacy summary (`/privacy`), the
+     first-run checklist (`/learn`), or a fallback. `/privacy` answers every chat (it reads
+     nothing; a chat with no web account is told the version that applies to it); `/learn`
+     answers only a person whose chat is linked to a web account, and anyone else is told how
+     to link.
 
 A button tap (`Callback`) is dispatched on its data's prefix: confirm or cancel a resume
 preview, generate a resume, mark an application as applied.
@@ -30,8 +34,10 @@ validated deterministically (profile.py) and staged as a PENDING profile_version
 Generating a resume is the one slow thing here, and it is DEFERRED: `_start_prepare` does
 the quick part inline (the per-user limit, the "this can take a minute" message) and hands
 the rest to a `DeferredReplies` task, so the webhook can answer its request at once and
-the person gets the resume when it is ready. That module's docstring says what a restart does
-to work in flight.
+the person gets the resume when it is ready. The "this can take a minute" message is the
+person's one progress message (`progress_message`): the task edits it as the work advances and
+ends it with the final state, so a generation is one message plus the document. That module's
+docstring says what a restart does to work in flight.
 
 Human actions stay human: the bot drafts and delivers a resume, and offers a button to mark
 the application as applied; it never submits anything.
@@ -72,7 +78,9 @@ from .channel_envelope import (
     rich,
 )
 from .deferred_reply import DeferredReplies
+from .env import web_app_url
 from .errors import ApiError, log_api_error
+from .first_run import derive_first_run, load_first_run_facts
 from .intents import (
     Intent,
     classify,
@@ -97,6 +105,7 @@ from .profile_store import (
     delete_pending_version,
     get_active_version,
 )
+from .progress_message import ProgressMessage
 from .rate_limits import rate_limit_error_or_none
 from .telegram_identity import (
     is_auto_provisioned_for_subject,
@@ -226,7 +235,11 @@ async def _start_prepare(turn: _Turn, application_id: str) -> None:
     The place is reserved before the limit is claimed, so a refusal for "busy" spends none of
     the person's hourly budget. It is given back as soon as nothing is going to run, before
     the reply that says so. The window of the limiter's own database round trip still holds
-    it, which is short and bounded."""
+    it, which is short and bounded.
+
+    The "this can take a minute" message is the person's ONE progress message
+    (`ProgressMessage`): the background task edits it as the work advances and ends it with the
+    final state, instead of sending a message per stage."""
     slot = await turn.deferred.try_reserve(turn.user_id)
     if slot is None:
         if turn.deferred.holds(turn.user_id):
@@ -257,13 +270,17 @@ async def _start_prepare(turn: _Turn, application_id: str) -> None:
             else:
                 await turn.say(f"❌ {limited.message}")
             return
-        await turn.say(messages.GENERATING_TEXT)
+        progress = ProgressMessage(turn.renderer, turn.message.chat_ref, log_context=_log_ctx(turn))
+        await progress.start(messages.GENERATING_TEXT)
         turn.deferred.start(
             slot,
-            lambda: _prepare_and_deliver(turn, application_id),
+            lambda: _prepare_and_deliver(turn, application_id, progress),
             name="prepare",
             context=_log_ctx(turn),
-            on_failure=lambda: turn.say(messages.PREPARE_FAILED_TEXT),
+            # The registry only calls this for an exception nothing below caught. It ends the
+            # progress message in the failed state (or, when that cannot be edited, says so in a
+            # new one); `finish` never raises.
+            on_failure=lambda: _tell_the_generation_failed(progress),
         )
         handed_over = True
     finally:
@@ -271,17 +288,27 @@ async def _start_prepare(turn: _Turn, application_id: str) -> None:
             slot.release()
 
 
-async def _prepare_and_deliver(turn: _Turn, application_id: str) -> None:
+async def _prepare_and_deliver(turn: _Turn, application_id: str, progress: ProgressMessage) -> None:
     """The slow part of generating a resume, run as a deferred task: the same
     `run_prepare_application` / `latest_resume_pdf` orchestration the web's `/prepare` and
-    `/resume.pdf` routes call, turned into a chat message and a real file instead of a JSON
-    body. `ApiError` is caught here rather than left to propagate -- this IS the
-    client-facing boundary for a chat-triggered prepare, the same role `errors.py`'s FastAPI
-    handler plays for the web route -- and is logged the way that handler logs it, so an
-    engine outage seen through the bot leaves the same trace as one seen through the web.
-    Anything else is the registry's to catch, log and report (see `deferred_reply`), and is
-    told to the person as a failed generation: so nothing after the resume has reached the
-    chat may raise, or they would be told it failed when they hold it."""
+    `/resume.pdf` routes call, turned into a real file and a message instead of a JSON body.
+
+    The person's one progress message (`progress`, sent by `_start_prepare`) is edited as the
+    work crosses the two boundaries that exist -- the engine has written the resume, the PDF is
+    being compiled -- and ends as the final state: done (with the "mark as applied" button under
+    it, after the document is sent), or the reason there is no resume (and when the channel will
+    not take that reason, the generic failure instead: see `_end_without_a_resume`). The engine
+    is one call, so "reading the job" and "writing" are not separate stages the bot could
+    honestly report.
+
+    `ApiError` is caught here rather than left to propagate -- this IS the client-facing
+    boundary for a chat-triggered prepare, the same role `errors.py`'s FastAPI handler plays for
+    the web route -- and is logged the way that handler logs it, so an engine outage seen
+    through the bot leaves the same trace as one seen through the web. Anything else is the
+    registry's to catch, log and report (see `deferred_reply`), and is told to the person as a
+    failed generation: so nothing after the resume has reached the chat may raise, or they would
+    be told it failed when they hold it. That holds for the progress message by construction:
+    its calls never raise."""
     try:
         result = await run_prepare_application(
             turn.supabase,
@@ -295,22 +322,27 @@ async def _prepare_and_deliver(turn: _Turn, application_id: str) -> None:
         # This is the bot's own error boundary, so the API error handler never sees the error;
         # a person stuck on a setup step here is as much a funnel drop-off as one on the web.
         emit_setup_required(turn.supabase, turn.user_id, e)
-        await turn.say(f"❌ {e.message}")
+        await _end_without_a_resume(progress, f"❌ {e.message}")
         return
 
     warnings = cast(list[str], result.get("warnings") or [])
     if result.get("resume") is None:
-        warning_text = "\n".join(f"• {w}" for w in warnings) if warnings else "No details given."
-        await turn.say(messages.PREPARE_DECLINED_TEXT.format(warnings=warning_text))
+        await _end_without_a_resume(
+            progress,
+            messages.PREPARE_DECLINED_TEXT.format(
+                warnings=messages.declined_warnings_text(warnings)
+            ),
+        )
         return
 
+    await progress.update(messages.PREPARE_COMPILING_TEXT)
     try:
         _version_row, pdf_bytes = await latest_resume_pdf(
             turn.supabase, turn.http, turn.user_id, application_id
         )
     except ApiError as e:
         _log_known_failure(turn, e)
-        await turn.say(f"❌ {e.message}")
+        await _end_without_a_resume(progress, f"❌ {e.message}")
         return
 
     score = result.get("final_score")
@@ -328,22 +360,28 @@ async def _prepare_and_deliver(turn: _Turn, application_id: str) -> None:
     )
     # One tap moves the application from "saved" (its default status, per
     # applications_store._DEFAULT_STATUS) to "applied", the natural next step right after
-    # reviewing a freshly generated resume. A separate message rather than buttons on the
-    # document itself -- the already-tested shape (a message with a keyboard).
-    try:
-        await turn.say(
-            messages.MARK_APPLIED_PROMPT_TEXT, messages.mark_applied_keyboard(application_id)
-        )
-    except Exception:
-        # The resume is already in the chat. Failing to offer this button must not reach the
-        # registry, which would tell the person generation failed: they would regenerate, on
-        # their own key, for nothing. Not retried; the stage can still be changed from the
-        # list or the web app.
-        logger.warning(
-            "could not send the mark-as-applied prompt after delivering the resume",
-            exc_info=True,
-            extra={"ctx": _log_ctx(turn)},
-        )
+    # reviewing a freshly generated resume. The button rides on the progress message's final
+    # state. The resume is already in the chat: failing to show this must not reach the
+    # registry, which would tell the person generation failed and they would regenerate, on
+    # their own key, for nothing. `finish` logs its own failure and never raises; the stage can
+    # still be changed from the list or the web app.
+    await progress.finish(
+        messages.PREPARE_DONE_TEXT, messages.mark_applied_keyboard(application_id)
+    )
+
+
+async def _end_without_a_resume(progress: ProgressMessage, reason: str) -> None:
+    """Ends the progress message with the reason there is no resume. The person has nothing yet,
+    so they must not be left on "this can take a minute": when the channel refuses the reason (a
+    text it will not take), they are told, in the generic words, that it failed. The registry
+    does this for an exception; this is the same guarantee for the endings that are answers.
+    Never used once the resume is in the chat, where "failed" would be false."""
+    if not await progress.finish(reason):
+        await progress.finish(messages.PREPARE_FAILED_TEXT)
+
+
+async def _tell_the_generation_failed(progress: ProgressMessage) -> None:
+    await progress.finish(messages.PREPARE_FAILED_TEXT)
 
 
 def _log_known_failure(turn: _Turn, exc: ApiError) -> None:
@@ -511,6 +549,40 @@ async def _handle_unlink_command(turn: _Turn) -> None:
     await turn.say(messages.UNLINK_TEXT)
 
 
+async def _is_linked(turn: _Turn) -> bool:
+    """Whether this chat is linked to a web account, as opposed to being the account the bot
+    made on first contact. Decided from the verified identity, the same check `/unlink` makes
+    (see `telegram_identity.is_auto_provisioned_for_subject`); nothing in the message counts."""
+    return not await is_auto_provisioned_for_subject(
+        turn.supabase, turn.user_id, turn.message.channel, turn.message.subject
+    )
+
+
+async def _handle_privacy(turn: _Turn) -> None:
+    """`/privacy`: a short summary of what is stored and who handles it, with the website's
+    policy page as the full text. Static copy plus the configured website address: none of the
+    person's data is read, so nothing gates it. A person who only ever used the bot is exactly
+    who it serves (the bot already holds what they sent it), so it is not withheld from a chat
+    that is not linked. Whether the chat is linked only picks the wording of the last line: the
+    Profile page's "Delete my account" and `/unlink` are for an account that exists on the web."""
+    await turn.say(messages.privacy_text(web_app_url(), linked=await _is_linked(turn)))
+
+
+async def _handle_learn(turn: _Turn) -> None:
+    """`/learn`: the first-run checklist the web's Today page shows, from what this person's
+    account holds, read through the stores (so each read is filtered by the verified user) and
+    derived by the same rules (`first_run`). A fact that cannot be read is shown as unknown,
+    never guessed."""
+    if not await _is_linked(turn):
+        await turn.say(messages.link_first_text(web_app_url()))
+        return
+    facts = await load_first_run_facts(turn.supabase, turn.user_id)
+    # A chat cannot see the web app's browser-side memory of a first search, so it passes None
+    # and the first-search step is done or unknown here, never todo.
+    view = derive_first_run(facts, None)
+    await turn.say(messages.learn_text(view, facts, web_app_url()))
+
+
 async def _handle_message(turn: _Turn) -> None:
     message = turn.message
     attachment = message.attachment
@@ -579,6 +651,14 @@ async def _handle_message(turn: _Turn) -> None:
 
     if intent == Intent.LIST_APPLICATIONS:
         await _handle_list_applications(turn)
+        return
+
+    if intent == Intent.PRIVACY:
+        await _handle_privacy(turn)
+        return
+
+    if intent == Intent.LEARN:
+        await _handle_learn(turn)
         return
 
     await turn.say(messages.FALLBACK_TEXT)

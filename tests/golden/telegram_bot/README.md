@@ -31,3 +31,25 @@ the pre-extraction one.
 A resume generation runs after the webhook has answered, so the fixture records the calls
 once it has finished (the app's shutdown drains it). That it answers promptly, and what
 happens to a task that is still running, is in `tests/test_telegram_deferred_prepare.py`.
+
+## Deliberate changes since the capture
+
+The file was regenerated twice-over for changes that were meant, each reviewed message by message:
+
+- **One progress message.** A resume generation used to send an acknowledgement, the document and
+  a separate "Applying with this one?" prompt. It now sends the acknowledgement once, edits that
+  message as the work advances (`editMessageText`: "compiling the PDF", then the final state with
+  the "Mark as applied" button, or the reason there is no resume), and sends the document. In
+  the seven scenarios that start a generation, the opening message and the document are
+  byte-identical to the capture, and an error or declined-resume text has the same digest as
+  before: it is edited into the progress message instead of sent as a new one. The two scenarios
+  whose names end in `progress_message_was_deleted` / `cannot_be_edited_and_the_engine_declines`
+  cover the fallback: an edit Telegram refuses is followed by a new message.
+- **`/privacy` and `/learn`.** New scenarios only; no existing message changed. The `/privacy`
+  text was then changed on purpose, after a review of what it says against the web policy: it
+  qualifies the deletion promise the way the policy does, says that the resume engine receives
+  the AI key, and no longer claims to be a complete list of what is kept. The four `privacy_*`
+  scenarios changed with it (their bodies are shared). `privacy_for_a_telegram_only_user` also
+  changed in kind: it used to be the 208-character "link this chat first" prompt, and is now the
+  summary, with the last line written for a chat that has no web account (`/learn` still sends
+  the link prompt, in `learn_for_a_telegram_only_user`).

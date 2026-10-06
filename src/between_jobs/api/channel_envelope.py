@@ -20,8 +20,8 @@ the plain text). Because a segment's text is never markup, a name or an error me
 into a `RichText` can never be read as formatting: escaping is the renderer's job, once.
 
 Identity is not here. `subject` is whatever the provider calls the sender; mapping it to a
-user is `telegram_identity` for now, keyed by the verified channel link and never by anything
-in the message text.
+user is `channel_identity` (the lookups) and `telegram_identity` (creating a Telegram sender's
+account), keyed by the verified channel link and never by anything in the message text.
 
 Neither is redelivery. A provider that delivers an update again when it gets no answer in
 time needs its channel side to drop the repeat before the logic sees it, or a resume
@@ -233,10 +233,15 @@ class Renderer(Protocol):
 
 
 class Notifier(Protocol):
-    """Tells a user something unprompted, on whichever channel they have linked.
+    """Tells a user something unprompted, on the channel or channels they have linked.
 
-    Returns whether anything was sent: False for a user with no linked channel, which is a
-    normal answer. Raises when the channel refuses; callers that treat a nudge as a bonus
-    catch that themselves."""
+    Returns whether anything was sent. False means nothing was sent and nothing refused: the
+    user has no linked channel (or no chat on it), which is a normal answer. Raises when the
+    channel refuses and nothing was sent; callers that treat a nudge as a bonus catch that
+    themselves, and log it against their own event and user.
+
+    A notifier over several channels (`channel_push.FanOutNotifier`) tries each of them. It
+    returns True when at least one took the message, however the others fared, and raises only
+    when nothing was sent and a channel refused."""
 
     async def notify(self, user_id: str, text: RichText) -> bool: ...

@@ -68,7 +68,12 @@ class _PerSubjectIdentities(webhook_fakes._FakeChannelIdentitiesTable):
 
 
 class FakeRenderer:
-    """Records every intent; returns a `MessageRef` for each message it "sends"."""
+    """Records every intent; returns a `MessageRef` for each message it "sends".
+
+    `shown` is what the person would see in the chat once everything has been applied: each
+    message sent, in order, with an edit replacing the text (and buttons) of the message it
+    names. It is how a test says "the progress message ended as ..." without caring which
+    calls got it there."""
 
     def __init__(
         self,
@@ -83,6 +88,7 @@ class FakeRenderer:
         self.fetches: list[tuple[Attachment, int]] = []
         self._attachment_bytes = attachment_bytes
         self._attachment_too_large = attachment_too_large
+        self._shown: dict[tuple[str, str], Say] = {}
         # Every call in order, across kinds: ("say" | "document" | "edit" | "ack" | "fetch").
         self.calls: list[str] = []
 
@@ -90,10 +96,21 @@ class FakeRenderer:
     def texts(self) -> list[str]:
         return [intent.text.plain_text() for _chat, intent in self.sent]
 
+    @property
+    def shown(self) -> list[Say]:
+        """The messages as the person sees them now: sends in order, edits applied."""
+        return list(self._shown.values())
+
+    @property
+    def shown_texts(self) -> list[str]:
+        return [say.text.plain_text() for say in self.shown]
+
     async def send(self, chat_ref: str, intent: Say) -> MessageRef | None:
         self.calls.append("say")
         self.sent.append((chat_ref, intent))
-        return MessageRef(chat_ref, str(len(self.sent)))
+        ref = MessageRef(chat_ref, str(len(self.sent)))
+        self._shown[(ref.chat_ref, ref.message_id)] = intent
+        return ref
 
     async def send_document(self, chat_ref: str, intent: SendDocument) -> MessageRef | None:
         self.calls.append("document")
@@ -103,7 +120,9 @@ class FakeRenderer:
     async def edit(self, intent: EditMessage) -> MessageRef | None:
         self.calls.append("edit")
         self.edits.append(intent)
-        return intent.message_ref
+        ref = intent.message_ref
+        self._shown[(ref.chat_ref, ref.message_id)] = Say(intent.text, intent.buttons)
+        return ref
 
     async def ack_callback(self, intent: AckCallback) -> None:
         self.calls.append("ack")
@@ -177,7 +196,7 @@ class ComposedSupabase(webhook_fakes._FakeSupabaseClient):
         super().__init__(**kwargs)
         if distinct_users:
             self.channel_identities = _PerSubjectIdentities()
-        self._extra = {
+        self._extra: dict[str, Any] = {
             "capability_preferences": prepare_fakes._FakeTable(
                 select_rows=[prepare_fakes._PREFERENCE_ROW]
             ),
@@ -193,6 +212,7 @@ class ComposedSupabase(webhook_fakes._FakeSupabaseClient):
                 select_rows=[], insert_row={"id": "event-1"}
             ),
             "event_outbox": prepare_fakes._FakeTable(select_rows=[]),
+            "saved_searches": prepare_fakes._FakeTable(select_rows=[]),
         }
         self.storage = prepare_fakes._FakeStorage(prepare_fakes._FakeBucket())
 

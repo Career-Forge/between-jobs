@@ -12,7 +12,9 @@ convenient shortcut at a time, so it is enforced here by reading the source:
    (`callback_data`, `inline_keyboard`) -- except in the few modules that parse some OTHER
    service's JSON which happens to call a field `message`, each listed below with the reason.
    Spelling `update_id` as a key of a log-context dict is not a read and is fine.
-3. The neutral modules do not import the Telegram ones: the dependency points one way.
+3. The neutral modules do not import the Telegram ones: the dependency points one way. That
+   covers the identity lookups, the fan-out push, the progress message and the first-run
+   checklist, which every channel shares.
 """
 
 from __future__ import annotations
@@ -44,7 +46,15 @@ WIRE_KEYS = frozenset({"callback_data", "inline_keyboard"})
 """Keys of Telegram's request JSON: flagged wherever a module spells one."""
 CLIENT_NAMES = frozenset({"TelegramClient", "Html"})
 
-NEUTRAL = ("api/channel_core.py", "api/channel_messages.py", "api/channel_envelope.py")
+NEUTRAL = (
+    "api/channel_core.py",
+    "api/channel_messages.py",
+    "api/channel_envelope.py",
+    "api/channel_identity.py",
+    "api/channel_push.py",
+    "api/progress_message.py",
+    "api/first_run.py",
+)
 TELEGRAM_MODULES = frozenset({"telegram_adapter", "telegram_client", "telegram_webhook"})
 
 

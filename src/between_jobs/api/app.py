@@ -32,6 +32,7 @@ from fastapi.responses import JSONResponse, Response
 from supabase import AsyncClient
 
 from .account_routes import router as account_router
+from .app_state import build_push_notifier
 from .applications_routes import router as applications_router
 from .auth import create_jwks_client
 from .body_limit import BodyLimitMiddleware, max_request_body_bytes
@@ -42,7 +43,7 @@ from .credentials_routes import router as credentials_router
 from .deferred_reply import shutdown_deferred_replies
 from .digest_listener import handle_batch as handle_digest_batch
 from .discovery_routes import router as discovery_router
-from .env import optional_env, refuse
+from .env import optional_env, refuse, web_app_url
 from .errors import ApiError, log_api_error
 from .extension_routes import router as extension_router
 from .forge_engines_client import _base_url as forge_engines_base_url
@@ -73,7 +74,6 @@ from .saved_search_matcher import _DEFAULT_MATCH_INTERVAL_SECONDS as MATCHER_INT
 from .saved_search_matcher import run_matcher_forever
 from .saved_searches_routes import router as saved_searches_router
 from .supabase_client import create_supabase_client
-from .telegram_adapter import build_notifier
 from .telegram_client import TelegramClient, parse_bot_username
 from .telegram_webhook import router as telegram_router
 from .tester_enrollment import tester_program_required
@@ -129,6 +129,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Likewise the list of people allowed to use Hiring signals, read on every request: a typo
     # in it must stop the boot, not decide who the feature is open to.
     hiring_signals_allowlist()
+    # The web app's public address is optional (the bot's /privacy and /learn link to it when it
+    # is set); a malformed one stops the boot here instead of reaching a person's chat.
+    web_app_url()
     app.state.supabase, app.state.supabase_url = await create_supabase_client()
     app.state.jwks_client = create_jwks_client(app.state.supabase_url)
 
@@ -156,6 +159,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         TelegramClient(app.state.http, telegram_token) if telegram_token is not None else None
     )
     app.state.telegram_webhook_secret = telegram_secret
+    # Discord has no adapter yet, so a Discord link code cannot be redeemed here (the link route
+    # answers FEATURE_DISABLED for it). Its own task turns this on.
+    app.state.discord_enabled = False
     # Optional and cosmetic: the name the Integrations page tells people to look
     # for. A malformed value is dropped, not fatal -- a typo in a display name
     # must not keep the API from starting -- and the page then says "this
@@ -178,8 +184,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # than ending the worker, and `app.state.workers` is what /health reports.
     #
     # - outbox (Horizon Sprint 4.0) feeds the Today digest. Job Finder P10 binds a
-    #   `Notifier` for the bot (None on a server without one) into its listener via
-    #   `partial`, keeping outbox_store's `Listener` a plain two-argument callable.
+    #   `Notifier` into its listener via `partial`, keeping outbox_store's `Listener` a plain
+    #   two-argument callable: one that fans out to every channel a user linked that has an
+    #   adapter on this server (`build_push_notifier`), or None on a server with none.
     # - job_registry_poller (Job Finder P2) reuses app.state.http for its ATS calls.
     # - saved_search_matcher (Job Finder P9b) makes no raw HTTP call at all.
     # - gmail_reply_checker (Gmail reply/status parsing R3) reuses app.state.http.
@@ -239,7 +246,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 listeners=[
                     partial(
                         handle_digest_batch,
-                        notifier=build_notifier(sb, app.state.telegram_client),
+                        notifier=build_push_notifier(sb, app.state.telegram_client),
                     )
                 ],
                 state=state,

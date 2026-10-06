@@ -26,10 +26,16 @@ Job Finder P10 (job-finder-p10-digest.md) adds a real-time Telegram push
 for `high_fit_job` items specifically -- the one kind produced entirely
 in the background, with no active user session to notice it. The push goes through a
 channel-neutral `Notifier` (channel_envelope.py): this module neither knows nor cares
-which channel a user linked, or how it writes a message. The
+which channel a user linked, or how it writes a message. The notifier the app hands it
+fans out to every channel the user has linked (channel_push.py), so a user on two channels
+is told on both and one failing does not stop the other. The
 already-atomic `insert_high_fit_job_today_item` RPC succeeding IS the
 "genuinely new" signal (the same guarantee P9 already proved live), so
-the push needs no separate schedule or delivery-tracking of its own.
+the push needs no separate schedule or delivery-tracking of its own. It is also why a
+push is never repeated: the outbox hands each row to this listener once (a claimed row is
+marked published in the same statement, and a listener that raises loses its batch), and
+were the same event or the same job for the same saved search to arrive again, the insert
+raises a unique violation, which `handle_batch` swallows BEFORE the push is reached.
 The other four kinds all fire in direct response to something the user
 just did, so they stay pull-only (Today feed) for now -- a scheduled
 digest covering those too is a deliberately deferred follow-up, not

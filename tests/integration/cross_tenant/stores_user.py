@@ -1,6 +1,6 @@
 """Store-level cross-tenant cases for the per-user stores: capability preferences, provider
 credentials, the extension's approved answers and sign-out watermark, link codes and the
-Telegram identity lookup. Each function is called directly, as B, with A's ids."""
+channel identity lookups. Each function is called directly, as B, with A's ids."""
 
 from __future__ import annotations
 
@@ -16,12 +16,13 @@ from between_jobs.api import (
     capability_preferences_store as prefs,
 )
 from between_jobs.api import (
-    extension_answers_store as answers,
-)
-from between_jobs.api import (
+    channel_identity,
     extension_auth,
     link_codes_store,
     telegram_identity,
+)
+from between_jobs.api import (
+    extension_answers_store as answers,
 )
 from between_jobs.api import (
     provider_credentials_store as creds,
@@ -373,6 +374,38 @@ async def get_chat_id(ctx: Ctx) -> None:
     assert await telegram_identity.get_chat_id(ctx.sb, ctx.a.user_id) == int(subject)
 
 
+async def get_chat_ref(ctx: Ctx) -> None:
+    subject = (await ctx.need("rls_channel_identity", ctx.a))["subject"]
+    b_rows = (
+        await ctx.sb.table("channel_identities")
+        .select("external_subject")
+        .eq("user_id", ctx.b.user_id)
+        .eq("channel", "telegram")
+        .execute()
+    ).data
+    assert all(r["external_subject"] != subject for r in b_rows)
+    got = await channel_identity.get_chat_ref(ctx.sb, ctx.b.user_id, "telegram")
+    assert got != subject  # B is never handed A's chat
+    assert got is None if not b_rows else got == b_rows[0]["external_subject"]
+    assert await channel_identity.get_chat_ref(ctx.sb, ctx.a.user_id, "telegram") == subject
+    # A channel A never linked has no chat for A either, whoever else has linked it.
+    assert await channel_identity.get_chat_ref(ctx.sb, ctx.a.user_id, "discord") is None
+
+
+async def list_linked_channels(ctx: Ctx) -> None:
+    await ctx.need("rls_channel_identity", ctx.a)
+    b_rows = (
+        await ctx.sb.table("channel_identities")
+        .select("channel")
+        .eq("user_id", ctx.b.user_id)
+        .execute()
+    ).data
+    assert await channel_identity.list_linked_channels(ctx.sb, ctx.b.user_id) == sorted(
+        {r["channel"] for r in b_rows}
+    )  # exactly B's own rows; A's Telegram link is not among them unless B has one of their own
+    assert "telegram" in await channel_identity.list_linked_channels(ctx.sb, ctx.a.user_id)
+
+
 STORE_CASES = [
     StoreCase("capability_preferences_store.delete_preference", delete_preference),
     StoreCase("capability_preferences_store.get_preference", get_preference),
@@ -386,5 +419,7 @@ STORE_CASES = [
     StoreCase("extension_auth.get_extension_signed_out_at", get_extension_signed_out_at),
     StoreCase("link_codes_store.mint_code", mint_code),
     StoreCase("telegram_identity.get_chat_id", get_chat_id),
+    StoreCase("channel_identity.get_chat_ref", get_chat_ref),
+    StoreCase("channel_identity.list_linked_channels", list_linked_channels),
 ]
 _ = APIError

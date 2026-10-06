@@ -30,6 +30,7 @@ from postgrest.exceptions import APIError
 from between_jobs.api import app as app_module
 from between_jobs.api import product_events
 from between_jobs.api.app import LEASED_WORKERS, app
+from between_jobs.api.channel_push import FanOutNotifier
 from between_jobs.api.digest_listener import handle_batch as handle_digest_batch
 from between_jobs.api.telegram_adapter import TelegramNotifier
 
@@ -133,7 +134,12 @@ def test_the_outbox_worker_gets_a_notifier_for_the_bot_when_there_is_one(
     listener = _outbox_listener(monkeypatch)
 
     assert listener.func is handle_digest_batch
-    assert isinstance(listener.keywords["notifier"], TelegramNotifier)
+    # One notifier that fans out over every channel with an adapter here: Telegram's is the only
+    # entry today, and it is the very notifier a bot-only deployment used to be handed.
+    notifier = listener.keywords["notifier"]
+    assert isinstance(notifier, FanOutNotifier)
+    assert notifier.channels == {"telegram"}
+    assert isinstance(notifier._notifiers["telegram"], TelegramNotifier)
 
 
 def test_the_outbox_worker_gets_no_notifier_on_a_server_without_a_bot(

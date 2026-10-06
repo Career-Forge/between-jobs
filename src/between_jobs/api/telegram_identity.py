@@ -31,22 +31,30 @@ CALLING client's own session state, which would hijack the shared,
 service-role-authenticated `app.state.supabase` client used for every
 other trusted-backend operation. Admin operations don't touch the caller's
 session.
+
+The lookups that are not Telegram's alone -- the user of a (channel, subject), the chat of a
+user, the channels a user has linked -- are `channel_identity`'s, and this module calls them
+for its own. What stays here depends on how a Telegram account is provisioned (the auth user's
+`app_metadata`) or detached, so each function that does refuses any other channel
+(`_require_telegram`): a second channel gets its own rules, and until it does its subjects
+must not be filed under Telegram's.
 """
 
 from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any, cast
 
 from postgrest.exceptions import APIError
 
 from supabase import AsyncClient
 
+from .channel_identity import NO_TENANT, get_chat_ref, get_user_id_for_subject
+
 _UNIQUE_VIOLATION = "23505"
 
 CHANNEL = "telegram"
-EXTERNAL_TENANT = ""
+EXTERNAL_TENANT = NO_TENANT
 """Telegram has no tenant concept (unlike, say, a multi-workspace Slack
 app) -- every channel_identities row for Telegram uses the same empty
 tenant, matching the unique(channel, external_tenant, external_subject)
@@ -80,17 +88,11 @@ async def resolve_or_create_user_id_for_subject(
     (channel, subject) pair an `InboundMessage` carries, the provider's own user id as text."""
     _require_telegram(channel)
     external_subject = subject
-    existing = (
-        await supabase.table("channel_identities")
-        .select("user_id")
-        .eq("channel", CHANNEL)
-        .eq("external_tenant", EXTERNAL_TENANT)
-        .eq("external_subject", external_subject)
-        .execute()
+    existing_user_id = await get_user_id_for_subject(
+        supabase, CHANNEL, external_subject, tenant=EXTERNAL_TENANT
     )
-    if existing.data:
-        row = cast(dict[str, Any], existing.data[0])
-        return str(row["user_id"])
+    if existing_user_id is not None:
+        return existing_user_id
 
     created = await supabase.auth.admin.create_user(
         {
@@ -127,16 +129,12 @@ async def resolve_or_create_user_id_for_subject(
         # The new auth user we just created is an orphan -- acceptable
         # cost for a race this narrow, not worth a distributed lock over.
         # Fall back to whichever request's row actually landed.
-        winner = (
-            await supabase.table("channel_identities")
-            .select("user_id")
-            .eq("channel", CHANNEL)
-            .eq("external_tenant", EXTERNAL_TENANT)
-            .eq("external_subject", external_subject)
-            .execute()
+        winner_user_id = await get_user_id_for_subject(
+            supabase, CHANNEL, external_subject, tenant=EXTERNAL_TENANT
         )
-        winner_row = cast(dict[str, Any], winner.data[0])
-        return str(winner_row["user_id"])
+        if winner_user_id is None:
+            raise RuntimeError("the identity row that won the race could not be read back") from e
+        return winner_user_id
 
     return str(new_user_id)
 
@@ -169,18 +167,11 @@ async def get_chat_id(supabase: AsyncClient, user_id: str) -> int | None:
     Telegram's own private-chat semantics mean chat_id == the Telegram
     user_id for a 1:1 bot conversation (already relied on implicitly by
     every webhook handler in this codebase), so `external_subject`
-    doubles as the chat_id with no separate column needed."""
-    result = (
-        await supabase.table("channel_identities")
-        .select("external_subject")
-        .eq("user_id", user_id)
-        .eq("channel", CHANNEL)
-        .execute()
-    )
-    if not result.data:
-        return None
-    row = cast(dict[str, Any], result.data[0])
-    return int(cast(str, row["external_subject"]))
+    doubles as the chat_id with no separate column needed. The lookup itself is
+    `channel_identity.get_chat_ref`, which any channel can use; this is its
+    Telegram form, with the id as the integer Telegram's API takes."""
+    chat_ref = await get_chat_ref(supabase, user_id, CHANNEL)
+    return int(chat_ref) if chat_ref is not None else None
 
 
 async def unlink(supabase: AsyncClient, telegram_user_id: int) -> None:

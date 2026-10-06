@@ -13,6 +13,10 @@ copy of the bot's messages, and a failure prints the new text in full.
 The one deliberate difference from that capture is not visible here, because it is not about
 what is sent: a resume generation now runs after the webhook has answered (tests in
 test_telegram_deferred_prepare.py), so the fixture records the calls once it has finished.
+
+Two things were later changed on purpose and the file was regenerated for them (see
+`tests/golden/telegram_bot/README.md`): a resume generation is one progress message edited as
+the work advances, and the bot has `/privacy` and `/learn`.
 """
 
 from __future__ import annotations
@@ -79,6 +83,7 @@ def test_the_corpus_is_broad_and_the_expected_file_holds_exactly_it() -> None:
     assert {
         "sendMessage",
         "sendDocument",
+        "editMessageText",
         "answerCallbackQuery",
         "getFile",
         "downloadFile",
@@ -98,6 +103,8 @@ def test_the_corpus_is_broad_and_the_expected_file_holds_exactly_it() -> None:
         "generate",
         "confirm",
         "cancel",
+        "privacy",
+        "learn",
     } <= kinds
 
 

@@ -56,7 +56,11 @@ search or scraping key, it says so:
   Brave, Serper, Firecrawl or You.com key saved on the Integrations page. The code never
   fetches linkedin.com itself.
 - **Telegram bridge (optional).** Import a resume, paste a posting, list applications,
-  and receive a message when a saved search finds a strong match.
+  and receive a message when a saved search finds a strong match. A resume generation is one
+  message the bot edits as the work advances. `/privacy` summarises what is stored and who
+  handles it, and answers every chat (it reads no data; a chat with no web account gets the
+  wording that applies to it). `/learn` walks the first-run checklist and answers only a chat
+  that is linked to a web account.
 - **Browser extension (Chrome).** On the Lever, Greenhouse and Ashby application page of a
   posting you are tracking, it fills your contact fields from your profile and drafts
   answers to custom questions with your own key. It never clicks submit.
@@ -196,7 +200,8 @@ These are off until configured. The Telegram bridge needs `TELEGRAM_BOT_TOKEN` a
 `TELEGRAM_WEBHOOK_SECRET` and a public HTTPS URL for the webhook, which
 `scripts/set_telegram_webhook.py` registers; Gmail drafts need a Google OAuth client, and
 the Google consent includes read access to Gmail (see "What works today"); PDF output
-needs `latex-service/` running. `.env.example` explains each one.
+needs `latex-service/` running. `.env.example` explains each one. Setting `WEB_APP_URL` to
+the web app's public https address lets the bot's `/privacy` and `/learn` link to its pages.
 
 ## Run the API with Docker
 

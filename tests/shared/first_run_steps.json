@@ -1,0 +1,499 @@
+{
+  "about": "One table of accounts and the five first-run steps each must come out with, read by a test in Python (tests/test_first_run.py, against src/between_jobs/api/first_run.py) and one in TypeScript (web/src/lib/firstRunShared.test.ts, against web/src/lib/firstRun.ts). Written by hand from the rules, never computed from either implementation. A null fact is one that could not be read; 'searched' is the web app's browser-side memory of a first search (true, false, or null when it cannot be read: always null in a chat).",
+  "step_order": [
+    "profile",
+    "model_key",
+    "first_search",
+    "track_job",
+    "generate_resume"
+  ],
+  "labels": {
+    "profile": "Add your profile",
+    "model_key": "Add a model key",
+    "first_search": "Run a first search",
+    "track_job": "Track a job",
+    "generate_resume": "Generate a resume"
+  },
+  "pages": {
+    "profile": "/profile",
+    "model_key": "/profile/integrations",
+    "first_search": "/discover",
+    "track_job": "/applications",
+    "generate_resume": "/applications"
+  },
+  "cases": [
+    {
+      "name": "a brand-new account, browser remembers no search",
+      "why": "Nothing is done, and every fact was read, so the first search is 'not yet', not unknown.",
+      "facts": {
+        "profile": false,
+        "model_key": false,
+        "saved_searches": 0,
+        "applications": {
+          "count": 0,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": false,
+      "steps": {
+        "profile": "todo",
+        "model_key": "todo",
+        "first_search": "todo",
+        "track_job": "todo",
+        "generate_resume": "todo"
+      },
+      "done_count": 0,
+      "next_step": "profile"
+    },
+    {
+      "name": "a brand-new account as the chat sees it (it cannot see the browser)",
+      "why": "The browser's memory of a search is unreadable from a chat, so with nothing else to go on the first search is unknown, never todo.",
+      "facts": {
+        "profile": false,
+        "model_key": false,
+        "saved_searches": 0,
+        "applications": {
+          "count": 0,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": null,
+      "steps": {
+        "profile": "todo",
+        "model_key": "todo",
+        "first_search": "unknown",
+        "track_job": "todo",
+        "generate_resume": "todo"
+      },
+      "done_count": 0,
+      "next_step": "profile"
+    },
+    {
+      "name": "everything done, by a saved search",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": 1,
+        "applications": {
+          "count": 2,
+          "from_discover": 0,
+          "with_resume": 1
+        }
+      },
+      "searched": null,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "done",
+        "track_job": "done",
+        "generate_resume": "done"
+      },
+      "done_count": 5,
+      "next_step": null
+    },
+    {
+      "name": "only the profile is done",
+      "facts": {
+        "profile": true,
+        "model_key": false,
+        "saved_searches": 0,
+        "applications": {
+          "count": 0,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": false,
+      "steps": {
+        "profile": "done",
+        "model_key": "todo",
+        "first_search": "todo",
+        "track_job": "todo",
+        "generate_resume": "todo"
+      },
+      "done_count": 1,
+      "next_step": "model_key"
+    },
+    {
+      "name": "profile and model key done, nothing else",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": 0,
+        "applications": {
+          "count": 0,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": false,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "todo",
+        "track_job": "todo",
+        "generate_resume": "todo"
+      },
+      "done_count": 2,
+      "next_step": "first_search"
+    },
+    {
+      "name": "a saved search makes the first search done",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": 1,
+        "applications": {
+          "count": 0,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": null,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "done",
+        "track_job": "todo",
+        "generate_resume": "todo"
+      },
+      "done_count": 3,
+      "next_step": "track_job"
+    },
+    {
+      "name": "an application tracked from Discover makes the first search done",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": 0,
+        "applications": {
+          "count": 1,
+          "from_discover": 1,
+          "with_resume": 0
+        }
+      },
+      "searched": null,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "done",
+        "track_job": "done",
+        "generate_resume": "todo"
+      },
+      "done_count": 4,
+      "next_step": "generate_resume"
+    },
+    {
+      "name": "the browser's own memory of a search makes it done with nothing else",
+      "facts": {
+        "profile": false,
+        "model_key": false,
+        "saved_searches": 0,
+        "applications": {
+          "count": 0,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": true,
+      "steps": {
+        "profile": "todo",
+        "model_key": "todo",
+        "first_search": "done",
+        "track_job": "todo",
+        "generate_resume": "todo"
+      },
+      "done_count": 1,
+      "next_step": "profile"
+    },
+    {
+      "name": "an application from somewhere else (pasted, a URL, a chat) does not make the first search done",
+      "why": "Tracking a job and having searched are different steps.",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": 0,
+        "applications": {
+          "count": 3,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": false,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "todo",
+        "track_job": "done",
+        "generate_resume": "todo"
+      },
+      "done_count": 3,
+      "next_step": "first_search"
+    },
+    {
+      "name": "the same account as the chat sees it: the first search is unknown, and unknown is never the next step",
+      "why": "The checklist names the first step KNOWN to be todo; a step that could not be checked is skipped.",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": 0,
+        "applications": {
+          "count": 3,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": null,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "unknown",
+        "track_job": "done",
+        "generate_resume": "todo"
+      },
+      "done_count": 3,
+      "next_step": "generate_resume"
+    },
+    {
+      "name": "one tracked application with a resume",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": 0,
+        "applications": {
+          "count": 2,
+          "from_discover": 0,
+          "with_resume": 1
+        }
+      },
+      "searched": false,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "todo",
+        "track_job": "done",
+        "generate_resume": "done"
+      },
+      "done_count": 4,
+      "next_step": "first_search"
+    },
+    {
+      "name": "a tracked application that has no resume yet",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": 1,
+        "applications": {
+          "count": 2,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": null,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "done",
+        "track_job": "done",
+        "generate_resume": "todo"
+      },
+      "done_count": 4,
+      "next_step": "generate_resume"
+    },
+    {
+      "name": "saved searches could not be read",
+      "why": "Something that could have shown a search was unreadable, so 'no search' cannot be said.",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": null,
+        "applications": {
+          "count": 0,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": false,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "unknown",
+        "track_job": "todo",
+        "generate_resume": "todo"
+      },
+      "done_count": 2,
+      "next_step": "track_job"
+    },
+    {
+      "name": "applications could not be read",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": 0,
+        "applications": null
+      },
+      "searched": false,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "unknown",
+        "track_job": "unknown",
+        "generate_resume": "unknown"
+      },
+      "done_count": 2,
+      "next_step": null
+    },
+    {
+      "name": "applications could not be read but a saved search shows the first search",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": 2,
+        "applications": null
+      },
+      "searched": null,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "done",
+        "track_job": "unknown",
+        "generate_resume": "unknown"
+      },
+      "done_count": 3,
+      "next_step": null
+    },
+    {
+      "name": "the model key could not be read",
+      "facts": {
+        "profile": true,
+        "model_key": null,
+        "saved_searches": 0,
+        "applications": {
+          "count": 0,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": false,
+      "steps": {
+        "profile": "done",
+        "model_key": "unknown",
+        "first_search": "todo",
+        "track_job": "todo",
+        "generate_resume": "todo"
+      },
+      "done_count": 1,
+      "next_step": "first_search"
+    },
+    {
+      "name": "the profile could not be read",
+      "facts": {
+        "profile": null,
+        "model_key": true,
+        "saved_searches": 0,
+        "applications": {
+          "count": 0,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": false,
+      "steps": {
+        "profile": "unknown",
+        "model_key": "done",
+        "first_search": "todo",
+        "track_job": "todo",
+        "generate_resume": "todo"
+      },
+      "done_count": 1,
+      "next_step": "first_search"
+    },
+    {
+      "name": "nothing could be read",
+      "facts": {
+        "profile": null,
+        "model_key": null,
+        "saved_searches": null,
+        "applications": null
+      },
+      "searched": null,
+      "steps": {
+        "profile": "unknown",
+        "model_key": "unknown",
+        "first_search": "unknown",
+        "track_job": "unknown",
+        "generate_resume": "unknown"
+      },
+      "done_count": 0,
+      "next_step": null
+    },
+    {
+      "name": "nothing could be read, but the browser remembers a search",
+      "facts": {
+        "profile": null,
+        "model_key": null,
+        "saved_searches": null,
+        "applications": null
+      },
+      "searched": true,
+      "steps": {
+        "profile": "unknown",
+        "model_key": "unknown",
+        "first_search": "done",
+        "track_job": "unknown",
+        "generate_resume": "unknown"
+      },
+      "done_count": 1,
+      "next_step": null
+    },
+    {
+      "name": "four steps done and the fifth cannot be checked",
+      "why": "An unknown step alone names no next step.",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": null,
+        "applications": {
+          "count": 2,
+          "from_discover": 0,
+          "with_resume": 1
+        }
+      },
+      "searched": null,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "unknown",
+        "track_job": "done",
+        "generate_resume": "done"
+      },
+      "done_count": 4,
+      "next_step": null
+    },
+    {
+      "name": "an account that has done the four it can be told about, with a resume",
+      "facts": {
+        "profile": true,
+        "model_key": true,
+        "saved_searches": 0,
+        "applications": {
+          "count": 4,
+          "from_discover": 4,
+          "with_resume": 2
+        }
+      },
+      "searched": null,
+      "steps": {
+        "profile": "done",
+        "model_key": "done",
+        "first_search": "done",
+        "track_job": "done",
+        "generate_resume": "done"
+      },
+      "done_count": 5,
+      "next_step": null
+    }
+  ]
+}

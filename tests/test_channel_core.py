@@ -13,7 +13,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from pathlib import Path
+from typing import Any, ClassVar
 
 import httpx
 import pytest
@@ -37,6 +38,7 @@ from between_jobs.api.channel_envelope import (
     AckCallback,
     Attachment,
     Button,
+    EditMessage,
     MessageRef,
     RichText,
     Say,
@@ -44,6 +46,7 @@ from between_jobs.api.channel_envelope import (
     SendDocument,
 )
 from between_jobs.api.deferred_reply import DeferredReplies
+from between_jobs.api.first_run import ApplicationFacts, FirstRunFacts, derive_first_run
 from between_jobs.api.link_completion import LinkCompletion
 from between_jobs.api.prepare_orchestrator import run_prepare_application
 
@@ -466,10 +469,14 @@ async def test_the_resume_is_sent_as_a_document_after_the_handler_has_returned()
     assert (document.filename, document.content) == ("resume.pdf", prepare_fakes._PDF_BYTES)
     assert document.caption is not None and "ATS score 72/100" in document.caption
     assert "Borderline seniority match." in document.caption
-    # then the prompt with the stage button
-    last = renderer.sent[-1][1]
-    assert last.text.plain_text() == messages.MARK_APPLIED_PROMPT_TEXT
-    assert last.buttons == ((Button("✅ Mark as applied", f"app:stage:{APPLICATION_ID}:applied"),),)
+    # The one message the person has been watching ends as the final state, with the stage
+    # button under it: no second message after the document.
+    final = renderer.edits[-1]
+    assert final.text.plain_text() == messages.PREPARE_DONE_TEXT
+    assert final.buttons == (
+        (Button("✅ Mark as applied", f"app:stage:{APPLICATION_ID}:applied"),),
+    )
+    assert renderer.texts == [messages.GENERATING_TEXT]
 
 
 async def test_apply_to_a_number_runs_the_same_deferred_flow() -> None:
@@ -538,7 +545,7 @@ async def test_one_person_cannot_hold_more_than_one_place_and_others_still_get_o
     await registry.shutdown(grace_seconds=5)
 
     assert [r.texts for r in a_taps] == [
-        [messages.GENERATING_TEXT, messages.MARK_APPLIED_PROMPT_TEXT],  # and then its resume
+        [messages.GENERATING_TEXT],  # edited in place as the resume was made and delivered
         [messages.ALREADY_GENERATING_TEXT],
         [messages.ALREADY_GENERATING_TEXT],
     ]
@@ -611,7 +618,9 @@ async def test_a_failure_inside_the_generation_is_told_to_the_user() -> None:
     )
     await registry.shutdown(grace_seconds=5)
 
-    assert renderer.texts[-1] == messages.PREPARE_FAILED_TEXT
+    # the progress message the person was watching ends as the failure
+    assert renderer.texts == [messages.GENERATING_TEXT]
+    assert renderer.shown_texts == [messages.PREPARE_FAILED_TEXT]
     assert renderer.documents == []
 
 
@@ -623,11 +632,17 @@ def _telegram_refusal() -> httpx.HTTPStatusError:
     )
 
 
-class _RefusesThePrompt(FakeRenderer):
-    """A channel that takes the resume and then refuses the message that follows it."""
+class _RefusesTheFinalState(FakeRenderer):
+    """A channel that takes the resume and then refuses everything that would show the final
+    state: the edit of the progress message and the new message that is the fallback."""
+
+    async def edit(self, intent: EditMessage) -> MessageRef | None:
+        if intent.text.plain_text() == messages.PREPARE_DONE_TEXT:
+            raise _telegram_refusal()
+        return await super().edit(intent)
 
     async def send(self, chat_ref: str, intent: Say) -> MessageRef | None:
-        if intent.text.plain_text() == messages.MARK_APPLIED_PROMPT_TEXT:
+        if intent.text.plain_text() == messages.PREPARE_DONE_TEXT:
             raise _telegram_refusal()
         return await super().send(chat_ref, intent)
 
@@ -637,13 +652,13 @@ class _RefusesTheFile(FakeRenderer):
         raise _telegram_refusal()
 
 
-async def test_a_refused_follow_up_prompt_does_not_tell_the_person_the_generation_failed(
+async def test_a_refused_final_state_does_not_tell_the_person_the_generation_failed(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """The resume is already in the chat. A failure to offer the "mark as applied" button is
-    logged and nothing more: told as "something went wrong generating", it would send the
-    person off to pay for a second generation."""
-    renderer = _RefusesThePrompt()
+    """The resume is already in the chat. A failure to show the final state (and the "mark as
+    applied" button with it) is logged and nothing more: told as "something went wrong
+    generating", it would send the person off to pay for a second generation."""
+    renderer = _RefusesTheFinalState()
 
     with (
         caplog.at_level(logging.INFO, logger="between_jobs.api.channel_core"),
@@ -660,7 +675,7 @@ async def test_a_refused_follow_up_prompt_does_not_tell_the_person_the_generatio
     assert await registry.try_reserve(USER_ID) is not None  # its place and key came back
     logged = [r.getMessage() for r in caplog.records]
     assert "deferred work failed" not in logged  # not a failure of the task
-    (record,) = [r for r in caplog.records if "mark-as-applied prompt" in r.getMessage()]
+    (record,) = [r for r in caplog.records if "how their request ended" in r.getMessage()]
     assert record.levelno == logging.WARNING
     assert record.exc_info is not None
     assert record.ctx == {"update_id": "1", "channel": "telegram"}  # type: ignore[attr-defined]
@@ -675,7 +690,7 @@ async def test_a_refused_file_is_still_told_as_a_failure_because_the_person_has_
     await registry.shutdown(grace_seconds=5)
 
     assert renderer.documents == []
-    assert renderer.texts[-1] == messages.PREPARE_FAILED_TEXT
+    assert renderer.shown_texts == [messages.PREPARE_FAILED_TEXT]
 
 
 async def test_a_declined_generation_with_no_reason_to_give_still_says_something() -> None:
@@ -692,7 +707,391 @@ async def test_a_declined_generation_with_no_reason_to_give_still_says_something
     await registry.shutdown(grace_seconds=5)
 
     assert renderer.documents == []
-    assert renderer.texts[-1] == messages.PREPARE_DECLINED_TEXT.format(warnings="No details given.")
+    assert renderer.shown_texts == [
+        messages.PREPARE_DECLINED_TEXT.format(warnings="No details given.")
+    ]
+
+
+# -- an ending the channel refuses, with no resume to show for it ---------------------------
+
+_TELEGRAMS_LIMIT = 4096
+
+
+class _TakesOnlyTheCannedMessages(FakeRenderer):
+    """A channel that refuses, on edit and on send alike, every text but the bot's own fixed
+    ones: what a person whose "reason" text it will not take looks like from here."""
+
+    _TAKEN: ClassVar[frozenset[str]] = frozenset(
+        {
+            messages.GENERATING_TEXT,
+            messages.PREPARE_COMPILING_TEXT,
+            messages.PREPARE_DONE_TEXT,
+            messages.PREPARE_FAILED_TEXT,
+        }
+    )
+
+    async def edit(self, intent: EditMessage) -> MessageRef | None:
+        if intent.text.plain_text() not in self._TAKEN:
+            raise _bad_request("Bad Request: message is too long")
+        return await super().edit(intent)
+
+    async def send(self, chat_ref: str, intent: Say) -> MessageRef | None:
+        if intent.text.plain_text() not in self._TAKEN:
+            raise _bad_request("Bad Request: message is too long")
+        return await super().send(chat_ref, intent)
+
+
+class _TakesNothingOver(FakeRenderer):
+    """A channel with a size limit, as Telegram has: no text over `limit` characters, on edit or
+    on send."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__()
+        self._limit = limit
+
+    async def edit(self, intent: EditMessage) -> MessageRef | None:
+        if len(intent.text.plain_text()) > self._limit:
+            raise _bad_request("Bad Request: message is too long")
+        return await super().edit(intent)
+
+    async def send(self, chat_ref: str, intent: Say) -> MessageRef | None:
+        if len(intent.text.plain_text()) > self._limit:
+            raise _bad_request("Bad Request: message is too long")
+        return await super().send(chat_ref, intent)
+
+
+def _declined_for(*reasons: str) -> dict[str, Any]:
+    return {
+        **prepare_fakes._FORGE_APPLY_RESPONSE_BODY,
+        "resume": None,
+        "ats_attempts": [],
+        "gate": {"outcome": "reject_mismatch", "reason": reasons[0], "cautions": list(reasons[1:])},
+    }
+
+
+async def test_a_declined_resume_whose_reason_the_channel_refuses_is_told_as_a_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The person has no resume, so they must not be left on "this can take a minute": the reason
+    was refused, so the generic failure is what they are told (as before the progress message
+    existed, when the refusal reached the registry)."""
+    renderer = _TakesNothingOver(1000)  # the engine's reason below is longer than this
+    long_reason = "The posting asks for a clearance. " * 150
+
+    with caplog.at_level(logging.INFO, logger="between_jobs.api.progress_message"):
+        await _generate(renderer=renderer, http=_Engine(apply_body=_declined_for(long_reason)))
+
+    assert renderer.documents == []
+    assert renderer.shown_texts == [messages.GENERATING_TEXT, messages.PREPARE_FAILED_TEXT]
+    assert renderer.texts[-1] == messages.PREPARE_FAILED_TEXT  # a message of its own
+    assert any("how their request ended" in r.getMessage() for r in caplog.records)
+
+
+async def test_a_known_error_the_channel_refuses_is_told_as_a_failure() -> None:
+    supabase = ComposedSupabase()
+    supabase.profile_versions.select_rows = []  # no resume on file: an error with its own words
+
+    renderer = await _generate(renderer=_TakesOnlyTheCannedMessages(), supabase=supabase)
+
+    assert renderer.documents == []
+    assert renderer.shown_texts == [messages.GENERATING_TEXT, messages.PREPARE_FAILED_TEXT]
+
+
+async def test_a_pdf_error_the_channel_refuses_is_told_as_a_failure() -> None:
+    http = _Engine()
+    http.compile_status_code = 422
+
+    renderer = await _generate(renderer=_TakesOnlyTheCannedMessages(), http=http)
+
+    assert renderer.documents == []
+    assert renderer.shown_texts[-1] == messages.PREPARE_FAILED_TEXT
+
+
+async def test_a_declined_resume_with_a_huge_reason_is_bounded_so_the_channel_takes_it() -> None:
+    """Telegram's own limit applies. The engine's reasons are not text this code writes, so they
+    are cut to fit and say how many more there were, rather than refused whole."""
+    renderer = _TakesNothingOver(_TELEGRAMS_LIMIT)
+    reasons = [f"Reason {i}: " + "x" * 400 for i in range(40)]
+
+    await _generate(renderer=renderer, http=_Engine(apply_body=_declined_for(*reasons)))
+
+    (ending,) = renderer.shown_texts
+    assert ending.startswith(messages.PREPARE_DECLINED_TEXT.split("{")[0])
+    assert "Reason 0: " in ending and "• ... and " in ending and ending.endswith(" more")
+    assert len(ending) <= _TELEGRAMS_LIMIT
+    assert messages.PREPARE_FAILED_TEXT not in renderer.texts
+
+
+async def test_a_channel_that_takes_nothing_after_the_opening_still_ends_quietly(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Both tries are refused: nothing is raised (the registry would call it a failed task and
+    log it), the refusals are logged, and the place is given back."""
+
+    class _TakesNothingAfterTheOpening(FakeRenderer):
+        async def edit(self, intent: EditMessage) -> MessageRef | None:
+            raise _telegram_refusal()
+
+        async def send(self, chat_ref: str, intent: Say) -> MessageRef | None:
+            if self.sent:
+                raise _telegram_refusal()
+            return await super().send(chat_ref, intent)
+
+    renderer = _TakesNothingAfterTheOpening()
+    declined = _declined_for("Fit score too low.")
+
+    with caplog.at_level(logging.INFO):
+        _r, _s, registry = await _handle(
+            inbound(callback_data=_TAP), renderer=renderer, http=_Engine(apply_body=declined)
+        )
+        await registry.shutdown(grace_seconds=5)
+
+    assert renderer.texts == [messages.GENERATING_TEXT]
+    assert registry.running == 0
+    assert await registry.try_reserve(USER_ID) is not None
+    logged = [r.getMessage() for r in caplog.records]
+    assert "deferred work failed" not in logged
+    assert len([m for m in logged if "how their request ended" in m]) == 2  # each try is logged
+
+
+def test_the_declined_text_of_a_normal_reason_is_unchanged_by_the_bound() -> None:
+    assert messages.declined_warnings_text([]) == "No details given."
+    assert messages.declined_warnings_text(["Fit score too low."]) == "• Fit score too low."
+    assert messages.declined_warnings_text(["a", "b"]) == "• a\n• b"
+
+
+def test_the_declined_text_is_cut_to_its_limit_and_counts_what_it_leaves_out() -> None:
+    reasons = [f"reason number {i}" for i in range(100)]
+
+    text = messages.declined_warnings_text(reasons, limit=200)
+
+    assert len(text) <= 200
+    lines = text.splitlines()
+    assert lines[0] == "• reason number 0"
+    assert lines[-1] == f"• ... and {100 - (len(lines) - 1)} more"
+    assert all(line.startswith("• ") for line in lines)  # whole bullets, never a half one
+
+
+def test_one_reason_that_is_by_itself_too_long_is_cut_with_an_ellipsis() -> None:
+    text = messages.declined_warnings_text(["y" * 5000], limit=300)
+
+    assert len(text) <= 300 and text.startswith("• yyy") and text.endswith("…")
+    assert "more" not in text  # nothing else was left out
+
+    text_with_others = messages.declined_warnings_text(["y" * 5000, "z"], limit=300)
+    assert len(text_with_others) <= 300 and text_with_others.endswith("• ... and 1 more")
+
+
+# -- one progress message ------------------------------------------------------------------
+
+_TAP = f"app:prepare:{APPLICATION_ID}"
+
+
+async def _generate(
+    *, renderer: FakeRenderer | None = None, http: _Engine | None = None, supabase: Any = None
+) -> FakeRenderer:
+    renderer = renderer or FakeRenderer()
+    _r, _s, registry = await _handle(
+        inbound(callback_data=_TAP), renderer=renderer, http=http, supabase=supabase
+    )
+    await registry.shutdown(grace_seconds=5)
+    return renderer
+
+
+async def test_a_resume_is_one_progress_message_edited_twice_and_then_the_document() -> None:
+    renderer = await _generate()
+
+    # exactly one message sent; the rest of what the person was told is edits of it
+    assert renderer.texts == [messages.GENERATING_TEXT]
+    progress = MessageRef(CHAT_REF, "1")
+    assert [(e.message_ref, e.text.plain_text()) for e in renderer.edits] == [
+        (progress, messages.PREPARE_COMPILING_TEXT),
+        (progress, messages.PREPARE_DONE_TEXT),
+    ]
+    # in this order: opened, "compiling" while the PDF is made, the file, then the final state
+    assert renderer.calls == ["ack", "say", "edit", "document", "edit"]
+    assert renderer.shown_texts == [messages.PREPARE_DONE_TEXT]
+    # only the final state carries the button, and it is for this application
+    assert renderer.edits[0].buttons == ()
+    assert renderer.edits[1].buttons == (
+        (Button("✅ Mark as applied", f"app:stage:{APPLICATION_ID}:applied"),),
+    )
+
+
+async def test_a_resume_the_engine_declines_ends_the_progress_message_with_the_reason() -> None:
+    declined = {
+        **prepare_fakes._FORGE_APPLY_RESPONSE_BODY,
+        "resume": None,
+        "ats_attempts": [],
+        "gate": {"outcome": "skip_low_score", "reason": "Fit score too low.", "cautions": []},
+    }
+
+    renderer = await _generate(http=_Engine(apply_body=declined))
+
+    assert renderer.texts == [messages.GENERATING_TEXT]
+    assert [e.text.plain_text() for e in renderer.edits] == [
+        messages.PREPARE_DECLINED_TEXT.format(warnings="• Fit score too low.")
+    ]
+    assert renderer.documents == []
+    assert renderer.edits[0].buttons == ()  # nothing to mark as applied
+
+
+async def test_a_known_error_ends_the_progress_message_as_the_error() -> None:
+    supabase = ComposedSupabase()
+    supabase.profile_versions.select_rows = []  # no resume on file
+
+    renderer = await _generate(supabase=supabase)
+
+    assert renderer.texts == [messages.GENERATING_TEXT]
+    ((edit),) = renderer.edits
+    assert edit.text.plain_text().startswith("❌")
+    assert renderer.documents == []
+
+
+async def test_a_pdf_that_will_not_compile_is_a_stage_and_then_the_error() -> None:
+    http = _Engine()
+    http.compile_status_code = 422
+
+    renderer = await _generate(http=http)
+
+    assert renderer.texts == [messages.GENERATING_TEXT]
+    texts = [e.text.plain_text() for e in renderer.edits]
+    assert texts[0] == messages.PREPARE_COMPILING_TEXT
+    assert len(texts) == 2 and texts[1].startswith("❌")
+    assert renderer.documents == []
+
+
+class _CannotEdit(FakeRenderer):
+    """A channel that cannot edit a message at all, or refuses to for any reason (the message
+    was deleted, an edit rate limit, an outage): every edit raises."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        super().__init__()
+        self._error = error or NotImplementedError("this channel cannot edit messages")
+        self.refused_edits: list[EditMessage] = []
+
+    async def edit(self, intent: EditMessage) -> MessageRef | None:
+        self.refused_edits.append(intent)
+        raise self._error
+
+
+def _bad_request(description: str) -> httpx.HTTPStatusError:
+    return httpx.HTTPStatusError(
+        "400 Bad Request",
+        request=httpx.Request("POST", "https://api.telegram.org/bot/editMessageText"),
+        response=httpx.Response(400, json={"ok": False, "description": description}),
+    )
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(None, id="a channel that cannot edit"),
+        pytest.param(_bad_request("Bad Request: message to edit not found"), id="deleted"),
+        pytest.param(_telegram_refusal(), id="rate limited"),
+        pytest.param(ConnectionError("the channel is unreachable"), id="unreachable"),
+    ],
+)
+async def test_when_nothing_can_be_edited_the_final_state_is_sent_as_a_new_message(
+    error: Exception | None,
+) -> None:
+    """The person never loses what the final state says. The stage in between is a courtesy
+    and is dropped rather than sent as a message of its own."""
+    renderer = _CannotEdit(error)
+
+    await _generate(renderer=renderer)
+
+    assert len(renderer.refused_edits) == 2  # the stage, and the final state: both tried
+    assert renderer.texts == [messages.GENERATING_TEXT, messages.PREPARE_DONE_TEXT]
+    final = renderer.sent[-1][1]
+    assert final.buttons == (
+        (Button("✅ Mark as applied", f"app:stage:{APPLICATION_ID}:applied"),),
+    )
+    assert len(renderer.documents) == 1
+    assert renderer.calls == ["ack", "say", "document", "say"]
+
+
+async def test_an_error_is_sent_as_a_new_message_when_it_cannot_be_edited_in() -> None:
+    supabase = ComposedSupabase()
+    supabase.profile_versions.select_rows = []  # no resume on file
+    renderer = _CannotEdit()
+
+    await _generate(renderer=renderer, supabase=supabase)
+
+    assert len(renderer.texts) == 2
+    assert renderer.texts[1].startswith("❌")  # what went wrong still reaches the person
+
+
+async def test_a_stage_that_cannot_be_edited_in_does_not_stop_the_final_edit() -> None:
+    class _FailsTheStage(FakeRenderer):
+        async def edit(self, intent: EditMessage) -> MessageRef | None:
+            if intent.text.plain_text() == messages.PREPARE_COMPILING_TEXT:
+                raise _telegram_refusal()
+            return await super().edit(intent)
+
+    renderer = _FailsTheStage()
+
+    await _generate(renderer=renderer)
+
+    assert renderer.texts == [messages.GENERATING_TEXT]  # no extra message
+    assert renderer.shown_texts == [messages.PREPARE_DONE_TEXT]  # the final edit still landed
+
+
+async def test_a_renderer_that_names_no_message_gets_the_final_state_as_a_new_message() -> None:
+    class _NamesNothing(FakeRenderer):
+        async def send(self, chat_ref: str, intent: Say) -> MessageRef | None:
+            await super().send(chat_ref, intent)
+            return None
+
+    renderer = _NamesNothing()
+
+    await _generate(renderer=renderer)
+
+    assert renderer.edits == []  # nothing to edit by
+    assert renderer.texts == [messages.GENERATING_TEXT, messages.PREPARE_DONE_TEXT]
+
+
+async def test_nothing_the_progress_message_does_can_make_the_task_fail(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Every edit and every send after the opening one is refused, and the generation still ends
+    quietly with the resume delivered: a task that raised would be told to the person as a
+    failure and logged as one."""
+
+    class _RefusesEverythingAfterTheOpening(FakeRenderer):
+        async def edit(self, intent: EditMessage) -> MessageRef | None:
+            raise _telegram_refusal()
+
+        async def send(self, chat_ref: str, intent: Say) -> MessageRef | None:
+            if self.sent:
+                raise _telegram_refusal()
+            return await super().send(chat_ref, intent)
+
+    renderer = _RefusesEverythingAfterTheOpening()
+
+    with caplog.at_level(logging.INFO, logger="between_jobs.api.deferred_reply"):
+        await _generate(renderer=renderer)
+
+    assert len(renderer.documents) == 1
+    assert renderer.texts == [messages.GENERATING_TEXT]
+    assert "deferred work failed" not in [r.getMessage() for r in caplog.records]
+
+
+async def test_the_opening_message_failing_is_the_requests_own_failure() -> None:
+    """Nothing has been promised yet, so this is a failed reply like any other, not a quiet
+    one: the webhook answers an error and the channel redelivers."""
+
+    class _CannotOpen(FakeRenderer):
+        async def send(self, chat_ref: str, intent: Say) -> MessageRef | None:
+            raise _telegram_refusal()
+
+    registry = DeferredReplies()
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await _handle(inbound(callback_data=_TAP), renderer=_CannotOpen(), registry=registry)
+
+    assert registry.running == 0
+    assert await registry.try_reserve(USER_ID) is not None  # the place was given back
 
 
 async def test_every_generation_and_every_stage_change_gets_a_fresh_idempotency_key(
@@ -778,6 +1177,527 @@ async def test_the_generation_still_claims_the_users_prepare_slot_before_startin
     ]
     assert engine.post_calls == []
     assert registry.running == 0
+
+
+# -- /privacy and /learn -------------------------------------------------------------------
+
+_WEB = "https://app.between-jobs.example"
+
+
+def _linked(**overrides: Any) -> ComposedSupabase:
+    """A chat linked to a web account: the user it resolves to is a web user, which carries no
+    mark of having been made by the bot."""
+    return ComposedSupabase(existing_user=webhook_fakes._WEB_USER, **overrides)
+
+
+def _unlinked(**overrides: Any) -> ComposedSupabase:
+    """The account the bot made for this sender on first contact."""
+    bot_made = webhook_fakes._auth_user(
+        "telegram-x@users.between-jobs.tech",
+        provider="telegram",
+        bj_provisioned_by="telegram",
+        bj_telegram_subject=inbound().subject,
+    )
+    return ComposedSupabase(existing_user=bot_made, **overrides)
+
+
+@pytest.fixture
+def web_url(monkeypatch: pytest.MonkeyPatch) -> str:
+    monkeypatch.setenv("WEB_APP_URL", _WEB)
+    return _WEB
+
+
+@pytest.fixture
+def no_web_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("WEB_APP_URL", raising=False)
+
+
+@pytest.mark.parametrize("text", ["/privacy", "privacy"])
+async def test_privacy_is_one_short_message_that_links_the_policy(text: str, web_url: str) -> None:
+    renderer, supabase, _registry = await _handle(inbound(text), supabase=_linked())
+
+    assert len(renderer.sent) == 1 and renderer.documents == [] and renderer.edits == []
+    say = renderer.sent[0][1]
+    assert say.buttons == ()
+    shown = say.text.plain_text()
+    assert shown.endswith(f"Full policy: {_WEB}/privacy")
+    assert len(shown) < 1200  # a summary, not the policy
+    for fact in ("encrypted", "Telegram id", "OpenRouter", "Supabase", "/unlink", "Delete my"):
+        assert fact in shown
+    assert supabase.auth.admin.get_user_by_id_calls == [USER_ID]  # the only thing it looked up
+
+
+async def test_privacy_without_a_web_address_says_where_the_policy_is_and_links_nothing(
+    no_web_url: None,
+) -> None:
+    renderer, _supabase, _registry = await _handle(inbound("/privacy"), supabase=_linked())
+
+    shown = renderer.texts[0]
+    assert shown.endswith(messages.PRIVACY_NO_LINK_TEXT)
+    assert "http" not in shown
+
+
+@pytest.mark.parametrize("linked", [True, False], ids=["linked", "bot-only"])
+@pytest.mark.parametrize("address", [None, _WEB, "https://between-jobs.tech"])
+def test_the_privacy_summary_stays_a_summary_whoever_reads_it(
+    linked: bool, address: str | None
+) -> None:
+    shown = messages.privacy_text(address, linked=linked).plain_text()
+
+    assert len(shown) < 1200
+
+
+# What the bot's summary says, and the words of the web policy (`web/src/content/legal.ts`) that
+# say the same. The policy is the authority: if it changes, this fails until the summary is
+# checked against it again. Each pair is (words in the bot's message, words in the policy).
+_PRIVACY_CLAIMS = [
+    ("stored encrypted", "stored encrypted"),
+    ("numeric Telegram id", "numeric Telegram user id"),
+    ("no name, no username", "no name or username"),
+    ("failed link-code attempts", "failed link-code attempts"),
+    ("a short record each time you use a main feature", "A short record each time you use a main"),
+    ("no resume or job text", "your resume or any job text"),
+    ("numbered lists", "numbered lists of applications"),
+    ("Supabase", "Supabase"),
+    ("Railway", "Railway"),
+    ("OpenRouter", "OpenRouter"),
+    ("resume engine", "Resume engine"),
+    # Where the person's AI key goes: the summary must say what the policy says, not less.
+    ("the AI key and model you chose", "the AI key and model you chose"),
+    ("that one request", "for that one request"),
+    ("does not store it", "does not store your key"),
+    ("PDF renderer", "PDF renderer"),
+    ("submit an application or send an email for you", "never submits an application for you"),
+    ("no third-party analytics", "no third-party analytics"),
+]
+# Only the version for a chat linked to a web account. The deletion promise carries the
+# qualifier the policy attaches to it, and names the exceptions as the policy lists them.
+_PRIVACY_CLAIMS_LINKED = [
+    ("/unlink detaches", "'/unlink' detaches it"),
+    ("Delete my account", "'Delete my account' on the Profile page"),
+    ("with exceptions", "with the exceptions listed under 'Keeping and deleting your data'"),
+    ("backups until they expire", "keeps backups, deleted data stays in them until they expire"),
+    ("drafts in your Gmail", "Drafts we already created in your Gmail"),
+    ("what your AI provider kept", "Anything your AI and search providers kept"),
+]
+# Only the version for a chat the bot made an account for: no Profile page to delete from.
+_PRIVACY_CLAIMS_BOT_ONLY = [
+    ("link this chat to a website account with a code", "link it to a web account with a code"),
+    ("Integrations page", "Integrations page"),
+    ("email the privacy address", "delete your account by email at"),
+    ("within 7 days", "We will do it within 7 days"),
+    ("what the policy lists as not removed", "What is not removed when you delete your account"),
+]
+
+
+@pytest.mark.parametrize(
+    ("linked", "claims"),
+    [
+        pytest.param(True, _PRIVACY_CLAIMS + _PRIVACY_CLAIMS_LINKED, id="linked"),
+        pytest.param(False, _PRIVACY_CLAIMS + _PRIVACY_CLAIMS_BOT_ONLY, id="bot-only"),
+    ],
+)
+def test_every_claim_in_the_privacy_summary_is_one_the_web_policy_makes(
+    linked: bool, claims: list[tuple[str, str]], no_web_url: None
+) -> None:
+    legal = (Path(__file__).parent.parent / "web" / "src" / "content" / "legal.ts").read_text()
+    summary = messages.privacy_text(None, linked=linked).plain_text()
+
+    for in_the_bot, in_the_policy in claims:
+        assert in_the_bot.lower() in summary.lower(), in_the_bot
+        assert in_the_policy.lower() in legal.lower(), in_the_policy
+
+
+@pytest.mark.parametrize("linked", [True, False], ids=["linked", "bot-only"])
+def test_what_is_kept_is_not_offered_as_a_complete_list(linked: bool, no_web_url: None) -> None:
+    """The policy lists more than the summary can (every table, and more services). The line
+    about what is kept says "mainly" so it does not read as the whole list, and the message ends
+    by pointing at the full policy for the rest."""
+    summary = messages.privacy_text(None, linked=linked).plain_text()
+
+    kept = next(line for line in summary.splitlines() if line.startswith("• What I keep"))
+    assert "mainly" in kept
+    assert summary.endswith(messages.PRIVACY_NO_LINK_TEXT)
+    assert "Full policy" in messages.privacy_text(_WEB, linked=linked).plain_text()
+
+
+def test_the_deletion_promise_is_never_stated_without_its_qualifier(no_web_url: None) -> None:
+    """The policy promises deletion "with the exceptions" it lists. A sentence that says an
+    account "and its data" are removed and stops there promises more than it does."""
+    summary = messages.privacy_text(None, linked=True).plain_text()
+
+    assert "removes your account and its data." not in summary
+    promise = summary.split('"Delete my account"')[1].split("\n")[0]
+    assert "exceptions" in promise
+
+
+async def test_a_chat_the_bot_made_an_account_for_gets_the_summary_too(
+    web_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bot already holds what this person sent it, so /privacy is not withheld: it reads no
+    data. Only the last line differs, since there is no web account to delete from the Profile
+    page and nothing to /unlink."""
+
+    async def never(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("/privacy must not read the person's data")
+
+    monkeypatch.setattr(channel_core, "load_first_run_facts", never)
+    supabase = _unlinked()
+
+    renderer, _s, _r = await _handle(inbound("/privacy"), supabase=supabase)
+
+    assert len(renderer.sent) == 1 and renderer.sent[0][1].buttons == ()
+    shown = renderer.texts[0]
+    assert renderer.texts == [messages.privacy_text(_WEB, linked=False).plain_text()]
+    assert shown != messages.privacy_text(_WEB, linked=True).plain_text()
+    assert shown.endswith(f"Full policy: {_WEB}/privacy")
+    assert "link this chat to a website account" in shown and "/link CODE" in shown
+    assert "/unlink" not in shown and "Profile page" not in shown
+    assert messages.LINK_FIRST_TEXT not in shown
+    assert supabase.auth.admin.get_user_by_id_calls == [USER_ID]  # who they are, and nothing else
+    assert supabase.rpc_calls == []
+
+
+async def test_a_chat_the_bot_made_an_account_for_gets_the_summary_without_a_web_address(
+    no_web_url: None,
+) -> None:
+    renderer, _s, _r = await _handle(inbound("/privacy"), supabase=_unlinked())
+
+    assert renderer.texts[0].endswith(messages.PRIVACY_NO_LINK_TEXT)
+    assert "http" not in renderer.texts[0]
+
+
+async def test_an_unlinked_chat_is_told_how_to_link_and_nothing_is_read(
+    web_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def never(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("an unlinked chat's data must not be read")
+
+    monkeypatch.setattr(channel_core, "load_first_run_facts", never)
+
+    renderer, _supabase, _registry = await _handle(inbound("/learn"), supabase=_unlinked())
+
+    assert renderer.texts == [messages.link_first_text(_WEB)]
+    assert "/link CODE" in renderer.texts[0]
+    assert renderer.texts[0].endswith(f"{_WEB}/profile/integrations")
+
+
+async def test_the_link_prompt_without_a_web_address_carries_no_link(no_web_url: None) -> None:
+    renderer, _supabase, _registry = await _handle(inbound("/learn"), supabase=_unlinked())
+
+    assert renderer.texts == [messages.LINK_FIRST_TEXT]
+
+
+class _Down:
+    """A table that cannot be read: every query against it fails."""
+
+    def select(self, *_a: Any, **_k: Any) -> Any:
+        raise ConnectionError("down")
+
+
+def _learn_supabase(
+    *,
+    profile: bool = False,
+    key_validated: bool | None = None,
+    saved_searches: int = 0,
+    applications: list[dict[str, Any]] | None = None,
+    resume_for: list[str] | None = None,
+) -> ComposedSupabase:
+    from between_jobs.api.artifact_versions_store import artifact_id_for
+
+    supabase = _linked(
+        profile_versions=webhook_fakes._FakeProfileVersionsTable(
+            select_rows=[{"id": "v1", "activated_at": "2026-10-01T00:00:00Z"}] if profile else []
+        ),
+        applications=webhook_fakes._FakeSimpleTable(select_rows=applications or []),
+    )
+    supabase._extra["provider_credentials"] = prepare_fakes._FakeTable(
+        select_rows=[]
+        if key_validated is None
+        else [{"service": "llm", "provider": "openrouter", "is_validated": key_validated}]
+    )
+    supabase._extra["saved_searches"] = prepare_fakes._FakeTable(
+        select_rows=[{"id": f"s{i}"} for i in range(saved_searches)]
+    )
+    supabase._extra["artifact_versions"] = prepare_fakes._FakeTable(
+        select_rows=[{"artifact_id": artifact_id_for(a, "resume")} for a in resume_for or []]
+    )
+    return supabase
+
+
+async def test_learn_for_a_new_account_shows_five_steps_and_points_at_the_first(
+    web_url: str,
+) -> None:
+    renderer, _supabase, _registry = await _handle(inbound("/learn"), supabase=_learn_supabase())
+
+    assert len(renderer.sent) == 1
+    shown = renderer.texts[0]
+    assert shown.splitlines()[0] == "📋 Getting started -- 0 of 5 done"
+    assert shown.splitlines()[2:7] == [
+        "⬜ Add your profile",
+        "⬜ Add a model key",
+        "❓ Run a first search -- I can't see searches you run in your browser",
+        "⬜ Track a job",
+        "⬜ Generate a resume",
+    ]
+    assert "Next: Add your profile" in shown
+    assert shown.endswith(f"On the website: {_WEB}/profile")
+    assert renderer.sent[0][1].buttons == ()
+
+
+async def test_learn_ticks_what_the_account_holds_and_names_the_next_step_to_take(
+    web_url: str,
+) -> None:
+    supabase = _learn_supabase(
+        profile=True,
+        key_validated=True,
+        saved_searches=1,
+        applications=[{**webhook_fakes._APP_1, "id": "app-1", "source_channel": "telegram"}],
+    )
+
+    renderer, _s, _r = await _handle(inbound("/learn"), supabase=supabase)
+
+    lines = renderer.texts[0].splitlines()
+    assert lines[0] == "📋 Getting started -- 4 of 5 done"
+    assert lines[2:7] == [
+        "✅ Add your profile",
+        "✅ Add a model key",
+        "✅ Run a first search",
+        "✅ Track a job",
+        "⬜ Generate a resume",
+    ]
+    assert "Next: Generate a resume" in renderer.texts[0]
+    assert renderer.texts[0].endswith(f"{_WEB}/applications")
+
+
+async def test_learn_when_everything_is_done_says_so(no_web_url: None) -> None:
+    supabase = _learn_supabase(
+        profile=True,
+        key_validated=True,
+        saved_searches=2,
+        applications=[{**webhook_fakes._APP_1, "id": "app-1", "source_channel": "web"}],
+        resume_for=["app-1"],
+    )
+
+    renderer, _s, _r = await _handle(inbound("/learn"), supabase=supabase)
+
+    assert renderer.texts[0].splitlines()[0] == "📋 Getting started -- 5 of 5 done"
+    assert renderer.texts[0].endswith("All five are done -- you're set up.")
+    assert "Next:" not in renderer.texts[0]
+
+
+async def test_learn_without_a_web_address_says_which_website_page(no_web_url: None) -> None:
+    renderer, _s, _r = await _handle(inbound("learn"), supabase=_learn_supabase())
+
+    assert renderer.texts[0].endswith("On the website: the Profile page.")
+    assert "http" not in renderer.texts[0]
+
+
+# Where the chat points a person when it has no website address to link: the hint for each step
+# it can name as next, then the page. Pinned for every one of them, so a step cannot be sent to
+# another step's page or told another step's instruction.
+_PROFILE_TAIL = (
+    'Send "set up my resume" here for the template, or import your resume on the website.\n'
+    "On the website: the Profile page."
+)
+_KEY_TAIL = (
+    "Paste your own model key on the website. This app never runs on a shared key.\n"
+    "On the website: the Integrations page (under Profile)."
+)
+_TRACK_TAIL = (
+    'Send me a job here ("track a job" shows the format), or paste one on the website.\n'
+    "On the website: the Applications page."
+)
+_GENERATE_TAIL = (
+    'Tap "Generate resume" under a tracked job, or send "list" and then "apply to #N".\n'
+    "On the website: the Applications page."
+)
+
+
+def _a_tracked_job(channel: str) -> list[dict[str, Any]]:
+    return [{**webhook_fakes._APP_1, "id": "app-1", "source_channel": channel}]
+
+
+@pytest.mark.parametrize(
+    ("account", "next_step", "tail"),
+    [
+        pytest.param({}, "Add your profile", _PROFILE_TAIL, id="profile"),
+        pytest.param({"profile": True}, "Add a model key", _KEY_TAIL, id="model_key"),
+        pytest.param(
+            {"profile": True, "key_validated": True, "saved_searches": 1},
+            "Track a job",
+            _TRACK_TAIL,
+            id="track_job",
+        ),
+        pytest.param(
+            {
+                "profile": True,
+                "key_validated": True,
+                "saved_searches": 1,
+                "applications": _a_tracked_job("telegram"),
+            },
+            "Generate a resume",
+            _GENERATE_TAIL,
+            id="generate_resume",
+        ),
+    ],
+)
+async def test_learn_without_a_web_address_names_the_right_hint_and_page_for_every_step(
+    account: dict[str, Any], next_step: str, tail: str, no_web_url: None
+) -> None:
+    renderer, _s, _r = await _handle(inbound("/learn"), supabase=_learn_supabase(**account))
+
+    shown = renderer.texts[0]
+    assert f"Next: {next_step}\n" in shown
+    assert shown.endswith(tail)
+    assert "http" not in shown
+
+
+def test_the_first_search_step_has_its_own_hint_and_page_even_though_a_chat_never_names_it() -> (
+    None
+):
+    """A chat cannot know the first search was NOT done, so it never names it as next. The
+    wording exists for the view that can (the web's, which remembers a search in the browser):
+    it is pinned here so it stays right."""
+    facts = FirstRunFacts(
+        profile=True,
+        model_key=True,
+        saved_searches=0,
+        applications=ApplicationFacts(count=0, from_discover=0, with_resume=0),
+    )
+    view = derive_first_run(facts, False)  # the browser remembers no search: it is todo
+    assert view.next_step is not None and view.next_step.id == "first_search"
+
+    assert (
+        messages.learn_text(view, facts, None)
+        .plain_text()
+        .endswith(
+            "Search for a role on the website, or leave the filters empty to browse the latest "
+            "postings.\nOn the website: the Discover page."
+        )
+    )
+    assert (
+        messages.learn_text(view, facts, _WEB)
+        .plain_text()
+        .endswith(f"On the website: {_WEB}/discover")
+    )
+
+
+async def test_an_application_tracked_in_the_chat_does_not_show_a_first_search_was_run(
+    no_web_url: None,
+) -> None:
+    """The bot itself tracks applications (`source_channel` "telegram"). One of those, and no
+    saved search, says nothing about a search: the step stays unknown, never done."""
+    supabase = _learn_supabase(
+        profile=True, key_validated=True, saved_searches=0, applications=_a_tracked_job("telegram")
+    )
+
+    renderer, _s, _r = await _handle(inbound("/learn"), supabase=supabase)
+
+    lines = renderer.texts[0].splitlines()
+    assert lines[0] == "📋 Getting started -- 3 of 5 done"
+    assert lines[2:7] == [
+        "✅ Add your profile",
+        "✅ Add a model key",
+        "❓ Run a first search -- I can't see searches you run in your browser",
+        "✅ Track a job",
+        "⬜ Generate a resume",
+    ]
+
+
+async def test_an_application_tracked_from_discover_shows_a_first_search_was_run(
+    no_web_url: None,
+) -> None:
+    supabase = _learn_supabase(
+        profile=True, key_validated=True, saved_searches=0, applications=_a_tracked_job("discover")
+    )
+
+    renderer, _s, _r = await _handle(inbound("/learn"), supabase=supabase)
+
+    lines = renderer.texts[0].splitlines()
+    assert lines[0] == "📋 Getting started -- 4 of 5 done"
+    assert "✅ Run a first search" in lines
+
+
+async def test_a_validated_key_is_what_counts_not_a_saved_one(no_web_url: None) -> None:
+    supabase = _learn_supabase(profile=True, key_validated=False)
+
+    renderer, _s, _r = await _handle(inbound("/learn"), supabase=supabase)
+
+    assert "⬜ Add a model key" in renderer.texts[0]
+    assert "Next: Add a model key" in renderer.texts[0]
+
+
+async def test_learn_says_unknown_for_what_it_could_not_read_and_never_names_it_next(
+    no_web_url: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    supabase = _learn_supabase(profile=True, key_validated=True)
+    supabase._extra["applications"] = _Down()
+    supabase._extra["saved_searches"] = _Down()
+
+    with caplog.at_level(logging.WARNING, logger="between_jobs.api.first_run"):
+        renderer, _s, _r = await _handle(inbound("/learn"), supabase=supabase)
+
+    shown = renderer.texts[0]
+    assert "✅ Add your profile" in shown and "✅ Add a model key" in shown
+    assert "❓ Run a first search -- couldn't check just now" in shown
+    assert "❓ Track a job -- couldn't check just now" in shown
+    assert "❓ Generate a resume -- couldn't check just now" in shown
+    assert "Next:" not in shown  # nothing KNOWN to be todo
+    assert shown.endswith(
+        "Everything I could check is done. "
+        "I couldn't confirm: Run a first search, Track a job, Generate a resume."
+    )
+    assert {r.ctx["fact"] for r in caplog.records} == {"saved_searches", "applications"}  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("broken", ["applications", "saved_searches"])
+async def test_learn_blames_the_browser_only_when_everything_that_could_show_a_search_was_read(
+    broken: str, no_web_url: None
+) -> None:
+    """The note "I can't see searches you run in your browser" is for a first search that could
+    not be told from the account. When one of the two things that could have shown it failed to
+    be read, the honest reason is that the read failed, not a limit of the chat."""
+    supabase = _learn_supabase(profile=True, key_validated=True)
+    supabase._extra[broken] = _Down()
+
+    renderer, _s, _r = await _handle(inbound("/learn"), supabase=supabase)
+
+    shown = renderer.texts[0]
+    assert "❓ Run a first search -- couldn't check just now" in shown
+    assert "I can't see searches you run in your browser" not in shown
+    if broken == "applications":
+        assert "❓ Track a job -- couldn't check just now" in shown
+        assert "❓ Generate a resume -- couldn't check just now" in shown
+
+
+async def test_learn_is_all_our_own_words_so_nothing_a_person_stored_can_reach_it(
+    web_url: str,
+) -> None:
+    """A job title, a company or a profile field is attacker-controlled text elsewhere in the
+    bot. /learn reads counts and flags and prints constants, so none of it is in the message."""
+    hostile = "<b>Boss</b> & <script>"
+    supabase = _learn_supabase(
+        profile=True,
+        applications=[
+            {**webhook_fakes._APP_1, "id": "app-1", "source_channel": "discover", "title": hostile}
+        ],
+    )
+
+    renderer, _s, _r = await _handle(inbound("/learn"), supabase=supabase)
+
+    assert "Boss" not in renderer.texts[0] and "script" not in renderer.texts[0]
+    assert all(seg.style in {None, "bold"} for seg in renderer.sent[0][1].text.segments)
+
+
+async def test_learn_reads_nothing_it_is_not_entitled_to_and_writes_nothing() -> None:
+    supabase = _learn_supabase(profile=True)
+
+    await _handle(inbound("/learn"), supabase=supabase)
+
+    assert supabase.rpc_calls == []  # no write goes through an RPC
+    for table in ("applications", "profile_versions"):
+        assert getattr(supabase, table).insert_calls == []
 
 
 # -- which requests are slow ---------------------------------------------------------------

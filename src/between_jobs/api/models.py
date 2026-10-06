@@ -54,11 +54,10 @@ class ImportProfileRequest(BaseModel):
 
 
 class MintLinkCodeRequest(BaseModel):
-    """`channel` matches channel_identities' own vocabulary -- only
-    "telegram" is actually wired to a bot command yet (the route rejects
-    anything else), but the field isn't narrowed to a single literal so the
-    shape doesn't need to change when a second channel's bot integration
-    arrives."""
+    """`channel` matches channel_identities' own vocabulary. The route accepts "telegram" and
+    "discord" and rejects the rest, and only mints a code for a channel this server can serve
+    (see link_routes.py); the field isn't narrowed to literals so the shape doesn't change when
+    another channel's adapter arrives."""
 
     channel: str = Field(min_length=1)
 

@@ -160,6 +160,11 @@ def _texts(telegram: prepare_fakes._FakeTelegramClient) -> list[str]:
     return [text for _chat, text, _markup in telegram.sent]
 
 
+def _shown(telegram: prepare_fakes._FakeTelegramClient) -> list[str]:
+    """The messages as the chat reads them now: what was sent, with the edits applied."""
+    return [text for _chat, text, _markup in telegram.shown]
+
+
 def _texts_to(telegram: prepare_fakes._FakeTelegramClient, chat_id: int) -> list[str]:
     return [text for chat, text, _markup in telegram.sent if chat == chat_id]
 
@@ -203,8 +208,20 @@ def test_the_webhook_answers_promptly_while_a_slow_engine_is_still_running() -> 
         prepare_fakes._PDF_BYTES,
     )
     assert caption is not None and "ATS score 72/100" in caption
-    # and the follow-up the foreground flow always sent: a prompt with the stage button
-    assert _texts(telegram)[-1] == channel_messages.MARK_APPLIED_PROMPT_TEXT
+    # One progress message, edited in place: "compiling" while the PDF is made, then the final
+    # state with the stage button under it. Nothing is sent after the document.
+    assert _texts(telegram) == [channel_messages.GENERATING_TEXT]
+    assert [text for _c, _id, text, _m in telegram.edited] == [
+        channel_messages.PREPARE_COMPILING_TEXT,
+        channel_messages.PREPARE_DONE_TEXT,
+    ]
+    assert {message_id for _c, message_id, _t, _m in telegram.edited} == {101}  # the one message
+    final_markup = telegram.edited[-1][3]
+    assert final_markup is not None
+    assert final_markup["inline_keyboard"][0][0]["callback_data"] == (
+        f"app:stage:{_APPLICATION_ID}:applied"
+    )
+    assert _shown(telegram) == [channel_messages.PREPARE_DONE_TEXT]
     assert deferred_reply.registry.running == 0
 
 
@@ -394,9 +411,9 @@ def test_the_limit_is_claimed_before_the_work_starts_and_the_reply_comes_first(
     class _OrderedTelegram(prepare_fakes._FakeTelegramClient):
         async def send_message(
             self, chat_id: int, text: str, *, reply_markup: dict[str, Any] | None = None
-        ) -> None:
+        ) -> int:
             order.append("reply")
-            await super().send_message(chat_id, text, reply_markup=reply_markup)
+            return await super().send_message(chat_id, text, reply_markup=reply_markup)
 
     monkeypatch.setattr(rate_limits, "claim_rate_limit_slot", allow)
     supabase, telegram, engine = ComposedSupabase(), _OrderedTelegram(), _OrderedEngine()
@@ -424,10 +441,10 @@ def test_a_failure_in_the_background_task_is_logged_and_told_to_the_user(
         _serving(supabase, telegram, engine) as client,
     ):
         response = _post(client, _tap_generate(update_id=444))
-        assert _wait_for(lambda: channel_messages.PREPARE_FAILED_TEXT in _texts(telegram))
+        assert _wait_for(lambda: channel_messages.PREPARE_FAILED_TEXT in _shown(telegram))
 
     assert response.status_code == 200  # the delivery itself succeeded; the work is separate
-    assert _texts(telegram)[-1] == channel_messages.PREPARE_FAILED_TEXT
+    assert _shown(telegram) == [channel_messages.PREPARE_FAILED_TEXT]  # the progress message ended
     assert telegram.documents_sent == []
     failures = [r for r in caplog.records if r.getMessage() == "deferred work failed"]
     assert len(failures) == 1
@@ -442,29 +459,47 @@ def test_a_failure_in_the_background_task_is_logged_and_told_to_the_user(
     assert engine.request_ids == [response.headers["X-Request-ID"]]
 
 
-def test_a_refused_follow_up_after_the_resume_was_delivered_is_logged_and_not_told(
+def test_a_refused_final_state_after_the_resume_was_delivered_is_logged_and_not_told(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Telegram can answer the message after the document with a 429 or a 5xx. The person has
-    the resume; "something went wrong generating it, try again" would be false and would cost
-    them a second paid generation."""
+    """Telegram can answer the edit that ends the progress message, and the new message that is
+    its fallback, with a 429 or a 5xx. The person has the resume; "something went wrong
+    generating it, try again" would be false and would cost them a second paid generation."""
 
-    class _RefusesThePrompt(prepare_fakes._FakeTelegramClient):
+    def refusal() -> httpx.HTTPStatusError:
+        return httpx.HTTPStatusError(
+            "429 Too Many Requests",
+            request=httpx.Request("POST", "https://api.telegram.org/bot/sendMessage"),
+            response=httpx.Response(429),
+        )
+
+    class _RefusesTheFinalState(prepare_fakes._FakeTelegramClient):
         async def send_message(
             self, chat_id: int, text: str, *, reply_markup: dict[str, Any] | None = None
-        ) -> None:
-            if text == channel_messages.MARK_APPLIED_PROMPT_TEXT:
-                raise httpx.HTTPStatusError(
-                    "429 Too Many Requests",
-                    request=httpx.Request("POST", "https://api.telegram.org/bot/sendMessage"),
-                    response=httpx.Response(429),
-                )
-            await super().send_message(chat_id, text, reply_markup=reply_markup)
+        ) -> int:
+            if text == channel_messages.PREPARE_DONE_TEXT:
+                raise refusal()
+            return await super().send_message(chat_id, text, reply_markup=reply_markup)
 
-    supabase, telegram, engine = ComposedSupabase(), _RefusesThePrompt(), _Engine()
+        async def edit_message_text(
+            self,
+            chat_id: int,
+            message_id: int,
+            text: str,
+            *,
+            reply_markup: dict[str, Any] | None = None,
+        ) -> int:
+            if text == channel_messages.PREPARE_DONE_TEXT:
+                raise refusal()
+            return await super().edit_message_text(
+                chat_id, message_id, text, reply_markup=reply_markup
+            )
+
+    supabase, telegram, engine = ComposedSupabase(), _RefusesTheFinalState(), _Engine()
 
     with (
         caplog.at_level(logging.INFO, logger="between_jobs.api.channel_core"),
+        caplog.at_level(logging.INFO, logger="between_jobs.api.progress_message"),
         caplog.at_level(logging.INFO, logger="between_jobs.api.deferred_reply"),
         _serving(supabase, telegram, engine) as client,
     ):
@@ -474,10 +509,10 @@ def test_a_refused_follow_up_after_the_resume_was_delivered_is_logged_and_not_to
 
     assert response.status_code == 200
     assert len(telegram.documents_sent) == 1
-    assert _texts(telegram) == [channel_messages.GENERATING_TEXT]  # and nothing false after it
+    assert channel_messages.PREPARE_FAILED_TEXT not in _shown(telegram)  # nothing false after it
     messages = [r.getMessage() for r in caplog.records]
     assert "deferred work failed" not in messages
-    (logged,) = [r for r in caplog.records if "mark-as-applied prompt" in r.getMessage()]
+    (logged,) = [r for r in caplog.records if "how their request ended" in r.getMessage()]
     assert logged.exc_info is not None
     assert logged.ctx == {"update_id": "446", "channel": "telegram"}  # type: ignore[attr-defined]
 
@@ -502,7 +537,7 @@ def test_the_failure_line_the_app_writes_carries_the_request_id_and_the_update_i
     try:
         with _serving(supabase, telegram, engine) as client:
             response = _post(client, _tap_generate(update_id=555))
-            assert _wait_for(lambda: channel_messages.PREPARE_FAILED_TEXT in _texts(telegram))
+            assert _wait_for(lambda: channel_messages.PREPARE_FAILED_TEXT in _shown(telegram))
     finally:
         logger.removeHandler(handler)
 
@@ -531,8 +566,8 @@ def test_a_known_failure_is_still_a_message_and_not_a_failure_of_the_task(
         _post(client, _tap_generate())
 
     assert _texts(telegram)[0] == channel_messages.GENERATING_TEXT
-    assert _texts(telegram)[-1].startswith("❌")
-    assert channel_messages.PREPARE_FAILED_TEXT not in _texts(telegram)
+    assert _shown(telegram)[-1].startswith("❌")  # the progress message ended as the error
+    assert channel_messages.PREPARE_FAILED_TEXT not in _shown(telegram)
     assert [r for r in caplog.records if r.getMessage() == "deferred work failed"] == []
     (known,) = [r for r in caplog.records if r.getMessage().startswith("api error")]
     assert known.getMessage() == "api error SETUP_REQUIRED"
@@ -598,8 +633,8 @@ def test_a_known_failure_leaves_a_log_line_with_the_code_and_where_it_came_from(
     ):
         _post(client, _tap_generate(update_id=77))
 
-    assert _texts(telegram)[-1].startswith("❌")
-    assert channel_messages.PREPARE_FAILED_TEXT not in _texts(telegram)
+    assert _shown(telegram)[-1].startswith("❌")
+    assert channel_messages.PREPARE_FAILED_TEXT not in _shown(telegram)
     (record,) = [r for r in caplog.records if r.getMessage().startswith("api error")]
     assert record.getMessage() == f"api error {code}"
     assert record.levelno == level

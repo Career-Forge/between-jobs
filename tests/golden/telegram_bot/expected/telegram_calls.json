@@ -47,6 +47,16 @@
     }
    },
    {
+    "chat_id": 987654321,
+    "method": "editMessageText",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 40,
+     "sha256": "f111adb3fbbf2598"
+    }
+   },
+   {
     "bytes": 23,
     "caption": {
      "chars": 58,
@@ -64,7 +74,7 @@
    },
    {
     "chat_id": 987654321,
-    "method": "sendMessage",
+    "method": "editMessageText",
     "parse_mode": "HTML",
     "reply_markup": [
      [
@@ -78,8 +88,8 @@
      ]
     ],
     "text": {
-     "chars": 23,
-     "sha256": "56b7c03a9e68ce14"
+     "chars": 62,
+     "sha256": "7feaff1da6f9d2f2"
     }
    }
   ]
@@ -382,6 +392,16 @@
     }
    },
    {
+    "chat_id": 987654321,
+    "method": "editMessageText",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 40,
+     "sha256": "f111adb3fbbf2598"
+    }
+   },
+   {
     "bytes": 23,
     "caption": {
      "chars": 28,
@@ -399,7 +419,7 @@
    },
    {
     "chat_id": 987654321,
-    "method": "sendMessage",
+    "method": "editMessageText",
     "parse_mode": "HTML",
     "reply_markup": [
      [
@@ -413,8 +433,8 @@
      ]
     ],
     "text": {
-     "chars": 23,
-     "sha256": "56b7c03a9e68ce14"
+     "chars": 62,
+     "sha256": "7feaff1da6f9d2f2"
     }
    }
   ]
@@ -445,6 +465,16 @@
     }
    },
    {
+    "chat_id": 987654321,
+    "method": "editMessageText",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 40,
+     "sha256": "f111adb3fbbf2598"
+    }
+   },
+   {
     "bytes": 23,
     "caption": {
      "chars": 58,
@@ -462,7 +492,7 @@
    },
    {
     "chat_id": 987654321,
-    "method": "sendMessage",
+    "method": "editMessageText",
     "parse_mode": "HTML",
     "reply_markup": [
      [
@@ -476,8 +506,8 @@
      ]
     ],
     "text": {
-     "chars": 23,
-     "sha256": "56b7c03a9e68ce14"
+     "chars": 62,
+     "sha256": "7feaff1da6f9d2f2"
     }
    }
   ]
@@ -536,7 +566,7 @@
    },
    {
     "chat_id": 987654321,
-    "method": "sendMessage",
+    "method": "editMessageText",
     "parse_mode": "HTML",
     "reply_markup": null,
     "text": {
@@ -573,7 +603,7 @@
    },
    {
     "chat_id": 987654321,
-    "method": "sendMessage",
+    "method": "editMessageText",
     "parse_mode": "HTML",
     "reply_markup": null,
     "text": {
@@ -609,6 +639,16 @@
     }
    },
    {
+    "chat_id": 987654321,
+    "method": "editMessageText",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 40,
+     "sha256": "f111adb3fbbf2598"
+    }
+   },
+   {
     "bytes": 23,
     "caption": {
      "chars": 58,
@@ -626,7 +666,7 @@
    },
    {
     "chat_id": 987654321,
-    "method": "sendMessage",
+    "method": "editMessageText",
     "parse_mode": "HTML",
     "reply_markup": [
      [
@@ -640,8 +680,8 @@
      ]
     ],
     "text": {
-     "chars": 23,
-     "sha256": "56b7c03a9e68ce14"
+     "chars": 62,
+     "sha256": "7feaff1da6f9d2f2"
     }
    }
   ]
@@ -673,12 +713,162 @@
    },
    {
     "chat_id": 987654321,
-    "method": "sendMessage",
+    "method": "editMessageText",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 40,
+     "sha256": "f111adb3fbbf2598"
+    }
+   },
+   {
+    "chat_id": 987654321,
+    "method": "editMessageText",
     "parse_mode": "HTML",
     "reply_markup": null,
     "text": {
      "chars": 62,
      "sha256": "44dcd97eb6a3c013"
+    }
+   }
+  ]
+ },
+ "generate_button_when_the_progress_message_cannot_be_edited_and_the_engine_declines": {
+  "http": [
+   200,
+   {
+    "status": "ok"
+   },
+   null
+  ],
+  "telegram": [
+   {
+    "json": {
+     "callback_query_id": "cbq-1"
+    },
+    "method": "answerCallbackQuery"
+   },
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 66,
+     "sha256": "22eb39c79afefc3e"
+    }
+   },
+   {
+    "chat_id": 987654321,
+    "method": "editMessageText",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 77,
+     "sha256": "04ad7292d7eff490"
+    }
+   },
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 77,
+     "sha256": "04ad7292d7eff490"
+    }
+   }
+  ]
+ },
+ "generate_button_when_the_progress_message_was_deleted": {
+  "http": [
+   200,
+   {
+    "status": "ok"
+   },
+   null
+  ],
+  "telegram": [
+   {
+    "json": {
+     "callback_query_id": "cbq-1"
+    },
+    "method": "answerCallbackQuery"
+   },
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 66,
+     "sha256": "22eb39c79afefc3e"
+    }
+   },
+   {
+    "chat_id": 987654321,
+    "method": "editMessageText",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 40,
+     "sha256": "f111adb3fbbf2598"
+    }
+   },
+   {
+    "bytes": 23,
+    "caption": {
+     "chars": 58,
+     "sha256": "7420b5a2b739892a"
+    },
+    "chat_id": "987654321",
+    "content_sha256": "8fa522657b5f1000",
+    "fields": [
+     "caption",
+     "chat_id",
+     "document"
+    ],
+    "filename": "resume.pdf",
+    "method": "sendDocument"
+   },
+   {
+    "chat_id": 987654321,
+    "method": "editMessageText",
+    "parse_mode": "HTML",
+    "reply_markup": [
+     [
+      {
+       "callback_data": "app:stage:30000000-0000-0000-0000-000000000001:applied",
+       "label": {
+        "chars": 17,
+        "sha256": "f89ac971255dfff8"
+       }
+      }
+     ]
+    ],
+    "text": {
+     "chars": 62,
+     "sha256": "7feaff1da6f9d2f2"
+    }
+   },
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": [
+     [
+      {
+       "callback_data": "app:stage:30000000-0000-0000-0000-000000000001:applied",
+       "label": {
+        "chars": 17,
+        "sha256": "f89ac971255dfff8"
+       }
+      }
+     ]
+    ],
+    "text": {
+     "chars": 62,
+     "sha256": "7feaff1da6f9d2f2"
     }
    }
   ]
@@ -907,6 +1097,111 @@
     "text": {
      "chars": 194,
      "sha256": "e61147efc6467f51"
+    }
+   }
+  ]
+ },
+ "learn_for_a_finished_account_on_a_server_with_no_web_address": {
+  "http": [
+   200,
+   {
+    "status": "ok"
+   },
+   null
+  ],
+  "telegram": [
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 255,
+     "sha256": "85c99b31edf62fe8"
+    }
+   }
+  ]
+ },
+ "learn_for_a_new_account": {
+  "http": [
+   200,
+   {
+    "status": "ok"
+   },
+   null
+  ],
+  "telegram": [
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 353,
+     "sha256": "d429420af43226be"
+    }
+   }
+  ]
+ },
+ "learn_for_a_telegram_only_user": {
+  "http": [
+   200,
+   {
+    "status": "ok"
+   },
+   null
+  ],
+  "telegram": [
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 208,
+     "sha256": "602c37d1dcfafc11"
+    }
+   }
+  ]
+ },
+ "learn_for_an_account_a_resume_away_from_done": {
+  "http": [
+   200,
+   {
+    "status": "ok"
+   },
+   null
+  ],
+  "telegram": [
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 308,
+     "sha256": "dd56a31db36b56c2"
+    }
+   }
+  ]
+ },
+ "learn_when_the_account_cannot_be_read": {
+  "http": [
+   200,
+   {
+    "status": "ok"
+   },
+   null
+  ],
+  "telegram": [
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 320,
+     "sha256": "8fff69f4dd5ffdb8"
     }
    }
   ]
@@ -1400,6 +1695,90 @@
    null
   ],
   "telegram": []
+ },
+ "privacy_as_a_plain_word": {
+  "http": [
+   200,
+   {
+    "status": "ok"
+   },
+   null
+  ],
+  "telegram": [
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 1203,
+     "sha256": "78e53aef8610f4a5"
+    }
+   }
+  ]
+ },
+ "privacy_for_a_linked_user": {
+  "http": [
+   200,
+   {
+    "status": "ok"
+   },
+   null
+  ],
+  "telegram": [
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 1203,
+     "sha256": "78e53aef8610f4a5"
+    }
+   }
+  ]
+ },
+ "privacy_for_a_telegram_only_user": {
+  "http": [
+   200,
+   {
+    "status": "ok"
+   },
+   null
+  ],
+  "telegram": [
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 1194,
+     "sha256": "2fba298ef928d23a"
+    }
+   }
+  ]
+ },
+ "privacy_on_a_server_with_no_web_address": {
+  "http": [
+   200,
+   {
+    "status": "ok"
+   },
+   null
+  ],
+  "telegram": [
+   {
+    "chat_id": 987654321,
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": null,
+    "text": {
+     "chars": 1200,
+     "sha256": "169c4bfcf366f99e"
+    }
+   }
+  ]
  },
  "setup_help": {
   "http": [

@@ -42,6 +42,8 @@ class Intent(StrEnum):
     CHECK_RESUME = "check_resume"
     TRACK_JOB_HELP = "track_job_help"
     LIST_APPLICATIONS = "list_applications"
+    PRIVACY = "privacy"
+    LEARN = "learn"
     UNKNOWN = "unknown"
 
 
@@ -59,6 +61,8 @@ _TRACK_JOB_HELP_RE = re.compile(
 _LIST_APPLICATIONS_RE = re.compile(
     r"^(?:/list|list(?:\s+my)?(?:\s+applications|\s+jobs)?|my\s+applications)\??$", re.IGNORECASE
 )
+_PRIVACY_RE = re.compile(r"^(?:/privacy|privacy(?:\s+policy)?)\s*\??$", re.IGNORECASE)
+_LEARN_RE = re.compile(r"^(?:/learn|learn)\s*\??$", re.IGNORECASE)
 _LINK_RE = re.compile(r"^/link\s+(\S+)$", re.IGNORECASE)
 _UNLINK_RE = re.compile(r"^/unlink$", re.IGNORECASE)
 
@@ -176,5 +180,11 @@ def classify(text: str) -> Intent:
 
     if _LIST_APPLICATIONS_RE.match(text):
         return Intent.LIST_APPLICATIONS
+
+    if _PRIVACY_RE.match(text):
+        return Intent.PRIVACY
+
+    if _LEARN_RE.match(text):
+        return Intent.LEARN
 
     return Intent.UNKNOWN

@@ -14,9 +14,12 @@ from fastapi import Depends, Request
 
 from supabase import AsyncClient
 
+from .channel_envelope import Notifier
+from .channel_push import FanOutNotifier
 from .errors import ApiError
-from .telegram_adapter import TelegramRenderer
+from .telegram_adapter import TelegramRenderer, build_notifier
 from .telegram_client import TelegramClient
+from .telegram_identity import CHANNEL as TELEGRAM_CHANNEL
 
 
 def get_supabase(request: Request) -> AsyncClient:
@@ -40,6 +43,46 @@ def telegram_enabled(request: Request) -> bool:
     both Telegram values together or neither (see `app.lifespan`), so either
     one answers it."""
     return request.app.state.telegram_client is not None
+
+
+def discord_enabled(request: Request) -> bool:
+    """Whether this server can take a Discord message. Always False today: there is no
+    Discord adapter yet, so nothing here may offer a Discord link as if it worked. The
+    lifespan sets `app.state.discord_enabled` (False), and the adapter's own task is what
+    turns it on, from the settings that adapter needs."""
+    return bool(getattr(request.app.state, "discord_enabled", False))
+
+
+def channel_enabled(request: Request, channel: str) -> bool:
+    """Whether a link code for `channel` could be redeemed on this server: the channel has an
+    adapter here. A channel the vocabulary knows but nothing serves answers False."""
+    if channel == TELEGRAM_CHANNEL:
+        return telegram_enabled(request)
+    if channel == "discord":
+        return discord_enabled(request)
+    return False
+
+
+def build_notifier_registry(
+    supabase: AsyncClient, telegram_client: TelegramClient | None
+) -> dict[str, Notifier]:
+    """The notifier of every channel this server can push to, by channel name. A channel with
+    no adapter on this server has no entry, and a user linked there is skipped (with a log
+    line) by `FanOutNotifier`. A new channel's adapter adds its entry here."""
+    registry: dict[str, Notifier] = {}
+    telegram = build_notifier(supabase, telegram_client)
+    if telegram is not None:
+        registry[TELEGRAM_CHANNEL] = telegram
+    return registry
+
+
+def build_push_notifier(
+    supabase: AsyncClient, telegram_client: TelegramClient | None
+) -> FanOutNotifier | None:
+    """What the outbox listener pushes through: every channel a user linked that has an
+    entry in `build_notifier_registry`, or None on a server with no channel to push to."""
+    registry = build_notifier_registry(supabase, telegram_client)
+    return FanOutNotifier(supabase, registry) if registry else None
 
 
 def _require_telegram(request: Request) -> None:

@@ -31,6 +31,12 @@
 // requests stop altogether -- the checklist runs on every visit to Today, so a finished
 // account would otherwise pay for four requests, one of them heavy, to draw nothing.
 //
+// THE CHAT BOT HAS A COPY OF THESE RULES. Its `/learn` command shows the same five steps, derived in
+// src/between_jobs/api/first_run.py from what the account holds. The two are held to one table of
+// accounts and the steps each must come out with (tests/shared/first_run_steps.json), run by
+// firstRunShared.test.ts here and by tests/test_first_run.py there. Change a rule in either place
+// and update the table and the other side.
+//
 // Pure module: the fetcher and the storage are injected (api.ts pulls in the Supabase
 // client, which throws at import time without env vars, and storage may be missing or may
 // throw), and there is no React here -- the hook is useFirstRun.ts and the card is

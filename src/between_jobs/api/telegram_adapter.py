@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
+
 from supabase import AsyncClient
 
 from .channel_envelope import (
@@ -151,6 +153,18 @@ def _ref(chat_ref: str, message_id: int | None) -> MessageRef | None:
     return MessageRef(chat_ref, str(message_id)) if message_id is not None else None
 
 
+def _is_not_modified(error: httpx.HTTPStatusError) -> bool:
+    """Telegram answers an edit that would change nothing with a 400 "message is not modified".
+    The message already shows the text that was asked for, so it is not a failure."""
+    if error.response.status_code != 400:
+        return False
+    try:
+        description = str(error.response.json().get("description", ""))
+    except (ValueError, AttributeError):
+        return False
+    return "message is not modified" in description
+
+
 class TelegramRenderer:
     """`Renderer` on top of `TelegramClient`."""
 
@@ -178,12 +192,17 @@ class TelegramRenderer:
 
     async def edit(self, intent: EditMessage) -> MessageRef | None:
         ref = intent.message_ref
-        message_id = await self._client.edit_message_text(
-            int(ref.chat_ref),
-            int(ref.message_id),
-            render_html(intent.text),
-            reply_markup=inline_keyboard(intent.buttons) if intent.buttons else None,
-        )
+        try:
+            message_id = await self._client.edit_message_text(
+                int(ref.chat_ref),
+                int(ref.message_id),
+                render_html(intent.text),
+                reply_markup=inline_keyboard(intent.buttons) if intent.buttons else None,
+            )
+        except httpx.HTTPStatusError as e:
+            if _is_not_modified(e):
+                return ref  # the message already reads as asked
+            raise
         return _ref(ref.chat_ref, message_id)
 
     async def ack_callback(self, intent: AckCallback) -> None:

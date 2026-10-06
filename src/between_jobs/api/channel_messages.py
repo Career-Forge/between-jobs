@@ -13,10 +13,12 @@ handler parses it by (`channel_core`) are one contract.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from .body_limit import describe_bytes
-from .channel_envelope import Button, ButtonRows, RichText, bold, code, pre, rich
+from .channel_envelope import Button, ButtonRows, RichText, Segment, bold, code, pre, rich
+from .first_run import STEP_IDS, FirstRunFacts, FirstRunView, StepId
 
 # -- callback data: the buttons below carry it, `channel_core` reads it --------------------
 
@@ -86,6 +88,8 @@ link_codes move too, but naming them in a chat message would just be
 noise."""
 
 GENERATING_TEXT = "⏳ Generating your resume for this job -- this can take a minute..."
+PREPARE_COMPILING_TEXT = "⏳ Resume written -- compiling the PDF..."
+PREPARE_DONE_TEXT = "✅ Done -- your resume is in this chat. Applying with this one?"
 BUSY_TEXT = "⏳ I'm busy generating other resumes right now -- try again in a minute."
 ALREADY_GENERATING_TEXT = "⏳ Your resume is still generating -- it'll arrive here when it's done."
 PREPARE_FAILED_TEXT = "❌ Something went wrong while generating your resume. Try again in a minute."
@@ -95,6 +99,11 @@ ENROLLMENT_REQUIRED_TEXT = (
     "Then ask again."
 )
 PREPARE_DECLINED_TEXT = "The resume engine didn't produce a resume for this job.\n\n{warnings}"
+PREPARE_NO_DETAILS_TEXT = "No details given."
+DECLINED_WARNINGS_LIMIT = 3000
+"""How many characters of the engine's reasons a declined-resume message carries. A message can
+hold 4096 on Telegram, and the engine's reasons are text this code does not write, so they are
+bounded rather than trusted to be short."""
 PREPARE_SUCCESS_CAPTION = "📄 Resume -- ATS score {score}/100{warnings}"
 
 NO_APPLICATIONS_TEXT = 'Nothing tracked yet. Send "track a job" to get started.'
@@ -108,7 +117,38 @@ CANCELLED_TEXT = "Cancelled. Nothing was saved."
 APPLICATION_GONE_TEXT = "❌ Couldn't find that application anymore."
 
 MARK_APPLIED_BUTTON_TEXT = "✅ Mark as applied"
-MARK_APPLIED_PROMPT_TEXT = "Applying with this one?"
+
+
+def declined_warnings_text(warnings: Sequence[str], *, limit: int = DECLINED_WARNINGS_LIMIT) -> str:
+    """The reasons the engine gave for not producing a resume, one bullet each, within `limit`
+    characters. Whole bullets are kept while they fit; the rest are counted ("... and N more"),
+    and a single reason that is longer than the limit by itself is cut, with an ellipsis. Text
+    that fits is returned exactly as it would be written without a bound."""
+    if not warnings:
+        return PREPARE_NO_DETAILS_TEXT
+    bullets = [f"• {warning}" for warning in warnings]
+    whole = "\n".join(bullets)
+    if len(whole) <= limit:
+        return whole
+    room = limit - len(_and_more(len(bullets))) - 1  # the marker, and the line break before it
+    kept: list[str] = []
+    used = 0
+    for bullet in bullets:
+        cost = len(bullet) + (1 if kept else 0)
+        if used + cost > room:
+            break
+        kept.append(bullet)
+        used += cost
+    if not kept:
+        kept = [bullets[0][: room - 1] + "…"]
+    omitted = len(bullets) - len(kept)
+    if omitted:
+        kept.append(_and_more(omitted))
+    return "\n".join(kept)
+
+
+def _and_more(count: int) -> str:
+    return f"• ... and {count} more"
 
 
 def document_too_large_text(limit: int) -> str:
@@ -120,6 +160,160 @@ def document_too_large_text(limit: int) -> str:
 
 def not_a_real_stage_text(status: str) -> str:
     return f"❌ {status!r} isn't a real stage."
+
+
+# -- /privacy and /learn -----------------------------------------------------------------------
+
+LINK_FIRST_TEXT = (
+    "To use this, link this chat to your Between Jobs account first. On the website, open "
+    "Integrations, generate a code, and send it to me here as /link CODE."
+)
+"""What `/learn` tells a chat that is not linked to a web account, instead of the answer: the
+checklist is about the website account's data, which such a chat has none of to show."""
+
+PRIVACY_NO_LINK_TEXT = "Full policy: on the website's Privacy Policy page."
+
+_PRIVACY_CONTROL_LINKED = (
+    '• Yours to control: /unlink detaches this chat. "Delete my account" on the website\'s '
+    "Profile page removes your account and its data straight away, with exceptions (such as "
+    "backups until they expire, drafts in your Gmail and what your AI provider kept) that the "
+    "full policy lists.\n\n"
+)
+_PRIVACY_CONTROL_BOT_ONLY = (
+    "• Yours to control: link this chat to a website account with a code from its Integrations "
+    "page (send it as /link CODE). To have your account deleted, email the privacy address on "
+    "the policy page: it is done within 7 days, apart from what the policy lists as not "
+    "removed.\n\n"
+)
+
+
+def link_first_text(web_url: str | None) -> str:
+    if web_url is None:
+        return LINK_FIRST_TEXT
+    return f"{LINK_FIRST_TEXT}\n\n{web_url}/profile/integrations"
+
+
+def privacy_text(web_url: str | None, *, linked: bool) -> RichText:
+    """A short summary of what is stored and who handles it, and where the whole policy is.
+
+    A summary of the web app's Privacy Policy (`web/src/content/legal.ts`), which is the
+    authority and is what the link leads to. It is held to the policy in BOTH directions:
+
+    - It may not say more than the policy does. Where the policy qualifies a promise, so does
+      this: deletion "removes your account and its data" only "with the exceptions" the policy
+      lists, and the summary says so and names the ones a person is most likely to count as
+      theirs (backups, drafts already in their Gmail, what the AI provider kept).
+    - It may not say less than the policy about where a credential goes. The resume engine
+      receives the person's AI key with each request (it uses the key for that one request and
+      does not store it), so the summary says that, next to "stored encrypted". A list of what
+      is kept is worded as a "mainly" list: it is not the policy's whole list, and the full
+      policy is linked for the rest.
+
+    Each line was checked against the code: the identity row holds only the Telegram user id
+    and a count of failed link-code attempts; provider keys are stored encrypted
+    (`provider_credentials_store`) and go to the engine in the request body
+    (`forge_engines_client`); every real resume generation writes a usage record
+    (`product_events`); "list" stores a numbered working set (`working_sets_store`); no code
+    path submits an application or sends an email; `/unlink` and the Profile page's "Delete my
+    account" exist.
+
+    `linked` is whether this chat is attached to a website account. Only the "Yours to control"
+    line depends on it: a chat the bot made an account for on first contact has no web account
+    to delete from the Profile page and nothing to `/unlink`, so it is told how to link and how
+    to ask for deletion instead. With no `web_url` the message says the policy is on the website
+    and gives no link."""
+    policy = f"Full policy: {web_url}/privacy" if web_url is not None else PRIVACY_NO_LINK_TEXT
+    control = _PRIVACY_CONTROL_LINKED if linked else _PRIVACY_CONTROL_BOT_ONLY
+    return rich(
+        "🔒 ",
+        bold("Privacy, in short"),
+        "\n\n"
+        "• What I keep: mainly your profile, tracked jobs, resumes, saved searches and AI key "
+        "(stored encrypted), plus a short record each time you use a main feature (no resume or "
+        'job text) and the numbered lists for "apply to #N". From Telegram: only your numeric '
+        "Telegram id and a count of failed link-code attempts -- no name, no username.\n"
+        "• Who handles it: Supabase (database and files) and Railway (runs the API). For a "
+        "resume, an operator-run resume engine gets your profile, the job posting and the AI key "
+        "and model you chose, uses the key for that one request and does not store it; a PDF "
+        "renderer gets the finished resume. OpenRouter, your AI provider, gets the text a "
+        "feature needs. Telegram carries this chat.\n"
+        "• What I never do: submit an application or send an email for you -- that last step is "
+        "yours. No ads, no third-party analytics.\n" + control,
+        policy,
+    )
+
+
+_STEP_MARKS = {"done": "✅", "todo": "⬜", "unknown": "❓"}
+
+_STEP_HINTS: dict[StepId, str] = {
+    "profile": (
+        'Send "set up my resume" here for the template, or import your resume on the website.'
+    ),
+    "model_key": "Paste your own model key on the website. This app never runs on a shared key.",
+    "first_search": (
+        "Search for a role on the website, or leave the filters empty to browse the latest "
+        "postings."
+    ),
+    "track_job": (
+        'Send me a job here ("track a job" shows the format), or paste one on the website.'
+    ),
+    "generate_resume": (
+        'Tap "Generate resume" under a tracked job, or send "list" and then "apply to #N".'
+    ),
+}
+_STEP_WEB_PAGES: dict[StepId, str] = {
+    "profile": "the Profile page",
+    "model_key": "the Integrations page (under Profile)",
+    "first_search": "the Discover page",
+    "track_job": "the Applications page",
+    "generate_resume": "the Applications page",
+}
+
+
+def _unknown_note(step_id: StepId, facts: FirstRunFacts) -> str:
+    """Why a step cannot be called done or todo. The first search is the one a chat can never
+    settle for itself: a search run in the browser leaves nothing the chat can read."""
+    if (
+        step_id == "first_search"
+        and facts.saved_searches is not None
+        and facts.applications is not None
+    ):
+        return "I can't see searches you run in your browser"
+    return "couldn't check just now"
+
+
+def learn_text(view: FirstRunView, facts: FirstRunFacts, web_url: str | None) -> RichText:
+    """The first-run checklist as a message: the five steps with where each stands (done, todo,
+    or unknown, and why), then the next step to take and where to do it.
+
+    Every word is ours: the only value that is not a constant is the website's address, put in
+    as plain text. A step the chat cannot check is shown as unknown and never named as next."""
+    lines: list[str] = []
+    for step in view.steps:
+        line = f"{_STEP_MARKS[step.status]} {step.label}"
+        if step.status == "unknown":
+            line += f" -- {_unknown_note(step.id, facts)}"
+        lines.append(line)
+
+    parts: list[str | Segment] = [
+        "📋 ",
+        bold(f"Getting started -- {view.done_count} of {len(STEP_IDS)} done"),
+        "\n\n" + "\n".join(lines) + "\n\n",
+    ]
+    next_step = view.next_step
+    if next_step is not None:
+        where = (
+            f"On the website: {web_url}{next_step.page}"
+            if web_url is not None
+            else f"On the website: {_STEP_WEB_PAGES[next_step.id]}."
+        )
+        parts += [bold("Next: "), next_step.label, "\n", _STEP_HINTS[next_step.id], "\n", where]
+    elif view.done_count == len(STEP_IDS):
+        parts.append("All five are done -- you're set up.")
+    else:
+        unchecked = ", ".join(s.label for s in view.steps if s.status == "unknown")
+        parts.append(f"Everything I could check is done. I couldn't confirm: {unchecked}.")
+    return rich(*parts)
 
 
 # -- formatted messages --------------------------------------------------------------------

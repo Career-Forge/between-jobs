@@ -43,6 +43,7 @@ from between_jobs.api.app_state import (
     get_telegram_client,
     get_webhook_secret,
 )
+from between_jobs.api.artifact_versions_store import artifact_id_for
 from between_jobs.api.link_completion import LinkCompletion
 
 SECRET = "test-secret-not-real"
@@ -93,6 +94,7 @@ class World:
         compile_status: int = 200,
         entity_error_marker: str | None = None,
         telegram_down_on: str | None = None,
+        edit_error: str | None = None,
     ) -> None:
         self.telegram: list[dict[str, Any]] = []
         self.document_bytes = document_bytes
@@ -102,6 +104,7 @@ class World:
         self.compile_status = compile_status
         self.entity_error_marker = entity_error_marker
         self.telegram_down_on = telegram_down_on
+        self.edit_error = edit_error
         self._message_id = 100
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -144,6 +147,10 @@ class World:
         body = json.loads(request.content) if request.content else {}
         self.telegram.append({"method": method, "json": body})
         text = str(body.get("text", ""))
+        if method == "editMessageText" and self.edit_error is not None:
+            return httpx.Response(
+                400, json={"ok": False, "description": self.edit_error}, request=request
+            )
         if self.telegram_down_on and self.telegram_down_on in text:
             return httpx.Response(500, json={"ok": False}, request=request)
         if (
@@ -431,6 +438,81 @@ _add(
     world={"apply_body": _PREP_OK},
 )
 
+# generating a resume, when the one progress message cannot be edited
+_add(
+    "generate_button_when_the_progress_message_was_deleted",
+    _callback(_PREP_CALLBACK),
+    sb=_PREP,
+    world={
+        "apply_body": _PREP_OK,
+        "edit_error": "Bad Request: message to edit not found",
+    },
+)
+_add(
+    "generate_button_when_the_progress_message_cannot_be_edited_and_the_engine_declines",
+    _callback(_PREP_CALLBACK),
+    sb=_PREP,
+    world={
+        "apply_body": _PREP_DECLINED,
+        "edit_error": "Bad Request: message can't be edited",
+    },
+)
+
+# /privacy and /learn
+_WEB_ENV = {"WEB_APP_URL": "https://app.between-jobs.example"}
+_add("privacy_for_a_linked_user", _message("/privacy"), sb={"existing_user": "web"}, env=_WEB_ENV)
+_add("privacy_as_a_plain_word", _message("privacy"), sb={"existing_user": "web"}, env=_WEB_ENV)
+_add("privacy_on_a_server_with_no_web_address", _message("/privacy"), sb={"existing_user": "web"})
+_add("privacy_for_a_telegram_only_user", _message("/privacy"), env=_WEB_ENV)
+_add(
+    "learn_for_a_new_account",
+    _message("/learn"),
+    sb={
+        "existing_user": "web",
+        "profile": {"select_rows": []},
+        "applications": [],
+        "credentials": [],
+        "saved_searches": [],
+    },
+    env=_WEB_ENV,
+)
+_add(
+    "learn_for_an_account_a_resume_away_from_done",
+    _message("/learn"),
+    sb={
+        "existing_user": "web",
+        "profile": {"select_rows": [_CHECK_RESUME_ROW]},
+        "applications": [{**webhook_fakes._APP_1, "id": "app-1", "source_channel": "telegram"}],
+        "credentials": [{"service": "llm", "provider": "openrouter", "is_validated": True}],
+        "saved_searches": [{"id": "search-1"}],
+    },
+    env=_WEB_ENV,
+)
+_add(
+    "learn_for_a_finished_account_on_a_server_with_no_web_address",
+    _message("learn"),
+    sb={
+        "existing_user": "web",
+        "profile": {"select_rows": [_CHECK_RESUME_ROW]},
+        "applications": [{**webhook_fakes._APP_1, "id": "app-1", "source_channel": "web"}],
+        "credentials": [{"service": "llm", "provider": "openrouter", "is_validated": True}],
+        "saved_searches": [],
+        "resume_for": ["app-1"],
+    },
+)
+_add(
+    "learn_when_the_account_cannot_be_read",
+    _message("/learn"),
+    sb={
+        "existing_user": "web",
+        "profile": {"select_rows": [_CHECK_RESUME_ROW]},
+        "unreadable": ["applications", "saved_searches"],
+        "credentials": [{"service": "llm", "provider": "openrouter", "is_validated": True}],
+    },
+    env=_WEB_ENV,
+)
+_add("learn_for_a_telegram_only_user", _message("/learn"), env=_WEB_ENV)
+
 # linking
 _add("link_succeeds", _message("/link ABCD2345"), sb={"rpc_data": _LINK_OK}, finish="retired")
 _add(
@@ -590,7 +672,30 @@ def _supabase(config: dict[str, Any]) -> ComposedSupabase:
         supabase._extra["capability_preferences"] = prepare_fakes._FakeTable(
             select_rows=config["prefs"]
         )
+    if "credentials" in config:
+        supabase._extra["provider_credentials"] = prepare_fakes._FakeTable(
+            select_rows=config["credentials"]
+        )
+    if "saved_searches" in config:
+        supabase._extra["saved_searches"] = prepare_fakes._FakeTable(
+            select_rows=config["saved_searches"]
+        )
+    if "resume_for" in config:
+        supabase._extra["artifact_versions"] = prepare_fakes._FakeTable(
+            select_rows=[
+                {"artifact_id": artifact_id_for(a, "resume")} for a in config["resume_for"]
+            ]
+        )
+    for name in config.get("unreadable", []):
+        supabase._extra[name] = _Unreadable()
     return supabase
+
+
+class _Unreadable:
+    """A table whose every read fails, as a database that is down would."""
+
+    def select(self, *_: Any, **__: Any) -> Any:
+        raise ConnectionError("the database is unreachable")
 
 
 def _finish_link(mode: str | None) -> Callable[..., Any]:
@@ -645,6 +750,10 @@ def run_scenario(name: str, stack: Stack) -> dict[str, Any]:
     try:
         with ExitStack() as stack_:
             stack_.enter_context(mock.patch.dict(os.environ, env))
+            # The web address is part of what /privacy and /learn say: a scenario that does not
+            # give one has none, whatever the machine running the test has in its environment.
+            if "WEB_APP_URL" not in env:
+                os.environ.pop("WEB_APP_URL", None)
             stack_.enter_context(mock.patch.object(rate_limits, "claim_rate_limit_slot", claim))
             stack_.enter_context(mock.patch(f"{stack.patch_module}.link_schema_ready", link_ready))
             stack_.enter_context(

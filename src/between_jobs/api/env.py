@@ -6,6 +6,7 @@ import logging
 import os
 import re
 from typing import NoReturn
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -83,3 +84,54 @@ def optional_uuid_set(name: str) -> frozenset[str] | None:
     if not all(_CANONICAL_UUID.fullmatch(entry) for entry in entries):
         refuse(f"{name} must be a comma-separated list of user ids (UUIDs), with no empty entries")
     return frozenset(entry.lower() for entry in entries)
+
+
+def https_url_or_refuse(name: str, value: str) -> str:
+    """`value` as the https address it is, without a trailing slash, or `refuse`: the API does
+    not start, and the message names the setting `name` and never the value (an address in a
+    setting can carry credentials, which is one of the things refused).
+
+    Only what is safe to put in front of a person and to append a path to is accepted: the
+    `https` scheme and a host, optionally a port and a path, and nothing else -- no user name
+    or password, no query string, no fragment, no whitespace, control or invisible character
+    (a zero-width space or a direction mark pasted in from a chat or a document would cut the
+    link the bot prints, with nothing to see), and no backslash. `urlsplit` is lenient (it reads
+    "https:host" as a path), so the shape is checked on the string as written too."""
+    problem = _url_problem(value)
+    if problem is not None:
+        refuse(f"{name} must be an https URL with a host, and no credentials, query or fragment")
+    return value.rstrip("/")
+
+
+def _url_problem(value: str) -> str | None:
+    if not value.lower().startswith("https://"):
+        return "not https"
+    # `isprintable` is False for every control, format (zero-width, direction, soft hyphen, byte
+    # order mark), separator, private-use and unassigned character, and for DEL; ordinary letters
+    # of any script (an internationalised host or path) pass. A plain space is printable, so it is
+    # refused by `isspace`.
+    if any(ch.isspace() or not ch.isprintable() or ch == "\\" for ch in value):
+        return "whitespace, a control or invisible character, or a backslash"
+    if "?" in value or "#" in value:
+        return "a query or fragment"
+    try:
+        parts = urlsplit(value)
+        _port = parts.port  # raises ValueError for a port that is not a number in range
+    except ValueError:
+        return "not a valid address"
+    if not parts.hostname:
+        return "no host"
+    if parts.username is not None or parts.password is not None or "@" in parts.netloc:
+        return "credentials"
+    return None
+
+
+def web_app_url() -> str | None:
+    """The public address of the web app (WEB_APP_URL), or None when it is unset or empty.
+    The bot uses it to link to the website's pages from a chat. A bad value stops the API from
+    starting (the lifespan reads this once at boot); it is read again, cheaply, wherever a link
+    is built, so a value can never be used without having passed the check."""
+    raw = (optional_env("WEB_APP_URL") or "").strip()
+    if raw == "":
+        return None
+    return https_url_or_refuse("WEB_APP_URL", raw)

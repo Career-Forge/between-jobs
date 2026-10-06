@@ -87,6 +87,8 @@ def test_the_scan_finds_the_variables_it_should() -> None:
         # read through the strict on/off helper, from a module-level constant
         "TESTER_PROGRAM_REQUIRED",
         "LATEX_SERVICE_BASE_URL",
+        # read through `optional_env`, then checked as a URL
+        "WEB_APP_URL",
         "DISABLE_OUTBOX_WORKER",
         # read through the id-list helper, from a module-level constant
         "HIRING_SIGNALS_ALLOWED_USER_IDS",

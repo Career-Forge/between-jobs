@@ -120,6 +120,9 @@ class _ChainBuilder:
     def eq(self, *_: Any, **__: Any) -> _ChainBuilder:
         return self
 
+    def in_(self, *_: Any, **__: Any) -> _ChainBuilder:
+        return self
+
     def order(self, *_: Any, **__: Any) -> _ChainBuilder:
         return self
 
@@ -287,15 +290,41 @@ class _FakeHttpClient:
 
 
 class _FakeTelegramClient:
+    """Telegram as far as the bot can tell: a sent message gets an id, and an edit of that id
+    changes what the chat shows (`shown`), the way editMessageText does."""
+
     def __init__(self) -> None:
         self.sent: list[tuple[int, str, dict[str, Any] | None]] = []
+        self.edited: list[tuple[int, int, str, dict[str, Any] | None]] = []
         self.documents_sent: list[tuple[int, str, bytes, str | None]] = []
         self.answered_callback_ids: list[str] = []
+        self._next_message_id = 100
+        self._shown: dict[tuple[int, int], tuple[str, dict[str, Any] | None]] = {}
+
+    @property
+    def shown(self) -> list[tuple[int, str, dict[str, Any] | None]]:
+        """The messages in the chat as they read now: each one sent, with its last edit."""
+        return [(chat, text, markup) for (chat, _id), (text, markup) in self._shown.items()]
 
     async def send_message(
         self, chat_id: int, text: str, *, reply_markup: dict[str, Any] | None = None
-    ) -> None:
+    ) -> int:
         self.sent.append((chat_id, text, reply_markup))
+        self._next_message_id += 1
+        self._shown[(chat_id, self._next_message_id)] = (text, reply_markup)
+        return self._next_message_id
+
+    async def edit_message_text(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        *,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> int:
+        self.edited.append((chat_id, message_id, text, reply_markup))
+        self._shown[(chat_id, message_id)] = (text, reply_markup)
+        return message_id
 
     async def send_document(
         self, chat_id: int, filename: str, content: bytes, *, caption: str | None = None
@@ -367,12 +396,15 @@ def test_prepare_callback_success_sends_document_with_score_caption() -> None:
     assert http.post_calls[0].endswith("/apply")
     assert http.post_calls[1].endswith("/compile")
 
-    # Sprint 3.4d -- a follow-up "Mark as applied" prompt with the right
-    # application_id baked into its callback_data.
-    prompt = next(rm for _c, _t, rm in telegram.sent if rm is not None)
+    # The one progress message ends as the final state, with the "Mark as applied" button
+    # carrying the right application_id in its callback_data -- not a new message.
+    assert [text for _c, _id, text, _rm in telegram.edited][-1].startswith("✅ Done")
+    prompt = telegram.edited[-1][3]
+    assert prompt is not None
     assert (
         prompt["inline_keyboard"][0][0]["callback_data"] == f"app:stage:{_APPLICATION_ID}:applied"
     )
+    assert len(telegram.sent) == 1
 
 
 def test_prepare_callback_answers_the_callback_before_running() -> None:
@@ -402,7 +434,7 @@ def test_prepare_callback_setup_required_sends_honest_error_no_document() -> Non
     assert response.status_code == 200
     assert telegram.documents_sent == []
     assert http.post_calls == []
-    error_texts = [text for _cid, text, _rm in telegram.sent if text.startswith("❌")]
+    error_texts = [text for _cid, text, _rm in telegram.shown if text.startswith("❌")]
     assert len(error_texts) == 1
 
 
@@ -421,7 +453,7 @@ def test_prepare_callback_declined_gate_sends_warnings_no_document() -> None:
 
     assert response.status_code == 200
     assert telegram.documents_sent == []
-    declined_texts = [text for _cid, text, _rm in telegram.sent if "Fit score too low." in text]
+    declined_texts = [text for _cid, text, _rm in telegram.shown if "Fit score too low." in text]
     assert len(declined_texts) == 1
 
 
@@ -434,7 +466,7 @@ def test_prepare_callback_compile_failure_sends_honest_error() -> None:
 
     assert response.status_code == 200
     assert telegram.documents_sent == []
-    error_texts = [text for _cid, text, _rm in telegram.sent if text.startswith("❌")]
+    error_texts = [text for _cid, text, _rm in telegram.shown if text.startswith("❌")]
     assert len(error_texts) == 1
 
 
@@ -536,7 +568,7 @@ def test_prepare_callback_setup_required_is_recorded_once_for_the_attempt_and_on
     )
 
     assert response.status_code == 200
-    assert len([t for _c, t, _rm in telegram.sent if t.startswith("❌")]) == 1
+    assert len([t for _c, t, _rm in telegram.shown if t.startswith("❌")]) == 1
     assert [(r["event"], r["outcome"], r["capability"]) for r in recorded_events] == [
         ("prepare_finished", "setup_required", "prepare_application"),
         ("setup_required", "setup_required", "prepare_application"),

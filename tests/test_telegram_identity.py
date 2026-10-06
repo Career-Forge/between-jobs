@@ -259,6 +259,114 @@ async def test_another_channel_is_refused_so_its_subjects_are_never_filed_under_
     assert client._select_calls == 0  # and the table was never touched
 
 
+# -- what the sender lookup asks the shared seam for ----------------------------------------------
+#
+# The service-role client bypasses row-level security, so the filters of the lookup ARE the
+# ownership boundary: asking for another channel or another tenant would resolve a stranger. The
+# fakes above ignore `.eq()`, and `test_channel_identity` pins only the shared function's own
+# filters, so what THIS module passes it is pinned here, on the first lookup and on the read-back
+# after a lost race alike.
+
+_WHO = [("channel", "telegram"), ("external_tenant", ""), ("external_subject", "555")]
+_UNIQUE = APIError(
+    {"message": "duplicate key value", "code": "23505", "hint": None, "details": None}
+)
+
+
+class _RecordedSelect:
+    def __init__(self, rows: list[dict[str, Any]], seen: list[list[tuple[str, Any]]]) -> None:
+        self._rows = rows
+        self._filters: list[tuple[str, Any]] = []
+        seen.append(self._filters)
+
+    def eq(self, column: str, value: Any) -> _RecordedSelect:
+        self._filters.append((column, value))
+        return self
+
+    async def execute(self) -> SimpleNamespace:
+        return SimpleNamespace(data=self._rows)
+
+
+class _RecordedIdentities:
+    """`channel_identities`: one query per `.select()` (so the first lookup and the read-back are
+    told apart), each answering the next of `selects`; and the rows that were inserted."""
+
+    def __init__(
+        self, selects: list[list[dict[str, Any]]], *, insert_error: APIError | None = None
+    ) -> None:
+        self._selects = list(selects)
+        self._insert_error = insert_error
+        self.queries: list[list[tuple[str, Any]]] = []
+        self.inserted: list[dict[str, Any]] = []
+
+    def select(self, _columns: str) -> _RecordedSelect:
+        return _RecordedSelect(self._selects.pop(0), self.queries)
+
+    def insert(self, data: dict[str, Any]) -> _RecordedIdentities:
+        self.inserted.append(data)
+        return self
+
+    async def execute(self) -> SimpleNamespace:
+        if self._insert_error is not None:
+            raise self._insert_error
+        return SimpleNamespace(data=[{}])
+
+
+class _RecordingClient:
+    def __init__(
+        self, selects: list[list[dict[str, Any]]], *, insert_error: APIError | None = None
+    ) -> None:
+        self.auth = _FakeAuth(_NEW_USER_ID)
+        self.identities = _RecordedIdentities(selects, insert_error=insert_error)
+
+    def table(self, name: str) -> _RecordedIdentities:
+        assert name == "channel_identities"
+        return self.identities
+
+
+async def test_the_first_lookup_is_for_this_telegram_sender_and_nobody_else() -> None:
+    client = _RecordingClient([[{"user_id": _EXISTING_USER_ID}]])
+
+    result = await resolve_or_create_user_id_for_subject(client, "telegram", "555")  # type: ignore[arg-type]
+
+    assert result == _EXISTING_USER_ID
+    assert client.identities.queries == [_WHO]
+
+
+async def test_a_new_sender_is_filed_under_telegram_with_no_tenant() -> None:
+    client = _RecordingClient([[]])
+
+    result = await resolve_or_create_user_id_for_subject(client, "telegram", "555")  # type: ignore[arg-type]
+
+    assert result == _NEW_USER_ID
+    assert client.identities.queries == [_WHO]
+    ((row,),) = [client.identities.inserted]
+    assert {k: row[k] for k in ("user_id", "channel", "external_tenant", "external_subject")} == {
+        "user_id": _NEW_USER_ID,
+        "channel": "telegram",
+        "external_tenant": "",
+        "external_subject": "555",
+    }
+
+
+async def test_the_read_back_after_a_lost_race_asks_for_the_same_sender() -> None:
+    client = _RecordingClient([[], [{"user_id": _EXISTING_USER_ID}]], insert_error=_UNIQUE)
+
+    result = await resolve_or_create_user_id_for_subject(client, "telegram", "555")  # type: ignore[arg-type]
+
+    assert result == _EXISTING_USER_ID  # the request that won the race, not the orphan just made
+    assert client.identities.queries == [_WHO, _WHO]
+
+
+async def test_a_lost_race_whose_winner_cannot_be_read_back_is_an_error_not_a_user_id() -> None:
+    client = _RecordingClient([[], []], insert_error=_UNIQUE)
+
+    with pytest.raises(RuntimeError, match="could not be read back"):
+        await resolve_or_create_user_id_for_subject(client, "telegram", "555")  # type: ignore[arg-type]
+
+    assert client.identities.queries == [_WHO, _WHO]
+
+
 async def test_unlinking_a_subject_deletes_that_subjects_telegram_identity_row() -> None:
     filters: list[tuple[str, Any]] = []
 

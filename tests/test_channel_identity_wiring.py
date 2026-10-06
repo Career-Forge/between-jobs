@@ -47,6 +47,7 @@ _USER_ID_ARGUMENT = {
     "change_stage": 1,
     "rate_limit_error_or_none": 1,
     "is_auto_provisioned_for_subject": 1,
+    "load_first_run_facts": 1,
     "run_prepare_application": 2,
     "latest_resume_pdf": 2,
 }
@@ -108,6 +109,12 @@ def _flows() -> dict[str, tuple[InboundMessage, dict[str, Any], set[str]]]:
             {"change_stage"},
         ),
         "unlink": (inbound("/unlink"), {}, {"is_auto_provisioned_for_subject"}),
+        "privacy": (inbound("/privacy"), {}, {"is_auto_provisioned_for_subject"}),
+        "learn": (
+            inbound("/learn"),
+            {},
+            {"is_auto_provisioned_for_subject", "load_first_run_facts"},
+        ),
     }
 
 
@@ -133,7 +140,7 @@ async def test_every_call_is_for_the_resolved_user_and_every_reply_is_for_the_co
         async def spy(*args: Any, **kwargs: Any) -> Any:
             user_arguments.append((name, args[index]))
             if name == "is_auto_provisioned_for_subject":
-                return False  # a linked account, so /unlink goes through
+                return False  # a linked account, so /unlink, /privacy and /learn go through
             return await original(*args, **kwargs)
 
         return spy

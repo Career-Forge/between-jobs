@@ -55,6 +55,48 @@ def test_check_resume_matches(text: str) -> None:
 
 @pytest.mark.parametrize(
     "text",
+    ["/privacy", "/PRIVACY", "privacy", "Privacy", "privacy?", "privacy policy", "  /privacy  "],
+)
+def test_privacy_matches(text: str) -> None:
+    assert classify(text) == Intent.PRIVACY
+
+
+@pytest.mark.parametrize("text", ["/learn", "/LEARN", "learn", "Learn", "learn?", "  /learn  "])
+def test_learn_matches(text: str) -> None:
+    assert classify(text) == Intent.LEARN
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "https://example.com/careers/privacy-engineer",
+        "https://example.com/learn",
+        "https://boards.greenhouse.io/acme/jobs/1?utm=learn",
+        "learn more about this role",
+        "privacy engineer at Acme",
+        "what is your privacy policy?",
+        "/privacy please",
+        "/learn more",
+        "/privacy_extra",
+        "unlearn",
+        "my privacy",
+    ],
+)
+def test_privacy_and_learn_are_whole_message_commands_and_nothing_else_is_taken_for_them(
+    text: str,
+) -> None:
+    """A pasted URL, a job title or a sentence that merely contains the word is ordinary text:
+    the commands are the whole message."""
+    assert classify(text) == Intent.UNKNOWN
+
+
+def test_a_job_paste_about_privacy_is_still_a_job_paste() -> None:
+    paste = "Title: Privacy Engineer\nCompany: Acme\n\nLearn the stack."
+    assert looks_like_job_paste(paste)  # checked before classify(), so it never gets there
+
+
+@pytest.mark.parametrize(
+    "text",
     [
         "hello",
         "find ML jobs in NYC",

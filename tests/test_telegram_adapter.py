@@ -468,6 +468,77 @@ async def test_the_renderer_and_the_real_client_put_the_expected_json_on_the_wir
     ]
 
 
+def _renderer_answering(status: int, body: dict[str, Any]) -> tuple[TelegramRenderer, list[str]]:
+    """The renderer over the real client, with Telegram answering every call with this."""
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(request.url.path.rsplit("/", 1)[-1])
+        return httpx.Response(status, json=body)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return TelegramRenderer(TelegramClient(http, "test-token-not-real")), methods
+
+
+async def test_an_edit_that_would_change_nothing_is_not_a_failure() -> None:
+    """Telegram refuses to "edit" a message to the text it already has with a 400. The message
+    reads as asked, so the renderer answers with its reference instead of raising (and the
+    progress message does not send a duplicate of what is already on screen)."""
+    renderer, methods = _renderer_answering(
+        400,
+        {
+            "ok": False,
+            "description": "Bad Request: message is not modified: specified new message content "
+            "and reply markup are exactly the same as a current content and reply markup",
+        },
+    )
+    ref = MessageRef("987654321", "31")
+
+    assert await renderer.edit(EditMessage(ref, rich("same"))) == ref
+    assert methods == ["editMessageText"]  # asked once; not retried, not resent
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (400, {"ok": False, "description": "Bad Request: message to edit not found"}),
+        (400, {"ok": False, "description": "Bad Request: message can't be edited"}),
+        (429, {"ok": False, "description": "Too Many Requests: retry after 5"}),
+        (500, {"ok": False}),
+        # Telegram says "not modified" only with a 400. The same words under any other status
+        # are not that answer, and swallowing them would hide a real failure.
+        (500, {"ok": False, "description": "Bad Request: message is not modified"}),
+        (429, {"ok": False, "description": "Bad Request: message is not modified"}),
+    ],
+    ids=[
+        "deleted",
+        "too old to edit",
+        "rate limited",
+        "server error",
+        "5xx that mentions not modified",
+        "429 that mentions not modified",
+    ],
+)
+async def test_every_other_refusal_of_an_edit_is_raised_for_the_caller(
+    status: int, body: dict[str, Any]
+) -> None:
+    renderer, _methods = _renderer_answering(status, body)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await renderer.edit(EditMessage(MessageRef("987654321", "31"), rich("new")))
+
+
+async def test_a_400_that_is_not_json_is_still_raised() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, content=b"<html>bad gateway</html>")
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    renderer = TelegramRenderer(TelegramClient(http, "test-token-not-real"))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await renderer.edit(EditMessage(MessageRef("987654321", "31"), rich("new")))
+
+
 # -- the notifier --------------------------------------------------------------------------
 
 

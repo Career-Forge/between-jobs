@@ -90,10 +90,59 @@ def test_mint_link_code_success() -> None:
 def test_mint_link_code_rejects_unsupported_channel() -> None:
     supabase = _FakeSupabaseClient()
     with _client(supabase) as client:
-        response = client.post("/link/code", json={"channel": "discord"})
+        response = client.post("/link/code", json={"channel": "slack"})
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "INVALID_INPUT"
+    assert supabase.link_codes.insert_calls == []
+
+
+def test_discord_is_in_the_vocabulary_but_no_code_is_minted_while_nothing_serves_it() -> None:
+    """Discord is a channel the link route knows (so it is not INVALID_INPUT), but there is no
+    Discord adapter yet, so a code for it could not be redeemed: nothing is minted and the
+    answer says Discord is not set up -- never a code that looks as if it worked."""
+    supabase = _FakeSupabaseClient()
+    with _client(supabase) as client:
+        response = client.post("/link/code", json={"channel": "discord"})
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "FEATURE_DISABLED"
+    assert "Discord" in response.json()["error"]["message"]
+    assert supabase.link_codes.insert_calls == []
+    assert supabase.link_codes.delete_calls == 0
+
+
+def test_a_discord_code_is_minted_for_discord_once_a_server_serves_it() -> None:
+    """The route's plumbing is channel-generic: when something turns Discord on, a code is
+    minted for that channel and stored under it (what the adapter's own task will rely on)."""
+    supabase = _FakeSupabaseClient()
+    with _client(supabase) as client:
+        client.app.state.discord_enabled = True  # type: ignore[attr-defined]
+        try:
+            response = client.post("/link/code", json={"channel": "discord"})
+        finally:
+            client.app.state.discord_enabled = False  # type: ignore[attr-defined]
+
+    assert response.status_code == 201
+    assert response.json()["channel"] == "discord"
+    (inserted,) = supabase.link_codes.insert_calls
+    assert inserted["channel"] == "discord"
+    assert inserted["user_id"] == _USER_ID
+
+
+def test_telegram_is_still_refused_on_a_server_without_a_bot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN")
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET")
+    supabase = _FakeSupabaseClient()
+    with _client(supabase) as client:
+        response = client.post("/link/code", json={"channel": "telegram"})
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "FEATURE_DISABLED"
+    assert "Telegram" in response.json()["error"]["message"]
+    assert supabase.link_codes.insert_calls == []
 
 
 def test_mint_link_code_requires_auth() -> None:
