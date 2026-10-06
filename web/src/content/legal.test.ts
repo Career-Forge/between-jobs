@@ -860,12 +860,12 @@ describe("what we store names the small tables that hold something about you", (
   });
 });
 
-// ── nothing records product usage events yet ───────────────────────────────
+// ── product usage events are described, column by column ───────────────────
 
 describe("product usage events", () => {
-  // The tables whose name suggests they record what people do. Each of these three is described
-  // already (application history, event research, the queue behind the Today feed).
-  const DESCRIBED = ["application_events", "event_outbox", "warm_path_events"];
+  // The tables whose name suggests they record what people do. Each is described in the policy:
+  // application history, event research, the queue behind the Today feed, and product usage events.
+  const DESCRIBED = ["application_events", "event_outbox", "product_events", "warm_path_events"];
 
   function eventLikeTables(): string[] {
     const found = new Set<string>();
@@ -877,17 +877,62 @@ describe("product usage events", () => {
     return [...found].sort();
   }
 
-  it("are not recorded by any table the policy does not describe", () => {
+  // What each recorded column means to a reader, and the words the policy must use for it.
+  const COLUMN_WORDS: Record<string, string> = {
+    event: "which feature you used",
+    capability: "which kind of feature it was",
+    application_id: "which application it concerned",
+    ats_type: "which job-site platform it was",
+    outcome: "whether it worked",
+    n_a: "a few counts",
+    n_b: "a few counts",
+    duration_ms: "how long it took",
+    created_at: "and when",
+  };
+  // Tied to the account, which the section's introduction says of everything it lists.
+  const TECHNICAL_COLUMNS = ["id", "user_id"];
+
+  function columnsOf(table: string): string[] {
+    const creators = Object.values(migrationSources).filter((sql) =>
+      new RegExp(`create\\s+table\\s+public\\.${table}\\s*\\(`, "i").test(sql),
+    );
+    expect(creators.length).toBe(1);
+    const body = creators[0].split(new RegExp(`create\\s+table\\s+public\\.${table}\\s*\\(`, "i"))[1].split(/\n\);/)[0];
+    return body
+      .split("\n")
+      .map((line) => /^\s{2}([a-z_]+)\s+(?:uuid|text|integer|timestamptz|boolean)\b/i.exec(line)?.[1])
+      .filter((name): name is string => name !== undefined);
+  }
+
+  it("every table that records what people do is one the policy describes", () => {
     const undescribed = eventLikeTables().filter((table) => !DESCRIBED.includes(table));
     expect(
       undescribed,
-      `${undescribed.join(", ")}: if this table records what people do in the product, the Privacy Policy must describe it in the same change -- name every recorded column (including any that says which application or which job-site platform an event is about), say that an event is deleted with the account, add 'product usage events' to 'Keeping and deleting your data', and reconcile it with 'What you browse' -- and this guard must then check that each column is named. If it records nothing about people, add it to DESCRIBED.`,
+      `${undescribed.join(", ")}: if this table records what people do in the product, the Privacy Policy must describe it in the same change -- name every recorded column in plain words, say that an event is deleted with the account, add it under 'Keeping and deleting your data', and reconcile it with 'What you browse' -- then add it to DESCRIBED and give each column its words below. If it records nothing about people, add it to DESCRIBED.`,
     ).toEqual([]);
   });
 
-  it("are not mentioned in the policy while nothing records them", () => {
-    const text = textsOf(PRIVACY).join("\n");
-    expect(text).not.toMatch(/usage event|product event|product usage/i);
+  it("the policy names every column product_events records, and a new column fails until it does", () => {
+    const columns = columnsOf("product_events");
+    expect([...columns].sort()).toEqual([...TECHNICAL_COLUMNS, ...Object.keys(COLUMN_WORDS)].sort());
+    const stored = sectionText(PRIVACY, "what-we-store");
+    for (const [column, words] of Object.entries(COLUMN_WORDS)) {
+      expect(stored, `${column} must be described as "${words}"`).toContain(words);
+    }
+    expect(stored).toContain("Everything below is tied to your account");
+  });
+
+  it("says what a usage event never contains", () => {
+    const stored = sectionText(PRIVACY, "what-we-store");
+    expect(stored).toContain("never contains what you typed");
+    expect(stored).toContain("your IP address or details of your browser");
+    expect(stored).toContain("it is not sent to any analytics service");
+  });
+
+  it("says usage events go with the account, and reconciles them with what the extension sends", () => {
+    expect(sectionText(PRIVACY, "keeping-deleting")).toContain("product usage events");
+    expect(sectionText(PRIVACY, "what-we-store")).toContain("Product usage events hold no web addresses.");
+    expect(sectionText(PRIVACY, "extension")).toContain("sends no usage events yet");
   });
 });
 

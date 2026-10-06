@@ -376,6 +376,10 @@ export const PRIVACY: LegalDocument = {
             "The question text and the answer you approved, when you press 'Fill & remember' in the extension.",
           ),
           def(
+            "Product usage events",
+            "A short record each time you use a main feature, so we can tell whether the product works for people. It says which feature you used (a search, preparing a resume or cover letter, downloading a PDF, a setup problem, or a form fill by the browser extension), which kind of feature it was (for example company research or interview practice), which application it concerned, which job-site platform it was (for example Greenhouse), whether it worked, a few counts (such as how many results were found or how many form fields were filled), how long it took, and when. It never contains what you typed, your resume or any job text, a web address, your IP address or details of your browser, and it is not sent to any analytics service. The browser extension does not send these records yet; when it does, the only thing it will report is how many fields it tried and filled, never their values.",
+          ),
+          def(
             "Technical records",
             "Counters that limit how often you can use costly features, a record of when you signed the browser extension out, short-lived codes for linking Telegram, a one-time token that ties a Gmail connect attempt to your account (valid for 10 minutes and removed when the attempt comes back, but kept until you delete your account if it never does), the numbered lists of applications the Telegram bot shows you when you ask it to list them (stored as application ids, so that 'apply to #3' means the one you saw: each is valid for 30 minutes, and it is kept until you delete your account), and a queue of internal events that feeds your Today feed.",
           ),
@@ -386,7 +390,7 @@ export const PRIVACY: LegalDocument = {
           "Your provider keys or Gmail connection in readable form. They are encrypted in the database (see 'Security').",
           "Your inbox. If you connect Gmail we keep the connection, and for each reply we classify a short quoted excerpt and the message id (see 'Gmail').",
           "Payment details. Between Jobs takes no payments.",
-          "What you browse. The browser extension keeps no browsing history. On its four supported sites it sends only the address of a page that has an application form, and a little more when you press a button (see 'The browser extension').",
+          "What you browse. The browser extension keeps no browsing history. On its four supported sites it sends only the address of a page that has an application form, and a little more when you press a button (see 'The browser extension'). Product usage events hold no web addresses.",
         ),
       ],
     },
@@ -456,7 +460,7 @@ export const PRIVACY: LegalDocument = {
           "Draft answer uses your AI provider, as described above.",
           "It never clicks a submit button, never ticks a checkbox and fills a form only when you press a button. Questions about gender, race, disability, veteran status and similar self-identification topics are never listed, drafted or filled. It recognizes them by their wording, so read the form before you submit.",
           "On your device it keeps your sign-in in the browser's session storage for extensions (pages you visit cannot read it, and Chrome clears it when the browser restarts), and in local storage the highest field-map version it has accepted and whether you have agreed to its first-run notice, until you uninstall it.",
-          "It has no analytics. 'Sign out' in its panel ends its session and tells the API to reject the tokens it had issued.",
+          "It has no analytics of its own and sends no usage events yet. Later it may report, as plain counts, how many form fields a fill tried and completed (see 'Product usage events'), never the values, the questions or the page. 'Sign out' in its panel ends its session and tells the API to reject the tokens it had issued.",
         ),
       ],
     },
@@ -475,7 +479,7 @@ export const PRIVACY: LegalDocument = {
       blocks: [
         ul(
           "We keep your data while your account exists.",
-          "'Delete my account' on the Profile page removes your account and everything tied to it, immediately and for good: your profile, applications, documents and the files stored for them, saved searches, keys, connections, practice sessions, research and the rest of what is listed above. It also asks Google to revoke a Gmail connection, signs out your sessions and the browser extension, clears Telegram link-attempt counters and removes your entries from our sign-in provider's audit log. Those extra steps are made on a best-effort basis.",
+          "'Delete my account' on the Profile page removes your account and everything tied to it, immediately and for good: your profile, applications, documents and the files stored for them, saved searches, keys, connections, practice sessions, research, product usage events and the rest of what is listed above. It also asks Google to revoke a Gmail connection, signs out your sessions and the browser extension, clears Telegram link-attempt counters and removes your entries from our sign-in provider's audit log. Those extra steps are made on a best-effort basis.",
           [
             "You can also ask us to delete your account by email at ",
             privacyEmail,
