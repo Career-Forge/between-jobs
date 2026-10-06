@@ -89,6 +89,7 @@ Capability = Literal[
     "positioning_brief",
     "prepare_application",
     "profile",
+    "profile_import",
     "warm_path_events",
 ]
 """Exactly the keys the backend resolves a credential for (`credential_resolver.resolve`) or names

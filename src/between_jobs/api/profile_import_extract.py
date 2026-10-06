@@ -1476,15 +1476,15 @@ def extraction_reply(data: bytes, kind: DocumentKind, timeout: float) -> bytes:
     try:
         document = extract_text_sync(data, kind, timeout=timeout)
     except ExtractionError as e:
-        payload = {"ok": False, "reason": e.reason, "message": e.message}
+        payload = {"ok": False, "reason": e.reason, "detail": e.message}
     except MemoryError:
-        payload = {"ok": False, "reason": "unsafe", "message": _OUT_OF_MEMORY}
+        payload = {"ok": False, "reason": "unsafe", "detail": _OUT_OF_MEMORY}
     except Exception as e:  # a defect in the reader, not something to blame the file for
         logger.warning("resume reader failed", extra={"ctx": {"error_type": type(e).__name__}})
         payload = {
             "ok": False,
             "reason": "unreadable",
-            "message": _UNREADABLE,
+            "detail": _UNREADABLE,
             "error_type": type(e).__name__,
         }
     else:
@@ -1528,7 +1528,7 @@ def _decode_reply(raw: bytes, kind: DocumentKind) -> ExtractedDocument:
         raise _unreadable()
 
     if payload.get("ok") is False:
-        reason, message = payload.get("reason"), payload.get("message")
+        reason, message = payload.get("reason"), payload.get("detail")
         if reason not in _REASONS or not isinstance(message, str):
             raise _unreadable()
         if payload.get("error_type"):

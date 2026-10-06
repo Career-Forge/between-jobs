@@ -58,14 +58,22 @@ _USER = "00000000-0000-0000-0000-0000000000a1"
 
 # -- the closed lists the database and the code share ----------------------------------------
 
-_REVIEWED_ALTERATIONS: frozenset[str] = frozenset()
+_CHECK_LIST_ONLY_ALTERATIONS: frozenset[str] = frozenset(
+    {"20261006060304_allow_profile_import_in_product_events.sql"}
+)
+"""Later migrations that only replace one closed CHECK list on `product_events` (they add a
+value to the capability list). The closed-list parity checks below read the LAST definition of a
+list across the creating migration and these, so they stay unit-level checks."""
+
+_REVIEWED_ALTERATIONS: frozenset[str] = _CHECK_LIST_ONLY_ALTERATIONS
 """Migrations (file names) other than the creating one that change `product_events`, each added
 only after the live-catalog tests in tests/integration/test_local_product_events.py were updated
-for what it changed. While this is non-empty the checks below that read only the creating
-migration are skipped: they would describe a table that no longer exists."""
+for what it changed. While one of them changes more than a CHECK list, the checks below that
+read only the creating migration are skipped: they would describe a table that no longer
+exists."""
 
 _creating_migration_is_current = pytest.mark.skipif(
-    bool(_REVIEWED_ALTERATIONS),
+    bool(_REVIEWED_ALTERATIONS - _CHECK_LIST_ONLY_ALTERATIONS),
     reason="a later migration changed product_events; the live-catalog tests are the guard",
 )
 
@@ -160,6 +168,15 @@ def _check_list(table: str, column: str) -> set[str]:
     )
     assert match is not None, f"no `{column} in (...)` CHECK on {table}"
     values = re.findall(r"'([^']*)'", match.group(1))
+    # A later migration that only replaces this list wins, in file order.
+    for name in sorted(_CHECK_LIST_ONLY_ALTERATIONS):
+        later = re.findall(
+            rf"\bcheck\s*\(\s*{column}\s+in\s*\((.*?)\)\s*\)",
+            (_MIGRATIONS / name).read_text(),
+            re.DOTALL,
+        )
+        if table == "product_events" and later:
+            values = re.findall(r"'([^']*)'", later[-1])
     assert len(values) == len(set(values)), f"{table}.{column} lists a value twice"
     return set(values)
 

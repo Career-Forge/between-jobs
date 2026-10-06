@@ -1923,7 +1923,7 @@ async def test_the_real_child_cannot_see_the_services_secrets(
     script = (
         "import json, os; "
         "print(json.dumps({'ok': False, 'reason': 'unreadable', "
-        "'message': os.environ.get('OPENROUTER_API_KEY', 'absent')}))"
+        "'detail': os.environ.get('OPENROUTER_API_KEY', 'absent')}))"
     )
     with _worker_script(monkeypatch, script), pytest.raises(ExtractionError) as error:
         await extract_document_text(b"%PDF-", "pdf")
@@ -2017,14 +2017,14 @@ def test_a_reply_that_is_not_a_json_object_is_unreadable(raw: bytes) -> None:
 def test_the_reasons_a_child_reports_are_passed_on_and_no_others() -> None:
     for reason in ("no_text", "encrypted", "unsafe", "timeout", "empty", "unsupported_type"):
         with pytest.raises(ExtractionError) as error:
-            _decode({"ok": False, "reason": reason, "message": "A message."})
+            _decode({"ok": False, "reason": reason, "detail": "A message."})
         assert (_reason(error), error.value.message) == (reason, "A message.")
     for bad in ("busy", "bogus", None, 3):
         with pytest.raises(ExtractionError) as unexpected:
-            _decode({"ok": False, "reason": bad, "message": "A message."})
+            _decode({"ok": False, "reason": bad, "detail": "A message."})
         assert _reason(unexpected) == "unreadable"
     with pytest.raises(ExtractionError) as long:
-        _decode({"ok": False, "reason": "unsafe", "message": "m" * 5_000})
+        _decode({"ok": False, "reason": "unsafe", "detail": "m" * 5_000})
     assert len(long.value.message) == 500
 
 
@@ -2177,7 +2177,7 @@ def test_a_defect_in_the_reader_is_reported_not_raised(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(extract, "extract_text_sync", out_of_memory)
     reply = json.loads(extract.extraction_reply(b"%PDF-", "pdf", 20.0))
-    assert reply["reason"] == "unsafe" and "memory" in reply["message"]
+    assert reply["reason"] == "unsafe" and "memory" in reply["detail"]
 
 
 async def test_the_sniff_runs_off_the_event_loop_too() -> None:
