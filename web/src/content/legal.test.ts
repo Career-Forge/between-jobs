@@ -838,7 +838,7 @@ describe("what we store names the small tables that hold something about you", (
   });
 
   it("the numbered lists behind the Telegram bot's 'apply to #3' last 30 minutes and are not purged", () => {
-    expect(apiModule("telegram_webhook")).toContain("create_working_set(");
+    expect(apiModule("channel_core")).toContain("create_working_set(");
     expect(apiModule("working_sets_store")).toContain("_DEFAULT_TTL_SECONDS = 30 * 60");
     expect(stored).toContain("the numbered lists of applications the Telegram bot shows you");
     expect(stored).toContain("each is valid for 30 minutes, and it is kept until you delete your account");
