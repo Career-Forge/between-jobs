@@ -5,7 +5,9 @@
 //
 // RATE_LIMITED is the platform's own per-user limit (429, with `retry_after_seconds`
 // in the envelope's details and a Retry-After header). It is not
-// PROVIDER_RATE_LIMITED, which says an upstream provider throttled the server.
+// PROVIDER_RATE_LIMITED, which says an upstream provider throttled the server. One RATE_LIMITED is
+// the server's own capacity and not the person's count: every resume-file reader being busy, which
+// says so in `details.reason` ("readers_busy", ApiError.reason).
 // PAYLOAD_TOO_LARGE is a request body over the size cap (413).
 // UNSUPPORTED_MEDIA_TYPE is an uploaded file the route does not read (415): a resume that
 // is not a PDF or a DOCX.

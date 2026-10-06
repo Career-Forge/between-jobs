@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from between_jobs.api.app import app
-from between_jobs.api.env import ConfigurationError, refuse, require_env
+from between_jobs.api.env import ConfigurationError, optional_uuid_set, refuse, require_env
 
 _LOGGER = "between_jobs.api.env"
 
@@ -123,3 +123,89 @@ def test_booting_half_configured_for_telegram_names_both_settings_and_neither_va
     [message] = _critical(caplog)
     assert "TELEGRAM_BOT_TOKEN" in message and "TELEGRAM_WEBHOOK_SECRET" in message
     assert "a-value-that-must-not-be-logged" not in message
+
+
+# -- a list of user ids ---------------------------------------------------------------------
+
+_ID_A = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+_ID_B = "00000000-0000-0000-0000-000000000002"
+
+
+@pytest.mark.parametrize("value", [None, "", "   ", "\t"])
+def test_an_unset_or_blank_id_list_is_no_list(
+    monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    if value is None:
+        monkeypatch.delenv("SOME_ID_LIST", raising=False)
+    else:
+        monkeypatch.setenv("SOME_ID_LIST", value)
+    assert optional_uuid_set("SOME_ID_LIST") is None
+
+
+def test_an_id_list_is_split_on_commas_trimmed_and_lower_cased(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SOME_ID_LIST", f"  {_ID_A.upper()} ,{_ID_B}  ")
+    assert optional_uuid_set("SOME_ID_LIST") == frozenset({_ID_A, _ID_B})
+    monkeypatch.setenv("SOME_ID_LIST", _ID_A)
+    assert optional_uuid_set("SOME_ID_LIST") == frozenset({_ID_A})
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "not-a-uuid",
+        f"{_ID_A},oops",
+        f"{_ID_A},,{_ID_B}",  # an empty entry
+        f"{_ID_A},",  # a trailing comma
+        ",",  # nothing at all, but not blank
+        f"urn:uuid:{_ID_A}",  # a spelling Postgres rejects
+        f"{{{_ID_A}}}",
+        _ID_A.replace("-", ""),
+        f"{_ID_A} {_ID_B}",  # two ids with no comma
+        "\uff10" * 8 + "-0000-0000-0000-000000000000",  # full-width digits
+        # A canonical UUID is 8-4-4-4-12 hex digits, and a typo that keeps it nearly right (a
+        # truncated id is the likeliest) would match nobody and look like a working list.
+        _ID_A[:-1],  # last group one short: 35 characters
+        _ID_A + "0",  # last group one long: 37 characters
+        _ID_A[1:],  # first group of 7
+        "0" + _ID_A,  # first group of 9
+        _ID_A.replace("-4e5f-", "-4e5-"),  # second group of 3
+        _ID_A.replace("-4a6b-", "-4a6-"),  # third group of 3
+        _ID_A.replace("-4a6b-", "-4a6bc-"),  # third group of 5
+        _ID_A.replace("-8c7d-", "-8c7-"),  # fourth group of 3
+        _ID_A.replace("0a1b2c3d", "0a1b2c3g"),  # a letter that is not a hex digit
+        "0a1b2c3d4-e5f-4a6b-8c7d-9e0f1a2b3c4d",  # a hyphen one place late
+        # full-width digits are not hex digits anywhere in the id, not just in the first group
+        _ID_A.replace("4e5f", "\uff14\uff10\uff10\uff10"),
+        _ID_A.replace("4a6b", "\uff14\uff10\uff10\uff10"),
+        _ID_A.replace("8c7d", "\uff18\uff10\uff10\uff10"),
+        _ID_A[:24] + "\uff10" * 12,
+    ],
+)
+def test_an_id_list_with_a_bad_entry_stops_the_boot_naming_the_setting_never_the_value(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, value: str
+) -> None:
+    monkeypatch.setenv("SOME_ID_LIST", value)
+    with caplog.at_level(logging.CRITICAL, logger=_LOGGER), pytest.raises(ConfigurationError):
+        optional_uuid_set("SOME_ID_LIST")
+
+    [message] = _critical(caplog)
+    assert message.startswith("the API cannot start: SOME_ID_LIST must be")
+    assert len(value) < 4 or value.strip() not in message  # a lone "," is in the wording
+
+
+def test_booting_with_a_bad_hiring_signals_list_names_the_setting_and_not_the_value(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("HIRING_SIGNALS_ALLOWED_USER_IDS", f"{_ID_A},a-person-not-an-id")
+    with (
+        caplog.at_level(logging.CRITICAL, logger=_LOGGER),
+        pytest.raises(ConfigurationError),
+        TestClient(app),
+    ):
+        pass
+
+    [message] = _critical(caplog)
+    assert "HIRING_SIGNALS_ALLOWED_USER_IDS" in message
+    assert "a-person-not-an-id" not in message and _ID_A not in message

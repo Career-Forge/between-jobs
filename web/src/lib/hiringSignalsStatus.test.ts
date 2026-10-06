@@ -290,3 +290,108 @@ describe("isHiringSignalsEnabled", () => {
     expect(isHiringSignalsEnabled({ kind: "unavailable" })).toBe(false);
   });
 });
+
+// The answer is the signed-in person's own (the server can limit the feature to chosen people),
+// so a store that outlives a sign-out must not hand the next person the previous one's.
+describe("HiringSignalsStatusStore and the person it holds the answer for", () => {
+  it("is nobody's until told, and a reader for a person refuses an answer that is not theirs", async () => {
+    const { fetcher, calls } = wire();
+    const store = new HiringSignalsStatusStore(fetcher);
+    expect(store.isFor("a")).toBe(false);
+    store.setPerson("a");
+    expect(store.isFor("a")).toBe(true);
+    expect(store.isFor("b")).toBe(false);
+    expect(store.isFor(null)).toBe(false);
+    const asked = store.ensure();
+    calls[0].resolve({ enabled: true });
+    await asked;
+    expect(store.getSnapshot()).toEqual({ kind: "enabled" });
+  });
+
+  it("forgets a known answer when a different person is named, and asks again for them", async () => {
+    const { fetcher, calls } = wire();
+    const store = new HiringSignalsStatusStore(fetcher);
+    store.setPerson("a");
+    const first = store.ensure();
+    calls[0].resolve({ enabled: true });
+    await first;
+
+    store.setPerson("b");
+    expect(store.getSnapshot()).toEqual({ kind: "checking" });
+    const second = store.ensure();
+    expect(calls).toHaveLength(2);
+    calls[1].resolve({ enabled: false });
+    await second;
+    expect(store.getSnapshot()).toEqual({ kind: "disabled" });
+  });
+
+  it("keeps everything when the same person is named again", async () => {
+    const { fetcher, calls } = wire();
+    const store = new HiringSignalsStatusStore(fetcher);
+    store.setPerson("a");
+    const first = store.ensure();
+    calls[0].resolve({ enabled: true });
+    await first;
+    store.setPerson("a");
+    await store.ensure();
+    expect(calls).toHaveLength(1);
+    expect(store.getSnapshot()).toEqual({ kind: "enabled" });
+  });
+
+  it("throws away an ask that lands after the person changed, even when the first person is back", async () => {
+    const { fetcher, calls } = wire();
+    const store = new HiringSignalsStatusStore(fetcher);
+    store.setPerson("a");
+    const forA = store.ensure();
+    store.setPerson("b");
+    const forB = store.ensure();
+    expect(calls).toHaveLength(2);
+
+    // A's answer lands after B signed in: it is not B's, and not shown
+    calls[0].resolve({ enabled: true });
+    await forA;
+    expect(store.getSnapshot()).toEqual({ kind: "checking" });
+
+    calls[1].resolve({ enabled: false });
+    await forB;
+    expect(store.getSnapshot()).toEqual({ kind: "disabled" });
+
+    // A -> B -> A while the first ask is still out: the old ask must not count as the new A's
+    const fresh = wire();
+    const other = new HiringSignalsStatusStore(fresh.fetcher);
+    other.setPerson("a");
+    const old = other.ensure();
+    other.setPerson("b");
+    other.setPerson("a");
+    const current = other.ensure();
+    expect(fresh.calls).toHaveLength(2);
+    fresh.calls[0].resolve({ enabled: true });
+    await old;
+    expect(other.getSnapshot()).toEqual({ kind: "checking" });
+    fresh.calls[1].resolve({ enabled: false });
+    await current;
+    expect(other.getSnapshot()).toEqual({ kind: "disabled" });
+  });
+
+  it("tells subscribers when a different person resets a known answer", async () => {
+    const { fetcher, calls } = wire();
+    const store = new HiringSignalsStatusStore(fetcher);
+    store.setPerson("a");
+    const first = store.ensure();
+    calls[0].resolve({ enabled: true });
+    await first;
+    const seen: string[] = [];
+    store.subscribe(() => seen.push(store.getSnapshot().kind));
+    store.setPerson("b");
+    expect(seen).toEqual(["checking"]);
+  });
+
+  it("with no person named at all behaves as it always did (one store, one answer)", async () => {
+    const { fetcher, calls } = wire();
+    const store = new HiringSignalsStatusStore(fetcher);
+    const asked = store.ensure();
+    calls[0].resolve({ enabled: true });
+    await asked;
+    expect(store.getSnapshot()).toEqual({ kind: "enabled" });
+  });
+});

@@ -17,6 +17,16 @@
 // the next consumer to mount asks again, and the tab offers a retry, so a network
 // blip while the shell was loading does not switch the feature off until reload.
 //
+// THE ANSWER BELONGS TO A PERSON. When the operator names who may use the feature
+// (the server's HIRING_SIGNALS_ALLOWED_USER_IDS), the same server answers
+// differently for different people, and a page that stays open across a sign-out
+// and a sign-in as someone else must not show the second person the first one's
+// answer -- or, worse, a nav entry the server will refuse them. So the store
+// remembers whose answer it holds (`setPerson`): a different person starts again
+// from "checking", and an ask still in flight for the previous person is thrown
+// away when it lands. `isFor` lets a reader refuse an answer that is not its
+// person's during the render before the store has been told.
+//
 // WHILE IT IS NOT KNOWN, THE FEATURE IS HIDDEN. Showing a nav item that then
 // disappears is worse than one that appears a moment later, and the cost of the
 // wait is one small request the shell already needs to make. So `checking` and
@@ -75,12 +85,33 @@ export function parseStatusBody(raw: unknown): HiringStatus {
   return { kind: raw.enabled ? "enabled" : "disabled" };
 }
 
+export const CHECKING: HiringStatus = { kind: "checking" };
+
 export class HiringSignalsStatusStore {
-  private snapshot: HiringStatus = { kind: "checking" };
+  private snapshot: HiringStatus = CHECKING;
   private readonly listeners = new Set<() => void>();
   private pending: Promise<void> | null = null;
+  // Whose answer the snapshot is: a user id, or null before anyone has been named.
+  private person: string | null = null;
+  // Counts the changes of person, so an ask can tell that the person it was made for has gone.
+  private generation = 0;
 
   constructor(private readonly fetcher: Fetcher) {}
+
+  // Says whose answer this store holds from now on. The same person again is nothing; a
+  // different one (another sign-in, or none) forgets the answer, forgets the ask in flight and
+  // goes back to "checking" until the next `ensure`.
+  setPerson = (userId: string | null): void => {
+    if (userId === this.person) return;
+    this.person = userId;
+    this.generation += 1;
+    this.pending = null;
+    this.set(CHECKING);
+  };
+
+  // Whether the snapshot is this person's. False until `setPerson` has been told about them,
+  // which a reader draws as "not known yet" rather than as the previous person's answer.
+  isFor = (userId: string | null): boolean => userId === this.person;
 
   // Arrow properties, so they can be handed to `useSyncExternalStore` unbound.
   getSnapshot = (): HiringStatus => this.snapshot;
@@ -113,21 +144,24 @@ export class HiringSignalsStatusStore {
 
   private request(): Promise<void> {
     if (this.pending !== null) return this.pending;
-    const pending = this.run();
+    const pending = this.run(this.generation);
     // Recorded BEFORE anyone is told anything, so a listener that reacts to the
     // change by asking again joins this request instead of starting another.
     this.pending = pending;
-    this.set({ kind: "checking" });
+    this.set(CHECKING);
     return pending;
   }
 
-  private async run(): Promise<void> {
+  private async run(generation: number): Promise<void> {
     let next: HiringStatus;
     try {
       next = parseStatusBody(await this.fetcher<unknown>(STATUS_PATH));
     } catch (error) {
       next = classifyStatusError(error);
     }
+    // The person changed while this was in flight: the answer is for someone who is gone, and
+    // `setPerson` has already cleared the ask it belonged to.
+    if (generation !== this.generation) return;
     this.pending = null;
     this.set(next);
   }

@@ -191,6 +191,14 @@
   border-color: var(--bj-danger);
 }
 
+/* Two or more badges side by side where a card header has room for one. */
+.bj-badge-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .bj-badge-muted {
   font-size: 12px;
   font-weight: 600;
@@ -2643,5 +2651,145 @@ a.bj-button-link-primary:hover {
 
   .bj-enroll-facts dd {
     margin-bottom: 8px;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Resume file import (the card on Profile)                            */
+/* ------------------------------------------------------------------ */
+
+.bj-import {
+  overflow-wrap: anywhere;
+}
+
+/* Gold is review and uncertainty: this is the "check it yourself" notice, with words, a border and a
+   position of its own, so the colour is never the only signal. */
+.bj-import-warning,
+.bj-import-assumptions,
+.bj-import-confirm {
+  border: 1px solid var(--bj-gold);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.bj-import-assumptions ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.bj-import-notice {
+  border: 1px solid var(--bj-emerald);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.bj-import-failure {
+  margin: 8px 0;
+}
+
+.bj-import .bj-actions {
+  margin-top: 14px;
+}
+
+.bj-import-section {
+  margin-top: 18px;
+}
+
+.bj-import-section h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.bj-import-block {
+  margin-bottom: 12px;
+}
+
+.bj-import-block h5 {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  color: var(--bj-text-muted);
+}
+
+.bj-import-fields {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bj-import-field {
+  display: grid;
+  grid-template-columns: minmax(110px, 170px) minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: start;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-import-field dt {
+  color: var(--bj-text-muted);
+  font-size: 13px;
+}
+
+.bj-import-field dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.bj-import-toggle {
+  margin-left: 8px;
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+.bj-import-assumed {
+  color: var(--bj-gold);
+  margin-top: 4px;
+}
+
+.bj-import-source {
+  margin-top: 8px;
+}
+
+.bj-import-text {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-surface);
+  padding: 10px 12px;
+}
+
+.bj-import-text pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--bj-font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+/* The part of the file a value came from: a tint AND an underline, so it shows without colour. */
+.bj-import-mark {
+  background: rgba(199, 161, 90, 0.35); /* --bj-gold at 35% */
+  color: inherit;
+  border-bottom: 2px solid var(--bj-gold);
+}
+
+.bj-import-dropped ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.bj-import-dropped li {
+  margin-bottom: 6px;
+}
+
+@media (max-width: 560px) {
+  .bj-import-field {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

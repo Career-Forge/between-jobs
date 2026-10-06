@@ -43,11 +43,17 @@ export interface Personal {
   links?: Links;
   location?: PersonalLocation;
   work_authorization?: string;
-  // S5 (honest-score-surfaces.md, D1): render-only, locale-gated on
-  // generation -- see profile.py's own field comment. No editing UI for
-  // this yet; manual JSON paste already accepts it (extra="forbid" only
-  // rejects UNKNOWN fields, not known-but-omitted ones).
+  // The locale-specific, render-only fields profile.py keeps so the canonical JSON can round-trip
+  // them (see its own comment). They never enter a prompt and a document import never fills them;
+  // there is no editing UI for them yet, but a manual JSON paste already accepts them
+  // (extra="forbid" only rejects UNKNOWN fields, not known-but-omitted ones).
+  dob?: string;
   nationality?: string;
+  marital_status?: string;
+  // A map from a name to a status; profile.py gives the keys no further meaning.
+  work_authorization_status?: Record<string, string>;
+  photo?: string;
+  signature?: boolean;
 }
 
 // R5 (resumeforge-shape-and-fit.md): a candidate-set hard guarantee that

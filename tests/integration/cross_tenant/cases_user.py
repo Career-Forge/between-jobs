@@ -513,9 +513,10 @@ NOT_USER_SCOPED: dict[str, NotUserScoped] = {
         "username) read from process state; no user row is read, so nothing of A's can leak",
     ),
     "GET /hiring-signals/status": NotUserScoped(
-        "public",
-        "signed-in only; returns whether DISABLE_HIRING_SIGNALS is unset, a process-wide flag, "
-        "no user row",
+        "own-identity",
+        "no id: answers, for the caller's own verified user id, whether the feature is on for "
+        "them (the process-wide DISABLE_HIRING_SIGNALS switch and the operator's "
+        "HIRING_SIGNALS_ALLOWED_USER_IDS list); reads no user row, so nothing of A's can leak",
     ),
     "GET /discover": NotUserScoped(
         "own-identity",

@@ -51,6 +51,7 @@ from .gmail_reply_checker import _DEFAULT_CHECK_INTERVAL_SECONDS as REPLY_CHECK_
 from .gmail_reply_checker import run_reply_check_forever
 from .hiring_signal_cache import PURGE_INTERVAL_SECONDS
 from .hiring_signal_cache import run_purge_forever as run_hiring_cache_purge_forever
+from .hiring_signal_routes import hiring_signals_allowlist
 from .hiring_signal_routes import router as hiring_signal_router
 from .hiring_signal_routes import status_router as hiring_signal_status_router
 from .hiring_signal_search import refuse_non_provider_hosts
@@ -125,6 +126,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # The tester-programme gate reads its switch on every request; reading it here too makes a
     # bad value stop the boot (it is a consent check, so no spelling is guessed at).
     tester_program_required()
+    # Likewise the list of people allowed to use Hiring signals, read on every request: a typo
+    # in it must stop the boot, not decide who the feature is open to.
+    hiring_signals_allowlist()
     app.state.supabase, app.state.supabase_url = await create_supabase_client()
     app.state.jwks_client = create_jwks_client(app.state.supabase_url)
 

@@ -30,6 +30,8 @@ const recorded = vi.hoisted(() => ({
     actions: Record<string, (...args: unknown[]) => void>;
   },
   apiFetch: vi.fn(),
+  // Who is signed in, for the status hook: null is nobody.
+  userId: "user-1" as string | null,
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -43,6 +45,11 @@ vi.mock("react", async (importOriginal) => {
 });
 
 vi.mock("../lib/api", () => ({ apiFetch: recorded.apiFetch }));
+vi.mock("../auth", () => ({
+  useAuth: () => ({
+    session: recorded.userId === null ? null : { user: { id: recorded.userId } },
+  }),
+}));
 
 vi.mock("./HiringSignalsTabView", () => ({
   HiringSignalsTabView: (props: { actions: Record<string, (...args: unknown[]) => void> }) => {
@@ -93,6 +100,7 @@ beforeEach(() => {
   recorded.calls.length = 0;
   recorded.focusRequest = null;
   recorded.viewProps = null;
+  recorded.userId = "user-1";
   recorded.apiFetch.mockReset();
   element.focus.mockReset();
   element.scrollIntoView.mockReset();
@@ -344,5 +352,66 @@ describe("useHiringSignalsStatus and useHiringSignalsEnabled", () => {
     runEffects();
     await flush();
     expect(recorded.apiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  // The server can limit the feature to chosen people, so the answer is the signed-in person's:
+  // the one a previous person got must not be shown to the next one who signs in on the same
+  // page, not even for the render before the store has been told who they are.
+  it("is the answer of the person signed in, not of the one before them", async () => {
+    const { useHiringSignalsEnabled } = await fresh();
+    recorded.apiFetch.mockResolvedValue({ enabled: true });
+    renderToStaticMarkup(<Enabled hook={useHiringSignalsEnabled} />);
+    // React re-runs an effect only when its dependencies change, and `runEffects` runs every one it
+    // recorded: so what the effect depends on is read from what was recorded, or a hook whose effect
+    // never ran again for a new person (`[]`) would pass this test and show them nothing for good
+    expect(recorded.effects.map((effect) => effect.deps)).toEqual([["user-1"]]);
+    runEffects();
+    await flush();
+    expect(renderToStaticMarkup(<Enabled hook={useHiringSignalsEnabled} />)).toContain(
+      "enabled=true",
+    );
+
+    // someone else signs in on the same page
+    recorded.userId = "user-2";
+    recorded.effects.length = 0;
+    recorded.apiFetch.mockResolvedValue({ enabled: false });
+    expect(renderToStaticMarkup(<Enabled hook={useHiringSignalsEnabled} />)).toContain(
+      "enabled=false",
+    ); // the render before the effect: not user-1's "yes"
+    expect(recorded.effects.map((effect) => effect.deps)).toEqual([["user-2"]]);
+    runEffects();
+    await flush();
+    expect(recorded.apiFetch).toHaveBeenCalledTimes(2);
+    expect(renderToStaticMarkup(<Enabled hook={useHiringSignalsEnabled} />)).toContain(
+      "enabled=false",
+    );
+
+    // and the first person signs back in: their answer is asked for again, not remembered
+    recorded.userId = "user-1";
+    recorded.effects.length = 0;
+    recorded.apiFetch.mockResolvedValue({ enabled: true });
+    expect(renderToStaticMarkup(<Enabled hook={useHiringSignalsEnabled} />)).toContain(
+      "enabled=false",
+    );
+    expect(recorded.effects.map((effect) => effect.deps)).toEqual([["user-1"]]);
+    runEffects();
+    await flush();
+    expect(recorded.apiFetch).toHaveBeenCalledTimes(3);
+    expect(renderToStaticMarkup(<Enabled hook={useHiringSignalsEnabled} />)).toContain(
+      "enabled=true",
+    );
+  });
+
+  it("asks nothing, and shows nothing, while nobody is signed in", async () => {
+    const { useHiringSignalsEnabled } = await fresh();
+    recorded.userId = null;
+    recorded.apiFetch.mockResolvedValue({ enabled: true });
+    renderToStaticMarkup(<Enabled hook={useHiringSignalsEnabled} />);
+    runEffects();
+    await flush();
+    expect(recorded.apiFetch).not.toHaveBeenCalled();
+    expect(renderToStaticMarkup(<Enabled hook={useHiringSignalsEnabled} />)).toContain(
+      "enabled=false",
+    );
   });
 });

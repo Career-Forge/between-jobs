@@ -29,12 +29,24 @@ behind the same two gates:
   enforced by the router's own route class (`_FlagCheckedRoute`) rather than a
   dependency, because FastAPI reads and validates a body BEFORE it resolves
   dependencies.
+- `HIRING_SIGNALS_ALLOWED_USER_IDS` (optional, a comma-separated list of user ids)
+  limits the feature to the people named. Unset or blank means everyone, which is
+  how the feature behaves when nobody has chosen a list. When it is set, a caller
+  who is not verifiably on the list gets exactly the answer the switch above gives
+  -- 404 `FEATURE_DISABLED`, before the body is read -- so for them the feature does
+  not exist. That includes a caller with no valid token: they are not on the list
+  either, and a 401 would tell them the route is there. The same route class
+  enforces it, for the same reason (a dependency runs after the body is read), and
+  it checks the token with the same verification every route uses. The list is read
+  on every request, like the switch, and checked at start-up so a malformed one
+  stops the boot (`hiring_signals_allowlist`).
 - The verified user id, like every other route: an application, a save, a
   saved search or a cache row is only ever reached through the caller's own id.
 
-The one exception to the flag is `GET /hiring-signals/status`, which REPORTS it
-(`{"enabled": false}`) and so cannot be blocked by it. It is on its own router
-without the flag-checked route class, and it still requires authentication.
+The one exception to both gates is `GET /hiring-signals/status`, which REPORTS the
+answer for the caller (`{"enabled": false}` when the switch is off or the caller is
+not on the list) and so cannot be blocked by it. It is on its own router without the
+flag-checked route class, and it still requires authentication.
 
 An id in a path that is not a canonical UUID (36 characters, ASCII hex and
 hyphens -- not `uuid.UUID`'s wider set of spellings, such as full-width digits
@@ -77,6 +89,7 @@ from supabase import AsyncClient
 from .app_state import get_hiring_http_client, get_supabase
 from .applications_store import ApplicationNotFound, get_application
 from .auth import require_user_id
+from .env import optional_uuid_set
 from .errors import ApiError
 from .hiring_signal_saves_store import (
     HiringSignalSaveNotFound,
@@ -104,21 +117,70 @@ from .models import (
 )
 from .rate_limits import limit
 
+_ALLOWED_USER_IDS_ENV = "HIRING_SIGNALS_ALLOWED_USER_IDS"
+
+
+def hiring_signals_allowlist() -> frozenset[str] | None:
+    """The user ids (lower-cased) allowed to use Hiring signals, or None when no list is set
+    and everyone is. A malformed list stops the API from starting; `app.lifespan` reads it
+    once at boot for that reason."""
+    return optional_uuid_set(_ALLOWED_USER_IDS_ENV)
+
+
+def _is_listed(allowed: frozenset[str] | None, user_id: str) -> bool:
+    """Whether an id is on the allowlist that was read: everyone is when there is no list, and
+    otherwise a user is by the lower-case form of their id, since the list is kept lower-cased
+    and a token's `sub` may be written in capitals. The one membership test: the status answer
+    and the route gate both decide with it, so they cannot disagree about who is on the list."""
+    return allowed is None or user_id.lower() in allowed
+
+
+def user_may_use_hiring_signals(user_id: str) -> bool:
+    """Whether the switch and the allowlist let this (already verified) user have the
+    feature, as the status route reports it. The route gate (`require_hiring_signals_enabled`
+    and `require_listed_caller`) decides the same way -- the same switch, and membership by
+    the same `_is_listed` -- and a test runs both on one caller, so the web app never shows
+    an entry that every route then refuses."""
+    if os.environ.get("DISABLE_HIRING_SIGNALS"):
+        return False
+    return _is_listed(hiring_signals_allowlist(), user_id)
+
+
+def _feature_disabled() -> ApiError:
+    """The one answer for "this feature does not exist for you", whichever gate says it."""
+    return ApiError("FEATURE_DISABLED", "Hiring signals are turned off on this server.")
+
 
 def require_hiring_signals_enabled() -> None:
     if os.environ.get("DISABLE_HIRING_SIGNALS"):
-        raise ApiError("FEATURE_DISABLED", "Hiring signals are turned off on this server.")
+        raise _feature_disabled()
+
+
+async def require_listed_caller(request: Request) -> None:
+    """With an allowlist set, refuses (as `_feature_disabled`) anyone who is not verifiably on
+    it. The token is verified by `require_user_id`, the same check every route runs; a
+    caller it cannot verify is refused the same way, not with its 401."""
+    allowed = hiring_signals_allowlist()
+    if allowed is None:
+        return
+    try:
+        user_id = await require_user_id(request)
+    except ApiError:
+        raise _feature_disabled() from None
+    if not _is_listed(allowed, user_id):
+        raise _feature_disabled()
 
 
 class _FlagCheckedRoute(APIRoute):
-    """Every route of this router checks the feature flag first, before FastAPI
-    reads the body (see the module docstring)."""
+    """Every route of this router checks the feature flag and the allowlist first, before
+    FastAPI reads the body (see the module docstring)."""
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         handler = super().get_route_handler()
 
         async def flag_checked(request: Request) -> Response:
             require_hiring_signals_enabled()
+            await require_listed_caller(request)
             return await handler(request)
 
         return flag_checked
@@ -216,11 +278,13 @@ async def delete_hiring_signal_save(
 # ── the standalone tab (P4) ──────────────────────────────────────────────
 
 
-@status_router.get("/hiring-signals/status", dependencies=[Depends(require_user_id)])
-async def hiring_signals_status() -> dict[str, bool]:
-    """Whether Hiring signals is on for this server (`DISABLE_HIRING_SIGNALS`
-    unset or empty). Read on every request, like the flag itself."""
-    return {"enabled": not os.environ.get("DISABLE_HIRING_SIGNALS")}
+@status_router.get("/hiring-signals/status")
+async def hiring_signals_status(user_id: str = Depends(require_user_id)) -> dict[str, bool]:
+    """Whether Hiring signals is on for the caller: `DISABLE_HIRING_SIGNALS` unset or empty
+    and, when `HIRING_SIGNALS_ALLOWED_USER_IDS` is set, the caller is on it. Read on every
+    request, like the gates themselves. The answer is about the caller's own id and tells
+    nothing about anyone else."""
+    return {"enabled": user_may_use_hiring_signals(user_id)}
 
 
 @router.post("/hiring-signals/search", dependencies=[Depends(limit("hiring_signal_search"))])

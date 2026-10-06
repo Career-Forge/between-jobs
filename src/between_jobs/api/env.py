@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import NoReturn
 
 logger = logging.getLogger(__name__)
@@ -60,3 +61,25 @@ def strict_on_off(name: str, *, default: bool) -> bool:
     if raw == "off":
         return False
     refuse(f"{name} must be 'on' or 'off'")
+
+
+_CANONICAL_UUID = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+
+def optional_uuid_set(name: str) -> frozenset[str] | None:
+    """A comma-separated list of user ids (UUIDs, any case, spaces around an entry ignored),
+    returned lower-cased -- or None when the variable is unset or blank, which means "no list".
+
+    Every entry must be a canonical UUID (36 characters, hex and hyphens), and an empty entry
+    (`a,,b`, a trailing comma, a lone `,`) is not an entry. Anything else stops the API from
+    starting (`refuse`), naming the setting and never its value: for a list that opens a
+    feature to chosen people, a typo must not quietly turn into "everyone" or into "nobody"."""
+    raw = optional_env(name)
+    if raw is None or raw.strip() == "":
+        return None
+    entries = [entry.strip() for entry in raw.split(",")]
+    if not all(_CANONICAL_UUID.fullmatch(entry) for entry in entries):
+        refuse(f"{name} must be a comma-separated list of user ids (UUIDs), with no empty entries")
+    return frozenset(entry.lower() for entry in entries)

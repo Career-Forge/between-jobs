@@ -175,6 +175,20 @@ describe("setupRequiredNotice", () => {
     });
   });
 
+  // The resume file import has no model setting of its own: it falls back to the default model, so
+  // what a person with no key needs is the same model key, whether the server names what is missing
+  // or only the capability.
+  it("labels the resume file import's missing model as adding a model key", () => {
+    const path = "/profile/integrations?capability=profile_import";
+    expect(
+      setupRequiredNotice(setupError({ path, capability: "profile_import", missing: ["execution_mode"] })),
+    ).toMatchObject({ linkTo: path, linkLabel: "Add a model key in Integrations" });
+    expect(setupRequiredNotice(setupError({ path, capability: "profile_import" }))).toMatchObject({
+      linkTo: path,
+      linkLabel: "Add a model key in Integrations",
+    });
+  });
+
   it("labels a missing profile as finishing the profile", () => {
     expect(
       setupRequiredNotice(setupError({ path: "/profile", capability: "profile", missing: ["profile_version"] })),

@@ -36,6 +36,10 @@ export class ApiError extends Error {
     public readonly settingsPath?: string,
     public readonly capability?: string,
     public readonly missing?: readonly string[],
+    // The envelope's `details.reason`, when the server names one: what kind of refusal this is
+    // where the code alone does not say (a RATE_LIMITED that is the server's own capacity, not
+    // the person's request count). Undefined otherwise.
+    public readonly reason?: string,
   ) {
     super(message);
   }
@@ -50,6 +54,14 @@ interface ErrorBody {
   };
 }
 
+// `details.reason` when it is text, else undefined: details is the server's, but still read as
+// untrusted.
+function reasonOf(details: unknown): string | undefined {
+  if (typeof details !== "object" || details === null) return undefined;
+  const reason = (details as { reason?: unknown }).reason;
+  return typeof reason === "string" && reason !== "" ? reason : undefined;
+}
+
 function apiErrorFrom(response: Response, body: ErrorBody | null): ApiError {
   const setup = parseSetupFields(body?.error);
   return new ApiError(
@@ -61,6 +73,7 @@ function apiErrorFrom(response: Response, body: ErrorBody | null): ApiError {
     setup.settingsPath,
     setup.capability,
     setup.missing,
+    reasonOf(body?.error?.details),
   );
 }
 
@@ -100,12 +113,15 @@ async function accessToken(): Promise<string> {
   return token;
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+// The one place a JSON-answering request is sent: the token, the API base, the 204 and the
+// error envelope. `contentType` is the request body's, which is the only thing the JSON calls and
+// the raw-bytes call (`apiFetchBytes`) disagree about.
+async function send<T>(path: string, init: RequestInit | undefined, contentType: string): Promise<T> {
   const token = await accessToken();
   const response = await fetch(buildApiUrl(API_BASE, path), {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": contentType,
       Authorization: `Bearer ${token}`,
       ...init?.headers,
     },
@@ -120,6 +136,17 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     throw failedWith(response, body);
   }
   return body as T;
+}
+
+export function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  return send<T>(path, init, "application/json");
+}
+
+// A POST whose body is raw bytes (a file) rather than JSON, answered in JSON like every other
+// call. `contentType` is the caller's to choose and is sent exactly as given: it must come from
+// what the bytes are, not from what a browser or a file name says (see lib/resumeImportFile.ts).
+export function apiFetchBytes<T>(path: string, body: BodyInit, contentType: string): Promise<T> {
+  return send<T>(path, { method: "POST", body }, contentType);
 }
 
 // For binary responses (currently just the PDF download) -- `apiFetch`

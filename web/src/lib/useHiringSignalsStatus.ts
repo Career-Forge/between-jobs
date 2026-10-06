@@ -1,6 +1,8 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { useAuth } from "../auth";
 import { apiFetch } from "./api";
 import {
+  CHECKING,
   HiringSignalsStatusStore,
   type HiringStatus,
   isHiringSignalsEnabled,
@@ -14,17 +16,24 @@ import {
 // Every consumer calls `ensure()` when it mounts: the first asks the server, the
 // rest join that request or read the answer already kept. StrictMode's second
 // mount is one of those.
+//
+// The answer is the signed-in person's own (the server can limit the feature to chosen
+// people), so the store is told who is signed in, and a reader whose person is not the one the
+// store holds sees "checking", never the previous person's answer.
 
 const store = new HiringSignalsStatusStore(apiFetch);
 
 export function useHiringSignalsStatus(): HiringStatus {
+  const userId = useAuth().session?.user.id ?? null;
   // The third argument is the server snapshot: a static render has no
   // subscription to make, and React requires one.
-  const status = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const kept = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   useEffect(() => {
-    void store.ensure();
-  }, []);
-  return status;
+    store.setPerson(userId);
+    // Nobody signed in has nothing to ask about.
+    if (userId !== null) void store.ensure();
+  }, [userId]);
+  return store.isFor(userId) ? kept : CHECKING;
 }
 
 // For entry points (a nav item, a menu entry, a panel) that should exist only

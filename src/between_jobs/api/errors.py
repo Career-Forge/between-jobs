@@ -61,7 +61,11 @@ RATE_LIMITED is this platform's own per-user limit (api/rate_limits.py): the cal
 has used up their budget for an action and should wait. It is a 429 like
 PROVIDER_RATE_LIMITED but means something different -- that one says an upstream
 provider throttled us -- so a client must not conflate them. Its `details` carry
-`retry_after_seconds` and the `bucket`, and the response has a `Retry-After` header.
+`retry_after_seconds` and the `bucket`, and the response has a `Retry-After` header. One
+RATE_LIMITED is not the caller's budget at all: when every resume-file reader is busy
+(api/profile_routes.py) it is the server's own capacity, and carries `reason:
+"readers_busy"` in place of a `bucket`, so a client does not tell the person they did
+something too often.
 PAYLOAD_TOO_LARGE is a request body over the size cap (api/body_limit.py): a 413 that
 retrying unchanged cannot fix.
 UNSUPPORTED_MEDIA_TYPE is an uploaded file that is not one the route reads (a resume that is

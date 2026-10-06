@@ -88,6 +88,8 @@ def test_the_scan_finds_the_variables_it_should() -> None:
         "TESTER_PROGRAM_REQUIRED",
         "LATEX_SERVICE_BASE_URL",
         "DISABLE_OUTBOX_WORKER",
+        # read through the id-list helper, from a module-level constant
+        "HIRING_SIGNALS_ALLOWED_USER_IDS",
         # read through a module-level constant, not a string literal at the call
         "JOB_SCORING_SYSTEM_PROMPT_PATH",
         # read only by a script under scripts/

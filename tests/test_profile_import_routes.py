@@ -576,7 +576,10 @@ def test_when_every_reader_is_busy_the_answer_is_a_retryable_429(
     error = _error(response)
     assert error["code"] == "RATE_LIMITED"
     assert error["retryable"] is True
-    assert error["details"] == {"retry_after_seconds": 5}
+    # `reason` is what tells this 429 (the server's own capacity) from the per-user limiter's,
+    # which carries `bucket` instead; the web client words the two differently.
+    assert error["details"] == {"retry_after_seconds": 5, "reason": "readers_busy"}
+    assert "bucket" not in error["details"]
     assert response.headers["Retry-After"] == "5"
     assert "read right now" in error["message"]
     assert model.calls == []

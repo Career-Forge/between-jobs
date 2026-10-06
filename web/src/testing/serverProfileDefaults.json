@@ -1,0 +1,59 @@
+{
+  "personal": {
+    "name": "Pat Example",
+    "headline": "",
+    "emails": [],
+    "phones": [],
+    "links": {
+      "linkedin": "",
+      "github": "",
+      "portfolio": "",
+      "scholar": "",
+      "other": []
+    },
+    "location": {
+      "city": "",
+      "region": "",
+      "country": "",
+      "show_on_resume": false
+    },
+    "work_authorization": "",
+    "dob": "",
+    "nationality": "",
+    "marital_status": "",
+    "work_authorization_status": {},
+    "photo": "",
+    "signature": false
+  },
+  "summary_bullets": [],
+  "experience": [
+    {
+      "title": "Data Engineer",
+      "company": "Acme Corp",
+      "location": "",
+      "start_date": "2022-01",
+      "end_date": "present",
+      "is_current": false,
+      "bullets": [],
+      "skills": [],
+      "metrics": [],
+      "pin": null
+    }
+  ],
+  "projects": [],
+  "education": [],
+  "publications": [],
+  "patents": [],
+  "skills": {
+    "programming": [],
+    "ai_ml": [],
+    "data_mlops": [],
+    "cloud_devops": [],
+    "tools": [],
+    "other": []
+  },
+  "certifications": [],
+  "achievements": [],
+  "languages": [],
+  "volunteering": []
+}

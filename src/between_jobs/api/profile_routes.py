@@ -82,6 +82,10 @@ async def import_profile_version(
 
 
 _BUSY_RETRY_SECONDS = 5
+_READERS_BUSY = "readers_busy"
+"""`details.reason` of the 429 for "every reader is busy". The per-user limiter's 429 carries
+`details.bucket` instead, so a client tells the two apart by this marker: the busy one is the
+server's own capacity, not something the person did too often."""
 
 
 def _file_error(error: ExtractionError) -> ApiError:
@@ -95,7 +99,7 @@ def _file_error(error: ExtractionError) -> ApiError:
             "RATE_LIMITED",
             error.message,
             retryable=True,
-            details={"retry_after_seconds": _BUSY_RETRY_SECONDS},
+            details={"retry_after_seconds": _BUSY_RETRY_SECONDS, "reason": _READERS_BUSY},
         )
     return ApiError("INVALID_INPUT", error.message)
 

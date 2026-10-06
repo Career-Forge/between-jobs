@@ -145,6 +145,7 @@ const TARGET_BY_MISSING = new Map<string, Target>([
 // The capabilities that run on the person's own model, so a failure to resolve one
 // (the resolver sends `?capability=<name>` on its link) is fixed by the model key.
 const MODEL_KEY_CAPABILITIES = [
+  "profile_import",
   "job_scoring",
   "prepare_application",
   "positioning_brief",

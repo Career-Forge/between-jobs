@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { AccountCard } from "../components/AccountCard";
 import { HeaderComposer } from "../components/HeaderComposer";
 import { PersonalDetailsCard } from "../components/PersonalDetailsCard";
+import { ResumeImportCard } from "../components/ResumeImportCard";
 import { SectionedProfile } from "../components/SectionedProfile";
 import { SectionOrderEditor } from "../components/SectionOrderEditor";
 import { ShapeSettingsPanel } from "../components/ShapeSettingsPanel";
@@ -19,6 +20,11 @@ import { useProfileEditor } from "../lib/useProfileEditor";
 // prompt + review-before-activate), with the preview-then-confirm step
 // the canonical contract requires: nothing becomes your active profile
 // until you explicitly activate it.
+//
+// A resume FILE (PDF or DOCX) can be imported too (ResumeImportCard): a model reads it
+// into a draft, which is shown value by value next to where in the file each came from, and
+// is only ever used when the person confirms. It sits above the JSON import, which is
+// unchanged and still goes through the "Review before saving" step below.
 //
 // Sprint 3.1d replaced the stats-summary body with the real sectioned
 // view (SectionedProfile). Sprint 3.1e adds per-section editing --
@@ -47,6 +53,11 @@ export default function Profile() {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [importError, setImportError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A resume-file import is under way (a file being read, a draft waiting to be decided). The
+  // JSON import waits for it: its preview replaces the whole card list below, which would drop the
+  // file draft's review with no word. The reverse holds too (`blocked={busy}`), so the two never run
+  // at once, and the preview branch below is never reached with a file import open.
+  const [fileImportOpen, setFileImportOpen] = useState(false);
 
   const loadCurrent = useCallback(async () => {
     try {
@@ -66,6 +77,7 @@ export default function Profile() {
   }, [loadCurrent]);
 
   async function importJson(rawText: string) {
+    if (fileImportOpen) return;
     setBusy(true);
     setImportError(null);
     const hadActive = state.kind === "active";
@@ -142,9 +154,16 @@ export default function Profile() {
       {state.kind === "active" && (
         <ActiveProfile version={state.version} onEdited={loadCurrent} />
       )}
+      <ResumeImportCard
+        replacesCurrent={state.kind === "active"}
+        onActivated={() => void loadCurrent()}
+        blocked={busy}
+        onOpenChange={setFileImportOpen}
+      />
       <ImportSection
         replacing={state.kind === "active"}
         busy={busy}
+        disabled={fileImportOpen}
         error={importError}
         onImport={(text) => void importJson(text)}
       />
@@ -167,8 +186,8 @@ function PageFrame({ children }: { children?: React.ReactNode }) {
   );
 }
 
-// Exported for Profile.test.tsx -- everything else in this file stays
-// unexported page-local plumbing, same as before this feature.
+// Exported for Profile.test.tsx (with ImportSection below) -- everything else in this
+// file stays unexported page-local plumbing, same as before this feature.
 export function ActiveProfile({
   version,
   onEdited,
@@ -339,14 +358,20 @@ function PendingPreview({
   );
 }
 
-function ImportSection({
+const FILE_IMPORT_OPEN_NOTE =
+  "A file import above is in progress. Finish it, or discard its draft, before importing JSON.";
+
+export function ImportSection({
   replacing,
   busy,
+  disabled,
   error,
   onImport,
 }: {
   replacing: boolean;
   busy: boolean;
+  // A resume-file import is under way above: this one waits for it.
+  disabled: boolean;
   error: string | null;
   onImport: (rawText: string) => void;
 }) {
@@ -386,7 +411,7 @@ function ImportSection({
         <button onClick={() => void copyPrompt()}>
           {promptCopied ? "Copied ✓" : "Copy conversion prompt"}
         </button>
-        <button onClick={() => fileInput.current?.click()} disabled={busy}>
+        <button onClick={() => fileInput.current?.click()} disabled={busy || disabled}>
           Upload .json file
         </button>
         <input
@@ -402,13 +427,19 @@ function ImportSection({
         placeholder='Paste your filled template here ({"personal": ...)'
         value={pasted}
         onChange={(e) => setPasted(e.target.value)}
+        disabled={disabled}
       />
       {error && <div className="bj-error">{error}</div>}
+      {disabled && (
+        <p role="status" className="bj-muted bj-small">
+          {FILE_IMPORT_OPEN_NOTE}
+        </p>
+      )}
       <div className="bj-actions">
         <button
           className="bj-primary"
           onClick={() => onImport(pasted)}
-          disabled={busy || pasted.trim() === ""}
+          disabled={busy || disabled || pasted.trim() === ""}
         >
           {busy ? "Importing..." : "Import"}
         </button>

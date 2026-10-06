@@ -3,9 +3,16 @@ import { SavedSearchesCard } from "../components/SavedSearchesCard";
 import { ProblemView } from "../components/SetupRequiredNotice";
 import { apiFetch } from "../lib/api";
 import { isTelegramAvailable, telegramBotUsername } from "../lib/capabilities";
+import {
+  SEARCH_PROVIDER_CARDS,
+  cardNote,
+  providerNotice,
+  type SearchProviderCardSpec,
+} from "../lib/providerStatus";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { type Problem, problemOf } from "../lib/setupRequired";
 import { useCapabilities } from "../lib/useCapabilities";
+import { useHiringSignalsEnabled } from "../lib/useHiringSignalsStatus";
 
 // Integrations (Sprint 2.7f, widened Horizon Sprint 5.0) -- the web
 // surface over Sprint 2.7's BYOK credential broker (Proposal §11).
@@ -23,6 +30,9 @@ import { useCapabilities } from "../lib/useCapabilities";
 // key -- rather than forcing them through OpenRouterCard's shape. Hiring posts'
 // setup message names Brave, Serper, Firecrawl and You.com, so all four have a
 // card here: a step the page tells you to take has to be one you can take.
+// The Brave and Serper notes mention hiring posts ONLY for a person Hiring signals is enabled for
+// (useHiringSignalsEnabled, via cardNote): for anyone else the server treats the feature as not
+// existing, so the page must not say their key is used for it.
 //
 // The page is also where the tester-programme gate (lib/enrollment.ts) lets a person who has
 // not joined, or has withdrawn, switch things off: remove a key, disconnect Gmail, and pause or
@@ -69,14 +79,9 @@ export default function Integrations() {
     void load();
   }, [load]);
 
+  // False while the answer is awaited, when it is "not enabled", and when asking failed.
+  const hiringSignalsEnabled = useHiringSignalsEnabled();
   const openrouter = credentials?.find((c) => c.service === "llm" && c.provider === "openrouter") ?? null;
-  const youCom = credentials?.find((c) => c.service === "search" && c.provider === "you_com") ?? null;
-  const firecrawl = credentials?.find((c) => c.service === "search" && c.provider === "firecrawl") ?? null;
-  const brave = credentials?.find((c) => c.service === "search" && c.provider === "brave") ?? null;
-  const serper = credentials?.find((c) => c.service === "search" && c.provider === "serper") ?? null;
-  const apollo = credentials?.find((c) => c.service === "search" && c.provider === "apollo") ?? null;
-  const hunter = credentials?.find((c) => c.service === "search" && c.provider === "hunter") ?? null;
-  const exa = credentials?.find((c) => c.service === "search" && c.provider === "exa") ?? null;
   const gmail = credentials?.find((c) => c.service === "oauth" && c.provider === "gmail") ?? null;
 
   return (
@@ -88,76 +93,18 @@ export default function Integrations() {
       </p>
       {loadError && <div className="bj-error">{loadError}</div>}
       {credentials !== null && <OpenRouterCard credential={openrouter} onChanged={load} />}
-      {credentials !== null && (
-        <SearchProviderCard
-          title="You.com"
-          provider="you_com"
-          placeholder="your-you-com-key"
-          note="Validating costs a small real charge (~$0.005) -- a live search call, since You.com has no free key-check endpoint."
-          credential={youCom}
-          onChanged={load}
-        />
-      )}
-      {credentials !== null && (
-        <SearchProviderCard
-          title="Firecrawl"
-          provider="firecrawl"
-          placeholder="fc-..."
-          note="Validated against your account's credit usage -- doesn't spend a search/scrape credit."
-          credential={firecrawl}
-          onChanged={load}
-        />
-      )}
-      {credentials !== null && (
-        <SearchProviderCard
-          title="Brave Search"
-          provider="brave"
-          placeholder="your-brave-key"
-          note="Used for job search on Discover and to find hiring posts on an application. Validating runs one tiny real search call -- Brave has no free key-check endpoint."
-          credential={brave}
-          onChanged={load}
-        />
-      )}
-      {credentials !== null && (
-        <SearchProviderCard
-          title="Serper"
-          provider="serper"
-          placeholder="your-serper-key"
-          note="Used for job search on Discover and, as a last resort, to find hiring posts on an application (it returns Google results). Validating runs one 1-credit search call -- Serper has no free key-check endpoint."
-          credential={serper}
-          onChanged={load}
-        />
-      )}
-      {credentials !== null && (
-        <SearchProviderCard
-          title="Apollo"
-          provider="apollo"
-          placeholder="your-apollo-key"
-          note="Used only for contact enrichment, one already-selected person at a time -- never a bulk search. Validated against Apollo's free health-check endpoint, at no cost."
-          credential={apollo}
-          onChanged={load}
-        />
-      )}
-      {credentials !== null && (
-        <SearchProviderCard
-          title="Hunter"
-          provider="hunter"
-          placeholder="your-hunter-key"
-          note="A second contact-enrichment provider, tried automatically alongside Apollo for one already-selected person -- never a bulk search. Validated against Hunter's free account endpoint, at no cost."
-          credential={hunter}
-          onChanged={load}
-        />
-      )}
-      {credentials !== null && (
-        <SearchProviderCard
-          title="Exa"
-          provider="exa"
-          placeholder="your-exa-key"
-          note="Finds a LinkedIn profile URL for one already-selected contact who doesn't already have one -- never an email. Validating costs a small real charge -- a live search call, since Exa has no free key-check endpoint."
-          credential={exa}
-          onChanged={load}
-        />
-      )}
+      {credentials !== null &&
+        SEARCH_PROVIDER_CARDS.map((card) => (
+          <SearchProviderCard
+            key={card.provider}
+            card={card}
+            hiringSignalsEnabled={hiringSignalsEnabled}
+            credential={
+              credentials.find((c) => c.service === "search" && c.provider === card.provider) ?? null
+            }
+            onChanged={load}
+          />
+        ))}
       {isTelegramAvailable(capabilities) && (
         <TelegramLinkCard botUsername={telegramBotUsername(capabilities)} />
       )}
@@ -167,21 +114,23 @@ export default function Integrations() {
   );
 }
 
-function SearchProviderCard({
-  title,
-  provider,
-  placeholder,
-  note,
+// Exported for providerStatus.test.tsx -- the rest of this file stays page-local plumbing.
+export function SearchProviderCard({
+  card,
+  hiringSignalsEnabled,
   credential,
   onChanged,
 }: {
-  title: string;
-  provider: string;
-  placeholder: string;
-  note: string;
+  card: SearchProviderCardSpec;
+  // Hiring signals is on for this person (see the note at the top of this file).
+  hiringSignalsEnabled: boolean;
   credential: CredentialSummary | null;
   onChanged: () => Promise<void>;
 }) {
+  const { title, provider, placeholder } = card;
+  const note = cardNote(card, hiringSignalsEnabled);
+  // Whether this provider has had a successful run against the real service (lib/providerStatus.ts).
+  const notice = providerNotice(provider);
   const [secret, setSecret] = useState("");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -221,13 +170,22 @@ function SearchProviderCard({
     <div className="bj-card">
       <div className="bj-card-header">
         <h2>{title}</h2>
-        {credential ? (
-          <span className="bj-badge-emerald">Configured</span>
-        ) : (
-          <span className="bj-badge-gold">Not configured</span>
-        )}
+        <span className="bj-badge-group">
+          {notice !== null && <span className="bj-badge-muted">{notice.label}</span>}
+          {credential ? (
+            <span className="bj-badge-emerald">Configured</span>
+          ) : (
+            <span className="bj-badge-gold">Not configured</span>
+          )}
+        </span>
       </div>
       <p className="bj-muted">{note}</p>
+      {notice !== null && (
+        <p className="bj-muted bj-small">
+          {notice.detail}
+          {notice.help !== null && ` ${notice.help}`}
+        </p>
+      )}
       {credential && (
         <div className="bj-muted bj-small">
           Updated {new Date(credential.updated_at).toLocaleString()}
