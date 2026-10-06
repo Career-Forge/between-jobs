@@ -30,6 +30,8 @@ from postgrest.exceptions import APIError
 from between_jobs.api import app as app_module
 from between_jobs.api import product_events
 from between_jobs.api.app import LEASED_WORKERS, app
+from between_jobs.api.digest_listener import handle_batch as handle_digest_batch
+from between_jobs.api.telegram_adapter import TelegramNotifier
 
 THE_THREE = {"job_registry_poller", "saved_search_matcher", "gmail_reply_checker"}
 OTHERS = {"outbox", "hiring_signal_cache_purge"}
@@ -101,6 +103,46 @@ def _boot_with(
     ):
         monkeypatch.setattr(app_module, loop, idle)
     return fake_create
+
+
+def _outbox_listener(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """The digest listener the lifespan hands the outbox worker, as the worker receives it."""
+    _boot_with(monkeypatch, StrictClient(True))
+    seen: dict[str, Any] = {}
+
+    async def record(*_args: Any, **kwargs: Any) -> None:
+        seen["listeners"] = kwargs.get("listeners")
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(app_module, "run_worker_forever", record)
+    with TestClient(app):
+        deadline = time.monotonic() + 5
+        while "listeners" not in seen and time.monotonic() < deadline:
+            time.sleep(0.01)
+    (listener,) = seen["listeners"]
+    return listener
+
+
+def test_the_outbox_worker_gets_a_notifier_for_the_bot_when_there_is_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A listener holding no notifier would silently stop the real-time job pushes."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456:test-token-not-real")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "test-secret-not-real")
+
+    listener = _outbox_listener(monkeypatch)
+
+    assert listener.func is handle_digest_batch
+    assert isinstance(listener.keywords["notifier"], TelegramNotifier)
+
+
+def test_the_outbox_worker_gets_no_notifier_on_a_server_without_a_bot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listener = _outbox_listener(monkeypatch)
+
+    assert listener.func is handle_digest_batch
+    assert listener.keywords["notifier"] is None
 
 
 def _claimed_workers(client: StrictClient) -> list[str]:

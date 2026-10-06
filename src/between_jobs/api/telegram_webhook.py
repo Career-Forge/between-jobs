@@ -1,282 +1,43 @@
 """Telegram webhook receiver.
 
-Verifies the update is really from Telegram, resolves (or creates) the
-sender's identity, and dispatches on SEVEN things, checked in order:
-  1. A document attachment shaped like a .json file -> resume import.
-  2. `/link CODE` -> Sprint 2.8e's account-linking flow (consumes the
-     code, merges any accumulated data onto the target web account).
-  3. `/unlink` -> detaches this Telegram account from whatever it
-     currently resolves to.
-  4. Text shaped like a JSON payload (`looks_like_json_payload`) -> resume
-     import.
-  5. Text shaped like a `Title:`/`Company:` job paste
-     (`looks_like_job_paste`, Sprint 3.4a) -> creates the same
-     `jobs`/`job_snapshots`/`applications` rows the web's manual-paste
-     form does.
-  6. "apply to #N" / "apply #N" / "generate #N" (`parse_apply_reference`,
-     Sprint 3.4c) -> resolves the index against the working set "list"
-     minted, then runs the same prepare-and-deliver flow the "Generate
-     resume" button uses.
-  7. Everything else -> the deterministic command classifier
-     (`classify()`): setup help, check-resume, track-job help, list
-     applications, or a fallback.
+Verifies the update is really from Telegram, claims its `update_id` so a redelivery is not
+processed twice, parses it with the Telegram adapter (`telegram_adapter`), and hands the
+result to the channel-neutral logic (`channel_core`) with a Telegram renderer. That is all it
+does: what the bot says and does lives in `channel_core`, and everything that reads a raw
+update or writes a Telegram request body lives in `telegram_adapter`.
 
-Sprint 2.5 replaces the Sprint 2.4 stub (colon-delimited "my resume: <text>",
-saved as raw text) with the real contract: a template message, then a
-SEPARATE message carrying the actual JSON, validated deterministically
-(profile.py) and staged as a PENDING profile_versions row
-(profile_store.py) until the user taps a confirm/cancel inline button --
-handled here via Telegram's `callback_query` update type, which the
-Sprint 2.3/2.4 bridge never handled at all.
+Always returns 200 for a well-authenticated request, even for update shapes it doesn't
+handle -- Telegram retries on non-2xx, and there's nothing to retry here since not every
+update needs an action. (An unexpected exception still surfaces as a 500, which is how
+Telegram is asked to retry; the claim of each update_id (P0.9) stops a redelivery of an
+update that is still running or already done from being processed a second time.)
 
-Always returns 200 for a well-authenticated request, even for update
-shapes it doesn't handle -- Telegram retries on non-2xx, and there's
-nothing to retry here since not every update needs an action. (An
-unexpected exception still surfaces as a 500, which is how Telegram is
-asked to retry; see `telegram_webhook`'s claim of each update_id, P0.9,
-which stops a redelivery of an update that is still running or already
-done from being processed a second time.)
-
-Every message goes out in Telegram's HTML mode (`telegram_client`): a plain
-`str` is escaped, an `Html` template is sent as written.
+A resume generation does not hold the request open: `channel_core` answers the person at
+once and finishes the work in a background task, so the 200 goes out within a moment and
+Telegram has nothing to time out on. The claim is completed when this handler answers, which
+means a redelivery of that update is dropped as a duplicate even while the generation runs --
+and means that if the process dies mid-generation nothing resumes it (see `deferred_reply`).
 """
 
 from __future__ import annotations
 
 import hmac
-import logging
-import uuid
 from typing import Any, cast
 
 import anyio
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from postgrest.exceptions import APIError
 
 from supabase import AsyncClient
 
-from .app_state import get_http_client, get_supabase, get_telegram_client, get_webhook_secret
-from .applications_store import (
-    ApplicationNotFound,
-    InvalidApplicationStatus,
-    change_stage,
-    create_application,
-    list_applications,
-)
-from .body_limit import describe_bytes, max_request_body_bytes
-from .errors import ApiError
-from .intents import (
-    Intent,
-    classify,
-    is_unlink_command,
-    looks_like_job_paste,
-    looks_like_json_payload,
-    parse_apply_reference,
-    parse_job_paste,
-    parse_link_code,
-)
-from .jobs_store import create_job_from_paste, get_snapshots
-from .link_codes_store import consume_link_code, link_schema_ready
-from .link_completion import LinkCompletion, finish_link
-from .prepare_orchestrator import latest_resume_pdf, run_prepare_application
-from .product_events import emit_setup_required
-from .profile import ProfileImportError, import_profile
-from .profile_store import (
-    VersionAlreadyActivated,
-    VersionNotFound,
-    activate_version,
-    create_pending_version,
-    delete_pending_version,
-    get_active_version,
-)
-from .rate_limits import rate_limit_error_or_none
-from .telegram_client import DownloadTooLarge, Html, TelegramClient, escape, render
-from .telegram_identity import CHANNEL, is_auto_provisioned, resolve_or_create_user_id
-from .telegram_identity import unlink as unlink_telegram_identity
+from . import deferred_reply
+from .app_state import get_http_client, get_supabase, get_telegram_renderer, get_webhook_secret
+from .channel_core import handle_inbound, is_slow_request
+from .channel_envelope import InboundMessage, Renderer
+from .telegram_adapter import parse_update, update_id_of
 from .telegram_updates_store import claim_update, complete_update, release_update
-from .working_sets_store import (
-    ReferenceOutOfRange,
-    WorkingSetExpired,
-    create_working_set,
-    get_active_working_set,
-    resolve_reference,
-)
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_ACTIVATE_PREFIX = "profile:activate:"
-_CANCEL_PREFIX = "profile:cancel:"
-_PREPARE_PREFIX = "app:prepare:"
-_STAGE_PREFIX = "app:stage:"
-_UNIQUE_VIOLATION = "23505"
-
-_FALLBACK_TEXT = (
-    'Send "set up my resume" to get started, or "check my resume" to see what\'s on file.'
-)
-_NO_RESUME_TEXT = 'I don\'t have a resume on file yet. Send "set up my resume" to get started.'
-
-_LINK_INVALID_TEXT = "❌ That code isn't valid. Double-check it and try again."
-_LINK_EXPIRED_TEXT = "❌ That code expired. Generate a new one from the website."
-_LINK_RATE_LIMITED_TEXT = "❌ Too many wrong codes -- try again in a few minutes."
-_LINK_CONFLICT_TEXT = (
-    "❌ Couldn't link -- both accounts already have conflicting data "
-    "(e.g. the same saved API key or tracked job). Nothing was changed."
-)
-_LINK_ALREADY_LINKED_TEXT = "You're already linked to that account."
-_LINK_SOURCE_LINKED_TEXT = (
-    "This Telegram account is already linked to a web account -- if that's the one "
-    "you're linking, you're all set. To link a different account, send /unlink first, "
-    "then generate a new code on the website."
-)
-_LINK_TARGET_LINKED_TEXT = (
-    "❌ That web account is already linked to a different Telegram account. Unlink it "
-    "there first, then generate a new code."
-)
-_LINK_RETRY_TEXT = "Please send that again."
-_LINK_PRIVATE_ONLY_TEXT = (
-    "Send /link in a private chat with me, not a group -- and generate a fresh code, "
-    "since anyone in this chat could have seen that one."
-)
-_LINK_FAILED_TEXT = "❌ Couldn't link right now. Nothing was changed -- try again in a minute."
-_LINK_UNCONFIRMED_TEXT = (
-    "❌ Couldn't confirm the link. Send the same /link code again in a minute -- if it "
-    "says the code isn't valid, generate a new one on the website."
-)
-_LINK_FINISHING_NOTE = (
-    "\n\nStill moving your files over -- send the same /link code again in a minute "
-    "and I'll finish it."
-)
-_LINK_REFUSALS = {
-    "rate_limited": _LINK_RATE_LIMITED_TEXT,
-    "expired_code": _LINK_EXPIRED_TEXT,
-    "source_mismatch": _LINK_RETRY_TEXT,
-    "source_already_linked": _LINK_SOURCE_LINKED_TEXT,
-    "target_linked_elsewhere": _LINK_TARGET_LINKED_TEXT,
-}
-_UNLINK_TEXT = "Unlinked. This Telegram account is no longer connected to any web account."
-_UNLINK_NOT_LINKED_TEXT = (
-    "This Telegram account isn't linked to a web account -- nothing to unlink."
-)
-
-_MERGE_SUMMARY_LABELS = (
-    ("profile_versions", "resume version"),
-    ("applications", "tracked application"),
-    ("provider_credentials", "saved API key"),
-)
-"""Only the tables a human would recognize -- career_facts,
-application_events, event_outbox, artifact_versions, working_sets, and
-link_codes move too, but naming them in a chat message would just be
-noise."""
-
-# The resume template people copy. Kept as plain text and escaped when the message is built,
-# so the "<...>" placeholders in it reach the user as "<...>" and not as markup.
-_RESUME_TEMPLATE_JSON = """{
-  "personal": {
-    "name": "<Your Name>",
-    "headline": "<e.g. Software Engineer>",
-    "emails": [{"address": "<you@example.com>", "primary": true}],
-    "phones": [{"number": "<+1 555 0100>", "primary": true, "region": "US"}],
-    "links": {"linkedin": "", "github": "", "portfolio": "", "scholar": ""},
-    "location": {"city": "", "region": "", "country": "", "show_on_resume": false},
-    "work_authorization": "<your own work-authorization situation, in your own words>"
-  },
-  "summary_bullets": ["<one line summarizing who you are>"],
-  "experience": [
-    {
-      "title": "<Job Title>",
-      "company": "<Company>",
-      "location": "<City, ST>",
-      "start_date": "YYYY-MM",
-      "end_date": "YYYY-MM or present",
-      "is_current": false,
-      "bullets": ["<what you did, with a number if you can>"],
-      "skills": ["<Python>"],
-      "metrics": [],
-      "pin": null
-    }
-  ],
-  "projects": [],
-  "education": [
-    {
-      "degree": "<B.S. Computer Science>",
-      "institution": "<University>",
-      "start_date": "YYYY-MM",
-      "end_date": "YYYY-MM"
-    }
-  ],
-  "publications": [],
-  "patents": [],
-  "skills": {
-    "programming": [], "ai_ml": [], "data_mlops": [],
-    "cloud_devops": [], "tools": [], "other": []
-  },
-  "certifications": [],
-  "achievements": [],
-  "languages": [],
-  "volunteering": []
-}"""
-
-# Telegram HTML (see telegram_client): <b> for headings, <pre> and <code> for the blocks the
-# user is meant to copy, which Telegram renders as tap-to-copy.
-_SETUP_HELP_TEXT = Html(
-    "🗂️ <b>Set up your resume (one-time)</b>\n\n"
-    "I read resumes from a fixed JSON template -- deterministic, private, no AI guessing in "
-    "the loop.\n\n"
-    "<b>How:</b>\n"
-    "1️⃣ Copy the JSON below.\n"
-    "2️⃣ Paste it into ChatGPT/Claude with your real resume, and ask it to fill the template "
-    "in with your actual info.\n"
-    "3️⃣ Send the filled JSON back to me -- as pasted text, or as a <b>.json</b> file.\n\n"
-    "<pre>" + escape(_RESUME_TEMPLATE_JSON) + "</pre>\n"
-    "Sections shown empty above (publications, patents, certifications, languages, "
-    "volunteering, and links.scholar) are optional -- fill in whichever apply to you and "
-    "delete the rest. At least one of experience, projects, publications, patents, or "
-    "volunteering needs a real entry.\n\n"
-    "<code>work_authorization</code> wants your actual situation, not just your citizenship "
-    "-- a citizenship or nationality alone isn't a complete answer, and what counts as "
-    "complete looks different in every country.\n\n"
-    '<code>"pin"</code> on an experience/project/education entry (shown above as '
-    "<code>null</code>) is a manual choice, not something to fill in from your resume: set "
-    "it to <code>" + escape('{"mandatory": true, "min_bullets": 3}') + "</code> (min_bullets "
-    "1-6, optional) to force that entry into every generated resume regardless of relevance "
-    "-- up to 6 pinned entries total."
-)
-
-_TRACK_JOB_HELP_TEXT = Html(
-    "📋 <b>Track a job</b>\n\n"
-    "Send me the job in this format -- Title and Company are required, Location and URL are "
-    "optional:\n\n"
-    "<pre>"
-    + escape(
-        "Title: Staff AI Engineer\n"
-        "Company: Acme\n"
-        "Location: Remote\n"
-        "URL: https://example.com/jobs/123\n"
-        "\n"
-        "<paste the full job description here>"
-    )
-    + "</pre>\n\n"
-    "I don't fetch job postings from a link yet -- paste the description text along with the "
-    "URL, and I'll track both."
-)
-
-_JOB_TRACKED_TEXT = Html("✅ Tracking <b>{title}</b> at <b>{company}</b>.")
-_GENERATING_TEXT = "⏳ Generating your resume for this job -- this can take a minute..."
-_PREPARE_DECLINED_TEXT = "The resume engine didn't produce a resume for this job.\n\n{warnings}"
-_PREPARE_SUCCESS_CAPTION = "📄 Resume -- ATS score {score}/100{warnings}"
-
-_APPLICATIONS_WORKING_SET_KIND = "applications"
-_NO_APPLICATIONS_TEXT = 'Nothing tracked yet. Send "track a job" to get started.'
-_NO_WORKING_SET_TEXT = 'Send "list" first to number your applications, then "apply to #N".'
-_WORKING_SET_EXPIRED_TEXT = 'That list expired -- send "list" again to get fresh numbers.'
-_REFERENCE_OUT_OF_RANGE_TEXT = '#{index} isn\'t on your list -- send "list" to see the numbers.'
-
-_STAGE_APPLIED_STATUS = "applied"
-_MARK_APPLIED_BUTTON_TEXT = "✅ Mark as applied"
-_MARK_APPLIED_PROMPT_TEXT = "Applying with this one?"
-_STAGE_CHANGED_TEXT = Html("✅ Marked as <b>{status}</b>.")
 
 
 def _verify_webhook_secret(request: Request, expected: str = Depends(get_webhook_secret)) -> None:
@@ -285,589 +46,20 @@ def _verify_webhook_secret(request: Request, expected: str = Depends(get_webhook
         raise HTTPException(status_code=401, detail="invalid webhook secret")
 
 
-def _document_too_large_text(limit: int) -> str:
-    return (
-        f"❌ That file is too large to import (the limit is {describe_bytes(limit)}). "
-        "A resume JSON is far smaller than that -- check it is the right file."
-    )
-
-
-def _is_json_document(document: dict[str, Any]) -> bool:
-    file_name = str(document.get("file_name", ""))
-    mime_type = str(document.get("mime_type", ""))
-    return file_name.lower().endswith(".json") or mime_type == "application/json"
-
-
-def _decode_uploaded_bytes(raw: bytes) -> str:
-    # utf-8-sig transparently strips a UTF-8 BOM if present; UTF-16 (the
-    # common case for a Windows-Notepad-saved file) is the fallback n8n's
-    # own file-upload path had to handle for the same reason.
-    try:
-        return raw.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        return raw.decode("utf-16")
-
-
-def _build_preview_message(
-    version: dict[str, Any], stats: dict[str, int], warnings: tuple[str, ...]
-) -> str:
-    personal = version["canonical_json"]["personal"]
-    name = personal.get("name", "")
-    headline = personal.get("headline", "")
-    primary_email = next((e["address"] for e in personal.get("emails", []) if e.get("primary")), "")
-
-    lines = ["📄 Resume preview", "", f"Name: {name}"]
-    if headline:
-        lines.append(f"Headline: {headline}")
-    if primary_email:
-        lines.append(f"Email: {primary_email}")
-    lines += [
-        "",
-        "Detected:",
-        f"• Experience: {stats['experience']}",
-        f"• Projects: {stats['projects']}",
-        f"• Education: {stats['education']}",
-        f"• Skills: {stats['skills']}",
-    ]
-    if warnings:
-        lines.append("")
-        lines.append("⚠️ Notes:")
-        lines += [f"• {w}" for w in warnings]
-    lines += ["", "Tap a button below to confirm."]
-    return "\n".join(lines)
-
-
-def _format_merge_summary(summary: dict[str, int]) -> str:
-    parts = [
-        f"{summary[key]} {label}(s)" for key, label in _MERGE_SUMMARY_LABELS if summary.get(key)
-    ]
-    if not parts:
-        return "✅ Linked! Your Telegram account is now connected to your web account."
-    return "✅ Linked! Brought over " + ", ".join(parts) + " from this Telegram account."
-
-
-def _build_preview_keyboard(version_id: str) -> dict[str, Any]:
-    return {
-        "inline_keyboard": [
-            [
-                {
-                    "text": "✅ Looks good -- save it",
-                    "callback_data": f"{_ACTIVATE_PREFIX}{version_id}",
-                },
-                {"text": "❌ Cancel", "callback_data": f"{_CANCEL_PREFIX}{version_id}"},
-            ]
-        ]
-    }
-
-
-def _format_active_profile(version: dict[str, Any]) -> str:
-    personal = version["canonical_json"]["personal"]
-    name = personal.get("name", "")
-    headline = personal.get("headline", "")
-
-    lines = ["✅ I have your resume on file.", "", f"Name: {name}"]
-    if headline:
-        lines.append(f"Headline: {headline}")
-    lines += ["", f"Last updated: {version.get('activated_at', '')}", "", _FALLBACK_TEXT]
-    return "\n".join(lines)
-
-
-async def _handle_json_import(
-    supabase: AsyncClient,
-    user_id: str,
-    raw_text: str,
-    source_kind: str,
-    telegram: TelegramClient,
-    chat_id: int,
-) -> None:
-    try:
-        imported = import_profile(raw_text)
-    except ProfileImportError as e:
-        await telegram.send_message(chat_id, f"❌ {e}")
-        return
-
-    version = await create_pending_version(supabase, user_id, imported, source_kind)
-    preview = _build_preview_message(version, imported.stats, imported.warnings)
-    keyboard = _build_preview_keyboard(version["id"])
-    await telegram.send_message(chat_id, preview, reply_markup=keyboard)
-
-
-def _build_prepare_keyboard(application_id: str) -> dict[str, Any]:
-    return {
-        "inline_keyboard": [
-            [{"text": "📄 Generate resume", "callback_data": f"{_PREPARE_PREFIX}{application_id}"}]
-        ]
-    }
-
-
-def _build_mark_applied_keyboard(application_id: str) -> dict[str, Any]:
-    callback_data = f"{_STAGE_PREFIX}{application_id}:{_STAGE_APPLIED_STATUS}"
-    button = {"text": _MARK_APPLIED_BUTTON_TEXT, "callback_data": callback_data}
-    return {"inline_keyboard": [[button]]}
-
-
-async def _handle_job_paste(
-    supabase: AsyncClient,
-    user_id: str,
-    telegram: TelegramClient,
-    chat_id: int,
-    text: str,
-) -> None:
-    """Sprint 3.4a -- the Telegram-side equivalent of the web's manual-
-    paste `PasteJobForm` (2.6f), reusing the exact same store functions
-    (`create_job_from_paste`, `create_application`) rather than a second
-    job-creation path. This is the first Telegram handler that reaches
-    into the applications pipeline at all -- everything before this
-    sprint only ever touched profile_store/link_codes_store.
-
-    The confirmation carries a "Generate resume" button (3.4b) --
-    `_handle_callback`'s `_PREPARE_PREFIX` branch."""
-    parsed = parse_job_paste(text)
-    if isinstance(parsed, list):
-        await telegram.send_message(chat_id, "❌ " + " / ".join(parsed))
-        return
-
-    job, snapshot = await create_job_from_paste(
-        supabase,
-        title=parsed["title"],
-        company_name=parsed["company_name"],
-        description_text=parsed["description_text"],
-        canonical_url=parsed["canonical_url"],
-        location_text=parsed["location_text"],
-    )
-    application = await create_application(
-        supabase,
-        user_id,
-        job_id=job["id"],
-        active_job_snapshot_id=snapshot["id"],
-        source_channel=CHANNEL,
-    )
-    await telegram.send_message(
-        chat_id,
-        render(_JOB_TRACKED_TEXT, title=parsed["title"], company=parsed["company_name"]),
-        reply_markup=_build_prepare_keyboard(application["id"]),
-    )
-
-
-async def _run_prepare_and_deliver(
-    supabase: AsyncClient,
-    http: httpx.AsyncClient,
-    user_id: str,
-    telegram: TelegramClient,
-    chat_id: int,
-    application_id: str,
-) -> None:
-    """Sprint 3.4b (button) / 3.4c ("apply to #N") -- runs the exact same
-    `run_prepare_application` / `latest_resume_pdf` orchestration the
-    web's `/prepare` and `/resume.pdf` routes call, then turns the result
-    into a chat message (+ a real file, via `TelegramClient.send_document`)
-    instead of a JSON body. `ApiError` is caught here rather than left to
-    propagate -- this handler IS the client-facing boundary for a
-    Telegram-triggered prepare, the same role `errors.py`'s FastAPI
-    handler plays for the web route. Shared by both triggers so "tap the
-    button on a just-created job" and "apply to #N from your list" behave
-    identically -- one prepare flow, two ways to reach it.
-
-    The bot has no route dependency to carry the per-user limit, so it claims the
-    "prepare" bucket itself, the same one `POST /applications/{id}/prepare` uses: the
-    bot is no way round the limit on the web. A refusal is a chat message, like every
-    other failure here."""
-    limited = await rate_limit_error_or_none(supabase, user_id, "prepare")
-    if limited is not None:
-        await telegram.send_message(chat_id, f"❌ {limited.message}")
-        return
-    await telegram.send_message(chat_id, _GENERATING_TEXT)
-    try:
-        result = await run_prepare_application(
-            supabase, http, user_id, application_id, idempotency_key=f"telegram:{uuid.uuid4()}"
-        )
-    except ApiError as e:
-        # This is the bot's own error boundary, so the API error handler never sees the error;
-        # a person stuck on a setup step here is as much a funnel drop-off as one on the web.
-        emit_setup_required(supabase, user_id, e)
-        await telegram.send_message(chat_id, f"❌ {e.message}")
-        return
-
-    warnings = cast(list[str], result.get("warnings") or [])
-    if result.get("resume") is None:
-        warning_text = "\n".join(f"• {w}" for w in warnings) if warnings else "No details given."
-        await telegram.send_message(chat_id, _PREPARE_DECLINED_TEXT.format(warnings=warning_text))
-        return
-
-    try:
-        _version_row, pdf_bytes = await latest_resume_pdf(supabase, http, user_id, application_id)
-    except ApiError as e:
-        await telegram.send_message(chat_id, f"❌ {e.message}")
-        return
-
-    score = result.get("final_score")
-    score_text = str(int(score)) if score is not None else "--"
-    warning_suffix = ("\n" + "\n".join(f"• {w}" for w in warnings)) if warnings else ""
-    await telegram.send_document(
-        chat_id,
-        "resume.pdf",
-        pdf_bytes,
-        caption=_PREPARE_SUCCESS_CAPTION.format(score=score_text, warnings=warning_suffix),
-    )
-    # Sprint 3.4d -- "track/approve via buttons": one tap moves the
-    # application from "saved" (its default status, per
-    # applications_store._DEFAULT_STATUS) to "applied", the natural next
-    # step right after reviewing a freshly generated resume. A separate
-    # message rather than `reply_markup` on the document itself -- proven,
-    # already-tested shape (`send_message` + a keyboard), not a new one.
-    await telegram.send_message(
-        chat_id,
-        _MARK_APPLIED_PROMPT_TEXT,
-        reply_markup=_build_mark_applied_keyboard(application_id),
-    )
-
-
-async def _handle_list_applications(
-    supabase: AsyncClient, user_id: str, telegram: TelegramClient, chat_id: int
-) -> None:
-    """Sprint 3.4c -- numbers the user's own tracked applications and
-    mints a working set from that exact ordering (Proposal §21: "the
-    number belongs to a working set, not global memory"), so a later
-    "apply to #N" resolves against THIS list even if the underlying
-    applications change in between. The first real consumer of
-    `working_sets_store` -- Sprint 2.6e shipped it fully tested but
-    entirely unwired."""
-    applications = await list_applications(supabase, user_id)
-    if not applications:
-        await telegram.send_message(chat_id, _NO_APPLICATIONS_TEXT)
-        return
-
-    snapshot_ids = list({a["active_job_snapshot_id"] for a in applications})
-    snapshots_by_id = {s["id"]: s for s in await get_snapshots(supabase, snapshot_ids)}
-
-    await create_working_set(
-        supabase,
-        user_id,
-        kind=_APPLICATIONS_WORKING_SET_KIND,
-        source_channel=CHANNEL,
-        items=[a["id"] for a in applications],
-    )
-
-    lines = ["📋 Your tracked applications:", ""]
-    for i, application in enumerate(applications, start=1):
-        snapshot = snapshots_by_id.get(application["active_job_snapshot_id"])
-        title = snapshot["title"] if snapshot else "Untitled"
-        company = snapshot["company_name"] if snapshot else ""
-        lines.append(f"{i}. {title} @ {company} -- {application['status']}")
-    lines += ["", 'Send "apply to #N" to generate a resume for one.']
-    await telegram.send_message(chat_id, "\n".join(lines))
-
-
-async def _handle_apply_reference(
-    supabase: AsyncClient,
-    http: httpx.AsyncClient,
-    user_id: str,
-    telegram: TelegramClient,
-    chat_id: int,
-    index: int,
-) -> None:
-    """Sprint 3.4c -- resolves "apply to #N" against the active
-    applications working set `_handle_list_applications` mints, then runs
-    the same prepare-and-deliver flow the "Generate resume" button uses."""
-    working_set = await get_active_working_set(supabase, user_id, _APPLICATIONS_WORKING_SET_KIND)
-    if working_set is None:
-        await telegram.send_message(chat_id, _NO_WORKING_SET_TEXT)
-        return
-
-    try:
-        application_id = await resolve_reference(supabase, user_id, working_set["id"], index)
-    except WorkingSetExpired:
-        await telegram.send_message(chat_id, _WORKING_SET_EXPIRED_TEXT)
-        return
-    except ReferenceOutOfRange:
-        await telegram.send_message(chat_id, _REFERENCE_OUT_OF_RANGE_TEXT.format(index=index))
-        return
-
-    await _run_prepare_and_deliver(supabase, http, user_id, telegram, chat_id, application_id)
-
-
-async def _handle_link_command(
-    supabase: AsyncClient,
-    user_id: str,
-    telegram_user_id: int,
-    telegram: TelegramClient,
-    chat_id: int,
-    code: str,
-) -> None:
-    subject = str(telegram_user_id)
-    if not await link_schema_ready(supabase):
-        await telegram.send_message(chat_id, _LINK_FAILED_TEXT)
-        return
-    try:
-        result = await consume_link_code(
-            supabase,
-            channel=CHANNEL,
-            external_subject=subject,
-            code=code,
-            source_user_id=user_id,
-        )
-    except APIError as e:
-        # Answer instead of failing the webhook: a 5xx makes Telegram
-        # redeliver the same /link, and if the code was already consumed the
-        # retry would call it invalid. A Postgres error (a 5-character
-        # SQLSTATE) rolled the whole RPC back, so nothing changed; anything
-        # else -- a gateway error in front of PostgREST -- says nothing about
-        # whether it committed, so the user is told to send the same code
-        # again: if it did commit, that resumes the link (a new code would
-        # not); if it didn't, the code still works.
-        logger.warning("link code consumption failed", extra={"ctx": {"code": e.code}})
-        if e.code == _UNIQUE_VIOLATION:
-            text = _LINK_CONFLICT_TEXT
-        elif isinstance(e.code, str) and len(e.code) == 5:
-            text = _LINK_FAILED_TEXT
-        else:
-            text = _LINK_UNCONFIRMED_TEXT
-        await telegram.send_message(chat_id, text)
-        return
-
-    if not result["ok"]:
-        text = _LINK_REFUSALS.get(result["reason"], _LINK_INVALID_TEXT)
-        await telegram.send_message(chat_id, text)
-        return
-
-    target_user_id = result["target_user_id"]
-    source_user_id = result["source_user_id"]
-    if target_user_id == source_user_id:
-        await telegram.send_message(chat_id, _LINK_ALREADY_LINKED_TEXT)
-        return
-
-    # The merge is committed. What's left -- moving the files, retiring the
-    # emptied source account -- is finished before replying, so a crash in
-    # it means no reply, Telegram redelivers, and the same code resumes it
-    # (consume_link_code recognizes it) instead of leaving the source
-    # stranded behind a "Linked!" nobody will ever resend. (The update's
-    # claim, P0.9, keeps that working: until the crashed delivery's lease runs
-    # out Telegram's retries are answered 503, not 200, so it keeps retrying;
-    # then the retry takes the update over.)
-    completion = await _finish_link(
-        supabase,
-        source_user_id=source_user_id,
-        target_user_id=target_user_id,
-        subject=subject,
-    )
-    if result.get("resumed") and completion is not None and completion.already_complete:
-        await telegram.send_message(chat_id, _LINK_ALREADY_LINKED_TEXT)
-        return
-    text = _format_merge_summary(result.get("summary") or {})
-    if completion is None or not completion.retired:
-        # The accounts are linked, but the old one still holds something --
-        # say so rather than implying it's all done.
-        text += _LINK_FINISHING_NOTE
-    await telegram.send_message(chat_id, text)
-
-
-async def _finish_link(
-    supabase: AsyncClient, *, source_user_id: str, target_user_id: str, subject: str
-) -> LinkCompletion | None:
-    """`finish_link`, contained: the link itself already committed, so a
-    failure finishing it is logged and the user still hears "Linked!" (with a
-    note that it isn't quite done) -- the same code resumes it if they resend
-    it, and nothing is lost meanwhile, since the source account isn't deleted
-    until it owns nothing."""
-    try:
-        return await finish_link(
-            supabase,
-            source_user_id=source_user_id,
-            target_user_id=target_user_id,
-            subject=subject,
-        )
-    except Exception:
-        logger.error(
-            "finishing a link failed",
-            extra={"ctx": {"source_user_id": source_user_id, "target_user_id": target_user_id}},
-            exc_info=True,
-        )
-        return None
-
-
-async def _handle_unlink_command(
-    supabase: AsyncClient,
-    user_id: str,
-    telegram_user_id: int,
-    telegram: TelegramClient,
-    chat_id: int,
-) -> None:
-    # A Telegram-only account has no web account to detach from, and
-    # dropping its identity row would strand its data under an auth user
-    # nothing points at any more.
-    if await is_auto_provisioned(supabase, user_id, telegram_user_id):
-        await telegram.send_message(chat_id, _UNLINK_NOT_LINKED_TEXT)
-        return
-    await unlink_telegram_identity(supabase, telegram_user_id)
-    await telegram.send_message(chat_id, _UNLINK_TEXT)
-
-
-async def _handle_message(
-    supabase: AsyncClient,
-    http: httpx.AsyncClient,
-    user_id: str,
-    telegram_user_id: int,
-    telegram: TelegramClient,
-    chat_id: int,
-    message: dict[str, Any],
-) -> None:
-    document = message.get("document")
-    if isinstance(document, dict) and _is_json_document(document):
-        # The same size cap a pasted profile gets on the web (body_limit.py): this upload
-        # never passes through that middleware, so it is checked here, against the size
-        # Telegram reports (advisory, so the download is bounded too).
-        limit = max_request_body_bytes()
-        declared_size = document.get("file_size")
-        if isinstance(declared_size, int) and declared_size > limit:
-            await telegram.send_message(chat_id, _document_too_large_text(limit))
-            return
-        try:
-            raw_bytes = await telegram.download_document(document["file_id"], max_bytes=limit)
-        except DownloadTooLarge:
-            await telegram.send_message(chat_id, _document_too_large_text(limit))
-            return
-        raw_text = _decode_uploaded_bytes(raw_bytes)
-        await _handle_json_import(
-            supabase, user_id, raw_text, "telegram_json_upload", telegram, chat_id
-        )
-        return
-
-    text = message.get("text") or message.get("caption") or ""
-
-    link_code = parse_link_code(text)
-    if link_code is not None:
-        if message.get("chat", {}).get("type") != "private":
-            await telegram.send_message(chat_id, _LINK_PRIVATE_ONLY_TEXT)
-            return
-        await _handle_link_command(
-            supabase, user_id, telegram_user_id, telegram, chat_id, link_code
-        )
-        return
-
-    if is_unlink_command(text):
-        await _handle_unlink_command(supabase, user_id, telegram_user_id, telegram, chat_id)
-        return
-
-    if looks_like_json_payload(text):
-        await _handle_json_import(supabase, user_id, text, "telegram_json_paste", telegram, chat_id)
-        return
-
-    if looks_like_job_paste(text):
-        await _handle_job_paste(supabase, user_id, telegram, chat_id, text)
-        return
-
-    apply_index = parse_apply_reference(text)
-    if apply_index is not None:
-        await _handle_apply_reference(supabase, http, user_id, telegram, chat_id, apply_index)
-        return
-
-    intent = classify(text)
-
-    if intent == Intent.SETUP_HELP:
-        await telegram.send_message(chat_id, _SETUP_HELP_TEXT)
-        return
-
-    if intent == Intent.CHECK_RESUME:
-        version = await get_active_version(supabase, user_id)
-        if version is None:
-            await telegram.send_message(chat_id, _NO_RESUME_TEXT)
-            return
-        await telegram.send_message(chat_id, _format_active_profile(version))
-        return
-
-    if intent == Intent.TRACK_JOB_HELP:
-        await telegram.send_message(chat_id, _TRACK_JOB_HELP_TEXT)
-        return
-
-    if intent == Intent.LIST_APPLICATIONS:
-        await _handle_list_applications(supabase, user_id, telegram, chat_id)
-        return
-
-    await telegram.send_message(chat_id, _FALLBACK_TEXT)
-
-
-async def _handle_callback(
-    supabase: AsyncClient,
-    http: httpx.AsyncClient,
-    user_id: str,
-    telegram: TelegramClient,
-    chat_id: int,
-    callback_query: dict[str, Any],
-) -> None:
-    callback_data = callback_query.get("data", "")
-
-    if callback_data.startswith(_ACTIVATE_PREFIX):
-        version_id = callback_data[len(_ACTIVATE_PREFIX) :]
-        try:
-            await activate_version(supabase, user_id, version_id)
-            await telegram.send_message(chat_id, "✅ Saved! Your resume is now on file.")
-        except VersionNotFound:
-            await telegram.send_message(
-                chat_id, "❌ That preview is gone -- please resend your resume JSON."
-            )
-    elif callback_data.startswith(_CANCEL_PREFIX):
-        version_id = callback_data[len(_CANCEL_PREFIX) :]
-        try:
-            await delete_pending_version(supabase, user_id, version_id)
-            await telegram.send_message(chat_id, "Cancelled. Nothing was saved.")
-        except (VersionNotFound, VersionAlreadyActivated):
-            # Already gone (double-tap) or already confirmed (raced with
-            # activate) -- either way, nothing left to cancel.
-            pass
-    elif callback_data.startswith(_PREPARE_PREFIX):
-        application_id = callback_data[len(_PREPARE_PREFIX) :]
-        # Answered BEFORE the (potentially minute-long) prepare run, not
-        # after -- Telegram's own guidance is that a button's spinner
-        # shouldn't sit and wait for a slow action; `_GENERATING_TEXT`
-        # (sent inside the handler) is the actual "this is running"
-        # signal to the user.
-        await telegram.answer_callback_query(callback_query["id"])
-        await _run_prepare_and_deliver(supabase, http, user_id, telegram, chat_id, application_id)
-        return
-    elif callback_data.startswith(_STAGE_PREFIX):
-        application_id, _sep, new_status = callback_data[len(_STAGE_PREFIX) :].partition(":")
-        try:
-            await change_stage(
-                supabase,
-                user_id,
-                application_id,
-                new_status=new_status,
-                idempotency_key=f"telegram-stage:{uuid.uuid4()}",
-            )
-            await telegram.send_message(chat_id, render(_STAGE_CHANGED_TEXT, status=new_status))
-        except ApplicationNotFound:
-            await telegram.send_message(chat_id, "❌ Couldn't find that application anymore.")
-        except InvalidApplicationStatus:
-            # K1 (applications-kanban.md D2) -- this callback_data is
-            # technically forgeable, and this path never goes through
-            # ChangeApplicationStageRequest's own Pydantic Literal, so
-            # this is the first real check `new_status` ever meets.
-            await telegram.send_message(chat_id, f"❌ {new_status!r} isn't a real stage.")
-
-    await telegram.answer_callback_query(callback_query["id"])
-
-
 # How long an unfinished claim holds before a redelivery may take the update over (see
 # `claim_telegram_update`). Long enough that a live handler is never taken over, short enough
 # that a handler whose process died is picked up while Telegram is still retrying. Most updates
-# finish in a second or two; the resume generation does an engine call of up to 180 s and up to
-# two 30 s compiles, so it gets a lease that clears all of that.
+# finish in a second or two. The resume generation no longer runs inside the handler (it is a
+# deferred task), so the longer lease it used to need is more than it needs now; it is kept for
+# the requests that start one, to keep the claim's behaviour unchanged.
 _LEASE_SECONDS = 120
 _SLOW_LEASE_SECONDS = 600
 _SETTLE_TIMEOUT_SECONDS = 10.0
 
 
-def _lease_seconds_for(update: dict[str, Any]) -> int:
-    callback_query = update.get("callback_query")
-    if isinstance(callback_query, dict):
-        data = callback_query.get("data")
-        if isinstance(data, str) and data.startswith(_PREPARE_PREFIX):
-            return _SLOW_LEASE_SECONDS
-    message = update.get("message")
-    if isinstance(message, dict):
-        text = message.get("text") or message.get("caption") or ""
-        if isinstance(text, str) and parse_apply_reference(text) is not None:
-            return _SLOW_LEASE_SECONDS
+def _lease_seconds_for(message: InboundMessage | None) -> int:
+    if message is not None and is_slow_request(message):
+        return _SLOW_LEASE_SECONDS
     return _LEASE_SECONDS
 
 
@@ -883,29 +75,29 @@ async def _settle_claim(supabase: AsyncClient, update_id: int, *, finished: bool
             await release_update(supabase, update_id)
 
 
+def _parse(update: dict[str, Any]) -> tuple[InboundMessage | None, Exception | None]:
+    """`parse_update`, with a malformed update (a message with no sender or chat: Telegram
+    never sends one) held instead of raised. It is raised where the update is processed, so a
+    malformed one is claimed and then released like any other update that fails, and Telegram
+    is answered with the same 500 as always."""
+    try:
+        return parse_update(update), None
+    except (KeyError, TypeError) as e:
+        return None, e
+
+
 async def _process_update(
     supabase: AsyncClient,
-    telegram: TelegramClient,
+    renderer: Renderer,
     http: httpx.AsyncClient,
-    update: dict[str, Any],
+    message: InboundMessage | None,
+    malformed: Exception | None,
 ) -> dict[str, str]:
-    callback_query = update.get("callback_query")
-    if isinstance(callback_query, dict):
-        telegram_user_id = callback_query["from"]["id"]
-        chat_id = callback_query["message"]["chat"]["id"]
-        user_id = await resolve_or_create_user_id(supabase, telegram_user_id)
-        await _handle_callback(supabase, http, user_id, telegram, chat_id, callback_query)
-        return {"status": "ok"}
-
-    message = update.get("message")
-    if not isinstance(message, dict) or ("text" not in message and "document" not in message):
+    if malformed is not None:
+        raise malformed
+    if message is None:
         return {"status": "ignored"}
-
-    telegram_user_id = message["from"]["id"]
-    chat_id = message["chat"]["id"]
-
-    user_id = await resolve_or_create_user_id(supabase, telegram_user_id)
-    await _handle_message(supabase, http, user_id, telegram_user_id, telegram, chat_id, message)
+    await handle_inbound(supabase, http, renderer, message, deferred=deferred_reply.registry)
     return {"status": "ok"}
 
 
@@ -913,19 +105,20 @@ async def _process_update(
 async def telegram_webhook(
     request: Request,
     supabase: AsyncClient = Depends(get_supabase),
-    telegram: TelegramClient = Depends(get_telegram_client),
+    renderer: Renderer = Depends(get_telegram_renderer),
     http: httpx.AsyncClient = Depends(get_http_client),
 ) -> dict[str, str]:
     update = cast(dict[str, Any], await request.json())
+    message, malformed = _parse(update)
 
     # P0.9: Telegram redelivers an update it got no 2xx for, and gives up waiting on a
     # slow handler too. The claim makes the second delivery a quick answer instead of a
     # second job, application and paid generation. It is released again if this delivery
     # fails or is cancelled, so the retry a 500 asks for is processed, not dropped.
-    update_id = update.get("update_id")
+    update_id = update_id_of(update)
     claimed = False
-    if isinstance(update_id, int) and not isinstance(update_id, bool):
-        state = await claim_update(supabase, update_id, lease_seconds=_lease_seconds_for(update))
+    if update_id is not None:
+        state = await claim_update(supabase, update_id, lease_seconds=_lease_seconds_for(message))
         if state == "done":
             return {"status": "duplicate"}
         if state == "in_progress":
@@ -942,9 +135,9 @@ async def telegram_webhook(
 
     finished = False
     try:
-        response = await _process_update(supabase, telegram, http, update)
+        response = await _process_update(supabase, renderer, http, message, malformed)
         finished = True
         return response
     finally:
-        if claimed and isinstance(update_id, int):
+        if claimed and update_id is not None:
             await _settle_claim(supabase, update_id, finished=finished)

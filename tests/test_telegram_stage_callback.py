@@ -28,6 +28,7 @@ _APPLICATION_ID = "30000000-0000-0000-0000-000000000001"
 _WEBHOOK_SECRET = "test-secret-not-real"
 _RAISED_EXCEPTION_SQLSTATE = "P0001"
 _INVALID_STATUS_SQLSTATE = "22023"
+CHANGE_STAGE_RPC = "change_application_stage"
 
 
 class _FakeChannelIdentitiesTable:
@@ -109,9 +110,9 @@ class _FakeTelegramClient:
         self.answered_callback_ids.append(callback_query_id)
 
 
-def _callback_update(data: str) -> dict[str, Any]:
+def _callback_update(data: str, update_id: int = 2) -> dict[str, Any]:
     return {
-        "update_id": 2,
+        "update_id": update_id,
         "callback_query": {
             "id": "cbq-1",
             "from": {"id": _TELEGRAM_USER_ID, "is_bot": False, "first_name": "Test"},
@@ -163,6 +164,28 @@ def test_mark_applied_callback_changes_stage_and_confirms() -> None:
     assert params["p_new_status"] == "applied"
     assert params["p_user_id"] == _USER_ID
     assert "Marked as <b>applied</b>." in telegram.sent[0][1]
+
+
+def test_every_stage_tap_carries_a_fresh_idempotency_key() -> None:
+    """`change_stage` answers a repeated key with the current row and writes nothing, so a key
+    that was ever reused (or constant) would turn every later tap into a silent no-op."""
+    supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _USER_ID}],
+        rpc_data={"id": _APPLICATION_ID, "status": "applied"},
+    )
+    telegram = _FakeTelegramClient()
+    data = f"app:stage:{_APPLICATION_ID}:applied"
+
+    # Two deliveries, so the update ledger lets both through.
+    _post(supabase, telegram, _callback_update(data, update_id=2))
+    _post(supabase, telegram, _callback_update(data, update_id=3))
+
+    keys = [p["p_idempotency_key"] for fn, p in supabase.rpc_calls if fn == CHANGE_STAGE_RPC]
+    assert len(keys) == 2
+    assert keys[0] != keys[1]
+    for key in keys:
+        assert key.startswith("telegram-stage:")
+        assert 16 <= len(key) <= 128  # a uuid's worth, not something short enough to repeat
 
 
 def test_mark_applied_callback_application_not_found_sends_honest_error() -> None:

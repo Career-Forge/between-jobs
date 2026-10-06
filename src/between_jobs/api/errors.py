@@ -19,6 +19,8 @@ doesn't parse (or care about) this JSON envelope. Its one HTTPException
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Mapping
 from typing import Any, Literal
 
 ErrorCode = Literal[
@@ -128,3 +130,35 @@ class ApiError(Exception):
                 "details": self.details,
             }
         }
+
+
+def log_api_error(
+    logger: logging.Logger, exc: ApiError, *, ctx: Mapping[str, object] | None = None
+) -> None:
+    """Writes the one log line an `ApiError` gets, wherever it was turned into an answer: the
+    web handler in app.py, and the chat bot, which answers in a message and so never reaches
+    that handler.
+
+    `ctx` is what the caller knows about the request (a route, or a channel and an update id):
+    ids and names only, never a message, a body or a value out of one. What is added here is
+    the code, the status and the cause's type (and a Postgres SQLSTATE when it carries one),
+    which is what makes a 500 diagnosable; the cause's message is left out because database
+    and provider messages can quote the values involved.
+
+    The level says whose problem it is: a client error is INFO, a provider refusing or failing
+    (a user's own key, a rate limit, the resume engine being down) is WARNING because that is
+    not this service breaking, and anything else is ERROR."""
+    line: dict[str, object] = {"code": exc.code, "status": exc.status_code, **(ctx or {})}
+    cause = exc.__cause__
+    if cause is not None:
+        line["cause_type"] = f"{type(cause).__module__}.{type(cause).__qualname__}"
+        cause_code = getattr(cause, "code", None)
+        if isinstance(cause_code, str) and len(cause_code) <= 16:
+            line["cause_code"] = cause_code
+    if exc.status_code < 500:
+        level = logging.INFO
+    elif exc.code.startswith("PROVIDER_"):
+        level = logging.WARNING
+    else:
+        level = logging.ERROR
+    logger.log(level, "api error %s", exc.code, extra={"ctx": line})

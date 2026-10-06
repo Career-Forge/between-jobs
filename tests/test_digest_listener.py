@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from postgrest.exceptions import APIError
 
+from between_jobs.api.channel_envelope import RichText
 from between_jobs.api.digest_listener import handle_batch
 
 _USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -105,29 +106,23 @@ class _FakeStatusProposalRpc:
         self.raise_on = raise_unique_violation_on or set()
 
 
-class _FakeChannelIdentitiesTable:
-    def __init__(self, chat_id: int | None) -> None:
-        self._rows = [{"external_subject": str(chat_id)}] if chat_id is not None else []
+class _FakeNotifier:
+    """Stands in for a channel's `Notifier`: what the listener sees is a user id and a text,
+    never a chat or a wire format (how a user's chat is found and written to is the
+    adapter's, tested in test_telegram_adapter.py)."""
 
-    def select(self, *_: Any, **__: Any) -> _FakeChannelIdentitiesTable:
-        return self
-
-    def eq(self, *_: Any, **__: Any) -> _FakeChannelIdentitiesTable:
-        return self
-
-    async def execute(self) -> SimpleNamespace:
-        return SimpleNamespace(data=self._rows)
-
-
-class _FakeTelegramClient:
-    def __init__(self, *, raise_on_send: bool = False) -> None:
-        self.sent: list[tuple[int, str]] = []
+    def __init__(self, *, raise_on_send: bool = False, linked: bool = True) -> None:
+        self.sent: list[tuple[str, str]] = []
         self._raise_on_send = raise_on_send
+        self._linked = linked
 
-    async def send_message(self, chat_id: int, text: str, **_: Any) -> None:
+    async def notify(self, user_id: str, text: RichText) -> bool:
         if self._raise_on_send:
-            raise RuntimeError("telegram send failed")
-        self.sent.append((chat_id, text))
+            raise RuntimeError("the channel refused the message")
+        if not self._linked:
+            return False
+        self.sent.append((user_id, text.plain_text()))
+        return True
 
 
 class _FakeSupabaseClient:
@@ -139,7 +134,6 @@ class _FakeSupabaseClient:
         today_items: _FakeTodayItemsTable | None = None,
         high_fit_job_rpc: _FakeHighFitJobRpc | None = None,
         status_proposal_rpc: _FakeStatusProposalRpc | None = None,
-        telegram_chat_id: int | None = None,
         saved_search_exists: bool = True,
         status_proposal_exists: bool = True,
     ) -> None:
@@ -152,7 +146,6 @@ class _FakeSupabaseClient:
         self.today_items = today_items or _FakeTodayItemsTable()
         self.high_fit_job_rpc = high_fit_job_rpc or _FakeHighFitJobRpc()
         self.status_proposal_rpc = status_proposal_rpc or _FakeStatusProposalRpc()
-        self._channel_identities = _FakeChannelIdentitiesTable(telegram_chat_id)
         self._saved_searches = _FakeTable(
             [{"id": _SAVED_SEARCH_ID, "user_id": _USER_ID}] if saved_search_exists else []
         )
@@ -167,7 +160,6 @@ class _FakeSupabaseClient:
             "applications": self._applications,
             "job_snapshots": self._job_snapshots,
             "today_items": self.today_items,
-            "channel_identities": self._channel_identities,
             "saved_searches": self._saved_searches,
             "application_status_proposals": self._application_status_proposals,
         }[name]
@@ -351,77 +343,79 @@ async def test_job_match_found_skips_gracefully_when_the_saved_search_was_delete
     catches, so it would have propagated out of `run_worker_forever`'s
     bare `while True` loop and killed the whole outbox worker)."""
     supabase = _FakeSupabaseClient(applications=[], saved_search_exists=False)
-    telegram = _FakeTelegramClient()
+    notifier = _FakeNotifier()
     row = _job_match_row()
 
-    inserted = await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+    inserted = await handle_batch(supabase, [row], notifier=notifier)  # type: ignore[arg-type]
 
     assert inserted == 0
     assert supabase.high_fit_job_rpc.calls == []
-    assert telegram.sent == []
+    assert notifier.sent == []
 
 
-async def test_job_match_found_pushes_a_telegram_message_when_chat_id_resolves() -> None:
-    supabase = _FakeSupabaseClient(applications=[], telegram_chat_id=555)
-    telegram = _FakeTelegramClient()
+async def test_job_match_found_pushes_a_message_to_the_user_through_the_notifier() -> None:
+    supabase = _FakeSupabaseClient(applications=[])
+    notifier = _FakeNotifier()
     row = _job_match_row()
 
-    inserted = await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+    inserted = await handle_batch(supabase, [row], notifier=notifier)  # type: ignore[arg-type]
 
     assert inserted == 1
-    assert len(telegram.sent) == 1
-    chat_id, text = telegram.sent[0]
-    assert chat_id == 555
+    assert len(notifier.sent) == 1
+    user_id, text = notifier.sent[0]
+    assert user_id == row["user_id"]
     assert "Backend Engineer" in text
     assert "Strong fit -- backend skills align" in text
     assert "https://boards.greenhouse.io/acme/jobs/1" in text
 
 
-async def test_job_match_found_skips_the_push_when_no_telegram_identity_is_linked() -> None:
-    supabase = _FakeSupabaseClient(applications=[], telegram_chat_id=None)
-    telegram = _FakeTelegramClient()
+async def test_job_match_found_skips_the_push_when_the_user_has_no_linked_channel() -> None:
+    """The notifier answers False for a user with no linked chat: the Today item is still
+    written, and nothing is logged as a problem."""
+    supabase = _FakeSupabaseClient(applications=[])
+    notifier = _FakeNotifier(linked=False)
     row = _job_match_row()
 
-    inserted = await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+    inserted = await handle_batch(supabase, [row], notifier=notifier)  # type: ignore[arg-type]
 
     assert inserted == 1
-    assert telegram.sent == []
+    assert notifier.sent == []
 
 
-async def test_job_match_found_never_pushes_without_a_telegram_client(
+async def test_job_match_found_never_pushes_without_a_notifier(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A server run without a bot (P2.4) hands the listener `telegram=None`: the
+    """A server run without a bot (P2.4) hands the listener `notifier=None`: the
     Today item is still written, and nothing is logged as a problem -- not
     having a bot is a configuration, not a failure."""
     caplog.set_level(logging.INFO)
-    supabase = _FakeSupabaseClient(applications=[], telegram_chat_id=555)
+    supabase = _FakeSupabaseClient(applications=[])
     row = _job_match_row()
 
-    inserted = await handle_batch(supabase, [row], telegram=None)  # type: ignore[arg-type]
+    inserted = await handle_batch(supabase, [row], notifier=None)  # type: ignore[arg-type]
 
     assert inserted == 1
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
 async def test_job_match_found_push_failure_does_not_affect_the_insert_count() -> None:
-    supabase = _FakeSupabaseClient(applications=[], telegram_chat_id=555)
-    telegram = _FakeTelegramClient(raise_on_send=True)
+    supabase = _FakeSupabaseClient(applications=[])
+    notifier = _FakeNotifier(raise_on_send=True)
     row = _job_match_row()
 
-    inserted = await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+    inserted = await handle_batch(supabase, [row], notifier=notifier)  # type: ignore[arg-type]
 
     assert inserted == 1
-    assert telegram.sent == []
+    assert notifier.sent == []
 
 
 async def test_job_match_found_push_failure_is_logged(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.WARNING)
-    supabase = _FakeSupabaseClient(applications=[], telegram_chat_id=555)
-    telegram = _FakeTelegramClient(raise_on_send=True)
+    supabase = _FakeSupabaseClient(applications=[])
+    notifier = _FakeNotifier(raise_on_send=True)
     row = _job_match_row()
 
-    await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+    await handle_batch(supabase, [row], notifier=notifier)  # type: ignore[arg-type]
 
     records = [r for r in caplog.records if r.name == "between_jobs.api.digest_listener"]
     assert len(records) == 1
@@ -432,14 +426,14 @@ async def test_job_match_found_push_failure_is_logged(caplog: pytest.LogCaptureF
 
 async def test_job_match_found_does_not_push_on_idempotent_duplicate() -> None:
     rpc = _FakeHighFitJobRpc(raise_unique_violation_on={"evt-match-1"})
-    supabase = _FakeSupabaseClient(applications=[], high_fit_job_rpc=rpc, telegram_chat_id=555)
-    telegram = _FakeTelegramClient()
+    supabase = _FakeSupabaseClient(applications=[], high_fit_job_rpc=rpc)
+    notifier = _FakeNotifier()
     row = _job_match_row()
 
-    inserted = await handle_batch(supabase, [row], telegram=telegram)  # type: ignore[arg-type]
+    inserted = await handle_batch(supabase, [row], notifier=notifier)  # type: ignore[arg-type]
 
     assert inserted == 0
-    assert telegram.sent == []
+    assert notifier.sent == []
 
 
 _PROPOSAL_ID = "70000000-0000-0000-0000-000000000001"

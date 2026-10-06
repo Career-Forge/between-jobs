@@ -94,7 +94,7 @@ UNLIMITED: dict[str, str] = {
     "POST /telegram/webhook": (
         "authenticated by Telegram's shared secret, not a user session, so it cannot carry a "
         "per-user route dependency; its one expensive action, generating a resume, claims the "
-        "'prepare' bucket itself (telegram_webhook._run_prepare_and_deliver); an uploaded .json "
+        "'prepare' bucket itself (channel_core._start_prepare); an uploaded .json "
         "resume is held to the same size cap as a pasted one (body_limit.py), checked against "
         "Telegram's declared size and again while downloading"
     ),
@@ -402,6 +402,9 @@ EXPENSIVE_NAMES = frozenset(
         "resolve_header_chips",
         "load_coverage_context",
         "run_prepare_application",
+        # the chat bot's whole business logic (channel_core), which can start a resume
+        # generation; the Telegram webhook reaches it
+        "handle_inbound",
         # the LaTeX compiler
         "call_compile",
         "latest_resume_pdf",
@@ -435,7 +438,7 @@ SCAN_EXEMPT: dict[str, str] = {
     "telegram_webhook.py::telegram_webhook": (
         "no user session to hang a route dependency on (Telegram's shared secret authenticates "
         "the call); the one expensive action, generating a resume, claims the 'prepare' bucket "
-        "itself in _run_prepare_and_deliver"
+        "itself in channel_core._start_prepare, before it starts the work"
     ),
 }
 """'<module>::<handler>' -> why an expensive, un-limited handler is acceptable. Every entry
@@ -629,3 +632,39 @@ async def by_default_argument(x):
     assert by_name["socket"].expensive == {"llm_generate"} and not by_name["socket"].limited
     # a cross-module pipeline whose model call is a default argument, named in EXPENSIVE_NAMES
     assert by_name["by_default_argument"].expensive == {"generate_positioning_brief"}
+
+
+def test_the_bots_resume_generation_is_only_reachable_through_the_limiter() -> None:
+    """The webhook is exempt from the route scan because the chat bot claims the "prepare"
+    bucket itself. That only holds while the one function that starts a generation claims it
+    first, and nothing else reaches the work: pinned here on `channel_core`'s own source."""
+    source = (_SRC / "channel_core.py").read_text()
+    functions = {
+        node.name: node
+        for node in ast.parse(source).body
+        if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef)
+    }
+    work = functions["_prepare_and_deliver"]
+    start = functions["_start_prepare"]
+
+    assert {"run_prepare_application", "latest_resume_pdf"} <= _names_in(work)
+    assert {"rate_limit_error_or_none", "_prepare_and_deliver"} <= _names_in(start)
+    # the claim comes before the work is handed over, in source order
+    claim_line = min(
+        n.lineno
+        for n in ast.walk(start)
+        if isinstance(n, ast.Name) and n.id == "rate_limit_error_or_none"
+    )
+    handover_line = min(
+        n.lineno
+        for n in ast.walk(start)
+        if isinstance(n, ast.Name) and n.id == "_prepare_and_deliver"
+    )
+    assert claim_line < handover_line
+    # no other function reaches the work, or the engine and compiler it calls
+    others = {name: fn for name, fn in functions.items() if name not in {"_prepare_and_deliver"}}
+    for name, fn in others.items():
+        reached = _names_in(fn)
+        assert not {"run_prepare_application", "latest_resume_pdf"} & reached, name
+        if name != "_start_prepare":
+            assert "_prepare_and_deliver" not in reached, name

@@ -12,7 +12,10 @@ from postgrest.exceptions import APIError
 from between_jobs.api.telegram_identity import (
     get_chat_id,
     is_auto_provisioned,
+    is_auto_provisioned_for_subject,
     resolve_or_create_user_id,
+    resolve_or_create_user_id_for_subject,
+    unlink_subject,
 )
 
 _TELEGRAM_USER_ID = 987654321
@@ -203,3 +206,82 @@ async def test_get_chat_id_returns_none_when_no_telegram_identity_is_linked() ->
     client = _FakeSupabaseClient(select_rows=[])
     result = await get_chat_id(client, _EXISTING_USER_ID)  # type: ignore[arg-type]
     assert result is None
+
+
+# -- the channel-neutral names: the same behaviour, keyed by (channel, subject) ---------------
+
+
+async def test_the_subject_form_resolves_and_provisions_exactly_like_the_int_form() -> None:
+    existing = _FakeSupabaseClient(select_rows=[{"user_id": _EXISTING_USER_ID}])
+    assert (
+        await resolve_or_create_user_id_for_subject(existing, "telegram", str(_TELEGRAM_USER_ID))  # type: ignore[arg-type]
+        == _EXISTING_USER_ID
+    )
+
+    fresh = _FakeSupabaseClient(select_rows=[])
+    user_id = await resolve_or_create_user_id_for_subject(
+        fresh,  # type: ignore[arg-type]
+        "telegram",
+        str(_TELEGRAM_USER_ID),
+    )
+
+    assert user_id == _NEW_USER_ID
+    assert fresh.auth.admin.create_user_calls[0]["app_metadata"] == {
+        "provider": "telegram",
+        "bj_provisioned_by": "telegram",
+        "bj_telegram_subject": str(_TELEGRAM_USER_ID),
+    }
+    assert await is_auto_provisioned_for_subject(
+        fresh,  # type: ignore[arg-type]
+        user_id,
+        "telegram",
+        str(_TELEGRAM_USER_ID),
+    )
+    assert not await is_auto_provisioned_for_subject(
+        fresh,  # type: ignore[arg-type]
+        user_id,
+        "telegram",
+        str(_TELEGRAM_USER_ID + 1),
+    )
+
+
+async def test_another_channel_is_refused_so_its_subjects_are_never_filed_under_telegram() -> None:
+    client = _FakeSupabaseClient(select_rows=[])
+
+    with pytest.raises(ValueError, match="no identity provisioning for channel 'discord'"):
+        await resolve_or_create_user_id_for_subject(client, "discord", "42")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="channel 'discord'"):
+        await is_auto_provisioned_for_subject(client, _EXISTING_USER_ID, "discord", "42")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="channel 'discord'"):
+        await unlink_subject(client, "discord", "42")  # type: ignore[arg-type]
+
+    assert client.auth.admin.create_user_calls == []  # nothing was provisioned
+    assert client._select_calls == 0  # and the table was never touched
+
+
+async def test_unlinking_a_subject_deletes_that_subjects_telegram_identity_row() -> None:
+    filters: list[tuple[str, Any]] = []
+
+    class _Deletes:
+        def delete(self) -> _Deletes:
+            return self
+
+        def eq(self, column: str, value: Any) -> _Deletes:
+            filters.append((column, value))
+            return self
+
+        async def execute(self) -> SimpleNamespace:
+            return SimpleNamespace(data=[])
+
+    class _Client:
+        def table(self, name: str) -> _Deletes:
+            assert name == "channel_identities"
+            return _Deletes()
+
+    await unlink_subject(_Client(), "telegram", "987654321")  # type: ignore[arg-type]
+
+    assert filters == [
+        ("channel", "telegram"),
+        ("external_tenant", ""),
+        ("external_subject", "987654321"),
+    ]

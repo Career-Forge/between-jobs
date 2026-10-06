@@ -10,11 +10,12 @@ from __future__ import annotations
 from typing import cast
 
 import httpx
-from fastapi import Request
+from fastapi import Depends, Request
 
 from supabase import AsyncClient
 
 from .errors import ApiError
+from .telegram_adapter import TelegramRenderer
 from .telegram_client import TelegramClient
 
 
@@ -53,6 +54,16 @@ def get_telegram_client(request: Request) -> TelegramClient:
     Telegram isn't configured."""
     _require_telegram(request)
     return cast(TelegramClient, request.app.state.telegram_client)
+
+
+def get_telegram_renderer(
+    telegram: TelegramClient = Depends(get_telegram_client),
+) -> TelegramRenderer:
+    """The bot as a channel renderer: what the webhook hands to the channel-neutral logic.
+    Built on `get_telegram_client`, so it is just as unavailable (404 FEATURE_DISABLED) on a
+    server running without a bot, and a test that overrides that client gets its fake
+    wrapped here."""
+    return TelegramRenderer(telegram)
 
 
 def get_webhook_secret(request: Request) -> str:

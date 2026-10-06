@@ -24,7 +24,9 @@ here still does.
 
 Job Finder P10 (job-finder-p10-digest.md) adds a real-time Telegram push
 for `high_fit_job` items specifically -- the one kind produced entirely
-in the background, with no active user session to notice it. The
+in the background, with no active user session to notice it. The push goes through a
+channel-neutral `Notifier` (channel_envelope.py): this module neither knows nor cares
+which channel a user linked, or how it writes a message. The
 already-atomic `insert_high_fit_job_today_item` RPC succeeding IS the
 "genuinely new" signal (the same guarantee P9 already proved live), so
 the push needs no separate schedule or delivery-tracking of its own.
@@ -58,10 +60,9 @@ from supabase import AsyncClient
 
 from .application_status_proposals_store import StatusProposalNotFound, get_status_proposal
 from .applications_store import ApplicationNotFound, get_application
+from .channel_envelope import Notifier, rich
 from .jobs_store import SnapshotNotFound, get_snapshot
 from .saved_searches_store import SavedSearchNotFound, get_saved_search
-from .telegram_client import TelegramClient
-from .telegram_identity import get_chat_id
 
 logger = logging.getLogger(__name__)
 
@@ -254,24 +255,19 @@ async def _insert_status_proposal_item(
     ).execute()
 
 
-async def _push_job_match(
-    supabase: AsyncClient, telegram: TelegramClient, row: dict[str, Any], rendered: _Rendered
-) -> None:
+async def _push_job_match(notifier: Notifier, row: dict[str, Any], rendered: _Rendered) -> None:
     """Best-effort real-time push (Job Finder P10) -- only ever called
     right after `_insert_high_fit_job_item` just genuinely succeeded, so
     the today_item is already durably persisted by the time this runs. A
-    user with no linked Telegram identity, a network blip, or the bot
-    being blocked never loses or rolls back the already-correct data,
-    only the proactive nudge -- caught broadly on purpose, same
-    reasoning as `company_intel_routes.py`'s own fail-open precedent for
-    a bonus side effect of work that already succeeded."""
+    user with no linked chat, a network blip, or the bot being blocked
+    never loses or rolls back the already-correct data, only the
+    proactive nudge -- caught broadly on purpose, same reasoning as
+    `company_intel_routes.py`'s own fail-open precedent for a bonus side
+    effect of work that already succeeded."""
     try:
-        chat_id = await get_chat_id(supabase, row["user_id"])
-        if chat_id is None:
-            return
         apply_url = row["payload"].get("apply_url", "")
         text = f"{rendered['headline']}\n\n{rendered['detail'] or ''}\n\n{apply_url}".strip()
-        await telegram.send_message(chat_id, text)
+        await notifier.notify(row["user_id"], rich(text))
     except Exception:  # deliberately broad -- see docstring above
         logger.warning(
             "job-match push failed; the today item is already saved",
@@ -281,7 +277,7 @@ async def _push_job_match(
 
 
 async def handle_batch(
-    supabase: AsyncClient, rows: list[dict[str, Any]], *, telegram: TelegramClient | None = None
+    supabase: AsyncClient, rows: list[dict[str, Any]], *, notifier: Notifier | None = None
 ) -> int:
     """Renders and inserts one `today_items` row per claimed outbox row
     this listener recognizes. Idempotent on `source_outbox_event_id`
@@ -289,9 +285,10 @@ async def handle_batch(
     today_item (e.g. from a prior partial-batch failure) is silently
     skipped, never duplicated. Returns the count actually inserted.
 
-    `telegram` is optional so this stays testable/usable with no push
-    capability configured -- when given, a genuinely new `high_fit_job`
-    item also triggers `_push_job_match`."""
+    `notifier` is optional so this stays testable/usable with no push
+    capability configured (a server run without a bot has none) -- when
+    given, a genuinely new `high_fit_job` item also triggers
+    `_push_job_match`."""
     inserted = 0
     for row in rows:
         rendered = await _render(supabase, row)
@@ -300,8 +297,8 @@ async def handle_batch(
         try:
             if row["event_type"] == "job_registry.match_found.v1":
                 await _insert_high_fit_job_item(supabase, row, rendered)
-                if telegram is not None:
-                    await _push_job_match(supabase, telegram, row, rendered)
+                if notifier is not None:
+                    await _push_job_match(notifier, row, rendered)
             elif row["event_type"] == "gmail_reply.status_proposed.v1":
                 await _insert_status_proposal_item(supabase, row, rendered)
             else:

@@ -5,7 +5,7 @@ Regex, not an LLM call -- matches the project's own L1/L2/L3 philosophy
 
 Three layers, matching n8n's own separation of concerns:
   1. `looks_like_json_payload()` -- a JSON-shape gate, checked BEFORE
-     intent classification (see telegram_webhook.py). A long or
+     intent classification (see channel_core.py). A long or
      brace-leading message is almost certainly a resume-JSON paste, not a
      command -- classifying it first means real JSON never has to also
      match a command regex to be recognized.
@@ -23,7 +23,7 @@ format (a deliberate Sprint 2.4 stub, never the real contract) for the
 actual flow: a template message, then a SEPARATE message carrying the
 JSON, validated deterministically and confirmed via inline buttons before
 anything becomes canonical (profile.py / profile_store.py /
-telegram_webhook.py).
+channel_core.py).
 """
 
 from __future__ import annotations

@@ -8,10 +8,14 @@ the body shape matches Appendix B exactly and every code maps to a status.
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
-from between_jobs.api.errors import _STATUS_BY_CODE, ApiError, ErrorCode
+import pytest
+from postgrest.exceptions import APIError
+
+from between_jobs.api.errors import _STATUS_BY_CODE, ApiError, ErrorCode, log_api_error
 
 
 def test_to_body_matches_appendix_b_shape() -> None:
@@ -74,6 +78,60 @@ def test_the_platforms_own_limit_codes_have_their_own_statuses() -> None:
     provider = ApiError("PROVIDER_RATE_LIMITED", "x")
     assert provider.status_code == 429
     assert provider.code != limited.code
+
+
+# -- the one log line an ApiError gets, wherever it is answered ----------------------------
+
+_LOGGER = logging.getLogger("between_jobs.test_errors")
+
+
+@pytest.mark.parametrize(
+    ("code", "level"),
+    [
+        ("NOT_FOUND", logging.INFO),  # a client error
+        ("PROVIDER_RATE_LIMITED", logging.INFO),  # still a 4xx
+        ("PROVIDER_UNAVAILABLE", logging.WARNING),  # a provider failing is not this service
+        ("PROVIDER_REJECTED", logging.WARNING),
+        ("INTERNAL_ERROR", logging.ERROR),
+        ("RUN_FAILED", logging.ERROR),
+    ],
+)
+def test_an_api_error_is_logged_at_the_level_that_says_whose_problem_it_is(
+    code: ErrorCode, level: int, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.DEBUG, logger=_LOGGER.name):
+        log_api_error(_LOGGER, ApiError(code, "a message"), ctx={"route": "/x"})
+
+    (record,) = caplog.records
+    assert record.levelno == level
+    assert record.getMessage() == f"api error {code}"
+    assert record.ctx == {  # type: ignore[attr-defined]
+        "code": code,
+        "status": _STATUS_BY_CODE[code],
+        "route": "/x",
+    }
+
+
+def test_the_log_line_has_the_causes_type_and_code_and_never_a_message(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    try:
+        try:
+            raise APIError({"message": "row for jane@example.com exists", "code": "23505"})
+        except APIError as cause:
+            raise ApiError("INTERNAL_ERROR", "could not save jane@example.com") from cause
+    except ApiError as error:
+        with caplog.at_level(logging.DEBUG, logger=_LOGGER.name):
+            log_api_error(_LOGGER, error)
+
+    (record,) = caplog.records
+    assert record.ctx == {  # type: ignore[attr-defined]
+        "code": "INTERNAL_ERROR",
+        "status": 500,
+        "cause_type": "postgrest.exceptions.APIError",
+        "cause_code": "23505",
+    }
+    assert "jane@example.com" not in repr(record.__dict__)
 
 
 def test_the_web_apps_list_of_error_codes_is_the_servers() -> None:

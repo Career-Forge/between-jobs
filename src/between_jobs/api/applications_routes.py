@@ -259,7 +259,7 @@ async def change_application_stage(
     # route body ever runs; catching it here would be handling a state
     # this call site can't actually reach. The Telegram bridge's stage-
     # change callback is the real, reachable caller of that exception --
-    # see telegram_webhook.py, which never goes through this Literal.
+    # see channel_core.py, which never goes through this Literal.
     try:
         return await change_stage(
             supabase,

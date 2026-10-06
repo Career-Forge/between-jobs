@@ -43,8 +43,8 @@ this table.
 Not a route dependency: work started through the Telegram webhook runs inside that route's
 own handler under the bot's own secret, not under a user session, so it cannot carry one.
 Its one expensive action, generating a resume, claims the same "prepare" bucket directly
-(`rate_limit_error_or_none`, in `telegram_webhook._run_prepare_and_deliver`), so the bot is
-no way round the limit on the web.
+(`rate_limit_error_or_none`, in `channel_core._start_prepare`, before the generation is
+handed to a background task), so the bot is no way round the limit on the web.
 """
 
 from __future__ import annotations

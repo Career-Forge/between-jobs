@@ -327,7 +327,7 @@ def _stub_link_schema(monkeypatch: pytest.MonkeyPatch) -> None:
     async def ready(supabase: Any) -> bool:
         return True
 
-    monkeypatch.setattr("between_jobs.api.telegram_webhook.link_schema_ready", ready)
+    monkeypatch.setattr("between_jobs.api.channel_core.link_schema_ready", ready)
 
 
 @pytest.fixture(autouse=True)
@@ -412,20 +412,24 @@ def test_setup_help_gives_work_authorization_real_guidance() -> None:
     text is present, region-neutral (no US-only wording baked into the
     Telegram copy itself), and that adding it didn't quietly break the
     fenced JSON block real users copy into a resume-filling LLM."""
-    from between_jobs.api.telegram_webhook import _SETUP_HELP_TEXT
+    from between_jobs.api.channel_messages import SETUP_HELP_TEXT
+    from between_jobs.api.telegram_adapter import render_html
 
-    assert "work_authorization" in _SETUP_HELP_TEXT
+    # What the user receives: the neutral template as Telegram HTML.
+    setup_help_html = render_html(SETUP_HELP_TEXT)
+
+    assert "work_authorization" in setup_help_html
     # The prose addition explaining the citizenship trap, not just a bare
     # inline placeholder.
-    assert "not just your citizenship" in _SETUP_HELP_TEXT
+    assert "not just your citizenship" in setup_help_html
     for us_only_phrase in ("H-1B", "OPT", "green card", "United States"):
-        assert us_only_phrase not in _SETUP_HELP_TEXT
+        assert us_only_phrase not in setup_help_html
 
     # The block people copy is a <pre> with the "<...>" placeholders escaped; what lands in
     # their clipboard is the unescaped text, so unescape it the way Telegram does.
-    start = _SETUP_HELP_TEXT.index("<pre>") + len("<pre>")
-    end = _SETUP_HELP_TEXT.index("</pre>", start)
-    json_block = html.unescape(_SETUP_HELP_TEXT[start:end]).strip()
+    start = setup_help_html.index("<pre>") + len("<pre>")
+    end = setup_help_html.index("</pre>", start)
+    json_block = html.unescape(setup_help_html[start:end]).strip()
 
     parsed = json.loads(json_block)  # still valid JSON with the new placeholder in place
     assert parsed["personal"]["work_authorization"] != ""
@@ -621,9 +625,10 @@ def test_apply_reference_out_of_range_sends_honest_message() -> None:
 
 def test_apply_reference_resolves_and_reaches_the_shared_prepare_flow() -> None:
     # Proves reference resolution correctly maps #1 -> the right
-    # application_id and hands off to `_run_prepare_and_deliver` -- that
-    # shared function's own success/error branches are already covered
-    # thoroughly by test_telegram_prepare_callback.py, so this only needs
+    # application_id and hands off to `channel_core._start_prepare` (which
+    # defers `_prepare_and_deliver`) -- that shared flow's own success/error
+    # branches are already covered thoroughly by
+    # test_telegram_prepare_callback.py, so this only needs
     # to reach a point that PROVES the right application_id was used, not
     # re-derive the full orchestration. An empty `profile_versions` table
     # makes `run_prepare_application` fail fast with SETUP_REQUIRED right
@@ -840,7 +845,7 @@ def _stub_finish_link(
             raise error
         return completion or LinkCompletion(already_complete=False, retired=True)
 
-    monkeypatch.setattr("between_jobs.api.telegram_webhook.finish_link", fake)
+    monkeypatch.setattr("between_jobs.api.channel_core.finish_link", fake)
     return calls
 
 
@@ -903,7 +908,7 @@ def test_link_reply_waits_for_finishing_the_link(monkeypatch: pytest.MonkeyPatch
         order.append("finish")
         return LinkCompletion(already_complete=False, retired=True)
 
-    monkeypatch.setattr("between_jobs.api.telegram_webhook.finish_link", fake_finish)
+    monkeypatch.setattr("between_jobs.api.channel_core.finish_link", fake_finish)
     fake_supabase = _FakeSupabaseClient(
         channel_identities_rows=[{"user_id": _EXISTING_USER_ID}],
         rpc_data={
@@ -945,7 +950,7 @@ def test_link_still_replies_when_finishing_it_fails(
     )
     fake_telegram = _FakeTelegramClient()
 
-    with caplog.at_level("ERROR", logger="between_jobs.api.telegram_webhook"):
+    with caplog.at_level("ERROR", logger="between_jobs.api.channel_core"):
         response = _post(fake_supabase, fake_telegram, _message_update("/link ABCD2345"))
 
     assert response.status_code == 200
@@ -995,7 +1000,7 @@ def test_link_is_refused_before_touching_the_code_when_the_database_is_behind(
     async def not_ready(supabase: Any) -> bool:
         return False
 
-    monkeypatch.setattr("between_jobs.api.telegram_webhook.link_schema_ready", not_ready)
+    monkeypatch.setattr("between_jobs.api.channel_core.link_schema_ready", not_ready)
     finish_calls = _stub_finish_link(monkeypatch)
     fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
     fake_telegram = _FakeTelegramClient()
@@ -1133,6 +1138,30 @@ def test_link_in_a_group_chat_is_refused_without_touching_the_code(
     assert "private chat" in fake_telegram.sent[0][1]
     assert fake_supabase.rpc_calls == []
     assert finish_calls == []
+
+
+@pytest.mark.parametrize("sqlstate", ["23505", "57014", "502"])
+def test_a_link_failure_log_never_carries_the_link_code(
+    sqlstate: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The code is a bearer secret for an account merge: the line logged when consuming it
+    fails keeps the error's code (a SQLSTATE) and nothing the sender typed."""
+    distinctive = "ZQXV7K9M"
+    failure = APIError({"message": "the database said no", "code": sqlstate})
+    fake_supabase = _FakeSupabaseClient(
+        channel_identities_rows=[{"user_id": _EXISTING_USER_ID}], rpc_error=failure
+    )
+
+    with caplog.at_level("DEBUG"):
+        _post(fake_supabase, _FakeTelegramClient(), _message_update(f"/link {distinctive}"))
+
+    failures = [r for r in caplog.records if r.getMessage() == "link code consumption failed"]
+    assert len(failures) == 1
+    assert failures[0].ctx == {"code": sqlstate}  # type: ignore[attr-defined]
+    for record in caplog.records:
+        assert distinctive not in record.getMessage()
+        assert distinctive not in repr(record.args)
+        assert distinctive not in repr(getattr(record, "ctx", None))
 
 
 def test_link_database_error_answers_without_failing_the_webhook() -> None:
@@ -1326,6 +1355,47 @@ def test_an_update_that_fails_is_released_so_telegrams_retry_is_processed() -> N
     assert retry.json() == {"status": "ok"}
     assert len(fake_supabase.applications.insert_calls) == 1
     assert fake_supabase.update_ledger.rows[42]["completed"] is True
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        # Telegram never sends these; if one arrived it is a bug to be noticed, as ever.
+        {"update_id": 77, "message": {"text": "hi", "chat": {"id": 1, "type": "private"}}},
+        {"update_id": 77, "message": {"text": "hi", "from": {"id": 1}}},
+        {"update_id": 77, "callback_query": {"id": "c", "from": {"id": 1}, "data": "x"}},
+        # A key that is there but holds the wrong kind of value fails with a TypeError, not a
+        # KeyError, and is held and released the same way.
+        {"update_id": 77, "message": {"text": "hi", "from": {"id": 1}, "chat": None}},
+        {"update_id": 77, "message": {"text": "hi", "from": None, "chat": {"id": 1}}},
+        {
+            "update_id": 77,
+            "callback_query": {"id": "c", "from": {"id": 1}, "data": "x", "message": None},
+        },
+        {
+            "update_id": 77,
+            "callback_query": {
+                "id": "c",
+                "from": None,
+                "data": "x",
+                "message": {"chat": {"id": 1}},
+            },
+        },
+    ],
+)
+def test_a_malformed_update_is_a_500_and_its_claim_is_released(update: dict[str, Any]) -> None:
+    """The adapter raises for a message with no sender or chat, as the handler always did.
+    The update is claimed first and released when it fails, like any other failing update,
+    so the answer Telegram gets (and the retry it asks for) is unchanged."""
+    fake_supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _EXISTING_USER_ID}])
+    fake_telegram = _FakeTelegramClient()
+
+    response = _post(fake_supabase, fake_telegram, update)
+
+    assert response.status_code == 500
+    assert fake_supabase.update_ledger.claim_calls == [77]  # it was claimed ...
+    assert 77 not in fake_supabase.update_ledger.rows  # ... and released, not left holding
+    assert fake_telegram.sent == []
 
 
 def test_an_update_without_an_id_is_processed_and_never_touches_the_ledger() -> None:

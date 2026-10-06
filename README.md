@@ -225,8 +225,11 @@ contains it: the build copies only the package.
   pass `--workers`. If a second copy ever starts (an overlapping deploy, a stray
   replica), the workers that would otherwise do the same work twice stand by instead.
 - The container exits cleanly on SIGTERM. Give your platform a grace period longer than
-  20 seconds before it escalates to SIGKILL (on Railway, set
-  `RAILWAY_DEPLOYMENT_DRAINING_SECONDS`; its default is 0).
+  30 seconds before it escalates to SIGKILL (on Railway, set
+  `RAILWAY_DEPLOYMENT_DRAINING_SECONDS`; its default is 0): the API waits up to 20 seconds
+  for open requests, then up to 5 more for a Telegram-started resume generation to finish
+  before it cancels one. A generation cut off by a restart is not resumed: the person
+  sends the request again.
 
 ## Self-hosting the job registry
 

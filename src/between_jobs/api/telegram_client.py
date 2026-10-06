@@ -120,6 +120,20 @@ def _is_entity_error(response: httpx.Response) -> bool:
     return "can't parse entities" in description
 
 
+def _html_body(text: str) -> str:
+    """What goes in the request's `text`: an `Html` as written, anything else escaped."""
+    return str(text) if isinstance(text, Html) else html.escape(text, quote=False)
+
+
+def _message_id_of(response: httpx.Response) -> int | None:
+    try:
+        result = response.json().get("result")
+    except (ValueError, AttributeError):
+        return None
+    message_id = result.get("message_id") if isinstance(result, dict) else None
+    return message_id if isinstance(message_id, int) and not isinstance(message_id, bool) else None
+
+
 class TelegramClient:
     def __init__(self, http: httpx.AsyncClient, bot_token: str) -> None:
         self._http = http
@@ -128,30 +142,62 @@ class TelegramClient:
 
     async def send_message(
         self, chat_id: int, text: str, *, reply_markup: dict[str, Any] | None = None
-    ) -> None:
+    ) -> int | None:
         """Sends `text` as an HTML-mode message: escaped if it is a plain `str`, as written if
         it is `Html`. If Telegram still cannot parse it (a bug in a template or a value that
         slipped past `render`) the message is sent once more as plain text instead of being
-        lost -- a user who is told nothing is worse off than one who sees a stray tag."""
-        body = str(text) if isinstance(text, Html) else html.escape(text, quote=False)
-        payload: dict[str, Any] = {"chat_id": chat_id, "text": body, "parse_mode": "HTML"}
+        lost -- a user who is told nothing is worse off than one who sees a stray tag.
+
+        Returns Telegram's id for the message, or None if the answer did not carry one."""
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": _html_body(text),
+            "parse_mode": "HTML",
+        }
         if reply_markup is not None:
             payload["reply_markup"] = reply_markup
-        response = await self._http.post(f"{self._base_url}/sendMessage", json=payload)
+        return _message_id_of(await self._post_html("sendMessage", payload))
+
+    async def edit_message_text(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        *,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> int | None:
+        """`editMessageText`: replaces a sent message's text, with the same HTML handling and
+        plain-text fallback as `send_message`. Without `reply_markup` the message loses any
+        inline keyboard it had -- that is how Telegram treats an edit. Returns the edited
+        message's id, or None if the answer did not carry one."""
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": _html_body(text),
+            "parse_mode": "HTML",
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        return _message_id_of(await self._post_html("editMessageText", payload))
+
+    async def _post_html(self, method: str, payload: dict[str, Any]) -> httpx.Response:
+        response = await self._http.post(f"{self._base_url}/{method}", json=payload)
         if _is_entity_error(response):
             logger.warning("telegram could not parse a message; resending it as plain text")
-            payload["text"] = _plain_text_of(body)
+            payload["text"] = _plain_text_of(payload["text"])
             del payload["parse_mode"]
-            response = await self._http.post(f"{self._base_url}/sendMessage", json=payload)
+            response = await self._http.post(f"{self._base_url}/{method}", json=payload)
         response.raise_for_status()
+        return response
 
     async def send_document(
         self, chat_id: int, filename: str, content: bytes, *, caption: str | None = None
-    ) -> None:
+    ) -> int | None:
         """`sendDocument` -- Telegram's outbound-file API. Unlike every
         other method here, this is multipart/form-data (`files=`), not
         JSON: Telegram's Bot API only accepts a file upload as a real
-        multipart part, not a base64-encoded JSON field."""
+        multipart part, not a base64-encoded JSON field. Returns Telegram's id for the
+        message, or None if the answer did not carry one."""
         data: dict[str, Any] = {"chat_id": str(chat_id)}
         if caption is not None:
             data["caption"] = caption
@@ -161,14 +207,18 @@ class TelegramClient:
             files={"document": (filename, content, "application/octet-stream")},
         )
         response.raise_for_status()
+        return _message_id_of(response)
 
-    async def answer_callback_query(self, callback_query_id: str) -> None:
+    async def answer_callback_query(
+        self, callback_query_id: str, *, text: str | None = None
+    ) -> None:
         # Always call this for a callback_query, even with nothing to say --
-        # it's what stops the tapped button's loading spinner client-side.
-        response = await self._http.post(
-            f"{self._base_url}/answerCallbackQuery",
-            json={"callback_query_id": callback_query_id},
-        )
+        # it's what stops the tapped button's loading spinner client-side. `text`, when
+        # given, is shown to the person who tapped as a brief notice.
+        payload: dict[str, Any] = {"callback_query_id": callback_query_id}
+        if text is not None:
+            payload["text"] = text
+        response = await self._http.post(f"{self._base_url}/answerCallbackQuery", json=payload)
         response.raise_for_status()
 
     async def get_file_path(self, file_id: str) -> str:

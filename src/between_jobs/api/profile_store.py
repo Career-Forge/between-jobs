@@ -2,7 +2,7 @@
 
 Split from profile.py's pure validation/import logic -- this module is the
 only place that touches Supabase for profile_versions/career_facts. Both
-the HTTP endpoints (app.py) and the Telegram flow (telegram_webhook.py,
+the HTTP endpoints (app.py) and the chat flow (channel_core.py,
 Sprint 2.5d) call these functions directly rather than looping back
 through HTTP -- there's one FastAPI process, and an in-process call is
 strictly better than a self-referential network round trip.

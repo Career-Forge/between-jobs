@@ -397,3 +397,125 @@ def test_render_escapes_every_value_and_returns_html() -> None:
 
 def test_escape_leaves_quotes_alone() -> None:
     assert escape('say "hi" it\'s') == 'say "hi" it\'s'
+
+
+# -- message ids, editing a message, and a callback's note (channel envelope) ----------------
+
+
+def _answering(result: Any) -> Any:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True, "result": result})
+
+    return handler
+
+
+async def test_send_message_returns_the_id_telegram_gave_the_message() -> None:
+    assert await _client(_answering({"message_id": 42})).send_message(1, "hi") == 42
+
+
+@pytest.mark.parametrize("result", [{}, {"message_id": True}, {"message_id": "7"}, True, None, []])
+async def test_send_message_returns_none_when_the_answer_carries_no_usable_id(
+    result: Any,
+) -> None:
+    assert await _client(_answering(result)).send_message(1, "hi") is None
+
+
+async def test_send_message_returns_none_when_the_answer_is_not_json() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"not json")
+
+    assert await _client(handler).send_message(1, "hi") is None
+
+
+@pytest.mark.parametrize("body", [[], "text", 42])
+async def test_a_reply_that_is_valid_json_but_not_an_object_carries_no_id(body: Any) -> None:
+    """The message was accepted: reading its id must not raise, or the webhook would fail
+    after the fact and Telegram's redelivery would send the person a duplicate."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    assert await _client(handler).send_message(1, "hi") is None
+    assert await _client(handler).edit_message_text(1, 9, Html("hi")) is None
+
+
+async def test_send_document_returns_the_id_telegram_gave_the_message() -> None:
+    client = _client(_answering({"message_id": 43}))
+    assert await client.send_document(1, "r.pdf", b"%PDF") == 43
+    assert await _client(_answering({})).send_document(1, "r.pdf", b"%PDF") is None
+
+
+async def test_edit_message_text_posts_the_chat_the_message_and_the_html_text() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 9}})
+
+    edited = await _client(handler).edit_message_text(123, 9, Html("now <b>done</b>"))
+
+    assert captured["url"] == f"https://api.telegram.org/bot{_BOT_TOKEN}/editMessageText"
+    assert captured["body"] == {
+        "chat_id": 123,
+        "message_id": 9,
+        "text": "now <b>done</b>",
+        "parse_mode": "HTML",
+    }
+    assert edited == 9
+
+
+async def test_edit_message_text_escapes_plain_text_and_can_set_a_keyboard() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"ok": True, "result": {}})
+
+    keyboard = {"inline_keyboard": [[{"text": "Undo", "callback_data": "undo"}]]}
+    edited = await _client(handler).edit_message_text(1, 2, "a <b> & c", reply_markup=keyboard)
+
+    assert captured["body"]["text"] == "a &lt;b&gt; &amp; c"
+    assert captured["body"]["reply_markup"] == keyboard
+    assert edited is None  # the answer carried no id
+
+
+async def test_an_edit_telegram_cannot_parse_is_resent_once_as_plain_text() -> None:
+    bodies: list[dict[str, Any]] = []
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        paths.append(request.url.path.rsplit("/", 1)[-1])
+        if len(bodies) == 1:
+            return httpx.Response(
+                400, json={"ok": False, "description": "Bad Request: can't parse entities"}
+            )
+        return httpx.Response(200, json={"ok": True, "result": {}})
+
+    await _client(handler).edit_message_text(1, 2, Html("Hello <b>there</b> &amp; welcome"))
+
+    assert paths == ["editMessageText", "editMessageText"]
+    assert bodies[1]["text"] == "Hello there & welcome"
+    assert "parse_mode" not in bodies[1]
+    assert bodies[1]["message_id"] == 2
+
+
+async def test_edit_message_text_raises_on_http_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"ok": False, "description": "message is not modified"})
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await _client(handler).edit_message_text(1, 2, "same")
+
+
+async def test_answer_callback_query_can_show_a_note_to_the_person_who_tapped() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"ok": True, "result": True})
+
+    await _client(handler).answer_callback_query("cbq-9", text="Saved")
+
+    assert captured["body"] == {"callback_query_id": "cbq-9", "text": "Saved"}

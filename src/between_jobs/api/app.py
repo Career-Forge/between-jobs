@@ -39,10 +39,11 @@ from .capabilities_routes import router as capabilities_router
 from .company_intel_routes import router as company_intel_router
 from .contact_research_routes import router as contact_research_router
 from .credentials_routes import router as credentials_router
+from .deferred_reply import shutdown_deferred_replies
 from .digest_listener import handle_batch as handle_digest_batch
 from .discovery_routes import router as discovery_router
 from .env import optional_env, refuse
-from .errors import ApiError
+from .errors import ApiError, log_api_error
 from .extension_routes import router as extension_router
 from .forge_engines_client import _base_url as forge_engines_base_url
 from .gmail_oauth_routes import router as gmail_oauth_router
@@ -71,6 +72,7 @@ from .saved_search_matcher import _DEFAULT_MATCH_INTERVAL_SECONDS as MATCHER_INT
 from .saved_search_matcher import run_matcher_forever
 from .saved_searches_routes import router as saved_searches_router
 from .supabase_client import create_supabase_client
+from .telegram_adapter import build_notifier
 from .telegram_client import TelegramClient, parse_bot_username
 from .telegram_webhook import router as telegram_router
 from .today_routes import router as today_router
@@ -166,9 +168,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # under worker_supervision: a tick that raises is logged and retried rather
     # than ending the worker, and `app.state.workers` is what /health reports.
     #
-    # - outbox (Horizon Sprint 4.0) feeds the Today digest. Job Finder P10 binds
-    #   `telegram=app.state.telegram_client` into its listener via `partial`,
-    #   keeping outbox_store's `Listener` a plain two-argument callable.
+    # - outbox (Horizon Sprint 4.0) feeds the Today digest. Job Finder P10 binds a
+    #   `Notifier` for the bot (None on a server without one) into its listener via
+    #   `partial`, keeping outbox_store's `Listener` a plain two-argument callable.
     # - job_registry_poller (Job Finder P2) reuses app.state.http for its ATS calls.
     # - saved_search_matcher (Job Finder P9b) makes no raw HTTP call at all.
     # - gmail_reply_checker (Gmail reply/status parsing R3) reuses app.state.http.
@@ -225,7 +227,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             disable_env="DISABLE_OUTBOX_WORKER",
             run=lambda sb, state: run_worker_forever(
                 sb,
-                listeners=[partial(handle_digest_batch, telegram=app.state.telegram_client)],
+                listeners=[
+                    partial(
+                        handle_digest_batch,
+                        notifier=build_notifier(sb, app.state.telegram_client),
+                    )
+                ],
                 state=state,
             ),
         )
@@ -282,6 +289,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    # Before anything the deferred work uses is closed: a resume generation still running
+    # gets a few seconds to finish, then is cancelled (see deferred_reply).
+    await shutdown_deferred_replies()
     await workers.stop_all()
     # Product-event inserts still in flight finish (bounded) before the client they use goes.
     await flush_product_events(timeout=5.0)
@@ -387,30 +397,7 @@ def _route_path(request: Request) -> str:
 
 @app.exception_handler(ApiError)
 async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
-    # The cause's type (and a Postgres SQLSTATE when it carries one) is what
-    # makes a 500 diagnosable; its message is left out because database and
-    # provider messages can quote the values involved.
-    cause = exc.__cause__
-    ctx: dict[str, object] = {
-        "code": exc.code,
-        "status": exc.status_code,
-        "method": request.method,
-        "route": _route_path(request),
-    }
-    if cause is not None:
-        ctx["cause_type"] = f"{type(cause).__module__}.{type(cause).__qualname__}"
-        cause_code = getattr(cause, "code", None)
-        if isinstance(cause_code, str) and len(cause_code) <= 16:
-            ctx["cause_code"] = cause_code
-    # A provider refusing or failing (a user's own key, a rate limit) is not
-    # this service breaking, so those 5xx codes log a level lower.
-    if exc.status_code < 500:
-        level = logging.INFO
-    elif exc.code.startswith("PROVIDER_"):
-        level = logging.WARNING
-    else:
-        level = logging.ERROR
-    logger.log(level, "api error %s", exc.code, extra={"ctx": ctx})
+    log_api_error(logger, exc, ctx={"method": request.method, "route": _route_path(request)})
     # The one place every route's "set this up first" answer passes through, so the one place
     # that records it as a product event. The user id is what the auth dependency stored once
     # the token verified; an unauthenticated or overridden request has none and records nothing.

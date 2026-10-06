@@ -61,8 +61,25 @@ def _synthetic_email() -> str:
     return f"telegram-{uuid.uuid4().hex}@users.between-jobs.tech"
 
 
+def _require_telegram(channel: str) -> None:
+    """Identity is only implemented for Telegram so far. Another channel gets its own
+    provisioning rules (what its auth users carry in `app_metadata`) when it arrives;
+    refusing here is what keeps its subjects from being filed under Telegram's."""
+    if channel != CHANNEL:
+        raise ValueError(f"no identity provisioning for channel {channel!r}")
+
+
 async def resolve_or_create_user_id(supabase: AsyncClient, telegram_user_id: int) -> str:
-    external_subject = str(telegram_user_id)
+    return await resolve_or_create_user_id_for_subject(supabase, CHANNEL, str(telegram_user_id))
+
+
+async def resolve_or_create_user_id_for_subject(
+    supabase: AsyncClient, channel: str, subject: str
+) -> str:
+    """`resolve_or_create_user_id` for a channel-neutral caller: the sender is the
+    (channel, subject) pair an `InboundMessage` carries, the provider's own user id as text."""
+    _require_telegram(channel)
+    external_subject = subject
     existing = (
         await supabase.table("channel_identities")
         .select("user_id")
@@ -125,16 +142,24 @@ async def resolve_or_create_user_id(supabase: AsyncClient, telegram_user_id: int
 
 
 async def is_auto_provisioned(supabase: AsyncClient, user_id: str, telegram_user_id: int) -> bool:
+    return await is_auto_provisioned_for_subject(supabase, user_id, CHANNEL, str(telegram_user_id))
+
+
+async def is_auto_provisioned_for_subject(
+    supabase: AsyncClient, user_id: str, channel: str, subject: str
+) -> bool:
     """True only for an auth user `resolve_or_create_user_id` created for
     this Telegram account on first contact: its app_metadata -- which only
     the service role can write, never a web session -- says so and names
     this account. A Telegram account already linked to a web account
     resolves to that web user, which carries neither key."""
+    _require_telegram(channel)
     user = (await supabase.auth.admin.get_user_by_id(user_id)).user
     app_metadata = user.app_metadata or {}
-    return app_metadata.get("bj_provisioned_by") == PROVISIONED_BY and app_metadata.get(
-        "bj_telegram_subject"
-    ) == str(telegram_user_id)
+    return (
+        app_metadata.get("bj_provisioned_by") == PROVISIONED_BY
+        and app_metadata.get("bj_telegram_subject") == subject
+    )
 
 
 async def get_chat_id(supabase: AsyncClient, user_id: str) -> int | None:
@@ -159,17 +184,22 @@ async def get_chat_id(supabase: AsyncClient, user_id: str) -> int | None:
 
 
 async def unlink(supabase: AsyncClient, telegram_user_id: int) -> None:
+    await unlink_subject(supabase, CHANNEL, str(telegram_user_id))
+
+
+async def unlink_subject(supabase: AsyncClient, channel: str, subject: str) -> None:
     """Removes this Telegram account's channel_identities row (Sprint
     2.8e's `/unlink`), detaching it from the web account it's linked to.
     The web account keeps everything. The NEXT message from this Telegram
     account auto-provisions a fresh identity, same as first contact.
     Callers only unlink a linked account: unlinking an auto-provisioned
     identity would strand its data under an auth user nothing points at."""
+    _require_telegram(channel)
     await (
         supabase.table("channel_identities")
         .delete()
         .eq("channel", CHANNEL)
         .eq("external_tenant", EXTERNAL_TENANT)
-        .eq("external_subject", str(telegram_user_id))
+        .eq("external_subject", subject)
         .execute()
     )
