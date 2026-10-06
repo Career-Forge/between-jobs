@@ -152,6 +152,21 @@ async def test_a_tracked_job_names_the_job_in_bold_and_offers_a_generate_button(
     assert supabase.applications.insert_calls[0]["source_channel"] == "telegram"
 
 
+async def test_a_long_job_paste_is_tracked_not_read_as_a_resume_file() -> None:
+    # Real job descriptions run to thousands of characters, well past the length at which a
+    # message is otherwise taken for a pasted resume.
+    description = "Build and run data pipelines for the analytics team. " * 40
+    assert len(description) > 800
+    message = inbound(f"Title: Data Engineer\nCompany: Acme\n\n{description}")
+    supabase = ComposedSupabase(applications=webhook_fakes._FakeSimpleTable(select_rows=[]))
+
+    renderer, supabase, _registry = await _handle(message, supabase=supabase)
+
+    _chat, say = renderer.sent[0]
+    assert say.text == messages.job_tracked_text("Data Engineer", "Acme")
+    assert supabase.applications.insert_calls[0]["source_channel"] == "telegram"
+
+
 async def test_a_resume_preview_offers_confirm_and_cancel_in_one_row() -> None:
     profile_versions = webhook_fakes._FakeProfileVersionsTable(
         select_rows=[], insert_row=_PREVIEW_ROW

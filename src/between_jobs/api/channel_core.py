@@ -618,12 +618,15 @@ async def _handle_message(turn: _Turn) -> None:
         await _handle_unlink_command(turn)
         return
 
-    if looks_like_json_payload(text):
-        await _handle_json_import(turn, text, f"{message.channel}_json_paste")
-        return
-
+    # A job paste is checked before the "long message means a resume paste" rule: a real job
+    # description is well over the length that rule keys on, and a message that opens with a
+    # `Title:` line cannot be JSON.
     if looks_like_job_paste(text):
         await _handle_job_paste(turn, text)
+        return
+
+    if looks_like_json_payload(text):
+        await _handle_json_import(turn, text, f"{message.channel}_json_paste")
         return
 
     apply_index = parse_apply_reference(text)
