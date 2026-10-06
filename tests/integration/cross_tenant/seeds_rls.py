@@ -62,6 +62,17 @@ async def seed_working_set(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
 
 @seeder("rls_channel_identity", tables=("channel_identities",))
 async def seed_channel_identity(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
+    # Store cases share one tenant pair and each builds its own Ctx, so a second case asking for
+    # this seed finds the Telegram link already there: reuse it, the table allows one per channel.
+    existing = (
+        await ctx.sb.table("channel_identities")
+        .select("external_subject")
+        .eq("user_id", tenant.user_id)
+        .eq("channel", "telegram")
+        .execute()
+    ).data
+    if existing:
+        return {"subject": existing[0]["external_subject"]}
     subject = f"9{uuid.uuid4().int % 10**11:011d}"
     await ctx.world.identity(tenant.user_id, "telegram", subject)
     return {"subject": subject}
