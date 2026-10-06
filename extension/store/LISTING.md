@@ -20,7 +20,7 @@ documentation does not state is marked **confirm in the dashboard**.
 |-------|-------|-------|
 | Name | `Between Jobs` | Taken from the manifest `name`. Limit: 75 characters. |
 | Summary | `Deterministic ATS autofill from your own prepared résumé and cover letter. You always click submit.` (99 characters) | Taken from the manifest `description` as I understand the dashboard (**confirm**). Limit: 132 characters. To change it, edit `manifest.description` in `extension/wxt.config.ts` and rebuild. A plainer alternative (121 characters): `Fill Lever, Greenhouse and Ashby job applications from your own Between Jobs résumé and profile. You always click submit.` "ATS" is jargon for some job seekers; the alternative names the three services instead. |
-| Detailed description | Section 2 below (2,574 characters) | The docs give no hard limit. Start with what it does, as Chrome recommends. |
+| Detailed description | Section 2 below (3,180 characters) | The docs give no hard limit. Start with what it does, as Chrome recommends. |
 | Category | Productivity | **Confirm the subcategory in the dashboard.** A "Workflow & Planning" subcategory exists; I could not fetch the dashboard's own list. |
 | Language | English | Description and screenshots can be localized later; the small and marquee tiles cannot. |
 | Icon | 128x128 PNG | Present (`public/icon/128.png`), but it is a generic green puzzle-piece outline, which reads as a placeholder. Chrome's listing rules name "non-descriptive" metadata, including the icon, as grounds for rejection. Replace it with a real mark, with padding inside the canvas, before submitting. |
@@ -37,7 +37,9 @@ Listing rules that apply (Chrome's Listing Requirements page): the description, 
 icon and screenshots must be accurate and comprehensive; keyword spam (lists of brands,
 or the same keyword repeated more than five times) is a violation; and anything in the
 privacy fields that contradicts what the extension does gets it removed. The description
-below names each of the three services twice and the product name four times, on purpose.
+below names Lever and Ashby twice each, Greenhouse three times and the product name five
+times, on purpose and all under that threshold. (`tests/storeStatements.test.ts` recounts the
+description and these numbers, so editing it fails the test until this line is updated.)
 
 ## 2. Detailed description (paste-ready)
 
@@ -54,9 +56,10 @@ WHAT IT DOES
 - Once you have submitted on the employer's site, one button records the application as applied in your account.
 
 WHAT IT NEVER DOES
-- It never clicks Submit or Apply, never submits a form, and never ticks a checkbox, consent box or dropdown for you.
-- It skips voluntary self-identification and accommodation questions (gender, race, disability, veteran status and similar): they are not filled, not offered for drafting and not sent anywhere.
-- It has no analytics, no advertising and no tracking, and it does not sell your data.
+- It never clicks Submit, Apply, Next or Continue, never submits a form, never signs in or creates an account on a site, never types a PIN or a verification code, never answers a CAPTCHA, and never ticks a checkbox or consent box for you. The one list it fills is Greenhouse's country field, from your profile; every other dropdown is yours.
+- It recognizes voluntary self-identification and accommodation questions (gender, race, disability, veteran status and similar) by their wording and skips them: they are not filled, not offered for drafting and not sent anywhere. Wording can be unusual, so read the form before you submit.
+- It has no third-party analytics, no advertising and no tracking, and it does not sell your data. After a fill it sends the Between Jobs service one small report of counts only -- which site, how many fields it tried, how many it filled -- never what is in them.
+- It does nothing, and reads nothing from any page, until you have agreed to the disclosure it shows first.
 - It runs only on those three services' job-board sites and on no other website.
 
 WHAT YOU NEED
@@ -122,12 +125,15 @@ know them; **confirm each label and its tooltip definition in the dashboard.**
 | Personal communications | No | No emails, texts or chat messages are read or sent. (The cover letter is a document attached to the form, covered under personally identifiable information.) | -- |
 | Location | No | No geolocation API is used. The user's saved home city, region and country are profile data, covered above. Every HTTPS request reveals an IP address to the receiving server; the extension does not collect it. If your server logs it and you want to be conservative, tick this and say so in the policy. | -- |
 | Web history | **Yes** (conservative) | On a detected application form the extension sends that page's address (origin and path, with no query string or fragment) to the Between Jobs API to find the matching tracked job. That is a URL the user has open, sent off-device. It happens only on four hosts, only when signed in, and only when a form is present. | Core extension functionality |
-| User activity | No | No keystroke, click, mouse or scroll logging, and no network monitoring. Button presses in the panel cause only the requests listed in the policy. | -- |
+| User activity | **Yes** (conservative) | No keystroke, click, mouse or scroll logging, and no network monitoring. But after each fill the extension sends the Between Jobs service a report of how many fields it tried and filled, which of the three sites it was, which application, and one word (ok, partial, failed), and after a saved answer is filled as stored, that answer's id (`REPORT_FILL_OUTCOME` and `ANSWER_USED` in `background.ts`; policy requests 12 and 13). Counts only: no field name, value, label, page address or page text. It is product usage data about the user's own action, so tick this unless the dashboard's definition clearly excludes it. | Analytics (the report exists so the operator can tell whether autofill works) |
 | Website content | **Yes** | The text of a free-text screening question is sent to the service when the user presses "Draft answer" or "Fill & remember", and the user-approved answer text is sent when they press "Fill & remember". Nothing else on the page is sent. | Core extension functionality |
 
-For every ticked type the usage option is **core extension functionality** only. Do not tick
-analytics, developer communications, advertising or marketing, fraud or credit detection, or
-personalization: the code does none of them.
+For every ticked type except User activity the usage option is **core extension
+functionality** only. For User activity it is **analytics**: the fill report's purpose is to
+tell whether autofill works, and the policy says so. Do not tick developer communications,
+advertising or marketing, fraud or credit detection, or personalization: the code does none
+of them. (This replaces the earlier answer, which was "No" for User activity and "no
+analytics at all"; the report in policy request 12 is why it changed.)
 
 ### Data usage -- certifications
 
@@ -189,27 +195,42 @@ action (button labels are suggestions):
 > - download your profile details (name, email, phone, location, links) and the résumé and
 >   cover letter you prepared, and use them to fill the form when you press Fill;
 > - only if you press Draft answer or Fill & remember, send that question's text to the
->   service, which may pass it, with a summary of your profile and the job description, to
->   the AI provider you configured with your own key, and save answers you choose to
->   remember.
+>   service -- together with the question's kind (when it is one of a few common ones) and
+>   the country the job names (when it names one) -- which may pass it, with a summary of
+>   your profile and the job description, to the AI provider you configured with your own
+>   key, and save answers you choose to remember;
+> - after each fill, send the service a small report of counts only: which site, which of
+>   your applications, how many fields it tried and filled, and one word for how it went --
+>   never what is in any field;
+> - when you fill a saved answer exactly as it was saved, tell the service which saved
+>   answer was used, so it can count how often you reuse it.
 >
 > It never submits an application, never ticks a checkbox, and never fills
-> self-identification questions. It has no analytics and sells nothing. Full policy:
-> [MAINTAINER TO FILL: privacy policy URL]
+> self-identification questions. It has no third-party analytics and sells nothing. Full
+> policy: [MAINTAINER TO FILL: privacy policy URL]
 >
 > [ I understand and agree ]   [ Not now ]
 
-Implementation notes, as built: the sign-in form does not render, and no request other than
-the extension's own start-up is made, until the user agrees (concretely: the effect that
-calls `refreshDetection` never fires, and neither do the tab-update/tab-activated/
-`PAGE_CHANGED` listeners that would otherwise call it, even if a returning user's session is
-already valid); "Not now" leaves the extension inert -- it writes nothing, so the gate is
+Implementation notes, as built: the sign-in form does not render, and no request of any kind
+is made, until the user agrees. Concretely: the sign-in client is not even constructed
+(constructing it is itself a network request when a stored session has expired, because the
+library refreshes it), the effect that calls `refreshDetection` never fires, and neither do
+the tab-update/tab-activated/`PAGE_CHANGED` listeners that would otherwise call it, even if a
+returning user's session is already valid; "Not now" leaves the extension inert -- it writes nothing, so the gate is
 still there next time the panel opens. The agreement is a stored `{version: number}` flag
-(`CONSENT_VERSION`/`CONSENT_STORAGE_KEY` in `App.tsx`, `chrome.storage.local`), added to the
+(`CONSENT_VERSION`/`CONSENT_STORAGE_KEY` in `lib/consent.ts`, `chrome.storage.local`; the
+content script and the background worker check it too, so a page that was already open
+reads nothing and sends nothing until it is valid, and stops again when it is removed or its
+version changes: the flag is re-read before each request and before a fill starts writing, and
+a fill that is already writing finishes the page it is on and then stops), added to the
 storage table in `PRIVACY.md` section 4. When a later release changes what is collected,
 bumping `CONSENT_VERSION` makes the screen appear again with the change described -- that
-mechanism is real today, exercised directly in `tests/App.test.tsx`, even though only one
-version exists so far. This copy describes only what the code does today.
+mechanism is real, exercised directly in `tests/App.test.tsx` and `tests/consent.test.ts`.
+`CONSENT_VERSION` is 2: the count-only fill report is the change that raised it from 1, so
+everyone who agreed to the first wording (which promised "no analytics" outright) is asked
+again. Version 2 also covers what the screen lists beyond the counts: the application's id on
+the report, the saved-answer use report, and the question's kind and the job's country that
+travel with a question's text. This copy describes only what the code does today.
 
 ## 5. Test instructions for reviewers (Test instructions tab)
 

@@ -20,10 +20,17 @@ by Lever, Greenhouse and Ashby, using details from your own Between Jobs account
   service's sign-in provider (a Supabase project). If you use the "Draft answer" button,
   the Between Jobs service in turn sends your request to the AI provider you set up
   with your own API key. That is the complete list.
-- It has no analytics, no advertising, no crash reporting, no tracking, and it sells
-  nothing.
-- You always submit. The extension never clicks a submit or apply button, never
-  submits a form, and never ticks a checkbox or consent box for you.
+- It has no third-party analytics, no advertising, no crash reporting, no tracking, and
+  it sells nothing. The one thing like usage data is a small report to the Between Jobs
+  service itself after each fill: counts only -- which of the three sites, which
+  application, how many fields it tried, how many it filled, and one word (ok, partial or
+  failed). Never what is in a field, a question, an address or any page text (request 12).
+- It does nothing until you have agreed to the disclosure screen in the side panel: until
+  then it reads nothing from any page and sends nothing anywhere. If a later release
+  changes the disclosure, it asks again, and stops again until you agree.
+- You always submit. The extension never clicks a submit, apply, next, continue, sign-in
+  or create-account button, never submits a form, never types a PIN or a verification code,
+  never answers a CAPTCHA, and never ticks a checkbox or consent box for you.
 - Voluntary self-identification questions (gender, race, disability and the like) are
   skipped: not shown for drafting, not filled, not sent anywhere.
 
@@ -56,23 +63,26 @@ These are all the network requests the extension makes. There are no others.
 | # | Request | Sent to | When it happens | What it carries |
 |---|---------|---------|-----------------|-----------------|
 | 1 | Sign in | Sign-in service | You press "Sign in" | The email address and password of your Between Jobs account |
-| 2 | Refresh session | Sign-in service | Automatically, when you are signed in and the stored token has expired | Your refresh token |
-| 3 | Sign out | Sign-in service, then the Between Jobs API | You press "Sign out" | Your session token, asking the sign-in service to end this extension's session; then your access token, asking the Between Jobs API to reject any of this extension's own access tokens issued before this moment |
-| 4 | Look up the page | Between Jobs API | You are signed in and an application form is detected on a supported site, whether or not you track that job | The page address without any query string or fragment (for example `https://jobs.lever.co/acme/<posting-id>`), plus your access token |
+| 2 | Refresh session | Sign-in service | Automatically, when you have agreed to the disclosure screen, you are signed in and the stored token has expired | Your refresh token |
+| 3 | Sign out | Between Jobs API, then the sign-in service | You press "Sign out" | Your access token, asking the Between Jobs API to reject any of this extension's own access tokens issued before this moment; then your session token, asking the sign-in service to end this extension's session |
+| 4 | Look up the page | Between Jobs API | You have agreed to the disclosure screen, you are signed in, and an application form is detected on a supported site, whether or not you track that job | The page address without any query string or fragment (for example `https://jobs.lever.co/acme/<posting-id>`), plus your access token |
 | 5 | Get the field map | Between Jobs API | The page is a job you track | Nothing beyond the site name (`lever`, `greenhouse` or `ashby`) and your access token |
 | 6 | Get your details | Between Jobs API | The page is a job you track | The application's id |
 | 7 | Get your résumé and cover letter | Between Jobs API | The page is a job you track, and you press "Fill this page" for the first time on it | The application's id |
-| 8 | Check for a saved answer | Between Jobs API | You press "Draft answer" | The question's text, lower-cased with whitespace collapsed |
+| 8 | Check for a saved answer | Between Jobs API | You press "Draft answer" | The question's text, lower-cased with whitespace collapsed; and, when fixed wording rules in the extension recognise the question as one of a few common kinds ("why do you want to work here", "how did you hear about us", a work-authorization question and the like), the name of that kind; and the country the job's posting names, when it names one |
 | 9 | Draft an answer | Between Jobs API | You press "Draft answer" and no saved answer matched | The application's id and the question's text |
-| 10 | Save an answer | Between Jobs API | You press "Fill & remember" | The question's text (normalized as above) and the answer text you approved |
+| 10 | Save an answer | Between Jobs API | You press "Fill & remember" | The question's text (normalized as above) and the answer text you approved; and the name of the kind of question, if it was recognised (for a work-authorization question, together with the job's country, and only when the posting names one) |
 | 11 | Mark as applied | Between Jobs API | You press "I submitted this -- mark as applied" | The application's id, the new status "applied", and a random key that stops a retried click being recorded twice |
+| 12 | Report a fill | Between Jobs API | A "Fill this page" or "Refill all" on a job you track finishes, and it tried at least one field (or stopped with an error) | The application's id, which site (`lever`, `greenhouse` or `ashby`), how many fields it tried, how many it filled, and one word: `ok`, `partial` or `failed`. No field names, no values, no page address and no page text |
+| 13 | Count a saved answer's use | Between Jobs API | A saved answer is filled into a box exactly as it was stored | The saved answer's id |
 
-Request 3's second call and requests 4 to 11 also carry your access token so the service
-knows which account they belong to. If that second call fails (for example the service is
-unreachable), the extension still ends your local session -- your device is always what
-promptly stops it being used, and this second call is a further protection against a
-token that leaked or was left behind, not a condition for signing out at all. Requests 5
-and 6 happen as soon as the page is recognized as a job you
+Request 3's first call (to the Between Jobs API) and requests 4 to 13 also carry your
+access token so the service knows which account they belong to; the extension makes that
+first call before ending the local session, so the token is still readable. If it fails
+(for example the service is unreachable), the extension still ends your local session --
+your device is always what promptly stops it being used, and that call is a further
+protection against a token that leaked or was left behind, not a condition for signing
+out at all. Requests 5 and 6 happen as soon as the page is recognized as a job you
 track, not when you press "Fill this page" -- request 7 does not: your résumé and cover
 letter are only downloaded the first time you actually press "Fill this page" for that
 application, not on every page visit, and the extension reuses what it already
@@ -80,14 +90,20 @@ downloaded for the rest of that page's life rather than asking again on a later 
 "Refill all". Requests 4, 5 and 6 happen again if you press "Try this page", or if the
 page moves to a different posting without a full reload; request 7 would then happen
 again too, the next time you press "Fill this page" on the newly-resolved application.
+Request 12 happens at the end of each fill and is never waited for: if it fails, nothing
+about the fill changes and nothing is shown. It is not sent if you have not agreed to the
+disclosure screen, or have been asked to agree again and have not, when the fill ends.
+Request 13 likewise only follows a fill that went in, and a failure is ignored.
 
 **What you get back.** The service returns your profile details (name, email address,
 phone number, city, region and country, and your LinkedIn, GitHub and portfolio links),
-your prepared résumé and cover letter as PDF files, and the result of the last time
-Between Jobs prepared that application (which includes references to those files and
-Between Jobs' own fit assessment of the job). The extension only uses the profile
-details and the two files; it keeps the rest in memory for the life of the page and does
-not show it or send it anywhere. It also receives the site's field map (see section 5).
+the country the job's own location text names (or nothing, when it names none -- a city
+alone is not treated as a country), and the references the extension needs to download
+your prepared résumé and cover letter as PDF files (the files themselves come from
+request 7). The extension uses the profile details, the two files and the job's country.
+The country is sent back only as part of requests 8 and 10, and the file references are
+used only to download the two files. Nothing else in the response is kept. It also
+receives the site's field map (see section 5).
 
 **The AI provider.** "Draft answer" is the only feature that uses an AI model, and
 Between Jobs has no AI provider of its own. You choose one in your Between Jobs
@@ -97,9 +113,15 @@ nothing is sent. When you press it and no saved answer matches, the Between Jobs
 (not the extension) calls that provider with your key. The key stays on the service and
 is never sent to the extension. The request contains the question's text, a text summary
 of your profile, and the job description of the job you track. The summary holds your
-name, headline, city, region and country, any work-authorization text in your profile,
-and your summary bullets, recent roles, projects, skills and education, cut off at 6,000
-characters. It does not include your email address, phone number or links. A second
+name, headline, city, region and country, and your summary bullets, recent roles,
+projects, skills and education, cut off at 6,000 characters. It does not include your
+email address, phone number or links, and it does not include the work-authorization text
+in your profile. That text is added to a draft request only when the question itself is
+about work authorization, a visa or sponsorship -- decided by fixed wording rules in the
+Between Jobs service, not by the AI -- and then in its own labelled section; for any other
+question, and for any question that looks like an instruction to the AI rather than a
+question to you, it is left out. The question text and the job description are sent to the
+AI wrapped as marked data it is told not to obey. A second
 request checks the draft against those same materials and contains the draft too. The
 provider's own terms and privacy policy apply to what it receives, and if it forwards
 requests to a model vendor you selected (as OpenRouter does), that vendor is involved
@@ -122,8 +144,8 @@ library, not you). We do not use any of this for tracking.
 |-------|------|----------|
 | Chrome's `storage.session` area | Your sign-in session record: access token, refresh token, expiry, and the account record the sign-in service returns (your account id, email address and similar account fields) | Until you sign out, or until Chrome clears it -- which it does when the browser restarts and when the extension is disabled, reloaded or updated (so you sign in again after an update). By default Chrome does not let the extension's content scripts (the part that runs alongside web pages) read this area |
 | Chrome's `storage.local` area | For each supported site that has a signed field map, one whole number: the highest signed field-map version the extension has accepted (used to reject an older map being replayed) | Until you uninstall the extension |
-| Chrome's `storage.local` area | Whether you have agreed to the in-product disclosure screen shown before you can sign in, and which version of it you agreed to (a whole number, not just yes/no, so a later release that changes what this page collects can show the screen again instead of silently relying on an old agreement) | Until you uninstall the extension, or until a future release changes what is collected and shows the screen again |
-| Memory of the extension's script on the page you have open | The profile details, résumé and cover letter fetched for that tracked job, the rest of that job's prepared-application record, and the field map | Only while that page is open. The extension stops using it as soon as you sign out or the page moves to a different job, and drops it from memory the next time the page is used, navigated or closed |
+| Chrome's `storage.local` area | Whether you have agreed to the in-product disclosure screen shown before you can sign in, and which version of it you agreed to (a whole number, not just yes/no, so a later release that changes what this page collects can show the screen again instead of silently relying on an old agreement). The side panel writes it; the background worker and the part that runs alongside web pages read it (the latter reads nothing else from this area), and both re-read it before every request and before a fill starts writing, so a change takes effect at once, in tabs that are already open | Until you uninstall the extension, or until a future release changes what is collected and shows the screen again |
+| Memory of the extension's script on the page you have open | The profile details, résumé and cover letter fetched for that tracked job, the job's country (when its posting names one), the references to the two files, and the field map | Only while that page is open. The extension stops using it as soon as you sign out, the page moves to a different job, or the stored agreement stops being valid for this version, and drops it from memory the next time the page is used, navigated or closed. An action already under way finishes what it is doing: a fill that has started writing finishes the page it is on and then stops, and reports nothing |
 | Memory of the side panel | Drafts you are editing, and panel state | Until you close the panel or navigate away |
 
 The extension's own code does not use cookies, `localStorage`, `sessionStorage` or
@@ -136,7 +158,7 @@ above.
 
 ## 5. What the extension does on the page
 
-**It reads** the page to decide whether it contains an application form, to find the
+**It reads** nothing from a page until you have agreed to the disclosure screen. After that it reads the page to decide whether it contains an application form, to find the
 form's fields, and to read the text of the screening questions. It reads a field's
 current contents only to check whether the field is empty, so it does not overwrite
 what you have typed. Question text is shown in the side panel and is sent to the
@@ -147,17 +169,27 @@ content, form contents or anything you type.
 
 - "Fill this page" puts your profile details into plain text fields, and attaches your
   prepared résumé (and cover letter, where the form has a place for one) to the form's
-  file-upload fields. It skips a field that already has text or a file unless you press
-  "Refill all". It also triggers the ordinary input and change events, so the site
-  notices the values.
+  file-upload fields. It splits your one-line profile name into first and last name by its
+  spelling; a part it cannot know (a one-word name has no last name; a name in a script
+  whose word order the spelling does not show) is left empty and listed in the panel. On
+  Greenhouse it also chooses your country in the form's country list, by typing the country
+  name and picking the matching entry -- the one entry of a list it ever activates, only
+  an exact match, and only a plain entry of that list (never a button, a link, a label or
+  anything else a page dresses up as a list entry); if the list has no such country, or does not respond, the field is left
+  as it was and the panel says so. It skips a field that already has text, a file or a
+  choice unless you press "Refill all". It also triggers the ordinary input and change
+  events, so the site notices the values.
 - "Fill" on a drafted answer puts that one answer, which you have read and may have
   edited, into that one text box, and only if the box is empty.
 
 **It never**:
 
-- clicks, presses or activates any button, link or control on the page, and never
-  submits a form, including the site's submit, apply or next buttons;
-- ticks or changes any checkbox, radio button, dropdown, date field or consent box;
+- clicks, presses or activates any button, link or control on the page -- the one
+  exception is picking an entry in Greenhouse's country list, above -- and never submits a
+  form, including the site's submit, apply, next or continue buttons, or signs in, creates
+  an account, types a PIN or verification code, or answers a CAPTCHA;
+- ticks or changes any checkbox, radio button, date field or consent box, or any dropdown
+  other than that country list;
 - fills, lists for drafting, or sends the text of voluntary self-identification and
   accommodation questions (gender, sex, sexual orientation, race and ethnicity,
   disability and accommodation, veteran and military status, religion, age or date of
@@ -186,8 +218,9 @@ off the parts of that site's support that depend on it instead of using somethin
 
 ## 6. What is never collected
 
-- No analytics, telemetry, usage statistics or crash reports, and no third-party
-  tracking or advertising code of any kind.
+- No third-party analytics, crash reports, tracking or advertising code of any kind. The
+  only report of how you use the extension is request 12, sent to the Between Jobs service
+  itself: counts only, as described there.
 - No browsing history. The extension runs only on the four sites above and does nothing
   on any other page. On those sites the only address it sends is that of a page with an
   application form, as described in request 4.
@@ -195,7 +228,8 @@ off the parts of that site's support that depend on it instead of using somethin
 - No cookies. The extension does not read other tabs: its page script exists only on the
   four supported sites, and the side panel only learns which tab is active and when a tab
   finishes loading -- never its address, title or contents.
-- No values you type into a form.
+- No values you type into a form, and no field names or labels: the fill report holds
+  numbers and one word.
 - No provider API keys. They never reach the extension.
 
 We do not sell your data, share it for advertising, or use it to decide credit or
@@ -208,11 +242,16 @@ secure, to comply with the law, or in aggregated and anonymized form.
 - **Your account data** (profile, applications, documents) stays for as long as your
   Between Jobs account exists and is governed by the service's own policy.
 - **Saved answers.** If you press "Fill & remember", the question text (lower-cased) and
-  your answer are saved to your account until they are deleted. They are removed when
+  your answer are saved to your account until they are deleted, together with the kind of
+  question and the job's country when those were recognised, and, as the answer is reused,
+  how many times and when it was last used (request 13). They are removed when
   your account is deleted. [MAINTAINER TO FILL: how a user asks for individual saved
   answers to be deleted.]
 - **Application status.** Pressing "mark as applied" records that change in your
   application history.
+- **Fill reports.** Each report (request 12) is kept as one product usage event on your
+  account, which the Between Jobs service's own policy describes, and is removed when your
+  account is deleted.
 - **Drafts.** A draft you do not save with "Fill & remember" is not saved to your
   account. The AI provider you chose keeps whatever its own terms say.
 - **Server logs.** The service's ordinary web-server and proxy logs may contain the
@@ -248,6 +287,7 @@ compromised.
   sign you out of the Between Jobs website, and it has no effect on any session for that
   website itself: the two are scoped separately on purpose.
 - Do not press "Draft answer" and nothing is sent to an AI provider.
+- Do not press "Fill this page" or "Refill all" and no fill report is sent.
 - Do not press "Fill & remember" and no answer is saved.
 - Uninstall the extension to remove everything it stored on your device.
 - Ask us to access, correct or delete your data: [MAINTAINER TO FILL: contact and
@@ -290,8 +330,10 @@ Chrome Web Store dashboard's own live form.
   `document.cookie`, `chrome.cookies`, `chrome.history` or `chrome.webRequest` anywhere
   in `entrypoints/` or `lib/`, and no `localStorage`, `sessionStorage` or `indexedDB`
   in the extension's own code. The only `chrome.storage` uses are `lib/supabase.ts`
-  (session area) and the field-map version floor in `entrypoints/background.ts` (local
-  area). `XMLHttpRequest` appears once, in a comment in `lib/supabase.ts`. The side panel
+  (session area), the field-map version floor in `entrypoints/background.ts` (local
+  area), and the consent flag in `lib/consent.ts` (local area; written by the side panel,
+  read by the background worker and the content script, which also listens for changes to
+  it). `XMLHttpRequest` appears once, in a comment in `lib/supabase.ts`. The side panel
   never imports `lib/api.ts`; every backend call goes through the service worker. `sidepanel.html` loads one local script and the CSS has no `url()` or
   `@import`, so no page load fetches anything remote.
 - **Bundle scan.** A rebuild of the built bundles finds no analytics or telemetry
@@ -315,10 +357,31 @@ Chrome Web Store dashboard's own live form.
   claiming the bundle uses no `localStorage` at all. This was recorded under jsdom, not
   in real Chrome; auth-js 2.116.0 also opens a `BroadcastChannel` (a same-origin message
   channel between the extension's own pages, no network) that jsdom did not exercise.
-- **Human-submits.** No `.click()`, `.submit()`, `requestSubmit`, keyboard or mouse
-  event, or `.checked` write exists in the extension source. The only events dispatched
-  on page elements are `input` and `change`, on text-entry elements and file inputs.
-  Standard-field fill, per-question fill and file attach each re-check the target's type.
+- **Human-submits.** No `.submit()`, `requestSubmit`, keyboard or mouse event, or `.checked`
+  write exists in the extension source, and exactly one `.click()` does: activating an
+  entry of Greenhouse's country list after the country name has been typed into it
+  (`activateListboxOption` in `lib/greenhouse.ts`, which activates only a plain list entry
+  inside a listbox -- every element from the option up to its listbox a plain layout
+  element, and neither it nor anything around it a button, a link, a label, a form control
+  or an element with such a role; a page that marks a submit button or a link as an
+  "option" gets no click; `.focus()` is likewise called only on that list's own input). The only events dispatched on page elements are `input` and `change`,
+  on text-entry elements, file inputs and that list's `<select>` or search box.
+  `tests/neverSubmit.test.ts` scans the source (comments excluded) for any submit, next,
+  continue, sign-in, create-account, PIN, verification-code, CAPTCHA or consent selector,
+  click, submit, keyboard or mouse event, ticked box or navigation -- and fails on a
+  planted one -- and runs the real content script against synthetic pages full of such
+  controls (including a hostile country list) with the DOM's click, submit, dispatch and
+  focus entry points watched. The scan is a tripwire for the ordinary spellings of those
+  things (property and element access, `.call`, destructuring, assignment operators,
+  `setAttribute`, `defineProperty`); the behavioural run is the net for obfuscated ones.
+  Building a name out of pieces at run time is out of scope for static analysis, and
+  navigation is checked statically only. The signed-map loader refuses a map whose selector
+  matches a list of control names and spellings; that is a best-effort lock, not a proof (an
+  opaque selector passes it). What guarantees nothing is submitted, ticked or typed into a
+  code box is the engine's shape: it writes only profile text into text-entry controls, has
+  no click path but the country list above, and has no source for a PIN or a code. None of
+  this has been run against a live page or in real Chrome. Standard-field fill, per-question fill and file
+  attach each re-check the target's type.
 - **Sign-out.** `signOut({ scope: "local" })` calls `/logout?scope=local` (confirmed
   again in the recording above), so the refresh token is revoked server-side, and the
   local session is removed even if that call errors.
@@ -359,12 +422,20 @@ Chrome Web Store dashboard's own live form.
    `ConsentGate` now renders before the sign-in form (and before anything else) until the
    person presses "I understand and agree," which stores a version-carrying flag in
    `chrome.storage.local` (this section's own table, above) and only then lets
-   `refreshDetection`/the tab-change listeners run at all -- confirmed by toolchain tests,
+   `refreshDetection`/the tab-change listeners run at all. The content script and the
+   background worker check the same flag themselves (`lib/consent.ts`, the one decision
+   point), so a page that was already open reads nothing and sends nothing until the flag is
+   valid, and stops again the moment it is removed or its version changes (a request or a
+   fill already under way finishes first; the flag is re-read before each request and before
+   a fill starts writing) -- confirmed by toolchain tests,
    not yet by a real Chrome session (see the E6-continuation session notes for exactly
    what that leaves unverified). The copy is `LISTING.md` section 4's own draft, close to
    verbatim; a live re-check of Chrome's current policy pages (2026-09-21) found nothing
    materially wrong with it. The privacy-policy link inside the screen is still the
-   `[MAINTAINER TO FILL]` placeholder below -- fill it in before submitting.
+   `[MAINTAINER TO FILL]` placeholder below -- fill it in before submitting. The panel builds
+   its sign-in client only after agreement: constructing the client is itself a network
+   request when a stored session has expired (the library refreshes it), so building it on
+   mount would send a refresh token before the person had agreed.
 2. **No self-service deletion.** No route or screen deletes saved answers
    (`approved_answers`), applications or the account. The table cascades on account
    deletion at the database level, and has an owner-only delete policy, but nothing calls
@@ -378,16 +449,20 @@ Chrome Web Store dashboard's own live form.
    do not use technical data for tracking" sentences (sections 3 and 6) are commitments,
    not something the code enforces; make sure you can keep them.
 4. **What the AI provider receives is broader than the question.** `summarize_profile`
-   includes the candidate's name, headline, location and the free-text
-   `work_authorization` field. Work-authorization and visa questions are deliberately
-   outside the self-identification exclusion, so a free-text one can be drafted. That is
-   a maintainer decision already on record; the policy states it plainly instead of
-   hiding it. The answer-generation code is frozen, so nothing was changed.
-5. **The extension receives more than it uses.** `GET .../extension-payload` returns the
-   whole stored `prepare_result` (fit assessment, gate outcome, ATS attempts, warnings).
-   The extension reads only `resume`, `cover_letter` and `personal_info`, but the whole
-   record is held in the page's script memory. Section 3 says so. Projecting the response
-   down would let that sentence be shorter.
+   includes the candidate's name, headline and location, but no longer the free-text
+   `work_authorization` field: that is added to a draft request only when a deterministic
+   classifier (`application_answer_generator.is_work_authorization_question`) says the
+   question itself is about work authorization or sponsorship, and never for text that is
+   long, instruction-shaped or contains markup. Work-authorization and visa questions are
+   deliberately outside the self-identification exclusion, so a free-text one can be
+   drafted. That is a maintainer decision already on record; the policy states it plainly
+   instead of hiding it.
+5. **What the extension receives is what it uses.** `GET .../extension-payload` returns
+   `prepare_result` trimmed to `{resume, cover_letter}` (references to the two files),
+   `personal_info` and `job_jurisdiction`. It no longer returns the stored fit assessment,
+   gate outcome, ATS attempts or warnings. The extension uses all three: the references to
+   download the files, the profile details to fill, and the country to tag and look up
+   remembered answers. Section 3 says so.
 6. **The page address travels in a GET query string** (`/extension/lookup?url=...`), so
    it can land in access logs. The extension already strips query strings and
    fragments; the path still identifies the company and posting. Moving it to a POST
@@ -424,6 +499,16 @@ Chrome Web Store dashboard's own live form.
 15. **The Supabase publishable key is inside the bundle.** That is by design (it is a
     public client key, and row-level security plus the API's JWT check are what protect
     data), but a reviewer or scanner may flag it; expect the question.
+16. **Counts-only usage report (request 12).** The extension now sends one report per
+    fill. It is the first thing in the extension that is usage data rather than a feature
+    request, so `CONSENT_VERSION` was raised to 2: everyone who agreed to the earlier
+    wording (which promised "no analytics" outright) is asked again. The Chrome Web
+    Store's Privacy practices answers in `LISTING.md` section 3 were re-checked for it.
+    Whether `application_id` should travel with the report (it ties the event to an
+    application on the service) is a judgment call; the service accepts it as optional.
+    Version 2 also covers what the screen now lists beyond the counts: the application's id
+    on the report, the saved-answer use report (request 13), and the kind and country that
+    travel with a question's text (requests 8 and 10).
 
 ### Sources (checked 2026-09-19)
 

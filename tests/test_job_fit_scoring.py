@@ -87,6 +87,30 @@ def test_summarize_profile_includes_name_headline_and_location() -> None:
     assert "LOCATION: New York, NY, USA" in summary
 
 
+def _personal_with_auth() -> Personal:
+    return Personal(
+        name="Jane Doe",
+        headline="Backend Engineer",
+        location=Location(city="New York", region="NY", country="USA"),
+        work_authorization="H-1B holder (SECRETAUTH-7731)",
+    )
+
+
+def test_summarize_profile_leaves_the_work_authorization_text_out_by_default() -> None:
+    profile = _profile(personal=_personal_with_auth())
+
+    assert "SECRETAUTH" not in summarize_profile(profile)
+    assert "WORK AUTHORIZATION" not in summarize_profile(profile)
+
+
+def test_summarize_profile_includes_it_when_job_scoring_asks_for_it() -> None:
+    profile = _profile(personal=_personal_with_auth())
+
+    assert "WORK AUTHORIZATION: H-1B holder (SECRETAUTH-7731)" in summarize_profile(
+        profile, include_work_authorization=True
+    )
+
+
 def test_summarize_profile_includes_experience_bullets() -> None:
     summary = summarize_profile(_profile())
     assert "Software Engineer @ Acme" in summary
@@ -169,6 +193,30 @@ async def test_score_jobs_caps_the_batch_at_30_and_returns_the_rest_unscored() -
     assert len(scored) == 30
     assert len(unscored) == 15
     assert unscored == results[30:]
+
+
+async def test_score_jobs_gives_the_scorer_the_candidates_work_authorization() -> None:
+    """Fit scoring needs the work-authorization text (a job that cannot be worked on a candidate's
+    visa is not a fit), so `score_jobs` asks for it in the profile summary it sends. A change that
+    left it out would quietly weaken scoring with every other test green."""
+    captured: list[dict[str, Any]] = []
+
+    async def fake_generate(**kwargs: Any) -> LLMResponse:
+        captured.append(json.loads(kwargs["user_prompt"]))
+        return LLMResponse(content=json.dumps({"scored": []}))
+
+    await score_jobs(
+        profile=_profile(personal=_personal_with_auth()),
+        results=_results(2),
+        llm_api_key="key",
+        llm_model="model",
+        llm_base_url=None,
+        generate=fake_generate,
+    )
+
+    assert (
+        "WORK AUTHORIZATION: H-1B holder (SECRETAUTH-7731)" in captured[0]["master_resume_summary"]
+    )
 
 
 async def test_score_jobs_drops_a_scored_item_whose_job_id_is_unrecognized() -> None:

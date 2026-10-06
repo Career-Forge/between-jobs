@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SignedFieldMapResponse } from "@/lib/ats-field-map";
+import { CONSENT_REQUIRED_MESSAGE, CONSENT_STORAGE_KEY, CONSENT_VERSION } from "@/lib/consent";
 import type { FetchApplicationFilesResult, TabState } from "@/lib/types";
 
 // Drives the real background.ts through its real onMessage listener, with the
@@ -33,6 +34,7 @@ vi.mock("@/lib/supabase", () => ({
 const TEST_KEY_ID = "test-key-e6";
 const APP_ID = "0b7f3c1e-5d2a-4e8b-9c41-2f6a8d9e0b13";
 const EXTENSION_ID = "test-extension";
+const ANSWER_ID = "7d3f5c2a-9b1e-4f60-8a27-3c5d1e9b4a10";
 
 let privateKey: CryptoKey;
 let publicKeyB64: string;
@@ -84,15 +86,28 @@ const SIDE_PANEL = { id: EXTENSION_ID, url: `chrome-extension://${EXTENSION_ID}/
 
 type Listener = (message: unknown, sender: unknown) => unknown;
 
-async function loadBackground(options: { storage?: Record<string, unknown>; storageLatencyMs?: number } = {}) {
+/** Pass as `consent` to start with no stored consent flag. */
+const NO_CONSENT = Symbol("no stored consent");
+
+async function loadBackground(
+  options: { storage?: Record<string, unknown>; storageLatencyMs?: number; consent?: unknown } = {},
+) {
   vi.resetModules();
   const store: Record<string, unknown> = { ...(options.storage ?? {}) };
+  // The consent flag lives in the same chrome.storage.local, but is held apart
+  // here so `store` keeps showing only what the field-map ratchet wrote.
+  const consent: { value: unknown } = {
+    value: options.consent === undefined ? { version: CONSENT_VERSION } : options.consent,
+  };
   const delay = () => new Promise((resolve) => setTimeout(resolve, options.storageLatencyMs ?? 0));
   vi.stubGlobal("chrome", {
     storage: {
       local: {
         get: async (key: string) => {
           await delay();
+          if (key === CONSENT_STORAGE_KEY) {
+            return consent.value === NO_CONSENT || consent.value === undefined ? {} : { [key]: consent.value };
+          }
           return key in store ? { [key]: store[key] } : {};
         },
         set: async (values: Record<string, unknown>) => {
@@ -123,6 +138,9 @@ async function loadBackground(options: { storage?: Record<string, unknown>; stor
   if (listener === undefined) throw new Error("background registered no message listener");
   return {
     store,
+    setConsent: (value: unknown) => {
+      consent.value = value;
+    },
     send: (message: unknown, sender: unknown = CONTENT_SCRIPT) => listener(message, sender),
   };
 }
@@ -630,5 +648,361 @@ describe("message fields are validated before they reach a request path or body"
       eligible: true,
     });
     expect(await harness.send({ type: "MATCH_ANSWER", normalizedQuestion: "why us?" }, SIDE_PANEL)).toEqual({ answer: null });
+  });
+});
+
+// ---- A: the consent gate ---------------------------------------------------------------
+//
+// The service worker is the second lock behind the content script's own: nothing that
+// sends an address, a question or an application id to the API, or downloads the
+// person's documents, runs unless the stored consent flag is valid for this build's
+// disclosure. The flag is read afresh on each request.
+
+describe("the consent gate", () => {
+  const withoutConsent = { consent: NO_CONSENT };
+
+  it("without consent, a page detection sends no lookup request and says why", async () => {
+    const harness = await loadBackground(withoutConsent);
+
+    const state = await detect(harness, "greenhouse");
+
+    expect(state).toEqual({ status: "consent_required" });
+    expect(apiPaths()).toEqual([]);
+    expect(mocks.getSession).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["MATCH_ANSWER", { normalizedQuestion: "why us?" }, SIDE_PANEL],
+    ["SAVE_ANSWER", { normalizedQuestion: "why us?", answerText: "because" }, SIDE_PANEL],
+    ["DRAFT_ANSWER", { applicationId: APP_ID, questionText: "Why us?" }, SIDE_PANEL],
+    ["MARK_APPLIED", { applicationId: APP_ID, idempotencyKey: "k" }, SIDE_PANEL],
+    ["ANSWER_USED", { answerId: ANSWER_ID }, SIDE_PANEL],
+    ["FETCH_APPLICATION_FILES", { applicationId: APP_ID, wantResume: true, wantCoverLetter: true }, CONTENT_SCRIPT],
+  ])("without consent, %s is refused and nothing reaches the API", async (type, fields, sender) => {
+    const harness = await loadBackground(withoutConsent);
+
+    await expect(harness.send({ type, ...fields }, sender) as Promise<unknown>).rejects.toThrow(CONSENT_REQUIRED_MESSAGE);
+
+    expect(apiPaths()).toEqual([]);
+    expect(mocks.apiFetchBlob).not.toHaveBeenCalled();
+  });
+
+  it("sign-out still works without consent: ending a session must never be blocked", async () => {
+    const harness = await loadBackground(withoutConsent);
+
+    expect(await harness.send({ type: "SIGN_OUT" }, SIDE_PANEL)).toEqual({ ok: true });
+    expect(apiPaths()).toEqual(["/extension/sign-out"]);
+  });
+
+  it("with consent everything runs as before", async () => {
+    const harness = await loadBackground();
+
+    expect((await detect(harness, "greenhouse")).status).toBe("tracked");
+    expect(await harness.send({ type: "MATCH_ANSWER", normalizedQuestion: "why us?" }, SIDE_PANEL)).toEqual({ answer: null });
+  });
+
+  it("consent withdrawn mid-session stops the very next request", async () => {
+    const harness = await loadBackground();
+    expect((await detect(harness, "greenhouse")).status).toBe("tracked");
+    const callsBefore = apiPaths().length;
+
+    harness.setConsent(undefined);
+
+    expect(await detect(harness, "greenhouse")).toEqual({ status: "consent_required" });
+    await expect(
+      harness.send({ type: "DRAFT_ANSWER", applicationId: APP_ID, questionText: "Why us?" }, SIDE_PANEL) as Promise<unknown>,
+    ).rejects.toThrow(CONSENT_REQUIRED_MESSAGE);
+    expect(apiPaths()).toHaveLength(callsBefore);
+  });
+
+  it("consent withdrawn while the lookup was running: the application's id goes into no further request", async () => {
+    const harness = await loadBackground();
+    mocks.apiFetch.mockImplementation(async (path: string) => {
+      if (path.startsWith("/extension/lookup")) {
+        harness.setConsent(undefined); // the person withdraws while the lookup is in flight
+        return { application_id: APP_ID };
+      }
+      return {};
+    });
+
+    const state = await detect(harness, "greenhouse");
+
+    expect(state).toEqual({ status: "consent_required" });
+    expect(apiPaths().filter((p) => p.startsWith("/extension/lookup"))).toHaveLength(1);
+    expect(apiPaths()).not.toContain(`/applications/${APP_ID}/extension-payload`);
+    expect(apiPaths().some((p) => p.startsWith("/extension/field-maps/"))).toBe(false);
+  });
+
+  it("a consent version bump closes the gate for a flag stored under the old version", async () => {
+    const harness = await loadBackground({ consent: { version: CONSENT_VERSION } });
+    expect((await detect(harness, "greenhouse")).status).toBe("tracked");
+    const callsBefore = apiPaths().length;
+
+    harness.setConsent({ version: CONSENT_VERSION + 1 });
+
+    expect(await detect(harness, "greenhouse")).toEqual({ status: "consent_required" });
+    expect(apiPaths()).toHaveLength(callsBefore);
+
+    harness.setConsent({ version: CONSENT_VERSION - 1 });
+    expect(await detect(harness, "greenhouse")).toEqual({ status: "consent_required" });
+    expect(apiPaths()).toHaveLength(callsBefore);
+  });
+
+  it("agreeing again reopens it without restarting the worker", async () => {
+    const harness = await loadBackground(withoutConsent);
+    expect(await detect(harness, "greenhouse")).toEqual({ status: "consent_required" });
+
+    harness.setConsent({ version: CONSENT_VERSION });
+
+    expect((await detect(harness, "greenhouse")).status).toBe("tracked");
+  });
+
+  it("an unreadable flag is no consent", async () => {
+    const harness = await loadBackground();
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get: async () => {
+            throw new Error("storage unavailable");
+          },
+        },
+      },
+    });
+
+    expect(await detect(harness, "greenhouse")).toEqual({ status: "consent_required" });
+    expect(apiPaths()).toEqual([]);
+  });
+});
+
+
+// ---- B: the intent and jurisdiction a remembered answer travels with --------------------
+
+describe("MATCH_ANSWER and SAVE_ANSWER carry the intent and the jurisdiction", () => {
+  const bodyOf = (path: string) => {
+    const call = mocks.apiFetch.mock.calls.find((c) => c[0] === path);
+    return JSON.parse((call?.[1] as { body: string }).body) as Record<string, unknown>;
+  };
+
+  it("a lookup sends canonical_intent and jurisdiction in the request body", async () => {
+    const harness = await loadBackground();
+
+    await harness.send(
+      { type: "MATCH_ANSWER", normalizedQuestion: "why do you want to work here?", canonicalIntent: "why_this_company", jurisdiction: "US" },
+      SIDE_PANEL,
+    );
+
+    expect(bodyOf("/extension/match-answer")).toEqual({
+      normalized_question: "why do you want to work here?",
+      canonical_intent: "why_this_company",
+      jurisdiction: "US",
+    });
+  });
+
+  it("a save sends them too", async () => {
+    const harness = await loadBackground();
+
+    await harness.send(
+      {
+        type: "SAVE_ANSWER",
+        normalizedQuestion: "are you legally authorized to work in the united states?",
+        answerText: "Yes",
+        canonicalIntent: "work_authorization",
+        jurisdiction: "US",
+      },
+      SIDE_PANEL,
+    );
+
+    expect(bodyOf("/extension/approved-answers")).toEqual({
+      normalized_question: "are you legally authorized to work in the united states?",
+      answer_text: "Yes",
+      canonical_intent: "work_authorization",
+      jurisdiction: "US",
+    });
+  });
+
+  it("a tag that is absent is absent from the body -- never an empty string or null", async () => {
+    const harness = await loadBackground();
+
+    await harness.send({ type: "MATCH_ANSWER", normalizedQuestion: "q" }, SIDE_PANEL);
+    await harness.send({ type: "SAVE_ANSWER", normalizedQuestion: "q", answerText: "a" }, SIDE_PANEL);
+
+    expect(bodyOf("/extension/match-answer")).toEqual({ normalized_question: "q" });
+    expect(bodyOf("/extension/approved-answers")).toEqual({ normalized_question: "q", answer_text: "a" });
+  });
+
+  it.each([
+    ["an intent with upper case or spaces", { canonicalIntent: "Why Us" }],
+    ["an intent that is not a name at all", { canonicalIntent: "../../x" }],
+    ["an over-long intent", { canonicalIntent: "a".repeat(65) }],
+    ["a jurisdiction that is not an ISO code", { jurisdiction: "usa" }],
+    ["a lower-case jurisdiction", { jurisdiction: "us" }],
+    ["a jurisdiction that is not a string", { jurisdiction: 7 }],
+    ["an empty intent", { canonicalIntent: "" }],
+  ])("rejects %s without calling the API", async (_name, tags) => {
+    const harness = await loadBackground();
+
+    await expect(
+      harness.send({ type: "MATCH_ANSWER", normalizedQuestion: "q", ...tags }, SIDE_PANEL) as Promise<unknown>,
+    ).rejects.toThrow(/invalid request/i);
+    await expect(
+      harness.send({ type: "SAVE_ANSWER", normalizedQuestion: "q", answerText: "a", ...tags }, SIDE_PANEL) as Promise<unknown>,
+    ).rejects.toThrow(/invalid request/i);
+    expect(apiPaths()).toEqual([]);
+  });
+});
+
+// ---- C: a remembered answer was used --------------------------------------------------------
+
+describe("ANSWER_USED", () => {
+  it("POSTs to the answer's own used route and reports ok", async () => {
+    const harness = await loadBackground();
+
+    const result = await harness.send({ type: "ANSWER_USED", answerId: ANSWER_ID }, SIDE_PANEL);
+
+    expect(result).toEqual({ ok: true });
+    expect(mocks.apiFetch).toHaveBeenCalledWith(`/extension/answers/${ANSWER_ID}/used`, { method: "POST" });
+  });
+
+  it("never throws: a failed count (the answer is gone, the network is down) is ok:false", async () => {
+    mocks.apiFetch.mockRejectedValueOnce(new Error("not found"));
+    const harness = await loadBackground();
+
+    expect(await harness.send({ type: "ANSWER_USED", answerId: ANSWER_ID }, SIDE_PANEL)).toEqual({ ok: false });
+  });
+
+  it("only the side panel may send it", async () => {
+    const harness = await loadBackground();
+
+    expect(harness.send({ type: "ANSWER_USED", answerId: ANSWER_ID }, CONTENT_SCRIPT)).toBeUndefined();
+    expect(apiPaths()).toEqual([]);
+  });
+
+  it.each(["../../x", "not-a-uuid", "", `${ANSWER_ID}/../../x`, 7, null])("rejects an answer id of %j before any path is built", async (answerId) => {
+    const harness = await loadBackground();
+
+    await expect(harness.send({ type: "ANSWER_USED", answerId }, SIDE_PANEL) as Promise<unknown>).rejects.toThrow(
+      /invalid request/i,
+    );
+    expect(apiPaths()).toEqual([]);
+  });
+});
+
+
+// ---- G: the fill-outcome report ----------------------------------------------------------------
+
+describe("REPORT_FILL_OUTCOME", () => {
+  const GREENHOUSE_PAGE = { id: EXTENSION_ID, url: "https://job-boards.greenhouse.io/acme/jobs/1", tab: { id: 7 } };
+  const report = (overrides: Record<string, unknown> = {}) => ({
+    type: "REPORT_FILL_OUTCOME",
+    atsType: "greenhouse",
+    applicationId: APP_ID,
+    fieldsAttempted: 4,
+    fieldsFilled: 4,
+    outcome: "ok",
+    ...overrides,
+  });
+  const postedBody = () => {
+    const call = mocks.apiFetch.mock.calls.find((c) => c[0] === "/extension/fill-outcome");
+    return call === undefined ? undefined : JSON.parse((call[1] as { body: string }).body);
+  };
+
+  it.each([
+    ["success", { fieldsAttempted: 4, fieldsFilled: 4, outcome: "ok" }],
+    ["a partial fill", { fieldsAttempted: 5, fieldsFilled: 3, outcome: "partial" }],
+    ["a failed fill", { fieldsAttempted: 2, fieldsFilled: 0, outcome: "failed" }],
+  ])("%s: posts exactly the five fields the service accepts", async (_name, counts) => {
+    const harness = await loadBackground();
+
+    const result = await harness.send(report(counts), GREENHOUSE_PAGE);
+
+    expect(result).toEqual({ ok: true });
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/extension/fill-outcome", expect.objectContaining({ method: "POST" }));
+    expect(postedBody()).toEqual({
+      ats_type: "greenhouse",
+      application_id: APP_ID,
+      fields_attempted: counts.fieldsAttempted,
+      fields_filled: counts.fieldsFilled,
+      outcome: counts.outcome,
+    });
+  });
+
+  it("the service's ceiling is inclusive: a report of exactly 1000 is accepted, 1001 is not", async () => {
+    const harness = await loadBackground();
+
+    expect(await harness.send(report({ fieldsAttempted: 1000, fieldsFilled: 1000 }), GREENHOUSE_PAGE)).toEqual({ ok: true });
+    expect(postedBody()).toMatchObject({ fields_attempted: 1000, fields_filled: 1000 });
+    await expect(
+      harness.send(report({ fieldsAttempted: 1001, fieldsFilled: 1001 }), GREENHOUSE_PAGE) as Promise<unknown>,
+    ).rejects.toThrow(/invalid request/i);
+  });
+
+  it("anything else the message carries is dropped, never forwarded", async () => {
+    const harness = await loadBackground();
+
+    await harness.send(
+      report({ label: "Why us?", value: "alice@example.com", url: "https://job-boards.greenhouse.io/acme/jobs/1?token=1", pageText: "..." }),
+      GREENHOUSE_PAGE,
+    );
+
+    expect(Object.keys(postedBody()).sort()).toEqual(["application_id", "ats_type", "fields_attempted", "fields_filled", "outcome"]);
+    expect(JSON.stringify(postedBody())).not.toMatch(/Why us|alice|token|pageText/);
+  });
+
+  it("nothing is sent without consent, and the refusal is silent to the page", async () => {
+    const harness = await loadBackground({ consent: NO_CONSENT });
+
+    await expect(harness.send(report(), GREENHOUSE_PAGE) as Promise<unknown>).rejects.toThrow(CONSENT_REQUIRED_MESSAGE);
+
+    expect(apiPaths()).toEqual([]);
+  });
+
+  it("consent withdrawn mid-session stops the next report", async () => {
+    const harness = await loadBackground();
+    expect(await harness.send(report(), GREENHOUSE_PAGE)).toEqual({ ok: true });
+
+    harness.setConsent(undefined);
+
+    await expect(harness.send(report(), GREENHOUSE_PAGE) as Promise<unknown>).rejects.toThrow(CONSENT_REQUIRED_MESSAGE);
+    expect(apiPaths().filter((p) => p === "/extension/fill-outcome")).toHaveLength(1);
+  });
+
+  it("a failed delivery is { ok: false } -- it never throws", async () => {
+    mocks.apiFetch.mockRejectedValueOnce(new Error("network down"));
+    const harness = await loadBackground();
+
+    expect(await harness.send(report(), GREENHOUSE_PAGE)).toEqual({ ok: false });
+  });
+
+  it("only a content script may report", async () => {
+    const harness = await loadBackground();
+
+    expect(harness.send(report(), SIDE_PANEL)).toBeUndefined();
+    expect(apiPaths()).toEqual([]);
+  });
+
+  it.each([
+    ["an unknown ATS", { atsType: "workday" }],
+    ["an ATS that is not the sender page's own", { atsType: "lever" }],
+    ["a malformed application id", { applicationId: "../../x" }],
+    ["a missing application id", { applicationId: undefined }],
+    ["more filled than attempted", { fieldsAttempted: 2, fieldsFilled: 3 }],
+    ["a negative count", { fieldsAttempted: -1, fieldsFilled: -1 }],
+    ["a fractional count", { fieldsAttempted: 2.5, fieldsFilled: 2 }],
+    ["a count as text", { fieldsAttempted: "4" }],
+    ["a count over the service's ceiling", { fieldsAttempted: 1001, fieldsFilled: 1001 }],
+    ["an outcome the service does not know", { outcome: "setup_required" }],
+    ["an outcome that is not a string", { outcome: 1 }],
+  ])("rejects %s without calling the API", async (_name, overrides) => {
+    const harness = await loadBackground();
+
+    await expect(harness.send(report(overrides), GREENHOUSE_PAGE) as Promise<unknown>).rejects.toThrow(/invalid request/i);
+
+    expect(apiPaths()).toEqual([]);
+  });
+
+  it("a sender with no page URL is judged on the message alone", async () => {
+    const harness = await loadBackground();
+
+    expect(await harness.send(report(), { id: EXTENSION_ID, tab: { id: 7 } })).toEqual({ ok: true });
   });
 });

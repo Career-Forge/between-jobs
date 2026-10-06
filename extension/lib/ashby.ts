@@ -8,7 +8,7 @@ import {
   type FillAnswerOutcome,
   type QuestionKind,
 } from "./questionSafety";
-import { setReactControlledValue } from "./standardFields";
+import { setReactControlledValue, type FieldFillPlanItem } from "./standardFields";
 
 // E5 (browser-extension.md) -- "Zero open-source prior art exists
 // anywhere for this ATS -- cold start," confirmed: no reference
@@ -44,11 +44,10 @@ import { setReactControlledValue } from "./standardFields";
 //   on initial load; `everai` exposed one, but as an ordinary per-org
 //   custom question with an opaque UUID name (`dd4dc7a2-...`), not a
 //   `_systemfield_phone`. No org tested actually used a `_systemfield_
-//   phone` id, so `#_systemfield_phone` below is an inferred, best-
-//   effort attempt at the same naming convention the other three
-//   systemfields use -- disclosed as unconfirmed live, not claimed as
-//   verified. It's a harmless no-op (skipped by `planStandardFieldFills`
-//   like any other absent selector) on every org that doesn't use it.
+//   phone` id, so the phone is NOT looked up by a fixed id: see
+//   `findPhoneInput` below, which recognises it by what the control is
+//   (`type="tel"`, an `autocomplete` of `tel`, or a phone label) and
+//   leaves it alone, saying so, when that does not pick out one box.
 // - Ashby has NO structural separation between an EEO/demographic
 //   question and an ordinary custom one -- confirmed live: a pronoun
 //   question ("What are your preferred pronouns?") and a mundane
@@ -75,10 +74,10 @@ import { setReactControlledValue } from "./standardFields";
 //   real Ashby map).
 // - No stable cover-letter selector or naming convention was found live
 //   on either tested posting (neither exposed a cover-letter upload at
-//   all) -- rather than guess a `_systemfield_coverLetter`-shaped name
-//   with zero live confirmation, this build simply doesn't attempt
-//   Ashby cover-letter attach yet. Disclosed as a real gap, not a silent
-//   omission.
+//   all) -- so there is no guessed id here either. `findCoverLetterSlot`
+//   below recognises the slot by what it is: a file input whose own
+//   question title says "cover letter". When the form has no such slot,
+//   or more than one, the fill says so rather than staying silent.
 //
 // Per this task's explicit instruction, this file is built exactly like
 // Lever's lib/lever.ts was between E2 and E3c: fully open-source,
@@ -95,9 +94,8 @@ export const GENERIC_FIELD_DEFAULTS: {
   standardFields: [
     { field: "name", selector: "#_systemfield_name", strategy: "direct", profileFields: ["name"] },
     { field: "email", selector: "#_systemfield_email", strategy: "direct", profileFields: ["email"] },
-    // See the file-level note above -- inferred from Ashby's own naming
-    // convention, not directly observed live on any tested org.
-    { field: "phone", selector: "#_systemfield_phone", strategy: "direct", profileFields: ["phone"] },
+    // No phone entry: Ashby has no phone id this build has seen (file-level note above).
+    // `findPhoneInput` finds it by what it is.
   ],
 };
 
@@ -170,7 +168,11 @@ function isSensitiveEntryContext(entry: Element): boolean {
  * confirmed live on a real "how did you hear about us" question --
  * neither is a stable per-question key the way `data-field-path` is).
  */
-export function extractCustomQuestions(doc: Document, excludeFieldName: string | null = null): CustomQuestion[] {
+export function extractCustomQuestions(
+  doc: Document,
+  excludeFieldNames: string | readonly string[] | null = null,
+): CustomQuestion[] {
+  const excluded = new Set(excludeFieldNames === null ? [] : [excludeFieldNames].flat());
   const seen = new Set<string>();
   const questions: CustomQuestion[] = [];
   for (const element of doc.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
@@ -180,7 +182,7 @@ export function extractCustomQuestions(doc: Document, excludeFieldName: string |
     if (entry === null) continue;
     const fieldPath = entry.getAttribute("data-field-path");
     if (fieldPath === null || fieldPath.startsWith(SYSTEMFIELD_PREFIX)) continue;
-    if (seen.has(fieldPath) || fieldPath === excludeFieldName) continue;
+    if (seen.has(fieldPath) || excluded.has(fieldPath)) continue;
     seen.add(fieldPath);
     const { label, sensitive } = labelForFieldEntry(entry);
     if (sensitive || isSensitiveEntryContext(entry)) continue;
@@ -229,4 +231,144 @@ export function fillCustomTextAnswer(
 
   setReactControlledValue(element, value);
   return "filled";
+}
+
+
+// ---- the phone number and the cover-letter upload, found by what they are --------------
+
+// The WHOLE title has to be a phone label ("Phone", "Mobile phone", "Your phone number",
+// "Phone (optional second)"), not merely contain the word: a question that mentions a phone
+// ("When are you available for a phone screen?", "Mobile app development experience") is a
+// question for the person, and must not get their number typed into it.
+const PHONE_LABEL =
+  /^(?:(?:your|my|best|primary|preferred|personal|contact)\s+)*(?:(?:mobile|cell(?:ular)?|contact|home|work|daytime)\s+)?(?:phone|telephone|mobile|cell(?:ular)?)(?:\s+(?:number|no\.?|#))?\s*(?:\([^)]{0,40}\))?\s*[:*]?\s*\*?$/iu;
+// A phone number that is somebody else's: not the candidate's own.
+const NOT_THE_CANDIDATES_PHONE =
+  /\b(?:emergency|reference|referee|referrer|manager|supervisor|employer|spouse|partner|parent|guardian|relative|recruiter)\b/iu;
+const COVER_LETTER_LABEL = /\bcover[\s-]?letter\b/iu;
+
+function titleOf(entry: Element): string | null {
+  return readQuestionLabel(entry.querySelector(QUESTION_LABEL_SELECTOR)?.textContent).label;
+}
+
+/** `type="tel"` or an `autocomplete` token that starts with "tel" ("tel", "tel-national"). */
+function declaresTelephone(input: HTMLInputElement): boolean {
+  if (input.type === "tel") return true;
+  return (input.getAttribute("autocomplete") ?? "")
+    .toLowerCase()
+    .split(/\s+/u)
+    .some((token) => token === "tel" || token.startsWith("tel-"));
+}
+
+export type PhoneInputResult =
+  | { status: "found"; input: HTMLInputElement; fieldPath: string }
+  | { status: "none" }
+  | { status: "ambiguous" };
+
+/**
+ * The candidate's phone box, recognised by what it is, never by a fixed id. Every text input
+ * inside a field entry (other than the name, email and résumé system fields, and never a
+ * combobox such as a country-code picker) is weighed: one point for declaring a telephone
+ * (`type="tel"` or `autocomplete="tel..."`) and one for a title that is, as a whole, a phone
+ * label. A box titled as somebody else's number ("Emergency contact phone") is never a
+ * candidate. The highest-scoring box wins only when it is the only one with that score; two
+ * equally good boxes are `ambiguous`, and the caller leaves both empty and says so. A form
+ * with no such box is `none`. Every input of an entry competes, so a text box beside a real
+ * tel box in the same entry (a country code, say) cannot shadow it.
+ */
+export function findPhoneInput(doc: Document): PhoneInputResult {
+  const scored: { input: HTMLInputElement; fieldPath: string; score: number }[] = [];
+  for (const input of doc.querySelectorAll<HTMLInputElement>("input")) {
+    if (!isTextEntryElement(input) || input.type === "hidden") continue;
+    if (input.getAttribute("role") === "combobox") continue;
+    const entry = input.closest(FIELD_ENTRY_SELECTOR);
+    const fieldPath = entry?.getAttribute("data-field-path") ?? null;
+    if (entry === null || fieldPath === null || fieldPath.startsWith(SYSTEMFIELD_PREFIX)) continue;
+    const label = titleOf(entry);
+    if (label !== null && NOT_THE_CANDIDATES_PHONE.test(label)) continue;
+    const score = (declaresTelephone(input) ? 1 : 0) + (label !== null && PHONE_LABEL.test(label) ? 1 : 0);
+    if (score === 0) continue;
+    scored.push({ input, fieldPath, score });
+  }
+  if (scored.length === 0) return { status: "none" };
+  const best = Math.max(...scored.map((c) => c.score));
+  const top = scored.filter((c) => c.score === best);
+  const only = top[0];
+  return top.length === 1 && only !== undefined
+    ? { status: "found", input: only.input, fieldPath: only.fieldPath }
+    : { status: "ambiguous" };
+}
+
+export interface PhonePlan {
+  /** The write to make, when there is one. */
+  item: FieldFillPlanItem | null;
+  /** The field entry the phone box sits in, so it is not also listed as an unanswered question. */
+  fieldPath: string | null;
+  /** Why the phone was left alone, when the person should know. */
+  skipped: string | null;
+}
+
+// A selector counts only if it finds this very input: a page can give a wrapper the same id, or
+// two boxes the same name, and writing to whatever that happens to resolve to is not the box that
+// was found.
+function selectorFor(input: HTMLInputElement): string | null {
+  const root = input.ownerDocument;
+  const candidates: string[] = [];
+  if (input.id !== "") candidates.push(`#${CSS.escape(input.id)}`);
+  const name = input.getAttribute("name");
+  if (name !== null && name !== "") candidates.push(`input[name="${CSS.escape(name)}"]`);
+  return candidates.find((candidate) => root.querySelector(candidate) === input) ?? null;
+}
+
+/** What to do about the phone box on this form. D5: a box that already holds text is left
+ * alone unless `forceRefillAll`. Nothing is said when there is nothing to say: no box, no
+ * phone in the profile, or a box already filled. A box this call did not fill (the profile has
+ * no phone) is not reported as handled, so it stays in the list of questions left for the
+ * person. */
+export function planPhoneFill(doc: Document, phone: string | null, forceRefillAll: boolean): PhonePlan {
+  const found = findPhoneInput(doc);
+  if (found.status === "none") return { item: null, fieldPath: null, skipped: null };
+  if (found.status === "ambiguous") {
+    return {
+      item: null,
+      fieldPath: null,
+      skipped: phone === null || phone === "" ? null : "more than one box on this form could be your phone number",
+    };
+  }
+  const { input, fieldPath } = found;
+  if (phone === null || phone === "") return { item: null, fieldPath: null, skipped: null };
+  if (!forceRefillAll && input.value.trim() !== "") return { item: null, fieldPath, skipped: null };
+  const selector = selectorFor(input);
+  if (selector === null) {
+    return { item: null, fieldPath: null, skipped: "the phone box on this form has no id or name that points only at it" };
+  }
+  return { item: { selector, value: phone }, fieldPath, skipped: null };
+}
+
+export type CoverLetterSlotResult =
+  | { status: "found"; input: HTMLInputElement; fieldPath: string }
+  | { status: "none" }
+  | { status: "ambiguous" };
+
+/**
+ * The cover-letter upload, recognised by what it is: a file input, in a field entry of its
+ * own (never the résumé system field), whose question title says "cover letter". Exactly one
+ * is `found`; none is `none`; more than one is `ambiguous` and nothing is attached.
+ */
+export function findCoverLetterSlot(doc: Document): CoverLetterSlotResult {
+  const slots: { input: HTMLInputElement; fieldPath: string }[] = [];
+  const seenEntries = new Set<Element>();
+  for (const input of doc.querySelectorAll<HTMLInputElement>('input[type="file"]')) {
+    const entry = input.closest(FIELD_ENTRY_SELECTOR);
+    const fieldPath = entry?.getAttribute("data-field-path") ?? null;
+    if (entry === null || fieldPath === null || fieldPath === `${SYSTEMFIELD_PREFIX}resume`) continue;
+    const { label, sensitive } = labelForFieldEntry(entry);
+    if (label === null || sensitive || !COVER_LETTER_LABEL.test(label)) continue;
+    if (seenEntries.has(entry)) continue;
+    seenEntries.add(entry);
+    slots.push({ input, fieldPath });
+  }
+  const only = slots[0];
+  if (only === undefined) return { status: "none" };
+  return slots.length === 1 ? { status: "found", ...only } : { status: "ambiguous" };
 }

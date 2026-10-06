@@ -400,17 +400,24 @@ cap, or was typed/edited by the user in the panel), so this is headroom
 above any real answer, not a tight fit around one."""
 
 
+_MAX_TAG_CHARS = 64
+"""A `canonical_intent` is a short snake_case name and a `jurisdiction` an ISO country code:
+both are tags the extension derives deterministically, never free text, so this is a bound on
+what a modified client could store, with room above any real tag."""
+
+
 class MatchApprovedAnswerRequest(BaseModel):
     """The extension sends a screening
     question's own normalized label text (never the raw DOM id/uuid,
     which live DOM research found carries no semantic meaning on any of
-    Greenhouse/Lever/Ashby); `canonical_intent` is optional, populated
-    only when the selector map's own authoring already tags this field
-    with a known deterministic intent (e.g. "willing_to_relocate")."""
+    Greenhouse/Lever/Ashby); `canonical_intent` is optional, set by the extension's
+    deterministic classifier (`lib/questionIntent.ts`) only when the question is one it
+    recognises (e.g. "willing_to_relocate"); `jurisdiction` is the ISO country the job's own
+    posting names, when it names one."""
 
     normalized_question: str = Field(min_length=1, max_length=_MAX_NORMALIZED_QUESTION_CHARS)
-    canonical_intent: str | None = None
-    jurisdiction: str | None = None
+    canonical_intent: str | None = Field(default=None, min_length=1, max_length=_MAX_TAG_CHARS)
+    jurisdiction: str | None = Field(default=None, min_length=1, max_length=_MAX_TAG_CHARS)
 
 
 class SaveApprovedAnswerRequest(BaseModel):
@@ -422,9 +429,9 @@ class SaveApprovedAnswerRequest(BaseModel):
 
     normalized_question: str = Field(min_length=1, max_length=_MAX_NORMALIZED_QUESTION_CHARS)
     answer_text: str = Field(min_length=1, max_length=_MAX_ANSWER_TEXT_CHARS)
-    canonical_intent: str | None = None
+    canonical_intent: str | None = Field(default=None, min_length=1, max_length=_MAX_TAG_CHARS)
     evidence_fact_ids: list[str] = Field(default_factory=list)
-    jurisdiction: str | None = None
+    jurisdiction: str | None = Field(default=None, min_length=1, max_length=_MAX_TAG_CHARS)
     sensitive_category: str | None = None
     expires_at: str | None = None
 

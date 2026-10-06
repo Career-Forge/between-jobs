@@ -145,6 +145,11 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     # row. A person does each a handful of times at most; the bound is only there so a stuck
     # client loop cannot hammer the table.
     "tester_enrollment": (30, HOUR),
+    # The extension reports each fill that reused a remembered answer exactly as stored: one
+    # read and one update of the caller's own row, no model or provider call. A person fills
+    # a few dozen answers an hour at most; the bound only stops a stuck client loop from
+    # inflating a counter the person reads later, so it sits far above real use.
+    "answer_used": (600, HOUR),
 }
 """bucket -> (max requests, window seconds). The only place these numbers live."""
 

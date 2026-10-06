@@ -1,4 +1,6 @@
 import type { StandardFieldSpec } from "./ats-field-map";
+import { countryCandidateKeys, countryKey, countrySearchText } from "./countryNames";
+import { isOrSitsInsideActivatable } from "./forbiddenControls";
 import {
   hasExistingText,
   isTextEntryElement,
@@ -75,17 +77,12 @@ export const GENERIC_FIELD_DEFAULTS: {
     { field: "last_name", selector: "#last_name", strategy: "lastNameWord", profileFields: ["name"] },
     { field: "email", selector: "#email", strategy: "direct", profileFields: ["email"] },
     { field: "phone", selector: "#phone", strategy: "direct", profileFields: ["phone"] },
-    // Deliberately NOT attempted: `#country` (also live-confirmed
-    // present and often required). It's a react-select combobox, not a
-    // plain text input -- setting text into its underlying input only
-    // changes the search box, it doesn't commit a real selected option,
-    // so attempting it would risk leaving a required field in a
-    // misleading half-filled state that still fails Greenhouse's own
-    // validation. Matches this project's "unknown means labeled as
-    // unknown, never guessed" rule: better to leave it genuinely empty
-    // (the same native validation the person would hit regardless) than
-    // fake-fill it. A real select/combobox interaction mechanism is a
-    // separate, harder problem than this build's scope covers.
+    // `#country` (also live-confirmed present and often required) is NOT here: it is a
+    // react-select combobox, not a plain text input -- setting text into its underlying
+    // input only changes the search box, it doesn't commit a selected option, and a
+    // text-entry fill here would leave a required field half-filled. It has its own path,
+    // `fillCountryField` below, which picks an option from the list and checks the choice
+    // took, or leaves the field alone and says why.
   ],
 };
 
@@ -203,4 +200,198 @@ export function fillCustomTextAnswer(
 
   setReactControlledValue(element, value);
   return "filled";
+}
+
+
+// ---- #country: a list, not a text box --------------------------------------------------
+
+export type CountryOutcome =
+  /** The form has no `#country`: nothing to fill, nothing to say. */
+  | { status: "absent" }
+  /** Already holds a choice and `forceRefillAll` was not asked: left as it is. */
+  | { status: "left" }
+  | { status: "filled" }
+  /** The field is there and is still empty; `reason` says why. Shown to the person. */
+  | { status: "not_filled"; reason: string };
+
+export interface CountryTiming {
+  /** How long to wait for the list to react to what was typed, and for the choice to show. */
+  timeoutMs: number;
+  pollMs: number;
+}
+
+const DEFAULT_COUNTRY_TIMING: CountryTiming = { timeoutMs: 800, pollMs: 25 };
+
+async function waitUntil(condition: () => boolean, timing: CountryTiming): Promise<boolean> {
+  const deadline = Date.now() + timing.timeoutMs;
+  for (;;) {
+    if (condition()) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, timing.pollMs));
+  }
+}
+
+function isPlaceholderOption(option: HTMLOptionElement): boolean {
+  return option.value === "" || /^(?:select|choose|please|pick)\b|^[-\u2013\u2014 ]+$/iu.test(option.text.trim());
+}
+
+function fillNativeCountrySelect(
+  select: HTMLSelectElement,
+  profileCountry: string,
+  force: boolean,
+): CountryOutcome {
+  const options = Array.from(select.options);
+  const selected = options[select.selectedIndex];
+  // A native list always shows SOMETHING; only a placeholder means "not chosen yet".
+  if (!force && selected !== undefined && !isPlaceholderOption(selected)) return { status: "left" };
+  const candidates = new Set(countryCandidateKeys(profileCountry));
+  const match = options.find(
+    (option) => !isPlaceholderOption(option) && (candidates.has(countryKey(option.text)) || candidates.has(countryKey(option.value))),
+  );
+  if (match === undefined) {
+    return { status: "not_filled", reason: "none of the form's country options matches the country in your profile" };
+  }
+  // A native <select> on a React form is still React-controlled: the prototype's own setter,
+  // then the events React listens for.
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")?.set;
+  if (setter !== undefined) setter.call(select, match.value);
+  else select.value = match.value;
+  select.dispatchEvent(new Event("input", { bubbles: true }));
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  return select.value === match.value
+    ? { status: "filled" }
+    : { status: "not_filled", reason: "the form's country list did not take the choice -- check this field" };
+}
+
+// The react-select the board renders: an `input[role=combobox]` inside a control, whose parent
+// holds both the control (with the chosen value, `...single-value`) and, while open, the menu
+// with a `role=listbox` of `role=option` entries. Found through ARIA wherever the library
+// exposes it, and through its class-name fragments only for the control and the shown value.
+// (The input's own wrapper is also called a "container" -- `...input-container` -- and is too
+// narrow to hold either, so the control's parent is the root.)
+function comboboxRoot(input: HTMLElement): Element | null {
+  return input.closest('[class*="control"]')?.parentElement ?? null;
+}
+
+function chosenText(input: HTMLElement): string | null {
+  const shown = comboboxRoot(input)?.querySelector('[class*="single-value"]');
+  const text = shown?.textContent?.trim();
+  return text === undefined || text === "" ? null : text;
+}
+
+// The page decides its own markup, so nothing here trusts what `aria-controls` points at. The
+// element it names is used only if it really is a listbox; otherwise the search is limited to
+// the combobox's own widget.
+function listboxOf(input: HTMLElement, doc: Document): Element | null {
+  const listboxId = input.getAttribute("aria-controls");
+  const byId = listboxId !== null && listboxId !== "" ? doc.getElementById(listboxId) : null;
+  if (byId !== null && byId.getAttribute("role") === "listbox") return byId;
+  return comboboxRoot(input)?.querySelector('[role="listbox"]') ?? null;
+}
+
+// What a list entry may be made of: plain layout elements, all the way from the option up to
+// its listbox. An allow-list of tag names, not a list of bad ones, so an element nobody
+// thought of is refused too.
+const PLAIN_LIST_TAGS: ReadonlySet<string> = new Set(["DIV", "SPAN", "LI", "UL", "OL"]);
+
+/**
+ * True only for an entry of a listbox that is plain markup: every element from the option up to
+ * its listbox is a plain layout element, and neither the option nor anything around it, up to
+ * the document, is something a click would activate (a link, a button, a label forwarding to a
+ * control, a form control, or an element with such a role). Job-page markup is untrusted, so a
+ * page cannot steer the one click this engine makes onto a submit button, a link or a consent
+ * box by calling it an "option".
+ */
+function isPlainListEntry(option: Element): boolean {
+  let insideListbox = false;
+  for (let el: Element | null = option; el !== null; el = el.parentElement) {
+    if (!PLAIN_LIST_TAGS.has(el.tagName)) return false;
+    if (el !== option && el.getAttribute("role") === "listbox") {
+      insideListbox = true;
+      break;
+    }
+  }
+  return insideListbox && !isOrSitsInsideActivatable(option);
+}
+
+function listboxOptions(input: HTMLElement, doc: Document): HTMLElement[] {
+  const listbox = listboxOf(input, doc);
+  if (listbox === null) return [];
+  return Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]')).filter(isPlainListEntry);
+}
+
+/** The one place the engine activates a list entry: a plain option of the country list it has
+ * just filtered, inside a listbox. It re-checks that itself and does nothing otherwise, so it
+ * can never click a button, a link, a label or anything else a page dresses up as an option. */
+function activateListboxOption(option: HTMLElement): void {
+  if (!isPlainListEntry(option)) return;
+  option.click();
+}
+
+async function fillReactSelectCountry(
+  input: HTMLInputElement,
+  doc: Document,
+  profileCountry: string,
+  force: boolean,
+  timing: CountryTiming,
+): Promise<CountryOutcome> {
+  if (!force && chosenText(input) !== null) return { status: "left" };
+  const candidates = new Set(countryCandidateKeys(profileCountry));
+  const unverified = "the form's country list did not respond as expected -- check this field";
+  try {
+    input.focus();
+    setReactControlledValue(input, countrySearchText(profileCountry));
+    const matching = () => listboxOptions(input, doc).find((o) => candidates.has(countryKey(o.textContent ?? "")));
+    await waitUntil(() => matching() !== undefined, timing);
+    const option = matching();
+    if (option === undefined) {
+      // A list that opened and offers no such country is a different answer from a list that
+      // never reacted to the typing. Read before the search text is cleared (which closes it).
+      const listOpened = listboxOf(input, doc) !== null;
+      setReactControlledValue(input, ""); // don't leave a half-typed search in the box
+      return {
+        status: "not_filled",
+        reason: listOpened ? "none of the form's country options matches the country in your profile" : unverified,
+      };
+    }
+    activateListboxOption(option);
+    const took = await waitUntil(() => {
+      const shown = chosenText(input);
+      return shown !== null && candidates.has(countryKey(shown));
+    }, timing);
+    return took ? { status: "filled" } : { status: "not_filled", reason: unverified };
+  } catch {
+    return { status: "not_filled", reason: unverified };
+  }
+}
+
+/**
+ * Fills Greenhouse's `#country` from the profile, when the control is one this code knows: a
+ * plain `<select>`, or the standard react-select combobox. Anything else, a profile with no
+ * country, a country no option matches, or a list that does not confirm the choice is
+ * `not_filled` with a reason -- the field is left as it was, never half-filled. D5: a field
+ * that already holds a choice is left alone unless `forceRefillAll`.
+ *
+ * Not verified against a live board: the react-select path depends on the list reacting to
+ * typed text and to a click on an option, which a synthetic fixture can only imitate.
+ */
+export async function fillCountryField(
+  doc: Document,
+  profileCountry: string,
+  forceRefillAll: boolean,
+  timing: CountryTiming = DEFAULT_COUNTRY_TIMING,
+): Promise<CountryOutcome> {
+  const control = doc.getElementById("country");
+  if (control === null) return { status: "absent" };
+  if (profileCountry.trim() === "") return { status: "not_filled", reason: "your profile has no country" };
+  if (control.tagName === "SELECT") {
+    return fillNativeCountrySelect(control as HTMLSelectElement, profileCountry, forceRefillAll);
+  }
+  if (control.tagName === "INPUT" && control.getAttribute("role") === "combobox") {
+    return fillReactSelectCountry(control as HTMLInputElement, doc, profileCountry, forceRefillAll, timing);
+  }
+  return {
+    status: "not_filled",
+    reason: "the form's country field is not a kind of list this extension knows how to fill",
+  };
 }

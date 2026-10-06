@@ -216,7 +216,7 @@ const LATIN_TERMS: string[] = [
   String.raw`\bchronic (?:illness|condition|disease|pain)`,
   String.raw`\bmedical (?:condition|history|issue|need)s?\b`,
   String.raw`\bmental health\b`,
-  String.raw`\bneurodiver`, // neurodiverse, neurodivergent, neurodiversity
+  String.raw`\bneuro-?diver`, // neurodiverse, neuro-diverse, neurodivergent, neurodiversity
   String.raw`\bneurotypical\b`,
   String.raw`\bdeaf\b`,
   String.raw`\bhard of hearing\b`,
@@ -248,6 +248,54 @@ const LATIN_TERMS: string[] = [
   String.raw`\baffirmative action\b`,
   String.raw`\bofccp\b`,
   String.raw`\bprotected (?:class|classes|categor|characteristic|group)`,
+  // ---- ordinary wordings of the categories above that the entries so far do not reach ----
+  // (each is a plain word or short phrase: no leading wildcard, no nested quantifier)
+  // veteran and military status
+  String.raw`\bmilitary\b`,
+  String.raw`\bvet status\b`,
+  String.raw`\bserved in the (?:army|navy|air force|marines?|marine corps|coast guard)\b`,
+  String.raw`\b(?:army|navy|air force|marine corps|coast guard)\b`,
+  // disability, health and accommodation. Bare "adjustments" is deliberately NOT here
+  // ("salary adjustments"): only the interview/process/application kind.
+  String.raw`\b(?:interview|process|workplace|assessment|application|hiring) adjustments?\b`,
+  String.raw`\badjustments? (?:to|for|during) (?:the |your )?(?:interview|process|application|assessment|hiring|recruitment)\b`,
+  String.raw`\b(?:support|assistance|help) (?:during|with|for) (?:the |your )?(?:interview|application|assessment|hiring|recruitment)`,
+  String.raw`\baccessib\w* (?:support|need|requirement|assistance|adjust)`,
+  String.raw`\baccessible for you\b`,
+  String.raw`\blong[- ]term (?:illness|condition|health)`,
+  String.raw`\billness\b`,
+  // age and birth
+  String.raw`\byears? old\b`,
+  String.raw`\bborn\b`,
+  String.raw`\b(?:over|under|at least) 1[68]\b`,
+  // family status, gender, religion, race. "single" alone is NOT here ("single sign-on").
+  String.raw`\bare you (?:currently )?single\b`,
+  String.raw`\b(?:divorced|widowed|civil partner)`,
+  String.raw`\bare you (?:a |an )?man\b`,
+  String.raw`\bintersex\b`,
+  String.raw`\b(?:muslim|jewish|christian|hindu|buddhist|sikh|atheist)\b`,
+  String.raw`\bmiddle eastern\b`,
+  String.raw`\bnorth african\b`,
+  String.raw`\bdei\b`,
+  // other Latin-script languages (accents are stripped before matching)
+  String.raw`\bnacimiento\b`,
+  String.raw`\bedad\b`,
+  String.raw`\bsituacion familiar\b`,
+  String.raw`\bnaissance\b`,
+  String.raw`\bsituation familiale\b`,
+  String.raw`\bvotre genre\b`,
+  String.raw`\balter\b`,
+  String.raw`\bgeburt`,
+  String.raw`\beta\b`,
+  String.raw`\bnascita\b`,
+  String.raw`\bdeficiencia\b`,
+  String.raw`\bidade\b`,
+  String.raw`\bnascimento\b`,
+  String.raw`\bgeslacht\b`,
+  String.raw`\bleeftijd\b`,
+  String.raw`\bgeboorte`,
+  "p\u0142ec", // Polish "plec" (sex): the stroke l is not a combining mark, so it survives normalization
+  String.raw`\bcinsiyet\b`,
 ];
 
 // Scripts where ASCII \b means nothing: CJK has no word spaces, and Cyrillic
@@ -276,10 +324,38 @@ const NON_LATIN_TERMS: string[] = [
   "ветеран",
   "جنس", // also matches الجنس
   "اعاقة", // إعاقة once its hamza is stripped by normalization
+  // birth, age, marital and family status, military service, disability, race, sex, religion
+  "出生",
+  "婚姻",
+  "退伍",
+  "军人",
+  "軍人",
+  "年齢",
+  "障害",
+  "人種",
+  "성별",
+  "장애",
+  "인종",
+  "나이",
+  "생년월일",
+  "종교",
+  "возраст",
+  "рождени",
+  "семейное положение",
+  "العمر",
+  "الدين",
+  "ديانة",
+  "الحالة الاجتماعية",
 ];
 
+// The label is matched after NFKD with every combining mark removed, so a term has to be written
+// the same way or it can never match: Korean syllables split into their letters under NFKD, and a
+// Cyrillic "й" becomes "и" once its breve is stripped. (No lower-casing here: a term may hold a
+// regex escape such as \p{L}.)
+const normalizeTerm = (term: string): string => term.normalize("NFKD").replace(/\p{M}+/gu, "");
+
 const LATIN_PATTERN = new RegExp(LATIN_TERMS.join("|"), "u");
-const NON_LATIN_PATTERN = new RegExp(NON_LATIN_TERMS.join("|"), "u");
+const NON_LATIN_PATTERN = new RegExp(NON_LATIN_TERMS.map(normalizeTerm).join("|"), "u");
 
 // Letters from other scripts that render identically to Latin ones. A
 // tenant who wants to slip a label past the check swaps one in; folding

@@ -34,16 +34,20 @@ questions for their review. Every permission below is used for that and nothing 
 
 ### `storage`
 
-> Keeps two small things on the user's own device and nothing else. chrome.storage.session
+> Keeps three small things on the user's own device and nothing else. chrome.storage.session
 > holds the user's Between Jobs sign-in session (access and refresh tokens) so the
 > extension can call its own service on their behalf; Chrome clears it when the browser
 > restarts and does not expose it to content scripts by default. chrome.storage.local holds
 > one whole number per supported site: the highest signed field-map version the extension
 > has accepted, which is how it rejects a replayed older map after a browser restart.
+> chrome.storage.local also holds whether the user has agreed to the in-product disclosure
+> screen, and which version of it: the extension reads nothing from a page and sends nothing
+> until that is valid, and checks it afresh on each action.
 > Profile details, résumés and page content are never stored.
 
 Where: `lib/supabase.ts` (session adapter), `entrypoints/background.ts`
-(`fieldMapVersion:<site>` keys). Chrome's permissions reference lists no install warning
+(`fieldMapVersion:<site>` keys), `lib/consent.ts` (the agreement flag: written by the side
+panel, read by the background worker and the content script). Chrome's permissions reference lists no install warning
 for `storage`.
 
 ### `sidePanel`
@@ -79,7 +83,9 @@ below). None of the four is a wildcard host and none is `<all_urls>`.
 ### `https://job-boards.greenhouse.io/*`
 
 > Greenhouse's current job-board host. Same use as above: detect an application form and,
-> on the user's button press, fill their own details and attach their own documents.
+> on the user's button press, fill their own details and attach their own documents. Here it
+> also chooses the user's country in the form's country list, by typing the name and picking
+> the one matching entry -- the only list entry it ever activates.
 
 ### `https://boards.greenhouse.io/*`
 
@@ -98,9 +104,10 @@ below). None of the four is a wildcard host and none is `<all_urls>`.
 > hosted by Lever, Greenhouse and Ashby live there. On them the content script checks
 > whether the page has an application form and reads its screening questions so the side
 > panel can list them. Only when the user presses a button does it fill their own profile
-> details into text fields, attach their prepared résumé and cover letter, or write one
-> reviewed answer into one empty text box. It never clicks or submits anything, never
-> touches checkboxes, dropdowns or consent boxes, and never fills self-identification
+> details into text fields, attach their prepared résumé and cover letter, choose their country
+> in Greenhouse's country list, or write one reviewed answer into one empty text box. It never
+> clicks or submits anything (apart from picking that one country entry), never touches
+> checkboxes, other dropdowns or consent boxes, and never fills self-identification
 > questions. It makes no request to these hosts and asks for no other site access.
 
 Chrome shows a site-access warning at install for host access. I did not find the exact
@@ -191,7 +198,10 @@ Nothing in the package is downloaded and run. The reviewer-facing facts:
    because every message listener returns a Promise (documented as supported from 148)
    and Ed25519 WebCrypto needs Chrome 137 or newer.
 6. **Dashboard text limits.** I did not find a documented per-field character limit for
-   the justification fields. Each paragraph above is under 700 characters.
+   the justification fields. The longest paragraphs are the storage one (817 characters)
+   and the combined host-permission one (781); the rest are under 500. Shorten those two if
+   the dashboard rejects them. (`tests/storeStatements.test.ts` re-measures them, so editing
+   a paragraph fails the test until these numbers are updated.)
 
 ### Sources (checked 2026-09-19)
 

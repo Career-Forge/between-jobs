@@ -94,6 +94,13 @@ function labelForCardField(
   return readQuestionLabel(label?.textContent);
 }
 
+/** The visible label of any Lever form field (a standard link box as much as a custom
+ * question), by the same wrapper/label shape. Null when the markup gives none. Throws on a
+ * selector the browser won't parse; callers treat that as "no label". */
+export function leverFieldLabel(element: Element, map: LeverQuestionMapFields): string | null {
+  return labelForCardField(element, map.label_wrapper_selector, map.label_selector).label;
+}
+
 // Only fields under the map's own `custom_question_prefix` (Lever:
 // `cards[<uuid>][...]`) are genuine per-org custom application questions
 // eligible for known-question-memory matching (E3). Lever's `eeo[...]`

@@ -1,4 +1,6 @@
 import type { StandardFieldSpec } from "./ats-field-map";
+import { splitPersonName, type NameSplitIssue } from "./personName";
+import { chooseLinkForBox, linkWantFromLabel } from "./profileLinks";
 import { isTextEntryElement } from "./questionSafety";
 import type { ExtensionPersonalInfo } from "./types";
 
@@ -24,22 +26,56 @@ function getProfileValue(info: ExtensionPersonalInfo, path: string): string {
   return typeof value === "string" ? value : "";
 }
 
-// E4 -- Greenhouse splits a person's name into separate `first_name`/
-// `last_name` inputs; `ExtensionPersonalInfo.name` (confirmed against the
-// real GET /applications/{id}/extension-payload contract) is one full-name
-// string, matching how Lever's own single `name` field already worked.
-// There's no structured first/last-name split anywhere in the profile
-// schema to draw on instead, so this is a best-effort heuristic, not a
-// claim of real name-parsing: the first whitespace-separated token is
-// treated as the given name, everything after it (rejoined) as the
-// family name. Good enough for a D5 idempotent fill the person can
-// correct by hand; a real name-parsing library would be overkill for a
-// single non-identity-critical form field.
-function splitName(fullName: string): { first: string; rest: string } {
-  const trimmed = fullName.trim();
-  const spaceIndex = trimmed.indexOf(" ");
-  if (spaceIndex === -1) return { first: trimmed, rest: "" };
-  return { first: trimmed.slice(0, spaceIndex), rest: trimmed.slice(spaceIndex + 1).trim() };
+// What a standard field could be given, or why it could not: `skipped` is set only when the
+// form HAS the field, it is fillable, and the profile could not supply a value that is
+// honestly knowable -- today the two halves of a split name (lib/personName.ts).
+interface ResolvedValue {
+  value: string | null;
+  skipped?: SkippedStandardField;
+}
+
+function nameSkipReason(part: "first" | "last", issue: NameSplitIssue | null): SkippedStandardField | undefined {
+  const field = part === "first" ? "First name" : "Last name";
+  if (issue === "single_name" && part === "last") {
+    return { field, reason: "your profile name has only one part" };
+  }
+  if (issue === "order_unknown") {
+    return { field, reason: `couldn't tell which part of your name is the ${part} name` };
+  }
+  return undefined;
+}
+
+function resolveNamePart(spec: StandardFieldSpec, info: ExtensionPersonalInfo, part: "first" | "last"): ResolvedValue {
+  for (const path of spec.profileFields) {
+    const value = getProfileValue(info, path);
+    if (!value) continue;
+    const split = splitPersonName(value);
+    const piece = part === "first" ? split.first : split.last;
+    if (piece !== null && piece !== "") return { value: piece };
+    return { value: null, skipped: nameSkipReason(part, split.issue) };
+  }
+  return { value: null };
+}
+
+// A "portfolio or GitHub" box: a fallback over exactly those two profile links. Its label, when
+// the form's own markup gives one, says which of the two the organisation meant.
+function isLinkChoiceSpec(spec: StandardFieldSpec): boolean {
+  return (
+    spec.strategy === "fallback" &&
+    spec.profileFields.length === 2 &&
+    spec.profileFields.includes("github") &&
+    spec.profileFields.includes("portfolio")
+  );
+}
+
+function resolveLinkChoice(spec: StandardFieldSpec, info: ExtensionPersonalInfo, label: string | null): ResolvedValue {
+  const chosen = chooseLinkForBox(
+    spec.profileFields.map((path) => getProfileValue(info, path)),
+    linkWantFromLabel(label),
+  );
+  return chosen.skipped === undefined
+    ? { value: chosen.value }
+    : { value: null, skipped: { field: "GitHub link", reason: chosen.skipped } };
 }
 
 /**
@@ -51,47 +87,46 @@ function splitName(fullName: string): { first: string; rest: string } {
  * `fallback` (first non-empty of several), `joinNonEmpty` (filters
  * empties, joins the rest), and E4's `firstNameWord`/`lastNameWord`
  * (splits the first non-empty of several full-name fields per
- * `splitName` above -- added for Greenhouse's separate first/last-name
+ * `splitPersonName` -- added for Greenhouse's separate first/last-name
  * inputs, harmless no-ops for any ATS that only ever sends "name").
  */
-function resolveFieldValue(spec: StandardFieldSpec, info: ExtensionPersonalInfo): string | null {
+function resolveFieldValue(spec: StandardFieldSpec, info: ExtensionPersonalInfo): ResolvedValue {
   switch (spec.strategy) {
     case "direct": {
       const value = getProfileValue(info, spec.profileFields[0] ?? "");
-      return value || null;
+      return { value: value || null };
     }
     case "fallback": {
       for (const path of spec.profileFields) {
         const value = getProfileValue(info, path);
-        if (value) return value;
+        if (value) return { value };
       }
-      return null;
+      return { value: null };
     }
     case "joinNonEmpty": {
       const parts = spec.profileFields
         .map((path) => getProfileValue(info, path))
         .filter((value) => value.length > 0);
-      return parts.length > 0 ? parts.join(spec.separator ?? ", ") : null;
+      return { value: parts.length > 0 ? parts.join(spec.separator ?? ", ") : null };
     }
-    case "firstNameWord": {
-      for (const path of spec.profileFields) {
-        const value = getProfileValue(info, path);
-        if (value) return splitName(value).first || null;
-      }
-      return null;
-    }
-    case "lastNameWord": {
-      for (const path of spec.profileFields) {
-        const value = getProfileValue(info, path);
-        if (value) return splitName(value).rest || null;
-      }
-      return null;
-    }
+    case "firstNameWord":
+      return resolveNamePart(spec, info, "first");
+    case "lastNameWord":
+      return resolveNamePart(spec, info, "last");
   }
+}
+
+export interface SkippedStandardField {
+  /** A name for the person: "First name", "Last name". Fixed text, never read off the page. */
+  field: string;
+  reason: string;
 }
 
 export interface StandardFieldPlanResult {
   plan: FieldFillPlanItem[];
+  /** Fields the form has, empty and fillable, that the profile could not honestly supply.
+   * Reported to the person, never guessed. */
+  skipped: SkippedStandardField[];
   /** Selectors from the supplied specs that the browser refused to parse.
    * A valid signature proves a signed map is AUTHENTIC, not that every
    * selector in it is well-formed -- a maintainer typo must cost that one
@@ -113,14 +148,23 @@ export interface StandardFieldPlanResult {
  * `forceRefillAll`): the signed map is the only thing deciding these
  * selectors, so this is the second lock on the door, not the first.
  */
+export interface StandardFieldPlanOptions {
+  /** The visible label of a form control, when the page's own markup gives one. Used only to
+   * decide between two profile links for a "portfolio or GitHub" box (lib/profileLinks.ts);
+   * it may throw (a malformed selector in a signed map), which counts as "no label". */
+  labelFor?: (element: Element) => string | null;
+}
+
 export function planStandardFieldFillsChecked(
   doc: Document,
   personalInfo: ExtensionPersonalInfo,
   forceRefillAll: boolean,
   standardFields: readonly StandardFieldSpec[],
+  options: StandardFieldPlanOptions = {},
 ): StandardFieldPlanResult {
   const plan: FieldFillPlanItem[] = [];
   const invalidSelectors: string[] = [];
+  const skipped: SkippedStandardField[] = [];
   for (const field of standardFields) {
     let element: Element | null;
     try {
@@ -131,11 +175,24 @@ export function planStandardFieldFillsChecked(
     }
     if (element === null || !isTextEntryElement(element)) continue;
     if (!forceRefillAll && element.value.trim() !== "") continue;
-    const value = resolveFieldValue(field, personalInfo);
-    if (value === null || value === "") continue;
-    plan.push({ selector: field.selector, value });
+    let label: string | null = null;
+    if (isLinkChoiceSpec(field) && options.labelFor !== undefined) {
+      try {
+        label = options.labelFor(element);
+      } catch {
+        label = null;
+      }
+    }
+    const resolved = isLinkChoiceSpec(field)
+      ? resolveLinkChoice(field, personalInfo, label)
+      : resolveFieldValue(field, personalInfo);
+    if (resolved.value === null || resolved.value === "") {
+      if (resolved.skipped !== undefined) skipped.push(resolved.skipped);
+      continue;
+    }
+    plan.push({ selector: field.selector, value: resolved.value });
   }
-  return { plan, invalidSelectors };
+  return { plan, invalidSelectors, skipped };
 }
 
 export function planStandardFieldFills(

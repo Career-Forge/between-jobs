@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, Query, Response
@@ -32,7 +33,7 @@ from .applications_store import ApplicationNotFound, find_application_by_url, ge
 from .ats_field_maps import get_latest_field_map
 from .credential_resolver import resolve
 from .errors import ApiError
-from .extension_answers_store import match_approved_answer, save_approved_answer
+from .extension_answers_store import match_approved_answer, record_answer_used, save_approved_answer
 from .extension_auth import record_extension_sign_out, require_active_extension_user_id
 from .extension_rate_limit import claim_draft_answer_slot
 from .job_fit_scoring import summarize_profile
@@ -244,6 +245,26 @@ async def save_answer(
 
 
 @router.post(
+    "/answers/{answer_id}/used",
+    status_code=204,
+    dependencies=[Depends(limit("answer_used", auth=require_active_extension_user_id))],
+)
+async def report_answer_used(
+    answer_id: UUID,
+    user_id: str = Depends(require_active_extension_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+) -> None:
+    """The extension's report that a remembered answer was filled into a form exactly as it was
+    stored. Adds one to the answer's `times_used` and stamps `last_used_at`. No body in either
+    direction: the id in the path is the whole request, and nothing is echoed back.
+
+    An id that is not the caller's is a 404, the same answer whether the answer belongs to
+    someone else or does not exist, so the route cannot be used to find out which ids exist."""
+    if not await record_answer_used(supabase, user_id, str(answer_id)):
+        raise ApiError("NOT_FOUND", f"no saved answer found for id {str(answer_id)!r}")
+
+
+@router.post(
     "/draft-answer",
     # Spends the person's AI key on every call and has its own, older limiter rather than the
     # generic one, so it carries the tester-programme gate (tester_enrollment.py) on its own.
@@ -297,7 +318,11 @@ async def draft_answer(
             settings_path="/profile",
         )
     profile = ResumeTemplate.model_validate(profile_version["canonical_json"])
+    # The summary carries no work-authorization text (summarize_profile leaves it out by
+    # default). The text goes to the model only for a question that is itself about work
+    # authorization, decided by a deterministic classifier inside generate/verify below.
     profile_summary = summarize_profile(profile)
+    work_authorization = profile.personal.work_authorization
 
     llm_credential = await resolve(supabase, user_id, capability=_ANSWER_GENERATION_CAPABILITY)
 
@@ -319,6 +344,7 @@ async def draft_answer(
         llm_model=llm_credential.model,
         llm_base_url=llm_credential.base_url,
         generate=llm_generate,
+        work_authorization=work_authorization,
     )
     if generated["answer_text"] is None:
         return {
@@ -344,6 +370,8 @@ async def draft_answer(
             llm_model=llm_credential.model,
             llm_base_url=llm_credential.base_url,
             generate=llm_generate,
+            question_text=body.question_text,
+            work_authorization=work_authorization,
         )
         warnings = flagged_answer_warnings(verification)
     except Exception:  # deliberately broad -- see comment above

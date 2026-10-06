@@ -933,7 +933,53 @@ describe("product usage events", () => {
   it("says usage events go with the account, and reconciles them with what the extension sends", () => {
     expect(sectionText(PRIVACY, "keeping-deleting")).toContain("product usage events");
     expect(sectionText(PRIVACY, "what-we-store")).toContain("Product usage events hold no web addresses.");
-    expect(sectionText(PRIVACY, "extension")).toContain("sends no usage events yet");
+    const extension = sectionText(PRIVACY, "extension");
+    expect(extension).toContain("After each fill it sends our API one count-only report");
+    expect(extension).not.toContain("sends no usage events yet");
+    expect(extension).not.toContain("It has no analytics of its own");
+    expect(extension).toContain("It has no third-party analytics.");
+  });
+
+  it("says what the extension's report carries and what it never does, in the usage-event paragraph too", () => {
+    const stored = sectionText(PRIVACY, "what-we-store");
+    expect(stored).toContain("After each fill, the browser extension sends one of these records.");
+    expect(stored).toContain("how many form fields it tried, how many it filled");
+    expect(stored).toContain("never a field's value, name or label, a question, a web address or any page text");
+    expect(stored).not.toContain("does not send these records yet");
+    // the browsing paragraph and the extension section agree that the report exists
+    expect(stored).toContain("including a count-only report when a fill finishes");
+    expect(sectionText(PRIVACY, "extension")).toContain(
+      "never the values, the field names, the questions, a web address or the page",
+    );
+  });
+
+  it("agrees with the extension's own store text and README about the report and about consent", () => {
+    expect(extensionStorePrivacy).toContain("Report a fill");
+    expect(extensionStorePrivacy).toContain("No field names, no values, no page address and no page text");
+    expect(extensionStorePrivacy).toContain("no third-party analytics");
+    expect(extensionStorePrivacy).not.toMatch(/It has no analytics, no advertising, no crash reporting/);
+    expect(extensionReadme).toContain("one count-only report");
+    expect(extensionReadme).toContain("until the person has agreed to the disclosure screen");
+    const extension = sectionText(PRIVACY, "extension");
+    expect(extension).toContain("It reads nothing from a page, and sends nothing, until you have agreed to its first-run notice");
+  });
+
+  it("says the extension's one list click, and what it never presses, as the extension's own text does", () => {
+    const extension = sectionText(PRIVACY, "extension");
+    expect(extension).toContain("never clicks a submit, next or sign-in button");
+    expect(extension).toContain("The one list it fills is the country list on a Greenhouse form, by picking the matching entry.");
+    expect(extensionStorePrivacy.replace(/\s+/g, " ")).toContain(
+      "the one exception is picking an entry in Greenhouse's country list",
+    );
+  });
+
+  it("says the Draft answer summary leaves out the work-authorization note unless the question is about it", () => {
+    const privacyText = textsOf(PRIVACY).join("\n");
+    expect(privacyText).toContain(
+      "The summary leaves out your work-authorization note unless the question itself is about work authorization, a visa or sponsorship",
+    );
+    // Job-fit scoring still sends it, and says so.
+    expect(privacyText).toContain("(name, headline, location, work-authorization note, summary");
   });
 });
 

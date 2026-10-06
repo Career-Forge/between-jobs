@@ -171,3 +171,173 @@ describe("attachFile only ever targets a file input", () => {
     expect(changed).toBe(false);
   });
 });
+
+// ---- a part the profile can't honestly supply is left empty and reported -----------------
+
+describe("the first/last-name boxes: a part that cannot be known is left empty and reported", () => {
+  const FIRST: StandardFieldSpec = { field: "first_name", selector: "#first_name", strategy: "firstNameWord", profileFields: ["name"] };
+  const LAST: StandardFieldSpec = { field: "last_name", selector: "#last_name", strategy: "lastNameWord", profileFields: ["name"] };
+
+  function buildNameForm(): void {
+    document.body.innerHTML = `<input type="text" id="first_name" /><input type="text" id="last_name" />`;
+  }
+  const plan = (name: string, force = false) =>
+    planStandardFieldFillsChecked(document, { ...INFO, name }, force, [FIRST, LAST]);
+
+  it("an ordinary name fills both and reports nothing", () => {
+    buildNameForm();
+    const result = plan("Jane Doe");
+    expect(result.plan).toEqual([
+      { selector: "#first_name", value: "Jane" },
+      { selector: "#last_name", value: "Doe" },
+    ]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("a one-word name fills the first box and says the last name is unknown", () => {
+    buildNameForm();
+    const result = plan("Madonna");
+    expect(result.plan).toEqual([{ selector: "#first_name", value: "Madonna" }]);
+    expect(result.skipped).toEqual([{ field: "Last name", reason: "your profile name has only one part" }]);
+  });
+
+  it("a name whose word order the spelling doesn't show fills neither box and says so for both", () => {
+    buildNameForm();
+    const result = plan("山田 太郎");
+    expect(result.plan).toEqual([]);
+    expect(result.skipped.map((s) => s.field)).toEqual(["First name", "Last name"]);
+    expect(result.skipped[0]?.reason).toMatch(/couldn't tell which part/);
+  });
+
+  it("a box that already holds text is the person's: nothing is planned and nothing is reported", () => {
+    buildNameForm();
+    document.querySelector<HTMLInputElement>("#last_name")!.value = "Typed by hand";
+    const result = plan("Madonna");
+    expect(result.plan).toEqual([{ selector: "#first_name", value: "Madonna" }]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("a form without the boxes reports nothing", () => {
+    document.body.innerHTML = `<input type="text" id="email" />`;
+    expect(plan("Madonna").skipped).toEqual([]);
+  });
+
+  it("an empty profile name is not a skipped part -- there is simply nothing to fill", () => {
+    buildNameForm();
+    const result = plan("");
+    expect(result.plan).toEqual([]);
+    expect(result.skipped).toEqual([]);
+  });
+});
+
+// ---- a "portfolio or GitHub" box: the label and each link's host decide ---------------------
+
+describe("a 'portfolio or GitHub' box is filled by what the form's label asks for", () => {
+  const LINK_BOX: StandardFieldSpec = {
+    field: "portfolio",
+    selector: 'input[name="urls[Other]"]',
+    strategy: "fallback",
+    profileFields: ["portfolio", "github"],
+  };
+  const BOTH = { ...INFO, portfolio: "https://jane.dev", github: "https://github.com/jane" };
+
+  function buildLinkBox(): void {
+    document.body.innerHTML = `<input type="text" name="urls[Other]" />`;
+  }
+  const labelled = (label: string | null) => ({ labelFor: () => label });
+  const planFor = (info: ExtensionPersonalInfo, label: string | null | "none") =>
+    planStandardFieldFillsChecked(document, info, false, [LINK_BOX], label === "none" ? {} : labelled(label));
+
+  it("a box the organisation labelled 'GitHub URL' gets the GitHub link, not the portfolio the map prefers", () => {
+    buildLinkBox();
+    const result = planFor(BOTH, "GitHub URL");
+    expect(result.plan).toEqual([{ selector: 'input[name="urls[Other]"]', value: "https://github.com/jane" }]);
+  });
+
+  it("...whichever profile field the GitHub address was typed into", () => {
+    buildLinkBox();
+    const swapped = { ...INFO, portfolio: "https://github.com/jane", github: "https://jane.dev" };
+    expect(planFor(swapped, "GitHub URL").plan[0]?.value).toBe("https://github.com/jane");
+  });
+
+  it("'GitHub URL' with no GitHub link in the profile: left empty, and the person is told", () => {
+    buildLinkBox();
+    const result = planFor({ ...INFO, portfolio: "https://jane.dev", github: "" }, "GitHub URL");
+    expect(result.plan).toEqual([]);
+    expect(result.skipped).toEqual([
+      { field: "GitHub link", reason: "the form asks for a GitHub link and your profile has none" },
+    ]);
+  });
+
+  it("a box labelled 'Portfolio URL' or 'Other website' gets the real website", () => {
+    buildLinkBox();
+    expect(planFor(BOTH, "Portfolio URL").plan[0]?.value).toBe("https://jane.dev");
+    expect(planFor(BOTH, "Other website").plan[0]?.value).toBe("https://jane.dev");
+  });
+
+  it("a box whose label names both, neither, or can't be read keeps the map's own preference", () => {
+    buildLinkBox();
+    expect(planFor(BOTH, "Other (portfolio, GitHub etc)").plan[0]?.value).toBe("https://jane.dev");
+    expect(planFor(BOTH, "Link").plan[0]?.value).toBe("https://jane.dev");
+    expect(planFor(BOTH, null).plan[0]?.value).toBe("https://jane.dev");
+    expect(planFor(BOTH, "none").plan[0]?.value).toBe("https://jane.dev"); // no label reader at all
+  });
+
+  it("a label reader that throws (a malformed selector in a signed map) counts as no label", () => {
+    buildLinkBox();
+    const result = planStandardFieldFillsChecked(document, BOTH, false, [LINK_BOX], {
+      labelFor: () => {
+        throw new SyntaxError("bad selector");
+      },
+    });
+    expect(result.plan[0]?.value).toBe("https://jane.dev");
+  });
+
+  it("a spec that is not a portfolio-or-GitHub choice is untouched by any label", () => {
+    buildLinkBox();
+    const direct: StandardFieldSpec = { ...LINK_BOX, strategy: "direct", profileFields: ["portfolio"] };
+    const result = planStandardFieldFillsChecked(document, BOTH, false, [direct], labelled("GitHub URL"));
+    expect(result.plan[0]?.value).toBe("https://jane.dev");
+  });
+
+  // Each clause of "this is a portfolio-or-GitHub choice" is pinned: a spec that differs from it
+  // in any one way is read by its own strategy, whatever the label says.
+  describe("only exactly a portfolio-or-GitHub fallback is a link choice", () => {
+    const withLinks = { ...INFO, portfolio: "https://jane.dev", github: "", linkedin: "https://linkedin.com/in/jane" };
+    const only = (spec: StandardFieldSpec) => planStandardFieldFillsChecked(document, withLinks, false, [spec], labelled("GitHub URL"));
+
+    it("a direct spec over both fields reads its first field", () => {
+      buildLinkBox();
+      const result = only({ ...LINK_BOX, strategy: "direct", profileFields: ["portfolio", "github"] });
+      expect(result.plan[0]?.value).toBe("https://jane.dev");
+      expect(result.skipped).toEqual([]);
+    });
+
+    it("a fallback over two fields that are not portfolio and GitHub is an ordinary fallback", () => {
+      buildLinkBox();
+      expect(only({ ...LINK_BOX, profileFields: ["portfolio", "linkedin"] }).plan[0]?.value).toBe("https://jane.dev");
+      expect(only({ ...LINK_BOX, profileFields: ["github", "linkedin"] }).plan[0]?.value).toBe("https://linkedin.com/in/jane");
+      expect(only({ ...LINK_BOX, profileFields: ["portfolio", "portfolio"] }).plan[0]?.value).toBe("https://jane.dev");
+    });
+
+    it("a fallback over portfolio, GitHub and a third field is an ordinary fallback", () => {
+      buildLinkBox();
+      const result = only({ ...LINK_BOX, profileFields: ["portfolio", "github", "linkedin"] });
+      expect(result.plan[0]?.value).toBe("https://jane.dev");
+      expect(result.skipped).toEqual([]);
+    });
+
+    it("a fallback over portfolio alone is an ordinary fallback", () => {
+      buildLinkBox();
+      expect(only({ ...LINK_BOX, profileFields: ["portfolio"] }).plan[0]?.value).toBe("https://jane.dev");
+    });
+  });
+
+  it("D5: a box that already holds text is not read, planned or reported", () => {
+    buildLinkBox();
+    document.querySelector<HTMLInputElement>("input")!.value = "https://already.example";
+    const result = planFor({ ...INFO, portfolio: "https://jane.dev", github: "" }, "GitHub URL");
+    expect(result.plan).toEqual([]);
+    expect(result.skipped).toEqual([]);
+  });
+});

@@ -42,9 +42,12 @@ async def match_approved_answer(
     intent tier, since an identically-worded eligibility question can
     legitimately appear on postings in two different jurisdictions. An
     answer with no jurisdiction tag was never jurisdiction-specific and is
-    always eligible. When the caller doesn't supply a jurisdiction at all,
-    a jurisdiction-tagged answer is conservatively excluded too -- "unknown
-    means labeled as unknown," never guessed at as a match."""
+    always eligible -- which is why the extension never saves a work-
+    eligibility answer without a country (an untagged one would count as
+    true everywhere), and never offers an untagged one for such a question.
+    When the caller doesn't supply a jurisdiction at all, a jurisdiction-
+    tagged answer is conservatively excluded too -- "unknown means labeled
+    as unknown," never guessed at as a match."""
     now_iso = datetime.now(UTC).isoformat()
 
     def jurisdiction_ok(row: dict[str, Any]) -> bool:
@@ -102,8 +105,13 @@ async def save_approved_answer(
     otherwise let a plain "re-approve this edited answer" call quietly
     erase D6's own sensitive_category opt-in gate and the jurisdiction
     exclusion tag. A caller that genuinely wants to clear one of these
-    fields has no way to do that through this function today -- an
-    accepted v1 gap, since nothing needs to yet."""
+    fields has no way to do that through this function today.
+
+    That preservation assumes a re-save is for the same jurisdiction as the
+    stored row. The extension keeps it true: it saves a work-eligibility
+    answer only together with a country, and sends nothing at all when no
+    country is known, so a re-save can never replace the text of a
+    country-tagged answer while leaving the tag behind."""
     existing = (
         await supabase.table("approved_answers")
         .select("*")
@@ -138,24 +146,21 @@ async def save_approved_answer(
     return cast(dict[str, Any], result.data[0])
 
 
-async def record_answer_used(supabase: AsyncClient, user_id: str, answer_id: str) -> None:
-    """Best-effort usage counter -- not idempotency-critical, so a lost
-    increment under a race is an acceptable, low-stakes gap (same shape as
-    this project's other non-critical counters)."""
-    current = (
-        await supabase.table("approved_answers")
-        .select("times_used")
-        .eq("id", answer_id)
-        .eq("user_id", user_id)
-        .execute()
-    )
-    if not current.data:
-        return
-    row = cast(dict[str, Any], current.data[0])
-    await (
-        supabase.table("approved_answers")
-        .update({"times_used": row["times_used"] + 1})
-        .eq("id", answer_id)
-        .eq("user_id", user_id)
-        .execute()
-    )
+async def record_answer_used(supabase: AsyncClient, user_id: str, answer_id: str) -> bool:
+    """Counts one use of a remembered answer: adds one to `times_used` and stamps
+    `last_used_at`. True when the answer exists and is the caller's; False for an id that is
+    missing or belongs to someone else -- the same answer for both, so a caller learns nothing
+    about which ids exist.
+
+    The increment is one SQL statement (`record_approved_answer_use`), not a read followed by a
+    write, so two reports for one answer arriving together are both counted. The row's
+    `updated_at` moves too (every update does), so an answer that keeps being used is also the
+    most recently updated one under its intent."""
+    result = await supabase.rpc(
+        "record_approved_answer_use", {"p_user_id": user_id, "p_answer_id": answer_id}
+    ).execute()
+    if not isinstance(result.data, bool):
+        raise RuntimeError(
+            f"record_approved_answer_use returned {result.data!r}, expected true or false"
+        )
+    return result.data

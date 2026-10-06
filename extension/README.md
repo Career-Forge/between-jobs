@@ -121,8 +121,16 @@ The extension requests no `activeTab`, `scripting`, `tabs`, cookies or
 string or fragment) when it looks the page up, and -- only when you click
 the matching button -- the text of a custom question (to find or draft an
 answer), an answer you choose to remember, or an application id when you
-mark it applied. Self-identification questions (gender, race, disability,
-veteran status and the like) are never listed, drafted or filled.
+mark it applied. It also sends, after each fill and with no label, value,
+URL or page text in it, one count-only report: the ATS, the application id,
+how many fields it tried and filled, and `ok`, `partial` or `failed`. And it
+sends the id of a remembered answer each time one is filled as stored.
+Self-identification questions (gender, race, disability, veteran status and
+the like) are recognized by their wording and are then never listed, drafted or filled; an
+unusually worded one could be missed, so read the form before you submit. Nothing is read from a page,
+and nothing is sent, until the person has agreed to the disclosure screen
+(`lib/consent.ts` is the one place that decides, read by the side panel, the
+content script and the service worker alike).
 
 ### Known limitations (v1)
 
@@ -184,6 +192,14 @@ What still needs a person:
   (`lib/lever.ts`/`lib/greenhouse.ts`/`lib/ashby.ts`), fills only the
   fields it was explicitly told to fill, and never touches anything else
   on the page -- no checkbox, no button, no submit, on any of the three.
+  (The one list it fills is Greenhouse's country field, by picking the
+  matching entry. That click, `activateListboxOption` in `lib/greenhouse.ts`,
+  lands only on a plain entry of a listbox: never a button, a link, a label
+  or anything else a page dresses up as an option, however it points
+  `aria-controls`. `tests/neverSubmit.test.ts` is the guard that fails if
+  anything else is clicked, submitted or ticked; its static scan is a
+  tripwire for the ordinary spellings, and its behavioural run, on pages full
+  of such controls, is the net for the rest. Not verified against a live board.)
 - `entrypoints/sidepanel/` -- the UI. A first-run disclosure and consent gate,
   then sign-in, detection status, a manual "Fill this page" trigger, and which
   fields still need your own answer.
@@ -207,6 +223,17 @@ What still needs a person:
   plain text field with a readable label is ever offered for drafting), and
   label sanitizing. Question labels are tenant-controlled text, so nothing
   here trusts their spelling.
+- `lib/consent.ts` -- the consent flag and the single decision point on it;
+  `lib/questionIntent.ts` -- the deterministic question-intent classifier (closed,
+  anchored forms; work-eligibility answers are remembered and offered only together
+  with a country, the question's own or the job's; a company named by a question
+  classifies only when it is written like a name, so "work for startups" does not,
+  while a capitalised phrase still can until the posting's company name is available
+  to check it against);
+  `lib/personName.ts`, `lib/profileLinks.ts`, `lib/countryNames.ts` -- the
+  name split, the GitHub/portfolio link choice and the country-name matching
+  the fill uses; `lib/fillOutcome.ts` -- the count-only fill report;
+  `lib/forbiddenControls.ts` -- the controls a signed map may never name.
 - `lib/atsHosts.ts` -- which ATS a host belongs to, and the canonical
   posting URL a tab is looked up by (no query string or fragment).
 - `lib/ats-field-map.ts` -- the Ed25519 signature verification for a

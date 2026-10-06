@@ -1,9 +1,12 @@
 import { ApiError, apiFetch, apiFetchBlob } from "@/lib/api";
 import { verifyAndParseFieldMap } from "@/lib/ats-field-map";
 import type { AtsFieldMap, SignedFieldMapResponse } from "@/lib/ats-field-map";
-import { canonicalLookupUrl, isAtsType } from "@/lib/atsHosts";
+import { canonicalLookupUrl, detectAtsType, isAtsType } from "@/lib/atsHosts";
+import { CONSENT_REQUIRED_MESSAGE, readConsentDecision } from "@/lib/consent";
+import { MAX_REPORTED_FIELDS } from "@/lib/fillOutcome"; // the service's own ceiling on a fill report
 import { getSupabaseClient } from "@/lib/supabase";
 import type {
+  AnswerUsedResult,
   AtsType,
   BackgroundMessage,
   DraftAnswerResult,
@@ -248,6 +251,11 @@ async function resolveTabState(url: string, atsType: AtsType): Promise<TabState>
     return { status: "error", message: e instanceof Error ? e.message : "Lookup failed" };
   }
 
+  // The lookup can take a moment, and the flag is read once per message. Read it again before
+  // the application's id goes into two more requests: consent withdrawn while the lookup ran
+  // means nothing more is asked for. (A request already in flight is not recalled.)
+  if ((await readConsentDecision()) !== "granted") return { status: "consent_required" };
+
   try {
     // The field-map fetch never throws (fetchFieldMap catches
     // everything itself) and doesn't depend on `payload`, so it runs
@@ -315,11 +323,18 @@ async function markApplied(applicationId: string, idempotencyKey: string): Promi
 async function matchAnswer(
   normalizedQuestion: string,
   canonicalIntent: string | undefined,
+  jurisdiction: string | undefined,
 ): Promise<MatchAnswerResult> {
   try {
     return await apiFetch<MatchAnswerResult>("/extension/match-answer", {
       method: "POST",
-      body: JSON.stringify({ normalized_question: normalizedQuestion, canonical_intent: canonicalIntent }),
+      // An absent tag is left out of the body (JSON drops `undefined`), so the service
+      // sees "not sent", never an empty string.
+      body: JSON.stringify({
+        normalized_question: normalizedQuestion,
+        canonical_intent: canonicalIntent,
+        jurisdiction,
+      }),
     });
   } catch {
     return { answer: null };
@@ -343,11 +358,59 @@ async function signOutExtension(): Promise<SignOutResult> {
   }
 }
 
-async function saveAnswer(normalizedQuestion: string, answerText: string): Promise<void> {
+async function saveAnswer(
+  normalizedQuestion: string,
+  answerText: string,
+  canonicalIntent: string | undefined,
+  jurisdiction: string | undefined,
+): Promise<void> {
   await apiFetch("/extension/approved-answers", {
     method: "POST",
-    body: JSON.stringify({ normalized_question: normalizedQuestion, answer_text: answerText }),
+    body: JSON.stringify({
+      normalized_question: normalizedQuestion,
+      answer_text: answerText,
+      canonical_intent: canonicalIntent,
+      jurisdiction,
+    }),
   });
+}
+
+// Passes a finished fill's counts to the service, unchanged: the request body is exactly the
+// five fields the service accepts (the application, the ATS, two counts, one outcome word).
+// Never throws and never reports a problem -- telemetry has no business surfacing an error.
+async function reportFillOutcome(
+  atsType: AtsType,
+  applicationId: string,
+  fieldsAttempted: number,
+  fieldsFilled: number,
+  outcome: string,
+): Promise<{ ok: boolean }> {
+  try {
+    await apiFetch("/extension/fill-outcome", {
+      method: "POST",
+      body: JSON.stringify({
+        ats_type: atsType,
+        application_id: applicationId,
+        fields_attempted: fieldsAttempted,
+        fields_filled: fieldsFilled,
+        outcome,
+      }),
+    });
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
+// Counts one use of a remembered answer (times used, last used). Never throws: whether
+// the count landed has no bearing on a fill that already happened.
+async function markAnswerUsed(answerId: string): Promise<AnswerUsedResult> {
+  try {
+    await apiFetch(`/extension/answers/${answerId}/used`, { method: "POST" });
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
 }
 
 // E3b's LLM-fallback path -- MASTER_PLAN's "CoverForge-lite." Only ever
@@ -389,6 +452,27 @@ function classifySender(sender: Browser.runtime.MessageSender): SenderKind {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// The two tags that travel with a remembered answer: an intent from the closed vocabulary in
+// lib/questionIntent.ts (a short snake_case name) and an ISO country code.
+const INTENT_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+const JURISDICTION_PATTERN = /^[A-Z]{2}$/;
+const FILL_OUTCOMES = new Set(["ok", "partial", "failed"]);
+
+function isFieldCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_REPORTED_FIELDS;
+}
+
+function atsOfSenderPage(url: string): AtsType | null {
+  try {
+    return detectAtsType(new URL(url).hostname);
+  } catch {
+    return null;
+  }
+}
+
+function isOptionalTag(value: unknown, pattern: RegExp): boolean {
+  return value === undefined || (typeof value === "string" && pattern.test(value));
+}
 const MAX_QUESTION_LENGTH = 500;
 const MAX_ANSWER_LENGTH = 5000;
 const MAX_KEY_LENGTH = 200;
@@ -400,6 +484,23 @@ function isBoundedString(value: unknown, max: number): value is string {
 function invalidRequest(): Promise<never> {
   return Promise.reject(new Error("Invalid request."));
 }
+
+// The consent gate (lib/consent.ts decides; this is the second lock behind the
+// content script's own). Everything below that sends a page address, a question
+// or an application id to the API, or downloads the person's documents, runs
+// only while the stored flag is valid for THIS build's disclosure -- read afresh
+// on each request, so a withdrawal or a version change stops the next request
+// even from a tab that was opened long before. Sign-out is deliberately not
+// gated: ending a session must always work, and it sends nothing about a page.
+// VERIFY_SESSION is not gated either: it reads the local session and answers a
+// boolean, and the content script that asks has already dropped whatever it was
+// holding for an un-consented person.
+async function whenConsented<T>(run: () => Promise<T>, refused: () => T | Promise<never>): Promise<T> {
+  if ((await readConsentDecision()) !== "granted") return refused();
+  return run();
+}
+
+const refuseWithoutConsent = (): Promise<never> => Promise.reject(new Error(CONSENT_REQUIRED_MESSAGE));
 
 export default defineBackground(() => {
   // Clicking the toolbar icon opens the side panel directly, rather than
@@ -414,7 +515,10 @@ export default defineBackground(() => {
       case "PAGE_DETECTED":
         if (kind !== "content_script") return;
         if (!isAtsType(message.atsType) || typeof message.url !== "string") return invalidRequest();
-        return resolveTabState(message.url, message.atsType);
+        return whenConsented<TabState>(
+          () => resolveTabState(message.url, message.atsType),
+          () => ({ status: "consent_required" }),
+        );
       case "VERIFY_SESSION":
         if (kind !== "content_script") return;
         if (!isBoundedString(message.userId, MAX_KEY_LENGTH)) return invalidRequest();
@@ -424,31 +528,67 @@ export default defineBackground(() => {
         if (!UUID_PATTERN.test(message.applicationId) || !isBoundedString(message.idempotencyKey, MAX_KEY_LENGTH)) {
           return invalidRequest();
         }
-        return markApplied(message.applicationId, message.idempotencyKey);
+        return whenConsented(() => markApplied(message.applicationId, message.idempotencyKey), refuseWithoutConsent);
       case "MATCH_ANSWER":
         if (kind !== "extension_page") return;
         if (
           !isBoundedString(message.normalizedQuestion, MAX_QUESTION_LENGTH) ||
-          (message.canonicalIntent !== undefined && !isBoundedString(message.canonicalIntent, MAX_KEY_LENGTH))
+          !isOptionalTag(message.canonicalIntent, INTENT_PATTERN) ||
+          !isOptionalTag(message.jurisdiction, JURISDICTION_PATTERN)
         ) {
           return invalidRequest();
         }
-        return matchAnswer(message.normalizedQuestion, message.canonicalIntent);
+        return whenConsented(
+          () => matchAnswer(message.normalizedQuestion, message.canonicalIntent, message.jurisdiction),
+          refuseWithoutConsent,
+        );
       case "SAVE_ANSWER":
         if (kind !== "extension_page") return;
         if (
           !isBoundedString(message.normalizedQuestion, MAX_QUESTION_LENGTH) ||
-          !isBoundedString(message.answerText, MAX_ANSWER_LENGTH)
+          !isBoundedString(message.answerText, MAX_ANSWER_LENGTH) ||
+          !isOptionalTag(message.canonicalIntent, INTENT_PATTERN) ||
+          !isOptionalTag(message.jurisdiction, JURISDICTION_PATTERN)
         ) {
           return invalidRequest();
         }
-        return saveAnswer(message.normalizedQuestion, message.answerText);
+        return whenConsented(
+          () => saveAnswer(message.normalizedQuestion, message.answerText, message.canonicalIntent, message.jurisdiction),
+          refuseWithoutConsent,
+        );
+      case "REPORT_FILL_OUTCOME": {
+        // Only a content script reports a fill, and only for the ATS its own page is on: the
+        // page address is the sender's, not a field of the message.
+        if (kind !== "content_script") return;
+        if (
+          !isAtsType(message.atsType) ||
+          typeof message.applicationId !== "string" ||
+          !UUID_PATTERN.test(message.applicationId) ||
+          !isFieldCount(message.fieldsAttempted) ||
+          !isFieldCount(message.fieldsFilled) ||
+          message.fieldsFilled > message.fieldsAttempted ||
+          typeof message.outcome !== "string" ||
+          !FILL_OUTCOMES.has(message.outcome) ||
+          (sender.url !== undefined && atsOfSenderPage(sender.url) !== message.atsType)
+        ) {
+          return invalidRequest();
+        }
+        const { atsType, applicationId, fieldsAttempted, fieldsFilled, outcome } = message;
+        return whenConsented(
+          () => reportFillOutcome(atsType, applicationId, fieldsAttempted, fieldsFilled, outcome),
+          refuseWithoutConsent,
+        );
+      }
+      case "ANSWER_USED":
+        if (kind !== "extension_page") return;
+        if (typeof message.answerId !== "string" || !UUID_PATTERN.test(message.answerId)) return invalidRequest();
+        return whenConsented(() => markAnswerUsed(message.answerId), refuseWithoutConsent);
       case "DRAFT_ANSWER":
         if (kind !== "extension_page") return;
         if (!UUID_PATTERN.test(message.applicationId) || !isBoundedString(message.questionText, MAX_QUESTION_LENGTH)) {
           return invalidRequest();
         }
-        return draftAnswer(message.applicationId, message.questionText);
+        return whenConsented(() => draftAnswer(message.applicationId, message.questionText), refuseWithoutConsent);
       case "FETCH_APPLICATION_FILES":
         // E6 continuation -- only a content script fetches these (it owns
         // the Fill flow and the tab's own cached TabState), matching
@@ -462,7 +602,10 @@ export default defineBackground(() => {
         ) {
           return invalidRequest();
         }
-        return fetchApplicationFiles(message.applicationId, message.wantResume, message.wantCoverLetter);
+        return whenConsented(
+          () => fetchApplicationFiles(message.applicationId, message.wantResume, message.wantCoverLetter),
+          refuseWithoutConsent,
+        );
       case "SIGN_OUT":
         if (kind !== "extension_page") return;
         return signOutExtension();

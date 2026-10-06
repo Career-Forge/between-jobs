@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
-import { extractCustomQuestions, fillCustomTextAnswer, GENERIC_FIELD_DEFAULTS, isGreenhouseApplyForm } from "@/lib/greenhouse";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  extractCustomQuestions,
+  fillCountryField,
+  fillCustomTextAnswer,
+  GENERIC_FIELD_DEFAULTS,
+  isGreenhouseApplyForm,
+} from "@/lib/greenhouse";
 import { applyReactControlledFillPlan, planStandardFieldFills } from "@/lib/standardFields";
 import type { ExtensionPersonalInfo } from "@/lib/types";
+import { watchInteractions } from "./helpers/neverSubmit";
 
 // E4 -- mirrors the real DOM structure confirmed live against three real
 // job-boards.greenhouse.io postings (Melio, Wheely, Cloudflare,
@@ -79,8 +86,9 @@ describe("standard field fill (React-controlled)", () => {
     const plan = planStandardFieldFills(document, FULL_INFO, false, GENERIC_FIELD_DEFAULTS.standardFields);
     const bySelector = Object.fromEntries(plan.map((p) => [p.selector, p.value]));
 
-    expect(bySelector["#first_name"]).toBe("Jane");
-    expect(bySelector["#last_name"]).toBe("Middle Doe");
+    // "Jane Middle Doe": everything before the family name is given names (lib/personName.ts).
+    expect(bySelector["#first_name"]).toBe("Jane Middle");
+    expect(bySelector["#last_name"]).toBe("Doe");
     expect(bySelector["#email"]).toBe("jane@example.com");
     expect(bySelector["#phone"]).toBe("+1-555-0100");
   });
@@ -358,5 +366,417 @@ describe("E6 continuation: fillCustomTextAnswer's force parameter (Greenhouse)",
     buildQuestions(q(9, "Why us?", textInput(9)));
     expect(fillCustomTextAnswer(document, "question_00000000", "text", true)).toBe("refused");
     expect(fillCustomTextAnswer(document, "gender", "text", true)).toBe("refused");
+  });
+});
+
+
+// ---- #country: a list, not a text box ------------------------------------------------------
+//
+// Synthetic fixtures only. The react-select below is a hand-written imitation of what the
+// board renders (an input[role=combobox] in a container holding the chosen value, and a
+// listbox of options that appears once text is typed). It proves this engine's own logic
+// against that shape; it cannot prove the real library reacts to the same typing and click.
+
+const FAST = { timeoutMs: 120, pollMs: 5 };
+const COUNTRIES = ["United States", "United States Minor Outlying Islands", "India", "Germany", "United Kingdom"];
+
+interface ComboboxOptions {
+  chosen?: string | null;
+  /** The list ignores typing (nothing opens). */
+  deaf?: boolean;
+  /** Clicking an option does nothing. */
+  clickDoesNothing?: boolean;
+  options?: string[];
+}
+
+function buildCombobox(opts: ComboboxOptions = {}): { input: HTMLInputElement; clicked: HTMLElement[] } {
+  const { chosen = null, deaf = false, clickDoesNothing = false, options = COUNTRIES } = opts;
+  document.body.innerHTML = `
+    <form id="application-form">
+      <label id="country-label" for="country">Country</label>
+      <div class="select__container">
+        <div class="select__control">
+          <div class="select__value-container">
+            ${chosen === null ? '<div class="select__placeholder">Select...</div>' : `<div class="select__single-value">${chosen}</div>`}
+            <div class="select__input-container">
+              <input id="country" class="select__input" type="text" role="combobox" aria-controls="react-select-country-listbox" aria-expanded="false" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>`;
+  const input = document.querySelector<HTMLInputElement>("#country")!;
+  const container = document.querySelector(".select__container")!;
+  const clicked: HTMLElement[] = [];
+  input.addEventListener("input", () => {
+    container.querySelector("#react-select-country-listbox")?.remove();
+    if (deaf || input.value === "") return;
+    const listbox = document.createElement("div");
+    listbox.id = "react-select-country-listbox";
+    listbox.setAttribute("role", "listbox");
+    for (const name of options.filter((o) => o.toLowerCase().includes(input.value.toLowerCase()))) {
+      const option = document.createElement("div");
+      option.setAttribute("role", "option");
+      option.textContent = name;
+      option.addEventListener("click", () => {
+        clicked.push(option);
+        if (clickDoesNothing) return;
+        container.querySelector(".select__single-value, .select__placeholder")?.replaceWith(
+          Object.assign(document.createElement("div"), { className: "select__single-value", textContent: name }),
+        );
+        listbox.remove();
+        input.value = "";
+      });
+      listbox.append(option);
+    }
+    container.append(listbox);
+  });
+  return { input, clicked };
+}
+
+const shown = () => document.querySelector(".select__single-value")?.textContent ?? null;
+
+describe("#country as the standard react-select combobox", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("types the country, picks the matching option, and confirms the choice took", async () => {
+    const { clicked } = buildCombobox();
+
+    const outcome = await fillCountryField(document, "US", false, FAST);
+
+    expect(outcome).toEqual({ status: "filled" });
+    expect(shown()).toBe("United States");
+    // The one thing activated is an option of the list it just filtered.
+    expect(clicked).toHaveLength(1);
+    expect(clicked[0]!.getAttribute("role")).toBe("option");
+  });
+
+  it("only an exact name is taken: 'United States Minor Outlying Islands' is not the United States", async () => {
+    buildCombobox({ options: ["United States Minor Outlying Islands", "India"] });
+
+    const outcome = await fillCountryField(document, "US", false, FAST);
+
+    expect(outcome.status).toBe("not_filled");
+    expect(shown()).toBeNull();
+  });
+
+  it("a country no option matches is left empty with a reason, and the half-typed search is cleared", async () => {
+    const { input, clicked } = buildCombobox();
+
+    const outcome = await fillCountryField(document, "Atlantis", false, FAST);
+
+    expect(outcome).toEqual({
+      status: "not_filled",
+      reason: "none of the form's country options matches the country in your profile",
+    });
+    expect(input.value).toBe("");
+    expect(clicked).toEqual([]);
+  });
+
+  it("a list that never reacts is reported as 'check this field', never as filled", async () => {
+    const { input, clicked } = buildCombobox({ deaf: true });
+
+    const outcome = await fillCountryField(document, "US", false, FAST);
+
+    expect(outcome.status).toBe("not_filled");
+    expect(outcome.status === "not_filled" && outcome.reason).toMatch(/check this field/);
+    expect(input.value).toBe("");
+    expect(clicked).toEqual([]);
+  });
+
+  it("an option click the list ignores is not reported as a fill", async () => {
+    buildCombobox({ clickDoesNothing: true });
+
+    const outcome = await fillCountryField(document, "US", false, FAST);
+
+    expect(outcome.status).toBe("not_filled");
+    expect(outcome.status === "not_filled" && outcome.reason).toMatch(/check this field/);
+    expect(shown()).toBeNull();
+  });
+
+  it("D5: a country already chosen is left alone; refill-all replaces it", async () => {
+    const { clicked } = buildCombobox({ chosen: "India" });
+
+    expect(await fillCountryField(document, "US", false, FAST)).toEqual({ status: "left" });
+    expect(shown()).toBe("India");
+    expect(clicked).toEqual([]);
+
+    expect(await fillCountryField(document, "US", true, FAST)).toEqual({ status: "filled" });
+    expect(shown()).toBe("United States");
+  });
+
+  it("a dotted spelling is typed as the country's name: 'U.S.' finds the United States", async () => {
+    buildCombobox();
+
+    expect(await fillCountryField(document, "U.S.", false, FAST)).toEqual({ status: "filled" });
+    expect(shown()).toBe("United States");
+  });
+
+  it("matches a country written out as well as a code or alias", async () => {
+    for (const written of ["Germany", "germany", "DE", "UK", "USA"]) {
+      buildCombobox();
+      const outcome = await fillCountryField(document, written, false, FAST);
+      expect(outcome, written).toEqual({ status: "filled" });
+    }
+    buildCombobox();
+    await fillCountryField(document, "UK", false, FAST);
+    expect(shown()).toBe("United Kingdom");
+  });
+
+  it("a throw anywhere in the interaction is a reported failure, not an exception", async () => {
+    const { input } = buildCombobox();
+    input.focus = () => {
+      throw new Error("focus blew up");
+    };
+
+    const outcome = await fillCountryField(document, "US", false, FAST);
+
+    expect(outcome.status).toBe("not_filled");
+  });
+});
+
+describe("#country as a plain <select>", () => {
+  function buildSelect(selectedValue = ""): HTMLSelectElement {
+    document.body.innerHTML = `
+      <form><select id="country">
+        <option value="">Select...</option>
+        <option value="US">United States</option>
+        <option value="IN">India</option>
+        <option value="GB">United Kingdom</option>
+        <option value="DE">Germany</option>
+      </select></form>`;
+    const select = document.querySelector<HTMLSelectElement>("#country")!;
+    select.value = selectedValue;
+    return select;
+  }
+
+  it("chooses the matching option and fires the events a controlled form listens for", async () => {
+    const select = buildSelect();
+    const events: string[] = [];
+    select.addEventListener("input", () => events.push("input"));
+    select.addEventListener("change", () => events.push("change"));
+
+    expect(await fillCountryField(document, "US", false, FAST)).toEqual({ status: "filled" });
+
+    expect(select.value).toBe("US");
+    expect(events).toEqual(["input", "change"]);
+  });
+
+  it("matches by the option's text or its value, and a country written out", async () => {
+    for (const [profile, value] of [["IN", "IN"], ["india", "IN"], ["Germany", "DE"], ["United Kingdom", "GB"]] as const) {
+      const select = buildSelect();
+      expect(await fillCountryField(document, profile, false, FAST), profile).toEqual({ status: "filled" });
+      expect(select.value).toBe(value);
+    }
+  });
+
+  it("a dotted spelling of a country is matched: 'U.S.' is the United States", async () => {
+    for (const written of ["U.S.", "U.S", "u.s.", "U.K."]) {
+      const select = buildSelect();
+      expect(await fillCountryField(document, written, false, FAST), written).toEqual({ status: "filled" });
+      expect(select.value, written).toBe(written.toLowerCase().startsWith("u.k") ? "GB" : "US");
+    }
+  });
+
+  it("a choice the form does not take is reported, never counted as filled", async () => {
+    const select = buildSelect();
+    // A controlled form that reverts whatever is chosen.
+    select.addEventListener("change", () => {
+      select.selectedIndex = 0;
+    });
+
+    const outcome = await fillCountryField(document, "US", false, FAST);
+
+    expect(outcome.status).toBe("not_filled");
+    expect(outcome.status === "not_filled" && outcome.reason).toMatch(/did not take the choice/);
+  });
+
+  it("D5: a real choice is left alone, a placeholder is not; refill-all replaces a real one", async () => {
+    const select = buildSelect("IN");
+    expect(await fillCountryField(document, "US", false, FAST)).toEqual({ status: "left" });
+    expect(select.value).toBe("IN");
+    expect(await fillCountryField(document, "US", true, FAST)).toEqual({ status: "filled" });
+    expect(select.value).toBe("US");
+  });
+
+  it("a country with no matching option leaves the list as it was, with a reason", async () => {
+    const select = buildSelect();
+    const outcome = await fillCountryField(document, "Atlantis", false, FAST);
+    expect(outcome.status).toBe("not_filled");
+    expect(select.value).toBe("");
+  });
+});
+
+describe("#country: what is not a list, and what is missing", () => {
+  it("a form without #country has nothing to say", async () => {
+    document.body.innerHTML = '<form><input type="text" id="first_name" /></form>';
+    expect(await fillCountryField(document, "US", false, FAST)).toEqual({ status: "absent" });
+  });
+
+  it("a profile with no country leaves the field alone and says so", async () => {
+    buildCombobox();
+    expect(await fillCountryField(document, "  ", false, FAST)).toEqual({
+      status: "not_filled",
+      reason: "your profile has no country",
+    });
+  });
+
+  it("a #country that is neither a select nor a combobox is not touched", async () => {
+    document.body.innerHTML = '<form><input type="text" id="country" /></form>';
+    const outcome = await fillCountryField(document, "US", false, FAST);
+    expect(outcome.status).toBe("not_filled");
+    expect(document.querySelector<HTMLInputElement>("#country")!.value).toBe("");
+  });
+
+  it("is not part of the text-entry standard fields (those never write to a list)", () => {
+    expect(GENERIC_FIELD_DEFAULTS.standardFields.map((f) => f.selector)).not.toContain("#country");
+  });
+});
+
+// ---- #country: the page's markup is untrusted ------------------------------------------------
+//
+// A job page decides its own markup. The one click this engine makes must land only on a plain
+// entry of a country list, never on a submit button, a link, a label that forwards to a box, or
+// anything else a page labels `role=option` or points `aria-controls` at.
+
+describe("#country: a page cannot steer the one click onto a control", () => {
+  const COMBOBOX = (controls: string | null) => `
+    <div class="select__container"><div class="select__control"><div class="select__value-container">
+      <div class="select__placeholder">Select...</div>
+      <div class="select__input-container">
+        <input id="country" class="select__input" type="text" role="combobox"${controls === null ? "" : ` aria-controls="${controls}"`} />
+      </div>
+    </div></div></div>`;
+
+  interface Probe {
+    submits: number;
+    linkClicks: number;
+    consent: HTMLInputElement;
+  }
+
+  /** `body` is the page markup around (and holding) the hostile listbox. */
+  function build(body: string): Probe {
+    document.body.innerHTML = `
+      <form id="application-form">
+        ${body}
+        <input type="checkbox" id="consent" /><button type="button" id="create">Create account</button>
+      </form>`;
+    const probe: Probe = { submits: 0, linkClicks: 0, consent: document.querySelector<HTMLInputElement>("#consent")! };
+    document.querySelector("form")!.addEventListener("submit", (event) => {
+      probe.submits += 1;
+      event.preventDefault();
+    });
+    for (const link of document.querySelectorAll("a")) {
+      link.addEventListener("click", (event) => {
+        probe.linkClicks += 1;
+        event.preventDefault();
+      });
+    }
+    return probe;
+  }
+
+  const HOSTILE: Array<[string, string]> = [
+    [
+      "a submit button called an option, inside the combobox's own list",
+      `${COMBOBOX("lb")}<div id="lb" role="listbox"><button type="submit" role="option">United States</button></div>`,
+    ],
+    [
+      "a link called an option, in a list elsewhere on the page that aria-controls points at",
+      `${COMBOBOX("lb")}<nav><div id="lb" role="listbox"><a href="/elsewhere" role="option">United States</a></div></nav>`,
+    ],
+    [
+      "a link nested one level down in a plain div",
+      `${COMBOBOX("lb")}<div id="lb" role="listbox"><div><a href="/x" role="option">United States</a></div></div>`,
+    ],
+    [
+      "a plain option inside a submit button inside the list",
+      `${COMBOBOX("lb")}<div id="lb" role="listbox"><button type="submit"><span role="option">United States</span></button></div>`,
+    ],
+    [
+      "a plain option inside a label that ticks the consent box",
+      `${COMBOBOX("lb")}<div id="lb" role="listbox"><label for="consent"><span role="option">United States</span></label></div>`,
+    ],
+    [
+      "a plain option inside a label that wraps the whole list",
+      `${COMBOBOX("lb")}<label for="consent"><div id="lb" role="listbox"><div role="option">United States</div></div></label>`,
+    ],
+    [
+      "a list wrapped in a link",
+      `${COMBOBOX("lb")}<a href="/x"><div id="lb" role="listbox"><div role="option">United States</div></div></a>`,
+    ],
+    [
+      "no aria-controls: the list found by looking around the input holds a submit button",
+      `<div class="select__container"><div class="select__control"><div class="select__value-container">
+         <div class="select__input-container"><input id="country" type="text" role="combobox" /></div>
+       </div></div><div role="listbox"><button type="submit" role="option">United States</button></div></div>`,
+    ],
+    [
+      "an option dressed as a button by its own role",
+      `${COMBOBOX("lb")}<div id="lb" role="listbox"><div role="button"><div role="option">United States</div></div></div>`,
+    ],
+  ];
+
+  it.each(HOSTILE)("%s: nothing is clicked, submitted or ticked, and the field is reported as not filled", async (_name, body) => {
+    const probe = build(body);
+    const watcher = watchInteractions();
+    try {
+      const outcome = await fillCountryField(document, "US", false, FAST);
+
+      expect(outcome.status).toBe("not_filled");
+      expect(probe.submits).toBe(0);
+      expect(probe.linkClicks).toBe(0);
+      expect(probe.consent.checked).toBe(false);
+      expect(watcher.interactions.filter((i) => i.kind === "click")).toEqual([]);
+      expect(watcher.violations().filter((v) => v.kind !== "focus")).toEqual([]);
+    } finally {
+      watcher.restore();
+    }
+  });
+
+  it("aria-controls pointing at an element that is not a listbox is not trusted", async () => {
+    const probe = build(`${COMBOBOX("decoy")}<div id="decoy"><div role="option">United States</div></div>`);
+    const watcher = watchInteractions();
+    try {
+      const outcome = await fillCountryField(document, "US", false, FAST);
+      expect(outcome.status).toBe("not_filled");
+      expect(watcher.interactions.filter((i) => i.kind === "click")).toEqual([]);
+      expect(probe.submits).toBe(0);
+    } finally {
+      watcher.restore();
+    }
+  });
+
+  it("the control: a plain option in a plain list, even one built from list items, is still picked", async () => {
+    build(`${COMBOBOX("lb")}`);
+    const container = document.querySelector(".select__container")!;
+    const input = document.querySelector<HTMLInputElement>("#country")!;
+    const clicked: string[] = [];
+    input.addEventListener("input", () => {
+      container.querySelector("#lb")?.remove();
+      if (input.value === "") return;
+      const list = document.createElement("ul");
+      list.id = "lb";
+      list.setAttribute("role", "listbox");
+      const item = document.createElement("li");
+      item.setAttribute("role", "option");
+      item.textContent = "United States";
+      item.addEventListener("click", () => {
+        clicked.push("li");
+        container.querySelector(".select__placeholder")?.replaceWith(
+          Object.assign(document.createElement("div"), { className: "select__single-value", textContent: "United States" }),
+        );
+        list.remove();
+      });
+      list.append(item);
+      container.append(list);
+    });
+    const watcher = watchInteractions();
+    try {
+      expect(await fillCountryField(document, "US", false, FAST)).toEqual({ status: "filled" });
+      expect(clicked).toEqual(["li"]);
+      expect(watcher.violations().filter((v) => v.kind !== "focus")).toEqual([]);
+    } finally {
+      watcher.restore();
+    }
   });
 });

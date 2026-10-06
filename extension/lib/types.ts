@@ -37,6 +37,10 @@ export interface ExtensionPayload {
     cover_letter?: { artifact_id: string; version_id: string } | null;
   } | null;
   personal_info: ExtensionPersonalInfo | null;
+  /** The ISO country (two upper-case letters) the job's own location text names, or
+   * null/absent when it names none. Never a guess from a city: unknown stays unknown.
+   * Used only to tag, and to look up, remembered answers to work-eligibility questions. */
+  job_jurisdiction?: string | null;
 }
 
 /** A generated PDF (résumé or cover letter), base64-encoded for
@@ -85,6 +89,10 @@ export interface GeneratedFile {
  * `fieldMapError` carries a human-readable reason for the side panel. */
 export type TabState =
   | { status: "signed_out" }
+  // The person has not agreed to the current disclosure (never, withdrawn, or
+  // the consent version moved on): nothing about this page was read and
+  // nothing was sent anywhere. See lib/consent.ts.
+  | { status: "consent_required" }
   | { status: "untracked" }
   | {
       status: "tracked";
@@ -140,11 +148,24 @@ export interface MarkAppliedMessage {
 export interface MatchAnswerMessage {
   type: "MATCH_ANSWER";
   normalizedQuestion: string;
+  /** From lib/questionIntent.ts's deterministic classifier; absent when the question has
+   * no recognised intent. */
   canonicalIntent?: string;
+  /** The job's country, when its posting names one. */
+  jurisdiction?: string;
 }
 
 export interface MatchAnswerResult {
-  answer: { answer_text: string } | null;
+  /** `id` and `normalized_question` are the stored row's own. A `normalized_question` that
+   * differs from the one asked means the answer was found by its intent, from a question
+   * worded differently (possibly at another company). */
+  answer: {
+    id?: string;
+    answer_text: string;
+    normalized_question?: string;
+    /** The country the answer was saved for, or null/absent when it was saved for none. */
+    jurisdiction?: string | null;
+  } | null;
 }
 
 /** Side panel -> background: the human approved an answer (drafted or
@@ -153,6 +174,38 @@ export interface SaveAnswerMessage {
   type: "SAVE_ANSWER";
   normalizedQuestion: string;
   answerText: string;
+  /** Sent only for a question whose intent is recognised (and, for a work-eligibility
+   * question, only with the job's country). See `memoryTagsForSave`. */
+  canonicalIntent?: string;
+  jurisdiction?: string;
+}
+
+/** Side panel -> background: a remembered answer was filled into a form as it was stored.
+ * The service counts that use (times used, last used). Best effort: a failure here never
+ * affects the fill. */
+export interface AnswerUsedMessage {
+  type: "ANSWER_USED";
+  answerId: string;
+}
+
+export interface AnswerUsedResult {
+  ok: boolean;
+}
+
+/** How a fill went, as a label the service accepts: all of what was tried went in, some of it,
+ * or none. */
+export type FillOutcomeLabel = "ok" | "partial" | "failed";
+
+/** Content script -> background: one finished fill, as COUNTS ONLY. Never a label, a value, a
+ * URL or any page text -- there is no field here that could hold one. The service worker passes
+ * it to POST /extension/fill-outcome unchanged, and only while the person has consented. */
+export interface ReportFillOutcomeMessage {
+  type: "REPORT_FILL_OUTCOME";
+  atsType: AtsType;
+  applicationId: string;
+  fieldsAttempted: number;
+  fieldsFilled: number;
+  outcome: FillOutcomeLabel;
 }
 
 /** Side panel -> background: draft an answer via the LLM-fallback path.
@@ -238,6 +291,8 @@ export type BackgroundMessage =
   | MarkAppliedMessage
   | MatchAnswerMessage
   | SaveAnswerMessage
+  | AnswerUsedMessage
+  | ReportFillOutcomeMessage
   | DraftAnswerMessage
   | FetchApplicationFilesMessage
   | SignOutMessage;
@@ -293,10 +348,16 @@ export interface DetectionStateResponse {
 export interface FillResult {
   filledFields: string[];
   skippedFields: string[];
+  /** A file is on the input now -- written by this fill or already there from an earlier one.
+   * What the panel shows. */
   resumeAttached: boolean;
   resumeError: string | null;
   coverLetterAttached: boolean;
   coverLetterError: string | null;
+  /** This fill wrote the file itself (not "one was already there"). What the count-only fill
+   * report uses, so a repeat fill that finds everything in place reports nothing. */
+  resumeWritten: boolean;
+  coverLetterWritten: boolean;
   unresolvedQuestions: { fieldName: string; label: string | null; kind: QuestionKind }[];
   fieldMapError: string | null;
   /** Set when the fill itself threw unexpectedly. Whatever was written

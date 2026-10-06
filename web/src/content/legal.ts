@@ -14,6 +14,9 @@
 // column`) and fails the moment either table has a column of any type that the text does not name,
 // or another table that records what people do or whether they joined a programme exists without a
 // paragraph of its own -- the change that adds one must add its paragraph here, on purpose.
+// The browser extension is one source of usage records (one count-only report per fill); what it
+// sends is described under 'The browser extension' and must stay in step with
+// extension/store/PRIVACY.md.
 
 import { PRIVACY_EMAIL, REPO_URL, SOURCE_LICENSE, SUPPORT_EMAIL } from "./site";
 
@@ -303,7 +306,7 @@ function processorBlocks(): Block[] {
           "Contact research, event research and outreach drafts: the company, a contact's name and job title, the role, and excerpts of public web pages. They do not send your profile. In event research the AI provider sees only the excerpts of public pages: your city goes to your search provider as part of the search words and is not sent to the AI provider.",
           "Positioning briefs: your skills as matched against a posting, and the company research you already have.",
           "Interview practice: questions are written from the job's company, title and description, evidence in your resume and, where there is one, a company-level summary of how interviews there are run. The answers you type are sent for scoring and feedback along with the question and your resume evidence.",
-          "The browser extension's Draft answer: the question's text, a summary of your profile and the job posting text, and then the draft again for a check.",
+          "The browser extension's Draft answer: the question's text, a summary of your profile and the job posting text, and then the draft again for a check. The summary leaves out your work-authorization note unless the question itself is about work authorization, a visa or sponsorship; the question and the job posting are sent marked as data the model is told not to obey.",
           "Gmail replies (only if you connect Gmail): the text of the newest reply in a thread of a draft we created, so it can be classified. This also runs in the background.",
         ),
       );
@@ -384,11 +387,11 @@ export const PRIVACY: LegalDocument = {
           ),
           def(
             "Answers for the browser extension",
-            "The question text and the answer you approved, when you press 'Fill & remember' in the extension.",
+            "The question text and the answer you approved, when you press 'Fill & remember' in the extension, together with the kind of question (one of a few common ones, recognised by its wording) and the country the job names, when it names one, and how many times and when the answer was last filled exactly as saved.",
           ),
           def(
             "Product usage events",
-            "A short record each time you use a main feature, so we can tell whether the product works for people. It says which feature you used (a search, preparing a resume or cover letter, downloading a PDF, a setup problem, or a form fill by the browser extension), which kind of feature it was (for example company research or interview practice), which application it concerned, which job-site platform it was (for example Greenhouse), whether it worked, a few counts (such as how many results were found or how many form fields were filled), how long it took, and when. It never contains what you typed, your resume or any job text, a web address, your IP address or details of your browser, and it is not sent to any analytics service. The browser extension does not send these records yet; when it does, the only thing it will report is how many fields it tried and filled, never their values.",
+            "A short record each time you use a main feature, so we can tell whether the product works for people. It says which feature you used (a search, preparing a resume or cover letter, downloading a PDF, a setup problem, or a form fill by the browser extension), which kind of feature it was (for example company research or interview practice), which application it concerned, which job-site platform it was (for example Greenhouse), whether it worked, a few counts (such as how many results were found or how many form fields were filled), how long it took, and when. It never contains what you typed, your resume or any job text, a web address, your IP address or details of your browser, and it is not sent to any analytics service. After each fill, the browser extension sends one of these records. All it reports is which job-site platform the form was on, which of your applications it concerned, how many form fields it tried, how many it filled, and whether that went fully, partly or not at all -- never a field's value, name or label, a question, a web address or any page text.",
           ),
           def(
             "Tester programme",
@@ -405,7 +408,7 @@ export const PRIVACY: LegalDocument = {
           "Your provider keys or Gmail connection in readable form. They are encrypted in the database (see 'Security').",
           "Your inbox. If you connect Gmail we keep the connection, and for each reply we classify a short quoted excerpt and the message id (see 'Gmail').",
           "Payment details. Between Jobs takes no payments.",
-          "What you browse. The browser extension keeps no browsing history. On its four supported sites it sends only the address of a page that has an application form, and a little more when you press a button (see 'The browser extension'). Product usage events hold no web addresses.",
+          "What you browse. The browser extension keeps no browsing history. On its four supported sites it sends only the address of a page that has an application form, and a little more when you press a button, including a count-only report when a fill finishes (see 'The browser extension'). Product usage events hold no web addresses.",
         ),
       ],
     },
@@ -470,12 +473,12 @@ export const PRIVACY: LegalDocument = {
       blocks: [
         ul(
           "The Chrome extension helps fill in job application forms. It runs only on jobs.lever.co, job-boards.greenhouse.io, boards.greenhouse.io and jobs.ashbyhq.com. It asks Chrome for the 'storage' and 'sidePanel' permissions and for access to those four sites, and nothing else.",
-          "It reads the page to find the application form, its fields and its questions. Apart from the page address described next and the few things sent only when you press a button, it does not send page contents, what you type, or the other pages you visit.",
-          "Signed in as you, whenever it finds an application form on one of those sites it sends that page's address (without any query string or fragment) to our API to check whether you track that job. This happens whether or not you do. The API answers with the application's id or nothing, does not store the address and keeps it out of its own logs. The address does travel in the request's query string, so it may appear in the connection logs of our hosting providers. Once it has found a tracked application it sends the application's id to fetch your contact details and your prepared documents. Only when you press the matching button does it send the text of one custom question (to look for a saved answer or to draft one), an answer you chose to remember, or a request to mark the application as applied.",
+          "It reads nothing from a page, and sends nothing, until you have agreed to its first-run notice; if the notice changes, it stops again until you agree again. After that it reads the page to find the application form, its fields and its questions. Apart from the page address described next and the few things sent only when you press a button, it does not send page contents, what you type, or the other pages you visit.",
+          "Signed in as you, whenever it finds an application form on one of those sites it sends that page's address (without any query string or fragment) to our API to check whether you track that job. This happens whether or not you do. The API answers with the application's id or nothing, does not store the address and keeps it out of its own logs. The address does travel in the request's query string, so it may appear in the connection logs of our hosting providers. Once it has found a tracked application it sends the application's id to fetch your contact details and your prepared documents. Only when you press the matching button does it send the text of one custom question (to look for a saved answer or to draft one), an answer you chose to remember, or a request to mark the application as applied. With a question it may add the name of one of a few common kinds of question it recognised by its wording, and the country the job posting names, so a saved answer can be found again on another company's form.",
           "Draft answer uses your AI provider, as described above.",
-          "It never clicks a submit button, never ticks a checkbox and fills a form only when you press a button. Questions about gender, race, disability, veteran status and similar self-identification topics are never listed, drafted or filled. It recognizes them by their wording, so read the form before you submit.",
-          "On your device it keeps your sign-in in the browser's session storage for extensions (pages you visit cannot read it, and Chrome clears it when the browser restarts), and in local storage the highest field-map version it has accepted and whether you have agreed to its first-run notice, until you uninstall it.",
-          "It has no analytics of its own and sends no usage events yet. Later it may report, as plain counts, how many form fields a fill tried and completed (see 'Product usage events'), never the values, the questions or the page. 'Sign out' in its panel ends its session and tells the API to reject the tokens it had issued.",
+          "It never clicks a submit, next or sign-in button, never ticks a checkbox, never signs in or creates an account on a job site, never enters a PIN or a verification code, never answers a CAPTCHA, and fills a form only when you press a button. The one list it fills is the country list on a Greenhouse form, by picking the matching entry. Questions about gender, race, disability, veteran status and similar self-identification topics are never listed, drafted or filled. It recognizes them by their wording, so read the form before you submit.",
+          "On your device it keeps your sign-in in the browser's session storage for extensions (pages you visit cannot read it, and Chrome clears it when the browser restarts), and in local storage the highest field-map version it has accepted and which version of its first-run notice you have agreed to, until you uninstall it.",
+          "It has no third-party analytics. After each fill it sends our API one count-only report -- which job-site platform, which of your applications, how many form fields it tried and filled, and whether that went fully, partly or not at all -- never the values, the field names, the questions, a web address or the page (see 'Product usage events'). It also sends the id of a saved answer each time one is filled exactly as saved, so the count of how often you reuse it is kept with the answer. 'Sign out' in its panel ends its session and tells the API to reject the tokens it had issued.",
         ),
       ],
     },

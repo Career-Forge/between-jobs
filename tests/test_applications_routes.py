@@ -772,6 +772,54 @@ def test_extension_payload_returns_prepare_result_and_personal_info() -> None:
     assert body["personal_info"]["linkedin"] == "https://linkedin.com/in/jane"
 
 
+@pytest.mark.parametrize(
+    ("location_text", "expected"),
+    [
+        ("Remote - United States", "US"),
+        ("Berlin, Germany", "DE"),
+        # A city or a state code alone is not a jurisdiction: unknown, never the biggest city's.
+        ("San Francisco, CA", None),
+        ("Remote", None),
+        (None, None),
+    ],
+)
+def test_extension_payload_names_only_the_country_the_job_location_names(
+    location_text: str | None, expected: str | None
+) -> None:
+    application = {
+        "id": _APPLICATION_ID,
+        "user_id": _USER_ID,
+        "job_id": _JOB_ID,
+        "active_job_snapshot_id": _SNAPSHOT_ID,
+    }
+    snapshot = {"id": _SNAPSHOT_ID, "job_id": _JOB_ID, "location_text": location_text}
+    supabase = _FakeSupabaseClient(
+        applications=_FakeTable(select_rows=[application]),
+        job_snapshots=_FakeTable(select_rows=[snapshot]),
+        profile_versions=_FakeTable(select_rows=[_profile_row()]),
+    )
+    with _client(supabase) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/extension-payload")
+
+    assert response.status_code == 200
+    assert response.json()["job_jurisdiction"] == expected
+
+
+def test_extension_payload_has_no_jurisdiction_when_the_snapshot_is_gone() -> None:
+    application = {
+        "id": _APPLICATION_ID,
+        "user_id": _USER_ID,
+        "job_id": _JOB_ID,
+        "active_job_snapshot_id": _SNAPSHOT_ID,
+    }
+    supabase = _FakeSupabaseClient(applications=_FakeTable(select_rows=[application]))
+    with _client(supabase) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/extension-payload")
+
+    assert response.status_code == 200
+    assert response.json()["job_jurisdiction"] is None
+
+
 def test_extension_payload_trims_prepare_result_to_resume_and_cover_letter() -> None:
     """E6 continuation -- confirmed by grepping the whole extension/ tree
     that nothing there reads `fit`/`gate_outcome`/`gate_reason`/

@@ -34,8 +34,11 @@ from .credential_resolver import try_get_secret
 from .errors import ApiError
 from .export_checklist import ChecklistItem, build_checklist
 from .extension_auth import require_active_extension_user_id
+from .geo_gazetteer import explicit_country_of_location
 from .jobs_store import (
+    SnapshotNotFound,
     create_job_from_paste,
+    get_snapshot,
     get_snapshots,
     guess_company_name_from_url,
     lookup_registry_posting,
@@ -88,6 +91,21 @@ def _extension_personal_info(profile: ResumeTemplate) -> dict[str, Any]:
         "github": profile.personal.links.github,
         "portfolio": profile.personal.links.portfolio,
     }
+
+
+async def _job_jurisdiction(supabase: AsyncClient, application: dict[str, Any]) -> str | None:
+    """The ISO country the application's job location names, or None when it names none (or the
+    snapshot is gone). The extension tags an answer to a work-eligibility question with it, so
+    the answer is not reused for a job under another country's rules; see
+    `geo_gazetteer.explicit_country_of_location` for why a city alone is unknown."""
+    snapshot_id = application.get("active_job_snapshot_id")
+    if not snapshot_id:
+        return None
+    try:
+        snapshot = await get_snapshot(supabase, snapshot_id)
+    except SnapshotNotFound:
+        return None
+    return explicit_country_of_location(snapshot.get("location_text"))
 
 
 async def _with_snapshot(
@@ -339,6 +357,10 @@ async def get_extension_payload(
     reads `resume.pdf`/`cover-letter.pdf` after the user signs out of the
     extension.
 
+    `job_jurisdiction` is the ISO country the job's own location text names, or null. It exists
+    so the extension can tag a remembered answer to a work-eligibility question with the
+    country it was written for; null means "the posting does not say", never a guess.
+
     `prepare_result` here is trimmed to just
     `{resume, cover_letter}`, not `get_latest_prepare_result`'s full
     stored `PrepareApplicationResult` payload (which also carries
@@ -355,7 +377,7 @@ async def get_extension_payload(
     other key. `get_prepare_result` (the web app's own route, right
     above this one) is untouched and still returns the full payload."""
     try:
-        await get_application(supabase, user_id, application_id)
+        application = await get_application(supabase, user_id, application_id)
     except ApplicationNotFound as e:
         raise ApiError("NOT_FOUND", f"no application found for id {application_id!r}") from e
 
@@ -374,7 +396,11 @@ async def get_extension_payload(
         if profile_version is not None
         else None
     )
-    return {"prepare_result": prepare_result, "personal_info": personal_info}
+    return {
+        "prepare_result": prepare_result,
+        "personal_info": personal_info,
+        "job_jurisdiction": await _job_jurisdiction(supabase, application),
+    }
 
 
 @router.get("/{application_id}/resume.pdf", dependencies=[Depends(limit("pdf_compile"))])

@@ -20,6 +20,8 @@
  * to fall back TO.
  */
 
+import { selectorNamesForbiddenControl } from "./forbiddenControls";
+
 export type FieldStrategy = "direct" | "fallback" | "joinNonEmpty" | "firstNameWord" | "lastNameWord";
 
 /** One declarative fill behavior -- NOT a closure. `STANDARD_FIELDS`'
@@ -132,6 +134,9 @@ function isStandardFieldSpec(value: unknown): value is StandardFieldSpec {
   return (
     typeof v.field === "string" &&
     typeof v.selector === "string" &&
+    // A map may never aim the fill at a submit, next, sign-in, consent or similar control:
+    // refused here, before anything could be asked to write to it (lib/forbiddenControls.ts).
+    !selectorNamesForbiddenControl(v.selector) &&
     (v.strategy === "direct" ||
       v.strategy === "fallback" ||
       v.strategy === "joinNonEmpty" ||

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { extractCustomQuestions, fillCustomTextAnswer, GENERIC_FIELD_DEFAULTS, isAshbyApplyForm } from "@/lib/ashby";
+import {
+  extractCustomQuestions,
+  fillCustomTextAnswer,
+  findCoverLetterSlot,
+  findPhoneInput,
+  GENERIC_FIELD_DEFAULTS,
+  isAshbyApplyForm,
+  planPhoneFill,
+} from "@/lib/ashby";
 import { applyReactControlledFillPlan, planStandardFieldFills } from "@/lib/standardFields";
 import type { ExtensionPersonalInfo } from "@/lib/types";
 
@@ -430,5 +438,318 @@ describe("E6 continuation: fillCustomTextAnswer's force parameter (Ashby)", () =
     buildAshbyForm();
     expect(fillCustomTextAnswer(document, "_systemfield_name", "x", true)).toBe("refused");
     expect(fillCustomTextAnswer(document, "00000000-0000-0000-0000-000000000000", "x", true)).toBe("refused");
+  });
+});
+
+
+// ---- the phone box is found by what it is, not by a guessed id ------------------------------
+
+describe("the Ashby phone box (no fixed id)", () => {
+  const entry = (path: string, title: string, inputHtml: string) => `
+    <div data-field-path="${path}" class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="${path}">${title}</label>
+      ${inputHtml}
+    </div>`;
+  const page = (...entries: string[]) => {
+    document.body.innerHTML = `<div class="ashby-application-form-container">${entries.join("")}</div>`;
+  };
+  const NAME = entry("_systemfield_name", "Name", '<input type="text" id="_systemfield_name" name="_systemfield_name" />');
+
+  it("no longer carries the guessed #_systemfield_phone selector", () => {
+    expect(GENERIC_FIELD_DEFAULTS.standardFields.map((f) => f.selector)).not.toContain("#_systemfield_phone");
+    expect(JSON.stringify(GENERIC_FIELD_DEFAULTS)).not.toMatch(/systemfield_phone/);
+  });
+
+  // Three synthetic variants of how a real form could mark the phone box.
+  it("variant 1: type=tel with a phone label (the shape seen live on one posting)", () => {
+    page(NAME, entry("dd4dc7a2-c59a-463e-94e9-a27b546deb8b", "Phone number", '<input type="tel" id="dd4dc7a2-c59a-463e-94e9-a27b546deb8b" name="dd4dc7a2-c59a-463e-94e9-a27b546deb8b" />'));
+    const found = findPhoneInput(document);
+    expect(found.status).toBe("found");
+    expect(found.status === "found" && found.fieldPath).toBe("dd4dc7a2-c59a-463e-94e9-a27b546deb8b");
+  });
+
+  it("variant 2: a plain text input whose autocomplete says tel, with an unhelpful label", () => {
+    page(NAME, entry("q-phone", "How can we reach you?", '<input type="text" id="q-phone" name="q-phone" autocomplete="tel-national" />'));
+    expect(findPhoneInput(document).status).toBe("found");
+  });
+
+  it("variant 3: a plain text input recognised only by its label ('Mobile')", () => {
+    page(NAME, entry("q-mobile", "Mobile", '<input type="text" id="q-mobile" name="q-mobile" />'));
+    expect(findPhoneInput(document).status).toBe("found");
+  });
+
+  it("a label alone, with 'cell' or 'telephone', is enough too", () => {
+    page(NAME, entry("q-cell", "Cell phone", '<input type="text" id="q-cell" />'));
+    expect(findPhoneInput(document).status).toBe("found");
+    page(NAME, entry("q-tel", "Telephone", '<input type="text" id="q-tel" />'));
+    expect(findPhoneInput(document).status).toBe("found");
+  });
+
+  it("finds nothing on a form with no phone box, and says nothing about it", () => {
+    page(NAME, entry("q-why", "Why us?", '<textarea id="q-why" name="q-why"></textarea>'));
+    expect(findPhoneInput(document)).toEqual({ status: "none" });
+    expect(planPhoneFill(document, "+1-555-0100", false)).toEqual({ item: null, fieldPath: null, skipped: null });
+  });
+
+  it("never mistakes a name, an email or the résumé system field for the phone", () => {
+    page(NAME, entry("_systemfield_email", "Email", '<input type="email" id="_systemfield_email" autocomplete="tel" />'));
+    expect(findPhoneInput(document)).toEqual({ status: "none" });
+  });
+
+  it("somebody else's number is never the candidate's", () => {
+    page(NAME, entry("q-emergency", "Emergency contact phone", '<input type="tel" id="q-emergency" />'));
+    expect(findPhoneInput(document)).toEqual({ status: "none" });
+  });
+
+  it("the better-evidenced box wins: a tel box with a phone label beats a box that only says 'phone' in its label", () => {
+    page(
+      NAME,
+      entry("q-a", "Phone", '<input type="tel" id="q-a" />'),
+      entry("q-b", "Phone (optional second)", '<input type="text" id="q-b" />'),
+    );
+    const found = findPhoneInput(document);
+    expect(found.status === "found" && found.fieldPath).toBe("q-a");
+  });
+
+  it("two equally good boxes are ambiguous: nothing is filled and the person is told", () => {
+    page(
+      NAME,
+      entry("q-a", "Phone", '<input type="tel" id="q-a" />'),
+      entry("q-b", "Mobile phone", '<input type="tel" id="q-b" />'),
+    );
+    expect(findPhoneInput(document)).toEqual({ status: "ambiguous" });
+    expect(planPhoneFill(document, "+1-555-0100", false)).toEqual({
+      item: null,
+      fieldPath: null,
+      skipped: "more than one box on this form could be your phone number",
+    });
+  });
+
+  it("an ambiguous form with no phone in the profile has nothing to say either", () => {
+    page(
+      NAME,
+      entry("q-a", "Phone", '<input type="tel" id="q-a" />'),
+      entry("q-b", "Mobile phone", '<input type="tel" id="q-b" />'),
+    );
+    expect(planPhoneFill(document, null, false).skipped).toBeNull();
+  });
+
+  it("plans the fill by the box's own id, and by its name when it has no id", () => {
+    page(NAME, entry("q-phone", "Phone", '<input type="tel" id="q-phone" name="q-phone" />'));
+    expect(planPhoneFill(document, "+1-555-0100", false).item).toEqual({ selector: "#q-phone", value: "+1-555-0100" });
+    page(NAME, entry("q-phone", "Phone", '<input type="tel" name="q-phone" />'));
+    expect(planPhoneFill(document, "+1-555-0100", false).item).toEqual({
+      selector: 'input[name="q-phone"]',
+      value: "+1-555-0100",
+    });
+  });
+
+  it("a box with neither an id nor a name can't be targeted: reported, not guessed", () => {
+    page(NAME, entry("q-phone", "Phone", '<input type="tel" />'));
+    const plan = planPhoneFill(document, "+1-555-0100", false);
+    expect(plan.item).toBeNull();
+    expect(plan.skipped).toMatch(/no id or name/);
+  });
+
+  it("D5: a box that already holds a number is left alone unless refill-all", () => {
+    page(NAME, entry("q-phone", "Phone", '<input type="tel" id="q-phone" value="+44 20 7946 0000" />'));
+    expect(planPhoneFill(document, "+1-555-0100", false).item).toBeNull();
+    expect(planPhoneFill(document, "+1-555-0100", true).item).toEqual({ selector: "#q-phone", value: "+1-555-0100" });
+  });
+
+  it("fills through the React-controlled path like the other standard fields", () => {
+    page(NAME, entry("q-phone", "Phone", '<input type="tel" id="q-phone" name="q-phone" />'));
+    const plan = planPhoneFill(document, "+1-555-0100", false);
+    const filled = applyReactControlledFillPlan(document, plan.item === null ? [] : [plan.item]);
+    expect(filled).toEqual(["#q-phone"]);
+    expect(document.querySelector<HTMLInputElement>("#q-phone")!.value).toBe("+1-555-0100");
+  });
+
+  it("the phone question can be kept out of the list of unanswered questions once it is handled", () => {
+    page(NAME, entry("q-phone", "Phone", '<input type="tel" id="q-phone" name="q-phone" />'));
+    expect(extractCustomQuestions(document).map((q) => q.fieldName)).toEqual(["q-phone"]);
+    expect(extractCustomQuestions(document, ["q-phone"])).toEqual([]);
+    expect(extractCustomQuestions(document, "q-phone")).toEqual([]);
+  });
+
+  // A question that merely MENTIONS a phone is the person's to answer: the number is never typed
+  // into it, and it stays in the list of questions left for them.
+  describe("a question that only mentions a phone is not the phone box", () => {
+    const TITLES = [
+      "How many years of mobile development experience do you have?",
+      "Describe your experience with cellular network testing",
+      "Which cell biology techniques have you used?",
+      "Have you used a mobile device management platform? (name it)",
+      "Do you have experience with telephone systems?",
+      "When are you available for a phone screen?",
+      "Preferred time for a phone interview",
+      "Mobile app development experience (years)",
+      "Telephone support experience",
+      "What is your experience with a cell phone",
+      "Describe your mobile",
+      "Which phone",
+    ];
+    it.each(TITLES)("%s", (title) => {
+      page(NAME, entry("q-1", title, '<input type="text" id="q-1" name="q-1" />'));
+
+      expect(findPhoneInput(document)).toEqual({ status: "none" });
+      expect(planPhoneFill(document, "+1-555-0100", true)).toEqual({ item: null, fieldPath: null, skipped: null });
+      expect(extractCustomQuestions(document).map((q) => q.fieldName)).toEqual(["q-1"]);
+    });
+
+    it("beside a real tel box, only the tel box is the phone", () => {
+      page(
+        NAME,
+        entry("q-phone", "Phone", '<input type="tel" id="q-phone" name="q-phone" />'),
+        entry("q-screen", "When are you available for a phone screen?", '<input type="text" id="q-screen" name="q-screen" />'),
+      );
+      const found = findPhoneInput(document);
+      expect(found.status === "found" && found.fieldPath).toBe("q-phone");
+      expect(planPhoneFill(document, "+1-555-0100", false).item).toEqual({ selector: "#q-phone", value: "+1-555-0100" });
+    });
+
+    it.each(["Phone", "Phone number", "Mobile phone", "Cell phone", "Telephone", "Mobile number", "Your phone number", "Phone (optional second)", "Phone *", "Phone:"])(
+      "but %j, as a whole title, still is",
+      (title) => {
+        page(NAME, entry("q-1", title, '<input type="text" id="q-1" name="q-1" />'));
+        expect(findPhoneInput(document).status).toBe("found");
+      },
+    );
+  });
+
+  describe("every input in a phone entry competes, and the best one wins", () => {
+    it("a text country-code box before the tel box does not shadow it", () => {
+      page(
+        NAME,
+        entry("q-phone", "Phone", '<input type="text" id="cc" name="cc" /><input type="tel" id="q-phone" name="q-phone" />'),
+      );
+      const found = findPhoneInput(document);
+      expect(found.status === "found" && found.input.id).toBe("q-phone");
+      expect(planPhoneFill(document, "+1-555-0100", false).item).toEqual({ selector: "#q-phone", value: "+1-555-0100" });
+    });
+
+    it("a combobox country-code input is never the phone, whatever its title says", () => {
+      page(
+        NAME,
+        entry("q-phone", "Phone", '<input type="text" role="combobox" id="cc" /><input type="tel" id="q-phone" name="q-phone" />'),
+      );
+      expect(findPhoneInput(document).status === "found" && (findPhoneInput(document) as { input: HTMLInputElement }).input.id).toBe("q-phone");
+      page(NAME, entry("q-phone", "Phone", '<input type="text" role="combobox" id="cc" />'));
+      expect(findPhoneInput(document)).toEqual({ status: "none" });
+    });
+
+    it("two tel inputs of one entry are ambiguous: nothing is filled and the person is told", () => {
+      page(NAME, entry("q-phone", "Phone", '<input type="tel" id="area" name="area" /><input type="tel" id="rest" name="rest" />'));
+      expect(findPhoneInput(document)).toEqual({ status: "ambiguous" });
+      expect(planPhoneFill(document, "+1-555-0100", false).skipped).toMatch(/more than one box/);
+    });
+  });
+
+  describe("a phone box this call did not fill stays in the list of questions left for the person", () => {
+    it.each([null, ""])("a profile with phone %j", (phone) => {
+      page(NAME, entry("q-phone", "Phone", '<input type="tel" id="q-phone" name="q-phone" />'));
+      const plan = planPhoneFill(document, phone, false);
+      expect(plan).toEqual({ item: null, fieldPath: null, skipped: null });
+      expect(extractCustomQuestions(document, plan.fieldPath === null ? [] : [plan.fieldPath]).map((q) => q.fieldName)).toEqual(["q-phone"]);
+    });
+
+    it("a box that already holds text is the person's own answer, and is not listed", () => {
+      page(NAME, entry("q-phone", "Phone", '<input type="tel" id="q-phone" value="+44 20 7946 0000" />'));
+      expect(planPhoneFill(document, "+1-555-0100", false)).toEqual({ item: null, fieldPath: "q-phone", skipped: null });
+    });
+  });
+
+  it("a wrapper that shares the input's id does not hijack the write: the selector must find the input itself", () => {
+    page(
+      NAME,
+      `<div data-field-path="q-phone" class="ashby-application-form-field-entry" id="q-phone">
+         <label class="ashby-application-form-question-title" for="q-phone">Phone</label>
+         <input type="tel" id="q-phone" name="q-phone" />
+       </div>`,
+    );
+    const plan = planPhoneFill(document, "+1-555-0100", false);
+    expect(plan.item).toEqual({ selector: 'input[name="q-phone"]', value: "+1-555-0100" });
+    expect(document.querySelector(plan.item!.selector)).toBe(document.querySelector('input[type="tel"]'));
+  });
+});
+
+// ---- the cover-letter upload: found by its own question title ------------------------------
+
+describe("the Ashby cover-letter slot", () => {
+  const upload = (path: string, title: string) => `
+    <div data-field-path="${path}" class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="${path}">${title}</label>
+      <input type="file" id="${path}" name="${path}" />
+    </div>`;
+  const RESUME = upload("_systemfield_resume", "Resume");
+  const page = (...entries: string[]) => {
+    document.body.innerHTML = `<div>${entries.join("")}</div>`;
+  };
+
+  it("finds the one upload whose own title says cover letter", () => {
+    page(RESUME, upload("cl-1", "Cover Letter"));
+    const slot = findCoverLetterSlot(document);
+    expect(slot.status).toBe("found");
+    expect(slot.status === "found" && slot.fieldPath).toBe("cl-1");
+  });
+
+  it.each(["Cover letter (optional)", "Upload your cover-letter", "COVERLETTER", "Cover Letter / Motivation"])(
+    "recognises %j",
+    (title) => {
+      page(RESUME, upload("cl-1", title));
+      expect(findCoverLetterSlot(document).status).toBe("found");
+    },
+  );
+
+  it("a form with only a résumé upload has no slot", () => {
+    page(RESUME);
+    expect(findCoverLetterSlot(document)).toEqual({ status: "none" });
+  });
+
+  it("never takes the résumé system field, even if its title mentions a cover letter", () => {
+    page(upload("_systemfield_resume", "Resume and cover letter"));
+    expect(findCoverLetterSlot(document)).toEqual({ status: "none" });
+  });
+
+  it("another upload (a portfolio, a transcript) is not the cover letter", () => {
+    page(RESUME, upload("pf-1", "Portfolio"), upload("tr-1", "Transcript"));
+    expect(findCoverLetterSlot(document)).toEqual({ status: "none" });
+  });
+
+  it("a single-line text input titled 'cover letter' is not an upload slot either", () => {
+    page(
+      RESUME,
+      `<div data-field-path="cl-text"><label class="ashby-application-form-question-title" for="cl-text">Cover letter</label><input type="text" id="cl-text" name="cl-text" /></div>`,
+    );
+    expect(findCoverLetterSlot(document)).toEqual({ status: "none" });
+    page(
+      RESUME,
+      `<div data-field-path="cl-text"><label class="ashby-application-form-question-title" for="cl-text">Cover letter</label><input type="text" id="cl-text" /><input type="file" id="cl-file" /></div>`,
+    );
+    const slot = findCoverLetterSlot(document);
+    expect(slot.status === "found" && slot.input.id).toBe("cl-file");
+  });
+
+  it("a text box titled 'cover letter' is not an upload slot", () => {
+    page(
+      RESUME,
+      `<div data-field-path="cl-text"><label class="ashby-application-form-question-title">Cover letter</label><textarea id="cl-text"></textarea></div>`,
+    );
+    expect(findCoverLetterSlot(document)).toEqual({ status: "none" });
+  });
+
+  it("two uploads that both say cover letter are ambiguous: none is chosen for the person", () => {
+    page(RESUME, upload("cl-1", "Cover letter"), upload("cl-2", "Cover letter (translated)"));
+    expect(findCoverLetterSlot(document)).toEqual({ status: "ambiguous" });
+  });
+
+  it("an upload not inside a field entry is never a slot (the hidden autofill helper, say)", () => {
+    document.body.innerHTML = `<input type="file" id="cover-letter-helper" /><div>${RESUME}</div>`;
+    expect(findCoverLetterSlot(document)).toEqual({ status: "none" });
+  });
+
+  it("a tenant-authored self-ID wording in the title never makes a slot", () => {
+    page(RESUME, upload("x-1", "Cover letter -- voluntary self-identification: gender"));
+    expect(findCoverLetterSlot(document)).toEqual({ status: "none" });
   });
 });

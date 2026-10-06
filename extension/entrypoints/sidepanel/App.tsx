@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  CONSENT_REQUIRED_MESSAGE,
+  CONSENT_STORAGE_KEY,
+  CONSENT_VERSION,
+  consentDecisionFromChange,
+  readConsentDecision,
+  type StoredConsent,
+} from "@/lib/consent";
+import { asJurisdiction, isEligibilityQuestion, memoryTagsForLookup, memoryTagsForSave } from "@/lib/questionIntent";
 import { normalizeQuestionLabel } from "@/lib/questionMatching";
 import { sanitizeDraftText } from "@/lib/questionSafety";
 import { getSupabaseClient } from "@/lib/supabase";
 import type {
+  AnswerUsedMessage,
   ContentScriptMessage,
   DetectionStateResponse,
   DraftAnswerMessage,
@@ -16,6 +26,7 @@ import type {
   SaveAnswerMessage,
   SignOutMessage,
   SignOutResult,
+  TabState,
 } from "@/lib/types";
 import "./App.css";
 
@@ -40,19 +51,13 @@ import "./App.css";
 // future change in what this extension collects can force re-consent by
 // bumping CONSENT_VERSION -- without that, shipping a materially different
 // disclosure later would need a storage-schema migration instead of a
-// one-line constant change. There is only one version today.
-export const CONSENT_STORAGE_KEY = "disclosureConsent";
-export const CONSENT_VERSION = 1;
-
-interface StoredConsent {
-  version: number;
-}
+// one-line constant change. There is only one version today. The flag, the
+// version and the one function that decides whether the flag is good enough
+// live in lib/consent.ts, because the content script and the service worker
+// must ask the same question before they read a page or call the API.
+export { CONSENT_STORAGE_KEY, CONSENT_VERSION };
 
 type ConsentState = { status: "loading" } | { status: "needed" } | { status: "granted" };
-
-function isStoredConsent(value: unknown): value is StoredConsent {
-  return typeof value === "object" && value !== null && typeof (value as { version?: unknown }).version === "number";
-}
 
 // The gating screen itself, shown before any sign-in UI. Copy is
 // extension/store/LISTING.md section 4's draft, adapted to JSX (a bullet
@@ -61,7 +66,7 @@ function isStoredConsent(value: unknown): value is StoredConsent {
 // what handleFill/handleDraftAnswer/handleFillAnswer above actually do.
 // The privacy-policy link is left as an explicit maintainer placeholder
 // (LISTING.md's own convention) rather than inventing a URL.
-function ConsentGate({ onAgree }: { onAgree: () => void }): React.JSX.Element {
+function ConsentGate({ onAgree, error }: { onAgree: () => void; error: string | null }): React.JSX.Element {
   return (
     <div className="panel">
       <h1>Between Jobs</h1>
@@ -82,16 +87,27 @@ function ConsentGate({ onAgree }: { onAgree: () => void }): React.JSX.Element {
           </li>
           <li>
             only if you press Draft answer or Fill &amp; remember, send that question&apos;s text
-            to the service, which may pass it, with a summary of your profile and the job
-            description, to the AI provider you configured with your own key, and save answers
-            you choose to remember.
+            to the service -- together with the question&apos;s kind (when it is one of a few
+            common ones) and the country the job names (when it names one) -- which may pass it,
+            with a summary of your profile and the job description, to the AI provider you
+            configured with your own key, and save answers you choose to remember;
+          </li>
+          <li>
+            after each fill, send the service a small report of counts only: which site, which of
+            your applications, how many fields it tried and filled, and one word for how it went --
+            never what is in any field;
+          </li>
+          <li>
+            when you fill a saved answer exactly as it was saved, tell the service which saved
+            answer was used, so it can count how often you reuse it.
           </li>
         </ul>
         <p>
           It never submits an application, never ticks a checkbox, and never fills
-          self-identification questions. It has no analytics and sells nothing. Full policy:{" "}
-          [MAINTAINER TO FILL: privacy policy URL]
+          self-identification questions. It has no third-party analytics and sells nothing. Full
+          policy: [MAINTAINER TO FILL: privacy policy URL]
         </p>
+        {error !== null && <p className="error">{error}</p>}
         <div className="button-row">
           <button className="primary" onClick={onAgree}>
             I understand and agree
@@ -121,10 +137,21 @@ type MarkAppliedState =
 // user never clicked "Draft answer" for stays absent from this map
 // entirely (treated as "idle"), rather than every unresolved question
 // needing an eagerly-initialized entry.
+// A remembered answer offered for a question. `text` is what was stored (after the same
+// clean-up every draft gets): filling it unedited counts as a use of that answer.
+// `byIntent` is true when it was found through its intent, from a question worded
+// differently -- the panel says so, since the wording it was written for may name another
+// company.
+interface ReusedAnswer {
+  answerId: string;
+  text: string;
+  byIntent: boolean;
+}
+
 type QuestionAnswerState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ready"; text: string; warnings: string[]; fromMemory: boolean; notice?: string }
+  | { status: "ready"; text: string; warnings: string[]; fromMemory: boolean; reuse?: ReusedAnswer; notice?: string }
   // A real DOM write is in flight for this exact text -- the textarea and
   // both Fill buttons render disabled while in this state, closing two
   // adversarially-confirmed gaps at once: an in-flight fill resolving
@@ -132,10 +159,12 @@ type QuestionAnswerState =
   // (which used to discard the edit silently, since the fill's own
   // success handler unconditionally overwrote state to "filled"), and a
   // double-click/Fill-then-Fill&remember race with no busy guard.
-  | { status: "filling"; text: string; warnings: string[]; fromMemory: boolean; notice?: string }
+  | { status: "filling"; text: string; warnings: string[]; fromMemory: boolean; reuse?: ReusedAnswer; notice?: string }
   | { status: "declined"; reason: string | null }
   | { status: "error"; message: string }
-  | { status: "filled" };
+  // `note` says something the person should know about what happened after the fill (an answer
+  // that was filled but not remembered, and why).
+  | { status: "filled"; note?: string };
 
 // The specific message Chrome rejects `tabs.sendMessage` with when no
 // content script is listening on the target tab -- the one case that
@@ -151,6 +180,17 @@ const NO_RECEIVER_MESSAGE = "Could not establish connection. Receiving end does 
 // lost -- the user can copy it, or clear the field on the page and Fill again.
 const FIELD_HAS_TEXT_NOTICE =
   "That field on the page already has text, so it was left alone. Clear it there first if you want this answer in it.";
+
+// Fill & remember on a work-eligibility answer when neither the question nor the posting names a
+// country: the field was filled, but the answer is not kept, because an answer saved without a
+// country would be offered as true in every country.
+const NOT_REMEMBERED_NOTICE =
+  "Filled, but not remembered: neither this question nor the posting says which country it is about, and an answer about work eligibility is only kept together with a country.";
+
+// A question whose label could not be read is shown under this fixed text, never under the page's
+// own name for the field: that name is page-controlled (any length, any characters), and it is
+// only an identifier.
+const UNREADABLE_QUESTION_LABEL = "A question this extension couldn't read the label of";
 
 const PAGE_CHANGED_MESSAGE =
   "This page changed since the panel last looked at it -- it has been refreshed. Check the application shown, then try again.";
@@ -199,7 +239,14 @@ export default function App() {
   // BACKGROUND/side-panel cross-realm case (so a sign-in in one becomes
   // visible to the other); it was never meant to also apply to repeated
   // calls WITHIN one already-open realm, which is what this panel does.
-  const [supabase] = useState(getSupabaseClient);
+  //
+  // Created only once the person has agreed to the disclosure, never on mount: constructing the
+  // client is itself a network event when a stored sign-in session has expired (the library
+  // starts its auth listener, which refreshes an expired token with the sign-in service), and
+  // nothing may be sent before agreement. A ref holds it, so a repeated effect run (StrictMode)
+  // still makes exactly one.
+  const supabaseRef = useRef<ReturnType<typeof getSupabaseClient> | null>(null);
+  const [supabase, setSupabase] = useState<ReturnType<typeof getSupabaseClient> | null>(null);
   const [consent, setConsent] = useState<ConsentState>({ status: "loading" });
   const [auth, setAuth] = useState<AuthState>({ status: "loading" });
   const [email, setEmail] = useState("");
@@ -211,6 +258,21 @@ export default function App() {
   const [markApplied, setMarkApplied] = useState<MarkAppliedState>({ status: "idle" });
   const [answerStates, setAnswerStates] = useState<Record<string, QuestionAnswerState>>({});
   const [busy, setBusy] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
+
+  // Every detection answer goes through here. `consent_required` means the
+  // page-side script (or the service worker) found the stored flag invalid while
+  // this panel believed it was good -- the flag changed in between, or one side's
+  // read failed. Whichever it was, nothing was read or sent, so show what the
+  // flag really says now (the gate, if it is gone) instead of a page state.
+  const acceptDetection = useCallback((response: DetectionStateResponse | null) => {
+    setDetection(response);
+    if (response?.tabState?.status === "consent_required") {
+      void readConsentDecision().then((decision) => {
+        if (decision === "needed") setConsent({ status: "needed" });
+      });
+    }
+  }, []);
 
   // `recheck` forces a fresh lookup instead of reading what the page
   // already holds -- used when the signed-in user has just changed, so a
@@ -231,8 +293,8 @@ export default function App() {
     const response = await sendToActiveTab<DetectionStateResponse>({
       type: options?.recheck ? "RECHECK" : "GET_DETECTION_STATE",
     });
-    setDetection(response);
-  }, []);
+    acceptDetection(response);
+  }, [acceptDetection]);
 
   // E6 continuation -- reads the stored consent flag once, on mount. This
   // is the one thing allowed to happen before the person has agreed to
@@ -244,37 +306,74 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      let stored: StoredConsent | null = null;
-      try {
-        const result = (await chrome.storage.local.get(CONSENT_STORAGE_KEY)) as Record<string, unknown>;
-        const value = result[CONSENT_STORAGE_KEY];
-        stored = isStoredConsent(value) ? value : null;
-      } catch (e) {
-        console.error("[between-jobs] reading stored consent failed", e);
-      }
+      const decision = await readConsentDecision();
       if (cancelled) return;
-      setConsent(stored?.version === CONSENT_VERSION ? { status: "granted" } : { status: "needed" });
+      setConsent(decision === "granted" ? { status: "granted" } : { status: "needed" });
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
+  // The flag can change under an open panel: withdrawn, or replaced by another
+  // version. The page-side script and the service worker already re-read it on
+  // every action, so nothing more is collected either way; this closes the
+  // panel's own screen at the same moment, and drops what it was showing from
+  // the page (profile-derived answers and labels) so it can't reappear stale.
+  useEffect(() => {
+    const onChanged = (changes: Record<string, { newValue?: unknown }>, areaName: string) => {
+      const decision = consentDecisionFromChange(changes, areaName);
+      if (decision === null) return;
+      if (decision === "granted") {
+        setConsent({ status: "granted" });
+        return;
+      }
+      setConsent({ status: "needed" });
+      setDetection(null);
+      setFillResult(null);
+      setFillNotice(null);
+      setAnswerStates({});
+      setMarkApplied({ status: "idle" });
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
+  }, []);
+
   // "I understand and agree": persists the flag (so a remount, or the
   // panel reopening tomorrow, doesn't ask again) and lets the rest of the
-  // panel render. If the write itself fails, the person still proceeds
-  // for this session rather than being trapped behind a broken screen by
-  // a transient storage error -- the gate simply reappears next time.
+  // panel render. If the write fails the gate stays up and says so: the page
+  // script and the service worker read the same flag, so proceeding on a flag
+  // that was never stored would only produce a panel where nothing works.
   async function handleAgreeToConsent() {
+    setConsentError(null);
     try {
       await chrome.storage.local.set({ [CONSENT_STORAGE_KEY]: { version: CONSENT_VERSION } satisfies StoredConsent });
     } catch (e) {
       console.error("[between-jobs] saving consent failed", e);
+      setConsentError("Couldn't save your choice. Please try again.");
+      return;
     }
     setConsent({ status: "granted" });
   }
 
+  // A request the service worker refused because the flag was no longer valid
+  // (it reads it afresh each time): show what the flag says now.
+  function noteIfConsentRequired(e: unknown): void {
+    if (e instanceof Error && e.message === CONSENT_REQUIRED_MESSAGE) {
+      void readConsentDecision().then((decision) => {
+        if (decision === "needed") setConsent({ status: "needed" });
+      });
+    }
+  }
+
   useEffect(() => {
+    if (consent.status !== "granted") return;
+    if (supabaseRef.current === null) supabaseRef.current = getSupabaseClient();
+    setSupabase(supabaseRef.current);
+  }, [consent.status]);
+
+  useEffect(() => {
+    if (supabase === null) return;
     supabase.auth.getSession().then(({ data }) => {
       setAuth({ status: data.session ? "signed_in" : "signed_out" });
     });
@@ -356,6 +455,7 @@ export default function App() {
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
+    if (supabase === null) return; // only reachable after agreement, once the client exists
     setAuthError(null);
     setBusy(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -398,6 +498,7 @@ export default function App() {
     // signing out of it must not revoke the same account's web-app
     // sessions -- auth-js's default scope is "global", which signs the
     // user out everywhere.
+    if (supabase === null) return;
     const { error } = await supabase.auth.signOut({ scope: "local" });
     if (error) {
       // Sign-out failing is rare but not impossible (e.g. a refresh
@@ -425,7 +526,7 @@ export default function App() {
   async function handleRecheck() {
     setBusy(true);
     const response = await sendToActiveTab<DetectionStateResponse>({ type: "RECHECK" });
-    setDetection(response);
+    acceptDetection(response);
     setFillResult(null);
     setFillNotice(null);
     setAnswerStates({});
@@ -456,14 +557,16 @@ export default function App() {
   // panel hears in time, so before acting, ask the page what application
   // it is showing NOW; if it isn't the one on screen, show the real state
   // instead of acting on the stale one.
-  async function confirmStillOnApplication(applicationId: string): Promise<boolean> {
+  async function confirmStillOnApplication(
+    applicationId: string,
+  ): Promise<Extract<TabState, { status: "tracked" }> | null> {
     const live = await sendToActiveTab<DetectionStateResponse>({ type: "GET_DETECTION_STATE" });
-    if (live?.tabState?.status === "tracked" && live.tabState.applicationId === applicationId) return true;
-    setDetection(live);
+    if (live?.tabState?.status === "tracked" && live.tabState.applicationId === applicationId) return live.tabState;
+    acceptDetection(live);
     setFillResult(null);
     setAnswerStates({});
     setFillNotice(PAGE_CHANGED_MESSAGE);
-    return false;
+    return null;
   }
 
   // Tracking confirmation (browser-extension.md): the human confirms the
@@ -475,7 +578,7 @@ export default function App() {
   async function handleMarkApplied(applicationId: string) {
     setMarkApplied({ status: "busy" });
     try {
-      if (!(await confirmStillOnApplication(applicationId))) {
+      if ((await confirmStillOnApplication(applicationId)) === null) {
         setMarkApplied({ status: "idle" });
         return;
       }
@@ -493,6 +596,7 @@ export default function App() {
       // already wraps its network call, this had no catch, leaving the
       // button stuck on "Marking..." forever with no way to tell
       // whether the real backend mutation happened.
+      noteIfConsentRequired(e);
       setMarkApplied({
         status: "error",
         message: e instanceof Error ? e.message : "Failed to reach the extension's background worker.",
@@ -513,20 +617,46 @@ export default function App() {
     if (label === null) return;
     setAnswerStates((prev) => ({ ...prev, [fieldName]: { status: "loading" } }));
     try {
-      if (!(await confirmStillOnApplication(applicationId))) return;
+      const live = await confirmStillOnApplication(applicationId);
+      if (live === null) return;
+      // Same wording first; failing that, the service looks for an answer stored under the
+      // same intent (see lib/questionIntent.ts) -- "Why do you want to work here?" finds
+      // what was written for "...at Acme?". The job's country, when its posting names one,
+      // lets the service keep a work-eligibility answer to the country it was written for.
+      const normalizedQuestion = normalizeQuestionLabel(label);
       const matchMessage: MatchAnswerMessage = {
         type: "MATCH_ANSWER",
-        normalizedQuestion: normalizeQuestionLabel(label),
+        normalizedQuestion,
+        ...memoryTagsForLookup(label, asJurisdiction(live.payload.job_jurisdiction)),
       };
       const match: MatchAnswerResult = await browser.runtime.sendMessage(matchMessage);
-      if (match.answer !== null) {
+      // A work-eligibility answer is offered only if it was saved together with a country. One
+      // stored without a country (from before answers were tagged) would be true "everywhere",
+      // which it is not, so it is not offered here.
+      const stored =
+        match.answer !== null && isEligibilityQuestion(label) && (match.answer.jurisdiction ?? null) === null
+          ? null
+          : match.answer;
+      if (stored !== null) {
+        const storedText = sanitizeDraftText(stored.answer_text);
+        const answerId = stored.id;
         setAnswerStates((prev) => ({
           ...prev,
           [fieldName]: {
             status: "ready",
-            text: sanitizeDraftText(match.answer!.answer_text),
+            text: storedText,
             warnings: [],
             fromMemory: true,
+            ...(answerId === undefined
+              ? {}
+              : {
+                  reuse: {
+                    answerId,
+                    text: storedText,
+                    byIntent:
+                      stored.normalized_question !== undefined && stored.normalized_question !== normalizedQuestion,
+                  },
+                }),
           },
         }));
         return;
@@ -551,10 +681,20 @@ export default function App() {
         },
       }));
     } catch (e) {
+      noteIfConsentRequired(e);
       setAnswerStates((prev) => ({
         ...prev,
         [fieldName]: { status: "error", message: e instanceof Error ? e.message : "Failed to draft an answer." },
       }));
+    }
+  }
+
+  async function reportAnswerUsed(answerId: string): Promise<void> {
+    try {
+      const message: AnswerUsedMessage = { type: "ANSWER_USED", answerId };
+      await browser.runtime.sendMessage(message);
+    } catch (e) {
+      console.error("[between-jobs] recording a used answer failed", e);
     }
   }
 
@@ -585,8 +725,8 @@ export default function App() {
   async function handleFillAnswer(fieldName: string, label: string | null, remember: boolean, force = false) {
     const current = answerStates[fieldName];
     if (current === undefined || current.status !== "ready") return;
-    const { text, warnings, fromMemory } = current;
-    setAnswerStates((prev) => ({ ...prev, [fieldName]: { status: "filling", text, warnings, fromMemory } }));
+    const { text, warnings, fromMemory, reuse } = current;
+    setAnswerStates((prev) => ({ ...prev, [fieldName]: { status: "filling", text, warnings, fromMemory, reuse } }));
     const result = await sendToActiveTab<FillFieldResult>({ type: "FILL_FIELD", fieldName, value: text, force });
     if (result !== null && !result.filled && result.reason === "not_empty") {
       // D5: the field already has text. Nothing was written, and the draft
@@ -594,7 +734,7 @@ export default function App() {
       // to re-draft), it's the same draft with a reason it wasn't applied.
       setAnswerStates((prev) => ({
         ...prev,
-        [fieldName]: { status: "ready", text, warnings, fromMemory, notice: FIELD_HAS_TEXT_NOTICE },
+        [fieldName]: { status: "ready", text, warnings, fromMemory, reuse, notice: FIELD_HAS_TEXT_NOTICE },
       }));
       return;
     }
@@ -612,19 +752,33 @@ export default function App() {
       }));
       return;
     }
-    if (remember) {
-      try {
-        const saveMessage: SaveAnswerMessage = {
-          type: "SAVE_ANSWER",
-          normalizedQuestion: normalizeQuestionLabel(label ?? fieldName),
-          answerText: text,
-        };
-        await browser.runtime.sendMessage(saveMessage);
-      } catch (e) {
-        console.error("[between-jobs] saving approved answer failed", e);
+    // A remembered answer that went into the form exactly as stored has been used once more.
+    // Edited text is a new answer, not a use of the old one. Best effort, and never awaited
+    // against the fill: the count is bookkeeping.
+    if (reuse !== undefined && text === reuse.text) void reportAnswerUsed(reuse.answerId);
+    let note: string | undefined;
+    // Only a question whose label was readable is ever remembered: the page's own name for a
+    // field is not question text.
+    if (remember && label !== null) {
+      const live = detection?.tabState?.status === "tracked" ? detection.tabState : null;
+      const tags = memoryTagsForSave(label, asJurisdiction(live?.payload.job_jurisdiction));
+      if (tags === null) {
+        note = NOT_REMEMBERED_NOTICE;
+      } else {
+        try {
+          const saveMessage: SaveAnswerMessage = {
+            type: "SAVE_ANSWER",
+            normalizedQuestion: normalizeQuestionLabel(label),
+            answerText: text,
+            ...tags,
+          };
+          await browser.runtime.sendMessage(saveMessage);
+        } catch (e) {
+          console.error("[between-jobs] saving approved answer failed", e);
+        }
       }
     }
-    setAnswerStates((prev) => ({ ...prev, [fieldName]: { status: "filled" } }));
+    setAnswerStates((prev) => ({ ...prev, [fieldName]: note === undefined ? { status: "filled" } : { status: "filled", note } }));
   }
 
   // E6 continuation -- the consent gate renders before anything else,
@@ -634,7 +788,7 @@ export default function App() {
     return <div className="panel">Loading...</div>;
   }
   if (consent.status === "needed") {
-    return <ConsentGate onAgree={() => void handleAgreeToConsent()} />;
+    return <ConsentGate onAgree={() => void handleAgreeToConsent()} error={consentError} />;
   }
 
   if (auth.status === "loading") {
@@ -684,7 +838,12 @@ export default function App() {
       </div>
       {authError && <p className="error">{authError}</p>}
 
-      {detection === null || !detection.formDetected ? (
+      {detection?.tabState?.status === "consent_required" ? (
+        <p>
+          This page hasn&apos;t been read: the disclosure needs your agreement first. Close and reopen this
+          panel to review it.
+        </p>
+      ) : detection === null || !detection.formDetected ? (
         <p>
           Not on a supported application page yet. Open a Lever, Greenhouse, or Ashby application
           form to use autofill.
@@ -742,6 +901,22 @@ export default function App() {
                   {fillResult.coverLetterAttached ? "attached" : fillResult.coverLetterError}
                 </p>
               )}
+              {fillResult.skippedFields.length > 0 && (
+                // Fields the form has that the profile could not honestly fill (a one-word
+                // name has no last name; a country no option matches; two boxes that could
+                // both be the phone number). Left empty, never guessed -- this is the person's
+                // cue to check them. Fixed text from the extension, never page text.
+                <div>
+                  <p>Left empty -- check these yourself:</p>
+                  <ul className="warning-list">
+                    {fillResult.skippedFields.map((item, i) => (
+                      <li key={i} className="warning-item review">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {fillResult.fieldMapError !== null && (
                 // E3c, D4 fail-closed: the signed field map couldn't be
                 // used (unverifiable, or wrong for this ATS), so the
@@ -776,7 +951,7 @@ export default function App() {
                       const draftable = q.kind === "text" && q.label !== null;
                       return (
                         <li key={q.fieldName} className="question-card">
-                          <p className="question-label">{q.label ?? q.fieldName}</p>
+                          <p className="question-label">{q.label ?? UNREADABLE_QUESTION_LABEL}</p>
                           {q.kind === "file" && (
                             <p className="question-meta">Upload this file yourself.</p>
                           )}
@@ -816,7 +991,16 @@ export default function App() {
                                   )}
                                 </div>
                               )}
-                              {state.status === "filled" && <span className="badge badge-success">Filled</span>}
+                              {state.status === "filled" && (
+                                <div>
+                                  <span className="badge badge-success">Filled</span>
+                                  {state.note !== undefined && (
+                                    <p className="question-meta" role="status">
+                                      {state.note}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
                               {(state.status === "ready" || state.status === "filling") && (
                                 <div>
                                   <p>
@@ -826,6 +1010,12 @@ export default function App() {
                                       <span className="badge badge-ai">AI drafted -- review before filling</span>
                                     )}
                                   </p>
+                                  {state.reuse?.byIntent === true && (
+                                    <p className="question-meta">
+                                      Reused from a similar question you answered before -- check that it fits this
+                                      job.
+                                    </p>
+                                  )}
                                   {state.warnings.length > 0 && (
                                     <ul className="warning-list">
                                       {state.warnings.map((warning, i) => (

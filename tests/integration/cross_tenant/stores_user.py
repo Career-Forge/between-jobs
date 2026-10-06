@@ -4,6 +4,7 @@ Telegram identity lookup. Each function is called directly, as B, with A's ids."
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from datetime import UTC, datetime
 from typing import Any
@@ -282,11 +283,28 @@ async def save_approved_answer(ctx: Ctx) -> None:
 async def record_answer_used(ctx: Ctx) -> None:
     a = await ctx.need("app_approved_answer", ctx.a)
     before = await _answer_row(ctx, a["id"])
-    await answers.record_answer_used(ctx.sb, ctx.b.user_id, a["id"])
+    # A stranger is told "not found" and nothing moves.
+    assert await answers.record_answer_used(ctx.sb, ctx.b.user_id, a["id"]) is False
     assert await _answer_row(ctx, a["id"]) == before
-    await answers.record_answer_used(ctx.sb, ctx.a.user_id, a["id"])
+    # Control: the owner's report counts, and stamps when.
+    assert await answers.record_answer_used(ctx.sb, ctx.a.user_id, a["id"]) is True
     after = await _answer_row(ctx, a["id"])
     assert after["times_used"] == before["times_used"] + 1
+    assert before["last_used_at"] is None and after["last_used_at"] is not None
+    # Reports that arrive together are all counted: the increment is one statement that takes the
+    # row lock, not a read followed by a write (which would have both start from the same count).
+    reports = 10
+    results = await asyncio.gather(
+        *(answers.record_answer_used(ctx.sb, ctx.a.user_id, a["id"]) for _ in range(reports))
+    )
+    assert results == [True] * reports
+    assert (await _answer_row(ctx, a["id"]))["times_used"] == after["times_used"] + reports
+    # ...and a stranger's reports, in the same burst, still move nothing.
+    strangers = await asyncio.gather(
+        *(answers.record_answer_used(ctx.sb, ctx.b.user_id, a["id"]) for _ in range(reports))
+    )
+    assert strangers == [False] * reports
+    assert (await _answer_row(ctx, a["id"]))["times_used"] == after["times_used"] + reports
 
 
 # -- extension sign-out watermark, link codes, telegram identity -------------------------------

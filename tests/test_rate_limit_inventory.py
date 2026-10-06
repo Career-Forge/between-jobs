@@ -88,6 +88,9 @@ LIMITED: dict[str, str] = {
     # gets past it), see `rate_limits.UNGATED_BUCKETS`.
     "POST /tester/enrollment": "tester_enrollment",
     "POST /tester/enrollment/withdraw": "tester_enrollment",
+    # One read and one update of the caller's own row per remembered answer filled, bounded so
+    # a stuck client cannot inflate the counter.
+    "POST /extension/answers/{answer_id}/used": "answer_used",
 }
 """Route -> bucket. Routes authenticated with the extension's scoped token are listed too; the
 limiter on them reads the user from that token (see

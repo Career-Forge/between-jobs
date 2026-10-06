@@ -336,6 +336,23 @@ async def _save_unchanged(ctx: Ctx) -> None:
     )
 
 
+async def _answer_used(ctx: Ctx) -> Req:
+    answer = await ctx.need("app_approved_answer", ctx.a)
+    return Req("POST", f"/extension/answers/{answer['id']}/used")
+
+
+async def _answer_used_unchanged(ctx: Ctx) -> None:
+    answer = await ctx.need("app_approved_answer", ctx.a)
+    row = (
+        await ctx.sb.table("approved_answers")
+        .select("times_used, last_used_at")
+        .eq("id", answer["id"])
+        .execute()
+    ).data[0]
+    assert row["times_used"] == 0, "B's report counted a use of A's answer"
+    assert row["last_used_at"] is None, "B's report stamped A's answer as used"
+
+
 async def _draft(ctx: Ctx) -> Req:
     app = await ctx.need("application", ctx.a)
     return Req(
@@ -473,6 +490,14 @@ CASES = [
         unchanged=_fill_outcome_unchanged,
         note="B names A's application in a fill report: the same 404 as for an id that does "
         "not exist, and no event is recorded. The owner's own report is a 204.",
+    ),
+    Case(
+        "POST /extension/answers/{answer_id}/used",
+        _answer_used,
+        owner_status=frozenset({204}),
+        unchanged=_answer_used_unchanged,
+        note="B reports a use of A's answer: the same 404 as for an id that does not exist, "
+        "and A's times_used and last_used_at stay as they were. The owner's own report is a 204.",
     ),
     Case(
         "POST /extension/draft-answer",

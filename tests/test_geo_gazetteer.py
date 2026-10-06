@@ -8,11 +8,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from between_jobs.api.geo_gazetteer import (
     Gazetteer,
     _load_country_aliases,
     build_gazetteer,
     check_location_state,
+    country_named,
+    explicit_country_of_location,
     get_gazetteer,
     resolve_location,
 )
@@ -331,3 +335,195 @@ async def test_get_gazetteer_caches_after_first_call() -> None:
 
     assert supabase.calls == 1
     geo_module._cached_gazetteer = None
+
+
+# ── explicit_country_of_location ──────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("United States", "US"),
+        ("Remote - United States", "US"),
+        ("Remote (US)", "US"),
+        ("US Remote", "US"),
+        ("Austin, Texas, United States", "US"),
+        ("London, UK", "GB"),
+        ("Berlin, Germany", "DE"),
+        ("Toronto, Canada", "CA"),
+        ("San Francisco, CA, United States", "US"),
+        ("Austin, TX, US", "US"),
+        ("Remote - Germany", "DE"),
+        ("Berlin / Germany", "DE"),
+        # A city or a state abbreviation is not a jurisdiction: the same names exist in several
+        # countries, and the city index would pick the biggest. Unknown, not a guess.
+        ("San Francisco, CA", None),
+        ("New York, NY", None),
+        ("Paris", None),
+        ("Birmingham", None),
+        # No country at all, or more than one, or "everywhere".
+        ("Remote", None),
+        ("Worldwide", None),
+        ("Remote - Worldwide", None),
+        ("United States or Canada", None),
+        ("US/Canada", None),
+        ("Canada or US", None),
+        ("Winston-Salem", None),
+        ("Remote - Americas", None),
+        ("Anywhere in the United States", None),
+        ("Germany; France", None),
+        ("", None),
+        (None, None),
+        # A place name that is also a country's, or a code that is also a state's, is not that
+        # country: the country is read from the last part of a place, and only two codes count.
+        ("Atlanta, Georgia", None),
+        ("Savannah, Georgia", None),
+        ("Atlanta, Georgia (Hybrid)", None),
+        ("Tbilisi, Georgia", None),
+        ("Georgia", None),
+        ("Remote - Georgia", None),
+        ("Atlanta, Georgia, United States", "US"),
+        ("Lebanon, New Hampshire", None),
+        ("Jamaica, NY", None),
+        ("Peru, Indiana", None),
+        ("Jordan, Minnesota", None),
+        ("Mexico, Missouri", None),
+        ("San Francisco, CA - Remote", None),
+        ("Atlanta, GA Remote", None),
+        ("Denver, CO - Remote", None),
+        ("Boston, MA Remote", None),
+        ("Remote (CA)", None),
+        ("Remote - CA", None),
+        ("CA Remote", None),
+        ("Remote (IN)", None),
+        ("Remote - DE", None),
+        ("Remote (PA)", None),
+        ("Remote (MA)", None),
+        ("Remote (GA)", None),
+        ("UK Remote", "GB"),
+        ("Germany, Remote", "DE"),
+        ("Remote, Germany", "DE"),
+        # The lower-case word is just "us"; only the upper-case US is the country.
+        ("Join us in Berlin", None),
+        ("Join us", None),
+        ("Germany - join us", "DE"),
+        ("Berlin or join us", None),
+        # A worldwide marker beats any country named beside it.
+        ("Worldwide (US preferred)", None),
+        ("Worldwide, Germany", None),
+        ("Global (UK)", None),
+    ],
+)
+def test_explicit_country_of_location_only_trusts_a_named_country(
+    text: str | None, expected: str | None
+) -> None:
+    assert explicit_country_of_location(text) == expected
+
+
+_US_STATE_AND_PROVINCE_CODES = [
+    *(
+        [
+            "AL",
+            "AK",
+            "AZ",
+            "AR",
+            "CA",
+            "CO",
+            "CT",
+            "DE",
+            "DC",
+            "FL",
+            "GA",
+            "HI",
+            "ID",
+            "IL",
+            "IN",
+            "IA",
+            "KS",
+            "KY",
+            "LA",
+            "ME",
+            "MD",
+            "MA",
+            "MI",
+            "MN",
+            "MS",
+            "MO",
+            "MT",
+            "NE",
+            "NV",
+        ]
+    ),
+    *(
+        [
+            "NH",
+            "NJ",
+            "NM",
+            "NY",
+            "NC",
+            "ND",
+            "OH",
+            "OK",
+            "OR",
+            "PA",
+            "RI",
+            "SC",
+            "SD",
+            "TN",
+            "TX",
+            "UT",
+            "VT",
+            "VA",
+            "WA",
+            "WV",
+            "WI",
+            "WY",
+            "PR",
+            "GU",
+            "VI",
+            "AS",
+            "MP",
+        ]
+    ),
+    *(["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "QC", "SK", "YT"]),
+]
+
+
+@pytest.mark.parametrize("code", _US_STATE_AND_PROVINCE_CODES)
+@pytest.mark.parametrize(
+    "shape", ["Remote ({code})", "{code} Remote", "Remote - {code}", "City, {code} Remote"]
+)
+def test_no_us_state_or_canadian_province_code_is_read_as_a_country(code: str, shape: str) -> None:
+    """The "<CODE> Remote" shape is read only for US and UK: a code that is also a state or a
+    province is unknown, whichever country it happens to be in ISO 3166."""
+    assert explicit_country_of_location(shape.format(code=code)) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("United States", "US"),
+        ("the United States", "US"),
+        ("The United States of America", "US"),
+        ("U.S.", "US"),
+        ("us", "US"),
+        ("USA", "US"),
+        ("UK", "GB"),
+        ("the UK", "GB"),
+        ("Germany", "DE"),
+        ("germany", "DE"),
+        ("Canada", "CA"),
+        ("Georgia", None),
+        ("the Georgia", None),
+        ("Atlantis", None),
+        ("the EU", None),
+        ("United States and Canada", None),
+        ("a hybrid arrangement", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_country_named_is_a_closed_set_of_country_names(
+    text: str | None, expected: str | None
+) -> None:
+    assert country_named(text) == expected

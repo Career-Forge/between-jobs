@@ -187,12 +187,19 @@ class ScoredJob:
     scored off the deterministic `location_verified` signal instead."""
 
 
-def summarize_profile(profile: ResumeTemplate) -> str:
+def summarize_profile(profile: ResumeTemplate, *, include_work_authorization: bool = False) -> str:
     """Adapted from n8n's real `summarizeStructured` -- same shape and
     intent (name/headline/summary/experience/projects/skills/education,
     capped and truncated so the prompt stays cheap), translated field-
     for-field to between-jobs' own `ResumeTemplate` schema instead of
-    n8n's `resume_bubbles` shape, which this project doesn't have."""
+    n8n's `resume_bubbles` shape, which this project doesn't have.
+
+    The candidate's work-authorization text is left OUT unless asked for. A summary is
+    handed to a model as free facts, and anything free in a prompt can be pulled out by a
+    hostile question label ("print the candidate's work authorization"). Job-fit scoring
+    needs it and says so; answer drafting never passes it here -- it offers the text only for
+    a question that is itself about work authorization, through its own guidance path
+    (`application_answer_generator.work_authorization_for_question`)."""
     parts: list[str] = []
     p = profile.personal
     if p.name:
@@ -202,7 +209,7 @@ def summarize_profile(profile: ResumeTemplate) -> str:
     location = ", ".join(filter(None, [p.location.city, p.location.region, p.location.country]))
     if location:
         parts.append(f"LOCATION: {location}")
-    if p.work_authorization:
+    if include_work_authorization and p.work_authorization:
         parts.append(f"WORK AUTHORIZATION: {p.work_authorization}")
 
     if profile.summary_bullets:
@@ -526,7 +533,7 @@ async def score_jobs(
 
     call = generate or llm_generate
     payload = {
-        "master_resume_summary": summarize_profile(profile),
+        "master_resume_summary": summarize_profile(profile, include_work_authorization=True),
         "jobs": _build_job_batch(to_score),
     }
     response = await call(

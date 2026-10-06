@@ -61,6 +61,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from importlib import resources
 from typing import Any, Literal, cast
 
@@ -268,6 +269,100 @@ def resolve_location(gazetteer: Gazetteer, raw: str | None) -> LocationResolutio
         is_global=is_global,
         unresolved=not any_resolved and not remote and not is_global,
     )
+
+
+@lru_cache(maxsize=1)
+def _countries_only_gazetteer() -> Gazetteer:
+    """The static country names and aliases with no city table behind them."""
+    return build_gazetteer([])
+
+
+# Where one location text can name one country and the next: semicolons, bars, slashes, colons,
+# brackets, " or ", and a SPACED dash ("Remote - United States"). Commas are not here: a comma
+# separates the parts of ONE place ("City, Region, Country"), see `explicit_country_of_location`.
+# A bare hyphen stays, so "Guinea-Bissau" is still one name.
+_COUNTRY_SEGMENT_SPLIT_RX = re.compile(r"[;|()/:]|\s[-\u2013\u2014]\s|\s+or\s+", re.IGNORECASE)
+# A part of a place that says how the job is worked, not where.
+_WORK_MODE_PART_RX = re.compile(
+    r"^(?:remote|hybrid|on-?site|onsite|in[- ]office|wfh)$", re.IGNORECASE
+)
+# Country names that are also a US state's: "Atlanta, Georgia" is the state, and nothing in the
+# text says which one a bare "Georgia" is, so the name never counts on its own.
+_AMBIGUOUS_COUNTRY_NAMES = frozenset({"georgia"})
+# The "<CODE> Remote" / "Remote (<CODE>)" shape is read only for the two codes no US state or
+# Canadian province also uses. "Remote (CA)" is as likely California as Canada, "Remote (DE)"
+# Delaware as Germany: those are unknown, and a country is reached by its name instead.
+_UNAMBIGUOUS_REMOTE_CODES = {"US": "US", "UK": "GB"}
+# The bare, upper-case "US" is not an alias (the lower-case word is just "us") but in a location
+# text it is the country.
+_BARE_US_RX = re.compile(r"\bUS\b")
+
+
+@lru_cache(maxsize=1)
+def _dotless_country_aliases() -> dict[str, str]:
+    return {
+        alias.replace(".", ""): code
+        for alias, code in _countries_only_gazetteer().country_alias_to_code.items()
+    }
+
+
+def country_named(text: str | None) -> str | None:
+    """The ISO country a short text IS the name of ("Germany", "the United States", "U.S.", "UK"),
+    or None for anything else: a phrase, two countries, a name that is also a US state's
+    ("Georgia"). Dots and a leading "the" do not matter; case does not either."""
+    if not text:
+        return None
+    key = re.sub(r"\s+", " ", text.lower()).strip().replace(".", "")
+    key = re.sub(r"^the ", "", key)
+    if key in _AMBIGUOUS_COUNTRY_NAMES:
+        return None
+    # "u.s." is an alias, so with its dots gone "us" is too.
+    return _dotless_country_aliases().get(key)
+
+
+def explicit_country_of_location(raw: str | None) -> str | None:
+    """The ISO country a location text NAMES, or None. Used to tag an answer to a work-eligibility
+    question with the jurisdiction of the job it was written for.
+
+    It reads only what the text itself says. A location is "City, Region, Country": the country is
+    read from the LAST comma part of each place, so "Lebanon, New Hampshire" and "Jamaica, NY" are
+    not Lebanon and Jamaica, and a place name that happens to be a country's is not one. A bare
+    upper-case "US" is the country, and so is the "US Remote" / "UK Remote" / "Remote (US)" shape.
+    It never looks a city up, because a city name alone is not a jurisdiction: "San Francisco, CA"
+    and "Birmingham" each exist in several countries, and the city index would quietly pick the
+    biggest. A two-letter state or province code ("CA", "ON"), a bare "Georgia" and a name that is a
+    US state's are not read as countries either. So a posting that gives only a city, only
+    "Remote", a worldwide or multi-country location, or nothing is None -- an unknown jurisdiction,
+    not a guess. That costs coverage (a bare "New York, NY" or "Tbilisi, Georgia" is unknown); a
+    wrong tag would cost an answer reused under another country's rules."""
+    if not raw:
+        return None
+    if _GLOBAL_RX.search(raw):
+        return None
+    gazetteer = _countries_only_gazetteer()
+    countries: set[str] = set()
+    for segment in _COUNTRY_SEGMENT_SPLIT_RX.split(raw):
+        parts = [p.strip() for p in segment.split(",") if p.strip()]
+        parts = [p for p in parts if not _WORK_MODE_PART_RX.match(p)]
+        if not parts:
+            continue
+        last = parts[-1].lower()
+        if last in _AMBIGUOUS_COUNTRY_NAMES:
+            continue
+        code = gazetteer.country_alias_to_code.get(last)
+        if code is not None:
+            countries.add(code)
+    code_match = _CODE_REMOTE_RX.search(raw)
+    if code_match is not None:
+        remote_code = _UNAMBIGUOUS_REMOTE_CODES.get(code_match.group(1) or code_match.group(2))
+        if remote_code is not None:
+            countries.add(remote_code)
+    if _BARE_US_RX.search(raw):
+        countries.add("US")
+    if len(countries) != 1:
+        return None
+    (country,) = countries
+    return country
 
 
 LocationState = Literal["match", "mismatch", "unknown"]

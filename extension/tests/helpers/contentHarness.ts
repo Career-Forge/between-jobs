@@ -1,5 +1,6 @@
 import { vi } from "vitest";
 import type { LeverFieldMap } from "@/lib/ats-field-map";
+import { CONSENT_STORAGE_KEY, CONSENT_VERSION } from "@/lib/consent";
 import type { ContentScriptMessage, ExtensionPersonalInfo, TabState } from "@/lib/types";
 
 // Loads entrypoints/content.ts the way the browser would -- `main()` run once
@@ -55,6 +56,9 @@ export const LEVER_MAP: LeverFieldMap = {
 
 type Responder = (message: { type: string; [key: string]: unknown }) => unknown;
 
+/** Pass as `consent` to start with no stored consent at all. */
+export const NO_CONSENT = Symbol("no stored consent");
+
 export interface ContentHarness {
   /** Deliver a message from the side panel and return the reply. */
   send: (message: ContentScriptMessage) => Promise<unknown>;
@@ -67,6 +71,10 @@ export interface ContentHarness {
   fireLocationChange: () => void;
   /** Let queued promise work (including the initial detect) run to completion. */
   settle: () => Promise<void>;
+  /** Replace what `chrome.storage.local` holds for the consent flag (`undefined`
+   * removes it). Fires `chrome.storage.onChanged` unless `notify` is false, so a
+   * test can tell the listener apart from the per-use read. */
+  setConsent: (value: unknown, options?: { notify?: boolean }) => void;
 }
 
 export async function settle(): Promise<void> {
@@ -78,8 +86,25 @@ export async function settle(): Promise<void> {
 export async function loadContentScript(options: {
   href: string;
   respond: Responder;
+  /** The stored consent flag. Defaults to a current-version agreement, so a test
+   * that is not about consent runs past the gate; `NO_CONSENT` stores nothing. */
+  consent?: unknown;
 }): Promise<ContentHarness> {
   vi.resetModules();
+  const storage: Record<string, unknown> = {};
+  if (options.consent !== NO_CONSENT) {
+    storage[CONSENT_STORAGE_KEY] = options.consent === undefined ? { version: CONSENT_VERSION } : options.consent;
+  }
+  const storageListeners: Array<(changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, area: string) => void> =
+    [];
+  vi.stubGlobal("chrome", {
+    storage: {
+      local: {
+        get: async (key: string) => (key in storage ? { [key]: storage[key] } : {}),
+      },
+      onChanged: { addListener: (fn: (typeof storageListeners)[number]) => storageListeners.push(fn) },
+    },
+  });
   const loc = { href: options.href, hostname: new URL(options.href).hostname };
   vi.stubGlobal("location", loc);
   vi.stubGlobal("defineContentScript", (definition: unknown) => definition);
@@ -126,5 +151,14 @@ export async function loadContentScript(options: {
       for (const handler of locationHandlers) handler();
     },
     settle,
+    setConsent: (value, setOptions) => {
+      const oldValue = storage[CONSENT_STORAGE_KEY];
+      if (value === undefined) delete storage[CONSENT_STORAGE_KEY];
+      else storage[CONSENT_STORAGE_KEY] = value;
+      if (setOptions?.notify === false) return;
+      for (const listener of storageListeners) {
+        listener({ [CONSENT_STORAGE_KEY]: { oldValue, newValue: value } }, "local");
+      }
+    },
   };
 }

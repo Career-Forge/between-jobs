@@ -1,5 +1,7 @@
 import * as ashby from "@/lib/ashby";
 import { detectAtsType } from "@/lib/atsHosts";
+import { summarizeFill } from "@/lib/fillOutcome";
+import { consentDecisionFromChange, readConsentDecision } from "@/lib/consent";
 import * as greenhouse from "@/lib/greenhouse";
 import {
   applyFillPlan,
@@ -9,6 +11,7 @@ import {
   findCoverLetterField,
   GENERIC_FIELD_DEFAULTS,
   isLeverApplyForm,
+  leverFieldLabel,
 } from "@/lib/lever";
 import type { FillAnswerOutcome } from "@/lib/questionSafety";
 import { applyReactControlledFillPlan, planStandardFieldFillsChecked } from "@/lib/standardFields";
@@ -22,6 +25,7 @@ import type {
   FillResult,
   GeneratedFile,
   PageChangedMessage,
+  ReportFillOutcomeMessage,
   TabState,
   VerifySessionResult,
 } from "@/lib/types";
@@ -115,9 +119,41 @@ export default defineContentScript({
     // start a duplicate lookup while the initial one is still in flight.
     let detectingUrl: string | null = null;
 
+    // The consent gate (lib/consent.ts is the one place that decides). Until the
+    // person has agreed in the side panel to the CURRENT disclosure, this script
+    // reads nothing from the page -- not even whether a form is there -- sends
+    // no address to the API and fills nothing. The consent screen itself needs
+    // nothing from the page. The answer is read fresh from storage each time
+    // rather than remembered, so a withdrawal or a version change closes the gate
+    // in a tab that is already open on the very next thing it is asked to do.
+    async function consentGranted(): Promise<boolean> {
+      return (await readConsentDecision()) === "granted";
+    }
+
+    const CONSENT_REQUIRED: DetectionStateResponse = {
+      formDetected: false,
+      tabState: { status: "consent_required" },
+    };
+
+    // What was resolved for this page holds the person's profile details and
+    // PDFs. Once consent stops being valid none of it may be kept, and a lookup
+    // still in flight must not land afterwards.
+    function dropCachedState(): void {
+      resolved = null;
+      detectGeneration++;
+      detectingUrl = null;
+    }
+
     async function detect(): Promise<void> {
       if (atsType === null) return;
       const generation = ++detectGeneration;
+      const granted = await consentGranted();
+      if (generation !== detectGeneration) return;
+      if (!granted) {
+        resolved = null;
+        detectingUrl = null;
+        return;
+      }
       if (!isFormPresent()) {
         resolved = null;
         detectingUrl = null;
@@ -162,6 +198,11 @@ export default defineContentScript({
     // service worker each time because sign-out reaches the side panel
     // and background but never this content script.
     async function currentTabState(): Promise<TabState | null> {
+      if (resolved === null) return null;
+      if (!(await consentGranted())) {
+        dropCachedState();
+        return null;
+      }
       if (resolved === null) return null;
       if (resolved.url !== location.href) {
         resolved = null;
@@ -253,6 +294,20 @@ export default defineContentScript({
       void Promise.resolve(browser.runtime.sendMessage(message)).catch(() => {});
     }
 
+    // Drops the cached profile data as soon as consent stops being valid (the
+    // flag removed, or replaced by another version). The per-use read above is
+    // still what gates every action; this only shortens how long personal data
+    // sits in this page's memory afterwards. Registration can throw once the
+    // extension has been reloaded under an open tab (an invalidated context),
+    // and a page with a dead script has nothing left to protect.
+    try {
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (consentDecisionFromChange(changes, areaName) === "needed") dropCachedState();
+      });
+    } catch (e) {
+      console.error("[between-jobs] could not watch the stored disclosure choice", e);
+    }
+
     void detect();
 
     // Client-side navigation (Greenhouse/Ashby): drop what belonged to the
@@ -286,33 +341,52 @@ export default defineContentScript({
     // (file already there, not forced) returned attached:false, so the
     // side panel displayed "not attached" for a résumé that was, in
     // fact, still genuinely attached from a prior fill.
+    // `written` is the other half: true only when THIS call put the file on the input. The
+    // count-only fill report uses that, so a repeat fill that finds a file already in place
+    // (or fails to replace it) is not counted as a field it filled.
     // `fetchError` (E6 continuation): the reason `file` is null when it's
     // null because ensureFilesFetched tried and failed to download it --
     // as opposed to null because this application genuinely never had one
     // (the ordinary case, still reported as `error: null`, unchanged).
     // Only surfaced when there's otherwise nothing already attached to
     // show instead.
+    interface AttachOutcome {
+      attached: boolean;
+      written: boolean;
+      error: string | null;
+    }
+
     function tryAttach(
       selector: string,
       file: { base64: string; filename: string } | null,
       forceRefillAll: boolean,
       fetchError: string | null = null,
-    ): { attached: boolean; error: string | null } {
+    ): AttachOutcome {
       const input = document.querySelector<HTMLInputElement>(selector);
-      if (input === null) return { attached: false, error: null };
+      if (input === null) return { attached: false, written: false, error: null };
+      return tryAttachToInput(input, file, forceRefillAll, fetchError);
+    }
+
+    function tryAttachToInput(
+      input: HTMLInputElement,
+      file: { base64: string; filename: string } | null,
+      forceRefillAll: boolean,
+      fetchError: string | null = null,
+    ): AttachOutcome {
       const alreadyHasFile = (input.files?.length ?? 0) > 0;
       if (alreadyHasFile && !forceRefillAll) {
-        return { attached: true, error: null };
+        return { attached: true, written: false, error: null };
       }
       if (file === null) {
-        return { attached: alreadyHasFile, error: alreadyHasFile ? null : fetchError };
+        return { attached: alreadyHasFile, written: false, error: alreadyHasFile ? null : fetchError };
       }
       try {
         attachFile(input, base64ToArrayBuffer(file.base64), file.filename, "application/pdf");
-        return { attached: true, error: null };
+        return { attached: true, written: true, error: null };
       } catch (e) {
         return {
           attached: alreadyHasFile,
+          written: false,
           error: e instanceof Error ? e.message : "Failed to attach file",
         };
       }
@@ -329,11 +403,12 @@ export default defineContentScript({
       coverLetter: GeneratedFile | null,
       forceRefillAll: boolean,
       fetchError: string | null = null,
-    ): { attached: boolean; error: string | null } {
-      if (document.querySelector(selector) === null) return { attached: false, error: null };
+    ): AttachOutcome {
+      if (document.querySelector(selector) === null) return { attached: false, written: false, error: null };
       if (coverLetter === null) {
         return {
           attached: false,
+          written: false,
           // A real fetch failure is a more useful message than the
           // catch-all "never generated" one, and distinguishes an
           // application that genuinely has no cover letter from a network
@@ -348,6 +423,13 @@ export default defineContentScript({
     // won't parse. That costs the one field, never the fill -- but it is
     // reported, so a maintainer's typo shows up instead of a field quietly
     // never filling.
+    // A field the form has and the profile could not honestly supply (a one-word name has no
+    // last name; a name in a script whose word order isn't shown has neither part; a box that
+    // asks for GitHub when the profile has none). Left empty and said so, never guessed.
+    function noteSkipped(result: FillResult, skipped: readonly { field: string; reason: string }[]): void {
+      for (const item of skipped) result.skippedFields.push(`${item.field}: not filled -- ${item.reason}.`);
+    }
+
     function noteInvalidSelectors(result: FillResult, invalidSelectors: string[]): void {
       if (invalidSelectors.length === 0) return;
       result.fieldMapError = appendNote(
@@ -372,8 +454,16 @@ export default defineContentScript({
         ...GENERIC_FIELD_DEFAULTS.standardFields,
         ...(tracked.fieldMap?.ats_type === "lever" ? tracked.fieldMap.standard_fields : []),
       ];
-      const { plan, invalidSelectors } = planStandardFieldFillsChecked(document, personalInfo, forceRefillAll, standardFields);
+      const leverMap = tracked.fieldMap?.ats_type === "lever" ? tracked.fieldMap : null;
+      const { plan, invalidSelectors, skipped } = planStandardFieldFillsChecked(
+        document,
+        personalInfo,
+        forceRefillAll,
+        standardFields,
+        leverMap === null ? {} : { labelFor: (element) => leverFieldLabel(element, leverMap) },
+      );
       noteInvalidSelectors(result, invalidSelectors);
+      noteSkipped(result, skipped);
       result.filledFields = applyFillPlan(document, plan);
 
       const resumeOutcome = tryAttach(
@@ -383,6 +473,7 @@ export default defineContentScript({
         filesInfo.resumeFetchError,
       );
       result.resumeAttached = resumeOutcome.attached;
+      result.resumeWritten = resumeOutcome.written;
       result.resumeError = resumeOutcome.error;
 
       if (tracked.fieldMap === null || tracked.fieldMap.ats_type !== "lever") {
@@ -397,7 +488,7 @@ export default defineContentScript({
         );
         return result;
       }
-      const leverMap = tracked.fieldMap;
+      const verifiedLeverMap = tracked.fieldMap;
 
       // Adversarially-confirmed gap: a passed Ed25519 signature proves a
       // map's AUTHENTICITY, not that every selector/pattern inside it is
@@ -411,7 +502,7 @@ export default defineContentScript({
       // GENERIC_FIELD_DEFAULTS fields above have already filled by now
       // regardless, matching this function's own established scope split.
       try {
-        const coverLetterField = findCoverLetterField(document, leverMap);
+        const coverLetterField = findCoverLetterField(document, verifiedLeverMap);
         if (coverLetterField !== null) {
           const coverLetterOutcome = tryAttachCoverLetter(
             // `coverLetterField` is an untrusted `name` attribute value
@@ -426,16 +517,18 @@ export default defineContentScript({
             filesInfo.coverLetterFetchError,
           );
           result.coverLetterAttached = coverLetterOutcome.attached;
+          result.coverLetterWritten = coverLetterOutcome.written;
           result.coverLetterError = coverLetterOutcome.error;
         }
 
-        result.unresolvedQuestions = extractCustomQuestions(document, leverMap, coverLetterField).map((q) => ({
+        result.unresolvedQuestions = extractCustomQuestions(document, verifiedLeverMap, coverLetterField).map((q) => ({
           fieldName: q.fieldName,
           label: q.label,
           kind: q.kind,
         }));
       } catch (e) {
         result.coverLetterAttached = false;
+        result.coverLetterWritten = false;
         result.coverLetterError = null;
         result.unresolvedQuestions = [];
         result.fieldMapError = appendNote(
@@ -459,21 +552,33 @@ export default defineContentScript({
     // future signed Greenhouse map would only ever ADD supplemental
     // standard_fields on top of the generic ones, same merge pattern as
     // Lever's.
-    function fillGreenhousePage(
+    async function fillGreenhousePage(
       tracked: TrackedTabState,
       personalInfo: ExtensionPersonalInfo,
       forceRefillAll: boolean,
       filesInfo: FilesFetchInfo,
       result: FillResult,
-    ): FillResult {
+    ): Promise<FillResult> {
       const fieldMap = tracked.fieldMap;
       const standardFields = [
         ...greenhouse.GENERIC_FIELD_DEFAULTS.standardFields,
         ...(fieldMap !== null && fieldMap.ats_type === "greenhouse" ? fieldMap.standard_fields : []),
       ];
-      const { plan, invalidSelectors } = planStandardFieldFillsChecked(document, personalInfo, forceRefillAll, standardFields);
+      const { plan, invalidSelectors, skipped } = planStandardFieldFillsChecked(
+        document,
+        personalInfo,
+        forceRefillAll,
+        standardFields,
+      );
       noteInvalidSelectors(result, invalidSelectors);
+      noteSkipped(result, skipped);
       result.filledFields = applyReactControlledFillPlan(document, plan);
+
+      // `#country` is a list, not a text box: its own path, which picks an option and checks
+      // the choice took, or leaves the field alone and says why.
+      const country = await greenhouse.fillCountryField(document, personalInfo.location.country, forceRefillAll);
+      if (country.status === "filled") result.filledFields.push("#country");
+      else if (country.status === "not_filled") noteSkipped(result, [{ field: "Country", reason: country.reason }]);
 
       const resumeOutcome = tryAttach(
         greenhouse.GENERIC_FIELD_DEFAULTS.resumeSelector,
@@ -482,6 +587,7 @@ export default defineContentScript({
         filesInfo.resumeFetchError,
       );
       result.resumeAttached = resumeOutcome.attached;
+      result.resumeWritten = resumeOutcome.written;
       result.resumeError = resumeOutcome.error;
 
       const coverLetterOutcome = tryAttachCoverLetter(
@@ -491,6 +597,7 @@ export default defineContentScript({
         filesInfo.coverLetterFetchError,
       );
       result.coverLetterAttached = coverLetterOutcome.attached;
+      result.coverLetterWritten = coverLetterOutcome.written;
       result.coverLetterError = coverLetterOutcome.error;
 
       result.unresolvedQuestions = greenhouse.extractCustomQuestions(document).map((q) => ({
@@ -518,8 +625,20 @@ export default defineContentScript({
         ...ashby.GENERIC_FIELD_DEFAULTS.standardFields,
         ...(fieldMap !== null && fieldMap.ats_type === "ashby" ? fieldMap.standard_fields : []),
       ];
-      const { plan, invalidSelectors } = planStandardFieldFillsChecked(document, personalInfo, forceRefillAll, standardFields);
+      const { plan, invalidSelectors, skipped } = planStandardFieldFillsChecked(
+        document,
+        personalInfo,
+        forceRefillAll,
+        standardFields,
+      );
       noteInvalidSelectors(result, invalidSelectors);
+      noteSkipped(result, skipped);
+
+      // The phone box has no id this build knows: it is found by what it is (type, autocomplete,
+      // label), and left alone -- with the reason shown -- when that does not pick out one box.
+      const phone = ashby.planPhoneFill(document, personalInfo.phone, forceRefillAll);
+      if (phone.item !== null) plan.push(phone.item);
+      if (phone.skipped !== null) noteSkipped(result, [{ field: "Phone", reason: phone.skipped }]);
       result.filledFields = applyReactControlledFillPlan(document, plan);
 
       const resumeOutcome = tryAttach(
@@ -529,9 +648,36 @@ export default defineContentScript({
         filesInfo.resumeFetchError,
       );
       result.resumeAttached = resumeOutcome.attached;
+      result.resumeWritten = resumeOutcome.written;
       result.resumeError = resumeOutcome.error;
 
-      result.unresolvedQuestions = ashby.extractCustomQuestions(document).map((q) => ({
+      // The cover letter, found by what the upload is: a file input whose own question says
+      // "cover letter". Said, never silent, whenever the person has a cover letter for this
+      // application and it did not go in.
+      const hasCoverLetter = Boolean(tracked.payload.prepare_result?.cover_letter) || tracked.coverLetter !== null;
+      const coverSlot = ashby.findCoverLetterSlot(document);
+      if (coverSlot.status === "found") {
+        if (tracked.coverLetter === null) {
+          result.coverLetterError =
+            filesInfo.coverLetterFetchError ?? "No cover letter was generated for this application yet.";
+        } else {
+          const outcome = tryAttachToInput(coverSlot.input, tracked.coverLetter, forceRefillAll);
+          result.coverLetterAttached = outcome.attached;
+          result.coverLetterWritten = outcome.written;
+          result.coverLetterError = outcome.error;
+        }
+      } else if (hasCoverLetter) {
+        result.coverLetterError =
+          coverSlot.status === "ambiguous"
+            ? "This form has more than one upload that could be the cover letter, so none was attached -- attach it yourself."
+            : "Couldn't find a cover-letter upload on this form, so none was attached. If it has one, attach it yourself.";
+      }
+
+      const handledFieldPaths = [
+        ...(coverSlot.status === "found" ? [coverSlot.fieldPath] : []),
+        ...(phone.fieldPath === null ? [] : [phone.fieldPath]),
+      ];
+      result.unresolvedQuestions = ashby.extractCustomQuestions(document, handledFieldPaths).map((q) => ({
         fieldName: q.fieldName,
         label: q.label,
         kind: q.kind,
@@ -539,7 +685,7 @@ export default defineContentScript({
       return result;
     }
 
-    function fillPage(tracked: TabState, forceRefillAll: boolean, filesInfo: FilesFetchInfo): FillResult {
+    async function fillPage(tracked: TabState, forceRefillAll: boolean, filesInfo: FilesFetchInfo): Promise<FillResult> {
       const result: FillResult = {
         filledFields: [],
         skippedFields: [],
@@ -547,6 +693,8 @@ export default defineContentScript({
         resumeError: null,
         coverLetterAttached: false,
         coverLetterError: null,
+        resumeWritten: false,
+        coverLetterWritten: false,
         unresolvedQuestions: [],
         fieldMapError: null,
         fillError: null,
@@ -563,7 +711,7 @@ export default defineContentScript({
       // failure stays reported, since it really did happen.
       try {
         if (atsType === "lever") return fillLeverPage(tracked, personalInfo, forceRefillAll, filesInfo, result);
-        if (atsType === "greenhouse") return fillGreenhousePage(tracked, personalInfo, forceRefillAll, filesInfo, result);
+        if (atsType === "greenhouse") return await fillGreenhousePage(tracked, personalInfo, forceRefillAll, filesInfo, result);
         return fillAshbyPage(tracked, personalInfo, forceRefillAll, filesInfo, result);
       } catch (e) {
         result.fillError = e instanceof Error && e.message !== "" ? e.message : "The fill stopped unexpectedly.";
@@ -576,6 +724,10 @@ export default defineContentScript({
     // picked up -- if there is a form, no usable state, and no lookup
     // already running for this URL, start one and wait for it.
     async function getDetectionState(): Promise<DetectionStateResponse> {
+      if (!(await consentGranted())) {
+        dropCachedState();
+        return CONSENT_REQUIRED;
+      }
       const formDetected = isFormPresent();
       let tabState = await currentTabState();
       if (formDetected && tabState === null && detectingUrl !== location.href) {
@@ -590,6 +742,10 @@ export default defineContentScript({
     // a permanent "not supported" failure category, so automated detection
     // alone was never going to be sufficient on its own.
     async function recheck(): Promise<DetectionStateResponse> {
+      if (!(await consentGranted())) {
+        dropCachedState();
+        return CONSENT_REQUIRED;
+      }
       await detect();
       return { formDetected: isFormPresent(), tabState: await currentTabState() };
     }
@@ -601,18 +757,57 @@ export default defineContentScript({
     // gap: returning a structurally valid empty result made this
     // indistinguishable from a genuine "nothing to fill."
     async function requestFill(forceRefillAll: boolean): Promise<FillResult | null> {
+      if (!(await consentGranted())) {
+        dropCachedState();
+        return null;
+      }
       const state = await currentTabState();
       if (state === null) {
         if (isFormPresent() && detectingUrl !== location.href) void detect();
         return null;
       }
-      if (state.status !== "tracked") return fillPage(state, forceRefillAll, NO_FILE_FETCH_ERRORS);
+      if (state.status !== "tracked") return await fillPage(state, forceRefillAll, NO_FILE_FETCH_ERRORS);
 
       // E6 continuation -- this is the moment the résumé/cover-letter PDFs
       // actually get fetched (see GeneratedFile's own doc comment): the
       // first REQUEST_FILL for this tracked application, not detection.
       const { tracked, resumeFetchError, coverLetterFetchError } = await ensureFilesFetched(state);
-      return fillPage(tracked, forceRefillAll, { resumeFetchError, coverLetterFetchError });
+      // The download can take seconds. Read the flag again before anything is written into the
+      // form: consent withdrawn while it ran means nothing is written. (A fill that has already
+      // started writing finishes the page it is on -- the country list is asynchronous -- and
+      // then stops; it reports nothing, see reportFillOutcome.)
+      if (!(await consentGranted())) {
+        dropCachedState();
+        return null;
+      }
+      const result = await fillPage(tracked, forceRefillAll, { resumeFetchError, coverLetterFetchError });
+      void reportFillOutcome(tracked.applicationId, result);
+      return result;
+    }
+
+    // One count-only report per finished fill of a tracked application (lib/fillOutcome.ts).
+    // Sent only while the person has consented -- re-checked here, after the fill, because
+    // consent can be withdrawn while a fill is running -- and never awaited: whether it lands
+    // has no bearing on the fill, and a failure of any kind is swallowed. No label, value,
+    // URL or page text is in the message; it has no field that could hold one.
+    async function reportFillOutcome(applicationId: string, result: FillResult): Promise<void> {
+      try {
+        if (atsType === null) return;
+        const counts = summarizeFill(result);
+        if (counts === null) return;
+        if (!(await consentGranted())) return;
+        const message: ReportFillOutcomeMessage = {
+          type: "REPORT_FILL_OUTCOME",
+          atsType,
+          applicationId,
+          fieldsAttempted: counts.fieldsAttempted,
+          fieldsFilled: counts.fieldsFilled,
+          outcome: counts.outcome,
+        };
+        await browser.runtime.sendMessage(message);
+      } catch {
+        // Telemetry must never surface an error.
+      }
     }
 
     // E3b -- the one path a value chosen off-page (a saved answer, an LLM
@@ -625,6 +820,10 @@ export default defineContentScript({
     // map (E3c: its own `custom_question_prefix`, so no map means no fill,
     // D4's fail-closed scope); Greenhouse/Ashby's engines are self-contained.
     async function fillField(fieldName: string, value: string, force: boolean): Promise<FillFieldResult> {
+      if (!(await consentGranted())) {
+        dropCachedState();
+        return { filled: false, reason: "refused" };
+      }
       const state = await currentTabState();
       if (state === null) return { filled: false, reason: "page_changed" };
       if (state.status !== "tracked") return { filled: false, reason: "refused" };
