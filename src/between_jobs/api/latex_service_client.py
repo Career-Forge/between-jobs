@@ -18,6 +18,7 @@ import httpx
 
 from .env import optional_env, refuse
 from .errors import ApiError
+from .upstream_errors import upstream_error_detail
 
 _DEFAULT_BASE_URL = "http://localhost:5700"
 """Matches latex-service's own Dockerfile-exposed port. Overridable via
@@ -126,20 +127,11 @@ async def _compile(http: httpx.AsyncClient, latex: str) -> bytes:
         return response.content
     if response.status_code in (422, 504):
         raise ApiError(
-            "RUN_FAILED", f"This resume didn't compile to PDF: {_error_detail(response)}"
+            "RUN_FAILED",
+            f"This resume didn't compile to PDF: {upstream_error_detail(response)}",
         )
     raise ApiError(
         "PROVIDER_UNAVAILABLE",
         "The PDF renderer couldn't complete this run. Try again in a moment.",
         retryable=True,
     )
-
-
-def _error_detail(response: httpx.Response) -> str:
-    try:
-        body = response.json()
-    except ValueError:
-        return response.text[:200]
-    if isinstance(body, dict) and "message" in body:
-        return str(body["message"])
-    return str(body)[:200]

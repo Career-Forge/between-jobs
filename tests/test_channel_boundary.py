@@ -36,7 +36,8 @@ OTHER_SERVICES_MESSAGE_FIELD = {
     "api/ats_liveness.py": "reads an ATS error body's `message` field",
     "api/forge_engines_client.py": "reads a validation violation's `message` from forge-engines",
     "api/gmail_client.py": "reads Gmail's `message.threadId` out of a draft response",
-    "api/latex_service_client.py": "reads the LaTeX service's error body `message`",
+    "api/upstream_errors.py": "reads the `message` of the resume engine's and the LaTeX service's "
+    "error answers",
 }
 """Modules that read a `message` key from a service that is not Telegram."""
 

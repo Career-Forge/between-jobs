@@ -44,6 +44,7 @@ from .deferred_reply import shutdown_deferred_replies
 from .digest_listener import handle_batch as handle_digest_batch
 from .discovery_routes import router as discovery_router
 from .env import optional_env, refuse, web_app_url
+from .error_reporting import flush_error_reporting, init_error_reporting, report_exception
 from .errors import ApiError, log_api_error
 from .extension_routes import router as extension_router
 from .forge_engines_client import _base_url as forge_engines_base_url
@@ -83,6 +84,7 @@ from .warm_path_events_routes import router as warm_path_events_router
 from .worker_lease import TTL_SECONDS as WORKER_LEASE_TTL_SECONDS
 from .worker_lease import WorkerLease
 from .worker_leases_store import claim_worker_lease
+from .worker_pings import WorkerPings
 from .worker_supervision import WorkerRegistry, WorkerState
 
 load_dotenv()
@@ -118,6 +120,10 @@ def _worker_leases_enabled() -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Error reporting, only when SENTRY_DSN is set (error_reporting.py). First, so it is
+    # running before anything below can fail or be served, and so a malformed setting stops
+    # the boot like every other configuration error.
+    init_error_reporting()
     # Both are read lazily (the body cap on every request, the compile limit when the first
     # PDF is compiled); reading them once here makes a bad value stop the boot with a message
     # instead of failing requests later, one by one.
@@ -195,6 +201,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     #   the feature is switched on (see `hiring_signal_cache`, "Lifetime").
     workers = WorkerRegistry()
     app.state.workers = workers
+    # Healthchecks pings (worker_pings.py): a worker pings after each successful tick when
+    # its HEALTHCHECKS_URL_* setting is set, and otherwise not at all.
+    pings = WorkerPings()
+    app.state.worker_pings = pings
     leases_on = _worker_leases_enabled()
     # One id per process, made here (so it is post-fork and unique per process) and
     # never the bare Railway deployment id, which every replica of a deployment
@@ -217,6 +227,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             enabled=not os.environ.get(disable_env),
             backoff_base_seconds=backoff_base_seconds,
         )
+        # Read for a disabled worker too, so a malformed URL stops the boot either way.
+        state.heartbeat = pings.for_worker(name, disable_env=disable_env, enabled=state.enabled)
         if state.enabled:
             worker_supabase, _worker_url = await create_supabase_client()
             # Stamped here as well as by the loop, so a worker that never
@@ -290,9 +302,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     try:
         await start_workers()
+        # A healthcheck setting named after no worker is ignored; say so while the operator
+        # is looking at the boot log, since a check that never gets a ping never alerts.
+        pings.warn_unrecognised_settings()
     except BaseException:
         # A half-started set of workers and keepers must not outlive a failed boot.
         await workers.stop_all()
+        await pings.aclose()
         raise
 
     # /health's dependency probes get their own small pool, so a flood of
@@ -309,8 +325,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # gets a few seconds to finish, then is cancelled (see deferred_reply).
     await shutdown_deferred_replies()
     await workers.stop_all()
+    # A ping still on its way is abandoned; the check's grace time covers the restart.
+    await pings.aclose()
     # Product-event inserts still in flight finish (bounded) before the client they use goes.
     await flush_product_events(timeout=5.0)
+    # What the workers reported while stopping goes out too, in a thread and for at most a
+    # couple of seconds: an unreachable Sentry must not hold the shutdown.
+    await flush_error_reporting()
     await app.state.health_http.aclose()
     await app.state.http.aclose()
     await app.state.hiring_http.aclose()
@@ -338,13 +359,24 @@ async def request_id_middleware(
     token = request_id_var.set(request_id)
     try:
         response = await call_next(request)
-    except Exception:
+    except Exception as unhandled:
         # An exception no handler caught. Logged here, inside the request's
         # context, so the line carries the request id; answered here too, so
         # the 500 carries the header and the same envelope as every other error.
         logger.exception(
             "unhandled error",
             extra={"ctx": {"method": request.method, "route": _route_path(request)}},
+        )
+        # Also to the error tracker, when one is configured: this handler swallows the
+        # exception, so it never reaches the tracker's own request middleware. The tags are
+        # the route's template and the request id the log line above carries, never a URL.
+        report_exception(
+            unhandled,
+            tags={
+                "route": _route_path(request),
+                "method": request.method,
+                "request_id": request_id,
+            },
         )
         fallback = ApiError("INTERNAL_ERROR", "Something went wrong. Try again in a moment.")
         response = JSONResponse(status_code=fallback.status_code, content=fallback.to_body())
@@ -415,6 +447,18 @@ def _route_path(request: Request) -> str:
 @app.exception_handler(ApiError)
 async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
     log_api_error(logger, exc, ctx={"method": request.method, "route": _route_path(request)})
+    if exc.status_code >= 500:
+        # A failure of ours, not the caller's: also to the error tracker. A 4xx is the API
+        # saying what was wrong with the request, and is never reported.
+        report_exception(
+            exc,
+            tags={
+                "route": _route_path(request),
+                "method": request.method,
+                "request_id": request_id_var.get() or "",
+                "error_code": exc.code,
+            },
+        )
     # The one place every route's "set this up first" answer passes through, so the one place
     # that records it as a product event. The user id is what the auth dependency stored once
     # the token verified; an unauthenticated or overridden request has none and records nothing.

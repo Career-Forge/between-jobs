@@ -79,6 +79,7 @@ from .channel_envelope import (
 )
 from .deferred_reply import DeferredReplies
 from .env import web_app_url
+from .error_reporting import report_exception
 from .errors import ApiError, log_api_error
 from .first_run import derive_first_run, load_first_run_facts
 from .intents import (
@@ -388,6 +389,14 @@ def _log_known_failure(turn: _Turn, exc: ApiError) -> None:
     """A generation that ends in an `ApiError` is answered in chat and is not a failure of the
     task, but it still leaves a log line, at the level the web handler would give it."""
     log_api_error(logger, exc, ctx={"task": "prepare", **_log_ctx(turn)})
+    if exc.status_code >= 500:
+        # The web handler reports a 5xx ApiError to the error tracker (when one is configured);
+        # this boundary answers in chat instead, so it reports here. A 4xx is the person's own
+        # setup or input and is never reported.
+        report_exception(
+            exc,
+            tags={"task": "prepare", "channel": str(turn.message.channel), "error_code": exc.code},
+        )
 
 
 async def _handle_list_applications(turn: _Turn) -> None:

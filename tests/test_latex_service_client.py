@@ -96,6 +96,35 @@ async def test_call_compile_raises_run_failed_on_a_compile_error() -> None:
     assert "Undefined control sequence." in exc_info.value.message
 
 
+async def test_call_compile_reports_a_validation_422_without_the_latex_it_was_sent() -> None:
+    """The renderer's own request validation answers like any FastAPI service: with the
+    offending input in the answer. Only where and why may reach the message."""
+    latex = r"\name{Pat Smith} \phone{+1 201 555 0187}"
+    http = _FakeHttpClient(
+        status_code=422,
+        json_body={
+            "detail": [
+                {
+                    "type": "string_type",
+                    "loc": ["body", "latex"],
+                    "msg": "Input should be a valid string",
+                    "input": latex,
+                }
+            ]
+        },
+    )
+
+    with pytest.raises(ApiError) as exc_info:
+        await call_compile(http, latex=latex)  # type: ignore[arg-type]
+
+    assert exc_info.value.code == "RUN_FAILED"
+    assert exc_info.value.message == (
+        "This resume didn't compile to PDF: body.latex: Input should be a valid string"
+    )
+    assert "Pat Smith" not in exc_info.value.message
+    assert "555 0187" not in exc_info.value.message
+
+
 async def test_call_compile_raises_run_failed_on_a_timeout() -> None:
     http = _FakeHttpClient(
         status_code=504, json_body={"error": "CompileTimeout", "message": "pdflatex timed out."}

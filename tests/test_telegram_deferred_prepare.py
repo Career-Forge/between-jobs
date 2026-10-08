@@ -39,9 +39,10 @@ import test_telegram_prepare_callback as prepare_fakes
 import test_telegram_webhook as webhook_fakes
 from channel_fakes import APPLICATION_ID as _APPLICATION_ID
 from channel_fakes import ComposedSupabase
+from fake_sentry import FakeSentry
 from fastapi.testclient import TestClient
 
-from between_jobs.api import channel_messages, deferred_reply, rate_limits
+from between_jobs.api import channel_messages, deferred_reply, error_reporting, rate_limits
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase, get_telegram_client
 from between_jobs.api.deferred_reply import DeferredReplies
@@ -457,6 +458,66 @@ def test_a_failure_in_the_background_task_is_logged_and_told_to_the_user(
     # The task carries the request id of the delivery that began it, so its log lines can be
     # traced back to that request (the response header is what a person could quote).
     assert engine.request_ids == [response.headers["X-Request-ID"]]
+
+
+_SENTRY_DSN = "https://0123456789abcdef0123456789abcdef@o123456.ingest.sentry.io/4501234567"
+
+
+@pytest.fixture
+def sentry(monkeypatch: pytest.MonkeyPatch) -> FakeSentry:
+    """Error reporting switched on through the app's own boot, with a fake SDK."""
+    monkeypatch.setattr(error_reporting, "_sdk", None)
+    monkeypatch.setattr(error_reporting, "_failure_warned", False)
+    monkeypatch.setenv("SENTRY_DSN", _SENTRY_DSN)
+    return FakeSentry().install(monkeypatch)
+
+
+def test_a_crash_in_the_background_task_reaches_the_error_tracker_once(
+    sentry: FakeSentry,
+) -> None:
+    """A chat generation runs outside any request, and the registry catches what it raises:
+    without its own report, the one kind of failure that is a bug would leave only a log line."""
+    supabase, telegram, engine = (
+        ComposedSupabase(),
+        prepare_fakes._FakeTelegramClient(),
+        _Engine(fail=True),
+    )
+
+    with _serving(supabase, telegram, engine) as client:
+        _post(client, _tap_generate(update_id=446))
+        assert _wait_for(lambda: channel_messages.PREPARE_FAILED_TEXT in _shown(telegram))
+
+    [(reported, scope)] = sentry.captured
+    assert isinstance(reported, RuntimeError)
+    assert scope == {"tags": {"task": "prepare"}}
+
+
+def test_a_server_side_api_error_ended_in_chat_is_reported_once_not_twice(
+    sentry: FakeSentry,
+) -> None:
+    """The chat boundary answers an ApiError itself and reports a 5xx; it does not reach the
+    registry, which would report a second time."""
+    supabase, telegram = ComposedSupabase(), prepare_fakes._FakeTelegramClient()
+
+    with _serving(supabase, telegram, _Engine(compile_status_code=422)) as client:
+        _post(client, _tap_generate(update_id=447))
+        assert _wait_for(lambda: any(text.startswith("❌") for text in _shown(telegram)))
+
+    [(reported, scope)] = sentry.captured
+    assert getattr(reported, "code", None) == "RUN_FAILED"
+    assert scope == {"tags": {"task": "prepare", "channel": "telegram", "error_code": "RUN_FAILED"}}
+
+
+def test_a_known_client_side_failure_ended_in_chat_is_not_reported(sentry: FakeSentry) -> None:
+    supabase = ComposedSupabase()
+    supabase.profile_versions.select_rows = []  # no resume on file: SETUP_REQUIRED, a 409
+    telegram = prepare_fakes._FakeTelegramClient()
+
+    with _serving(supabase, telegram, _Engine()) as client:
+        _post(client, _tap_generate(update_id=448))
+        assert _wait_for(lambda: any(text.startswith("❌") for text in _shown(telegram)))
+
+    assert sentry.captured == []
 
 
 def test_a_refused_final_state_after_the_resume_was_delivered_is_logged_and_not_told(

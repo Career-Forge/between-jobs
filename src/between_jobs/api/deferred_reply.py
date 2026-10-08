@@ -22,10 +22,11 @@ What the registry is responsible for, because asyncio will not be:
   caller gives it back because nothing will run -- so a caller should reserve as late as it can
   and release as early as it can.
 - Failure containment. An exception in the work is logged (`logger.exception`, carrying the
-  request id of the delivery that started it and its update id) and the person is told
-  something went wrong, through the `on_failure` callback; a failure of that message is
-  logged too, never raised. Nothing escapes into the event loop's "task exception was never
-  retrieved" handler.
+  request id of the delivery that started it and its update id), reported to the error tracker
+  when one is configured (error_reporting.py; this task runs outside any request, so nothing
+  else would see it), and the person is told something went wrong, through the `on_failure`
+  callback; a failure of that message is logged too, never raised. Nothing escapes into the
+  event loop's "task exception was never retrieved" handler.
 - Shutdown. `shutdown` waits a short grace period for what is running to finish, then
   cancels the rest and waits for them to end. A task that is cancelled says nothing to the
   person: shutdown is not a failure they should be told about.
@@ -49,6 +50,8 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
+
+from .error_reporting import report_exception
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +149,11 @@ class DeferredReplies:
         except asyncio.CancelledError:
             logger.info("deferred work cancelled; the user is not messaged", extra={"ctx": ctx})
             raise
-        except Exception:
+        except Exception as failure:
             logger.exception("deferred work failed", extra={"ctx": ctx})
+            # Before the user is told: a failing `on_failure` must not cost the report. The
+            # tags are the task's name only; the request and update ids belong in the logs.
+            report_exception(failure, tags={"task": name})
             if on_failure is not None:
                 try:
                     await on_failure()

@@ -38,6 +38,12 @@ _FAKE_KEY = "sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef"
 _TOKEN_TAIL = "FAKEfakeFAKEfake" + "0123456789abcdefXY"
 _BOT_TOKEN = "123456789:" + _TOKEN_TAIL
 _SUPABASE_SECRET = "sb_" + "secret_" + "FAKEfakeFAKE0123456789"
+# Google shapes, each made of a prefix and obviously fake repeated filler, so no secret
+# scanner reads the source as a real key.
+_GOOGLE_CLIENT_SECRET = "GOCSPX-" + "AbCdEfGh1234567890_-" * 2
+_GOOGLE_API_KEY = "AIza" + "SyAbCdEfGh1234567890_-aBcDeFgHiJ"
+_GOOGLE_ACCESS_TOKEN = "ya29." + "a0AbCdEfGh1234567890_-" * 2
+_GOOGLE_REFRESH_TOKEN = "1//" + "0gAbCdEfGh1234567890_-" * 2
 # Kept out of the `raise` lines below: a traceback shows each frame's source
 # line, which is code; the message itself must never appear.
 _PERSONAL = "could not push: Jordan Rivera, 555-0134"
@@ -105,6 +111,12 @@ def _record(msg: str, *args: Any, name: str = "test", **kwargs: Any) -> logging.
         ("{'secret': 'abc123secret'}", "abc123secret"),
         ('{"secret_2": "appkey0123"}', "appkey0123"),
         ("client_secret=GOCSPX-abcdefghijklmnopqrstuv", "abcdefghijklmnop"),
+        # Bare, with no label in front for the name=value rule to catch: only the shape rules
+        # of the Google credentials can.
+        (f"oauth client {_GOOGLE_CLIENT_SECRET} rejected", _GOOGLE_CLIENT_SECRET[7:]),
+        (f"maps call with {_GOOGLE_API_KEY} failed", _GOOGLE_API_KEY[4:]),
+        (f"gmail answered 401 for {_GOOGLE_ACCESS_TOKEN}", _GOOGLE_ACCESS_TOKEN[5:]),
+        (f"refresh of {_GOOGLE_REFRESH_TOKEN} failed", _GOOGLE_REFRESH_TOKEN[3:]),
         ("X-RapidAPI-Key: 9f8e7d6c5b4a39281706f5e4d3c2b1a0", "9f8e7d6c5b4a3928"),
         ("firecrawl key fc-0123456789abcdef0123", "0123456789abcdef0123"),
         ("groq key gsk_0123456789abcdefghijABCD", "0123456789abcdefghij"),

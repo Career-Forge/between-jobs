@@ -21,6 +21,11 @@ alive and healthy, simply not the one doing the work -- and one that cannot tell
 `lease_unknown`, which fails the check, so a deploy whose lease path is broken is
 caught by the platform's healthcheck instead of idling behind a 200.
 
+Every failed tick is also reported to the error tracker when one is configured
+(error_reporting.py), thinned the way the full tracebacks in the log are, and a worker
+with a healthcheck (worker_pings.py) pings it after each successful tick. Both are
+best-effort: neither can raise into the loop or slow it down.
+
 A worker's own tick must contain failures of individual items (one search,
 one draft, one company) so that a supervised retry only ever repeats work
 that hadn't happened yet -- the matcher's and the reply checker's ticks spend
@@ -37,6 +42,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
+from .error_reporting import report_exception
+
 logger = logging.getLogger(__name__)
 
 BACKOFF_BASE_SECONDS = 5.0
@@ -45,6 +52,16 @@ BACKOFF_MAX_SECONDS = 300.0
 # after one slow tick.
 MIN_STALE_AFTER_SECONDS = 60.0
 FAILING_AFTER_MAX_SECONDS = 1800.0
+
+REPORT_MIN_SPACING_SECONDS = 600.0
+"""The soonest the same worker's same kind of failure is reported again. The thinning by
+failure count below resets whenever a tick succeeds, so a worker that fails every other tick
+would otherwise be reported every few seconds."""
+
+FAIL_PING_AFTER_FAILURES = 3
+"""A worker tells its healthcheck "failing" only from its third failed tick in a row. One
+failure the retry cures in seconds is not worth an alert; the check's grace time still
+catches a worker that stops succeeding."""
 
 LEASE_POLL_SECONDS = 1.0
 """How often a leased worker that may not tick re-reads its lease. The read is
@@ -69,8 +86,21 @@ class Lease(Protocol):
     async def stop(self) -> None: ...
 
 
+class Heartbeat(Protocol):
+    """What the supervisor needs from a worker's healthcheck (worker_pings.WorkerPinger):
+    two calls that return at once and never raise."""
+
+    def succeeded(self) -> None: ...
+
+    def failed(self) -> None: ...
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _monotonic() -> float:
+    return time.monotonic()
 
 
 @dataclass
@@ -96,6 +126,10 @@ class WorkerState:
     waiting_for_lease: bool = False
     # time.monotonic() when the tick now running began; None between ticks.
     current_tick_started: float | None = None
+    # The worker's healthcheck, set only when its ping URL is configured and it is enabled.
+    heartbeat: Heartbeat | None = None
+    # When each kind of failure was last reported to the error tracker (monotonic seconds).
+    reported_at: dict[str, float] = field(default_factory=dict)
 
     @property
     def stale_after(self) -> timedelta:
@@ -305,6 +339,7 @@ async def run_supervised(
             state.last_success_at = _now()
             state.consecutive_failures = 0
             state.failing_since = None
+            _ping(state, ok=True)
             await sleep(state.interval_seconds)
             continue
         await sleep(state.next_retry_delay())
@@ -316,6 +351,49 @@ def _warn_if_lease_lapsed(state: WorkerState) -> None:
             "worker lease lapsed while a tick was running",
             extra={"ctx": {"worker": state.name, "lease": state.lease.status()}},
         )
+
+
+def _ping(state: WorkerState, *, ok: bool) -> None:
+    """Tells the worker's healthcheck about a tick, when it has one. A worker that does not
+    hold its lease pings nothing: it is standing by, and the check belongs to whichever
+    process is doing the work."""
+    heartbeat = state.heartbeat
+    if heartbeat is None:
+        return
+    try:
+        if state.lease is not None and state.lease.status() != "held":
+            return
+        if ok:
+            heartbeat.succeeded()
+        else:
+            heartbeat.failed()
+    except Exception:
+        logger.warning("worker heartbeat failed", extra={"ctx": {"worker": state.name}})
+
+
+def _report_failure(state: WorkerState, error: BaseException) -> None:
+    """Sends a failed tick to the error tracker: on the 1st, 2nd, 4th, 8th ... failure in a
+    row (the cadence of the full tracebacks in the log), and never the same kind of failure
+    of the same worker twice within REPORT_MIN_SPACING_SECONDS. One fingerprint per worker
+    and exception type, so a crash loop is a single issue however long it runs."""
+    n = state.consecutive_failures
+    if n & (n - 1) != 0:
+        return
+    kind = state.last_error_type or type(error).__qualname__
+    now = _monotonic()
+    last = state.reported_at.get(kind)
+    if last is not None and now - last < REPORT_MIN_SPACING_SECONDS:
+        return
+    state.reported_at[kind] = now
+    try:
+        report_exception(
+            error,
+            tags={"worker": state.name, "consecutive_failures": str(n)},
+            fingerprint=["worker-tick-failure", state.name, kind],
+        )
+    except Exception:
+        # report_exception does not raise; if it ever does, the worker still retries.
+        logger.warning("worker failure report failed", extra={"ctx": {"worker": state.name}})
 
 
 def _log_failure(state: WorkerState, error: BaseException) -> None:
@@ -344,3 +422,6 @@ def _log_failure(state: WorkerState, error: BaseException) -> None:
             "worker tick failed again; retrying after backoff",
             extra={"ctx": {**ctx, "error_type": state.last_error_type}},
         )
+    _report_failure(state, error)
+    if n >= FAIL_PING_AFTER_FAILURES:
+        _ping(state, ok=False)

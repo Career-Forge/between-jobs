@@ -403,6 +403,106 @@ async def test_call_gap_answer_draft_maps_a_422_to_an_api_error() -> None:
     assert "Couldn't draft a bullet" in str(exc_info.value)
 
 
+_NAME = "Pat Smith"
+_PHONE = "+1 201 555 0187"
+_EMPLOYER = "Initech Holdings"
+_BULLET = "Led the payments migration at Initech Holdings"
+
+
+def _skewed_engine_answer() -> dict[str, Any]:
+    """What FastAPI answers when a required field is missing -- here, after one service was
+    deployed ahead of the other: the offending input, the whole request body, rides in it."""
+    return {
+        "detail": [
+            {
+                "type": "missing",
+                "loc": ["body", "new_required_field"],
+                "msg": "Field required",
+                "input": {
+                    "resume_template": {
+                        "personal": {"name": _NAME, "phone": _PHONE},
+                        "experience": [{"company": _EMPLOYER, "bullets": [_BULLET]}],
+                    },
+                    "credential": {"secret": "sk-or-v1-plaintext"},
+                },
+                "ctx": {"error": f"{_NAME} is not allowed"},
+                "url": "https://errors.pydantic.dev/2.9/v/missing",
+            }
+        ]
+    }
+
+
+async def test_a_validation_422_from_the_engine_reports_where_and_why_never_the_input() -> None:
+    http = _FakeHttpClient(status_code=422, body=_skewed_engine_answer())
+
+    with pytest.raises(ApiError) as exc_info:
+        await call_apply(
+            http,  # type: ignore[arg-type]
+            resume_template=_RESUME_TEMPLATE,
+            job_snapshot=_SNAPSHOT,
+            credential=_CREDENTIAL,
+            now="2026-08-15T00:00:00.000Z",
+        )
+
+    error = exc_info.value
+    assert error.code == "RUN_FAILED"
+    assert error.message == (
+        "The resume engine rejected this run: body.new_required_field: Field required"
+    )
+    for leaked in (_NAME, _PHONE, _EMPLOYER, _BULLET, "sk-or-v1-plaintext", "pydantic.dev"):
+        assert leaked not in error.message
+        assert leaked not in str(error)
+
+
+async def test_every_engine_call_reports_a_validation_422_the_same_safe_way() -> None:
+    http = _FakeHttpClient(status_code=422, body=_skewed_engine_answer())
+    calls = [
+        resolve_header_chips(
+            http,  # type: ignore[arg-type]
+            personal={"name": _NAME},
+            header_layout=None,
+        ),
+        call_gap_interview(
+            http,  # type: ignore[arg-type]
+            items=[{"cluster_name": "Python", "bridge_skill": "Rust"}],
+            credential=_CREDENTIAL,
+        ),
+        call_gap_answer_draft(
+            http,  # type: ignore[arg-type]
+            question="Have you used Rust?",
+            answer=f"{_NAME} wrote some at {_EMPLOYER}",
+            candidates=_GAP_ANSWER_CANDIDATES,
+            credential=_CREDENTIAL,
+        ),
+    ]
+    for call in calls:
+        with pytest.raises(ApiError) as exc_info:
+            await call
+        assert "body.new_required_field: Field required" in exc_info.value.message
+        assert _NAME not in exc_info.value.message
+        assert _PHONE not in exc_info.value.message
+        assert _EMPLOYER not in exc_info.value.message
+
+
+async def test_a_validation_list_with_nothing_usable_in_it_is_not_printed() -> None:
+    http = _FakeHttpClient(
+        status_code=422,
+        body={"detail": [{"input": {"name": _NAME}}, {"ctx": {"phone": _PHONE}}]},
+    )
+
+    with pytest.raises(ApiError) as exc_info:
+        await call_apply(
+            http,  # type: ignore[arg-type]
+            resume_template=_RESUME_TEMPLATE,
+            job_snapshot=_SNAPSHOT,
+            credential=_CREDENTIAL,
+            now="2026-08-15T00:00:00.000Z",
+        )
+
+    assert _NAME not in exc_info.value.message and _PHONE not in exc_info.value.message
+    assert exc_info.value.code == "RUN_FAILED"
+
+
 async def test_call_apply_maps_a_declined_gate_with_no_resume() -> None:
     body = {**_APPLY_RESPONSE_BODY, "resume": None, "ats_attempts": []}
     http = _FakeHttpClient(body=body)

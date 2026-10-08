@@ -12,6 +12,8 @@ import ast
 import re
 from pathlib import Path
 
+from between_jobs.api.worker_pings import healthcheck_env_name
+
 _ROOT = Path(__file__).parent.parent
 
 # Set by the platform the API runs on, not by the operator.
@@ -69,6 +71,10 @@ def _variables_read_by_the_code() -> dict[str, set[str]]:
             for keyword in node.keywords:
                 if keyword.arg == "disable_env" and isinstance(keyword.value, ast.Constant):
                     record(keyword.value.value, path)
+                    # Each worker's healthcheck URL setting is named after its disable flag
+                    # (worker_pings.py) and is never written out as a literal in the code.
+                    if isinstance(keyword.value.value, str):
+                        record(healthcheck_env_name(keyword.value.value), path)
     return found
 
 
@@ -90,6 +96,14 @@ def test_the_scan_finds_the_variables_it_should() -> None:
         # read through `optional_env`, then checked as a URL
         "WEB_APP_URL",
         "DISABLE_OUTBOX_WORKER",
+        # named after the worker's disable flag, not written out where it is read
+        "HEALTHCHECKS_URL_OUTBOX_WORKER",
+        "HEALTHCHECKS_URL_HIRING_SIGNAL_CACHE_PURGE",
+        # error reporting
+        "SENTRY_DSN",
+        "SENTRY_ENVIRONMENT",
+        "SENTRY_TRACES_SAMPLE_RATE",
+        "RAILWAY_GIT_COMMIT_SHA",
         # read through the id-list helper, from a module-level constant
         "HIRING_SIGNALS_ALLOWED_USER_IDS",
         # read through a module-level constant, not a string literal at the call

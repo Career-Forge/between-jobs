@@ -84,7 +84,7 @@ const policy: Inline = { to: "/privacy", text: "Privacy Policy" };
 
 // ── who else handles your data ─────────────────────────────────────────────
 
-export type ProcessorGroup = "service" | "model" | "search" | "public" | "optional";
+export type ProcessorGroup = "service" | "model" | "search" | "public" | "optional" | "operator";
 
 export interface Processor {
   // The key the content test's evidence map uses, so keep it stable.
@@ -120,6 +120,12 @@ export const PROCESSOR_GROUPS: readonly { id: ProcessorGroup; title: string; int
     id: "optional",
     title: "Only if you use the feature",
     intro: "These are involved only if you connect or use the thing named.",
+  },
+  {
+    id: "operator",
+    title: "Only if the operator turns it on",
+    intro:
+      "These are off unless whoever runs the server sets them up. While they are off, nothing is sent to them.",
   },
 ];
 
@@ -280,6 +286,20 @@ export const PROCESSORS: readonly Processor[] = [
     group: "optional",
     detail: [
       "If you open a post in Hiring signals, your browser loads LinkedIn's public embed of that post, so LinkedIn sees that request as it would from any page that embeds its posts. Our servers do not fetch LinkedIn pages for Hiring signals.",
+    ],
+  },
+  {
+    name: "Sentry",
+    group: "operator",
+    detail: [
+      "If the operator turns on error reporting, a failure in the API sends Sentry technical error details: the type of the error and its message, the lines of code it passed through, the address of the request without its query string (the address can include the ids of the records involved), the request's method, a few ordinary headers (among them the name and version of your browser, its User-Agent, and the address of the site that made the request, Origin), the name of the part of the API that was in use, a request id, the version of the software and, for a background job, the job's name. Request bodies, query strings, cookies, other headers, local variables, your email address and your IP address are not sent. The message of an error from the database, validation, HTTP and AI-provider libraries, and of an error the API answers a request with, is replaced. In every other message, keys, tokens and email addresses are masked where they can be recognized, which cannot be done perfectly, so a message may still contain something a person wrote. An error that a caller causes by sending a bad request is not reported.",
+    ],
+  },
+  {
+    name: "Healthchecks",
+    group: "operator",
+    detail: [
+      "If the operator turns on monitoring of the background jobs, each job sends a monitoring service such as Healthchecks.io a bare web request when it finishes a run, so the operator is told if one stops. The request carries no data about anyone.",
     ],
   },
 ];

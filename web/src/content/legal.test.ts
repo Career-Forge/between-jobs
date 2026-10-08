@@ -18,6 +18,9 @@ import latexServiceClient from "../../../src/between_jobs/api/latex_service_clie
 import linkCodes from "../../../src/between_jobs/api/link_codes_store.py?raw";
 import telegramDedup from "../../../supabase/migrations/20261003120448_telegram_update_dedup.sql?raw";
 import loggingSetup from "../../../src/between_jobs/api/logging_setup.py?raw";
+import errorReporting from "../../../src/between_jobs/api/error_reporting.py?raw";
+import sentryScrub from "../../../src/between_jobs/api/sentry_scrub.py?raw";
+import workerPings from "../../../src/between_jobs/api/worker_pings.py?raw";
 import extensionStorePrivacy from "../../../extension/store/PRIVACY.md?raw";
 import webViteConfig from "../../vite.config.ts?raw";
 // The extension's own README, not its wxt.config.ts: Vite in this package cannot load the
@@ -494,6 +497,16 @@ const EVIDENCE: Record<string, Evidence> = {
     kind: "code",
     checks: [{ path: "web/src/lib/hiringSignals.ts", text: hiringSignalsLib, needles: ["https://www.linkedin.com/embed/feed/update/"] }],
   },
+  // Both are off unless the operator sets a variable; the code imports the SDK (or makes the
+  // request) only then, which the "what the text says matches the code" tests below pin.
+  Sentry: {
+    kind: "code",
+    checks: [{ path: "src/between_jobs/api/error_reporting.py", text: errorReporting, needles: ["sentry_sdk", "SENTRY_DSN"] }],
+  },
+  Healthchecks: {
+    kind: "code",
+    checks: [{ path: "src/between_jobs/api/worker_pings.py", text: workerPings, needles: ["HEALTHCHECKS_URL_", "/fail"] }],
+  },
 };
 
 // The deployment facts the code cannot show. Naming a new one here is a deliberate act that
@@ -557,7 +570,6 @@ describe("the processor list", () => {
   it("names no service that is not in the code", () => {
     const text = textsOf(PRIVACY).join("\n");
     for (const absent of [
-      "Sentry",
       "PostHog",
       "Mixpanel",
       "Google Analytics",
@@ -602,6 +614,72 @@ describe("what the text says matches the code", () => {
     expect(gmailClient).not.toMatch(/messages\/send|drafts\/send|\.send\(/);
     expect(gmailClient).toContain("_DRAFTS_URL");
     expect(privacyText).toContain("Nothing in its code calls Gmail's send function");
+  });
+
+  it("error reporting is off unless the operator sets a DSN, collects what the text says it does, and is reached from one module", () => {
+    // Off by default: the SDK is imported only after the DSN setting is found.
+    expect(errorReporting).toContain('optional_env("SENTRY_DSN")');
+    expect(errorReporting).not.toMatch(/^(import|from) sentry_sdk/m);
+    // What the SDK is told to leave out.
+    for (const option of [
+      '"send_default_pii": False',
+      '"max_request_body_size": "never"',
+      '"include_local_variables": False',
+      '"auto_enabling_integrations": False',
+    ]) {
+      expect(errorReporting, option).toContain(option);
+    }
+    // What the scrubber drops or replaces: the hostname, the libraries whose messages are not sent,
+    // and an API error that is the caller's doing.
+    expect(sentryScrub).toContain('_DROPPED_EVENT_KEYS = frozenset({"server_name", "_meta"})');
+    for (const library of ["postgrest", "pydantic", "openai", "httpx", "between_jobs.api.errors"]) {
+      expect(sentryScrub, library).toContain(`"${library}"`);
+    }
+    expect(sentryScrub).toContain("error.status_code < 500");
+    // What is sent, which the text names: the request's address without its query string, the
+    // method, and the few headers that stay.
+    expect(sentryScrub).toContain('out["url"] = scrub_url(');
+    expect(sentryScrub).toContain(
+      '{"accept", "content-length", "content-type", "host", "origin", "user-agent", "x-request-id"}',
+    );
+    // No other module of the API talks to the SDK: what is reported is what these two say.
+    const callers = Object.entries(apiSources)
+      .filter(([path]) => !path.endsWith("/error_reporting.py") && !path.endsWith("/sentry_scrub.py"))
+      .filter(([, source]) => source.includes("sentry_sdk"))
+      .map(([path]) => path);
+    expect(callers).toEqual([]);
+    // And the policy says it, in the processor list only if the operator turns it on.
+    const sentry = PROCESSORS.find((processor) => processor.name === "Sentry");
+    expect(sentry?.group).toBe("operator");
+    const detail = (sentry?.detail ?? []).filter((part): part is string => typeof part === "string").join(" ");
+    expect(detail).toContain("If the operator turns on error reporting");
+    expect(detail).toContain("cannot be done perfectly");
+    expect(detail).toContain("is not reported");
+    // The text names what the events carry, not only what they leave out.
+    for (const phrase of [
+      "its message",
+      "without its query string",
+      "ids of the records involved",
+      "User-Agent",
+      "Origin",
+      "something a person wrote",
+      "HTTP and AI-provider libraries",
+      "the API answers a request with",
+    ]) {
+      expect(detail, phrase).toContain(phrase);
+    }
+    expect(detail).not.toContain("most headers");
+  });
+
+  it("a worker's healthcheck ping is a bare GET with nothing in it, and only when the operator sets a URL", () => {
+    expect(workerPings).toContain("await self._client.get(url)");
+    expect(workerPings).not.toMatch(/params=|json=|data=|content=|headers=/);
+    expect(workerPings).toContain('ENV_PREFIX = "HEALTHCHECKS_URL_"');
+    const healthchecks = PROCESSORS.find((processor) => processor.name === "Healthchecks");
+    expect(healthchecks?.group).toBe("operator");
+    const detail = (healthchecks?.detail ?? []).filter((part): part is string => typeof part === "string").join(" ");
+    expect(detail).toContain("If the operator turns on monitoring");
+    expect(detail).toContain("carries no data about anyone");
   });
 
   it("the reply checker runs about every 15 minutes, as the text says", () => {

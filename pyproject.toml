@@ -18,6 +18,11 @@ dependencies = [
     "openai>=1.50",
     "cryptography>=43",
     "anyio>=4.0",
+    # Error reporting, off unless SENTRY_DSN is set (src/between_jobs/api/error_reporting.py).
+    # MIT-licensed, so it sits fine under AGPL-3.0. The code imports it only when a DSN is
+    # configured. 2.45 is the floor because it lists Python 3.14 (which CI runs) and is the
+    # oldest release the error-reporting tests were run against.
+    "sentry-sdk[fastapi]>=2.45",
 ]
 
 [project.urls]

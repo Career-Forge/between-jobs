@@ -11,7 +11,9 @@ import weakref
 from typing import Any
 
 import pytest
+from fake_sentry import FakeSentry
 
+from between_jobs.api import error_reporting
 from between_jobs.api.deferred_reply import DeferredReplies, Slot
 from between_jobs.api.logging_setup import request_id_var
 
@@ -358,6 +360,132 @@ async def test_a_failure_with_nobody_to_tell_is_still_logged_and_contained(
         await task
 
     assert [r.getMessage() for r in caplog.records] == ["deferred work failed"]
+
+
+# -- failure reaches the error tracker -------------------------------------------------------
+
+
+@pytest.fixture
+def sdk(monkeypatch: pytest.MonkeyPatch) -> FakeSentry:
+    """Error reporting switched on, with a fake SDK that records what it is handed."""
+    fake = FakeSentry()
+    monkeypatch.setattr(error_reporting, "_sdk", fake)
+    monkeypatch.setattr(error_reporting, "_failure_warned", False)
+    return fake
+
+
+async def test_a_failure_in_the_work_is_reported_with_the_task_name_and_no_ids(
+    sdk: FakeSentry,
+) -> None:
+    """The task runs outside any request, so nothing else would see the exception: the registry
+    catches it, and is the one place that can report it. The ids belong in the log lines."""
+    registry = DeferredReplies()
+    error = RuntimeError("the engine fell over")
+
+    async def work() -> None:
+        raise error
+
+    registry.start(
+        await _reserve(registry),
+        work,
+        name="prepare",
+        context={"update_id": "77", "application_id": "app-1"},
+    )
+    await _settle()
+
+    assert sdk.captured == [(error, {"tags": {"task": "prepare"}})]
+
+
+async def test_the_failure_is_reported_before_the_user_is_told_and_survives_a_failed_telling(
+    sdk: FakeSentry,
+) -> None:
+    registry = DeferredReplies()
+    error = RuntimeError("first")
+    reported_when_told: list[int] = []
+
+    async def work() -> None:
+        raise error
+
+    async def on_failure() -> None:
+        reported_when_told.append(len(sdk.captured))
+        raise RuntimeError("second")
+
+    task = registry.start(await _reserve(registry), work, name="t", on_failure=on_failure)
+    await _settle()
+    await task  # does not raise
+
+    assert reported_when_told == [1]
+    assert sdk.captured == [(error, {"tags": {"task": "t"}})]
+
+
+async def test_a_cancelled_task_is_not_reported(sdk: FakeSentry) -> None:
+    registry = DeferredReplies()
+
+    async def work() -> None:
+        await asyncio.Event().wait()  # never finishes
+
+    task = registry.start(await _reserve(registry), work, name="t")
+    await _settle()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert sdk.captured == []
+
+
+async def test_work_that_succeeds_reports_nothing(sdk: FakeSentry) -> None:
+    registry = DeferredReplies()
+
+    async def work() -> None:
+        return None
+
+    registry.start(await _reserve(registry), work, name="t")
+    await _settle()
+
+    assert sdk.captured == []
+
+
+async def test_with_reporting_off_a_failure_is_contained_and_nothing_extra_is_logged(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(error_reporting, "_sdk", None)
+    monkeypatch.setattr(error_reporting, "_failure_warned", False)
+    registry = DeferredReplies()
+    told: list[str] = []
+
+    async def work() -> None:
+        raise RuntimeError("boom")
+
+    async def on_failure() -> None:
+        told.append("sorry")
+
+    with caplog.at_level(logging.DEBUG):
+        task = registry.start(await _reserve(registry), work, name="t", on_failure=on_failure)
+        await _settle()
+        await task
+
+    assert told == ["sorry"]
+    assert not error_reporting.reporting_enabled()
+    assert [r.getMessage() for r in caplog.records] == ["deferred work failed"]
+
+
+async def test_an_sdk_that_raises_cannot_stop_the_user_being_told(sdk: FakeSentry) -> None:
+    sdk.capture_error = RuntimeError("transport down")
+    registry = DeferredReplies()
+    told: list[str] = []
+
+    async def work() -> None:
+        raise ValueError("boom")
+
+    async def on_failure() -> None:
+        told.append("sorry")
+
+    task = registry.start(await _reserve(registry), work, name="t", on_failure=on_failure)
+    await _settle()
+    await task
+
+    assert told == ["sorry"]
+    assert registry.running == 0
 
 
 # -- cancellation and shutdown -------------------------------------------------------------

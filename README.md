@@ -236,6 +236,19 @@ contains it: the build copies only the package.
   before it cancels one. A generation cut off by a restart is not resumed: the person
   sends the request again.
 
+## Operations
+
+Nothing here reports to anyone unless you configure it (`.env.example` lists every setting).
+Set `SENTRY_DSN` and the API sends Sentry its unhandled exceptions, API errors answered with a
+5xx, failed background-worker ticks and chat-started generations that crashed, with request
+bodies, query strings, cookies, all but a few ordinary headers, local variables, user email and
+address and the messages of database, validation, provider and API errors left out, and known
+secret shapes (JWTs, bearer tokens, API keys, bot tokens, email addresses) removed from the text
+that remains. That last step is a safety net, not a guarantee: read `src/between_jobs/api/sentry_scrub.py` before pointing it at real traffic. Set a
+`HEALTHCHECKS_URL_*` setting and the matching worker sends that Healthchecks.io check an empty
+GET after each successful tick, so you hear when it goes quiet; it carries no user data. For an
+uptime monitor use `/health`, which answers 503 when a worker has died or stalled.
+
 ## Self-hosting the job registry
 
 The job registry is the list of company job boards that the API's background poller

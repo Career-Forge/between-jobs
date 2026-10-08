@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .credential_resolver import ResolvedCredential
 from .engine_contract import AtsAttempt, ForgeFitResult, GapAnswerDraft, GapQuestion, Step0Result
 from .errors import ApiError
+from .upstream_errors import upstream_error_detail
 
 _DEFAULT_BASE_URL = "http://localhost:5682"
 """Matches forge-engines' own Dockerfile-exposed port. Overridable via
@@ -74,7 +75,8 @@ async def _post(
         )
     if response.status_code >= 400:
         raise ApiError(
-            "RUN_FAILED", f"The resume engine rejected this run: {_error_detail(response)}"
+            "RUN_FAILED",
+            f"The resume engine rejected this run: {upstream_error_detail(response)}",
         )
     return cast(dict[str, Any], response.json())
 
@@ -164,16 +166,6 @@ def job_posting_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
         "url": snapshot.get("source_url") or "",
         "source": snapshot.get("source_kind") or "manual_paste",
     }
-
-
-def _error_detail(response: httpx.Response) -> str:
-    try:
-        body = response.json()
-    except ValueError:
-        return response.text[:200]
-    if isinstance(body, dict) and "detail" in body:
-        return str(body["detail"])
-    return str(body)[:200]
 
 
 async def call_apply(
