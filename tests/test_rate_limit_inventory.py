@@ -108,6 +108,16 @@ UNLIMITED: dict[str, str] = {
         "resume is held to the same size cap as a pasted one (body_limit.py), checked against "
         "Telegram's declared size and again while downloading"
     ),
+    "POST /discord/interactions": (
+        "authenticated by Discord's Ed25519 signature over the timestamp and the raw body (the "
+        "application's public key), not a user session, so it cannot carry a per-user route "
+        "dependency. It is cheap before verification: the body is capped at 64 KiB by "
+        "body_limit.py before the handler runs, and an unsigned, mis-signed or stale request is a "
+        "401 with no parsing and no database access. Once verified, a repeat of an interaction "
+        "id is dropped by claim_discord_interaction, in-flight handlers are bounded "
+        "(discord_webhook.MAX_IN_FLIGHT) and the one expensive action, generating a resume, "
+        "claims the 'prepare' bucket itself (channel_core._start_prepare)"
+    ),
     "GET /oauth/gmail/callback": (
         "authenticated by the single-use state minted for a signed-in user; the Google code "
         "exchange only happens for a valid state, so a stranger cannot reach it"
@@ -447,6 +457,12 @@ SCAN_EXEMPT: dict[str, str] = {
         "has its own dedicated limiter (extension_rate_limit.claim_draft_answer_slot), which "
         "predates the generic one and is deliberately kept"
     ),
+    "discord_webhook.py::discord_interactions": (
+        "no user session to hang a route dependency on (Discord's signature authenticates the "
+        "call, and nothing past the signature check runs without it); the one expensive action, "
+        "generating a resume, claims the 'prepare' bucket itself in channel_core._start_prepare, "
+        "before it starts the work"
+    ),
     "telegram_webhook.py::telegram_webhook": (
         "no user session to hang a route dependency on (Telegram's shared secret authenticates "
         "the call); the one expensive action, generating a resume, claims the 'prepare' bucket "
@@ -460,7 +476,14 @@ _VERBS = {"get", "post", "put", "patch", "delete", "head", "options", "api_route
 
 
 def _scanned_files() -> list[Path]:
-    return sorted([*_SRC.glob("*_routes.py"), _SRC / "app.py", _SRC / "telegram_webhook.py"])
+    return sorted(
+        [
+            *_SRC.glob("*_routes.py"),
+            _SRC / "app.py",
+            _SRC / "discord_webhook.py",
+            _SRC / "telegram_webhook.py",
+        ]
+    )
 
 
 def _is_route_decorator(node: ast.expr) -> bool:

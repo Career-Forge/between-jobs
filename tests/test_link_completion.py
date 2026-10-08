@@ -140,6 +140,7 @@ class _FakeSupabase:
         # per recount: extra counts on top of what the files and rows imply
         self.extra_counts: list[dict[str, int]] = []
         self.delete_counts: dict[str, int] | None = None
+        self.rpc_calls: list[tuple[str, dict[str, Any]]] = []
 
     def table(self, name: str) -> _Query:
         assert name == "artifact_versions"
@@ -156,6 +157,7 @@ class _FakeSupabase:
         return counts
 
     def rpc(self, name: str, params: dict[str, Any]) -> _Rpc:
+        self.rpc_calls.append((name, params))
         if name == "finish_link_merge":
             self.merge_calls += 1
             return _Rpc({"ok": True, "source_gone": self.source_gone, "summary": {}})
@@ -201,6 +203,36 @@ async def test_files_move_to_the_target_and_the_emptied_source_is_retired() -> N
         f"{_TARGET}/art-1/2",
     ]
     assert client.deleted
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "channel"),
+    [({"channel": "discord"}, "discord"), ({"channel": "telegram"}, "telegram"), ({}, "telegram")],
+    ids=["discord", "telegram", "default is telegram"],
+)
+async def test_the_channel_the_link_was_made_on_reaches_both_database_functions(
+    kwargs: dict[str, str], channel: str
+) -> None:
+    """The functions find the link by its channel and check the source account against it: sent
+    with the wrong one, a Discord link would never finish and the source would never retire."""
+    client = _FakeSupabase()
+
+    completion = await _finish(client, **kwargs)
+
+    assert completion.retired
+    finishing = [
+        params
+        for name, params in client.rpc_calls
+        if name in ("finish_link_merge", "finish_link_delete_source")
+    ]
+    assert [name for name, _ in client.rpc_calls if name.startswith("finish_")] == [
+        "finish_link_merge",
+        "finish_link_delete_source",
+    ]
+    assert len(finishing) == 2
+    for params in finishing:
+        assert params["p_channel"] == channel
+        assert params["p_subject"] == _SUBJECT
 
 
 async def test_nothing_to_move_still_retires_the_source() -> None:

@@ -42,6 +42,10 @@ from .contact_research_routes import router as contact_research_router
 from .credentials_routes import router as credentials_router
 from .deferred_reply import shutdown_deferred_replies
 from .digest_listener import handle_batch as handle_digest_batch
+from .discord_client import DiscordClient
+from .discord_config import load_discord_config
+from .discord_webhook import router as discord_router
+from .discord_webhook import shutdown_interaction_tasks
 from .discovery_routes import router as discovery_router
 from .env import optional_env, refuse, web_app_url
 from .error_reporting import flush_error_reporting, init_error_reporting, report_exception
@@ -166,9 +170,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         TelegramClient(app.state.http, telegram_token) if telegram_token is not None else None
     )
     app.state.telegram_webhook_secret = telegram_secret
-    # Discord has no adapter yet, so a Discord link code cannot be redeemed here (the link route
-    # answers FEATURE_DISABLED for it). Its own task turns this on.
-    app.state.discord_enabled = False
+    # Discord is optional too, with the same all-or-nothing rule (see `discord_config`): the
+    # application id and public key together turn the interactions endpoint on, a bot token adds
+    # pushes and the expired-token fallback, none of them means Discord is off (the endpoint
+    # answers 404 FEATURE_DISABLED and a Discord link code is not minted), and a half-set
+    # configuration stops the boot here with a message that names the variables.
+    discord_config = load_discord_config()
+    app.state.discord_config = discord_config
+    app.state.discord_enabled = discord_config is not None
+    app.state.discord_client = (
+        DiscordClient(
+            app.state.http,
+            application_id=discord_config.application_id,
+            bot_token=discord_config.bot_token,
+        )
+        if discord_config is not None
+        else None
+    )
     # Optional and cosmetic: the name the Integrations page tells people to look
     # for. A malformed value is dropped, not fatal -- a typo in a display name
     # must not keep the API from starting -- and the page then says "this
@@ -273,7 +291,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 listeners=[
                     partial(
                         handle_digest_batch,
-                        notifier=build_push_notifier(sb, app.state.telegram_client),
+                        notifier=build_push_notifier(
+                            sb, app.state.telegram_client, app.state.discord_client
+                        ),
                     )
                 ],
                 state=state,
@@ -341,7 +361,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
     # Before anything the deferred work uses is closed: a resume generation still running
-    # gets a few seconds to finish, then is cancelled (see deferred_reply).
+    # gets a few seconds to finish, then is cancelled (see deferred_reply). The Discord
+    # handlers go first, because one of them may be about to start a generation.
+    await shutdown_interaction_tasks()
     await shutdown_deferred_replies()
     await workers.stop_all()
     # A ping still on its way is abandoned; the check's grace time covers the restart.
@@ -434,6 +456,7 @@ app.add_middleware(
 
 app.include_router(capabilities_router)
 app.include_router(telegram_router)
+app.include_router(discord_router)
 app.include_router(profile_router)
 app.include_router(applications_router)
 app.include_router(credentials_router)

@@ -11,9 +11,10 @@ A message is dispatched on SEVEN things, checked in order:
   2. `/link CODE` -> account linking (consumes the code, merges any accumulated data onto
      the target web account). Only in a private chat.
   3. `/unlink` -> detaches this channel account from whatever it currently resolves to.
-  4. Text shaped like a JSON payload (`looks_like_json_payload`) -> resume import.
-  5. Text shaped like a `Title:`/`Company:` job paste (`looks_like_job_paste`) -> creates
+  4. Text shaped like a `Title:`/`Company:` job paste (`looks_like_job_paste`) -> creates
      the same `jobs`/`job_snapshots`/`applications` rows the web's manual-paste form does.
+  5. Text shaped like a JSON payload (`looks_like_json_payload`) -> resume import. (After the
+     job paste, not before: see `_handle_message`.)
   6. "apply to #N" / "apply #N" / "generate #N" (`parse_apply_reference`) -> resolves the
      index against the working set "list" minted, then runs the same prepare-and-deliver
      flow the "Generate resume" button uses.
@@ -64,6 +65,11 @@ from .applications_store import (
     list_applications,
 )
 from .body_limit import max_request_body_bytes
+from .channel_accounts import (
+    is_auto_provisioned_for_subject,
+    resolve_or_create_user_id_for_subject,
+    unlink_subject,
+)
 from .channel_envelope import (
     AckCallback,
     Attachment,
@@ -108,11 +114,6 @@ from .profile_store import (
 )
 from .progress_message import ProgressMessage
 from .rate_limits import rate_limit_error_or_none
-from .telegram_identity import (
-    is_auto_provisioned_for_subject,
-    resolve_or_create_user_id_for_subject,
-    unlink_subject,
-)
 from .working_sets_store import (
     ReferenceOutOfRange,
     WorkingSetExpired,
@@ -510,6 +511,7 @@ async def _handle_link_command(turn: _Turn, code: str) -> None:
         source_user_id=source_user_id,
         target_user_id=target_user_id,
         subject=subject,
+        channel=turn.message.channel,
     )
     if result.get("resumed") and completion is not None and completion.already_complete:
         await turn.say(messages.LINK_ALREADY_LINKED_TEXT)
@@ -523,19 +525,34 @@ async def _handle_link_command(turn: _Turn, code: str) -> None:
 
 
 async def _finish_link(
-    supabase: AsyncClient, *, source_user_id: str, target_user_id: str, subject: str
+    supabase: AsyncClient,
+    *,
+    source_user_id: str,
+    target_user_id: str,
+    subject: str,
+    channel: str,
 ) -> LinkCompletion | None:
     """`finish_link`, contained: the link itself already committed, so a
     failure finishing it is logged and the user still hears "Linked!" (with a
     note that it isn't quite done) -- the same code resumes it if they resend
     it, and nothing is lost meanwhile, since the source account isn't deleted
     until it owns nothing."""
+    # `finish_link` links through Telegram unless told another channel, so Telegram's call is
+    # the one it has always been and only another channel names itself.
     try:
+        if channel == "telegram":
+            return await finish_link(
+                supabase,
+                source_user_id=source_user_id,
+                target_user_id=target_user_id,
+                subject=subject,
+            )
         return await finish_link(
             supabase,
             source_user_id=source_user_id,
             target_user_id=target_user_id,
             subject=subject,
+            channel=channel,
         )
     except Exception:
         logger.error(

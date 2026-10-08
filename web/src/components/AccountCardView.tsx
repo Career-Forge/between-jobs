@@ -53,8 +53,8 @@ export function AccountCardView({
         <li>your browser-extension sign-in</li>
       </ul>
       <p>
-        <strong>This cannot be undone.</strong> If you also use the Telegram bot, messaging it
-        again starts a new, empty account.
+        <strong>This cannot be undone.</strong> If you also use the Telegram bot or the Discord app,
+        using it again starts a new, empty account.
       </p>
       <p>Drafts we already created in your Gmail stay in your mailbox.</p>
       <p className="bj-muted bj-small">

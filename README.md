@@ -61,6 +61,11 @@ search or scraping key, it says so:
   handles it, and answers every chat (it reads no data; a chat with no web account gets the
   wording that applies to it). `/learn` walks the first-run checklist and answers only a chat
   that is linked to a web account.
+- **Discord bridge (optional).** The same bot on Discord, as slash commands in a direct
+  message with the app: link an account, paste a job, list applications, generate a resume
+  for one and get the PDF back, import a resume file, and receive the strong-match alert.
+  Discord only delivers slash commands and button taps to an app like this, never text
+  typed in the chat: see "Discord" under "Set it up".
 - **Browser extension (Chrome).** On the Lever, Greenhouse and Ashby application page of a
   posting you are tracking, it fills your contact fields from your profile and drafts
   answers to custom questions with your own key. It never clicks submit.
@@ -73,8 +78,8 @@ does not work from a clean checkout.** Until a public engine lands, these featur
 with a retryable `PROVIDER_UNAVAILABLE` error ("Couldn't reach the resume engine"):
 
 - generating a resume and cover letter for an application (`POST /applications/{id}/prepare`,
-  and the Telegram bot's "Generate resume" button and "apply to #N", which run the same
-  preparation), and with them everything that works from the generated documents -- PDF
+  and the Telegram and Discord bots' "Generate resume" button and "apply to #N" (`/apply` on
+  Discord), which run the same preparation), and with them everything that works from the generated documents -- PDF
   download, the export checklist, and attaching a resume or cover letter in the extension;
 - the Tailor panel's coverage analysis, the gap interview, and the resume header preview;
 - interview practice (it builds its context through the engine's ingest step).
@@ -98,7 +103,7 @@ service in `latex-service/` (see its README).
 | `extension/` | The Chrome extension (WXT, React): ATS autofill |
 | `latex-service/` | A small, separate service that compiles LaTeX to PDF |
 | `supabase/migrations/` | The database schema, as migration files |
-| `scripts/` | Operator scripts, run by hand (reference-data imports, registry sampling, Telegram webhook registration, account deletion) |
+| `scripts/` | Operator scripts, run by hand (reference-data imports, registry sampling, Telegram webhook and Discord command registration, account deletion) |
 | `tests/` | The Python test suite |
 
 ## Set it up
@@ -194,14 +199,96 @@ unpacked" and select `extension/build/chrome-mv3`. Sign in from the side panel w
 same account. See `extension/README.md` for what it does, what it sends to the API, and
 the store-build rules; it is not published to the Chrome Web Store.
 
-### Optional: Telegram, Gmail, the LaTeX service
+### Optional: Telegram, Discord, Gmail, the LaTeX service
 
 These are off until configured. The Telegram bridge needs `TELEGRAM_BOT_TOKEN` and
 `TELEGRAM_WEBHOOK_SECRET` and a public HTTPS URL for the webhook, which
 `scripts/set_telegram_webhook.py` registers; Gmail drafts need a Google OAuth client, and
 the Google consent includes read access to Gmail (see "What works today"); PDF output
-needs `latex-service/` running. `.env.example` explains each one. Setting `WEB_APP_URL` to
+needs `latex-service/` running; Discord has its own walk-through below. `.env.example` explains each one. Setting `WEB_APP_URL` to
 the web app's public https address lets the bot's `/privacy` and `/learn` link to its pages.
+
+### Discord
+
+The Discord bridge is optional and off until you set its values. It works over Discord's
+HTTP interactions, not the Gateway: Discord sends a signed request to
+`https://<your-public-host>/discord/interactions` when someone runs a slash command or
+taps a button in a direct message with the app, the API answers within Discord's three
+seconds (a "thinking..." placeholder, or a silent acknowledgement for a button) and does the
+work in the background, then edits that placeholder or sends follow-up messages through the
+interaction's own 15-minute webhook.
+
+**What people can do.** Everything is a slash command, because **text typed in a direct
+message with the app is never delivered to an app that uses HTTP interactions**: it needs the
+Gateway, which this server does not open. So a person who types `list` in the chat gets no
+answer; they run `/list`.
+
+| Command | What it does |
+| --- | --- |
+| `/link code` | Links this Discord account to a web account with the one-time code from the Integrations page |
+| `/unlink` | Detaches it again |
+| `/list`, `/apply number` | Numbers the tracked applications; generates a resume for one of them |
+| `/job title company description [location] [url]` | Tracks a job (the description is up to 6,000 characters, Discord's limit for a command option) |
+| `/import file` | Imports a resume from a filled-in JSON file (`/setup` gives the template) |
+| `/setup`, `/resume` | The resume template; the resume on file |
+| `/privacy`, `/learn` | What is stored and who handles it; the getting-started checklist |
+
+A generation is one message edited as the work advances, the PDF arrives as a follow-up,
+and the final message carries the "Mark as applied" button; nothing is ever submitted for
+the person. Commands are registered for the direct message with the app only, and anything
+that arrives from a server channel or a group chat is refused.
+
+**Setting it up.**
+
+1. In the [Discord developer portal](https://discord.com/developers/applications) create an
+   application. On *General Information* copy the **Application ID** into
+   `DISCORD_APPLICATION_ID` and the **Public Key** into `DISCORD_PUBLIC_KEY`. Both together
+   turn the endpoint on; one without the other stops the API from starting.
+2. On *Installation*, enable **both** installation contexts. *User Install* lets a person
+   add the app to their own account and use its commands in their direct message with it
+   (the commands are registered for that direct message, which Discord calls the `BOT_DM`
+   context). *Guild Install* (scopes `applications.commands` and `bot`) gives the app a bot
+   user in a server. Which people can reach the direct message through which install is
+   Discord's rule, and its documentation does not say whether an app that was only installed
+   to a person's account can message them unprompted, so what a push does for such a person
+   is decided by Discord when it is tried (see step 3). The web app's Integrations page points
+   people at the app's install link. With `DISCORD_INSTALL_URL` empty that is built from
+   `DISCORD_APPLICATION_ID` as Discord's own link
+   (`https://discord.com/oauth2/authorize?client_id=<application id>`), which works once
+   *Installation* -> *Install Link* is set to **Discord Provided Link**. Set
+   `DISCORD_INSTALL_URL` only for a Custom URL or a vanity link; it may carry a query string,
+   and a value that is not an https address is ignored with a warning.
+3. Optional: on *Bot*, reset the token and put it in `DISCORD_BOT_TOKEN`. It is what lets the
+   server open a direct message and send into it, which pushes (the strong-match alert) and
+   the delivery of a reply after a command's 15-minute token has expired both need. Whether a
+   person can be messaged this way is Discord's decision, made from their own settings:
+   Discord's support pages list what stops one account messaging another (no server in
+   common, direct messages turned off for the shared server, accepting messages from
+   friends only, a block). When Discord refuses (error 50007, "Cannot send messages to this
+   user"), the push is skipped on Discord, logged with that code, and the person's other
+   channels still get it. The token is a secret; keep it in the environment, never in git.
+4. Register the commands, from your shell (the script does not read `.env` and never prints
+   the token): `python scripts/register_discord_commands.py` is a dry run that shows what
+   would change, `--apply` does it. It **replaces** the application's global commands; it
+   refuses to delete ones this repository does not define unless you pass
+   `--remove-others`, and `--integration-types guild|user|both` narrows who may install.
+5. Put `https://<your-public-host>/discord/interactions` in *General Information* ->
+   *Interactions Endpoint URL* and save. Discord sends a ping, and then purposely sends
+   requests with invalid signatures, and removes the URL if the endpoint does not answer
+   them correctly (the endpoint answers the ping and refuses every unverified request with
+   401). An application has one endpoint: use a separate application for dev and prod.
+
+Every request is verified (an Ed25519 signature over the timestamp and the raw body, with the
+public key) before it is parsed, a timestamp more than five minutes from now is refused, and
+the interaction's id is claimed in the database, so a repeat of the same interaction is
+dropped instead of processed again. That is a safety net, not a gate: if the claim cannot be
+made (the database is unreachable, does not answer within about a second and a half, or the
+migration has not been applied) the interaction is processed anyway, and a replay of it inside
+the five minutes a timestamp is accepted for can run twice. Interaction tokens and the bot token are never logged. The limits that matter in
+practice: a command option holds at most 6,000 characters (so a resume is imported as a file,
+not pasted); a message over Discord's 2,000-character limit is sent as several messages; and
+an app that was only installed to a person's account may send at most five follow-ups to one
+interaction.
 
 ## Run the API with Docker
 
@@ -223,17 +310,17 @@ contains it: the build copies only the package.
   Supabase stack at the address `supabase status` prints. Point `SUPABASE_URL` at the
   host instead (on Docker Desktop, `http://host.docker.internal:54321`), or use a hosted
   project.
-- Configuration is environment variables; `.env.example` lists them all. Telegram is
-  optional -- leave `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` unset to run
-  web-only.
+- Configuration is environment variables; `.env.example` lists them all. Telegram and
+  Discord are optional -- leave `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET` (and
+  `DISCORD_APPLICATION_ID` and `DISCORD_PUBLIC_KEY`) unset to run web-only.
 - **One container, one process.** The API runs its own background workers, so do not
   pass `--workers`. If a second copy ever starts (an overlapping deploy, a stray
   replica), the workers that would otherwise do the same work twice stand by instead.
 - The container exits cleanly on SIGTERM. Give your platform a grace period longer than
   30 seconds before it escalates to SIGKILL (on Railway, set
   `RAILWAY_DEPLOYMENT_DRAINING_SECONDS`; its default is 0): the API waits up to 20 seconds
-  for open requests, then up to 5 more for a Telegram-started resume generation to finish
-  before it cancels one. A generation cut off by a restart is not resumed: the person
+  for open requests, then up to 5 more for Discord commands still being handled, then up to 5
+  more for a Telegram- or Discord-started resume generation to finish before it cancels one. A generation cut off by a restart is not resumed: the person
   sends the request again.
 
 ## Operations
@@ -364,6 +451,8 @@ is no importer for a raw company list in `scripts/`; what is there:
   either, so the extension runs on its open-source generic defaults.
 - `scripts/set_telegram_webhook.py` points a Telegram bot at the API's webhook; the
   `TELEGRAM_WEBHOOK_SECRET` comment in `.env.example` shows how to run it.
+- `scripts/register_discord_commands.py` registers the Discord app's slash commands (a dry
+  run unless you pass `--apply`); see "Discord" under "Set it up".
 - `scripts/delete_account.py` and `scripts/check_migration_drift.py` are operator tools.
 
 ## Contributing

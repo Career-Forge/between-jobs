@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { SavedSearchesCard } from "../components/SavedSearchesCard";
 import { ProblemView } from "../components/SetupRequiredNotice";
 import { apiFetch } from "../lib/api";
-import { isTelegramAvailable, telegramBotUsername } from "../lib/capabilities";
+import { discordInstallUrl, isDiscordAvailable, isTelegramAvailable, telegramBotUsername } from "../lib/capabilities";
 import {
   SEARCH_PROVIDER_CARDS,
   cardNote,
@@ -43,6 +43,8 @@ import { useHiringSignalsEnabled } from "../lib/useHiringSignalsStatus";
 // the page's own title already claims, so this doesn't need a second
 // route to earn its place. It shows only on a server that has a bot (P2.4):
 // GET /capabilities says so, and until that answer is known the card stays out.
+// The Discord card is the same idea, shown only when /capabilities says the server has the
+// Discord app configured (a link code could not be redeemed otherwise).
 
 interface CredentialSummary {
   id: string;
@@ -108,6 +110,7 @@ export default function Integrations() {
       {isTelegramAvailable(capabilities) && (
         <TelegramLinkCard botUsername={telegramBotUsername(capabilities)} />
       )}
+      {isDiscordAvailable(capabilities) && <DiscordLinkCard installUrl={discordInstallUrl(capabilities)} />}
       <GmailConnectCard credential={gmail} onChanged={load} />
       <SavedSearchesCard />
     </div>
@@ -353,6 +356,72 @@ function TelegramLinkCard({ botUsername }: { botUsername: string | null }) {
         <div>
           <div className="bj-muted bj-small">Send this to the bot:</div>
           <div className="bj-link-code">/link {code}</div>
+          {expiresAt && (
+            <div className="bj-muted bj-small">
+              Expires {new Date(expiresAt).toLocaleTimeString()}
+            </div>
+          )}
+        </div>
+      )}
+      {error && <div className="bj-error">{error}</div>}
+      <div className="bj-actions">
+        <button className="bj-primary" onClick={() => void generate()} disabled={busy}>
+          {busy ? "Generating..." : code ? "Generate a new code" : "Generate a code"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// The Discord card. Discord only hands a command or a button tap to the app, never text typed in
+// the chat, so the code goes in as the /link command (it has a field for the code), not as a
+// message. A code can only be redeemed here if the server has the Discord app configured, which is
+// why the card is shown only when /capabilities says so.
+function DiscordLinkCard({ installUrl }: { installUrl: string | null }) {
+  const [code, setCode] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function generate() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await apiFetch<{ code: string; expires_at: string }>("/link/code", {
+        method: "POST",
+        body: JSON.stringify({ channel: "discord" }),
+      });
+      setCode(result.code);
+      setExpiresAt(result.expires_at);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to generate a code.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="bj-card">
+      <h2>Discord</h2>
+      <p className="bj-muted">
+        Link your Discord account to use this server's Discord app with the same profile and
+        applications you see here. If you've already used the app, linking brings over anything you
+        built up there. The app answers slash commands in a direct message with it; text you type in
+        that chat is not delivered to it.
+      </p>
+      {installUrl && (
+        <p className="bj-muted bj-small">
+          Not added yet?{" "}
+          <a href={installUrl} target="_blank" rel="noopener noreferrer">
+            Add the app to Discord
+          </a>
+          .
+        </p>
+      )}
+      {code && (
+        <div>
+          <div className="bj-muted bj-small">In a direct message with the app, run:</div>
+          <div className="bj-link-code">/link code: {code}</div>
           {expiresAt && (
             <div className="bj-muted bj-small">
               Expires {new Date(expiresAt).toLocaleTimeString()}

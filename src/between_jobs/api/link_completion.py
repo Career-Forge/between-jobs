@@ -313,10 +313,13 @@ async def finish_link(
     source_user_id: str,
     target_user_id: str,
     subject: str,
+    channel: str = CHANNEL,
     budget_seconds: float = _TIME_BUDGET_SECONDS,
 ) -> LinkCompletion:
     """Moves what the merge left (storage) and retires the source account
-    once it owns nothing. Gives up moving files after `budget_seconds`, which
+    once it owns nothing. `channel` is the chat channel the link was made on
+    (Telegram unless told otherwise; the database functions this calls are
+    channel-blind and find the link by it). Gives up moving files after `budget_seconds`, which
     reads as not retired -- the same code sent again carries on. Raises on an
     unexpected failure (an RPC or storage error the passes below don't
     contain); the caller logs it and carries on."""
@@ -326,7 +329,7 @@ async def finish_link(
     for attempt in range(_MAX_PASSES):
         merged = await finish_link_merge(
             supabase,
-            channel=CHANNEL,
+            channel=channel,
             subject=subject,
             source_user_id=source_user_id,
             target_user_id=target_user_id,
@@ -349,7 +352,7 @@ async def finish_link(
 
     deleted = await finish_link_delete_source(
         supabase,
-        channel=CHANNEL,
+        channel=channel,
         subject=subject,
         source_user_id=source_user_id,
         target_user_id=target_user_id,

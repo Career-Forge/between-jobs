@@ -34,7 +34,9 @@ session.
 
 The lookups that are not Telegram's alone -- the user of a (channel, subject), the chat of a
 user, the channels a user has linked -- are `channel_identity`'s, and this module calls them
-for its own. What stays here depends on how a Telegram account is provisioned (the auth user's
+for its own. The business logic does not call this module directly: `channel_accounts` is its
+channel-neutral front, which hands Telegram to the functions here unchanged and holds the same
+rules for Discord. What stays here depends on how a Telegram account is provisioned (the auth user's
 `app_metadata`) or detached, so each function that does refuses any other channel
 (`_require_telegram`): a second channel gets its own rules, and until it does its subjects
 must not be filed under Telegram's.

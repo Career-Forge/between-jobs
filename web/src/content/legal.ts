@@ -282,6 +282,13 @@ export const PROCESSORS: readonly Processor[] = [
     ],
   },
   {
+    name: "Discord",
+    group: "optional",
+    detail: [
+      "If you use the Between Jobs app on Discord, the commands you run and the app's replies travel through Discord, and Discord processes those messages: the details of a job you paste, a resume file you attach, a link code, and what the app answers, including the resume PDF it sends you. Discord's own privacy policy covers what it does with them.",
+    ],
+  },
+  {
     name: "LinkedIn",
     group: "optional",
     detail: [
@@ -359,7 +366,7 @@ export const PRIVACY: LegalDocument = {
       heading: "Who runs Between Jobs",
       blocks: [
         p(
-          "Between Jobs is the service at between-jobs.tech, with its web app, API, browser extension and Telegram bot. In this policy 'we' and 'us' mean whoever operates it, and 'the operator' means the same. You can reach us at ",
+          "Between Jobs is the service at between-jobs.tech, with its web app, API, browser extension, Telegram bot and Discord app. In this policy 'we' and 'us' mean whoever operates it, and 'the operator' means the same. You can reach us at ",
           privacyEmail,
           ".",
         ),
@@ -403,7 +410,7 @@ export const PRIVACY: LegalDocument = {
           ),
           def(
             "Your connections",
-            "Your provider keys, and your Gmail connection if you make one, stored encrypted. We also keep which AI provider and model you chose as your default, in plain text next to the encrypted key. If you link Telegram, your numeric Telegram user id and a count of failed link-code attempts from it, and nothing else about your Telegram account: no name or username.",
+            "Your provider keys, and your Gmail connection if you make one, stored encrypted. We also keep which AI provider and model you chose as your default, in plain text next to the encrypted key. If you link Telegram, your numeric Telegram user id and a count of failed link-code attempts from it, and nothing else about your Telegram account: no name or username. If you link Discord, the same from Discord: your numeric Discord user id and a count of failed link-code attempts from it, and nothing else about your Discord account.",
           ),
           def(
             "Answers for the browser extension",
@@ -419,7 +426,7 @@ export const PRIVACY: LegalDocument = {
           ),
           def(
             "Technical records",
-            "Counters that limit how often you can use costly features, a record of when you signed the browser extension out, short-lived codes for linking Telegram, a one-time token that ties a Gmail connect attempt to your account (valid for 10 minutes and removed when the attempt comes back, but kept until you delete your account if it never does), the numbered lists of applications the Telegram bot shows you when you ask it to list them (stored as application ids, so that 'apply to #3' means the one you saw: each is valid for 30 minutes, and it is kept until you delete your account), and a queue of internal events that feeds your Today feed.",
+            "Counters that limit how often you can use costly features, a record of when you signed the browser extension out, short-lived codes for linking Telegram or Discord, a one-time token that ties a Gmail connect attempt to your account (valid for 10 minutes and removed when the attempt comes back, but kept until you delete your account if it never does), the numbered lists of applications the Telegram bot and the Discord app show you when you ask them to list them (stored as application ids, so that 'apply to #3' or '/apply 3' means the one you saw: each is valid for 30 minutes, and it is kept until you delete your account), and a queue of internal events that feeds your Today feed.",
           ),
         ),
         h3("What we do not store"),
@@ -488,6 +495,19 @@ export const PRIVACY: LegalDocument = {
       ],
     },
     {
+      id: "discord",
+      heading: "Discord (optional)",
+      blocks: [
+        ul(
+          "If you run a command in a direct message with the Between Jobs app on Discord, we create an account for your Discord user id if you do not have one. You can link it to a web account with a code, and the data it collected is merged into that account.",
+          "The app receives what you give it through its slash commands and buttons: the details of a job you paste, a resume file you attach, a link code and the buttons you tap. Discord sends along with each one some details about you and the chat it came from, such as your username, display name, avatar and language setting. The app uses your numeric user id and the chat only to know who is asking and where to answer, and does not use or store the rest. Discord does not deliver ordinary text you type in the chat to it. Discord processes these messages and the app's replies, and the resume PDF it sends you, because it carries the conversation; Discord's own privacy policy covers what it does with them.",
+          "We store your numeric Discord user id and a count of failed link-code attempts from it, and nothing else about your Discord account: no name or username. We also keep the id Discord gives each command or button tap, only so that the same one is not processed twice; it is removed once it is older than 7 days, as a side effect of the app receiving later ones. The temporary token Discord gives each one for replying is used while we answer and is not stored.",
+          "To tell you about a strong match without being asked, the app opens a direct message with you through its Discord bot. Discord allows that only under its own rules, for example when you share a server with the bot and allow direct messages from it. If Discord refuses, nothing is sent on Discord and nothing else changes.",
+          "'/unlink' detaches it. If you delete your web account and run a command again, it starts a new, empty account.",
+        ),
+      ],
+    },
+    {
       id: "extension",
       heading: "The browser extension",
       blocks: [
@@ -518,14 +538,14 @@ export const PRIVACY: LegalDocument = {
         ul(
           "We keep your data while your account exists.",
           "The tester programme is an exception to that line. If you joined it, we delete your enrollment record and your usage records 30 days after the programme ends, even if your account stays, unless you have agreed that we may keep them. 'Delete my account' removes them straight away, as it does everything else.",
-          "'Delete my account' on the Profile page removes your account and everything tied to it, immediately and for good: your profile, applications, documents and the files stored for them, saved searches, keys, connections, practice sessions, research, product usage events, tester programme enrollment and the rest of what is listed above. It also asks Google to revoke a Gmail connection, signs out your sessions and the browser extension, clears Telegram link-attempt counters and removes your entries from our sign-in provider's audit log. Those extra steps are made on a best-effort basis.",
+          "'Delete my account' on the Profile page removes your account and everything tied to it, immediately and for good: your profile, applications, documents and the files stored for them, saved searches, keys, connections, practice sessions, research, product usage events, tester programme enrollment and the rest of what is listed above. It also asks Google to revoke a Gmail connection, signs out your sessions and the browser extension, clears Telegram and Discord link-attempt counters and removes your entries from our sign-in provider's audit log. Those extra steps are made on a best-effort basis.",
           [
             "You can also ask us to delete your account by email at ",
             privacyEmail,
             ". We will do it within 7 days.",
           ],
           "You can delete saved searches, saved Hiring-signals posts and searches, a pending profile import, your provider keys and your Gmail connection yourself. There is no button yet to delete a single application or document: ask us by email, or delete the whole account.",
-          "Some data lives only briefly by design: a link code is valid for 10 minutes, a cached search result is deleted after about 24 hours, and the numbers Telegram assigns to each update it sends the bot (kept only so that the same update is not processed twice) are removed once they are older than 7 days, as a side effect of the bot receiving later updates.",
+          "Some data lives only briefly by design: a link code is valid for 10 minutes, a cached search result is deleted after about 24 hours, and the numbers Telegram assigns to each update it sends the bot (kept only so that the same update is not processed twice) are removed once they are older than 7 days, as a side effect of the bot receiving later updates. The ids Discord assigns to each command or button tap the Discord app receives are kept only for the same reason and are removed in the same way, once they are older than 7 days, as a side effect of the app receiving later ones.",
         ),
         h3("What is not removed when you delete your account"),
         ul(
@@ -543,7 +563,7 @@ export const PRIVACY: LegalDocument = {
       blocks: [
         ul(
           "Your provider keys and your Gmail connection are encrypted in the database. The key that encrypts them is held in the database's vault, separate from the encrypted values.",
-          "Every table has row-level security switched on, and every API route that reads or changes your data checks who you are. The few routes that cannot carry your sign-in token have their own checks: the health check returns no user data, the Google redirect that completes a Gmail connection is matched to you by a one-time code, and the Telegram webhook accepts only requests that carry our secret.",
+          "Every table has row-level security switched on, and every API route that reads or changes your data checks who you are. The few routes that cannot carry your sign-in token have their own checks: the health check returns no user data, the Google redirect that completes a Gmail connection is matched to you by a one-time code, the Telegram webhook accepts only requests that carry our secret, and the Discord endpoint accepts only requests whose signature checks out against the public key of our Discord application.",
           "The website's production build and the browser extension's store package are built to talk to our API over HTTPS, and both builds are refused at build time if they point at a plain-HTTP or local address. The HTTPS connection itself is provided by our hosting platforms.",
           "The API limits how often each account can use the costly features.",
           [
@@ -613,7 +633,7 @@ export const TERMS: LegalDocument = {
       heading: "What these terms cover",
       blocks: [
         p(
-          "These terms apply when you create an account or use Between Jobs: the website at between-jobs.tech, its API, the browser extension and the Telegram bot. If you do not agree to them, do not use it. You must be at least 16 years old. How we handle your data is in the ",
+          "These terms apply when you create an account or use Between Jobs: the website at between-jobs.tech, its API, the browser extension, the Telegram bot and the Discord app. If you do not agree to them, do not use it. You must be at least 16 years old. How we handle your data is in the ",
           policy,
           ".",
         ),

@@ -7,11 +7,11 @@ INVALID_INPUT, the same allow-list precedent credentials_routes.py set for
 (service, provider) pairs. A channel in the vocabulary is not necessarily one
 this server can serve: a code is only minted when the channel has an adapter
 here (`channel_enabled`), because a code nobody can redeem is worse than a
-refusal. Telegram has one when the bot is configured. Discord has none yet, so
-it answers FEATURE_DISABLED -- and even with an adapter its codes could not be
-redeemed until the database function that consumes them (`consume_link_code`)
-accepts the channel, which today it refuses for anything but Telegram. Lifting
-both belongs with the Discord adapter.
+refusal. Telegram has one when the bot is configured; Discord when its
+application id and public key are (see `discord_config`), and its codes are
+redeemable because `consume_link_code` accepts both channels. A code is only ever
+redeemed on the channel it was minted for. A server with neither answers
+FEATURE_DISABLED.
 """
 
 from __future__ import annotations

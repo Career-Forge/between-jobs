@@ -17,7 +17,7 @@ export function TodayEmptyState() {
       <p>
         After that, Today shows what actually happened: a job you tracked, a resume that generated
         (or didn't), a stage change, a high-fit new job found for one of your saved searches, or a
-        Gmail reply worth a second look -- on either Telegram or web. It doesn't yet cover
+        Gmail reply worth a second look -- on Telegram, Discord or the web. It doesn't yet cover
         interview prep or stale-application nudges, since those don't exist yet.
       </p>
     </div>

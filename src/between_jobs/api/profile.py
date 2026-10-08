@@ -339,6 +339,14 @@ def parse_and_validate(raw_text: str) -> ResumeTemplate:
 
 
 _MAX_REPORTED_ERRORS = 10
+_MAX_REPORTED_PATH_CHARS = 120  # a key path is whatever the person's JSON said, however long
+
+
+def _reported_path(loc: tuple[int | str, ...]) -> str:
+    path = ".".join(str(p) for p in loc) or "(top level)"
+    if len(path) > _MAX_REPORTED_PATH_CHARS:
+        return path[:_MAX_REPORTED_PATH_CHARS] + "..."
+    return path
 
 
 def _format_validation_error(e: ValidationError) -> str:
@@ -350,8 +358,7 @@ def _format_validation_error(e: ValidationError) -> str:
     errors = e.errors()
     lines = []
     for err in errors[:_MAX_REPORTED_ERRORS]:
-        loc = ".".join(str(p) for p in err["loc"]) or "(top level)"
-        lines.append(f"• `{loc}`: {err['msg']}")
+        lines.append(f"• `{_reported_path(err['loc'])}`: {err['msg']}")
     if len(errors) > _MAX_REPORTED_ERRORS:
         lines.append(f"...and {len(errors) - _MAX_REPORTED_ERRORS} more.")
     problems = "\n".join(lines)

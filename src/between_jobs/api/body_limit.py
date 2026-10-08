@@ -30,9 +30,10 @@ so a 413 carries the CORS headers (without them a browser shows a network error 
 the message) and the `X-Request-ID` header (so it can be quoted in a bug report).
 
 The default is 1 MiB, set by MAX_REQUEST_BODY_BYTES. `PATH_PREFIX_LIMITS` is the hook for a
-route that legitimately takes more: a path prefix -> bytes mapping, longest matching prefix
-wins. Today that is the resume file upload (5 MiB), and only that path; every other route keeps
-the default. The limit is read on every request,
+route that needs a different cap: a path prefix -> bytes mapping, longest matching prefix
+wins. Today that is the resume file upload (5 MiB, more than the default) and the Discord
+interactions endpoint (64 KiB, far less, because it is open until a request has been verified);
+every other route keeps the default. The limit is read on every request,
 like the DISABLE_* flags, and validated at startup (`app.lifespan`), so a bad value stops the
 API from starting instead of failing requests one by one.
 """
@@ -56,10 +57,17 @@ DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024
 
 RESUME_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
 
+DISCORD_INTERACTION_MAX_BYTES = 64 * 1024
+
 PATH_PREFIX_LIMITS: dict[str, int] = {
     # A resume file (PDF or DOCX) sent as the raw request body. A real one is a few hundred
     # kilobytes; 5 MiB leaves room for one with embedded images.
     "/profile/import-document": RESUME_UPLOAD_MAX_BYTES,
+    # Discord's interactions endpoint is open to the internet until a request proves it is
+    # Discord's, so it is held far below the default. A real interaction is a few kilobytes; the
+    # largest is a `/job` with a 6,000-character description (about 24 KB as UTF-8 at worst)
+    # next to the rest of the document. Lowering a cap is what the mapping is for, too.
+    "/discord/interactions": DISCORD_INTERACTION_MAX_BYTES,
 }
 """Path prefix -> the largest body, in bytes, that paths under it may send: the place to raise
 the cap for a route that takes an upload. The match is on the raw path string, so end a prefix

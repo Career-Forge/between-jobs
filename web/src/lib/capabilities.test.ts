@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CAPABILITIES_PATH,
   type CapabilitiesFetcher,
+  discordInstallUrl,
+  isDiscordAvailable,
   isTelegramAvailable,
   isTesterProgramRequired,
   loadCapabilities,
@@ -162,5 +164,63 @@ describe("the tester programme flag", () => {
     expect(isTesterProgramRequired(ready(false))).toBe(false);
     expect(isTesterProgramRequired({ kind: "checking" })).toBe(false);
     expect(isTesterProgramRequired({ kind: "unavailable" })).toBe(false);
+  });
+});
+
+
+describe("Discord", () => {
+  it("is not there unless the server says so: the answer a server without it gives is unchanged", () => {
+    const parsed = parseCapabilities({ telegram: true });
+    expect(parsed).toEqual({ telegram: true, telegramBotUsername: null, testerProgramRequired: false });
+    expect(parsed).not.toHaveProperty("discord");
+    for (const discord of [false, "true", 1, null, undefined]) {
+      expect(parseCapabilities({ telegram: false, discord })).not.toHaveProperty("discord");
+    }
+  });
+
+  it("reads the flag and the install address when the server sends them", () => {
+    expect(
+      parseCapabilities({ telegram: false, discord: true, discord_install_url: "https://example.com/add-the-app" }),
+    ).toEqual({
+      telegram: false,
+      telegramBotUsername: null,
+      testerProgramRequired: false,
+      discord: true,
+      discordInstallUrl: "https://example.com/add-the-app",
+    });
+    expect(parseCapabilities({ telegram: false, discord: true })?.discordInstallUrl).toBeNull();
+  });
+
+  it("keeps the query string of Discord's own install link, which is the whole of it", () => {
+    for (const link of [
+      "https://discord.com/oauth2/authorize?client_id=1234567890123456789",
+      "https://discord.com/oauth2/authorize?client_id=1234567890123456789&scope=bot+applications.commands&integration_type=0",
+    ]) {
+      expect(parseCapabilities({ telegram: false, discord: true, discord_install_url: link })?.discordInstallUrl).toBe(link);
+    }
+  });
+
+  it.each([
+    "http://example.com/add",
+    "javascript:alert(1)",
+    "https://user:secret@example.com/add",
+    "not a url",
+    "",
+    42,
+    null,
+  ])("shows no install address for %j", (value) => {
+    expect(parseCapabilities({ telegram: false, discord: true, discord_install_url: value })?.discordInstallUrl).toBeNull();
+  });
+
+  it("offers the card only for a definite yes", () => {
+    const on = { kind: "ready", capabilities: { telegram: false, telegramBotUsername: null, testerProgramRequired: false, discord: true, discordInstallUrl: "https://example.com/a" } } as const;
+    const off = { kind: "ready", capabilities: { telegram: false, telegramBotUsername: null, testerProgramRequired: false } } as const;
+    expect(isDiscordAvailable(on)).toBe(true);
+    expect(isDiscordAvailable(off)).toBe(false);
+    expect(isDiscordAvailable({ kind: "checking" })).toBe(false);
+    expect(isDiscordAvailable({ kind: "unavailable" })).toBe(false);
+    expect(discordInstallUrl(on)).toBe("https://example.com/a");
+    expect(discordInstallUrl(off)).toBeNull();
+    expect(discordInstallUrl({ kind: "checking" })).toBeNull();
   });
 });

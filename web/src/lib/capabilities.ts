@@ -34,6 +34,14 @@ export interface Capabilities {
   // it is; null otherwise. A self-hosted server has its own bot, so the page
   // must not assume the hosted service's.
   telegramBotUsername: string | null;
+  // The server has the Discord app configured, so a Discord link code can be redeemed. The server
+  // sends `discord` only when that is so, and a server that says nothing has no Discord: both
+  // fields are therefore absent unless it is true, and the card stays hidden.
+  discord?: boolean;
+  // The address people open to add the Discord app: the operator's own, or else Discord's install
+  // link for the application (a query string and all). null when the server has none or what it
+  // sent is not an https address.
+  discordInstallUrl?: string | null;
 }
 
 export type CapabilitiesState =
@@ -63,7 +71,22 @@ export function parseCapabilities(body: unknown): Capabilities | null {
     telegram: record.telegram,
     telegramBotUsername: typeof name === "string" && BOT_USERNAME.test(name) ? name : null,
     testerProgramRequired: record.tester_program_required === true,
+    ...(record.discord === true
+      ? { discord: true, discordInstallUrl: httpsAddress(record.discord_install_url) }
+      : {}),
   };
+}
+
+// The install address as the card may link to it: an https address, and nothing else. Anything
+// the server sent that is not one is shown as no address rather than rendered as whatever it was.
+function httpsAddress(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.username === "" && url.password === "" ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function loadCapabilities(fetcher: CapabilitiesFetcher): Promise<CapabilitiesState> {
@@ -78,6 +101,18 @@ export async function loadCapabilities(fetcher: CapabilitiesFetcher): Promise<Ca
 /** Whether the Telegram card may be shown: only for a definite yes. */
 export function isTelegramAvailable(state: CapabilitiesState): boolean {
   return state.kind === "ready" && state.capabilities.telegram;
+}
+
+/** Whether the Discord card may be shown: only for a definite yes. */
+export function isDiscordAvailable(state: CapabilitiesState): boolean {
+  return state.kind === "ready" && state.capabilities.discord === true;
+}
+
+/** Where people add the Discord app, for the card's link, or null when the operator gave none. */
+export function discordInstallUrl(state: CapabilitiesState): string | null {
+  return state.kind === "ready" && state.capabilities.discord === true
+    ? (state.capabilities.discordInstallUrl ?? null)
+    : null;
 }
 
 /** The bot's name for the card's copy, or null when it isn't known (the card

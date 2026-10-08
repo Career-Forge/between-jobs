@@ -44,6 +44,12 @@ _GOOGLE_CLIENT_SECRET = "GOCSPX-" + "AbCdEfGh1234567890_-" * 2
 _GOOGLE_API_KEY = "AIza" + "SyAbCdEfGh1234567890_-aBcDeFgHiJ"
 _GOOGLE_ACCESS_TOKEN = "ya29." + "a0AbCdEfGh1234567890_-" * 2
 _GOOGLE_REFRESH_TOKEN = "1//" + "0gAbCdEfGh1234567890_-" * 2
+# Discord shapes, assembled the same way: a bot token is three base64url parts, an interaction
+# token is long base64url text that goes in a URL path.
+_DISCORD_BOT_TOKEN = (
+    "ZmFrZS1ib3QtdG9rZW4tZm9y" + "." + "GtEsT1" + "." + "fake-bot-token-shaped-like-one-123"
+)
+_DISCORD_INTERACTION_TOKEN = "aW50ZXJhY3Rpb246" + "AbCdEf0123456789" * 3
 # Kept out of the `raise` lines below: a traceback shows each frame's source
 # line, which is code; the message itself must never appear.
 _PERSONAL = "could not push: Jordan Rivera, 555-0134"
@@ -122,6 +128,21 @@ def _record(msg: str, *args: Any, name: str = "test", **kwargs: Any) -> logging.
         ("groq key gsk_0123456789abcdefghijABCD", "0123456789abcdefghij"),
         ("password=hunter2hunter2", "hunter2hunter2"),
         ("reply from jordan.rivera@example.com", "jordan.rivera@example.com"),
+        # Discord: a bare bot token (no label for another rule to catch), the interaction token in
+        # each path it travels in, and `Authorization: Bot` with a token of no particular shape.
+        (f"startup failed with {_DISCORD_BOT_TOKEN}", "fake-bot-token-shaped-like-one-123"),
+        (
+            f"POST /interactions/1500000000000000001/{_DISCORD_INTERACTION_TOKEN}/callback",
+            _DISCORD_INTERACTION_TOKEN,
+        ),
+        (
+            f"PATCH /webhooks/1500000000000000001/{_DISCORD_INTERACTION_TOKEN}/messages/@original",
+            _DISCORD_INTERACTION_TOKEN,
+        ),
+        (
+            "Authorization: Bot abcdefghijklmnopqrstuvwxyz0123456789",
+            "abcdefghijklmnopqrstuvwxyz0123456789",
+        ),
     ],
 )
 def test_redact_removes_secrets(text: str, secret: str) -> None:
@@ -134,6 +155,10 @@ def test_redact_removes_secrets(text: str, secret: str) -> None:
         "scored 30 jobs for saved search 5f1c; max_tokens=500 tokens: 12",
         "board risk-assessment-pipeline and whisk-technologies-inc at 12:30:45",
         "sqlstate 23505 for 3f2b1c9e-8a7d-4e6f-9b0a-1c2d3e4f5a6b",
+        # Dotted names that are not three long base64url parts: the Discord bot token rule is tight.
+        "failed in discord_interactions_store.claim_interaction at src/between_jobs/api/x.py:199",
+        "wrote resume_for_a_staff_engineer_role.final.pdf and version 1.12.0",
+        "POST /webhooks/1500000000000000001 answered 204",
     ],
 )
 def test_redact_leaves_ordinary_text_alone(text: str) -> None:

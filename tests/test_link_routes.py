@@ -98,8 +98,8 @@ def test_mint_link_code_rejects_unsupported_channel() -> None:
 
 
 def test_discord_is_in_the_vocabulary_but_no_code_is_minted_while_nothing_serves_it() -> None:
-    """Discord is a channel the link route knows (so it is not INVALID_INPUT), but there is no
-    Discord adapter yet, so a code for it could not be redeemed: nothing is minted and the
+    """Discord is a channel the link route knows (so it is not INVALID_INPUT), but on a server
+    where it is not configured a code for it could not be redeemed: nothing is minted and the
     answer says Discord is not set up -- never a code that looks as if it worked."""
     supabase = _FakeSupabaseClient()
     with _client(supabase) as client:

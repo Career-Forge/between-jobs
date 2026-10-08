@@ -52,10 +52,11 @@ request is not counted. With the programme off the gate does nothing and asks no
 buckets in `UNGATED_BUCKETS` are the routes that let a person enroll.
 
 Not a route dependency: work started through the Telegram webhook runs inside that route's
-own handler under the bot's own secret, not under a user session, so it cannot carry one.
-Its one expensive action, generating a resume, claims the same "prepare" bucket directly
+own handler under the bot's own secret, and work started through the Discord interactions
+endpoint under Discord's request signature, not under a user session, so neither can carry one.
+Their one expensive action, generating a resume, claims the same "prepare" bucket directly
 (`rate_limit_error_or_none`, in `channel_core._start_prepare`, before the generation is
-handed to a background task), so the bot is no way round the limit on the web.
+handed to a background task), so no bot is a way round the limit on the web.
 """
 
 from __future__ import annotations

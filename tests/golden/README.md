@@ -52,3 +52,41 @@ paths is EXPECTED, not a regression:
 `n8n_legacy` fixtures stay frozen exactly as captured either way -- they document
 what the reference actually did, which is what makes a deliberate divergence
 checkable at all.
+
+## Behaviour with no reference implementation (the Discord adapter)
+
+The rules above are for behaviour ported from a proven implementation. The Discord adapter has
+none: it is new, written from Discord's published documentation, and no run of anything exists to
+capture. Its tests (`tests/discord_fakes.py` explains each piece) therefore pin its own contract
+with **synthetic** fixtures, and say so: interactions written by hand in the shape Discord
+documents, signed with a throwaway Ed25519 key generated in the test process and used nowhere
+else, against a recording fake of Discord's REST API. Nothing in them is, or was derived from, real
+Discord data, a real application, a real token or a real person.
+
+This is not an exception to rule 1: nothing here claims to match a reference. What these tests
+cannot show is how the real Discord behaves, and they do not pretend to; the list below says what
+only the real service can answer. The Telegram bot's golden file
+(`telegram_bot/expected/telegram_calls.json`) is untouched by the Discord work and still has to
+pass byte for byte.
+
+### Not verified against the real Discord
+
+Each of these is checked by hand against a real application before a release that changes the
+code around it, and until then is an assumption taken from Discord's documentation:
+
+- That Discord accepts the endpoint's answer to its signed ping, and to the requests with an
+  invalid signature it sends on purpose when an Interactions Endpoint URL is saved.
+- That the acknowledgement lands inside Discord's three seconds under real network latency (the
+  tests bound the work done before it, not the network).
+- Whether an app that a person installed to their own account only (no shared server) can open a
+  direct message and send into it unprompted, and the exact status and error code of a refused
+  message (the code treats 50007 and 40003 as Discord's documentation describes them).
+- How many follow-ups an interaction from such an install may make, and how long its token lasts
+  in practice.
+- Downloading an attached file from Discord's CDN: the address shape, how long it stays valid, and
+  that no redirect is involved.
+- That Discord accepts the slash-command definitions the registration script sends, including the
+  installation types and the direct-message-only context.
+- How Discord's client draws the escaped markdown the app sends. Discord does not publish its
+  tokenizer; the escaping is written against the address pattern that discord.py and the
+  simple-markdown library under Discord's client both use.

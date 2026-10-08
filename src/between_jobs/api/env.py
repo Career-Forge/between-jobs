@@ -103,7 +103,22 @@ def https_url_or_refuse(name: str, value: str) -> str:
     return value.rstrip("/")
 
 
-def _url_problem(value: str) -> str | None:
+def is_plain_https_url(value: str) -> bool:
+    """Whether `value` passes the same check `https_url_or_refuse` applies, for a setting that
+    is only cosmetic and so is ignored (with a warning) rather than stopping the API."""
+    return _url_problem(value) is None
+
+
+def is_https_link(value: str) -> bool:
+    """Whether `value` is an https address that is only ever shown as a link, as written: the
+    check of `is_plain_https_url` except that a query string is allowed (an install link is
+    `.../oauth2/authorize?client_id=...`). Nothing is appended to such a value, so the reason
+    a query is refused elsewhere (a path added after it would land inside it) does not apply;
+    credentials, a fragment, whitespace and invisible characters are still refused."""
+    return _url_problem(value, allow_query=True) is None
+
+
+def _url_problem(value: str, *, allow_query: bool = False) -> str | None:
     if not value.lower().startswith("https://"):
         return "not https"
     # `isprintable` is False for every control, format (zero-width, direction, soft hyphen, byte
@@ -112,7 +127,7 @@ def _url_problem(value: str) -> str | None:
     # refused by `isspace`.
     if any(ch.isspace() or not ch.isprintable() or ch == "\\" for ch in value):
         return "whitespace, a control or invisible character, or a backslash"
-    if "?" in value or "#" in value:
+    if "#" in value or ("?" in value and not allow_query):
         return "a query or fragment"
     try:
         parts = urlsplit(value)

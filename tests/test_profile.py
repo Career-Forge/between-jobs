@@ -222,6 +222,18 @@ def test_multiple_violations_are_all_reported_not_just_the_first() -> None:
         assert "2 problem(s)" in message
 
 
+def test_a_very_long_key_is_not_echoed_back_whole() -> None:
+    # The message goes back to whoever sent the file, in a chat message of limited size; a key of
+    # a million characters would otherwise be sent back a million characters long.
+    payload = {**_MINIMAL_VALID, "k" * 100_000: "surprise"}
+    with pytest.raises(ProfileImportError) as caught:
+        import_profile(_text(payload))
+    message = str(caught.value)
+    assert "k" * 120 + "..." in message
+    assert "k" * 121 not in message
+    assert len(message) < 1000
+
+
 def test_json_array_at_top_level_is_rejected() -> None:
     with pytest.raises(ProfileImportError, match="not a resume object"):
         import_profile("[1, 2, 3]")

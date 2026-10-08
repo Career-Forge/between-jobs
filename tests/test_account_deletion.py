@@ -427,6 +427,34 @@ async def test_only_the_users_own_lockout_counters_are_forgotten(events: list[An
     ]
 
 
+async def test_a_discord_identitys_lockout_counter_is_forgotten_and_only_that_channels(
+    events: list[Any],
+) -> None:
+    """The counters are keyed by (channel, subject); the same id on another channel, and another
+    person's Discord counter, stay."""
+    supabase = _Supabase(
+        events,
+        identities=[
+            {"channel": "telegram", "external_subject": "42", "user_id": _USER},
+            {"channel": "discord", "external_subject": "777000111222333444", "user_id": _USER},
+        ],
+        attempts=[
+            {"channel": "telegram", "external_subject": "42"},
+            {"channel": "discord", "external_subject": "777000111222333444"},
+            {"channel": "discord", "external_subject": "42"},  # the same text, another channel
+            {"channel": "discord", "external_subject": "999000111222333444"},  # someone else
+        ],
+    )
+
+    report = await delete_account(supabase, _google(events), _USER)  # type: ignore[arg-type]
+
+    assert report.link_attempts_purged == 2
+    assert supabase.tables["link_code_attempts"].rows == [
+        {"channel": "discord", "external_subject": "42"},
+        {"channel": "discord", "external_subject": "999000111222333444"},
+    ]
+
+
 async def test_rows_left_behind_are_reported_and_logged_loudly(
     events: list[Any], caplog: pytest.LogCaptureFixture
 ) -> None:

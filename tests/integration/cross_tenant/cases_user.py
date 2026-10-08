@@ -563,6 +563,13 @@ NOT_USER_SCOPED: dict[str, NotUserScoped] = {
         "token); the user is resolved from the consumed state, and the route also needs a Google "
         "code exchange, which the suite forbids",
     ),
+    "POST /discord/interactions": NotUserScoped(
+        "secret",
+        "authenticated by Discord's Ed25519 signature over the timestamp and the raw body, "
+        "verified before the body is parsed or the database touched; the acting user is resolved "
+        "from the Discord sender's own linked identity (the signed interaction's user id), so a "
+        "sender can only ever act as the account linked to them",
+    ),
     "POST /telegram/webhook": NotUserScoped(
         "secret",
         "authenticated by the X-Telegram-Bot-Api-Secret-Token header (constant-time compare), "

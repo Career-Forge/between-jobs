@@ -23,6 +23,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from discord_fakes import APPLICATION_ID, BOT_TOKEN, PUBLIC_KEY_HEX
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
@@ -32,6 +33,7 @@ from between_jobs.api import product_events
 from between_jobs.api.app import LEASED_WORKERS, app
 from between_jobs.api.channel_push import FanOutNotifier
 from between_jobs.api.digest_listener import handle_batch as handle_digest_batch
+from between_jobs.api.discord_adapter import DiscordNotifier
 from between_jobs.api.telegram_adapter import TelegramNotifier
 
 THE_THREE = {"job_registry_poller", "saved_search_matcher", "gmail_reply_checker"}
@@ -76,6 +78,8 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test-key-not-real")
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+    for name in ("DISCORD_APPLICATION_ID", "DISCORD_PUBLIC_KEY", "DISCORD_BOT_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("RAILWAY_DEPLOYMENT_ID", raising=False)
     for flag in _DISABLE_FLAGS:
         monkeypatch.delenv(flag)  # all five workers enabled
@@ -140,6 +144,48 @@ def test_the_outbox_worker_gets_a_notifier_for_the_bot_when_there_is_one(
     assert isinstance(notifier, FanOutNotifier)
     assert notifier.channels == {"telegram"}
     assert isinstance(notifier._notifiers["telegram"], TelegramNotifier)
+
+
+def _configure_discord(monkeypatch: pytest.MonkeyPatch, *, bot_token: bool) -> None:
+    monkeypatch.setenv("DISCORD_APPLICATION_ID", APPLICATION_ID)
+    monkeypatch.setenv("DISCORD_PUBLIC_KEY", PUBLIC_KEY_HEX)
+    if bot_token:
+        monkeypatch.setenv("DISCORD_BOT_TOKEN", BOT_TOKEN)
+
+
+def test_the_outbox_worker_gets_a_notifier_for_discord_when_the_server_has_a_bot_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The client the lifespan builds has to reach the push notifier: dropped on the way, a server
+    with a bot token would never push to Discord and nothing else would notice."""
+    _configure_discord(monkeypatch, bot_token=True)
+
+    listener = _outbox_listener(monkeypatch)
+
+    notifier = listener.keywords["notifier"]
+    assert isinstance(notifier, FanOutNotifier)
+    assert notifier.channels == {"discord"}
+    assert isinstance(notifier._notifiers["discord"], DiscordNotifier)
+
+
+def test_discord_without_a_bot_token_has_no_push_notifier(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No token, no push: nothing can be sent to a person unprompted without one."""
+    _configure_discord(monkeypatch, bot_token=False)
+
+    listener = _outbox_listener(monkeypatch)
+
+    assert listener.keywords["notifier"] is None
+
+
+def test_both_channels_push_when_both_are_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456:test-token-not-real")
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "test-secret-not-real")
+    _configure_discord(monkeypatch, bot_token=True)
+
+    notifier = _outbox_listener(monkeypatch).keywords["notifier"]
+
+    assert isinstance(notifier, FanOutNotifier)
+    assert notifier.channels == {"telegram", "discord"}
 
 
 def test_the_outbox_worker_gets_no_notifier_on_a_server_without_a_bot(

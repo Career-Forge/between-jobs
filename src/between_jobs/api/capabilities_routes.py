@@ -7,6 +7,13 @@ redeem a link code, so the Integrations page hides its Telegram card.
 not given or no bot), so the card can tell people which bot to message instead
 of assuming the hosted service's.
 
+`discord`, `discord_install_url`: present ONLY when the server has the Discord app configured (see
+`discord_config`), so a server without it answers exactly what it always did. `discord` is then
+true -- a Discord link code can be redeemed here, so the Integrations page shows its Discord card --
+and `discord_install_url` is the address people open to add the app (DISCORD_INSTALL_URL, or
+Discord's own install link for the application when that is empty; null only when the operator's
+value was not a usable https address). The web app reads a missing `discord` as false.
+
 `tester_program_required`: the operator has switched the tester programme on (see
 `tester_enrollment.py`), so the costly features answer 403 ENROLLMENT_REQUIRED until the person
 has accepted the tester agreement. The web app uses it to send people to the enrollment page
@@ -21,7 +28,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from .app_state import telegram_enabled
+from .app_state import discord_enabled, telegram_enabled
 from .auth import require_user_id
 from .tester_enrollment import tester_program_required
 
@@ -31,8 +38,13 @@ router = APIRouter()
 @router.get("/capabilities", dependencies=[Depends(require_user_id)])
 async def get_capabilities(request: Request) -> dict[str, bool | str | None]:
     enabled = telegram_enabled(request)
-    return {
+    capabilities: dict[str, bool | str | None] = {
         "telegram": enabled,
         "telegram_bot_username": request.app.state.telegram_bot_username if enabled else None,
         "tester_program_required": tester_program_required(),
     }
+    if discord_enabled(request):
+        config = getattr(request.app.state, "discord_config", None)
+        capabilities["discord"] = True
+        capabilities["discord_install_url"] = config.install_url if config is not None else None
+    return capabilities

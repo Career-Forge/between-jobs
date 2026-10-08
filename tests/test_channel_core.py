@@ -301,14 +301,14 @@ async def test_a_link_code_is_consumed_for_the_sender_not_for_the_conversation(
 
 
 async def test_a_channel_with_no_identity_provisioning_is_refused_before_anything_happens() -> None:
-    """Identity is implemented for Telegram only. A message from another channel must not be
-    filed under a Telegram identity, so it stops at the identity step -- nothing is said or
-    written."""
+    """Identity is implemented for Telegram and Discord. A message from a channel nobody wrote
+    the account rules for must not be filed under either, so it stops at the identity step --
+    nothing is said or written."""
     renderer = FakeRenderer()
     supabase = ComposedSupabase()
 
-    with pytest.raises(ValueError, match="no identity provisioning for channel 'discord'"):
-        await _handle(inbound("hi", channel="discord"), supabase=supabase, renderer=renderer)
+    with pytest.raises(ValueError, match="no identity provisioning for channel 'slack'"):
+        await _handle(inbound("hi", channel="slack"), supabase=supabase, renderer=renderer)
 
     assert renderer.calls == []
     assert supabase.applications.insert_calls == []

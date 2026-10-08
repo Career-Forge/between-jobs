@@ -13,7 +13,8 @@ contents. Three things hold it:
   from everything written, as a safety net under the first two.
 
 Third-party libraries log at WARNING and above only: httpx would otherwise
-print every outbound URL (the Telegram bot token is part of Telegram's), and
+print every outbound URL (the Telegram bot token is part of Telegram's, and a Discord
+interaction token is part of the path of every message sent in answer to one), and
 the openai SDK prints whole prompts at DEBUG. LOG_LEVEL governs this app's own
 loggers.
 
@@ -61,6 +62,19 @@ _REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bsb_(?:secret|publishable)_[A-Za-z0-9_\-]{8,}"), "sb_<redacted>"),
     # Telegram bot tokens, including inside `https://api.telegram.org/bot<token>/...`.
     (re.compile(r"(?<!\d)\d{6,12}:[A-Za-z0-9_\-]{30,}"), "<telegram-token-redacted>"),
+    # Discord: the interaction token inside a webhook or callback path (a credential for 15
+    # minutes), a bot token (three dot-separated base64url parts), and `Authorization: Bot ...`.
+    (
+        re.compile(r"(/(?:webhooks|interactions)/[0-9]{1,25}/)[A-Za-z0-9_.\-]{20,}"),
+        r"\1<discord-token-redacted>",
+    ),
+    (
+        re.compile(
+            _NOT_ALNUM_BEFORE + r"[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{5,8}\.[A-Za-z0-9_\-]{25,}"
+        ),
+        "<discord-token-redacted>",
+    ),
+    (re.compile(r"(?i)\bbot\s+[A-Za-z0-9._\-]{20,}"), "Bot <redacted>"),
     # Google API keys and OAuth tokens.
     (re.compile(r"\bAIza[0-9A-Za-z_\-]{30,}"), "<google-key-redacted>"),
     (re.compile(r"\bya29\.[0-9A-Za-z_\-.]{20,}"), "<google-token-redacted>"),

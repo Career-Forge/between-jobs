@@ -13,6 +13,7 @@ import researchClients from "../../../src/between_jobs/api/research_clients.py?r
 import searchProviders from "../../../src/between_jobs/api/search_providers.py?raw";
 import supabaseClient from "../../../src/between_jobs/api/supabase_client.py?raw";
 import telegramClient from "../../../src/between_jobs/api/telegram_client.py?raw";
+import discordClient from "../../../src/between_jobs/api/discord_client.py?raw";
 import latexCompiler from "../../../latex-service/src/latex_service/compiler.py?raw";
 import latexServiceClient from "../../../src/between_jobs/api/latex_service_client.py?raw";
 import linkCodes from "../../../src/between_jobs/api/link_codes_store.py?raw";
@@ -155,6 +156,7 @@ const REQUIRED_PRIVACY_SECTIONS = [
   "operator-access",
   "gmail",
   "telegram",
+  "discord",
   "extension",
   "browser-storage",
   "keeping-deleting",
@@ -493,6 +495,16 @@ const EVIDENCE: Record<string, Evidence> = {
     kind: "code",
     checks: [{ path: "src/between_jobs/api/telegram_client.py", text: telegramClient, needles: ["https://api.telegram.org"] }],
   },
+  Discord: {
+    kind: "code",
+    checks: [
+      {
+        path: "src/between_jobs/api/discord_client.py",
+        text: discordClient,
+        needles: ["https://discord.com/api", "cdn.discordapp.com"],
+      },
+    ],
+  },
   LinkedIn: {
     kind: "code",
     checks: [{ path: "web/src/lib/hiringSignals.ts", text: hiringSignalsLib, needles: ["https://www.linkedin.com/embed/feed/update/"] }],
@@ -714,6 +726,44 @@ describe("what the text says matches the code", () => {
     expect(privacyText).not.toContain("cleared after about 7 days");
   });
 
+  it("what Discord's interactions leave is an interaction id, cleared after 7 days by a later claim; the reply token is not stored", () => {
+    // Same shape as Telegram's: a table keyed on the id Discord assigns, whose only purge is inside
+    // the claim of a later interaction, 200 rows at a time. Nothing else about the interaction is
+    // kept in it: no user, no channel, no message, no token.
+    const creators = Object.values(migrationSources).filter((sql) =>
+      /create table public\.discord_processed_interactions/i.test(sql),
+    );
+    expect(creators.length).toBe(1);
+    expect(columnsOf("discord_processed_interactions").sort()).toEqual(["claimed_at", "completed_at", "interaction_id"]);
+    expect(creators[0]).toContain("interval '7 days'");
+    expect(creators[0]).toContain("limit 200");
+    // The interaction's token is held in memory by the renderer and never reaches the database:
+    // the modules that read an interaction and answer it make no database call of their own.
+    for (const name of ["discord_adapter", "discord_webhook"]) {
+      expect(apiModule(name), name).not.toMatch(/\.table\(|\.rpc\(/);
+    }
+    // Like Telegram's, the text names the number and the trigger, not a schedule: with no later
+    // interaction nothing is cleared, so it must not promise "up to 7 days" or "for 7 days".
+    expect(privacyText).toContain(
+      "We also keep the id Discord gives each command or button tap, only so that the same one is not processed twice; it is removed once it is older than 7 days, as a side effect of the app receiving later ones.",
+    );
+    expect(privacyText).not.toContain("up to 7 days");
+    expect(privacyText).not.toContain("for 7 days");
+    expect(privacyText).not.toContain("kept for 7 days");
+    expect(privacyText).toContain(
+      "The ids Discord assigns to each command or button tap the Discord app receives are kept only for the same reason",
+    );
+    expect(privacyText).toContain("once they are older than 7 days, as a side effect of the app receiving later ones");
+    expect(privacyText).toContain("is used while we answer and is not stored");
+  });
+
+  it("says that messages sent through Discord are processed by Discord, in the Discord entry and in its section", () => {
+    const entry = PROCESSORS.find((processor) => processor.name === "Discord");
+    expect(entry?.detail.map(inlineText).join(" ")).toContain("Discord processes those messages");
+    expect(sectionText(PRIVACY, "discord")).toContain("Discord processes these messages and the app's replies");
+    expect(sectionText(PRIVACY, "discord")).toContain("Discord does not deliver ordinary text you type in the chat to it");
+  });
+
   it("the extension's permissions and sites are the ones the text lists", () => {
     expect(extensionReadme).toContain("`storage`");
     expect(extensionReadme).toContain("`sidePanel`");
@@ -919,10 +969,10 @@ describe("what we store names the small tables that hold something about you", (
     expect(stored).not.toMatch(/per feature/i);
   });
 
-  it("the numbered lists behind the Telegram bot's 'apply to #3' last 30 minutes and are not purged", () => {
+  it("the numbered lists behind the bots' 'apply to #3' and '/apply 3' last 30 minutes and are not purged", () => {
     expect(apiModule("channel_core")).toContain("create_working_set(");
     expect(apiModule("working_sets_store")).toContain("_DEFAULT_TTL_SECONDS = 30 * 60");
-    expect(stored).toContain("the numbered lists of applications the Telegram bot shows you");
+    expect(stored).toContain("the numbered lists of applications the Telegram bot and the Discord app show you");
     expect(stored).toContain("each is valid for 30 minutes, and it is kept until you delete your account");
   });
 
@@ -939,6 +989,32 @@ describe("what we store names the small tables that hold something about you", (
     expect(creators.length).toBe(1);
     expect(stored).toContain("a count of failed link-code attempts from it");
     expect(sectionText(PRIVACY, "telegram")).toContain("a count of failed link-code attempts from it");
+  });
+
+  it("failed link-code attempts are counted per Discord id too, and the text says so in both places", () => {
+    // `link_code_attempts` is keyed by (channel, subject), so the same table counts a Discord
+    // sender's attempts; what is kept about the account is its numeric user id and that count.
+    expect(stored).toContain("your numeric Discord user id and a count of failed link-code attempts from it");
+    expect(sectionText(PRIVACY, "discord")).toContain("a count of failed link-code attempts from it");
+    expect(sectionText(PRIVACY, "discord")).toContain("nothing else about your Discord account: no name or username");
+    // The code that reads a Discord interaction never touches the sender's name, username or avatar.
+    const reads = [apiModule("discord_adapter"), apiModule("channel_accounts"), apiModule("discord_webhook")].join("\n");
+    expect(reads).not.toMatch(/username|global_name|avatar|discriminator|locale/);
+  });
+
+  it("says what Discord sends along with every command, and that the app does not use or store it", () => {
+    // Every signed interaction carries the invoking user's object (username, global_name, avatar)
+    // and locale, and the endpoint receives and parses all of it; only the numeric id is kept. The
+    // policy must not say the app "only receives" the job text, the file, the code and the taps.
+    const discord = sectionText(PRIVACY, "discord");
+    expect(discord).not.toContain("only receives");
+    expect(discord).toContain("Discord sends along with each one some details about you and the chat it came from");
+    expect(discord).toContain("such as your username, display name, avatar and language setting");
+    expect(discord).toContain("does not use or store the rest");
+    // What the app does use of it: the sender's id (identity) and the chat (where to answer).
+    const adapter = apiModule("discord_adapter");
+    expect(adapter).toMatch(/\bsubject\b/);
+    expect(adapter).toMatch(/channel_id/);
   });
 });
 
@@ -1180,12 +1256,12 @@ describe("the text says who the API checks, and the code agrees", () => {
   const ROUTE = /@(?:router|app)\.(?:get|post|put|patch|delete|api_route)\(/;
   const USER_CHECK = /require_user_id|require_active_extension_user_id/;
 
-  it("every router module checks a user, except the Telegram webhook (the app's own route is pinned next)", () => {
+  it("every router module checks a user, except the Telegram webhook and the Discord endpoint (the app's own route is pinned next)", () => {
     const unchecked = Object.entries(apiSources)
       .filter(([path, source]) => !path.endsWith("/app.py") && ROUTE.test(source) && !USER_CHECK.test(source))
       .map(([path]) => path.slice(API_DIR.length, -".py".length))
       .sort();
-    expect(unchecked).toEqual(["telegram_webhook"]);
+    expect(unchecked).toEqual(["discord_webhook", "telegram_webhook"]);
   });
 
   it("the app's own route is the health check, and the webhook accepts only the shared secret", () => {
@@ -1196,6 +1272,19 @@ describe("the text says who the API checks, and the code agrees", () => {
     expect(webhook).toContain('@router.post("/telegram/webhook", dependencies=[Depends(_verify_webhook_secret)])');
     expect(webhook).toContain("x-telegram-bot-api-secret-token");
     expect(webhook).toContain("hmac.compare_digest");
+  });
+
+  it("the Discord endpoint accepts only requests signed with the application's public key, before it parses or stores anything", () => {
+    const endpoint = apiModule("discord_webhook");
+    expect(endpoint).toContain('@router.post("/discord/interactions")');
+    expect(endpoint).toContain("x-signature-ed25519");
+    expect(endpoint).toContain("x-signature-timestamp");
+    expect(endpoint).toContain("public_key.verify(");
+    // The signature is checked before the body is parsed and before the interaction is claimed.
+    expect(endpoint.indexOf("verify_request(")).toBeGreaterThan(-1);
+    expect(endpoint.indexOf("await request.body()")).toBeLessThan(endpoint.indexOf("json.loads(body)"));
+    expect(endpoint.indexOf("config.public_key")).toBeLessThan(endpoint.indexOf("json.loads(body)"));
+    expect(endpoint.indexOf("json.loads(body)")).toBeLessThan(endpoint.indexOf("claim_interaction("));
   });
 
   it("the Google redirect is the one route of its module that carries no sign-in token, and a one-time state finds the user", () => {
@@ -1211,6 +1300,7 @@ describe("the text says who the API checks, and the code agrees", () => {
     expect(security).toContain("the health check returns no user data");
     expect(security).toContain("matched to you by a one-time code");
     expect(security).toContain("the Telegram webhook accepts only requests that carry our secret");
+    expect(security).toContain("the Discord endpoint accepts only requests whose signature checks out against the public key of our Discord application");
     expect(security).not.toContain("checks who you are on every request");
   });
 });

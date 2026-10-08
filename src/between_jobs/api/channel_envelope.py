@@ -152,7 +152,7 @@ class InboundMessage:
     dedups on it: protection against a redelivery is the channel's own job, done before the
     message reaches the business logic (Telegram's webhook claims the raw integer id in
     `telegram_processed_updates`, a table keyed on that id alone, so another channel needs a
-    claim path of its own)."""
+    claim path of its own: Discord's is `discord_processed_interactions`)."""
     text: str
     """What they typed (or the caption of what they sent); empty for a button tap."""
     attachment: Attachment | None = None

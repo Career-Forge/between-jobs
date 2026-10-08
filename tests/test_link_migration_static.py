@@ -129,7 +129,13 @@ def test_the_merge_migration_uses_the_python_artifact_namespace() -> None:
 
 
 @pytest.mark.parametrize(
-    "function", ["merge_user_data", "assert_unreferenced", "is_auto_provisioned_telegram_user"]
+    "function",
+    [
+        "merge_user_data",
+        "assert_unreferenced",
+        "is_auto_provisioned_telegram_user",
+        "is_auto_provisioned_channel_user",
+    ],
 )
 def test_the_internal_link_functions_are_reachable_by_no_api_role(function: str) -> None:
     """Only functions owned by postgres call these (consume_link_code,

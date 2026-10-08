@@ -108,6 +108,10 @@ def test_the_scan_finds_the_variables_it_should() -> None:
         "HIRING_SIGNALS_ALLOWED_USER_IDS",
         # read through a module-level constant, not a string literal at the call
         "JOB_SCORING_SYSTEM_PROMPT_PATH",
+        # the Discord settings, each read through `optional_env` with its name spelled out
+        "DISCORD_APPLICATION_ID",
+        "DISCORD_PUBLIC_KEY",
+        "DISCORD_BOT_TOKEN",
         # read only by a script under scripts/
         "ATS_FIELD_MAP_SIGNING_KEY",
         "SAMPLE_SOURCE_SUPABASE_URL",

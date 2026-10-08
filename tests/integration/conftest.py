@@ -95,6 +95,12 @@ class TelegramUser:
     subject: str
 
 
+@dataclass(frozen=True)
+class DiscordUser:
+    id: str
+    subject: str
+
+
 class World:
     """Builds the users and rows a test needs, and removes them afterward.
 
@@ -133,6 +139,26 @@ class World:
         await self.identity(user_id, "telegram", subject)
         return TelegramUser(user_id, subject)
 
+    async def discord_user(self) -> DiscordUser:
+        """What `channel_accounts.resolve_or_create_user_id_for_subject` makes for a Discord
+        sender on first contact: a bot-only account whose app_metadata names the channel."""
+        subject = f"7{uuid.uuid4().int % 10**17:017d}"
+        created = await self.sb.auth.admin.create_user(
+            {
+                "email": f"discord-{uuid.uuid4().hex}@users.between-jobs.tech",
+                "email_confirm": True,
+                "app_metadata": {
+                    "bj_provisioned_by": "discord",
+                    "bj_discord_subject": subject,
+                },
+            }
+        )
+        user_id = str(created.user.id)
+        self.users.append(user_id)
+        self.subjects.append(subject)
+        await self.identity(user_id, "discord", subject)
+        return DiscordUser(user_id, subject)
+
     async def web_user(self, *, password: str | None = None, email: str | None = None) -> str:
         created = await self.sb.auth.admin.create_user(
             {
@@ -160,14 +186,20 @@ class World:
             .execute()
         )
 
-    async def mint(self, user_id: str, *, expires_in: timedelta = timedelta(minutes=10)) -> str:
+    async def mint(
+        self,
+        user_id: str,
+        *,
+        expires_in: timedelta = timedelta(minutes=10),
+        channel: str = "telegram",
+    ) -> str:
         code = uuid.uuid4().hex[:8].upper()
         await (
             self.sb.table("link_codes")
             .insert(
                 {
                     "user_id": user_id,
-                    "channel": "telegram",
+                    "channel": channel,
                     "code_hash": hashlib.sha256(code.encode()).hexdigest(),
                     "expires_at": (datetime.now(UTC) + expires_in).isoformat(),
                 }
@@ -349,18 +381,26 @@ class World:
 
     # -- the link ------------------------------------------------------
 
-    async def link(self, subject: str, code: str, source: str) -> dict[str, Any]:
+    async def link(
+        self, subject: str, code: str, source: str, *, channel: str = "telegram"
+    ) -> dict[str, Any]:
         return await consume_link_code(
             self.sb,
-            channel="telegram",
+            channel=channel,
             external_subject=subject,
             code=code,
             source_user_id=source,
         )
 
-    async def finish(self, source: str, target: str, subject: str) -> LinkCompletion:
+    async def finish(
+        self, source: str, target: str, subject: str, *, channel: str = "telegram"
+    ) -> LinkCompletion:
         return await finish_link(
-            self.sb, source_user_id=source, target_user_id=target, subject=subject
+            self.sb,
+            source_user_id=source,
+            target_user_id=target,
+            subject=subject,
+            channel=channel,
         )
 
     async def counts(self, user_id: str) -> dict[str, int]:

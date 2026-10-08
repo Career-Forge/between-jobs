@@ -430,8 +430,11 @@ def test_a_prefix_matches_the_start_of_a_path_never_the_middle() -> None:
     assert limit_for_path("/upload", 1000, prefixes) == 5000
 
 
-def test_the_only_raised_cap_is_the_resume_upload() -> None:
-    assert PATH_PREFIX_LIMITS == {"/profile/import-document": 5 * 1024 * 1024}
+def test_the_only_raised_cap_is_the_resume_upload_and_the_only_lowered_one_is_discords() -> None:
+    assert PATH_PREFIX_LIMITS == {
+        "/profile/import-document": 5 * 1024 * 1024,
+        "/discord/interactions": 64 * 1024,
+    }
 
 
 def test_the_resume_upload_path_gets_five_mebibytes_and_its_neighbours_the_default() -> None:
@@ -477,6 +480,34 @@ async def test_the_upload_path_takes_five_mebibytes_through_the_middleware(
     assert streamed.status == 413  # 6 MiB with no declared length is cut off at the cap
     assert elsewhere.status == 413
     assert elsewhere.json()["error"]["details"] == {"max_bytes": 1024 * 1024}
+
+
+async def test_the_discord_endpoint_is_held_to_64_kibibytes_before_anything_reads_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The endpoint is open to anyone until a request has proved it is Discord's, so its cap is
+    far below the default; the middleware refuses before the handler (and so before the
+    signature check) sees a byte."""
+    cap = 64 * 1024
+    monkeypatch.delenv("MAX_REQUEST_BODY_BYTES")
+    path = "/discord/interactions"
+
+    at_cap = await _call(
+        _Handler(), chunks=[b"x" * cap], content_length=[str(cap)], path=path, prefix_limits=None
+    )
+    over = await _call(
+        _Handler(),
+        chunks=[b"x" * (cap + 1)],
+        content_length=[str(cap + 1)],
+        path=path,
+        prefix_limits=None,
+        receive_forbidden=True,
+    )
+    streamed = await _call(_Handler(), chunks=[b"x" * cap, b"y"], path=path, prefix_limits=None)
+
+    assert at_cap.status == 200
+    assert over.status == 413 and over.json()["error"]["details"] == {"max_bytes": cap}
+    assert streamed.status == 413
 
 
 @pytest.mark.parametrize(

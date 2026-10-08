@@ -17,6 +17,10 @@ from supabase import AsyncClient
 
 from .channel_envelope import Notifier
 from .channel_push import FanOutNotifier
+from .discord_adapter import CHANNEL as DISCORD_CHANNEL
+from .discord_adapter import build_notifier as build_discord_notifier
+from .discord_client import DiscordClient
+from .discord_config import DiscordConfig
 from .errors import ApiError
 from .telegram_adapter import TelegramRenderer, build_notifier, webhook_info_fetcher
 from .telegram_client import TelegramClient
@@ -51,10 +55,10 @@ def telegram_enabled(request: Request) -> bool:
 
 
 def discord_enabled(request: Request) -> bool:
-    """Whether this server can take a Discord message. Always False today: there is no
-    Discord adapter yet, so nothing here may offer a Discord link as if it worked. The
-    lifespan sets `app.state.discord_enabled` (False), and the adapter's own task is what
-    turns it on, from the settings that adapter needs."""
+    """Whether this server can take a Discord interaction. The lifespan sets
+    `app.state.discord_enabled` from the Discord settings (`discord_config`): true when the
+    application id and public key are configured, false otherwise, so nothing here offers a
+    Discord link on a server that could not redeem one."""
     return bool(getattr(request.app.state, "discord_enabled", False))
 
 
@@ -63,30 +67,38 @@ def channel_enabled(request: Request, channel: str) -> bool:
     adapter here. A channel the vocabulary knows but nothing serves answers False."""
     if channel == TELEGRAM_CHANNEL:
         return telegram_enabled(request)
-    if channel == "discord":
+    if channel == DISCORD_CHANNEL:
         return discord_enabled(request)
     return False
 
 
 def build_notifier_registry(
-    supabase: AsyncClient, telegram_client: TelegramClient | None
+    supabase: AsyncClient,
+    telegram_client: TelegramClient | None,
+    discord_client: DiscordClient | None = None,
 ) -> dict[str, Notifier]:
     """The notifier of every channel this server can push to, by channel name. A channel with
     no adapter on this server has no entry, and a user linked there is skipped (with a log
-    line) by `FanOutNotifier`. A new channel's adapter adds its entry here."""
+    line) by `FanOutNotifier`. A new channel's adapter adds its entry here. Discord has one only
+    when the server has a bot token: without it nothing can be sent to a person unprompted."""
     registry: dict[str, Notifier] = {}
     telegram = build_notifier(supabase, telegram_client)
     if telegram is not None:
         registry[TELEGRAM_CHANNEL] = telegram
+    discord = build_discord_notifier(supabase, discord_client)
+    if discord is not None:
+        registry[DISCORD_CHANNEL] = discord
     return registry
 
 
 def build_push_notifier(
-    supabase: AsyncClient, telegram_client: TelegramClient | None
+    supabase: AsyncClient,
+    telegram_client: TelegramClient | None,
+    discord_client: DiscordClient | None = None,
 ) -> FanOutNotifier | None:
     """What the outbox listener pushes through: every channel a user linked that has an
     entry in `build_notifier_registry`, or None on a server with no channel to push to."""
-    registry = build_notifier_registry(supabase, telegram_client)
+    registry = build_notifier_registry(supabase, telegram_client, discord_client)
     return FanOutNotifier(supabase, registry) if registry else None
 
 
@@ -160,3 +172,20 @@ def get_telegram_renderer(
 def get_webhook_secret(request: Request) -> str:
     _require_telegram(request)
     return cast(str, request.app.state.telegram_webhook_secret)
+
+
+def get_discord_config(request: Request) -> DiscordConfig:
+    """The Discord settings, or 404 FEATURE_DISABLED on a server running without them. The
+    interactions route depends on this, so it does nothing -- least of all compare a signature
+    against a missing key -- when Discord is not configured."""
+    config = getattr(request.app.state, "discord_config", None)
+    if config is None or not discord_enabled(request):
+        raise ApiError("FEATURE_DISABLED", "Discord isn't set up on this server.")
+    return cast(DiscordConfig, config)
+
+
+def get_discord_client(request: Request) -> DiscordClient:
+    """The Discord REST client (built on the app's shared HTTP client, with the bot token when
+    the server has one), or 404 FEATURE_DISABLED on a server running without Discord."""
+    get_discord_config(request)
+    return cast(DiscordClient, request.app.state.discord_client)

@@ -13,8 +13,10 @@ functions read it from either end:
 
 What they do NOT do is provision anything. Creating the user that a first message from a new
 sender belongs to depends on how that channel's accounts are made (what the auth user carries in
-`app_metadata`, how a later `/link` finds it), so it stays with the channel: see
-`telegram_identity`, which keeps its refusal of every other channel for that reason.
+`app_metadata`, how a later `/link` finds it), so it stays with the channel's own rules:
+`telegram_identity` for Telegram, which keeps its refusal of every other channel for that reason,
+and `channel_accounts`, the channel-neutral front the business logic calls, which hands Telegram to
+it and holds the same rules for Discord.
 
 Every function filters by what it is given and never reads another user's row: the backend uses
 the service-role client, which bypasses row-level security, so these filters are the boundary.
@@ -54,9 +56,10 @@ async def get_chat_ref(supabase: AsyncClient, user_id: str, channel: str) -> str
 
     This is the identity row's subject. That is a chat reference only for a channel whose
     one-to-one conversation is addressed by the person's own id, which is Telegram's rule for a
-    private chat and the only channel with an adapter today. A channel for which it does not
-    hold (one that must open a conversation first and gets a different id for it) has to
-    resolve its chat from the subject inside its own notifier; it must not send to this value."""
+    private chat. A channel for which it does not hold (one that must open a conversation first
+    and gets a different id for it: Discord's notifier opens the direct message with the user id
+    this returns, then sends to the channel Discord names) has to resolve its chat from the
+    subject inside its own notifier; it must not send to this value."""
     result = (
         await supabase.table("channel_identities")
         .select("external_subject")
