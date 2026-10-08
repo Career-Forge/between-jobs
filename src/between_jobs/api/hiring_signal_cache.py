@@ -68,7 +68,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
@@ -262,16 +262,28 @@ async def run_purge_forever(
     interval_seconds: float = PURGE_INTERVAL_SECONDS,
     state: WorkerState | None = None,
     sleep: Sleep = asyncio.sleep,
+    after_purge: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     """The background sweep behind "Lifetime": a plain sleep loop, the shape
     of `saved_search_matcher.run_matcher_forever` -- shutdown is
     `asyncio.CancelledError` out of the sleep. A sweep that fails (the
     database was unreachable) is never fatal: supervised like the other
     workers (worker_supervision.py), it is logged and retried after a backoff.
-    The deletes are idempotent and bounded, so retrying sooner is safe."""
+    The deletes are idempotent and bounded, so retrying sooner is safe.
+
+    `after_purge` is other slow, once-in-a-while work that rides on this worker's hourly tick
+    (the daily Telegram webhook probe, webhook_probe.py). It runs after the sweep -- and also
+    when the sweep failed, since it does not depend on the database -- and can neither fail the
+    tick nor hold it for longer than its own time limit: a failure of it is logged by type and
+    dropped. It is asked on every tick and decides for itself whether it is due."""
 
     async def tick() -> None:
-        await purge_all_expired(supabase, now=datetime.now(UTC))
+        try:
+            await purge_all_expired(supabase, now=datetime.now(UTC))
+        except Exception:
+            await _run_after_purge(after_purge)
+            raise  # the sweep's own failure still goes to the supervisor
+        await _run_after_purge(after_purge)
 
     await run_supervised(
         tick,
@@ -279,3 +291,17 @@ async def run_purge_forever(
         or WorkerState(name="hiring_signal_cache_purge", interval_seconds=interval_seconds),
         sleep=sleep,
     )
+
+
+async def _run_after_purge(after_purge: Callable[[], Awaitable[None]] | None) -> None:
+    if after_purge is None:
+        return
+    try:
+        await after_purge()
+    except Exception as failure:
+        logger.warning(
+            "work that rides on the cache purge tick failed",
+            extra={
+                "ctx": {"error_type": f"{type(failure).__module__}.{type(failure).__qualname__}"}
+            },
+        )

@@ -7,6 +7,7 @@ to include those routers, so the reverse import would be circular.
 
 from __future__ import annotations
 
+import logging
 from typing import cast
 
 import httpx
@@ -17,9 +18,13 @@ from supabase import AsyncClient
 from .channel_envelope import Notifier
 from .channel_push import FanOutNotifier
 from .errors import ApiError
-from .telegram_adapter import TelegramRenderer, build_notifier
+from .telegram_adapter import TelegramRenderer, build_notifier, webhook_info_fetcher
 from .telegram_client import TelegramClient
 from .telegram_identity import CHANNEL as TELEGRAM_CHANNEL
+from .webhook_probe import WEBHOOK_CHECK_ENV, WEBHOOK_CHECK_NAME, WebhookProbe
+from .worker_pings import WorkerPings
+
+logger = logging.getLogger(__name__)
 
 
 def get_supabase(request: Request) -> AsyncClient:
@@ -83,6 +88,49 @@ def build_push_notifier(
     entry in `build_notifier_registry`, or None on a server with no channel to push to."""
     registry = build_notifier_registry(supabase, telegram_client)
     return FanOutNotifier(supabase, registry) if registry else None
+
+
+def build_webhook_probe(
+    telegram_client: TelegramClient | None, pings: WorkerPings, *, host_enabled: bool
+) -> WebhookProbe | None:
+    """The daily Telegram webhook probe (webhook_probe.py), or None on a server with no bot.
+
+    `host_enabled` says whether the worker the probe rides on (the hiring-signal cache purge)
+    is running here. The check's setting (HEALTHCHECKS_URL_TELEGRAM_WEBHOOK) is read and
+    validated whatever else is true, so a malformed value stops the boot; a URL for a probe
+    that will not run is said out loud, since its check would go down (once it has been pinged
+    at least once; a check never pinged stays "new" and never alerts)."""
+    if telegram_client is None:
+        pings.for_check(
+            WEBHOOK_CHECK_NAME,
+            env_name=WEBHOOK_CHECK_ENV,
+            enabled=False,
+            off_message=(
+                "a healthcheck URL is set for the Telegram webhook probe, but this server has "
+                "no Telegram bot, so nothing is probed and the check will go down once it has "
+                "been pinged before; delete that check"
+            ),
+        )
+        return None
+    heartbeat = pings.for_check(
+        WEBHOOK_CHECK_NAME,
+        env_name=WEBHOOK_CHECK_ENV,
+        enabled=host_enabled,
+        off_message=(
+            "a healthcheck URL is set for the Telegram webhook probe, but the worker it runs "
+            "in (DISABLE_HIRING_SIGNAL_CACHE_PURGE) is switched off, so nothing is probed and "
+            "the check will go down once it has been pinged before; delete that check or "
+            "switch the worker on"
+        ),
+    )
+    if not host_enabled:
+        logger.warning(
+            "the Telegram webhook probe will not run: it runs inside the hiring-signal cache "
+            "purge worker, which is switched off (DISABLE_HIRING_SIGNAL_CACHE_PURGE)"
+        )
+    return WebhookProbe(
+        webhook_info_fetcher(telegram_client), heartbeat=heartbeat, scheduled=host_enabled
+    )
 
 
 def _require_telegram(request: Request) -> None:

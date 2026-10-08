@@ -12,6 +12,11 @@ HEALTHCHECKS_URL_OUTBOX_WORKER). The value is the check's ping URL, which is a c
 (anyone who has it can mark the check up), so it is never logged and never put in an error
 report.
 
+ONE CHECK IS NOT A WORKER'S. The daily Telegram webhook probe (webhook_probe.py) reports to a
+check of its own, HEALTHCHECKS_URL_TELEGRAM_WEBHOOK, through `WorkerPings.for_check`: same URL
+rules, same pinger, same timeouts, and its name is a known one so it is never reported as a
+stray. It pings only when it has something definite to say (see that module).
+
 A NAME THAT MATCHES NO WORKER IS SAID OUT LOUD. The setting is named after the DISABLE_* flag,
 not after the name /health shows (the outbox's is HEALTHCHECKS_URL_OUTBOX_WORKER, though /health
 calls the worker "outbox"), so a plausible guess is easy to get wrong, and a check that never
@@ -208,19 +213,33 @@ class WorkerPings:
     def for_worker(self, name: str, *, disable_env: str, enabled: bool) -> WorkerPinger | None:
         """The worker's pinger, or None when it has no URL or is switched off. The URL is
         validated either way, so a typo stops the boot whether or not the worker runs."""
-        env_name = healthcheck_env_name(disable_env)
-        # Known before the URL is read, and whether or not the worker runs: a disabled
-        # worker's setting is a real one (it gets its own warning), not a stray.
+        return self.for_check(
+            name,
+            env_name=healthcheck_env_name(disable_env),
+            enabled=enabled,
+            off_message=(
+                "a healthcheck URL is set for a worker that is switched off, so it will not be "
+                "pinged and its check will go down once it has been pinged before; delete "
+                "that check"
+            ),
+        )
+
+    def for_check(
+        self, name: str, *, env_name: str, enabled: bool, off_message: str
+    ) -> WorkerPinger | None:
+        """The pinger for a check that is named by its own setting rather than by a worker's
+        disable flag (the Telegram webhook probe's, webhook_probe.py), or None when the setting
+        is unset or `enabled` is False -- then `off_message` is logged, since a check that stops
+        getting pings goes down. Like `for_worker`, the URL is validated either way and the
+        setting's name counts as known, so it is never reported as a stray."""
+        # Known before the URL is read, and whether or not the check is used: a setting for a
+        # check that is off is a real one (it gets its own warning), not a stray.
         self._known_env_names.add(env_name)
         url = load_ping_url(env_name)
         if url is None:
             return None
         if not enabled:
-            logger.warning(
-                "a healthcheck URL is set for a worker that is switched off, so it will not be "
-                "pinged and its check will report the worker down; delete that check",
-                extra={"ctx": {"worker": name, "variable": env_name}},
-            )
+            logger.warning(off_message, extra={"ctx": {"worker": name, "variable": env_name}})
             return None
         if self._client is None:
             self._client = self._make_client()

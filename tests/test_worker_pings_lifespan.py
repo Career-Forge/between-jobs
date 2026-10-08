@@ -32,6 +32,7 @@ from between_jobs.api import app as app_module
 from between_jobs.api import worker_pings
 from between_jobs.api.app import app
 from between_jobs.api.env import ConfigurationError
+from between_jobs.api.webhook_probe import WEBHOOK_CHECK_ENV
 from between_jobs.api.worker_pings import WorkerPings
 from between_jobs.api.worker_supervision import run_supervised
 
@@ -294,7 +295,10 @@ def test_a_setting_named_after_no_worker_is_ignored_and_warned_about_by_name_onl
     [warning] = [r for r in caplog.records if r.name == PINGS_LOGGER]
     assert warning.levelno == logging.WARNING
     assert warning.ctx["variable"] == name  # type: ignore[attr-defined]
-    assert warning.ctx["expected"] == sorted(setting for _flag, setting in WORKERS.values())  # type: ignore[attr-defined]
+    # The five workers' settings and the Telegram webhook probe's own (webhook_probe.py).
+    assert warning.ctx["expected"] == sorted(  # type: ignore[attr-defined]
+        [*(setting for _flag, setting in WORKERS.values()), WEBHOOK_CHECK_ENV]
+    )
     assert "HEALTHCHECKS_URL_OUTBOX_WORKER" in warning.ctx["expected"]  # type: ignore[attr-defined]
     # The value is the check's credential: neither the record nor what is written has it.
     for text in (caplog.text, rendered([warning]), repr(warning.ctx)):  # type: ignore[attr-defined]

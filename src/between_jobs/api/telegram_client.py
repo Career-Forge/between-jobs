@@ -35,6 +35,26 @@ class DownloadTooLarge(Exception):
         self.max_bytes = max_bytes
 
 
+class TelegramApiError(Exception):
+    """A Bot API call failed, said in a few fixed words. `code` is one of:
+
+    - `timeout`: no answer in time;
+    - `transport`: the request could not be made or completed (DNS, TLS, a reset connection);
+    - `refused`: Telegram answered with an HTTP status outside 2xx (a wrong bot token is a 401);
+    - `malformed`: Telegram answered 2xx, but not with `{"ok": true, "result": {...}}`.
+
+    `status_code` is Telegram's HTTP status, when there was one. The message is made of those
+    two and nothing else: not the request URL (the bot token is part of it), not the exception
+    that was caught, and not Telegram's own `description` text. So it is safe in a log line and
+    in an error report, and nothing needs to scrub it."""
+
+    def __init__(self, code: str, *, status_code: int | None = None) -> None:
+        detail = code if status_code is None else f"{code}, HTTP {status_code}"
+        super().__init__(f"the Telegram Bot API call failed ({detail})")
+        self.code = code
+        self.status_code = status_code
+
+
 def parse_bot_username(raw: str | None) -> str | None:
     """The bot's public username, without a leading "@", or None when none was
     given. Raises ValueError (naming no value) for something that can't be one.
@@ -123,6 +143,25 @@ def _is_entity_error(response: httpx.Response) -> bool:
 def _html_body(text: str) -> str:
     """What goes in the request's `text`: an `Html` as written, anything else escaped."""
     return str(text) if isinstance(text, Html) else html.escape(text, quote=False)
+
+
+_WEBHOOK_INFO_TIMEOUT_SECONDS = 10.0
+
+
+def _webhook_info_of(response: httpx.Response) -> tuple[str | None, dict[str, Any] | None]:
+    """(failure code, None) or (None, the `result` object) for a getWebhookInfo answer."""
+    if not response.is_success:
+        return "refused", None
+    try:
+        body = response.json()
+    except (ValueError, RecursionError):  # not JSON at all, or nested past what json will read
+        return "malformed", None
+    if not isinstance(body, dict) or body.get("ok") is not True:
+        return "malformed", None
+    result = body.get("result")
+    if not isinstance(result, dict):
+        return "malformed", None
+    return None, result
 
 
 def _message_id_of(response: httpx.Response) -> int | None:
@@ -220,6 +259,37 @@ class TelegramClient:
             payload["text"] = text
         response = await self._http.post(f"{self._base_url}/answerCallbackQuery", json=payload)
         response.raise_for_status()
+
+    async def get_webhook_info(self) -> dict[str, Any]:
+        """`getWebhookInfo`: what Telegram itself reports about delivering updates to this
+        bot's webhook -- the `WebhookInfo` object, as the parsed JSON dict, unchecked (the
+        webhook probe decides what it means). Raises `TelegramApiError` when there is no usable
+        answer.
+
+        THE BOT TOKEN IS IN THE URL PATH, so this method never lets the request, its URL or
+        anything that quotes them out: an httpx error message and `raise_for_status` both
+        carry the URL, and an exception raised inside an `except` block keeps the original as
+        its `__context__`. So the failure is only noted inside the `except` blocks, and the
+        error that leaves is raised after them, a new exception that holds a code and a status.
+        (httpx's own INFO log line for the request also quotes the URL: `configure_logging`
+        keeps httpx at WARNING, and the log redactor knows the shape of a bot token.)"""
+        failure: str | None = None
+        status_code: int | None = None
+        result: dict[str, Any] | None = None
+        try:
+            response = await self._http.get(
+                f"{self._base_url}/getWebhookInfo", timeout=_WEBHOOK_INFO_TIMEOUT_SECONDS
+            )
+        except httpx.TimeoutException:
+            failure = "timeout"
+        except (httpx.HTTPError, httpx.InvalidURL):
+            failure = "transport"
+        else:
+            status_code = response.status_code
+            failure, result = _webhook_info_of(response)
+        if failure is not None or result is None:
+            raise TelegramApiError(failure or "malformed", status_code=status_code)
+        return result
 
     async def get_file_path(self, file_id: str) -> str:
         response = await self._http.get(f"{self._base_url}/getFile", params={"file_id": file_id})

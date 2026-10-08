@@ -40,6 +40,13 @@ def test_health() -> None:
     }
     assert {w["status"] for w in body["workers"].values()} == {"disabled"}
     assert set(body["dependencies"].values()) == {"not_checked"}
+    # This test configures a Telegram bot, and conftest switches the cache-purge worker (which
+    # hosts the webhook probe) off: the block says the probe is not running, not "not yet".
+    assert body["telegram_webhook"] == {
+        "status": "unknown",
+        "last_checked_at": None,
+        "reasons": ["probe_not_running"],
+    }
 
 
 def test_an_authenticated_route_without_an_auth_header_returns_401() -> None:

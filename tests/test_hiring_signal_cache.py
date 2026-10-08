@@ -5,6 +5,7 @@ writers. Runs against the in-memory fake in `hiring_signal_fakes`."""
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -26,6 +27,7 @@ from between_jobs.api.hiring_signal_cache import (
     run_purge_forever,
 )
 from between_jobs.api.hiring_signals import Freshness, RawSearchHit
+from between_jobs.api.worker_supervision import WorkerState
 
 NOW = datetime(2026, 9, 19, 18, 0, 0, tzinfo=UTC)
 DAY = date(2026, 9, 19)
@@ -329,6 +331,117 @@ async def test_a_failed_sweep_does_not_end_the_worker() -> None:
             await task
 
     assert table.rows == []
+
+
+# ── the work that rides on the purge tick (the daily webhook probe) ──────
+
+
+class _StopAfter:
+    """A fake `sleep` that records delays and, on the n-th, cancels the loop as shutdown does."""
+
+    def __init__(self, ticks: int) -> None:
+        self.ticks = ticks
+        self.delays: list[float] = []
+
+    async def __call__(self, delay: float) -> None:
+        self.delays.append(delay)
+        if len(self.delays) >= self.ticks:
+            raise asyncio.CancelledError
+
+
+async def _run(
+    supabase: FakeSupabase, after_purge: Any, *, ticks: int = 1, state: Any = None
+) -> _StopAfter:
+    sleep = _StopAfter(ticks)
+    with pytest.raises(asyncio.CancelledError):
+        await run_purge_forever(
+            as_client(supabase), sleep=sleep, state=state, after_purge=after_purge
+        )
+    return sleep
+
+
+async def test_the_work_that_rides_on_the_tick_runs_once_per_tick_after_the_sweep() -> None:
+    old = datetime(2020, 1, 1, tzinfo=UTC).isoformat()
+    supabase, table = _supabase(
+        [{"id": "id-1", "query_key": "k", "response_json": {}, "created_at": old}]
+    )
+    seen: list[int] = []
+
+    async def after_purge() -> None:
+        seen.append(len(table.rows))  # how many rows were left when it ran
+
+    await _run(supabase, after_purge, ticks=3)
+
+    assert seen == [0, 0, 0]  # swept first, on every one of the three ticks
+
+
+async def test_it_runs_when_the_sweep_fails_and_the_failure_still_reaches_the_supervisor() -> None:
+    supabase, table = _supabase()
+    table.fail_with = RuntimeError("database unreachable")
+    calls: list[str] = []
+    state = WorkerState(name="hiring_signal_cache_purge", interval_seconds=3600.0)
+
+    async def after_purge() -> None:
+        calls.append("after")
+
+    sleep = _StopAfter(2)
+    with pytest.raises(asyncio.CancelledError):
+        await run_purge_forever(
+            as_client(supabase), sleep=sleep, state=state, after_purge=after_purge
+        )
+
+    assert calls == ["after", "after"]  # it does not depend on the database
+    assert state.consecutive_failures == 2  # both sweeps' failures were counted, not hidden
+    assert state.last_error_type == "builtins.RuntimeError"
+
+
+async def test_a_failure_of_it_is_logged_by_type_and_never_fails_or_changes_the_tick(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    supabase, _ = _supabase()
+    state = WorkerState(name="hiring_signal_cache_purge", interval_seconds=3600.0)
+
+    async def after_purge() -> None:
+        raise RuntimeError("secret detail in the message")
+
+    sleep = await _run(supabase, after_purge, state=state)
+
+    assert state.consecutive_failures == 0 and state.last_success_at is not None
+    assert sleep.delays == [3600.0]  # the normal interval, not a retry backoff
+    [record] = [r for r in caplog.records if "rides on" in r.getMessage()]
+    assert record.levelno == logging.WARNING
+    assert record.ctx == {"error_type": "builtins.RuntimeError"}  # type: ignore[attr-defined]
+    assert "secret detail" not in caplog.text
+
+
+async def test_a_cancellation_inside_it_is_shutdown_not_a_failure() -> None:
+    supabase, _ = _supabase()
+    state = WorkerState(name="hiring_signal_cache_purge", interval_seconds=3600.0)
+    inside = asyncio.Event()
+
+    async def after_purge() -> None:
+        inside.set()
+        await asyncio.sleep(3600)
+
+    task = asyncio.create_task(
+        run_purge_forever(as_client(supabase), state=state, after_purge=after_purge)
+    )
+    await asyncio.wait_for(inside.wait(), timeout=5)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        # Bounded: were the cancellation swallowed, the loop would go on to its hour-long sleep
+        # and this would hang instead of failing. A correct run re-raises the task's
+        # cancellation at once.
+        await asyncio.wait_for(task, timeout=5)
+    assert state.consecutive_failures == 0
+
+
+async def test_with_nothing_riding_on_the_tick_the_worker_is_what_it_was() -> None:
+    supabase, _ = _supabase()
+    state = WorkerState(name="hiring_signal_cache_purge", interval_seconds=3600.0)
+    await _run(supabase, None, state=state)
+    assert state.last_success_at is not None and state.consecutive_failures == 0
 
 
 # ── BC-7: a purge never deletes a row a concurrent request just refreshed ─

@@ -490,6 +490,73 @@ async def test_a_bad_url_stops_the_boot_even_for_a_disabled_worker(
         WorkerPings().for_worker("outbox", disable_env="DISABLE_OUTBOX_WORKER", enabled=False)
 
 
+# --- a check that is not a worker's (`for_check`) ---------------------------------------------
+
+CHECK_ENV = "HEALTHCHECKS_URL_SOME_PROBE"
+OFF_MESSAGE = "a healthcheck URL is set for a probe that does not run here"
+
+
+@pytest.mark.usefixtures("_clean_env")
+async def test_a_check_with_a_url_gets_a_pinger_under_its_own_name_on_the_shared_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HEALTHCHECKS_URL_OUTBOX_WORKER", URL)
+    monkeypatch.setenv(CHECK_ENV, URL + "-probe")
+    pings = WorkerPings()
+
+    outbox = pings.for_worker("outbox", disable_env="DISABLE_OUTBOX_WORKER", enabled=True)
+    probe = pings.for_check("some_probe", env_name=CHECK_ENV, enabled=True, off_message=OFF_MESSAGE)
+
+    assert outbox is not None and probe is not None
+    assert probe.worker == "some_probe" and probe._client is outbox._client
+    assert set(pings.pingers) == {"outbox", "some_probe"}
+    await pings.aclose()
+    assert pings._client is None
+
+
+@pytest.mark.usefixtures("_clean_env")
+async def test_a_check_with_no_url_is_none_but_its_name_is_known(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pings = WorkerPings()
+    assert pings.for_check("p", env_name=CHECK_ENV, enabled=True, off_message=OFF_MESSAGE) is None
+    assert pings.pingers == {} and pings._client is None
+
+    with caplog.at_level(logging.WARNING, logger=PINGS_LOGGER):
+        pings.warn_unrecognised_settings({CHECK_ENV: "anything", "HEALTHCHECKS_URL_OTHER": "x"})
+    [warning] = caplog.records  # only the stray one: the check's own name is not
+    assert warning.ctx["variable"] == "HEALTHCHECKS_URL_OTHER"  # type: ignore[attr-defined]
+    assert CHECK_ENV in warning.ctx["expected"]  # type: ignore[attr-defined]
+
+
+@pytest.mark.usefixtures("_clean_env")
+async def test_a_check_that_is_off_gets_no_pinger_and_the_callers_own_warning(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv(CHECK_ENV, URL)
+    pings = WorkerPings()
+    with caplog.at_level(logging.WARNING, logger=PINGS_LOGGER):
+        pinger = pings.for_check(
+            "some_probe", env_name=CHECK_ENV, enabled=False, off_message=OFF_MESSAGE
+        )
+
+    assert pinger is None and pings.pingers == {} and pings._client is None
+    [warning] = caplog.records
+    assert warning.getMessage() == OFF_MESSAGE
+    assert warning.ctx == {"worker": "some_probe", "variable": CHECK_ENV}  # type: ignore[attr-defined]
+    assert not any(fragment in rendered([warning]) for fragment in URL_FRAGMENTS)
+
+
+@pytest.mark.usefixtures("_clean_env")
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_a_bad_check_url_stops_the_boot_whether_or_not_the_check_is_used(
+    monkeypatch: pytest.MonkeyPatch, enabled: bool
+) -> None:
+    monkeypatch.setenv(CHECK_ENV, "http://not-https.example/x")
+    with pytest.raises(ConfigurationError, match=CHECK_ENV):
+        WorkerPings().for_check("p", env_name=CHECK_ENV, enabled=enabled, off_message=OFF_MESSAGE)
+
+
 class _KeysOnly(Mapping[str, str]):
     """An environment that gives its names and nothing else: reading a value fails (and so do
     `get`, `items` and `values`, which read through it)."""

@@ -249,6 +249,72 @@ that remains. That last step is a safety net, not a guarantee: read `src/between
 GET after each successful tick, so you hear when it goes quiet; it carries no user data. For an
 uptime monitor use `/health`, which answers 503 when a worker has died or stalled.
 
+### Telegram webhook probe
+
+Telegram stops delivering messages silently when the webhook's address is wrong, unreachable or
+answers errors, and nothing in this service's own logs shows it, because nothing arrives. On a
+server with a bot, about once a day (and again just after the API starts) the API asks Telegram
+itself, with `getWebhookInfo`, and decides: **problem** if the bot has no webhook, the webhook's
+address does not end in `/telegram/webhook` (the route this API serves, so Telegram is
+delivering to something else), the bot is subscribed to a list of update types that leaves out
+`message` or `callback_query` (a missing or empty list is Telegram's default and is fine), more
+than 10 updates are waiting, or Telegram reports a delivery error or a synchronization error from
+the last 25 hours (Telegram's documentation does not say when it stops reporting an old error, so
+an older one is ignored); **ok** if none of that holds; **unknown** if the answer was missing,
+malformed or never came. It runs inside the hiring-signal cache purge worker, so that worker must
+be on, and it is off on a server with no bot.
+
+The reason codes in `/health` and the log, for a **problem**:
+
+- `no_webhook_url`: the bot has no webhook set.
+- `webhook_path_unexpected`: the webhook's address does not end in `/telegram/webhook`. A proxy
+  that strips a path prefix does not trip this; a webhook pointed at another service's route does.
+- `update_types_excluded`: the bot's subscription leaves out `message` or `callback_query`, which
+  are the only update types the webhook handler reads.
+- `pending_updates_high`: more than 10 updates are waiting for delivery.
+- `recent_delivery_error`: Telegram failed to deliver to the webhook within the last 25 hours.
+- `recent_sync_error`: Telegram reports an error from the last 25 hours while synchronizing
+  updates with its own datacenters. Its documentation defines it only that way, which is not a
+  failure to reach your webhook, and does not say whether it clears. It counts as a problem
+  because updates may be delayed. There is nothing to fix on your side: it ages out after 25
+  hours, and the check stays down until the next healthy probe.
+
+An **unknown** names what was missing or malformed (`url_invalid`, `pending_update_count_invalid`,
+`last_error_date_invalid`, `last_synchronization_error_date_invalid`, `allowed_updates_invalid`)
+or how asking Telegram failed (`telegram_timeout`, `telegram_unreachable`, `telegram_refused`,
+`telegram_answer_malformed`, `probe_timed_out`, `probe_failed`).
+
+A problem is one WARNING in the log, with short reason codes and no webhook address or token. It
+also shows in `/health` under `telegram_webhook` (`status`, `last_checked_at`, `reasons`), which
+never changes `/health`'s status code, so a broken webhook cannot stop a deploy. Nothing goes to
+Sentry. To get alerted, set `HEALTHCHECKS_URL_TELEGRAM_WEBHOOK` to a Healthchecks check's ping
+URL (period 1 day, grace 6 hours): the probe pings it when ok, pings its `/fail` address on a
+problem, and sends nothing when unknown, so the missing ping is what alerts you when Telegram
+cannot be reached or the bot token is wrong. Create that check only on a server with a bot and
+with the purge worker on.
+
+A new Healthchecks check stays in its "new" state, which never alerts, until it receives its
+first ping, so a missing ping only alerts once the check has been pinged at least once. After
+creating the check and setting the URL, restart the API (the probe runs right after it starts),
+or send one manual GET to the ping URL, and confirm in Healthchecks that the check turns green
+(up) before you rely on it. If it stays "new" after the first probe, the probe is not getting an
+answer from Telegram: read the log WARNING and `/health` `telegram_webhook`.
+
+Three limits. Telegram records a delivery error only when it tries to deliver an update, so a dead
+webhook address on a bot nobody has messaged since shows nothing until the first message. The
+probe does not know this server's public address, so a webhook re-pointed at another live service
+on this API's own path (for example a dev copy of the API on another host) still reads ok; check
+the host Telegram has with `python scripts/set_telegram_webhook.py --info`. And the probe runs in
+every copy of the API (see "One container, one process"), so a stray second replica asks
+Telegram, and pings the check, a second time a day; the answer is the same.
+
+To see it work, use a separate dev bot and a dev API with its own check (never the production
+bot, which has one webhook): point the dev bot at a host that is not your API with
+`python scripts/set_telegram_webhook.py --url https://<another site you control> --replace-existing`,
+send the bot a message so Telegram tries to deliver it and records an error, then restart the dev
+API. The log shows the WARNING (`recent_delivery_error`), `/health` shows `problem`, and the check
+goes down. Put the real address back with the same script.
+
 ## Self-hosting the job registry
 
 The job registry is the list of company job boards that the API's background poller

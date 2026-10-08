@@ -32,7 +32,7 @@ from fastapi.responses import JSONResponse, Response
 from supabase import AsyncClient
 
 from .account_routes import router as account_router
-from .app_state import build_push_notifier
+from .app_state import build_push_notifier, build_webhook_probe
 from .applications_routes import router as applications_router
 from .auth import create_jwks_client
 from .body_limit import BodyLimitMiddleware, max_request_body_bytes
@@ -81,6 +81,7 @@ from .tester_enrollment import tester_program_required
 from .tester_enrollment_routes import router as tester_enrollment_router
 from .today_routes import router as today_router
 from .warm_path_events_routes import router as warm_path_events_router
+from .webhook_probe import webhook_report
 from .worker_lease import TTL_SECONDS as WORKER_LEASE_TTL_SECONDS
 from .worker_lease import WorkerLease
 from .worker_leases_store import claim_worker_lease
@@ -198,7 +199,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # - gmail_reply_checker (Gmail reply/status parsing R3) reuses app.state.http.
     # - hiring_signal_cache_purge keeps the shared query cache's third-party text
     #   inside its lifetime even when nobody searches, and runs whether or not
-    #   the feature is switched on (see `hiring_signal_cache`, "Lifetime").
+    #   the feature is switched on (see `hiring_signal_cache`, "Lifetime"). It also hosts the
+    #   daily Telegram webhook probe (webhook_probe.py) on a server that has a bot.
     workers = WorkerRegistry()
     app.state.workers = workers
     # Healthchecks pings (worker_pings.py): a worker pings after each successful tick when
@@ -212,6 +214,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # prefix is only a label for the logs.
     holder = f"{(os.environ.get('RAILWAY_DEPLOYMENT_ID') or 'local')[:8]}:{uuid.uuid4().hex}"
     leases: list[WorkerLease] = []
+
+    # The Telegram webhook probe asks Telegram once a day whether it is delivering (None on a
+    # server without a bot). It runs on the cache-purge worker's tick, so it only runs where that
+    # worker does; its check has its own setting, HEALTHCHECKS_URL_TELEGRAM_WEBHOOK, read (and
+    # validated) here whether or not the probe will run. The flag is read as start_worker reads it.
+    # DISABLE_HIRING_SIGNALS is deliberately not consulted: that switch turns a feature off, not
+    # the worker, which keeps running (and keeps hosting the probe) with the feature off.
+    webhook_probe = build_webhook_probe(
+        app.state.telegram_client,
+        pings,
+        host_enabled=not os.environ.get("DISABLE_HIRING_SIGNAL_CACHE_PURGE"),
+    )
+    app.state.webhook_probe = webhook_probe
 
     async def start_worker(
         name: str,
@@ -288,7 +303,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "hiring_signal_cache_purge",
             interval_seconds=PURGE_INTERVAL_SECONDS,
             disable_env="DISABLE_HIRING_SIGNAL_CACHE_PURGE",
-            run=lambda sb, state: run_hiring_cache_purge_forever(sb, state=state),
+            run=lambda sb, state: run_hiring_cache_purge_forever(
+                sb,
+                state=state,
+                after_purge=webhook_probe.run_if_due if webhook_probe is not None else None,
+            ),
         )
         # Each leased worker's keeper has made its first claim by now, or failed
         # and said so (every attempt is bounded at 10 s, and they run in parallel):
@@ -580,7 +599,13 @@ async def health(request: Request) -> JSONResponse:
     is refused instead of cutting over to workers that can never run. Their body
     carries `lease: {state, claim_failures, last_claim_error}`, never the holder's id.
 
-    Dependencies are reported for diagnosis and never change the status."""
+    Dependencies are reported for diagnosis and never change the status.
+
+    `telegram_webhook` is the daily Telegram webhook probe's last verdict (webhook_probe.py):
+    `status` is `ok`, `problem`, `unknown` or `not_configured` (no bot on this server),
+    `last_checked_at` when it was reached, and `reasons` the fixed reason codes. It is reported
+    and nothing more: a broken webhook is not this server being unhealthy, and `/health` is
+    what a deploy waits on, so it never changes the status or the status code."""
     workers: WorkerRegistry = getattr(request.app.state, "workers", WorkerRegistry())
     now = datetime.now(UTC)
     healthy = workers.healthy(now)
@@ -588,5 +613,6 @@ async def health(request: Request) -> JSONResponse:
         "status": "ok" if healthy else "failing",
         "workers": workers.report(now),
         "dependencies": await _check_dependencies(request),
+        "telegram_webhook": webhook_report(getattr(request.app.state, "webhook_probe", None)),
     }
     return JSONResponse(status_code=200 if healthy else 503, content=body)

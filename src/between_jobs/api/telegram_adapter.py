@@ -20,10 +20,15 @@ template tests instead.
 
 `TelegramNotifier` is the proactive side: it finds the chat a user linked and says
 something there.
+
+`webhook_info_fetcher` is the third thing that asks Telegram something: the daily webhook
+probe's question (`getWebhookInfo`), with every way it can fail turned into one of the probe's
+fixed reason codes.
 """
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -43,8 +48,16 @@ from .channel_envelope import (
     Say,
     SendDocument,
 )
-from .telegram_client import DownloadTooLarge, Html, TelegramClient, escape
+from .telegram_client import DownloadTooLarge, Html, TelegramApiError, TelegramClient, escape
 from .telegram_identity import CHANNEL, get_chat_id
+from .webhook_probe import (
+    PROBE_FAILED,
+    TELEGRAM_ANSWER_MALFORMED,
+    TELEGRAM_REFUSED,
+    TELEGRAM_TIMEOUT,
+    TELEGRAM_UNREACHABLE,
+    WebhookInfoUnavailable,
+)
 
 _TAGS = {"bold": "b", "italic": "i", "code": "code", "pre": "pre"}
 
@@ -243,3 +256,28 @@ def build_notifier(supabase: AsyncClient, client: TelegramClient | None) -> Tele
     if client is None:
         return None
     return TelegramNotifier(supabase, TelegramRenderer(client))
+
+
+_WEBHOOK_INFO_FAILURES = {
+    "timeout": TELEGRAM_TIMEOUT,
+    "transport": TELEGRAM_UNREACHABLE,
+    "refused": TELEGRAM_REFUSED,
+    "malformed": TELEGRAM_ANSWER_MALFORMED,
+}
+
+
+def webhook_info_fetcher(client: TelegramClient) -> Callable[[], Awaitable[dict[str, Any]]]:
+    """What the webhook probe asks Telegram with: `getWebhookInfo` on this server's bot. A
+    failure comes out as `WebhookInfoUnavailable` carrying one of the probe's fixed reason
+    codes. The new error is raised after the `except` block, not inside it, so it does not
+    keep the original as its `__context__` (nothing there holds the token, but nothing needs
+    to travel with a code and a status either)."""
+
+    async def fetch() -> dict[str, Any]:
+        try:
+            return await client.get_webhook_info()
+        except TelegramApiError as error:
+            reason = _WEBHOOK_INFO_FAILURES.get(error.code, PROBE_FAILED)
+        raise WebhookInfoUnavailable(reason)
+
+    return fetch

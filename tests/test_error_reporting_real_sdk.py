@@ -31,6 +31,7 @@ from between_jobs.api.credential_resolver import ResolvedCredential
 from between_jobs.api.errors import ApiError
 from between_jobs.api.forge_engines_client import call_apply
 from between_jobs.api.sentry_scrub import MESSAGE_OMITTED
+from between_jobs.api.telegram_client import TelegramApiError, TelegramClient
 
 # Everything from the SDK is reached through these two names (typed Any), so that this module
 # type-checks the same whether or not the package is installed.
@@ -396,6 +397,45 @@ async def test_a_report_made_in_a_worker_task_arrives_with_its_tags_and_fingerpr
     [event] = recorder.events
     assert event["fingerprint"] == ["worker-tick-failure", "outbox", "builtins.ConnectionError"]
     assert event["tags"] == {"worker": "outbox", "consecutive_failures": "2"}
+
+
+@pytest.mark.parametrize("failure", ["transport", "timeout", "refused", "malformed"])
+async def test_a_failed_get_webhook_info_that_is_reported_anyway_carries_no_bot_token(
+    recorder: Any, failure: str
+) -> None:
+    """The webhook probe never reports to the tracker, but nothing may rely on that: the
+    bot token is in the request URL, and an error from this call must be safe if someone does
+    pass it to `report_exception` one day. Real SDK, real scrubbing, library message hostile."""
+    secret_part = "FAKEfakeFAKEfake" + "0123456789abcdefXY"  # runtime-built: not a scanner hit
+    token = "123456789:" + secret_part
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if failure == "transport":
+            raise httpx.ConnectError(f"cannot reach {request.url}", request=request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout(f"timed out: {request.url}", request=request)
+        if failure == "refused":
+            return httpx.Response(401, json={"ok": False, "description": f"bad {token}"})
+        return httpx.Response(200, content=b"garbage")
+
+    telegram = TelegramClient(httpx.AsyncClient(transport=httpx.MockTransport(handler)), token)
+    caught: TelegramApiError | None = None
+    try:
+        await telegram.get_webhook_info()
+    except TelegramApiError as error:
+        caught = error
+    assert caught is not None
+
+    error_reporting.init_error_reporting()
+    error_reporting.report_exception(caught, tags={"worker": "hiring_signal_cache_purge"})
+    await error_reporting.flush_error_reporting(timeout=1.0)
+
+    [event] = recorder.events
+    blob = json.dumps(event)
+    assert token not in blob and secret_part not in blob
+    [exception] = event["exception"]["values"]
+    assert exception["type"] == "TelegramApiError"
+    assert exception["value"].startswith("the Telegram Bot API call failed (")
 
 
 def test_no_trace_headers_leave_on_a_request_this_service_makes(recorder: Any) -> None:
