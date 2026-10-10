@@ -347,14 +347,15 @@ CASES = [
         "POST /resume-documents/{document_id}/gap-interview",
         _gap_interview,
         owner_status=_NEEDS_SETUP,
-        note="same as coverage: SETUP_REQUIRED (409) for the owner",
+        note="the owner stops at 409 after the ownership lookup: NOT_AVAILABLE_IN_GENERIC_ENGINE "
+        "on the built-in engine the local-stack tests run on (a stranger gets 404 first)",
     ),
     Case(
         "POST /resume-documents/{document_id}/header/preview",
         _preview,
-        owner_status=frozenset({500}),
-        note="the owner's request reaches forge-engines, which the harness blocks: the blocked "
-        "socket surfaces as the generic INTERNAL_ERROR 500 (after the ownership lookup passed)",
+        owner_status=frozenset({200}),
+        note="the preview is deterministic and runs on the engine built into the API here, so "
+        "the owner's control really succeeds (after the ownership lookup passed)",
     ),
     Case(
         "PATCH /resume-documents/{document_id}/sections",

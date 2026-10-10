@@ -733,6 +733,24 @@ def test_the_gap_interview_says_it_is_not_available_before_spending_a_model_call
     assert model.calls == [] and http.post_calls == []
 
 
+def test_the_gap_interview_of_a_document_that_is_not_yours_is_not_found_on_every_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The ownership lookup comes first, so a stranger's answer does not depend on which engine
+    # the server runs: not found, never "not available".
+    model = ScriptedModel()
+    _use_the_built_in_engine(monkeypatch, model)
+    http = _FakeHttpClient()
+
+    nobody_elses = _FakeSupabaseClient(resume_documents=_FakeTable(select_rows=[]))
+    with _client(nobody_elses, http) as client:
+        response = client.post("/resume-documents/someone-elses-document/gap-interview")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+    assert model.calls == [] and http.post_calls == []
+
+
 def test_the_tailor_coverage_works_without_the_hosted_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

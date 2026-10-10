@@ -229,13 +229,15 @@ async def get_gap_interview(
     profile writes happen here -- read-only, same as `/coverage`. A
     document with no eligible gap returns an empty list without spending
     the (optional) second LLM call at all."""
-    # Before the job is read: reading it costs a model call, and an engine that has no gap
-    # interview would only answer "not available" after the person had paid for it.
-    ensure_available("gap_interview")
     try:
         document = await get_document(supabase, user_id, document_id)
     except DocumentNotFound as e:
         raise ApiError("NOT_FOUND", f"no resume document found for id {document_id!r}") from e
+
+    # After the ownership lookup (so a document that is not yours answers 404 on every engine)
+    # and before the job is read: reading it costs a model call, and an engine that has no gap
+    # interview would only answer "not available" after the person had paid for it.
+    ensure_available("gap_interview")
 
     ctx = await load_coverage_context(supabase, http, user_id, document)
     candidates = pick_gap_interview_questions(ctx.coverage, ctx.canonical_json)

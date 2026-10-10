@@ -41,6 +41,15 @@ _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 _BUCKET = "artifacts"
 
 
+@pytest.fixture(autouse=True)
+def _built_in_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The local-stack tests run on the engine built into the API: with FORGE_ENGINES_BASE_URL
+    unset nothing here tries to reach a resume engine, and the routes that only need the
+    engine's deterministic parts (the header preview) really answer for their owner. The unit
+    tests' own default (an address for a faked remote engine, tests/conftest.py) is undone."""
+    monkeypatch.delenv("FORGE_ENGINES_BASE_URL", raising=False)
+
+
 def _cannot_run(reason: str) -> NoReturn:
     """Skip on a developer's machine; fail in CI, where a silent skip is a green build that
     tested nothing (GitHub sets CI=true)."""
