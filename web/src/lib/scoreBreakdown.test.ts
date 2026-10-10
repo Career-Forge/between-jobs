@@ -14,7 +14,9 @@ import {
   hardReqCapIsBinding,
   hardReqScoreForMissingCount,
   latestAttempt,
+  NOT_SCORED_NOTE,
   nextDealbreakerGain,
+  notScoredNote,
   parseGaps,
   quantificationCaption,
   scoreRows,
@@ -323,5 +325,28 @@ describe("latestAttempt", () => {
 
   it("returns null for an empty list rather than throwing", () => {
     expect(latestAttempt([])).toBeNull();
+  });
+});
+
+describe("notScoredNote", () => {
+  const written = { resume: { artifact_id: "a", version_id: "v", media_type: "application/x-tex", sha256: "s" } };
+  const attempt = { overall_score: 72, breakdown: breakdown(), confidence: "high", rating: "Strong Match", gaps: [] };
+
+  it("says so, in words, when a resume was written and nothing scored it", () => {
+    expect(notScoredNote({ ...written, ats_attempts: [], final_score: null })).toBe(NOT_SCORED_NOTE);
+  });
+
+  it("says nothing when there is a score, however it reached the page", () => {
+    expect(notScoredNote({ ...written, ats_attempts: [attempt], final_score: 72 })).toBeNull();
+    expect(notScoredNote({ ...written, ats_attempts: [attempt], final_score: null })).toBeNull();
+    expect(notScoredNote({ ...written, ats_attempts: [], final_score: 72 })).toBeNull();
+  });
+
+  it("says nothing when no resume was written: there is nothing to score", () => {
+    expect(notScoredNote({ resume: null, ats_attempts: [], final_score: null })).toBeNull();
+  });
+
+  it("is a sentence, not a number", () => {
+    expect(NOT_SCORED_NOTE).not.toMatch(/\d/);
   });
 });

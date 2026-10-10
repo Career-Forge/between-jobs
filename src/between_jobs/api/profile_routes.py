@@ -27,8 +27,8 @@ from supabase import AsyncClient
 from .app_state import get_http_client, get_supabase
 from .auth import require_user_id
 from .credential_resolver import resolve
+from .engine_gateway import call_gap_answer_draft
 from .errors import ApiError
-from .forge_engines_client import call_gap_answer_draft
 from .llm_client import generate as llm_generate
 from .models import GapInterviewApproveRequest, GapInterviewDraftRequest, ImportProfileRequest
 from .profile import ProfileImportError, append_bullet_to_entity, entity_candidates, import_profile

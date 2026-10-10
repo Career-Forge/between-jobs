@@ -97,6 +97,7 @@ testpaths = ["tests"]
 addopts = "-q -m 'not local_supabase'"
 markers = [
     "local_supabase: runs against a local Supabase stack (never a hosted project)",
+    "latex_compile: compiles generated LaTeX with a real pdflatex (local, or the container named by GENERIC_ENGINE_LATEX_IMAGE); skipped when neither exists",
 ]
 asyncio_mode = "auto"
 # The standalone operator scripts live at the repo root (scripts/), not inside the

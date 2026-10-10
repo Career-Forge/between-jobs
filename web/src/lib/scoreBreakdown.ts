@@ -9,6 +9,7 @@ import type {
   AtsScoreBreakdown,
   CompanyAlignmentDetail,
   ExperienceDetail,
+  PrepareApplicationResult,
   QuantificationDetail,
 } from "./generateTypes";
 
@@ -156,6 +157,20 @@ export function hardReqCapIsBinding(breakdown: AtsScoreBreakdown, overallScore: 
 
 export function latestAttempt(attempts: AtsAttempt[]): AtsAttempt | null {
   return attempts.length > 0 ? attempts[attempts.length - 1] : null;
+}
+
+export const NOT_SCORED_NOTE =
+  "This resume wasn't scored: the engine that wrote it doesn't score resumes.";
+
+// What to say where the score would be, when a resume was written and nothing scored it (an
+// engine that does not compute a score sends none). A resume that was not written has nothing
+// to score, so it gets no note, and one with a score gets none either. Never a number: when
+// nobody calculated one, the page says so in words.
+export function notScoredNote(
+  result: Pick<PrepareApplicationResult, "resume" | "ats_attempts" | "final_score">,
+): string | null {
+  if (result.resume === null) return null;
+  return result.ats_attempts.length === 0 && result.final_score === null ? NOT_SCORED_NOTE : null;
 }
 
 // ForgeScore chart-UI pass -- surfacing sub-signals `calculate_ats_score`

@@ -348,17 +348,23 @@ async def _prepare_and_deliver(turn: _Turn, application_id: str, progress: Progr
         return
 
     score = result.get("final_score")
-    score_text = str(int(score)) if score is not None else "--"
-    warning_suffix = ("\n" + "\n".join(f"• {w}" for w in warnings)) if warnings else ""
+    # An engine that does not score its resumes sends no score: the caption then says nothing
+    # about one, rather than showing a placeholder where a number would be.
+    head = (
+        messages.PREPARE_SUCCESS_CAPTION.format(score=int(score), warnings="")
+        if score is not None
+        else messages.PREPARE_SUCCESS_CAPTION_UNSCORED.format(warnings="")
+    )
+    # The warnings are the engine's own text, so they are held to what a caption can carry
+    # (whole bullets while they fit, the rest counted); short ones come out exactly as written.
+    room = messages.CAPTION_LIMIT - len(head) - 1
+    warning_suffix = (
+        "\n" + messages.declined_warnings_text(warnings, limit=room) if warnings else ""
+    )
+    caption = head + warning_suffix
     await turn.renderer.send_document(
         turn.message.chat_ref,
-        SendDocument(
-            "resume.pdf",
-            pdf_bytes,
-            caption=messages.PREPARE_SUCCESS_CAPTION.format(
-                score=score_text, warnings=warning_suffix
-            ),
-        ),
+        SendDocument("resume.pdf", pdf_bytes, caption=caption),
     )
     # One tap moves the application from "saved" (its default status, per
     # applications_store._DEFAULT_STATUS) to "applied", the natural next step right after

@@ -14,10 +14,14 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from generic_engine_fakes import ScriptedModel
+from generic_engine_fakes import profile as sample_profile
 
+from between_jobs.api import engine_gateway
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase
 from between_jobs.api.auth import require_user_id
+from between_jobs.engines import GenericBackend
 
 _USER_ID = "00000000-0000-0000-0000-000000000001"
 _APPLICATION_ID = "30000000-0000-0000-0000-000000000001"
@@ -675,3 +679,71 @@ def test_the_master_document_itself_is_never_marked_inherited() -> None:
 
     assert body["header_layout"] == _MASTER_LAYOUT
     assert "header_layout_inherited" not in body
+
+
+# -- with no hosted engine: the built-in one answers the Studio's routes -------------------------
+
+
+def _use_the_built_in_engine(monkeypatch: pytest.MonkeyPatch, model: ScriptedModel) -> None:
+    monkeypatch.delenv("FORGE_ENGINES_BASE_URL")
+    monkeypatch.setattr(engine_gateway, "_GENERIC", GenericBackend(generate=model))
+
+
+def test_the_header_preview_works_without_the_hosted_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ScriptedModel()
+    _use_the_built_in_engine(monkeypatch, model)
+    row = {**_PROFILE_VERSION_ROW, "canonical_json": sample_profile()}
+    supabase = _FakeSupabaseClient(profile_versions=_FakeTable(select_rows=[row]))
+    http = _FakeHttpClient()
+    layout = {"chips": [{"field": "email"}, {"field": "github", "display_mode": "label"}]}
+
+    with _client(supabase, http) as client:
+        response = client.post(
+            f"/resume-documents/{_DOCUMENT_ID}/header/preview", json={"header_layout": layout}
+        )
+
+    assert response.status_code == 200
+    assert response.json()["chips"] == [
+        {
+            "field": "email",
+            "text": "avery.quill@example.com",
+            "href": "mailto:avery.quill@example.com",
+        },
+        {"field": "github", "text": "GitHub", "href": "https://github.com/averyquill"},
+    ]
+    assert http.post_calls == [] and model.calls == []  # no service, and no model for a preview
+
+
+def test_the_gap_interview_says_it_is_not_available_before_spending_a_model_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ScriptedModel()  # any call to it fails the test
+    _use_the_built_in_engine(monkeypatch, model)
+    http = _FakeHttpClient()
+
+    with _client(_FakeSupabaseClient(), http) as client:
+        response = client.post(f"/resume-documents/{_DOCUMENT_ID}/gap-interview")
+
+    assert response.status_code == 409
+    error = response.json()["error"]
+    assert error["code"] == "NOT_AVAILABLE_IN_GENERIC_ENGINE"
+    assert error["details"] == {"operation": "gap_interview", "engine": "generic"}
+    assert model.calls == [] and http.post_calls == []
+
+
+def test_the_tailor_coverage_works_without_the_hosted_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = ScriptedModel.faithful()
+    _use_the_built_in_engine(monkeypatch, model)
+
+    with _client(_FakeSupabaseClient(), _FakeHttpClient()) as client:
+        response = client.post(f"/resume-documents/{_DOCUMENT_ID}/coverage")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [c["name"] for c in body["step0"]["clusters"]] == ["Streaming data", "Cloud"]
+    assert body["step0"]["key_terms"] == ["Kafka", "Snowflake", "Terraform", "dbt"]
+    assert len(model.calls) == 1 and model.calls[0].stage == "step0"

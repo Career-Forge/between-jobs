@@ -200,6 +200,20 @@ async def test_artifact_generated_produces_a_resume_ready_item_with_score() -> N
     assert item["detail"] == "ATS score 72/100"
 
 
+async def test_a_resume_nobody_scored_is_announced_without_a_score() -> None:
+    """The resume was delivered by an engine that does not score: the item says it is ready and
+    has no detail, rather than a score of zero or a placeholder."""
+    supabase = _FakeSupabaseClient()
+    row = _outbox_row("artifact.generated.v1", {"final_score": None, "warnings": []})
+
+    inserted = await handle_batch(supabase, [row])  # type: ignore[arg-type]
+
+    assert inserted == 1
+    item = supabase.today_items.insert_calls[0]
+    assert item["kind"] == "resume_ready"
+    assert item["detail"] is None
+
+
 async def test_artifact_generation_failed_produces_a_resume_failed_item_with_warnings() -> None:
     supabase = _FakeSupabaseClient()
     row = _outbox_row(

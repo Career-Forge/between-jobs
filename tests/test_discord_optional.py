@@ -74,6 +74,7 @@ def test_capabilities_answers_exactly_what_it_always_did_when_discord_is_off() -
             "telegram": False,
             "telegram_bot_username": None,
             "tester_program_required": False,
+            "engine": "remote",
         }
 
 
@@ -147,6 +148,7 @@ def test_a_configured_server_turns_discord_on(monkeypatch: pytest.MonkeyPatch) -
             "telegram": False,
             "telegram_bot_username": None,
             "tester_program_required": False,
+            "engine": "remote",
             "discord": True,
             # Nothing set: Discord's own install link for the application.
             "discord_install_url": (

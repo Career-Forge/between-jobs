@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { apiFetch, apiFetchBlob } from "../lib/api";
 import type { ChecklistItem, PrepareApplicationResult } from "../lib/generateTypes";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
+import { notScoredNote } from "../lib/scoreBreakdown";
 import { type SetupNotice, failureOf } from "../lib/setupRequired";
+import { ClaimWarningsBanner } from "./ClaimWarningsBanner";
 import { GapInterview } from "./GapInterview";
 import { HonestFloor } from "./HonestFloor";
 import { ScoreBreakdown } from "./ScoreBreakdown";
@@ -18,11 +20,12 @@ function isPinWarning(w: string): boolean {
   return w.startsWith("pinned item");
 }
 
-// C4 (coverforge-port.md): same "same shared warnings channel, split out by
-// a plain prefix" pattern as isPinWarning above -- the prefix is
-// forge_engines.claim_verify.flagged_claim_warnings' own "unsupported
-// claim (...)" format. Never blocks or auto-edits anything (Pranav's
-// explicit call, see the plan doc's C4 section) -- purely a visible flag.
+// Same "shared warnings channel, split out by a plain prefix" pattern as
+// isPinWarning above -- the prefix is the
+// "unsupported claim (...)" format both engines write. The separate engine only
+// flags (it never edits or blocks); the built-in engine has already taken the
+// flagged text out, or put the candidate's own wording back, and says which in
+// the parenthesis. The banner below words itself by that (ClaimWarningsBanner).
 function isClaimWarning(w: string): boolean {
   return w.startsWith("unsupported claim");
 }
@@ -75,6 +78,12 @@ function checklistStatusLabel(status: ChecklistItem["status"]): string {
     case "not_checked":
       return "Not checked";
   }
+}
+
+// Where the score would be, when the engine that wrote the resume did not score it.
+function NotScoredNote({ result }: { result: PrepareApplicationResult }) {
+  const note = notScoredNote(result);
+  return note === null ? null : <div className="bj-muted bj-small">{note}</div>;
 }
 
 export function GeneratePanel({
@@ -275,6 +284,7 @@ export function GeneratePanel({
                 applicationId={applicationId}
                 attempts={generate.result.ats_attempts}
               />
+              <NotScoredNote result={generate.result} />
               <GapInterview
                 applicationId={applicationId}
                 attempts={generate.result.ats_attempts}
@@ -304,20 +314,7 @@ export function GeneratePanel({
                         </div>
                       </div>
                     )}
-                    {claimWarnings.length > 0 && (
-                      <div className="bj-claim-warning-banner">
-                        <div>⚠️ Claim verification flagged {claimWarnings.length} claim(s):</div>
-                        <ul className="bj-small">
-                          {claimWarnings.map((w) => (
-                            <li key={w}>{w}</li>
-                          ))}
-                        </ul>
-                        <div className="bj-small">
-                          Nothing was auto-edited or blocked -- review these against your own
-                          background before you send anything.
-                        </div>
-                      </div>
-                    )}
+                    {claimWarnings.length > 0 && <ClaimWarningsBanner warnings={claimWarnings} />}
                     {otherWarnings.length > 0 && (
                       <ul className="bj-small bj-generate-warnings">
                         {otherWarnings.map((w) => (

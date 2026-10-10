@@ -3,6 +3,7 @@ import {
   CAPABILITIES_PATH,
   type CapabilitiesFetcher,
   discordInstallUrl,
+  engineKind,
   isDiscordAvailable,
   isTelegramAvailable,
   isTesterProgramRequired,
@@ -222,5 +223,41 @@ describe("Discord", () => {
     expect(discordInstallUrl(on)).toBe("https://example.com/a");
     expect(discordInstallUrl(off)).toBeNull();
     expect(discordInstallUrl({ kind: "checking" })).toBeNull();
+  });
+});
+
+describe("the resume engine flag", () => {
+  it.each(["remote", "generic"] as const)("is read when the server says %s", (engine) => {
+    expect(parseCapabilities({ telegram: false, engine })).toEqual({
+      telegram: false,
+      telegramBotUsername: null,
+      testerProgramRequired: false,
+      engine,
+    });
+  });
+
+  it.each([
+    ["absent", undefined],
+    ["null", null],
+    ["a word this app does not know", "hosted"],
+    ["a boolean", true],
+    ["an address", "http://localhost:5682"],
+    ["different case", "Remote"],
+  ])("is left out, as unknown, when it is %s -- and the answer is still taken", (_label, engine) => {
+    const parsed = parseCapabilities({ telegram: false, engine });
+    expect(parsed).toEqual({ telegram: false, telegramBotUsername: null, testerProgramRequired: false });
+    expect(parsed).not.toHaveProperty("engine");
+  });
+
+  it("is read through engineKind, null while unknown or failed", () => {
+    const ready = (engine?: "remote" | "generic") => ({
+      kind: "ready" as const,
+      capabilities: { telegram: false, telegramBotUsername: null, testerProgramRequired: false, ...(engine ? { engine } : {}) },
+    });
+    expect(engineKind(ready("generic"))).toBe("generic");
+    expect(engineKind(ready("remote"))).toBe("remote");
+    expect(engineKind(ready())).toBeNull();
+    expect(engineKind({ kind: "checking" })).toBeNull();
+    expect(engineKind({ kind: "unavailable" })).toBeNull();
   });
 });

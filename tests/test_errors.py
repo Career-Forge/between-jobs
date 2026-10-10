@@ -142,6 +142,37 @@ def test_a_file_the_route_does_not_read_is_a_415_that_retrying_cannot_fix() -> N
     assert refused.to_body()["error"]["code"] == "UNSUPPORTED_MEDIA_TYPE"
 
 
+def test_a_feature_the_built_in_engine_does_not_do_is_a_409_that_retrying_cannot_fix() -> None:
+    err = ApiError(
+        "NOT_AVAILABLE_IN_GENERIC_ENGINE",
+        "The gap interview isn't available on this server's built-in engine.",
+        details={"operation": "gap_interview", "engine": "generic"},
+    )
+
+    # A deployment capability: not a mistake in the request (422), not a failure to retry (503).
+    assert err.status_code == 409
+    assert err.retryable is False
+    body = err.to_body()["error"]
+    assert body["code"] == "NOT_AVAILABLE_IN_GENERIC_ENGINE"
+    assert body["retryable"] is False
+    assert body["details"] == {"operation": "gap_interview", "engine": "generic"}
+    # not the answer for a missing setup the person can do themselves
+    assert err.code != "SETUP_REQUIRED"
+    assert body["capability"] is None and body["missing"] is None and body["settings_path"] is None
+
+
+def test_it_is_logged_as_a_client_error_not_as_a_failure(caplog: pytest.LogCaptureFixture) -> None:
+    """A 5xx would be logged at ERROR and sent to the error tracker every time somebody clicked a
+    button the server cannot serve (the tracker side is test_sentry_scrub.py)."""
+    with caplog.at_level(logging.DEBUG, logger=_LOGGER.name):
+        log_api_error(
+            _LOGGER, ApiError("NOT_AVAILABLE_IN_GENERIC_ENGINE", "x"), ctx={"route": "/x"}
+        )
+
+    (record,) = caplog.records
+    assert record.levelno == logging.INFO
+
+
 def test_the_web_apps_list_of_error_codes_is_the_servers() -> None:
     """web/src/lib/apiErrorCodes.ts mirrors `ErrorCode`; adding a code means editing both."""
     source = (Path(__file__).parent.parent / "web" / "src" / "lib" / "apiErrorCodes.ts").read_text()

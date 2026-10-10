@@ -14,6 +14,11 @@ describe("KNOWN_API_ERROR_CODES", () => {
     expect(isKnownApiErrorCode("FORBIDDEN")).toBe(true);
   });
 
+  it("includes the code a server without the hosted resume engine answers a feature only that engine does with", () => {
+    expect(KNOWN_API_ERROR_CODES).toContain("NOT_AVAILABLE_IN_GENERIC_ENGINE");
+    expect(isKnownApiErrorCode("NOT_AVAILABLE_IN_GENERIC_ENGINE")).toBe(true);
+  });
+
   it("lists each code once", () => {
     expect(new Set(KNOWN_API_ERROR_CODES).size).toBe(KNOWN_API_ERROR_CODES.length);
   });

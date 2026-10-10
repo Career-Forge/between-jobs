@@ -1,16 +1,20 @@
-"""HTTP client for forge-engines' service (Sprint 3.0d, extended 3.2c).
+"""HTTP client for the forge-engines resume-engine service.
 
-Talks to the private forge-engines FastAPI service (default :5682, per its
-own Dockerfile) over plain HTTP -- there's no auth between them today
-because nothing routes untrusted traffic to forge-engines directly; only
-this backend calls it, server to server. `call_apply()` is the apply
-flow's endpoint; `resolve_header_chips()` (Sprint 3.2c) is the Studio's
-deterministic header preview. forge-engines' other routes (/ingest,
-/personal, /bubbles, /allocate, /assemble, /ats/score) are either covered
-by this platform's own equivalent (profile.py for ingest) or aren't
-consumed by anything yet.
+Talks to the private forge-engines FastAPI service (port 5682 in its own Dockerfile) over
+plain HTTP -- there's no auth between them today because nothing routes untrusted traffic
+to forge-engines directly; only this backend calls it, server to server. `call_apply()` is
+the apply flow's endpoint; `resolve_header_chips()` is the Studio's
+deterministic header preview. forge-engines' other routes (/bubbles, /allocate, /assemble,
+/ats/score) are either covered by this platform's own equivalent or aren't consumed by
+anything yet.
 
-Request/response translation lives here, not in the route layer (3.0e):
+Nothing imports this module to reach "the engine" any more: the routes go through
+`engine_gateway`, which picks this client (through `engines.RemoteBackend`) only when
+`FORGE_ENGINES_BASE_URL` is set. This module is the remote engine's wire, and no more: a
+caller that reached it without an address would be talking to a service nobody configured, so
+`_base_url()` refuses instead of falling back to a guess.
+
+Request/response translation lives here, not in the route layer:
 between-jobs' own `ResolvedCredential` and `job_snapshots` row shapes map
 onto forge-engines' wire format with a few fixed field renames, and that
 mapping belongs next to the HTTP call it serves.
@@ -21,7 +25,6 @@ never into a URL, header echoed to a log, or exception message.
 
 from __future__ import annotations
 
-import os
 from typing import Any, Literal, cast
 
 import httpx
@@ -29,13 +32,24 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .credential_resolver import ResolvedCredential
 from .engine_contract import AtsAttempt, ForgeFitResult, GapAnswerDraft, GapQuestion, Step0Result
+from .env import optional_env
 from .errors import ApiError
 from .upstream_errors import upstream_error_detail
 
-_DEFAULT_BASE_URL = "http://localhost:5682"
-"""Matches forge-engines' own Dockerfile-exposed port. Overridable via
-FORGE_ENGINES_BASE_URL for anything other than local dev against a
-same-machine service."""
+
+def configured_base_url() -> str | None:
+    """The remote engine's address (FORGE_ENGINES_BASE_URL, without a trailing slash), or None
+    when none is configured -- which is when the built-in engine answers instead.
+
+    Unset, empty and whitespace-only all read as "none": a blank `KEY=` line in a .env file is
+    how "not configured" usually looks. It is read on every call, and it is the one reader both
+    `engine_gateway` (which engine?) and `_base_url` (where?) use, so the two cannot disagree
+    about what counts as set."""
+    raw = optional_env("FORGE_ENGINES_BASE_URL")
+    if raw is None or not raw.strip():
+        return None
+    return raw.strip().rstrip("/")
+
 
 _APPLY_TIMEOUT_SECONDS = 180.0
 """/apply makes several sequential LLM calls (seniority, fit, Pass1, Step0,
@@ -49,7 +63,12 @@ live-typing header preview."""
 
 
 def _base_url() -> str:
-    return os.environ.get("FORGE_ENGINES_BASE_URL", _DEFAULT_BASE_URL).rstrip("/")
+    url = configured_base_url()
+    if url is None:
+        # `engine_gateway` only picks this client when an address is set, so this is a caller
+        # that went around it. A bug, not something to answer a request with.
+        raise RuntimeError("the remote engine client was used with FORGE_ENGINES_BASE_URL unset")
+    return url
 
 
 async def _post(
@@ -88,15 +107,22 @@ class GateInfo(BaseModel):
 
 
 class ForgeApplyResult(BaseModel):
-    """Typed view over forge-engines' `POST /apply` response -- only the
+    """What an engine's apply operation hands back, whichever engine it is. Typed after
+    forge-engines' `POST /apply` response, the first engine this was written for, and only the
     fields this platform's prepare_application flow actually reads.
     `job`/`personal`/`seniority`/`pass1`/`step0` stay unparsed: typing
     forge-engines' own internal TypedDicts here would be a second copy to
     keep in sync by hand, the same reasoning forge-engines' own
     service/models.py gives for not re-declaring ITS wrapped functions'
-    shapes. `fit` is the one exception (S4c, honest-score-surfaces.md) --
-    it was already arriving in this same response and silently dropped by
-    `extra="ignore"` until now; typing it is the entire fix."""
+    shapes. `fit` is the one exception -- it was already arriving in this
+    same response and was silently dropped by `extra="ignore"` until it
+    was typed.
+
+    The three score-bearing fields are what an engine may not have: `fit` (the pre-generation
+    fit read), `ats_attempts` (the ATS scoring passes) and `gate` (the Honest Floor's verdict).
+    An engine that does not compute one leaves it `None` / empty, and every consumer shows
+    nothing in its place -- never a number nobody calculated. The remote engine always sends the
+    fit read and the gate (`RemoteApplyResult`)."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -109,8 +135,8 @@ class ForgeApplyResult(BaseModel):
     AssembledCoverLetter`)."""
     ats_attempts: list[AtsAttempt] = Field(default_factory=list)
     regenerated: bool
-    gate: GateInfo
-    fit: ForgeFitResult
+    gate: GateInfo | None = None
+    fit: ForgeFitResult | None = None
     shape_report: dict[str, Any] | None = None
     """Untyped for the same reason `resume` is -- see the class docstring.
     R5: `shape_report["warnings"]` includes pin-conflict messages
@@ -133,6 +159,13 @@ class ForgeApplyResult(BaseModel):
     `prepare_orchestrator.py`; NOT itself a new gate -- generation always
     completes regardless of what this contains."""
 
+    evidence_pointers: list[str] = Field(default_factory=list)
+    """The profile entries (`/experience/2`, `/projects/0`, `/education/1`, in the pointer scheme
+    of `api/profile.py`) the engine drew the resume's content from AND checked: its bullets were
+    verified against, or are verbatim from, those entries. Empty when the engine does not report
+    it (the separate service does not), never a guess. The prepare flow turns it into the
+    `career_facts` ids stored with the document."""
+
     @property
     def generated(self) -> bool:
         return self.resume is not None
@@ -148,8 +181,19 @@ class ForgeApplyResult(BaseModel):
     @property
     def final_ats(self) -> AtsAttempt | None:
         """The last attempt -- post-regen when a regen happened, otherwise
-        the only attempt there is. None when nothing was generated."""
+        the only attempt there is. None when nothing was generated, or when
+        the engine does not score."""
         return self.ats_attempts[-1] if self.ats_attempts else None
+
+
+class RemoteApplyResult(ForgeApplyResult):
+    """The remote engine's `/apply` response: the same result, except that the engine always
+    sends the fit read and the gate's verdict, so a response without them is a break of that
+    service's contract and fails validation, as it always did. (The general result lets an
+    engine that has neither leave them out; this one does not get that latitude.)"""
+
+    gate: GateInfo
+    fit: ForgeFitResult
 
 
 def job_posting_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -186,7 +230,7 @@ async def call_apply(
     dealbreaker_assertions: list[str] | None = None,
     force_generate: bool = False,
     header_layout: dict[str, Any] | None = None,
-) -> ForgeApplyResult:
+) -> RemoteApplyResult:
     """Calls forge-engines' `POST /apply` and returns a typed result.
 
     `locale` (R4) and `page_count_override`/`bullet_lead_in`/`summary_mode`/
@@ -238,7 +282,7 @@ async def call_apply(
         "header_layout": header_layout,
     }
     data = await _post(http, "/apply", body, timeout=_APPLY_TIMEOUT_SECONDS)
-    return ForgeApplyResult.model_validate(data)
+    return RemoteApplyResult.model_validate(data)
 
 
 _STEP0_TIMEOUT_SECONDS = 60.0

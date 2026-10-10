@@ -38,6 +38,29 @@ def _disable_outbox_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DISABLE_HEALTH_DEPENDENCY_CHECKS", "1")
 
 
+@pytest.fixture(autouse=True)
+def _remote_engine_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With FORGE_ENGINES_BASE_URL unset the app runs the engine built into the API; with it set
+    it calls a separate service. The route tests fake that service at the HTTP boundary (they
+    were written when it was the only engine), so they run with an address set and keep
+    exercising the remote path. The tests of which engine gets chosen take it away again
+    (tests/test_engine_gateway.py), and the tests of the built-in engine do too."""
+    monkeypatch.setenv("FORGE_ENGINES_BASE_URL", "http://resume-engine.test")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_model_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test may spend a real key: the one place the API builds a client for a model provider
+    is made to fail loudly. A test of anything that calls the model passes its own fake
+    `generate` (or, for `api/llm_client.py` itself, replaces this)."""
+    from between_jobs.api import llm_client
+
+    def refuse(*_: object, **__: object) -> None:
+        raise AssertionError("a test reached the real model client: give it a fake `generate`")
+
+    monkeypatch.setattr(llm_client, "AsyncOpenAI", refuse)
+
+
 async def _allow_every_request(*_: object) -> rate_limits.RateLimitDecision:
     return rate_limits.RateLimitDecision(allowed=True, retry_after_seconds=0)
 

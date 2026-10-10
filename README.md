@@ -6,9 +6,12 @@ core of Between Jobs. A hosted version at [between-jobs.tech](https://between-jo
 is coming soon; it is not live yet.
 
 **Status: pre-alpha.** The API, the web app and the browser extension all run from this
-repository. One piece does not: resume and cover-letter generation needs a separate
-engine service that is not part of this repository yet. Read "What works today" before
-you start.
+repository, and so does a resume and cover-letter writer: the engine built into this
+repository answers when no separate engine service is configured. It writes one plain
+resume and one plain cover letter from your profile and a job, checks every fact in them
+against the profile, and does not score them. The hosted version uses a separate, larger
+engine service that is not part of this repository. Read "Running without the hosted
+engine" before you start.
 
 ## Principles
 
@@ -70,35 +73,141 @@ search or scraping key, it says so:
   posting you are tracking, it fills your contact fields from your profile and drafts
   answers to custom questions with your own key. It never clicks submit.
 
-### What needs an engine service that is not in this repository yet
+### Running without the hosted engine
 
-Resume and cover-letter generation is done by a separate HTTP service, called
-`forge-engines` in the code. **It does not exist in this repository yet, so generation
-does not work from a clean checkout.** Until a public engine lands, these features fail
-with a retryable `PROVIDER_UNAVAILABLE` error ("Couldn't reach the resume engine"):
+Resume and cover-letter generation, the Tailor panel's job analysis, the gap interview,
+the resume text interview practice is built from, and the resume header preview all go
+through a **resume engine**. There are two, and the API picks one on every request:
 
-- generating a resume and cover letter for an application (`POST /applications/{id}/prepare`,
-  and the Telegram and Discord bots' "Generate resume" button and "apply to #N" (`/apply` on
-  Discord), which run the same preparation), and with them everything that works from the generated documents -- PDF
-  download, the export checklist, and attaching a resume or cover letter in the extension;
-- the Tailor panel's coverage analysis, the gap interview, and the resume header preview;
-- interview practice (it builds its context through the engine's ingest step).
+- **The hosted engine** is a separate HTTP service, called `forge-engines` in the code,
+  run by whoever operates the hosted version. It is not in this repository. Set
+  `FORGE_ENGINES_BASE_URL` to its address and the API sends it those requests. The HTTP
+  client, with every endpoint it calls (`/apply`, `/step0`, `/gap-interview`,
+  `/gap-interview/draft`, `/ingest`, `/personal`, `/header/resolve`), is
+  `src/between_jobs/api/forge_engines_client.py`.
+- **The built-in engine** lives in this repository (`src/between_jobs/engines/generic/`)
+  and runs inside the API. It answers when `FORGE_ENGINES_BASE_URL` is unset or blank, so
+  a clone with only a model key gets an engine that is there, not an error about a
+  service that was never installed.
 
-The API reaches the engine at `FORGE_ENGINES_BASE_URL` (default `http://localhost:5682`).
-The HTTP client, with every endpoint it calls (`/apply`, `/step0`, `/gap-interview`,
-`/gap-interview/draft`, `/ingest`, `/personal`, `/header/resolve`), is
-`src/between_jobs/api/forge_engines_client.py`, and the response types are in
-`src/between_jobs/api/engine_contract.py`. The protocols in `src/between_jobs/engines/`
-are the seam a bring-your-own engine is meant to implement; nothing implements them yet,
-and the HTTP client does not go through them today. PDF output also needs the LaTeX
-service in `latex-service/` (see its README).
+`src/between_jobs/engines/backend.py` is the contract both satisfy (seven operations and
+a statement of which ones a backend can do), `src/between_jobs/api/engine_gateway.py` is
+where the choice is made, and the response types are in
+`src/between_jobs/api/engine_contract.py`. `GET /capabilities` reports which engine is
+running as `"engine": "remote"` or `"generic"` (never the address), `/health` reports
+`forge_engines` as `builtin` when it is the built-in one, and the API logs which at
+startup. **If you ran an engine on `http://localhost:5682` and relied on that being the
+default, set `FORGE_ENGINES_BASE_URL` yourself now: unset used to mean that address, and
+now means the built-in engine.**
+
+**What the built-in engine does.** Five of the seven operations. The other two answer
+`409 NOT_AVAILABLE_IN_GENERIC_ENGINE` with a message that says what to do (connect the
+hosted engine, or use another feature) instead of a made-up result. That answer is not
+retryable and is not reported to the error tracker, because nothing is broken.
+
+| Operation | What needs it | Built-in engine |
+| --- | --- | --- |
+| `apply` | generating a resume and cover letter (`POST /applications/{id}/prepare`, and the Telegram and Discord "Generate resume" button and "apply to #N"), and with them PDF download, the export checklist, and attaching a resume or cover letter in the extension | yes: a resume and, when asked for, a cover letter. No ATS score, no fit read, and no decision to decline |
+| `step0` | the Tailor panel's coverage analysis and the positioning brief | yes: one model call |
+| `gap_interview`, `gap_answer_draft` | the gap interview and drafting a bullet from an answer | not available |
+| `ingest`, `personal` | interview practice, and the resume header preview | yes, without a model |
+| `resolve_header_chips` | the resume header preview | yes, without a model |
+
+### How the built-in engine works
+
+The rule is that code owns structure and the model chooses words. For a job, the engine:
+
+1. validates your profile and cleans the posting (control and invisible characters
+   removed, length capped);
+2. makes one model call to read what the posting asks for;
+3. decides, in code, the shape: one page or two (a page count you chose wins), which jobs
+   are kept, how many bullets each may show, which skills are listed. Pinned entries are
+   always kept and always get their minimum bullets;
+4. asks the model for the experience and projects bullets, a two-sentence summary if you
+   turned summaries on, and the cover letter if you asked for one. The model is shown your
+   entries by pointer (`/experience/2`) with their bullets numbered, and answers with
+   pointers, bullet numbers and new text. It never writes a title, a company or a date:
+   those are copied from your profile;
+5. checks every answer in code (below), then prints the documents with templates that load
+   only packages the `latex-service/` image installs.
+
+**The fabrication check.** A reworded bullet may not contain a number (with its unit and
+any "+"), a unit of time or size, a currency, a name, a tool, a language called by a letter or
+a symbol (`R`, `C#`), a leadership, ownership or seniority word ("led", "manage", "owned",
+"senior"), a term from the job posting, markup, or a link or bare domain that the bullets it
+was written from (and that entry's own skills, tools and metrics) do not contain. A date is
+never evidence: dates are printed from your profile, and their digits do not make a stray
+"6" or "2019" look supported. A summary and a letter are held to the whole profile (and a
+summary to your own summary notes for numbers and leadership), and a stated number of years
+("12 years", "ten years", "a decade") must be one you wrote or, in a letter, no more than your
+dated experience adds up to. The job's company, title and location can be named in a letter,
+never used as proof of anything about you. When an answer fails, the engine asks the model once
+more with the list of what was wrong, and whatever still fails is replaced by your own bullet
+(or, in a letter, removed). The document is always produced. Everything that was repaired or
+replaced is listed as an `unsupported claim (...)` warning, which the export checklist shows.
+The engine is told never to state work authorization, relocation, salary or availability in
+a letter, and a code check removes the common phrasings of them.
+
+**What the check cannot catch.** It shows that a sentence brings in nothing new. It does
+not show that the sentence is a faithful paraphrase. An overstated verb that is not a
+leadership word ("architected" for "helped with"), an inflated scale in words ("global",
+"enterprise-scale", "dozens" in a bullet), a causal claim ("which drove growth"), a tool
+written in lower case that is neither in the skills table nor one of the posting's key terms,
+and (in a summary or a letter) a fact that is true of a different entry are not caught.
+Neither is a unit the source uses somewhere else (the check asks whether the source has the
+unit, not whether it sits next to the number), a qualifier such as "over" or "nearly" in front
+of a number, a number written out in words ("fifty percent"), or a name at the start of a
+sentence that looks like an ordinary verb. **Anything a letter says about the company in plain
+words ("the industry leader in streaming", "serves large enterprise customers") is not checked
+at all**: the only company facts the engine has are its name, the job title and the location, so
+check every sentence about the company against the posting. A work-authorization, relocation or
+availability statement in unusual wording may also get through. Read the documents before you
+send them.
+
+**Bounds.** At most four model calls to write a resume and a cover letter, plus at most one
+repair per writing stage (seven in all), and 180 seconds for the whole run. Prompts are size
+capped. Nothing is logged but counts.
+
+**What goes to your AI provider.** Your bullets, skills, titles and employers, and the job's
+title, company, location and description (marked as data the model is told not to obey).
+Not your contact details, date of birth, nationality or work-authorization note.
+
+**What it ignores, and says so.** Regional formats (`locale`), nationality, dealbreaker
+assertions, "generate anyway" and bold bullet lead-ins are not applied; the shape report
+lists each one that was asked for. It writes one US-letter, single-column resume.
+
+**Testing it.** `pytest tests/test_generic_engine_*.py` needs no model, no network and no TeX:
+the model is scripted, including answers that invent numbers, tools and employers, and a job
+posting that tries to give the model orders. `tests/test_generic_engine_compile.py` compiles
+the generated documents for real when it can: with a local TeX installation that has the
+template's packages, or through the PDF renderer's image (`docker build -t latex-service:local
+latex-service/`, then `GENERIC_ENGINE_LATEX_IMAGE=latex-service:local pytest
+tests/test_generic_engine_compile.py`). It skips itself when neither is there.
+
+**Limits.** The PDF renderer compiles with `pdflatex` only. It sets Latin-1 and the common
+Central European, Turkish and Nordic letters as they are written ("José", "Łukasz",
+"Straße"); the few Latin letters it cannot set faithfully are respelled in plain ASCII, and
+anything with no Latin spelling (Cyrillic, Greek, CJK, emoji) becomes `?`, each with a
+warning that names what changed. Page fit is estimated by counting
+lines, not measured: the export checklist's page count is the authority. The prompts have
+been tested with scripted models, not measured against real ones, so wording quality on a
+real model is not something this repository claims.
+
+Everything else in "What works today" (profile, applications, Discover, company
+research, Gmail drafts, hiring signals, the Telegram and Discord bridges apart from their
+"Generate resume" button, the extension's fills) does not use the engine and works with or
+without it.
+
+What a stranger needs to run this: a Supabase project (or the local stack), the API with
+`FORGE_ENGINES_BASE_URL` left unset, a model key saved on the Integrations page, and the
+`latex-service/` container for PDFs (see its README), since every PDF is compiled there.
 
 ## Repository layout
 
 | Path | What it is |
 | --- | --- |
 | `src/between_jobs/api/` | The FastAPI service: routes, stores, background workers, provider clients |
-| `src/between_jobs/engines/` | Protocols for a resume or score engine (no implementation yet) |
+| `src/between_jobs/engines/` | The resume-engine seam: the `EngineBackend` contract, the client of the separate engine service, and the built-in engine (`generic/`) |
 | `web/` | The web app: React and TypeScript, a thin client over the API |
 | `extension/` | The Chrome extension (WXT, React): ATS autofill |
 | `latex-service/` | A small, separate service that compiles LaTeX to PDF |

@@ -1,0 +1,96 @@
+{
+  "personal": {
+    "name": "A&B %Co $ #_ {x}",
+    "headline": "R&D 100% $5M #1 {braces} ~tilde ^caret \\backslash [brackets] under_score",
+    "emails": [
+      {
+        "address": "avery.quill@example.com",
+        "primary": true
+      }
+    ],
+    "phones": [
+      {
+        "number": "+1 555 010 0199",
+        "primary": true
+      }
+    ],
+    "links": {
+      "linkedin": "linkedin.com/in/averyquill",
+      "github": "https://github.com/averyquill",
+      "portfolio": "",
+      "scholar": "",
+      "other": []
+    },
+    "location": {
+      "city": "Springfield",
+      "region": "NJ",
+      "country": "USA",
+      "show_on_resume": true
+    },
+    "work_authorization": "Authorized to work in the US without sponsorship",
+    "nationality": "Examplian",
+    "dob": "1990-01-01"
+  },
+  "summary_bullets": [
+    "R&D 100% $5M #1 {braces} ~tilde ^caret \\backslash [brackets] under_score"
+  ],
+  "experience": [
+    {
+      "title": "C++ & C# Dev ~ ^",
+      "company": "R&D #1 {Corp} _x_",
+      "location": "Remote",
+      "start_date": "2022-03",
+      "end_date": "present",
+      "is_current": true,
+      "bullets": [
+        "R&D 100% $5M #1 {braces} ~tilde ^caret \\backslash [brackets] under_score",
+        "Saved $1,000,000 & 50% of 100% budget"
+      ],
+      "skills": [
+        "Python",
+        "Go",
+        "Kafka",
+        "PostgreSQL",
+        "Kubernetes",
+        "AWS"
+      ],
+      "metrics": [
+        "p95 latency -40%",
+        "$120K annual savings"
+      ]
+    }
+  ],
+  "projects": [],
+  "education": [],
+  "skills": {
+    "programming": [
+      "C++",
+      "C#",
+      "R&D"
+    ],
+    "tools": [
+      "#hash",
+      "a_b"
+    ]
+  },
+  "certifications": [
+    {
+      "name": "50% Off & More",
+      "issuer": "R&D {Inc}",
+      "date": "2020-01"
+    }
+  ],
+  "achievements": [
+    "R&D 100% $5M #1 {braces} ~tilde ^caret \\backslash [brackets] under_score"
+  ],
+  "languages": [
+    {
+      "language": "English",
+      "fluency": "native"
+    },
+    {
+      "language": "Spanish",
+      "fluency": "conversational"
+    }
+  ]
+}

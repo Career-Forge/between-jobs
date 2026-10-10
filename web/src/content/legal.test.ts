@@ -4,7 +4,9 @@ import atsLiveness from "../../../src/between_jobs/api/ats_liveness.py?raw";
 import contactEnrichment from "../../../src/between_jobs/api/contact_enrichment.py?raw";
 import contactResearch from "../../../src/between_jobs/api/contact_research.py?raw";
 import credentialsRoutes from "../../../src/between_jobs/api/credentials_routes.py?raw";
+import engineGateway from "../../../src/between_jobs/api/engine_gateway.py?raw";
 import forgeEnginesClient from "../../../src/between_jobs/api/forge_engines_client.py?raw";
+import genericEngine from "../../../src/between_jobs/engines/generic/backend.py?raw";
 import gmailClient from "../../../src/between_jobs/api/gmail_client.py?raw";
 import gmailReplyChecker from "../../../src/between_jobs/api/gmail_reply_checker.py?raw";
 import hiringSignalCache from "../../../src/between_jobs/api/hiring_signal_cache.py?raw";
@@ -57,6 +59,14 @@ import { PRIVACY_EMAIL, REPO_URL, SUPPORT_EMAIL } from "./site";
 // is not installed here.)
 const API_DIR = "../../../src/between_jobs/api/";
 const apiSources = import.meta.glob("../../../src/between_jobs/api/*.py", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+// The engines package holds the engine built into the API. A module there can call the model
+// as well as one in the API can, so the guard over who sends text to the AI provider reads it too.
+const ENGINES_DIR = "../../../src/between_jobs/engines/";
+const engineSources = import.meta.glob("../../../src/between_jobs/engines/**/*.py", {
   query: "?raw",
   import: "default",
   eager: true,
@@ -371,6 +381,18 @@ const EVIDENCE: Record<string, Evidence> = {
         path: "src/between_jobs/api/forge_engines_client.py",
         text: forgeEnginesClient,
         needles: ["FORGE_ENGINES_BASE_URL", '"/apply"', "credential.secret"],
+      },
+      // The text says the engine built into the API answers when the separate service is not set
+      // up, and that it says so about what it cannot do: both are decided in these two files.
+      {
+        path: "src/between_jobs/api/engine_gateway.py",
+        text: engineGateway,
+        needles: ['"remote" if configured_base_url() is not None else "generic"', "GenericBackend"],
+      },
+      {
+        path: "src/between_jobs/engines/generic/backend.py",
+        text: genericEngine,
+        needles: ["class GenericBackend", '"NOT_AVAILABLE_IN_GENERIC_ENGINE"'],
       },
     ],
   },
@@ -831,13 +853,25 @@ function aiProviderListText(): string {
 
 // ── every place the API calls the model is described ───────────────────────
 
-// Every API module that calls the model through llm_client, and the words of the list under
-// 'What your AI provider receives' that cover what it sends. The guard is keyed on the import
-// of llm_client, not on the engine client: a module that sends text to the user's AI provider
-// goes through llm_client, and the engine client is already described under its own entry.
+// How a module of the engines package imports the model client (the API's own modules use the
+// relative form, which the guard below matches on its own): `from between_jobs.api.llm_client
+// import ...`, `from ..api.llm_client import ...`, or the client module itself by name.
+// Covers the forms `ruff format` writes (one name per line inside parentheses) as well as the
+// one-line forms and a backslash continuation; the name must be the whole word `llm_client`.
+const IMPORTS_THE_MODEL_CLIENT_FROM_ENGINES =
+  /^(?:from (?:between_jobs\.api|\.\.api)(?:\.llm_client import\b| import (?:\([^)]*?\bllm_client\b|(?:[^\n(\\]|\\\n)*\bllm_client\b))|import between_jobs\.api\.llm_client\b)/m;
+
+// Every module that calls the model through llm_client (the API's, and the engines package's,
+// named `engines/<module>`), and the words of the list under 'What your AI provider receives'
+// that cover what it sends. The guard is keyed on the import of llm_client, not on the engine
+// client: a module that sends text to the user's AI provider goes through llm_client, and the
+// separate engine service's client is already described under its own entry.
 const MODEL_CALLERS: Record<string, string> = {
   application_answer_generator: "Draft answer",
   application_status_classifier: "Gmail replies",
+  // The built-in resume engine's one place that talks to the model: the posting's requirements,
+  // the experience and projects, the summary and the cover letter.
+  "engines/generic/llm": "Resumes, cover letters",
   company_intel_pipeline: "Company research",
   company_intel_routes: "Company research",
   contact_research: "Contact research",
@@ -861,10 +895,45 @@ const MODEL_CALLERS: Record<string, string> = {
 };
 
 describe("every place the API calls the model is covered by 'What your AI provider receives'", () => {
-  const callers = Object.entries(apiSources)
-    .filter(([path, source]) => !path.endsWith("/llm_client.py") && /^from \.llm_client import/m.test(source))
-    .map(([path]) => path.slice(API_DIR.length, -".py".length))
-    .sort();
+  const callers = [
+    ...Object.entries(apiSources)
+      .filter(([path, source]) => !path.endsWith("/llm_client.py") && /^from \.llm_client import/m.test(source))
+      .map(([path]) => path.slice(API_DIR.length, -".py".length)),
+    // A module of the engines package names the same client by its full path.
+    ...Object.entries(engineSources)
+      .filter(([, source]) => IMPORTS_THE_MODEL_CLIENT_FROM_ENGINES.test(source))
+      .map(([path]) => `engines/${path.slice(ENGINES_DIR.length, -".py".length)}`),
+  ].sort();
+
+  it("sees every way a module of the engines package can import the model client", () => {
+    for (const line of [
+      "from between_jobs.api.llm_client import generate",
+      "from between_jobs.api.llm_client import generate as llm_generate",
+      "from ..api.llm_client import generate",
+      "from between_jobs.api import llm_client",
+      "from ..api import llm_client",
+      "from ..api import errors, llm_client",
+      // the shape `ruff format` gives an import that is too long for one line
+      "from between_jobs.api import (\n    credential_resolver,\n    llm_client,\n)",
+      "from between_jobs.api import (\n    llm_client,\n    errors,\n)",
+      "from between_jobs.api.llm_client import (\n    generate,\n)",
+      "from ..api import (llm_client)",
+      "from between_jobs.api import credential_resolver, \\\n    llm_client",
+      "import between_jobs.api.llm_client as lc",
+    ]) {
+      expect(IMPORTS_THE_MODEL_CLIENT_FROM_ENGINES.test(`import httpx\n${line}\n`), line).toBe(true);
+    }
+    for (const line of [
+      "from between_jobs.api.errors import ApiError",
+      "from between_jobs.api import errors",
+      "# from between_jobs.api.llm_client import generate",
+      "from between_jobs.api import (\n    credential_resolver,\n    errors,\n)",
+      "from between_jobs.api import (\n    credential_resolver,\n    errors,\n)\nx = llm_client",
+      "from between_jobs.api import llm_client_extras",
+    ]) {
+      expect(IMPORTS_THE_MODEL_CLIENT_FROM_ENGINES.test(`import httpx\n${line}\n`), line).toBe(false);
+    }
+  });
 
   it("knows every module that sends text to the user's AI provider, and no module that does not", () => {
     const unlisted = callers.filter((name) => !(name in MODEL_CALLERS));

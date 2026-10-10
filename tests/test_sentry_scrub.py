@@ -823,7 +823,17 @@ def _api_error_hint(code: Any, cause: BaseException | None = None) -> dict[str, 
 
 
 @pytest.mark.parametrize(
-    "code", ["INVALID_INPUT", "NOT_FOUND", "AUTH_REQUIRED", "RATE_LIMITED", "FORBIDDEN"]
+    "code",
+    [
+        "INVALID_INPUT",
+        "NOT_FOUND",
+        "AUTH_REQUIRED",
+        "RATE_LIMITED",
+        "FORBIDDEN",
+        # a server run without the hosted engine answering a feature only that engine does:
+        # expected on that server, nothing is broken
+        "NOT_AVAILABLE_IN_GENERIC_ENGINE",
+    ],
 )
 def test_an_api_error_with_a_client_status_is_never_reported(code: Any) -> None:
     assert is_client_error(_api_error_hint(code))

@@ -31,22 +31,16 @@ from .applications_store import (
 from .artifact_versions_store import create_version, download_content, get_latest_version
 from .credential_resolver import resolve
 from .engine_contract import ArtifactRef, PrepareApplicationResult
+from .engine_gateway import active_capabilities, call_apply
 from .errors import ApiError
-from .forge_engines_client import call_apply
 from .jobs_store import SnapshotNotFound, get_snapshot
 from .latex_service_client import call_compile
 from .locale_resolver import resolve_locale_for_prepare
 from .product_events import EventDraft, ats_type_of_url, tracked
-from .profile_store import get_active_version
+from .profile_store import get_active_version, list_career_facts
 from .resume_documents_store import get_document_for, saved_header_layout
 from .shape_overrides import merge as merge_shape_overrides
 from .shape_overrides import resolve as resolve_shape_overrides
-
-_GENERATOR = "forge-engines"
-_GENERATOR_VERSION = "0.0.1"
-"""Mirrors forge-engines' own `FastAPI(title="forge-engines", version="0.0.1")`
-(service/app.py) -- copied, not queried live, since that field is static
-and forge-engines exposes no dedicated version endpoint to query yet."""
 
 _RESUME_MEDIA_TYPE = "application/x-tex"
 _COVER_LETTER_MEDIA_TYPE = "application/x-tex"
@@ -94,13 +88,14 @@ async def run_prepare_application(
     `cover_letter` artifact is written the same way `resume` is (own
     `document_kind`, own version row) -- forge-engines has no
     application-answers generation yet, so `application_answers_id` stays
-    None regardless. `evidence_fact_ids` stays empty -- forge-engines' Pass1 selects
-    achievements by ids it generates internally during ingest, which
-    don't map onto this platform's `career_facts.id` values. Closing that
-    gap needs either forge-engines surfacing which source achievements it
-    actually used, or this platform embedding career_fact ids into the
-    resume_template it sends -- guessing at either now would be worse
-    than leaving this an honest, labeled gap.
+    None regardless. `evidence_fact_ids` is whatever the engine can vouch for: the built-in
+    engine reports the profile entries it drew the resume's content from and checked
+    (`ForgeApplyResult.evidence_pointers`, in `api/profile.py`'s pointer scheme), which are
+    looked up here as `career_facts` ids. The separate service reports none -- its Pass1
+    selects achievements by ids it generates internally during ingest, which don't map onto
+    this platform's `career_facts.id` values -- so for it the list stays empty, an honest,
+    labeled gap rather than a guess. The cover letter's list is empty either way: it is
+    checked against the whole profile, not drawn from particular entries.
 
     Claim verification runs unconditionally on
     every real generation, resume and cover letter alike -- unlike
@@ -212,6 +207,9 @@ async def _prepare_application(
     # field by field. Before this nothing sent it, and every real generation got the default.
     header_layout = saved_header_layout(per_app_doc, master_doc)
 
+    # Who wrote the document is stamped on it, so it names the engine that was chosen for this
+    # run (the separate service or the built-in one), not a constant that is only true for one.
+    engine = active_capabilities()
     forge_result = await call_apply(
         http,
         resume_template=profile_version["canonical_json"],
@@ -231,9 +229,17 @@ async def _prepare_application(
         header_layout=header_layout,
     )
 
-    warnings = list(forge_result.gate.cautions)
-    if forge_result.gate.outcome != "proceed" and forge_result.gate.reason:
-        warnings = [forge_result.gate.reason, *warnings]
+    evidence_fact_ids = await _evidence_fact_ids(
+        supabase, user_id, profile_version["id"], forge_result.evidence_pointers
+    )
+
+    # An engine with no Honest Floor sends no gate: then there is no verdict, no reason and no
+    # cautions to carry, and the stored result says so (`gate_outcome` None) instead of
+    # recording a "proceed" nobody decided.
+    gate = forge_result.gate
+    warnings = list(gate.cautions) if gate is not None else []
+    if gate is not None and gate.outcome != "proceed" and gate.reason:
+        warnings = [gate.reason, *warnings]
     warnings += forge_result.shape_warnings
     warnings += forge_result.violation_messages
     # Claim-verification findings ride this SAME
@@ -256,11 +262,11 @@ async def _prepare_application(
             document_kind="resume",
             content=content,
             media_type=_RESUME_MEDIA_TYPE,
-            generator=_GENERATOR,
-            generator_version=_GENERATOR_VERSION,
+            generator=engine.generator,
+            generator_version=engine.generator_version,
             profile_version_id=profile_version["id"],
             job_snapshot_id=job_snapshot["id"],
-            evidence_fact_ids=[],
+            evidence_fact_ids=evidence_fact_ids,
             warnings=warnings,
             shape_report=forge_result.shape_report,
         )
@@ -281,8 +287,8 @@ async def _prepare_application(
             document_kind="cover_letter",
             content=cover_content,
             media_type=_COVER_LETTER_MEDIA_TYPE,
-            generator=_GENERATOR,
-            generator_version=_GENERATOR_VERSION,
+            generator=engine.generator,
+            generator_version=engine.generator_version,
             profile_version_id=profile_version["id"],
             job_snapshot_id=job_snapshot["id"],
             evidence_fact_ids=[],
@@ -307,11 +313,11 @@ async def _prepare_application(
             float(forge_result.final_ats.overall_score) if forge_result.final_ats else None
         ),
         fit=forge_result.fit,
-        gate_outcome=forge_result.gate.outcome,
-        gate_reason=forge_result.gate.reason,
-        gate_cautions=forge_result.gate.cautions,
+        gate_outcome=gate.outcome if gate is not None else None,
+        gate_reason=gate.reason if gate is not None else "",
+        gate_cautions=gate.cautions if gate is not None else [],
         warnings=warnings,
-        evidence_fact_ids=[],
+        evidence_fact_ids=evidence_fact_ids,
     )
 
     payload = result.model_dump(mode="json")
@@ -329,6 +335,21 @@ async def _prepare_application(
         ),
     )
     return payload
+
+
+async def _evidence_fact_ids(
+    supabase: AsyncClient, user_id: str, profile_version_id: str, pointers: list[str]
+) -> list[str]:
+    """The `career_facts` ids of the profile entries an engine says its resume was drawn from.
+
+    An engine reports pointers (`/experience/2`); facts are stored under the same pointer for
+    the profile version the run used. A pointer with no fact (a profile section that has none)
+    is left out, and an engine that reports no pointers costs no query."""
+    if not pointers:
+        return []
+    facts = await list_career_facts(supabase, user_id, profile_version_id)
+    by_pointer = {fact["source_pointer"]: fact["id"] for fact in facts}
+    return [by_pointer[pointer] for pointer in pointers if pointer in by_pointer]
 
 
 async def _latest_document_pdf(

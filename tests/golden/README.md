@@ -90,3 +90,28 @@ code around it, and until then is an assumption taken from Discord's documentati
 - How Discord's client draws the escaped markdown the app sends. Discord does not publish its
   tokenizer; the escaping is written against the address pattern that discord.py and the
   simple-markdown library under Discord's client both use.
+
+## Behaviour with no reference implementation (the built-in resume engine)
+
+The same applies to the engine built into the API (`src/between_jobs/engines/generic/`). It
+is not a port: its prompts, template and selection rules were written for this repository
+from the public contracts, and nothing was captured from any other engine, so **no parity
+with any other engine exists or is claimed.** Its fixtures
+([generic_engine/](generic_engine/README.md)) are synthetic and pin only the *structure* of
+what it writes (packages, section order, item counts, escapes, balanced braces). Its
+fabrication check, its escaping and its shape rules are tested with scripted models and
+adversarial inputs in `tests/test_generic_engine_*.py`, and its documents are compiled with
+a real `pdflatex` where one is available (`tests/test_generic_engine_compile.py`).
+
+### Not verified against a real model
+
+The tests script the model's answers, so they show what the engine does with each kind of
+answer, not what a real model sends. These are assumptions until someone runs the engine
+against a real model and reads the result:
+
+- how often a real model's rewording passes the fact check on the first try (a bullet that
+  fails twice is shown in the candidate's own words, so the cost is less tailoring, not a
+  wrong document);
+- whether the prompts produce bullets and letters that read well;
+- how many of a real model's cover-letter sentences the check removes.
+

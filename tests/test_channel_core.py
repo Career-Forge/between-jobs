@@ -494,6 +494,70 @@ async def test_the_resume_is_sent_as_a_document_after_the_handler_has_returned()
     assert renderer.texts == [messages.GENERATING_TEXT]
 
 
+async def test_the_caption_of_a_resume_nobody_scored_says_nothing_about_a_score() -> None:
+    """An engine that does not score its resumes sends no ATS attempts. The caption is then the
+    same message without the score -- not "ATS score --/100", a number's shape with no number in
+    it. (The scored caption is pinned just above and, byte for byte, by the Telegram golden.)"""
+    unscored = {**prepare_fakes._FORGE_APPLY_RESPONSE_BODY, "ats_attempts": []}
+    renderer, _supabase, registry = await _handle(
+        inbound(callback_data=f"app:prepare:{APPLICATION_ID}"), http=_Engine(apply_body=unscored)
+    )
+    await registry.shutdown(grace_seconds=5)
+
+    ((_, document),) = renderer.documents
+    assert document.caption == "📄 Resume\n• Borderline seniority match."
+    assert "score" not in document.caption.lower() and "/100" not in document.caption
+    # the resume was delivered all the same, so the chat ends as it does for a scored one
+    assert renderer.edits[-1].text.plain_text() == messages.PREPARE_DONE_TEXT
+
+
+async def test_a_resume_that_scored_zero_is_captioned_with_its_zero() -> None:
+    """Zero is a score. Only an engine that sent none leaves the caption without one."""
+    body: dict[str, Any] = prepare_fakes._FORGE_APPLY_RESPONSE_BODY
+    zero = {**body, "ats_attempts": [{**body["ats_attempts"][0], "overall_score": 0}]}
+    renderer, _supabase, registry = await _handle(
+        inbound(callback_data=f"app:prepare:{APPLICATION_ID}"), http=_Engine(apply_body=zero)
+    )
+    await registry.shutdown(grace_seconds=5)
+
+    ((_, document),) = renderer.documents
+    assert document.caption is not None and document.caption.startswith(
+        "\U0001f4c4 Resume -- ATS score 0/100"
+    )
+
+
+async def test_a_long_list_of_warnings_never_makes_a_caption_telegram_would_refuse() -> None:
+    """Telegram refuses a document whose caption is over 1024 characters, and a resume that was
+    already written must not be lost to its own warnings. Whole bullets are kept while they fit
+    and the rest are counted."""
+    many = [f'unsupported claim (removed): "{"x" * 150}" -- note {n}' for n in range(30)]
+    body = {
+        **prepare_fakes._FORGE_APPLY_RESPONSE_BODY,
+        "ats_attempts": [],
+        "gate": {"outcome": "proceed", "reason": "", "cautions": many},
+    }
+    renderer, _supabase, registry = await _handle(
+        inbound(callback_data=f"app:prepare:{APPLICATION_ID}"), http=_Engine(apply_body=body)
+    )
+    await registry.shutdown(grace_seconds=5)
+
+    ((_, document),) = renderer.documents
+    caption = document.caption
+    assert caption is not None and len(caption.encode("utf-16-le")) // 2 <= 1024
+    assert caption.startswith("📄 Resume\n• unsupported claim (removed)")
+    assert "more" in caption.splitlines()[-1]  # the bullets that did not fit are counted
+    assert renderer.edits[-1].text.plain_text() == messages.PREPARE_DONE_TEXT  # and it delivered
+
+
+def test_the_unscored_caption_is_the_scored_one_without_its_score() -> None:
+    scored = messages.PREPARE_SUCCESS_CAPTION.format(score=72, warnings="\n• a")
+    unscored = messages.PREPARE_SUCCESS_CAPTION_UNSCORED.format(warnings="\n• a")
+
+    assert scored == "📄 Resume -- ATS score 72/100\n• a"
+    assert unscored == "📄 Resume\n• a"
+    assert messages.PREPARE_SUCCESS_CAPTION_UNSCORED.format(warnings="") == "📄 Resume"
+
+
 async def test_apply_to_a_number_runs_the_same_deferred_flow() -> None:
     renderer, _supabase, registry = await _handle(inbound("apply to #1"))
     await registry.shutdown(grace_seconds=5)

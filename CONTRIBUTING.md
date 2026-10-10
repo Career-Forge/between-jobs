@@ -53,9 +53,14 @@ will do) and the webhook registered once -- the `TELEGRAM_WEBHOOK_SECRET` commen
 `.env.example` shows how to run `scripts/set_telegram_webhook.py` (try `--dry-run` first).
 Telegram is optional.
 
-Resume and cover-letter generation calls a separate engine service that is not in this
-repository (see "What works today" in the README), so those paths cannot be exercised from
-a clean checkout; the tests use fakes for it.
+Resume and cover-letter generation goes through a resume engine. With `FORGE_ENGINES_BASE_URL`
+unset (the default) the API uses the built-in engine in `src/between_jobs/engines/generic/`, so
+a clone with a model key saved on the Integrations page can generate a resume (PDFs also need
+the `latex-service/` container). Setting `FORGE_ENGINES_BASE_URL` points the API at a separate
+hosted engine instead; see "Running without the hosted engine" in the README. Two operations
+(the gap interview and drafting a bullet from its answer) answer
+`409 NOT_AVAILABLE_IN_GENERIC_ENGINE` on the built-in engine. The test suite uses scripted fake models and a fake remote engine,
+never a real model or service.
 
 ## Checks
 

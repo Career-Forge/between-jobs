@@ -90,10 +90,14 @@ export interface PrepareApplicationResult {
   // C1/C2 (coverforge-port.md): null unless the request opted in
   // (generate_cover_letter: true) -- see GeneratePanel.tsx.
   cover_letter?: ArtifactRef | null;
+  // Empty, with `final_score` null, when the engine that wrote the resume does not score
+  // resumes: show nothing in place of a score, never a number.
   ats_attempts: AtsAttempt[];
   final_score: number | null;
   score_scale: string;
-  fit?: ForgeFitResult;
+  // Absent or null when the engine computes no fit read. The server stores null, an older
+  // payload has no key at all: both mean "no read", and neither is a score of zero.
+  fit?: ForgeFitResult | null;
   // outreach-v2-search-first.md Phase I: the gate's own literal verdict
   // ("proceed", or a decline code like REJECT_MISMATCH/SKIP_LOW_SCORE) --
   // previously only reconstructable indirectly via resume being null.

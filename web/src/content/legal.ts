@@ -164,7 +164,7 @@ export const PROCESSORS: readonly Processor[] = [
     name: "Resume engine",
     group: "service",
     detail: [
-      "A private service run by the operator that writes and scores resumes and cover letters, builds interview-practice context and previews your resume header. With each request it receives your profile, the job posting text, and the AI key and model you chose, and it uses the key to call your AI provider for that one request. The engine does not store your key. It is not part of the open-source repository yet.",
+      "Writes resumes and cover letters (and, on the hosted service, scores them), reads the requirements in a job posting for the Tailor panel, builds interview-practice context and previews your resume header. Whoever runs the server chooses how it runs. On the hosted service it is a private service run by the operator, separate from the API: with each request it receives your profile, the job posting text, and the AI key and model you chose, and it uses the key to call your AI provider for that one request. The engine does not store your key. That service is not part of the open-source repository yet. On a server set up without it, the engine built into the open-source API answers instead, inside the API itself: it handles the same data in the API's own process, uses your key for that one request and does not store it either, and for what it cannot do it says so rather than guess.",
     ],
   },
   {
@@ -326,7 +326,7 @@ function processorBlocks(): Block[] {
       blocks.push(
         p("What your AI provider receives, by feature:"),
         ul(
-          "Resumes, cover letters, the Tailor panel and the gap interview: your profile and the job posting text, sent through the resume engine, and for the gap interview the answers you type.",
+          "Resumes, cover letters, the Tailor panel and the gap interview: your profile and the job posting text, sent through the resume engine (the hosted one, or the one built into the API), and for the gap interview the answers you type.",
           "Job fit scores in Discover and for saved searches: a text summary of your profile (name, headline, location, work-authorization note, summary, recent roles, projects, skills and education, but not your email address or phone number) and, for each job, its title, company, location and a short excerpt. Saved searches run in the background every few hours, without you clicking, and use your key when they do.",
           "Importing a resume file (PDF or DOCX): the text read from the file, which is your resume as you wrote it, so the model can fill in a draft profile for you to review. We do not keep the file itself.",
           "Company research: excerpts of public web pages found by your search provider, which the model turns into short claims.",
@@ -713,7 +713,7 @@ export const TERMS: LegalDocument = {
           SOURCE_LICENSE,
           " license at ",
           { href: REPO_URL, text: "the source repository" },
-          ". The license covers the code. It does not cover the data held by the hosted service, which is yours, and parts of the hosted service, such as the resume engine, are not in that repository.",
+          ". The license covers the code. It does not cover the data held by the hosted service, which is yours, and parts of the hosted service, such as its separate resume engine service, are not in that repository.",
         ),
       ],
     },

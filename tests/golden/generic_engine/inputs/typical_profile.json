@@ -1,0 +1,195 @@
+{
+  "personal": {
+    "name": "Avery Quill",
+    "headline": "Backend engineer focused on data systems",
+    "emails": [
+      {
+        "address": "avery.quill@example.com",
+        "primary": true
+      }
+    ],
+    "phones": [
+      {
+        "number": "+1 555 010 0199",
+        "primary": true
+      }
+    ],
+    "links": {
+      "linkedin": "linkedin.com/in/averyquill",
+      "github": "https://github.com/averyquill",
+      "portfolio": "",
+      "scholar": "",
+      "other": []
+    },
+    "location": {
+      "city": "Springfield",
+      "region": "NJ",
+      "country": "USA",
+      "show_on_resume": true
+    },
+    "work_authorization": "Authorized to work in the US without sponsorship",
+    "nationality": "Examplian",
+    "dob": "1990-01-01"
+  },
+  "summary_bullets": [
+    "Builds reliable data pipelines and the services around them."
+  ],
+  "experience": [
+    {
+      "title": "Senior Software Engineer",
+      "company": "Northwind Labs",
+      "location": "Remote",
+      "start_date": "2022-03",
+      "end_date": "present",
+      "is_current": true,
+      "bullets": [
+        "Reduced p95 API latency by 40% across 12 services by introducing request batching in Python and Go",
+        "Built an event pipeline on Kafka processing 2M events per day with exactly-once delivery",
+        "Mentored 3 junior engineers and led the migration of the billing service to PostgreSQL",
+        "Cut cloud spend by $120K per year by right-sizing Kubernetes workloads on AWS",
+        "Wrote the on-call runbook used by a team of 8 engineers",
+        "Introduced contract tests that caught 15 breaking changes before release"
+      ],
+      "skills": [
+        "Python",
+        "Go",
+        "Kafka",
+        "PostgreSQL",
+        "Kubernetes",
+        "AWS"
+      ],
+      "metrics": [
+        "p95 latency -40%",
+        "$120K annual savings"
+      ]
+    },
+    {
+      "title": "Software Engineer",
+      "company": "Contoso Analytics",
+      "location": "Newark, NJ",
+      "start_date": "2019-06",
+      "end_date": "2022-02",
+      "is_current": false,
+      "bullets": [
+        "Developed ETL jobs in Airflow loading 50 GB nightly into Snowflake",
+        "Created a dashboard in Tableau used by 40 analysts",
+        "Improved test coverage from 55% to 85% in the ingestion service"
+      ],
+      "skills": [
+        "Airflow",
+        "Snowflake",
+        "Tableau",
+        "Python"
+      ],
+      "metrics": []
+    },
+    {
+      "title": "Intern",
+      "company": "Fabrikam",
+      "location": "Jersey City, NJ",
+      "start_date": "2018-06",
+      "end_date": "2018-08",
+      "is_current": false,
+      "bullets": [
+        "Built an internal tool for tagging support tickets using scikit-learn"
+      ],
+      "skills": [
+        "Python",
+        "scikit-learn"
+      ],
+      "metrics": []
+    }
+  ],
+  "projects": [
+    {
+      "name": "logship",
+      "url": "https://github.com/averyquill/logship",
+      "tech": [
+        "Rust",
+        "SQLite"
+      ],
+      "bullets": [
+        "Wrote a log shipper in Rust that batches and compresses events",
+        "Added a SQLite-backed retry queue"
+      ],
+      "metrics": []
+    },
+    {
+      "name": "tabletop-tracker",
+      "url": "",
+      "tech": [
+        "TypeScript",
+        "React"
+      ],
+      "bullets": [
+        "Built a campaign tracker used by 30 players"
+      ],
+      "metrics": []
+    }
+  ],
+  "education": [
+    {
+      "degree": "BS",
+      "field": "Computer Science",
+      "institution": "State University",
+      "location": "Springfield, NJ",
+      "start_date": "2015-09",
+      "end_date": "2019-05",
+      "gpa": "3.7",
+      "coursework": [
+        "Databases",
+        "Distributed Systems"
+      ]
+    }
+  ],
+  "skills": {
+    "programming": [
+      "Python",
+      "Go",
+      "Rust",
+      "SQL",
+      "TypeScript"
+    ],
+    "ai_ml": [
+      "scikit-learn"
+    ],
+    "data_mlops": [
+      "Kafka",
+      "Airflow",
+      "Snowflake",
+      "PostgreSQL"
+    ],
+    "cloud_devops": [
+      "AWS",
+      "Kubernetes",
+      "Docker",
+      "Terraform"
+    ],
+    "tools": [
+      "Tableau",
+      "Git"
+    ],
+    "other": []
+  },
+  "certifications": [
+    {
+      "name": "AWS Certified Developer",
+      "issuer": "Amazon Web Services",
+      "date": "2021-05",
+      "url": ""
+    }
+  ],
+  "achievements": [
+    "Winner, internal hackathon 2023"
+  ],
+  "languages": [
+    {
+      "language": "English",
+      "fluency": "native"
+    },
+    {
+      "language": "Spanish",
+      "fluency": "conversational"
+    }
+  ]
+}

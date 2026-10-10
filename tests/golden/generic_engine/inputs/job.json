@@ -1,0 +1,9 @@
+{
+  "job_id": "job-1",
+  "title": "Staff Data Engineer",
+  "company_name": "Globex Corporation",
+  "location_text": "Remote (US)",
+  "description_text": "Globex is hiring a Staff Data Engineer to build streaming data platforms. You will design Kafka-based pipelines, operate Kubernetes clusters on AWS, and mentor engineers. Requirements: 8+ years of experience, Python, SQL, Kafka, Snowflake. Nice to have: Terraform, dbt, Spark.",
+  "source_url": "https://example.com/jobs/1",
+  "source_kind": "manual_paste"
+}

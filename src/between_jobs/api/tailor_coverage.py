@@ -24,8 +24,8 @@ from supabase import AsyncClient
 
 from .credential_resolver import ResolvedCredential, resolve
 from .engine_contract import Step0Result
+from .engine_gateway import call_step0
 from .errors import ApiError
-from .forge_engines_client import call_step0
 from .jobs_store import SnapshotNotFound, get_snapshot
 from .profile_store import get_version, list_career_facts
 from .tailor import ClusterCoverage, compute_coverage

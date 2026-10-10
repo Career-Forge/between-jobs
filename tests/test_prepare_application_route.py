@@ -9,6 +9,8 @@ call to forge-engines is faked at the httpx client boundary
 from __future__ import annotations
 
 import asyncio
+import io
+import json
 import time
 from types import SimpleNamespace
 from typing import Any
@@ -16,11 +18,18 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from generic_engine_fakes import ScriptedModel, echo_body
+from generic_engine_fakes import profile as sample_profile
+from generic_engine_fakes import snapshot as sample_snapshot
 
-from between_jobs.api import product_events
+from between_jobs.api import engine_gateway, product_events
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase
 from between_jobs.api.auth import require_user_id
+from between_jobs.api.engine_contract import PrepareApplicationResult
+from between_jobs.api.errors import ApiError
+from between_jobs.api.forge_engines_client import ForgeApplyResult
+from between_jobs.engines import CAPABILITIES_BY_KIND, GenericBackend
 
 _USER_ID = "00000000-0000-0000-0000-000000000001"
 _APPLICATION_ID = "30000000-0000-0000-0000-000000000001"
@@ -172,6 +181,7 @@ class _FakeSupabaseClient:
         artifact_versions: _FakeTable | None = None,
         event_outbox: _FakeTable | None = None,
         resume_documents: _FakeTable | None = None,
+        career_facts: _FakeTable | None = None,
     ) -> None:
         self.applications = applications or _FakeTable(select_rows=[_APPLICATION_ROW])
         self.job_snapshots = job_snapshots or _FakeTable(select_rows=[_SNAPSHOT_ROW])
@@ -202,6 +212,9 @@ class _FakeSupabaseClient:
         # existing test here, which predates shape_overrides and doesn't
         # exercise it.
         self.resume_documents = resume_documents or _FakeTable(select_rows=[])
+        # Only an engine that reports which profile entries it drew on (the built-in one) makes
+        # the prepare flow look their facts up.
+        self.career_facts = career_facts or _FakeTable(select_rows=[])
         self.bucket = _FakeBucket()
         self.storage = _FakeStorage(self.bucket)
 
@@ -216,6 +229,7 @@ class _FakeSupabaseClient:
             "artifact_versions": self.artifact_versions,
             "event_outbox": self.event_outbox,
             "resume_documents": self.resume_documents,
+            "career_facts": self.career_facts,
         }[name]
 
     def rpc(self, fn: str, params: dict[str, Any]) -> _FakeRpcBuilder:
@@ -818,3 +832,293 @@ def test_a_failing_run_still_raises_its_own_error_when_the_event_cannot_be_recor
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "SETUP_REQUIRED"
+
+
+# -- which engine wrote the document ----------------------------------------------------------
+
+
+def test_the_stored_document_names_the_separate_engine_that_wrote_it() -> None:
+    supabase = _FakeSupabaseClient()
+    with_cover_letter = {
+        **_FORGE_APPLY_RESPONSE_BODY,
+        "cover_letter": {"latex": r"\documentclass{article}", "word_count": 42},
+    }
+
+    response = _prepare(
+        supabase, _FakeHttpClient(body=with_cover_letter), generate_cover_letter=True
+    )
+
+    assert response.status_code == 201
+    rows = supabase.artifact_versions.insert_calls
+    assert [row["document_kind"] for row in rows] == ["resume", "cover_letter"]
+    # Byte for byte what every document written through the separate engine has always carried.
+    assert {(row["generator"], row["generator_version"]) for row in rows} == {
+        ("forge-engines", "0.0.1")
+    }
+
+
+class _ScorelessEngine:
+    """An engine that writes the resume and computes nothing else: no fit read, no ATS passes, no
+    Honest Floor gate. Takes the built-in engine's place; its capabilities (and so the name it is
+    stamped with) are the built-in engine's own."""
+
+    capabilities = CAPABILITIES_BY_KIND["generic"]
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def apply(self, http: Any, **kwargs: Any) -> ForgeApplyResult:
+        self.calls += 1
+        return ForgeApplyResult(
+            resume={"latex": r"\begin{document}hi\end{document}"}, regenerated=False
+        )
+
+
+def test_a_resume_from_an_engine_that_scores_nothing_carries_no_score_gate_or_fit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing is made up where the engine said nothing: no fit read, no score, no verdict, and
+    no caution that was never raised. The document is stamped with the engine that wrote it."""
+    import between_jobs
+
+    monkeypatch.delenv("FORGE_ENGINES_BASE_URL")
+    engine = _ScorelessEngine()
+    monkeypatch.setattr(engine_gateway, "_GENERIC", engine)
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient()
+
+    response = _prepare(supabase, http)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["resume"]["artifact_id"] == "artifact-1"
+    assert body["fit"] is None
+    assert body["ats_attempts"] == []
+    assert body["final_score"] is None
+    assert body["gate_outcome"] is None
+    assert body["gate_reason"] == ""
+    assert body["gate_cautions"] == []
+    assert body["warnings"] == []
+    assert engine.calls == 1
+    assert http.post_calls == []  # the separate service was never asked
+    (row,) = supabase.artifact_versions.insert_calls
+    assert (row["generator"], row["generator_version"]) == (
+        "between-jobs-builtin",
+        between_jobs.__version__,
+    )
+    # the resume was delivered, so it is announced as one
+    assert supabase.event_outbox.insert_calls[0]["event_type"] == "artifact.generated.v1"
+    # and what was stored for the page that restores it after a reload says the same
+    stored = supabase.application_events.insert_calls[0]["payload"]
+    assert stored["fit"] is None and stored["final_score"] is None
+    assert stored["gate_outcome"] is None
+
+
+# -- the built-in engine, end to end through the real route ------------------------------------
+
+
+def _use_the_built_in_engine(monkeypatch: pytest.MonkeyPatch, model: ScriptedModel) -> None:
+    monkeypatch.delenv("FORGE_ENGINES_BASE_URL")
+    monkeypatch.setattr(engine_gateway, "_GENERIC", GenericBackend(generate=model))
+
+
+_FACTS = _FakeTable(
+    select_rows=[
+        {"id": "fact-exp-0", "source_pointer": "/experience/0"},
+        {"id": "fact-exp-1", "source_pointer": "/experience/1"},
+        {"id": "fact-exp-2", "source_pointer": "/experience/2"},
+        {"id": "fact-proj-0", "source_pointer": "/projects/0"},
+        {"id": "fact-proj-1", "source_pointer": "/projects/1"},
+        {"id": "fact-edu-0", "source_pointer": "/education/0"},
+        # facts the profile version has but the resume was not drawn from: the built-in engine
+        # prints no publication or patent for this profile, so neither is evidence for it
+        {"id": "fact-pub-0", "source_pointer": "/publications/0"},
+        {"id": "fact-pat-0", "source_pointer": "/patents/0"},
+    ]
+)
+
+
+def _supabase_with_a_real_profile() -> _FakeSupabaseClient:
+    row = {**_PROFILE_VERSION_ROW, "canonical_json": sample_profile()}
+    posting = {**_SNAPSHOT_ROW, **sample_snapshot()}
+    return _FakeSupabaseClient(
+        profile_versions=_FakeTable(select_rows=[row]),
+        job_snapshots=_FakeTable(select_rows=[{**posting, "id": _SNAPSHOT_ID}]),
+        career_facts=_FACTS,
+    )
+
+
+def test_a_server_without_the_hosted_engine_writes_a_resume_and_a_cover_letter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The point of the built-in engine: no separate service, no private engine, only a profile,
+    a job and a model key, and the result is a stored resume and cover letter that the rest of
+    the app (the PDF endpoints, the checklist, the web app) already knows how to use."""
+    import between_jobs
+
+    model = ScriptedModel.faithful()
+    _use_the_built_in_engine(monkeypatch, model)
+    supabase = _supabase_with_a_real_profile()
+    http = _FakeHttpClient()
+
+    response = _prepare(supabase, http, generate_cover_letter=True)
+
+    assert response.status_code == 201
+    body = response.json()
+    result = PrepareApplicationResult.model_validate(body)  # the public result contract
+    assert result.resume is not None and result.cover_letter is not None
+    # nothing was scored and nothing is made up in its place
+    assert result.final_score is None and result.fit is None and result.ats_attempts == []
+    assert result.gate_outcome is None and result.gate_cautions == []
+    assert body["warnings"] == []
+    # the documents were stored under the built-in engine's name, with LaTeX the PDF renderer takes
+    rows = supabase.artifact_versions.insert_calls
+    assert [row["document_kind"] for row in rows] == ["resume", "cover_letter"]
+    assert {(row["generator"], row["generator_version"]) for row in rows} == {
+        ("between-jobs-builtin", between_jobs.__version__)
+    }
+    resume_tex, cover_tex = (upload[1].decode() for upload in supabase.bucket.uploads)
+    assert resume_tex.startswith(r"\documentclass") and "Northwind Labs" in resume_tex
+    assert cover_tex.startswith(r"\documentclass") and "Globex Corporation" in cover_tex
+    # nothing went to a separate service, and the model was asked exactly as often as planned
+    # (the summary is off unless the person turned it on)
+    assert http.post_calls == []
+    assert sorted(call.stage for call in model.calls) == ["body", "cover", "step0"]
+    assert supabase.event_outbox.insert_calls[0]["event_type"] == "artifact.generated.v1"
+
+
+def test_the_stored_resume_says_which_profile_entries_it_was_drawn_from(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _use_the_built_in_engine(monkeypatch, ScriptedModel.faithful())
+    supabase = _supabase_with_a_real_profile()
+
+    response = _prepare(supabase, _FakeHttpClient(), generate_cover_letter=True)
+
+    expected = [
+        "fact-edu-0",
+        "fact-exp-0",
+        "fact-exp-1",
+        "fact-exp-2",
+        "fact-proj-0",
+        "fact-proj-1",
+    ]
+    resume_row, cover_row = supabase.artifact_versions.insert_calls
+    assert sorted(resume_row["evidence_fact_ids"]) == expected
+    assert sorted(response.json()["evidence_fact_ids"]) == expected
+    # only the entries the engine reported: a fact of the same profile version it did not use is
+    # not recorded as provenance the document does not have
+    for unused in ("fact-pub-0", "fact-pat-0"):
+        assert unused not in resume_row["evidence_fact_ids"]
+        assert unused not in response.json()["evidence_fact_ids"]
+    # the letter is checked against the whole profile, not drawn from entries: nothing claimed
+    assert cover_row["evidence_fact_ids"] == []
+
+
+def test_what_the_built_in_engine_replaced_reaches_the_checklist_as_an_unsupported_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pypdf import PdfWriter
+
+    from between_jobs.api.export_checklist import build_checklist
+    from between_jobs.engines import claims_were_verified_by
+
+    def invent(user: str) -> str:
+        entries = json.loads(echo_body(user))
+        entries["entries"][0]["bullets"][0]["text"] = "Cut p95 API latency 45% across 12 services"
+        return json.dumps(entries)
+
+    _use_the_built_in_engine(monkeypatch, ScriptedModel.faithful(body=[invent, invent]))
+    supabase = _supabase_with_a_real_profile()
+
+    response = _prepare(supabase, _FakeHttpClient())
+
+    assert response.status_code == 201
+    flagged = [w for w in response.json()["warnings"] if w.startswith("unsupported claim")]
+    assert len(flagged) == 2 and all('"45%"' in w for w in flagged)
+    (row,) = supabase.artifact_versions.insert_calls
+    assert row["warnings"] == response.json()["warnings"]
+    # ... and the checklist, reading the stored warnings, fails the item that names them
+    writer = PdfWriter()
+    writer.add_blank_page(612, 792)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    checklist = build_checklist(
+        buffer.getvalue(),
+        row["warnings"],
+        row["shape_report"],
+        claims_verified=claims_were_verified_by(row["generator"]),
+    )
+    item = next(i for i in checklist if i["key"] == "no_unsupported_claims")
+    assert item["status"] == "fail" and "45%" in item["detail"]
+
+
+def test_the_built_in_engines_shape_report_is_stored_for_the_checklist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _use_the_built_in_engine(monkeypatch, ScriptedModel.faithful())
+    supabase = _supabase_with_a_real_profile()
+
+    _prepare(supabase, _FakeHttpClient())
+
+    (row,) = supabase.artifact_versions.insert_calls
+    assert row["shape_report"] == {"target_pages": 1, "pins_honored": True, "warnings": []}
+
+
+def test_a_provider_failure_while_the_built_in_engine_writes_stores_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    down = ApiError("PROVIDER_UNAVAILABLE", "down", retryable=True)
+    _use_the_built_in_engine(monkeypatch, ScriptedModel.faithful(step0=[down]))
+    supabase = _supabase_with_a_real_profile()
+
+    response = _prepare(supabase, _FakeHttpClient())
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+    assert supabase.bucket.uploads == [] and supabase.artifact_versions.insert_calls == []
+    assert supabase.application_events.insert_calls == []
+
+
+class _NoLookupTable(_FakeTable):
+    """A facts table that fails the test if anything reads it."""
+
+    def select(self, *_: Any, **__: Any) -> _ChainBuilder:
+        raise AssertionError("the profile's facts were looked up for an engine that reported none")
+
+
+def test_an_engine_that_reports_no_evidence_costs_no_lookup_of_the_profiles_facts() -> None:
+    """The separate service reports none: the stored list stays empty, and the facts table is
+    never read for it."""
+    supabase = _FakeSupabaseClient(career_facts=_NoLookupTable(select_rows=[]))
+
+    response = _prepare(supabase, _FakeHttpClient())
+
+    assert response.status_code == 201
+    assert supabase.artifact_versions.insert_calls[0]["evidence_fact_ids"] == []
+
+
+async def test_the_evidence_is_the_reported_pointers_in_the_engines_order_and_nothing_else(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from between_jobs.api import prepare_orchestrator
+
+    async def facts(*_args: Any) -> list[dict[str, str]]:
+        return [
+            {"id": "f-exp-0", "source_pointer": "/experience/0"},
+            {"id": "f-exp-1", "source_pointer": "/experience/1"},
+            {"id": "f-pub-0", "source_pointer": "/publications/0"},
+        ]
+
+    monkeypatch.setattr(prepare_orchestrator, "list_career_facts", facts)
+
+    ids = await prepare_orchestrator._evidence_fact_ids(
+        None,  # type: ignore[arg-type]
+        "user",
+        "version",
+        ["/experience/1", "/experience/0", "/experience/9"],
+    )
+
+    # the engine's order, the unknown pointer dropped, the publication left out
+    assert ids == ["f-exp-1", "f-exp-0"]
+    assert await prepare_orchestrator._evidence_fact_ids(None, "u", "v", []) == []  # type: ignore[arg-type]

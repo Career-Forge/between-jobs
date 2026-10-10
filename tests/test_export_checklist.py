@@ -207,3 +207,30 @@ def test_an_empty_shape_report_is_treated_the_same_as_no_report() -> None:
     assert _find(items, "page_fill")["status"] == "not_checked"
     assert _find(items, "pins_honored")["status"] == "not_checked"
     assert _find(items, "page_count_within_shape")["status"] == "not_checked"
+
+
+# -- claims nobody verified ----------------------------------------------------------------------
+
+
+def test_an_empty_claim_list_proves_nothing_when_no_verification_ran() -> None:
+    item = _find(
+        build_checklist(_pdf_with_pages(1), [], claims_verified=False), "no_unsupported_claims"
+    )
+
+    assert item["status"] == "not_checked"
+    assert "does not check its claims" in item["detail"]
+
+
+def test_a_flagged_claim_fails_even_from_an_engine_that_is_not_known_to_verify() -> None:
+    flagged = ['unsupported claim (unverifiable): "Led 20 engineers"']
+    item = _find(
+        build_checklist(_pdf_with_pages(1), flagged, claims_verified=False), "no_unsupported_claims"
+    )
+
+    assert item["status"] == "fail"
+
+
+def test_claims_are_taken_as_verified_unless_the_caller_says_otherwise() -> None:
+    assert (
+        _find(build_checklist(_pdf_with_pages(1), []), "no_unsupported_claims")["status"] == "pass"
+    )

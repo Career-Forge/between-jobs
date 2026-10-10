@@ -22,8 +22,8 @@ from .app_state import get_http_client, get_supabase
 from .applications_store import ApplicationNotFound, get_application
 from .auth import require_user_id
 from .credential_resolver import resolve
+from .engine_gateway import call_ingest, call_personal
 from .errors import ApiError
-from .forge_engines_client import call_ingest, call_personal
 from .interview_practice import (
     AnswerFeedback,
     PracticeQuestion,

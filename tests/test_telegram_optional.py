@@ -120,6 +120,7 @@ def test_capabilities_says_telegram_is_off() -> None:
         "telegram": False,
         "telegram_bot_username": None,
         "tester_program_required": False,
+        "engine": "remote",
     }
 
 
@@ -133,6 +134,7 @@ def test_capabilities_says_telegram_is_on(monkeypatch: pytest.MonkeyPatch) -> No
             "telegram": True,
             "telegram_bot_username": None,
             "tester_program_required": False,
+            "engine": "remote",
         }
 
 
@@ -165,6 +167,7 @@ def test_capabilities_names_the_bot_when_the_server_says_which(
             "telegram": True,
             "telegram_bot_username": "Acme_Jobs_bot",
             "tester_program_required": False,
+            "engine": "remote",
         }
 
 
@@ -175,6 +178,7 @@ def test_a_bot_name_with_no_bot_is_not_reported(monkeypatch: pytest.MonkeyPatch)
             "telegram": False,
             "telegram_bot_username": None,
             "tester_program_required": False,
+            "engine": "remote",
         }
 
 
@@ -192,6 +196,7 @@ def test_a_malformed_bot_name_is_ignored_not_fatal(
         "telegram": True,
         "telegram_bot_username": None,
         "tester_program_required": False,
+        "engine": "remote",
     }
     warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
     assert any("TELEGRAM_BOT_USERNAME" in message for message in warnings)

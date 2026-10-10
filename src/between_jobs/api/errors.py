@@ -45,9 +45,11 @@ ErrorCode = Literal[
     "PAYLOAD_TOO_LARGE",
     "UNSUPPORTED_MEDIA_TYPE",
     "ENROLLMENT_REQUIRED",
+    "NOT_AVAILABLE_IN_GENERIC_ENGINE",
 ]
 """Every code but INTERNAL_ERROR, FEATURE_DISABLED, RATE_LIMITED, PAYLOAD_TOO_LARGE,
-UNSUPPORTED_MEDIA_TYPE and ENROLLMENT_REQUIRED is Appendix B's own core list, verbatim.
+UNSUPPORTED_MEDIA_TYPE, ENROLLMENT_REQUIRED and NOT_AVAILABLE_IN_GENERIC_ENGINE is Appendix B's
+own core list, verbatim.
 INTERNAL_ERROR isn't in the appendix -- it's this platform's
 own fallback for failures that don't fit any named code (an unmapped database
 error, a genuine bug), so those still reach the client as the documented
@@ -74,7 +76,14 @@ ENROLLMENT_REQUIRED is a 403 from a server that has switched the tester programm
 (TESTER_PROGRAM_REQUIRED): the caller has not accepted the current tester agreement, and the
 costly feature they asked for needs that first (api/tester_enrollment.py). It is not FORBIDDEN
 in the sense of "never": accepting the agreement (POST /tester/enrollment) makes the same
-request succeed, which is why a client gets a code of its own to send the person there."""
+request succeed, which is why a client gets a code of its own to send the person there.
+NOT_AVAILABLE_IN_GENERIC_ENGINE is a feature the server's built-in resume engine does not do
+(see engines/generic/backend.py): the operator ran it without the hosted engine, and only connecting
+that engine changes the answer. It is a deployment capability, so it is neither a mistake in the
+request (not a 422) nor a failure to retry (not a 503, and `retryable` is false). It is a 409,
+like SETUP_REQUIRED: the request is fine, the server is not set up for it. It is not a 5xx on
+purpose, because every 5xx is logged as our failure and sent to the error tracker, and a person
+clicking a button the server cannot serve is neither. The message says what to do about it."""
 
 _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "AUTH_REQUIRED": 401,
@@ -98,6 +107,7 @@ _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "PAYLOAD_TOO_LARGE": 413,
     "UNSUPPORTED_MEDIA_TYPE": 415,
     "ENROLLMENT_REQUIRED": 403,
+    "NOT_AVAILABLE_IN_GENERIC_ENGINE": 409,
 }
 
 

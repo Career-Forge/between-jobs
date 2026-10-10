@@ -14,7 +14,7 @@ Two guards, from two angles, because either alone has a hole:
 
 2. THE SCAN. A static look (ast) at every module that serves a route, which fails when a route
    handler -- or any helper in the same module it calls -- reaches for something that spends
-   money or heavy compute (an LLM call, a search or scrape provider, the forge-engines client,
+   money or heavy compute (an LLM call, a search or scrape provider, the resume engine,
    the LaTeX compiler) and the handler neither carries a limiter nor is named in SCAN_EXEMPT
    with a reason. It does not care what the inventory says, so it catches the expensive route
    filed under UNLIMITED. What it can see is bounded: names reached in the handler's own
@@ -52,8 +52,8 @@ LIMITED: dict[str, str] = {
     "POST /applications/{application_id}/prepare": "prepare",
     "POST /applications/{application_id}/company-intel": "company_intel",
     "POST /applications/{application_id}/interview-practice/sessions": "interview_practice_session",
-    # Everything else that calls an LLM, a search or scrape provider, the forge-engines
-    # service or the LaTeX compiler.
+    # Everything else that calls an LLM, a search or scrape provider, the resume engine
+    # or the LaTeX compiler.
     "POST /applications/{application_id}/interview-practice/sessions/{session_id}/answers": (
         "interview_practice_answer"
     ),
@@ -394,6 +394,23 @@ def test_limiters_authenticate_the_way_their_route_does() -> None:
 
 # -- 2. the scan ---------------------------------------------------------------------------
 
+ENGINE_GATEWAY_NAMES = frozenset(
+    {
+        "call_apply",
+        "call_step0",
+        "call_gap_interview",
+        "call_gap_answer_draft",
+        "call_ingest",
+        "call_personal",
+        "resolve_header_chips",
+    }
+)
+"""The seven functions api/engine_gateway.py offers, which the routes call to reach the resume
+engine (the separate service or the built-in one: either costs a model call or heavy compute, and
+the built-in engine's answer for what it cannot do is still a request that was made). Pinned to
+what the gateway really defines by `test_the_gateway_offers_exactly_the_functions_the_scan_names`,
+so a new engine function cannot be added without being named here."""
+
 EXPENSIVE_NAMES = frozenset(
     {
         # a model call (every handler passes `generate=llm_generate`)
@@ -414,14 +431,13 @@ EXPENSIVE_NAMES = frozenset(
         # job search: provider fan-out and the registry lane
         "search_jobs",
         "fetch_registry_lane",
-        # the forge-engines client
-        "call_apply",
-        "call_step0",
-        "call_gap_interview",
-        "call_gap_answer_draft",
-        "call_ingest",
-        "call_personal",
-        "resolve_header_chips",
+        # the resume engine, through the gateway's seven functions, and the three ways round
+        # them (a backend picked by hand, or either class built directly); that a route module
+        # may not import the engine client or the backends is pinned below
+        *ENGINE_GATEWAY_NAMES,
+        "active_backend",
+        "RemoteBackend",
+        "GenericBackend",
         "load_coverage_context",
         "run_prepare_application",
         # the chat bot's whole business logic (channel_core), which can start a resume
@@ -667,6 +683,108 @@ async def by_default_argument(x):
     assert by_name["socket"].expensive == {"llm_generate"} and not by_name["socket"].limited
     # a cross-module pipeline whose model call is a default argument, named in EXPENSIVE_NAMES
     assert by_name["by_default_argument"].expensive == {"generate_positioning_brief"}
+
+
+def test_the_scan_catches_a_handler_that_reaches_the_resume_engine_unlimited() -> None:
+    """The self-check for the engine names: a route that calls the gateway, picks a backend
+    itself, or builds one is flagged unless it carries a limiter."""
+    source = """
+from fastapi import APIRouter, Depends
+router = APIRouter()
+
+@router.post("/via-the-gateway")
+async def via_the_gateway(http):
+    return await call_step0(http, job_description="x", credential=None)
+
+@router.post("/via-a-backend")
+async def via_a_backend(http):
+    return await active_backend().step0(http, job_description="x", credential=None)
+
+@router.post("/via-a-class")
+async def via_a_class(http):
+    return await GenericBackend().apply(http)
+
+@router.post("/limited", dependencies=[Depends(limit("prepare"))])
+async def limited(http):
+    return await call_apply(http)
+"""
+    by_name = {h.key.split("::")[1]: h for h in _handlers(source, "x_routes.py")}
+
+    assert by_name["via_the_gateway"].expensive == {"call_step0"}
+    assert by_name["via_a_backend"].expensive == {"active_backend"}
+    assert by_name["via_a_class"].expensive == {"GenericBackend"}
+    assert not any(by_name[name].limited for name in ("via_the_gateway", "via_a_backend"))
+    assert by_name["limited"].expensive == {"call_apply"} and by_name["limited"].limited
+
+
+def test_the_gateway_offers_exactly_the_functions_the_scan_names() -> None:
+    from between_jobs.api import engine_gateway
+
+    offered = {
+        name
+        for name, member in vars(engine_gateway).items()
+        if inspect.iscoroutinefunction(member) and member.__module__ == engine_gateway.__name__
+    }
+    assert offered == ENGINE_GATEWAY_NAMES
+
+
+def _imports_of(path: Path) -> dict[str, set[str]]:
+    """module -> the names a file imports from it (a plain `import x` gives an empty set)."""
+    found: dict[str, set[str]] = {}
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.ImportFrom):
+            module = ("." * node.level) + (node.module or "")
+            found.setdefault(module, set()).update(alias.name for alias in node.names)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                found.setdefault(alias.name, set())
+    return found
+
+
+def test_the_gateway_is_the_only_way_from_the_api_to_the_resume_engine() -> None:
+    """The scan above knows the gateway's function names. That only means something while no
+    route reaches the engine round the gateway: through the remote client (`.forge_engines_client`),
+    or through the backends (`between_jobs.engines`). `engine_gateway` is the one module that
+    does; `applications_routes` reads one thing from the engines package, which of the engines
+    verifies claims, and calls no engine."""
+    allowed_engine_imports = {
+        "engine_gateway.py": None,  # anything
+        "applications_routes.py": {"claims_were_verified_by"},
+    }
+    offenders: list[str] = []
+    for path in sorted(_SRC.glob("*.py")):
+        for module, names in _imports_of(path).items():
+            reaches_the_client = module.endswith("forge_engines_client") or (
+                module in {".", "between_jobs.api"} and "forge_engines_client" in names
+            )
+            if reaches_the_client and path.name != "engine_gateway.py":
+                offenders.append(f"{path.name} imports the remote engine client")
+            if module == "between_jobs.engines" or module.startswith("between_jobs.engines."):
+                allowed = allowed_engine_imports.get(path.name, set())
+                if allowed is not None and not names <= allowed:
+                    offenders.append(f"{path.name} imports {sorted(names - allowed)} from {module}")
+    assert offenders == [], (
+        "these modules reach the resume engine round engine_gateway, so the rate-limit scan "
+        f"cannot see the call: {offenders}"
+    )
+
+
+def test_the_import_scan_sees_the_ways_round_the_gateway(tmp_path: Path) -> None:
+    """Guards the guard: the shapes the test above must flag."""
+    sneaky = tmp_path / "sneaky_routes.py"
+    sneaky.write_text(
+        "from .forge_engines_client import call_apply\n"
+        "from . import forge_engines_client\n"
+        "from between_jobs.api import forge_engines_client as client\n"
+        "from between_jobs.engines import GenericBackend\n"
+        "import between_jobs.engines.remote\n"
+    )
+    imports = _imports_of(sneaky)
+    assert ".forge_engines_client" in imports
+    assert "forge_engines_client" in imports["."]
+    assert "forge_engines_client" in imports["between_jobs.api"]
+    assert imports["between_jobs.engines"] == {"GenericBackend"}
+    assert "between_jobs.engines.remote" in imports
 
 
 def test_the_bots_resume_generation_is_only_reachable_through_the_limiter() -> None:

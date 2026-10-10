@@ -32,13 +32,14 @@ from supabase import AsyncClient
 from .app_state import get_http_client, get_supabase
 from .applications_store import ApplicationNotFound, get_application
 from .auth import require_user_id
-from .errors import ApiError
-from .forge_engines_client import (
+from .engine_gateway import (
     call_gap_interview,
     call_ingest,
     call_personal,
+    ensure_available,
     resolve_header_chips,
 )
+from .errors import ApiError
 from .jobs_store import SnapshotNotFound, get_snapshot
 from .models import (
     PreviewHeaderRequest,
@@ -228,6 +229,9 @@ async def get_gap_interview(
     profile writes happen here -- read-only, same as `/coverage`. A
     document with no eligible gap returns an empty list without spending
     the (optional) second LLM call at all."""
+    # Before the job is read: reading it costs a model call, and an engine that has no gap
+    # interview would only answer "not available" after the person had paid for it.
+    ensure_available("gap_interview")
     try:
         document = await get_document(supabase, user_id, document_id)
     except DocumentNotFound as e:

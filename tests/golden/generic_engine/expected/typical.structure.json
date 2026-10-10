@@ -1,0 +1,83 @@
+{
+  "resume": {
+    "packages": [
+      "enumitem",
+      "fontenc",
+      "geometry",
+      "hyperref",
+      "lato",
+      "microtype",
+      "titlesec"
+    ],
+    "document_class": "letterpaper,10pt",
+    "sections": [
+      {
+        "title": "Summary",
+        "items": 0,
+        "entries": 0
+      },
+      {
+        "title": "Experience",
+        "items": 9,
+        "entries": 3
+      },
+      {
+        "title": "Projects",
+        "items": 3,
+        "entries": 2
+      },
+      {
+        "title": "Education",
+        "items": 0,
+        "entries": 1
+      },
+      {
+        "title": "Skills",
+        "items": 0,
+        "entries": 0
+      },
+      {
+        "title": "Certifications",
+        "items": 0,
+        "entries": 0
+      },
+      {
+        "title": "Achievements",
+        "items": 1,
+        "entries": 0
+      },
+      {
+        "title": "Languages",
+        "items": 0,
+        "entries": 0
+      }
+    ],
+    "links": 5,
+    "escapes_used": [
+      "$",
+      "%"
+    ],
+    "braces_balanced": true,
+    "environments_closed": true,
+    "ascii_only": true
+  },
+  "cover_letter": {
+    "packages": [
+      "enumitem",
+      "fontenc",
+      "geometry",
+      "hyperref",
+      "lato",
+      "microtype"
+    ],
+    "document_class": "letterpaper,11pt",
+    "has_date": true,
+    "has_addressee": true,
+    "has_subject": true,
+    "greeting": true,
+    "paragraphs": 3,
+    "signed": true,
+    "braces_balanced": true,
+    "ascii_only": true
+  }
+}

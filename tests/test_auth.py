@@ -189,6 +189,7 @@ def test_valid_token_accepted_end_to_end(
         "telegram",
         "telegram_bot_username",
         "tester_program_required",
+        "engine",
     }
 
 

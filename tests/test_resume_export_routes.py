@@ -99,6 +99,8 @@ class _FakeSupabaseClient:
                     "id": "version-row-1",
                     "version": 1,
                     "storage_key": f"{_USER_ID}/artifact-1/1",
+                    "generator": "forge-engines",
+                    "generator_version": "0.0.1",
                     "warnings": [],
                 }
             ]
@@ -260,6 +262,46 @@ def test_export_checklist_surfaces_stored_warnings_as_a_failed_check() -> None:
     items = {item["key"]: item for item in response.json()["items"]}
     assert items["no_engine_warnings"]["status"] == "fail"
     assert "Borderline seniority match." in items["no_engine_warnings"]["detail"]
+
+
+def _claims_item(generator: str | None, warnings: list[str]) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "id": "version-row-1",
+        "version": 1,
+        "storage_key": f"{_USER_ID}/artifact-1/1",
+        "warnings": warnings,
+    }
+    if generator is not None:
+        row["generator"] = generator
+    supabase = _FakeSupabaseClient(artifact_versions=[row])
+    with _client(supabase, _FakeHttpClient()) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/export-checklist")
+    assert response.status_code == 200
+    return next(item for item in response.json()["items"] if item["key"] == "no_unsupported_claims")
+
+
+@pytest.mark.parametrize("generator", ["forge-engines", "between-jobs-builtin"])
+def test_a_resume_from_an_engine_that_verifies_claims_passes_when_nothing_is_flagged(
+    generator: str,
+) -> None:
+    assert _claims_item(generator, [])["status"] == "pass"
+
+
+@pytest.mark.parametrize("generator", ["some-other-engine", "Between-Jobs-Builtin", None])
+def test_a_resume_nothing_checked_is_not_reported_as_having_no_unsupported_claims(
+    generator: str | None,
+) -> None:
+    item = _claims_item(generator, [])
+
+    assert item["status"] == "not_checked"
+    assert "does not check its claims" in item["detail"]
+
+
+def test_a_flagged_claim_still_fails_whichever_engine_wrote_the_resume() -> None:
+    flagged = ['unsupported claim (contradicted): "Led 20 engineers" -- no match']
+
+    assert _claims_item("between-jobs-builtin", flagged)["status"] == "fail"
+    assert _claims_item("forge-engines", flagged)["status"] == "fail"
 
 
 def test_export_checklist_404s_when_nothing_generated_yet() -> None:

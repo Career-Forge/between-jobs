@@ -47,11 +47,11 @@ from .discord_config import load_discord_config
 from .discord_webhook import router as discord_router
 from .discord_webhook import shutdown_interaction_tasks
 from .discovery_routes import router as discovery_router
+from .engine_gateway import log_active_engine, remote_engine_url
 from .env import optional_env, refuse, web_app_url
 from .error_reporting import flush_error_reporting, init_error_reporting, report_exception
 from .errors import ApiError, log_api_error
 from .extension_routes import router as extension_router
-from .forge_engines_client import _base_url as forge_engines_base_url
 from .gmail_oauth_routes import router as gmail_oauth_router
 from .gmail_reply_checker import _DEFAULT_CHECK_INTERVAL_SECONDS as REPLY_CHECK_INTERVAL_SECONDS
 from .gmail_reply_checker import run_reply_check_forever
@@ -134,6 +134,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # instead of failing requests later, one by one.
     max_request_body_bytes()
     latex_max_concurrency()
+    # Which engine writes the resumes, said once at boot: the separate service when
+    # FORGE_ENGINES_BASE_URL is set, otherwise the one built into this API.
+    log_active_engine()
     # The tester-programme gate reads its switch on every request; reading it here too makes a
     # bad value stop the boot (it is a consent check, so no spelling is guessed at).
     tester_program_required()
@@ -579,30 +582,47 @@ async def _probe_dependency(http: httpx.AsyncClient, url: str) -> str:
 
 
 async def _check_dependencies(request: Request) -> dict[str, str]:
-    """Reachability of Supabase, forge-engines and the LaTeX service, cached
+    """Reachability of Supabase, the resume engine and the LaTeX service, cached
     for 30s and computed by one caller at a time, so hitting /health in a loop
-    can't multiply outbound traffic."""
+    can't multiply outbound traffic.
+
+    The resume engine is probed only when it is a separate service. The built-in engine runs in
+    this process, so there is nothing to reach: it reports `builtin`, which says how the server
+    is set up rather than how a probe went, and so it is the answer even when the probes are
+    switched off."""
     names = ("supabase", "forge_engines", "latex_service")
+    engine_url = remote_engine_url()
+    builtin = engine_url is None
     # Off under tests (tests/conftest.py), like the workers: they would otherwise
     # call real hosts. Reported as not_checked rather than guessed.
     if os.environ.get("DISABLE_HEALTH_DEPENDENCY_CHECKS"):
-        return dict.fromkeys(names, "not_checked")
+        report = dict.fromkeys(names, "not_checked")
+        if builtin:
+            report["forge_engines"] = "builtin"
+        return report
     state = request.app.state
     async with state.health_lock:
         cached = getattr(state, "health_dependencies", None)
         loop_now = asyncio.get_running_loop().time()
-        if cached is not None and loop_now - cached[0] < _DEPENDENCY_CACHE_SECONDS:
-            return dict(cached[1])
-        urls = (
+        if cached is not None:
+            cached_at, cached_report, cached_builtin = cached
+            # An answer cached before the engine setting changed is not this setting's answer.
+            if cached_builtin == builtin and loop_now - cached_at < _DEPENDENCY_CACHE_SECONDS:
+                return dict(cached_report)
+        probes = {
             # Any answer means the project is up; without a key this is a 401.
-            f"{state.supabase_url.rstrip('/')}/rest/v1/",
-            f"{forge_engines_base_url()}/health",
-            f"{latex_service_base_url()}/health",
-        )
+            "supabase": f"{state.supabase_url.rstrip('/')}/rest/v1/",
+            "latex_service": f"{latex_service_base_url()}/health",
+        }
+        if engine_url is not None:
+            probes["forge_engines"] = f"{engine_url}/health"
         http: httpx.AsyncClient = state.health_http
-        results = await asyncio.gather(*(_probe_dependency(http, url) for url in urls))
-        report = dict(zip(names, results, strict=True))
-        state.health_dependencies = (loop_now, report)
+        results = await asyncio.gather(*(_probe_dependency(http, url) for url in probes.values()))
+        found = dict(zip(probes, results, strict=True))
+        if builtin:
+            found["forge_engines"] = "builtin"
+        report = {name: found[name] for name in names}
+        state.health_dependencies = (loop_now, report, builtin)
         return report
 
 
@@ -622,7 +642,9 @@ async def health(request: Request) -> JSONResponse:
     is refused instead of cutting over to workers that can never run. Their body
     carries `lease: {state, claim_failures, last_claim_error}`, never the holder's id.
 
-    Dependencies are reported for diagnosis and never change the status.
+    Dependencies are reported for diagnosis and never change the status. `forge_engines` is
+    `builtin` on a server that runs the engine built into the API (no FORGE_ENGINES_BASE_URL):
+    nothing separate to reach, and not a problem.
 
     `telegram_webhook` is the daily Telegram webhook probe's last verdict (webhook_probe.py):
     `status` is `ok`, `problem`, `unknown` or `not_configured` (no bot on this server),

@@ -65,13 +65,20 @@ class ChecklistItem(TypedDict):
 
 
 def build_checklist(
-    pdf_bytes: bytes, warnings: list[str], shape_report: dict[str, Any] | None = None
+    pdf_bytes: bytes,
+    warnings: list[str],
+    shape_report: dict[str, Any] | None = None,
+    *,
+    claims_verified: bool = True,
 ) -> list[ChecklistItem]:
+    """`claims_verified` is whether the engine that wrote this document runs claim verification
+    (`engines.claims_were_verified_by` on the stored `generator`). When it does not, an empty
+    claim list proves nothing, and `no_unsupported_claims` reports `not_checked`."""
     page_count = _page_count(pdf_bytes)
     items: list[ChecklistItem] = [
         _one_page(page_count),
         _no_engine_warnings(warnings),
-        _no_unsupported_claims(warnings),
+        _no_unsupported_claims(warnings, claims_verified),
         _page_fill(shape_report),
         _page_count_within_shape(page_count, shape_report),
         _pins_honored(shape_report),
@@ -130,7 +137,7 @@ def _no_engine_warnings(warnings: list[str]) -> ChecklistItem:
     )
 
 
-def _no_unsupported_claims(warnings: list[str]) -> ChecklistItem:
+def _no_unsupported_claims(warnings: list[str], claims_verified: bool = True) -> ChecklistItem:
     """C4 (coverforge-port.md): real now, not `not_checked` -- filters the
     SAME `warnings` list `_no_engine_warnings` reads (and skips) for entries forge-
     engines' claim-verification Judge added
@@ -142,6 +149,17 @@ def _no_unsupported_claims(warnings: list[str]) -> ChecklistItem:
     verifier call itself failed (fails open, see `claim_verify.py`'s own
     docstring) -- both look identical from this list alone."""
     flagged = [w for w in warnings if w.startswith(_CLAIM_WARNING_PREFIX)]
+    if not flagged and not claims_verified:
+        # Nothing flagged because nothing was looked at: not a pass.
+        return ChecklistItem(
+            key="no_unsupported_claims",
+            label="No unsupported claims",
+            status="not_checked",
+            detail=(
+                "The engine that wrote this resume does not check its claims against your "
+                "profile -- read it against your own background before you send it."
+            ),
+        )
     if not flagged:
         return ChecklistItem(
             key="no_unsupported_claims",

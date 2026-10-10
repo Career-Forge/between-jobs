@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { CAPABILITIES_TIMEOUT_MS, isTesterProgramRequired, type CapabilitiesFetcher } from "./capabilities";
+import {
+  CAPABILITIES_TIMEOUT_MS,
+  engineKind,
+  isTesterProgramRequired,
+  type CapabilitiesFetcher,
+} from "./capabilities";
 import { MAX_CAPABILITY_RETRIES, createCapabilitiesStore } from "./capabilitiesStore";
 
 // The one holder of "what was the server started with", and the rules for asking again. The hook
@@ -243,6 +248,25 @@ describe("refresh: the server just contradicted what this app believed", () => {
 
     expect(listener).not.toHaveBeenCalled();
     expect(store.getSnapshot()).toBe(known);
+  });
+});
+
+describe("the resume engine the server runs", () => {
+  it("is part of the answer: a refresh that finds a different engine is told to every reader", async () => {
+    const withEngine = (engine: string) => ({ ...BODY(false), engine });
+    const { fetcher, answerNext } = scripted(withEngine("remote"), withEngine("generic"));
+    const store = createCapabilitiesStore(fetcher);
+    const listener = vi.fn();
+    store.ensure();
+    await answerNext();
+    store.subscribe(listener);
+    expect(engineKind(store.getSnapshot())).toBe("remote");
+
+    store.refresh();
+    await answerNext();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(engineKind(store.getSnapshot())).toBe("generic");
   });
 });
 

@@ -16,6 +16,11 @@
 // needs that first (the enrollment page is where they do it). api.ts reports one to the shell's
 // gate (components/EnrollmentGate.tsx), which asks again where the person stands and puts the
 // enrollment page where the feature was; friendlyApiMessage words it for the page that asked.
+// NOT_AVAILABLE_IN_GENERIC_ENGINE is a 409 from a server run without the hosted resume engine,
+// for a feature only that engine does (the API's built-in engine answers it:
+// engines/generic/backend.py).
+// It is not retryable and nothing the person did caused it. Its message already says what to do
+// (connect the hosted engine, or use another feature), so pages show it as it comes.
 export const KNOWN_API_ERROR_CODES = [
   "AUTH_REQUIRED",
   "FORBIDDEN",
@@ -38,6 +43,7 @@ export const KNOWN_API_ERROR_CODES = [
   "PAYLOAD_TOO_LARGE",
   "UNSUPPORTED_MEDIA_TYPE",
   "ENROLLMENT_REQUIRED",
+  "NOT_AVAILABLE_IN_GENERIC_ENGINE",
 ] as const;
 
 export type KnownApiErrorCode = (typeof KNOWN_API_ERROR_CODES)[number];

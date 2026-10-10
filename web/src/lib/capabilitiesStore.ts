@@ -46,7 +46,8 @@ function sameAnswer(a: CapabilitiesState, b: CapabilitiesState): boolean {
   return (
     a.capabilities.telegram === b.capabilities.telegram &&
     a.capabilities.testerProgramRequired === b.capabilities.testerProgramRequired &&
-    a.capabilities.telegramBotUsername === b.capabilities.telegramBotUsername
+    a.capabilities.telegramBotUsername === b.capabilities.telegramBotUsername &&
+    a.capabilities.engine === b.capabilities.engine
   );
 }
 

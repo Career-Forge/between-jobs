@@ -42,7 +42,14 @@ export interface Capabilities {
   // link for the application (a query string and all). null when the server has none or what it
   // sent is not an https address.
   discordInstallUrl?: string | null;
+  // Which resume engine the server runs: "remote" (a separate service the operator runs) or
+  // "generic" (the engine built into the API, when no such service is set up). A flag, never an
+  // address. Absent when the server does not say -- an older one, or a value this app does not
+  // know -- which is "unknown", not "remote": nothing may be assumed from its absence.
+  engine?: EngineKind;
 }
+
+export type EngineKind = "remote" | "generic";
 
 export type CapabilitiesState =
   // Not asked yet, or the ask is in flight.
@@ -74,6 +81,7 @@ export function parseCapabilities(body: unknown): Capabilities | null {
     ...(record.discord === true
       ? { discord: true, discordInstallUrl: httpsAddress(record.discord_install_url) }
       : {}),
+    ...(record.engine === "remote" || record.engine === "generic" ? { engine: record.engine } : {}),
   };
 }
 
@@ -113,6 +121,13 @@ export function discordInstallUrl(state: CapabilitiesState): string | null {
   return state.kind === "ready" && state.capabilities.discord === true
     ? (state.capabilities.discordInstallUrl ?? null)
     : null;
+}
+
+/** Which resume engine the server runs, or null while that is unknown (still asking, asking
+ *  failed, or the server did not say). Nothing draws from it yet: it is here so a page that must
+ *  explain what a server without the hosted engine does reads one answer, not a guess. */
+export function engineKind(state: CapabilitiesState): EngineKind | null {
+  return state.kind === "ready" ? (state.capabilities.engine ?? null) : null;
 }
 
 /** The bot's name for the card's copy, or null when it isn't known (the card

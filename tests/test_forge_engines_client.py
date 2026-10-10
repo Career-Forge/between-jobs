@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from between_jobs.api.credential_resolver import ResolvedCredential
 from between_jobs.api.engine_contract import ForgeFitResult
@@ -517,6 +518,28 @@ async def test_call_apply_maps_a_declined_gate_with_no_resume() -> None:
 
     assert result.generated is False
     assert result.final_ats is None
+
+
+@pytest.mark.parametrize("missing", ["fit", "gate"])
+async def test_call_apply_rejects_a_remote_response_without_the_fit_read_or_the_gate(
+    missing: str,
+) -> None:
+    """The separate service always sends both. A reply without one is a break of its contract
+    and must fail loudly, not be stored as an unscored resume as if the built-in engine (which
+    has neither) had written it."""
+    body = {key: value for key, value in _APPLY_RESPONSE_BODY.items() if key != missing}
+    http = _FakeHttpClient(body=body)
+
+    with pytest.raises(ValidationError) as raised:
+        await call_apply(
+            http,  # type: ignore[arg-type]
+            resume_template=_RESUME_TEMPLATE,
+            job_snapshot=_SNAPSHOT,
+            credential=_CREDENTIAL,
+            now="2026-08-15T00:00:00.000Z",
+        )
+
+    assert missing in str(raised.value)
 
 
 async def test_call_apply_raises_provider_unavailable_on_connection_failure() -> None:

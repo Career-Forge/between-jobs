@@ -205,13 +205,16 @@ class PrepareApplicationResult(BaseModel):
     cover_letter: ArtifactRef | None
     application_answers_id: str | None
     ats_attempts: list[AtsAttempt]
+    """Empty, with `final_score` None, when the engine that wrote the resume does not score
+    resumes: there is no score to show, and no consumer fills one in."""
     final_score: float | None
     score_scale: str = "0-100"
     fit: ForgeFitResult | None = None
-    """The pre-generation Honest Floor read -- present on every real
-    `/apply` run (proceeded, cautioned, or declined alike), optional only
-    so a response from a not-yet-updated forge-engines deploy still
-    validates, same forward-compat rationale as `AtsAttempt.detail`."""
+    """The pre-generation Honest Floor read -- present on every real `/apply` run of the remote
+    engine (proceeded, cautioned, or declined alike). None when the engine computes no such read
+    (the built-in engine does not), or, as with `AtsAttempt.detail`, when the response came from
+    a not-yet-updated deploy: the same forward-compat rationale. Absence is never a score of
+    zero."""
     gate_outcome: str | None = None
     gate_reason: str = ""
     gate_cautions: list[str] = Field(default_factory=list)
@@ -223,6 +226,7 @@ class PrepareApplicationResult(BaseModel):
     `application_events.payload` on every prepare call regardless of gate
     outcome (fit is computed before the gate check runs), so capturing the
     literal outcome here needs no new table: it rides the same durable row
-    that already exists."""
+    that already exists. None, with an empty reason and no cautions, when the engine runs no
+    gate: no verdict was reached, so none is recorded."""
     warnings: list[str]
     evidence_fact_ids: list[str]

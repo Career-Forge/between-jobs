@@ -104,7 +104,16 @@ DECLINED_WARNINGS_LIMIT = 3000
 """How many characters of the engine's reasons a declined-resume message carries. A message can
 hold 4096 on Telegram, and the engine's reasons are text this code does not write, so they are
 bounded rather than trusted to be short."""
+CAPTION_LIMIT = 1000
+"""How many characters a document's caption carries. Telegram allows 1024 (counted in UTF-16
+units, so an emoji is two) and refuses the whole document when it is longer, so the caption stays
+under it with room to spare. A resume's warnings are text this code does not write (the built-in
+engine reports what its fact check replaced, quoted), so they are bounded, not trusted to be
+short."""
 PREPARE_SUCCESS_CAPTION = "📄 Resume -- ATS score {score}/100{warnings}"
+PREPARE_SUCCESS_CAPTION_UNSCORED = "📄 Resume{warnings}"
+"""The caption when the engine that wrote the resume did not score it (the built-in engine does
+not): the same message without the score, never a placeholder in its place."""
 
 NO_APPLICATIONS_TEXT = 'Nothing tracked yet. Send "track a job" to get started.'
 NO_WORKING_SET_TEXT = 'Send "list" first to number your applications, then "apply to #N".'
@@ -211,8 +220,9 @@ def privacy_text(web_url: str | None, *, linked: bool) -> RichText:
 
     Each line was checked against the code: the identity row holds only the Telegram user id
     and a count of failed link-code attempts; provider keys are stored encrypted
-    (`provider_credentials_store`) and go to the engine in the request body
-    (`forge_engines_client`); every real resume generation writes a usage record
+    (`provider_credentials_store`) and go to the resume engine (`engine_gateway`) in the request
+    body of a separate service (`forge_engines_client`), or are used inside the API by the
+    built-in one; every real resume generation writes a usage record
     (`product_events`); "list" stores a numbered working set (`working_sets_store`); no code
     path submits an application or sends an email; `/unlink` and the Profile page's "Delete my
     account" exist.

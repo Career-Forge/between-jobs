@@ -17,6 +17,7 @@ from typing import Any, cast
 import httpx
 from fastapi import APIRouter, Depends, Response
 
+from between_jobs.engines import claims_were_verified_by
 from supabase import AsyncClient
 
 from .app_state import get_http_client, get_supabase
@@ -468,4 +469,11 @@ async def get_export_checklist(
     version_row, pdf_bytes = await latest_resume_pdf(supabase, http, user_id, application_id)
     warnings = cast(list[str], version_row.get("warnings") or [])
     shape_report = cast("dict[str, Any] | None", version_row.get("shape_report") or None)
-    return {"items": build_checklist(pdf_bytes, warnings, shape_report)}
+    return {
+        "items": build_checklist(
+            pdf_bytes,
+            warnings,
+            shape_report,
+            claims_verified=claims_were_verified_by(version_row.get("generator")),
+        )
+    }

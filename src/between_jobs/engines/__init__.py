@@ -1,20 +1,33 @@
-"""Engine contracts -- BYO and hosted implementations satisfy the same protocols.
+"""The engine seam -- every resume engine, remote or built in, answers the same seven operations.
 
-Deterministic code owns structure and shape; LLMs choose words only (see CLAUDE.md's
-engineering rules). These protocols are intentionally thin -- callers depend on the
-contract, never on which concrete engine (a generic BYOK implementation shipped here,
-or the private ForgeEngines MCP) backs it. No concrete implementation ships in this
-module yet; it's the seam the rest of the platform is built against.
+`EngineBackend` is the contract and `EngineCapabilities` is what each backend says it can do;
+`RemoteBackend` is the client of a separate resume-engine service and `GenericBackend` is the
+engine that ships in this repository. The API picks between them per call
+(`between_jobs.api.engine_gateway`); callers depend on the contract, never on a concrete
+backend. Deterministic code owns structure and shape, and a backend's model calls choose
+words only (see CLAUDE.md's engineering rules).
 """
 
-from between_jobs.engines.resume import ResumeEngine, ResumeRequest, ResumeResult
-from between_jobs.engines.score import ScoreEngine, ScoreRequest, ScoreResult
+from between_jobs.engines.backend import (
+    ENGINE_OPERATIONS,
+    EngineBackend,
+    EngineCapabilities,
+    EngineKind,
+    EngineOperation,
+)
+from between_jobs.engines.catalog import CAPABILITIES_BY_KIND, claims_were_verified_by
+from between_jobs.engines.generic import GenericBackend, not_available
+from between_jobs.engines.remote import RemoteBackend
 
 __all__ = [
-    "ResumeEngine",
-    "ResumeRequest",
-    "ResumeResult",
-    "ScoreEngine",
-    "ScoreRequest",
-    "ScoreResult",
+    "CAPABILITIES_BY_KIND",
+    "ENGINE_OPERATIONS",
+    "EngineBackend",
+    "EngineCapabilities",
+    "EngineKind",
+    "EngineOperation",
+    "GenericBackend",
+    "RemoteBackend",
+    "claims_were_verified_by",
+    "not_available",
 ]
