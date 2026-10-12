@@ -15,6 +15,7 @@ from fake_sentry import FakeSentry
 
 from between_jobs.api import error_reporting
 from between_jobs.api.deferred_reply import DeferredReplies, Slot
+from between_jobs.api.errors import ApiError
 from between_jobs.api.logging_setup import request_id_var
 
 
@@ -394,6 +395,30 @@ async def test_a_failure_in_the_work_is_reported_with_the_task_name_and_no_ids(
     await _settle()
 
     assert sdk.captured == [(error, {"tags": {"task": "prepare"}})]
+
+
+@pytest.mark.parametrize(
+    "code", ["PROVIDER_REJECTED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"]
+)
+async def test_a_provider_failure_that_reaches_the_registry_is_not_reported_but_the_user_is_told(
+    sdk: FakeSentry, code: Any
+) -> None:
+    """A rejected key or an outage is an expected condition, not a bug: it is logged, the
+    person is told, and the error tracker is not asked to open an issue for it."""
+    registry = DeferredReplies()
+    told: list[str] = []
+
+    async def work() -> None:
+        raise ApiError(code, "Your AI provider rejected the key.")
+
+    async def on_failure() -> None:
+        told.append("told")
+
+    registry.start(await _reserve(registry), work, name="prepare", on_failure=on_failure)
+    await _settle()
+
+    assert sdk.captured == []
+    assert told == ["told"]
 
 
 async def test_the_failure_is_reported_before_the_user_is_told_and_survives_a_failed_telling(

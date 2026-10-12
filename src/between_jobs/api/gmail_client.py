@@ -31,7 +31,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from .env import require_env
+from .env import optional_env, refuse
 from .errors import ApiError
 
 _AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -50,27 +50,69 @@ class GmailOauthConfig(TypedDict):
     redirect_uri: str
 
 
-def require_gmail_oauth_config() -> GmailOauthConfig:
-    """Wraps `require_env` for this module's own three env vars,
-    mapping a missing one to a clean SETUP_REQUIRED error rather than a
-    bare `RuntimeError` (a raw 500 with no explanation). Gmail draft
-    integration is an OPTIONAL feature -- a self-hoster who never wants
-    it shouldn't need these set just to boot the app -- so hitting one
-    of these routes without it configured is an expected, common case,
-    not a bug to crash on."""
-    try:
+GOOGLE_OAUTH_VARIABLES = (
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+    "GOOGLE_OAUTH_REDIRECT_URI",
+)
+"""The three settings that turn Gmail on: all of them, or Gmail is off. A client id or secret
+without the rest is a mistake and stops the boot (`check_gmail_configuration`); a redirect URI on
+its own is not, and is ignored."""
+
+GMAIL_DISABLED_MESSAGE = "Gmail isn't set up on this server."
+
+
+def gmail_oauth_config() -> GmailOauthConfig | None:
+    """Gmail's settings, or None when Gmail is not set up here: Gmail is OPTIONAL, like
+    Telegram, so a server that never wants it leaves the three variables unset. A variable that
+    is unset or empty reads as not set. Read from the environment on every call, and never
+    logs: "not configured" is a normal, common state and not an error."""
+    client_id = optional_env("GOOGLE_OAUTH_CLIENT_ID")
+    client_secret = optional_env("GOOGLE_OAUTH_CLIENT_SECRET")
+    redirect_uri = optional_env("GOOGLE_OAUTH_REDIRECT_URI")
+    if client_id and client_secret and redirect_uri:
         return GmailOauthConfig(
-            client_id=require_env("GOOGLE_OAUTH_CLIENT_ID"),
-            client_secret=require_env("GOOGLE_OAUTH_CLIENT_SECRET"),
-            redirect_uri=require_env("GOOGLE_OAUTH_REDIRECT_URI"),
+            client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri
         )
-    except RuntimeError as e:
-        raise ApiError(
-            "SETUP_REQUIRED",
-            "Gmail draft integration isn't configured on this server yet.",
-            capability="gmail_draft",
-            missing=["google_oauth_env"],
-        ) from e
+    return None
+
+
+def gmail_enabled() -> bool:
+    return gmail_oauth_config() is not None
+
+
+def check_gmail_configuration() -> bool:
+    """For the boot: whether Gmail is set up. False when no client id or secret is set; when one
+    of them is set without the whole set, it stops the API from starting (`refuse`), naming the
+    variables and never a value. That is a mistake, not "off" -- a client secret with nothing to
+    use it, or a connect button that can never work -- the same all-or-nothing rule as the
+    Telegram and Discord settings.
+
+    A redirect URI on its own is NOT a mistake: nothing secret is set, nothing could ever be
+    connected, and Gmail is simply off (`gmail_oauth_config` is None). It is exactly what an
+    `.env` copied from an earlier `.env.example` holds, which shipped it filled in beside the
+    two blank credentials; refusing to start over it would stop every self-hosted install that
+    followed the README and never wanted Gmail."""
+    if gmail_enabled():
+        return True
+    if optional_env("GOOGLE_OAUTH_CLIENT_ID") or optional_env("GOOGLE_OAUTH_CLIENT_SECRET"):
+        unset = [name for name in GOOGLE_OAUTH_VARIABLES if not optional_env(name)]
+        refuse(
+            f"{', '.join(GOOGLE_OAUTH_VARIABLES)} must be set together, or all left unset to "
+            f"run without Gmail (not set: {', '.join(unset)})"
+        )
+    return False
+
+
+def require_gmail_oauth_config() -> GmailOauthConfig:
+    """Gmail's settings, or a 404 FEATURE_DISABLED ("Gmail isn't set up on this server.") on a
+    server that runs without Gmail, in the style of the Telegram routes. Every Gmail entry
+    point goes through this (the connect route, the callback, pushing a draft, the reply
+    checker), so none of them does anything -- or logs anything -- when Gmail is off."""
+    config = gmail_oauth_config()
+    if config is None:
+        raise ApiError("FEATURE_DISABLED", GMAIL_DISABLED_MESSAGE)
+    return config
 
 
 def build_authorize_url(*, client_id: str, redirect_uri: str, state: str) -> str:

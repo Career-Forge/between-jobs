@@ -312,10 +312,14 @@ the store-build rules; it is not published to the Chrome Web Store.
 
 These are off until configured. The Telegram bridge needs `TELEGRAM_BOT_TOKEN` and
 `TELEGRAM_WEBHOOK_SECRET` and a public HTTPS URL for the webhook, which
-`scripts/set_telegram_webhook.py` registers; Gmail drafts need a Google OAuth client, and
-the Google consent includes read access to Gmail (see "What works today"); PDF output
-needs `latex-service/` running; Discord has its own walk-through below. `.env.example` explains each one. Setting `WEB_APP_URL` to
-the web app's public https address lets the bot's `/privacy` and `/learn` link to its pages.
+`scripts/set_telegram_webhook.py` registers; Gmail drafts need a Google OAuth client (all of
+`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and `GOOGLE_OAUTH_REDIRECT_URI`, or none
+of them: with none, Gmail is off and its routes answer "Gmail isn't set up on this server."; a
+client id or secret without the others stops the API from starting, and a redirect URI on its
+own is ignored), and the Google consent includes read access to Gmail (see "What works today");
+PDF output needs `latex-service/` running; Discord has its own walk-through below.
+`.env.example` explains each one. Setting `WEB_APP_URL` to the web app's public https address
+lets the bot's `/privacy` and `/learn` link to its pages.
 
 ### Discord
 
@@ -436,7 +440,9 @@ contains it: the build copies only the package.
 
 Nothing here reports to anyone unless you configure it (`.env.example` lists every setting).
 Set `SENTRY_DSN` and the API sends Sentry its unhandled exceptions, API errors answered with a
-5xx, failed background-worker ticks and chat-started generations that crashed, with request
+5xx (a provider refusing or failing a call, such as a person's revoked or out-of-credit model key
+or an outage, is an expected condition: it is logged as a warning with its reason and not sent),
+failed background-worker ticks and chat-started generations that crashed, with request
 bodies, query strings, cookies, all but a few ordinary headers, local variables, user email and
 address and the messages of database, validation, provider and API errors left out, and known
 secret shapes (JWTs, bearer tokens, API keys, bot tokens, email addresses) removed from the text

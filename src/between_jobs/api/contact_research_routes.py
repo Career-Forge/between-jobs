@@ -417,6 +417,9 @@ async def push_outreach_to_gmail(
     if draft.get("gmail_draft_id"):
         return draft
 
+    # Before looking for the person's connection: on a server without Gmail there is nothing to
+    # connect, and "Connect Gmail first" would send them to a button that cannot work.
+    config = require_gmail_oauth_config()
     try:
         credential = await get_decrypted_credential(
             supabase, user_id, service="oauth", provider="gmail"
@@ -430,7 +433,6 @@ async def push_outreach_to_gmail(
             settings_path="/profile/integrations",
         ) from e
 
-    config = require_gmail_oauth_config()
     access_token = await refresh_access_token(
         http,
         refresh_token=credential["secret"],

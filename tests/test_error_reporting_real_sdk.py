@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 import httpx
+import openai
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -30,6 +31,7 @@ from between_jobs.api.app import app
 from between_jobs.api.credential_resolver import ResolvedCredential
 from between_jobs.api.errors import ApiError
 from between_jobs.api.forge_engines_client import call_apply
+from between_jobs.api.llm_client import classify_provider_error
 from between_jobs.api.sentry_scrub import MESSAGE_OMITTED
 from between_jobs.api.telegram_client import TelegramApiError, TelegramClient
 
@@ -60,6 +62,17 @@ RESUME_CITY = "Montclair, NJ"
 RESUME_EMPLOYER = "Initech Holdings"
 RESUME_BULLET = "Led the payments migration serving forty million users"
 JOB_TEXT = "Principal engineer for the Initech Holdings treasury platform"
+
+
+def leaky_sdk_error() -> openai.AuthenticationError:
+    """What the OpenAI SDK raises for a revoked key: its own text quotes the key."""
+    from test_llm_client import HTTP
+
+    request = HTTP.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+    text = f"Incorrect API key provided: {OPENROUTER_KEY}."
+    return openai.AuthenticationError(
+        text, response=HTTP.Response(401, request=request), body={"message": text}
+    )
 
 
 def _recorder_class() -> Any:
@@ -177,11 +190,20 @@ def _routes() -> Iterator[None]:
     async def client_error(thing_id: str) -> None:
         raise ApiError("NOT_FOUND", "No such thing.")
 
+    async def provider_refused(thing_id: str) -> None:
+        # what generate() raises for a revoked key: the classified error, chained from the SDK's
+        # own, whose text echoes the key
+        try:
+            raise leaky_sdk_error()
+        except openai.AuthenticationError as sdk_error:
+            raise classify_provider_error(sdk_error) from sdk_error
+
     paths = {
         "/__real/unhandled/{thing_id}": unhandled,
         "/__real/engine-rejects/{thing_id}": engine_rejects,
         "/__real/server/{thing_id}": server_error,
         "/__real/client/{thing_id}": client_error,
+        "/__real/provider/{thing_id}": provider_refused,
     }
     for path, endpoint in paths.items():
         app.add_api_route(path, endpoint, methods=["GET", "POST"])
@@ -279,6 +301,26 @@ def test_a_server_error_from_the_api_is_one_event_and_a_client_error_is_none(
     [event] = recorder.events
     assert event["exception"]["values"][0]["type"] == "ApiError"
     assert event["tags"]["error_code"] == "INTERNAL_ERROR"
+
+
+def test_a_provider_failure_is_no_event_at_all_and_the_sdks_own_text_would_not_have_left(
+    recorder: Any,
+) -> None:
+    """A revoked key is an expected condition: the request answers with the classified error and
+    the tracker hears nothing. Handed the SDK's exception itself anyway (by code that captures
+    it on its own), the event carries its type and not its text, which echoes the key."""
+    with _routes(), TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/__real/provider/abc")
+        sentry_sdk.capture_exception(leaky_sdk_error())
+
+    assert response.status_code == 502
+    assert response.json()["error"]["details"] == {"reason": "key_rejected"}
+    assert OPENROUTER_KEY not in response.text
+    [event] = recorder.events  # the one captured by hand, and no other
+    [exception] = event["exception"]["values"]
+    assert (exception["module"], exception["type"]) == ("openai", "AuthenticationError")
+    assert exception["value"] == MESSAGE_OMITTED
+    assert OPENROUTER_KEY not in json.dumps(event) and "Incorrect API key" not in json.dumps(event)
 
 
 def test_a_resume_engine_that_rejects_a_run_reports_where_and_never_what_the_person_wrote(

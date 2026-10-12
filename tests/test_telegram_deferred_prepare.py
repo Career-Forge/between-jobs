@@ -42,10 +42,17 @@ from channel_fakes import ComposedSupabase
 from fake_sentry import FakeSentry
 from fastapi.testclient import TestClient
 
-from between_jobs.api import channel_messages, deferred_reply, error_reporting, rate_limits
+from between_jobs.api import (
+    channel_core,
+    channel_messages,
+    deferred_reply,
+    error_reporting,
+    rate_limits,
+)
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase, get_telegram_client
 from between_jobs.api.deferred_reply import DeferredReplies
+from between_jobs.api.errors import ApiError
 from between_jobs.api.logging_setup import JsonFormatter, request_id_var
 
 _SECRET = prepare_fakes._WEBHOOK_SECRET
@@ -518,6 +525,88 @@ def test_a_known_client_side_failure_ended_in_chat_is_not_reported(sentry: FakeS
         assert _wait_for(lambda: any(text.startswith("❌") for text in _shown(telegram)))
 
     assert sentry.captured == []
+
+
+# -- a model provider that refuses the call: told in words, with the page that fixes it ------------
+
+_KEY_REJECTED = "Your AI provider rejected the key. Check it in Integrations."
+_WEB = "https://app.between-jobs.example"
+
+
+def _generation_ends_with(monkeypatch: pytest.MonkeyPatch, error: ApiError) -> None:
+    async def refused(*_args: Any, **_kwargs: Any) -> Any:
+        raise error
+
+    monkeypatch.setattr(channel_core, "run_prepare_application", refused)
+
+
+def _key_rejected(settings_path: str | None = "/profile/integrations") -> ApiError:
+    return ApiError(
+        "PROVIDER_REJECTED",
+        _KEY_REJECTED,
+        settings_path=settings_path,
+        details={"reason": "key_rejected"},
+    )
+
+
+def _generate_and_read_the_ending(
+    monkeypatch: pytest.MonkeyPatch, error: ApiError, caplog: pytest.LogCaptureFixture
+) -> str:
+    _generation_ends_with(monkeypatch, error)
+    supabase, telegram = ComposedSupabase(), prepare_fakes._FakeTelegramClient()
+    with (
+        caplog.at_level(logging.INFO, logger="between_jobs.api.channel_core"),
+        _serving(supabase, telegram, _Engine()) as client,
+    ):
+        _post(client, _tap_generate(update_id=451))
+        assert _wait_for(lambda: any(text.startswith("❌") for text in _shown(telegram)))
+    assert channel_messages.PREPARE_FAILED_TEXT not in _shown(telegram)
+    return _shown(telegram)[-1]
+
+
+def test_a_rejected_key_ends_the_chat_with_the_message_and_the_link_to_integrations(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, sentry: FakeSentry
+) -> None:
+    monkeypatch.setenv("WEB_APP_URL", _WEB)
+
+    ending = _generate_and_read_the_ending(monkeypatch, _key_rejected(), caplog)
+
+    assert ending == f"❌ {_KEY_REJECTED}\n\n{_WEB}/profile/integrations"
+    # an expected condition: logged as a warning with its reason, and not an issue per tap
+    assert sentry.captured == []
+    (known,) = [r for r in caplog.records if r.getMessage().startswith("api error")]
+    assert known.levelno == logging.WARNING
+    assert known.ctx["reason"] == "key_rejected"  # type: ignore[attr-defined]
+
+
+def test_without_a_web_address_a_rejected_key_is_the_message_alone(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.delenv("WEB_APP_URL", raising=False)
+    assert _generate_and_read_the_ending(monkeypatch, _key_rejected(), caplog) == (
+        f"❌ {_KEY_REJECTED}"
+    )
+
+
+def test_a_rejection_that_names_no_page_to_fix_it_on_gets_no_link(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("WEB_APP_URL", _WEB)
+    ending = _generate_and_read_the_ending(monkeypatch, _key_rejected(settings_path=None), caplog)
+    assert ending == f"❌ {_KEY_REJECTED}"
+
+
+@pytest.mark.parametrize(
+    "code", ["PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE", "SETUP_REQUIRED"]
+)
+def test_nothing_else_gets_the_link_even_when_it_names_a_page(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, code: Any
+) -> None:
+    """Only a refusal of the person's model key is fixed on that page; every other ending is
+    its message as it always was."""
+    monkeypatch.setenv("WEB_APP_URL", _WEB)
+    error = ApiError(code, "Wait a minute.", settings_path="/profile/integrations")
+    assert _generate_and_read_the_ending(monkeypatch, error, caplog) == "❌ Wait a minute."
 
 
 def test_a_refused_final_state_after_the_resume_was_delivered_is_logged_and_not_told(

@@ -196,6 +196,17 @@ _PRIVACY_CONTROL_BOT_ONLY = (
 )
 
 
+def provider_rejected_text(message: str, settings_path: str | None, web_url: str | None) -> str:
+    """The chat text for a generation that ended because the person's model provider refused the
+    call (their key was rejected, their account is out of credit, the model was turned down).
+    The error's own message already says what to do; when it names the web page that fixes it
+    (`settings_path`, the Integrations page) and this server has a web address, the link follows,
+    so the person does not have to find the page. Without either, just the message."""
+    if settings_path is None or web_url is None:
+        return f"❌ {message}"
+    return f"❌ {message}\n\n{web_url}{settings_path}"
+
+
 def link_first_text(web_url: str | None) -> str:
     if web_url is None:
         return LINK_FIRST_TEXT

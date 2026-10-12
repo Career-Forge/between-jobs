@@ -15,7 +15,15 @@ from pathlib import Path
 import pytest
 from postgrest.exceptions import APIError
 
-from between_jobs.api.errors import _STATUS_BY_CODE, ApiError, ErrorCode, log_api_error
+from between_jobs.api.errors import (
+    _STATUS_BY_CODE,
+    PROVIDER_FAILURE_CODES,
+    ApiError,
+    ErrorCode,
+    is_provider_failure,
+    log_api_error,
+    log_contained_failure,
+)
 
 
 def test_to_body_matches_appendix_b_shape() -> None:
@@ -89,8 +97,9 @@ _LOGGER = logging.getLogger("between_jobs.test_errors")
     ("code", "level"),
     [
         ("NOT_FOUND", logging.INFO),  # a client error
-        ("PROVIDER_RATE_LIMITED", logging.INFO),  # still a 4xx
-        ("PROVIDER_UNAVAILABLE", logging.WARNING),  # a provider failing is not this service
+        # a provider failing is not this service, whatever its status (429 included)
+        ("PROVIDER_RATE_LIMITED", logging.WARNING),
+        ("PROVIDER_UNAVAILABLE", logging.WARNING),
         ("PROVIDER_REJECTED", logging.WARNING),
         ("INTERNAL_ERROR", logging.ERROR),
         ("RUN_FAILED", logging.ERROR),
@@ -180,3 +189,179 @@ def test_the_web_apps_list_of_error_codes_is_the_servers() -> None:
     in_web = set(re.findall(r'"([A-Z_]+)"', body))
 
     assert in_web == set(ErrorCode.__args__)  # type: ignore[attr-defined]
+
+
+# -- provider failures: what they are, and the reason in their log line --------------------
+
+
+def test_the_provider_failure_codes_are_exactly_the_three_provider_ones() -> None:
+    assert {
+        "PROVIDER_REJECTED",
+        "PROVIDER_RATE_LIMITED",
+        "PROVIDER_UNAVAILABLE",
+    } == PROVIDER_FAILURE_CODES
+    # the prefix rule the log level used to rely on names no code outside the set
+    assert {c for c in ErrorCode.__args__ if c.startswith("PROVIDER_")} == PROVIDER_FAILURE_CODES  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("code", sorted(PROVIDER_FAILURE_CODES))
+def test_a_provider_failure_is_recognised(code: ErrorCode) -> None:
+    assert is_provider_failure(ApiError(code, "x"))
+
+
+@pytest.mark.parametrize("code", ["RUN_FAILED", "INTERNAL_ERROR", "RATE_LIMITED", "SETUP_REQUIRED"])
+def test_other_api_errors_are_not_provider_failures(code: ErrorCode) -> None:
+    assert not is_provider_failure(ApiError(code, "x"))
+
+
+@pytest.mark.parametrize("not_an_api_error", [RuntimeError("PROVIDER_REJECTED"), ValueError()])
+def test_only_an_api_error_can_be_a_provider_failure(not_an_api_error: BaseException) -> None:
+    assert not is_provider_failure(not_an_api_error)
+
+
+def test_the_log_line_carries_the_reason_a_provider_failure_names(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    error = ApiError("PROVIDER_REJECTED", "x", details={"reason": "out_of_credit"})
+    with caplog.at_level(logging.DEBUG, logger=_LOGGER.name):
+        log_api_error(_LOGGER, error, ctx={"route": "/x"})
+
+    (record,) = caplog.records
+    assert record.ctx == {  # type: ignore[attr-defined]
+        "code": "PROVIDER_REJECTED",
+        "status": 502,
+        "route": "/x",
+        "reason": "out_of_credit",
+    }
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Your key sk-or-v1-abcdef0123456789 was rejected",  # free text
+        "Key_Rejected",  # not a lower-case token
+        "9lives",  # does not start with a letter
+        "a" * 33,  # longer than a token
+        "",
+        42,
+        None,
+        ["key_rejected"],
+        # Each of these is short enough, and a letter first, wherever it is not: it pins one
+        # character the pattern must refuse, so loosening any one part of it fails here. (The
+        # capitalised cases above are refused by their first character alone and say nothing
+        # about the rest.)
+        "Rejected",  # a capital as the first character, and nothing else wrong with it
+        "_key",  # an underscore may not start a token
+        "key was rejected",  # a lower-case sentence: spaces
+        "sk-or-v1-0123456789abcdef",  # a lower-case key shape: hyphens
+        "key.rejected",  # a dot
+        "keyRejected",  # a capital after the first character
+        "key\n",  # a trailing newline (`$` would let it through, a full match does not)
+    ],
+)
+def test_the_log_line_never_carries_a_reason_that_is_not_a_short_token(
+    reason: object, caplog: pytest.LogCaptureFixture
+) -> None:
+    error = ApiError("PROVIDER_REJECTED", "x", details={"reason": reason})
+    with caplog.at_level(logging.DEBUG, logger=_LOGGER.name):
+        log_api_error(_LOGGER, error)
+
+    (record,) = caplog.records
+    assert "reason" not in record.ctx  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "a" * 32,  # the longest allowed
+        "a",  # the shortest
+        "out_of_credit",  # a real one: lower-case words and underscores
+        "request_rejected2",  # digits after the first character
+        "a_1",
+        "in_flight_budget",
+    ],
+)
+def test_a_short_lower_case_token_is_kept(reason: str, caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.DEBUG, logger=_LOGGER.name):
+        log_api_error(_LOGGER, ApiError("RATE_LIMITED", "x", details={"reason": reason}))
+    (record,) = caplog.records
+    assert record.ctx["reason"] == reason  # type: ignore[attr-defined]
+
+
+def test_a_contained_provider_failure_is_one_warning_with_its_reason_and_no_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    error = ApiError("PROVIDER_REJECTED", "x", details={"reason": "key_rejected"})
+    with caplog.at_level(logging.DEBUG, logger=_LOGGER.name):
+        log_contained_failure(
+            _LOGGER, "the item failed", error, task="the_task", ctx={"saved_search_id": "s-1"}
+        )
+
+    (record,) = caplog.records
+    assert record.levelno == logging.WARNING
+    assert record.getMessage() == "api error PROVIDER_REJECTED"
+    assert record.exc_info is None
+    assert record.ctx == {  # type: ignore[attr-defined]
+        "code": "PROVIDER_REJECTED",
+        "status": 502,
+        "saved_search_id": "s-1",
+        "task": "the_task",
+        "reason": "key_rejected",
+    }
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [RuntimeError("boom"), ApiError("INTERNAL_ERROR", "x"), ApiError("RUN_FAILED", "x")],
+)
+def test_any_other_contained_failure_keeps_its_message_and_traceback(
+    failure: Exception, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.DEBUG, logger=_LOGGER.name):
+        log_contained_failure(
+            _LOGGER, "the item failed", failure, task="the_task", ctx={"draft_id": "d-1"}
+        )
+
+    (record,) = caplog.records
+    assert record.levelno == logging.ERROR
+    assert record.getMessage() == "the item failed"
+    assert record.exc_info is not None and record.exc_info[1] is failure
+    assert record.ctx == {"draft_id": "d-1"}  # type: ignore[attr-defined]
+
+
+class _CauseWithCode(Exception):
+    def __init__(self, code: object) -> None:
+        super().__init__("a message that must not be logged")
+        self.code = code
+
+
+@pytest.mark.parametrize(
+    ("cause_code", "logged"),
+    [
+        ("invalid_api_key", True),
+        ("a" * 16, True),  # the longest a code may be
+        ("a" * 17, False),  # anything longer could be a sentence, or a key
+        ("", True),
+        (402, False),  # a status number, not a code
+        (None, False),
+        (["x"], False),
+    ],
+)
+def test_the_causes_code_is_logged_only_when_it_is_a_short_string(
+    cause_code: object, logged: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    try:
+        try:
+            raise _CauseWithCode(cause_code)
+        except _CauseWithCode as cause:
+            raise ApiError("PROVIDER_REJECTED", "x") from cause
+    except ApiError as error:
+        with caplog.at_level(logging.DEBUG, logger=_LOGGER.name):
+            log_api_error(_LOGGER, error)
+
+    (record,) = caplog.records
+    assert ("cause_code" in record.ctx) is logged  # type: ignore[attr-defined]
+    if logged:
+        assert record.ctx["cause_code"] == cause_code  # type: ignore[attr-defined]
+    assert record.ctx["cause_type"].endswith("._CauseWithCode")  # type: ignore[attr-defined]
+    assert "must not be logged" not in repr(record.__dict__)

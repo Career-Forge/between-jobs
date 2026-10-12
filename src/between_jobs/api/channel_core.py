@@ -324,7 +324,7 @@ async def _prepare_and_deliver(turn: _Turn, application_id: str, progress: Progr
         # This is the bot's own error boundary, so the API error handler never sees the error;
         # a person stuck on a setup step here is as much a funnel drop-off as one on the web.
         emit_setup_required(turn.supabase, turn.user_id, e)
-        await _end_without_a_resume(progress, f"❌ {e.message}")
+        await _end_without_a_resume(progress, _failure_text(e))
         return
 
     warnings = cast(list[str], result.get("warnings") or [])
@@ -392,6 +392,15 @@ async def _tell_the_generation_failed(progress: ProgressMessage) -> None:
     await progress.finish(messages.PREPARE_FAILED_TEXT)
 
 
+def _failure_text(error: ApiError) -> str:
+    """What the person is told when a generation ends in `error`. A model provider that
+    refused the call (a rejected key, an empty account) is fixed on the web app's Integrations
+    page, so that message carries the link; every other error is its message as it always was."""
+    if error.code == "PROVIDER_REJECTED":
+        return messages.provider_rejected_text(error.message, error.settings_path, web_app_url())
+    return f"❌ {error.message}"
+
+
 def _log_known_failure(turn: _Turn, exc: ApiError) -> None:
     """A generation that ends in an `ApiError` is answered in chat and is not a failure of the
     task, but it still leaves a log line, at the level the web handler would give it."""
@@ -399,7 +408,8 @@ def _log_known_failure(turn: _Turn, exc: ApiError) -> None:
     if exc.status_code >= 500:
         # The web handler reports a 5xx ApiError to the error tracker (when one is configured);
         # this boundary answers in chat instead, so it reports here. A 4xx is the person's own
-        # setup or input and is never reported.
+        # setup or input and is never reported, and neither is a provider failure (a rejected
+        # key, an outage): `report_exception` declines those itself.
         report_exception(
             exc,
             tags={"task": "prepare", "channel": str(turn.message.channel), "error_code": exc.code},

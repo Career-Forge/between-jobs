@@ -82,10 +82,7 @@ def test_an_unhandled_exception_is_reported_once_with_route_method_and_request_i
     assert "sensitive" not in repr(scope) and "a@b.com" not in repr(scope)
 
 
-@pytest.mark.parametrize(
-    "code",
-    ["INTERNAL_ERROR", "RUN_FAILED", "PROVIDER_REJECTED", "PROVIDER_UNAVAILABLE"],
-)
+@pytest.mark.parametrize("code", ["INTERNAL_ERROR", "RUN_FAILED"])
 def test_an_api_error_with_a_server_status_is_reported(sdk: FakeSentry, code: ErrorCode) -> None:
     error = ApiError(code, "Something went wrong.")
     with _route("/__test_things/{thing_id}", _raising(error)), TestClient(app) as client:
@@ -102,6 +99,31 @@ def test_an_api_error_with_a_server_status_is_reported(sdk: FakeSentry, code: Er
             "error_code": code,
         }
     }
+
+
+@pytest.mark.parametrize(
+    ("code", "status"),
+    [("PROVIDER_REJECTED", 502), ("PROVIDER_RATE_LIMITED", 429), ("PROVIDER_UNAVAILABLE", 503)],
+)
+def test_a_provider_failure_is_never_reported_but_is_logged_as_a_warning_with_its_reason(
+    sdk: FakeSentry, caplog: pytest.LogCaptureFixture, code: ErrorCode, status: int
+) -> None:
+    """A person's revoked key or empty account, a throttle and an outage are expected: one
+    issue per click would bury the real ones. The log line keeps them visible."""
+    error = ApiError(code, "Your AI provider rejected the key.", details={"reason": "key_rejected"})
+    with (
+        caplog.at_level(logging.DEBUG, logger="between_jobs.api.app"),
+        _route("/__test_things/{thing_id}", _raising(error)),
+        TestClient(app) as client,
+    ):
+        response = client.get("/__test_things/abc")
+
+    assert response.status_code == status
+    assert response.json()["error"]["details"] == {"reason": "key_rejected"}
+    assert sdk.captured == []
+    [record] = [r for r in caplog.records if r.getMessage() == f"api error {code}"]
+    assert record.levelno == logging.WARNING
+    assert record.ctx["reason"] == "key_rejected"  # type: ignore[attr-defined]
 
 
 @pytest.mark.parametrize(
@@ -179,7 +201,7 @@ def _turn() -> Any:
     return SimpleNamespace(message=SimpleNamespace(update_id="u-1", channel="telegram"))
 
 
-@pytest.mark.parametrize("code", ["INTERNAL_ERROR", "RUN_FAILED", "PROVIDER_UNAVAILABLE"])
+@pytest.mark.parametrize("code", ["INTERNAL_ERROR", "RUN_FAILED"])
 def test_a_chat_flow_that_ends_in_a_server_side_api_error_reports_it(
     sdk: FakeSentry, code: ErrorCode
 ) -> None:
@@ -194,11 +216,41 @@ def test_a_chat_flow_that_ends_in_a_server_side_api_error_reports_it(
 
 
 @pytest.mark.parametrize(
-    "code", ["SETUP_REQUIRED", "INVALID_INPUT", "PROVIDER_RATE_LIMITED", "NOT_FOUND"]
+    "code",
+    [
+        "SETUP_REQUIRED",
+        "INVALID_INPUT",
+        "NOT_FOUND",
+        # a provider failure is expected whatever its status: a rejected key, a throttle, an outage
+        "PROVIDER_REJECTED",
+        "PROVIDER_RATE_LIMITED",
+        "PROVIDER_UNAVAILABLE",
+    ],
 )
-def test_a_chat_flow_that_ends_in_a_client_side_api_error_does_not(
+def test_a_chat_flow_that_ends_in_an_expected_api_error_does_not_report_it(
     sdk: FakeSentry, code: ErrorCode
 ) -> None:
     error_reporting.init_error_reporting()
     channel_core._log_known_failure(_turn(), ApiError(code, "Set this up first."))
     assert sdk.captured == []
+
+
+@pytest.mark.parametrize(
+    ("code", "level"),
+    [
+        ("PROVIDER_REJECTED", logging.WARNING),
+        ("PROVIDER_RATE_LIMITED", logging.WARNING),
+        ("PROVIDER_UNAVAILABLE", logging.WARNING),
+        ("RUN_FAILED", logging.ERROR),
+    ],
+)
+def test_a_chat_flow_logs_a_provider_failure_as_a_warning_with_its_reason(
+    code: ErrorCode, level: int, caplog: pytest.LogCaptureFixture
+) -> None:
+    error = ApiError(code, "x", details={"reason": "out_of_credit"})
+    with caplog.at_level(logging.DEBUG, logger=channel_core.logger.name):
+        channel_core._log_known_failure(_turn(), error)
+
+    [record] = [r for r in caplog.records if r.getMessage() == f"api error {code}"]
+    assert record.levelno == level
+    assert record.ctx["reason"] == "out_of_credit"  # type: ignore[attr-defined]

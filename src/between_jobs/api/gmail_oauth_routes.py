@@ -11,6 +11,11 @@ reasoning `errors.py`'s own docstring gives for exempting the Telegram
 webhook: Google's browser redirect is the caller here, not this
 platform's own API client, so it doesn't parse (or care about) that
 envelope shape.
+
+The one exception is a server that has no Gmail (the three GOOGLE_OAUTH_*
+variables are unset): Gmail is optional, like Telegram, so both routes then
+answer 404 FEATURE_DISABLED before doing anything else -- no redirect from
+Google can legitimately be headed here, so there is nobody to render HTML for.
 """
 
 from __future__ import annotations
@@ -26,7 +31,12 @@ from supabase import AsyncClient
 from .app_state import get_http_client, get_supabase
 from .auth import require_user_id
 from .errors import ApiError
-from .gmail_client import build_authorize_url, exchange_code_for_tokens, require_gmail_oauth_config
+from .gmail_client import (
+    GmailOauthConfig,
+    build_authorize_url,
+    exchange_code_for_tokens,
+    require_gmail_oauth_config,
+)
 from .oauth_states_store import consume_state, mint_state
 from .provider_credentials_store import save_credential
 
@@ -45,13 +55,13 @@ _FAILURE_HTML_TEMPLATE = "<html><body><h1>Couldn't connect Gmail</h1><p>{message
 async def connect_gmail(
     user_id: str = Depends(require_user_id),
     supabase: AsyncClient = Depends(get_supabase),
+    config: GmailOauthConfig = Depends(require_gmail_oauth_config),
 ) -> dict[str, str]:
     """Returns a URL for the frontend to navigate the whole browser to
     (`window.location.href = ...`), not a redirect response itself --
     this route is called via the SPA's own authenticated `apiFetch`, and
     a fetch response's redirect can't hand control to the top-level
     browser window the way a real navigation needs to."""
-    config = require_gmail_oauth_config()
     state = await mint_state(supabase, user_id, _PROVIDER)
     authorize_url = build_authorize_url(
         client_id=config["client_id"], redirect_uri=config["redirect_uri"], state=state
@@ -61,6 +71,7 @@ async def connect_gmail(
 
 @router.get("/oauth/gmail/callback")
 async def gmail_callback(
+    config: GmailOauthConfig = Depends(require_gmail_oauth_config),
     code: str | None = Query(default=None),
     state: str | None = Query(default=None),
     error: str | None = Query(default=None),
@@ -71,13 +82,6 @@ async def gmail_callback(
         return HTMLResponse(
             _FAILURE_HTML_TEMPLATE.format(message="Google didn't authorize that request."),
             status_code=400,
-        )
-
-    try:
-        config = require_gmail_oauth_config()
-    except ApiError as e:
-        return HTMLResponse(
-            _FAILURE_HTML_TEMPLATE.format(message=html.escape(e.message)), status_code=500
         )
 
     user_id = await consume_state(supabase, state, _PROVIDER)

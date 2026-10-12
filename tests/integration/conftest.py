@@ -50,6 +50,17 @@ def _built_in_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("FORGE_ENGINES_BASE_URL", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _gmail_is_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cross-tenant cases for the Gmail routes need a server that has Gmail set up, so their
+    owner reaches the "not connected" answer instead of "this server has no Gmail". The values
+    are placeholders: nothing here ever calls Google (tests/conftest.py clears them for the
+    unit tests, which test the unconfigured server)."""
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "integration-test-client-id")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "integration-test-client-secret")
+    monkeypatch.setenv("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8000/oauth/gmail/callback")
+
+
 def _cannot_run(reason: str) -> NoReturn:
     """Skip on a developer's machine; fail in CI, where a silent skip is a green build that
     tested nothing (GitHub sets CI=true)."""

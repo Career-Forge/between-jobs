@@ -32,6 +32,7 @@ from between_jobs.api.error_reporting import (
     reporting_enabled,
     sentry_options,
 )
+from between_jobs.api.errors import ApiError
 from between_jobs.api.sentry_scrub import before_send, scrub_breadcrumb
 
 # Made up, but shaped like a real DSN: a public key, an ingest host, a project id.
@@ -441,6 +442,37 @@ def test_report_exception_hands_the_error_tags_and_fingerprint_to_the_sdk(
         (error, {"tags": {"worker": "outbox", "n": "3"}, "fingerprint": ["w", "outbox"]}),
         (error, {}),
     ]
+
+
+@pytest.mark.parametrize(
+    "code", ["PROVIDER_REJECTED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"]
+)
+def test_report_exception_declines_a_provider_failure_wherever_it_is_asked_from(
+    monkeypatch: pytest.MonkeyPatch, sdk: FakeSentry, code: Any
+) -> None:
+    """The one rule behind the web handler, the chat boundary, deferred work and a worker's
+    failed tick: a revoked key, an empty account, a throttle or an outage is not a bug."""
+    monkeypatch.setenv("SENTRY_DSN", DSN)
+    init_error_reporting()
+
+    report_exception(ApiError(code, "x"), tags={"worker": "w"}, fingerprint=["a"])
+
+    assert sdk.captured == []
+
+
+@pytest.mark.parametrize(
+    "code", ["INTERNAL_ERROR", "RUN_FAILED", "NOT_AVAILABLE_IN_GENERIC_ENGINE"]
+)
+def test_report_exception_still_hands_over_any_other_api_error(
+    monkeypatch: pytest.MonkeyPatch, sdk: FakeSentry, code: Any
+) -> None:
+    monkeypatch.setenv("SENTRY_DSN", DSN)
+    init_error_reporting()
+    error = ApiError(code, "x")
+
+    report_exception(error)
+
+    assert sdk.captured == [(error, {})]
 
 
 def test_an_sdk_that_raises_cannot_fail_the_caller_and_is_logged_once(

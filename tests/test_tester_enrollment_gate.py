@@ -20,12 +20,19 @@ from typing import Any
 import pytest
 import test_telegram_prepare_callback as prepare_fakes
 import tester_fakes
+from fake_sentry import FakeSentry
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from test_rate_limit_inventory import LIMITED
 from tester_fakes import OTHER, USER, FakeSupabase
 
-from between_jobs.api import applications_routes, channel_messages, rate_limits, tester_enrollment
+from between_jobs.api import (
+    applications_routes,
+    channel_messages,
+    error_reporting,
+    rate_limits,
+    tester_enrollment,
+)
 from between_jobs.api.app import app
 from between_jobs.api.app import handle_api_error as real_api_error_handler
 from between_jobs.api.app_state import get_supabase
@@ -271,6 +278,44 @@ def test_a_lookup_that_fails_refuses_the_request_with_a_retryable_503(
         "tester enrollment lookup failed; refusing the request"
     ]
     assert errors[0].exc_info is not None
+
+
+def test_a_lookup_that_fails_is_reported_as_our_own_database_failing(
+    monkeypatch: pytest.MonkeyPatch, claims: _Claims
+) -> None:
+    """The refusal is coded PROVIDER_UNAVAILABLE, which the error tracker is told not to hear
+    about (an upstream provider's outage is not a bug here). The database behind this lookup is
+    ours, so the exception itself is reported, under one fingerprint however often it recurs."""
+    _require(monkeypatch)
+    tracker = FakeSentry()
+    monkeypatch.setattr(error_reporting, "_sdk", tracker)
+    failure = ConnectionError("the database is unreachable")
+    supabase = FakeSupabase([_current()])
+    supabase.enrollments.fail_with = failure
+    client = TestClient(_tiny_app(supabase, []))
+
+    assert client.post("/costly").status_code == 503
+    assert client.post("/costly").status_code == 503
+
+    scope = {"tags": {"check": "tester_enrollment"}, "fingerprint": ["tester_enrollment_lookup"]}
+    assert tracker.captured == [(failure, scope), (failure, scope)]
+    assert not any(isinstance(reported, ApiError) for reported, _ in tracker.captured)
+
+    # an upstream provider failing is still nothing to report
+    error_reporting.report_exception(ApiError("PROVIDER_UNAVAILABLE", "x", retryable=True))
+    assert len(tracker.captured) == 2
+
+
+def test_a_person_who_is_simply_not_enrolled_is_not_reported(
+    monkeypatch: pytest.MonkeyPatch, claims: _Claims
+) -> None:
+    _require(monkeypatch)
+    tracker = FakeSentry()
+    monkeypatch.setattr(error_reporting, "_sdk", tracker)
+
+    assert TestClient(_tiny_app(FakeSupabase(), [])).post("/costly").status_code == 403
+
+    assert tracker.captured == []
 
 
 def test_an_answer_of_the_wrong_shape_also_refuses(

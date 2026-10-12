@@ -26,6 +26,13 @@ import { friendlyApiMessage } from "./rateLimitMessage";
 
 export const SETUP_REQUIRED_CODE = "SETUP_REQUIRED";
 
+// A model provider that refused the call is fixed in the same place as a missing key: the
+// Integrations page. The server answers PROVIDER_REJECTED with `details.reason` (read into
+// ApiError.reason) saying which kind it was, and `settings_path` where to go. A PROVIDER_REJECTED
+// without both (a search provider rejecting a key that was being saved, the resume engine) is not
+// this, and stays a plain message.
+export const PROVIDER_REJECTED_CODE = "PROVIDER_REJECTED";
+
 // The sentence used when the server sent none.
 export const GENERIC_SETUP_MESSAGE = "Something needs to be set up before this will work.";
 
@@ -181,6 +188,13 @@ function labelFor(pathname: string, capability: string | undefined, missing: rea
   return genericLabel(pathname);
 }
 
+// What the link of a rejected model call says, by the server's reason.
+const PROVIDER_FIX_LABELS = new Map<string, string>([
+  ["key_rejected", "Check your model key in Integrations"],
+  ["out_of_credit", "Switch or update your model key in Integrations"],
+  ["request_rejected", "Check your model in Integrations"],
+]);
+
 // ── the notice ─────────────────────────────────────────────────────────────
 
 // `linkTo` and `linkLabel` are both set or both null.
@@ -193,9 +207,12 @@ export interface SetupNotice {
 // A failed request's value, shown as one thing: a notice or a plain message.
 export type Problem = string | SetupNotice;
 
-// The notice for a SETUP_REQUIRED error, or null for anything else (any other code, a
-// bare Error such as a failed fetch, a value that is not an Error). It reads the fields
-// `ApiError` carries -- `code`, `settingsPath`, `capability`, `missing` -- structurally.
+// The notice for a SETUP_REQUIRED error -- or for a PROVIDER_REJECTED one that names a reason the
+// person fixes on the Integrations page (their model key was rejected, the account is out of
+// credit, the model was turned down) and a safe link there -- and null for anything else (any
+// other code, a bare Error such as a failed fetch, a value that is not an Error). It reads the
+// fields `ApiError` carries -- `code`, `settingsPath`, `capability`, `missing`, `reason` --
+// structurally.
 export function setupRequiredNotice(error: unknown): SetupNotice | null {
   if (!(error instanceof Error)) return null;
   const fields = error as Error & {
@@ -203,7 +220,9 @@ export function setupRequiredNotice(error: unknown): SetupNotice | null {
     settingsPath?: unknown;
     capability?: unknown;
     missing?: unknown;
+    reason?: unknown;
   };
+  if (fields.code === PROVIDER_REJECTED_CODE) return providerRejectedNotice(error, fields);
   if (fields.code !== SETUP_REQUIRED_CODE) return null;
 
   const message = error.message.trim() === "" ? GENERIC_SETUP_MESSAGE : error.message;
@@ -215,6 +234,19 @@ export function setupRequiredNotice(error: unknown): SetupNotice | null {
     ? fields.missing.filter((item): item is string => typeof item === "string")
     : [];
   return { message, linkTo, linkLabel: labelFor(pathnameOf(linkTo), capability, missing) };
+}
+
+// The notice for a rejected model call: the server's sentence plus the link to Integrations. Null
+// (so the plain message shows) unless the server named a reason this page can fix AND sent a link
+// that passes `safeSettingsLink`: a label is never a reason to guess a destination.
+function providerRejectedNotice(
+  error: Error,
+  fields: { settingsPath?: unknown; reason?: unknown },
+): SetupNotice | null {
+  const label = typeof fields.reason === "string" ? PROVIDER_FIX_LABELS.get(fields.reason) : undefined;
+  const linkTo = safeSettingsLink(fields.settingsPath);
+  if (label === undefined || linkTo === null || pathnameOf(linkTo) !== INTEGRATIONS) return null;
+  return { message: error.message, linkTo, linkLabel: label };
 }
 
 // ── a failure, as a component shows it ─────────────────────────────────────

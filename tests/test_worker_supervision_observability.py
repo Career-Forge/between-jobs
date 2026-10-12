@@ -15,8 +15,10 @@ from typing import Any
 
 import httpx
 import pytest
+from fake_sentry import FakeSentry
 
-from between_jobs.api import worker_supervision
+from between_jobs.api import error_reporting, worker_supervision
+from between_jobs.api.errors import ApiError
 from between_jobs.api.worker_pings import WorkerPinger
 from between_jobs.api.worker_supervision import (
     FAIL_PING_AFTER_FAILURES,
@@ -327,6 +329,32 @@ async def test_the_first_failure_is_reported_with_the_worker_the_count_and_a_fin
         "tags": {"worker": "outbox", "consecutive_failures": "1"},
         "fingerprint": ["worker-tick-failure", "outbox", "builtins.ConnectionError"],
     }
+
+
+@pytest.mark.parametrize(
+    ("failure", "reported"),
+    [
+        (ApiError("PROVIDER_UNAVAILABLE", "x"), False),
+        (ApiError("PROVIDER_REJECTED", "x"), False),
+        (ApiError("RUN_FAILED", "x"), True),
+        (ConnectionError("db down"), True),
+    ],
+)
+async def test_a_failed_tick_that_is_a_provider_failure_never_reaches_the_tracker(
+    monkeypatch: pytest.MonkeyPatch, clock: Clock, failure: Exception, reported: bool
+) -> None:
+    """The supervisor reports through the real `report_exception`, which declines a provider
+    failure (an ATS or search provider having an outage is not a bug here); the worker still
+    counts the failure and retries as it always did."""
+    sdk = FakeSentry()
+    monkeypatch.setattr(error_reporting, "_sdk", sdk)
+    monkeypatch.setattr(error_reporting, "_failure_warned", False)
+    state = WorkerState(name="outbox", interval_seconds=60)
+
+    await _run(_failing(failure), state, StopAfter(2, clock))
+
+    assert [e for e, _ in sdk.captured] == ([failure] if reported else [])
+    assert state.last_error_type is not None  # the failure was still recorded
 
 
 async def test_failures_in_a_row_are_reported_on_the_1st_2nd_4th_8th_not_each(

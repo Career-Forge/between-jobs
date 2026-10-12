@@ -43,16 +43,20 @@ def test_build_authorize_url_requests_offline_access_and_forces_consent() -> Non
     ]
 
 
-def test_require_gmail_oauth_config_raises_setup_required_when_unset(
-    monkeypatch: pytest.MonkeyPatch,
+def test_require_gmail_oauth_config_is_feature_disabled_when_unset(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Gmail is optional: unset is "this server has no Gmail" (404 FEATURE_DISABLED), not a setup
+    step the person could do, and not a startup failure to shout about in the log."""
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("GOOGLE_OAUTH_REDIRECT_URI", raising=False)
 
-    with pytest.raises(ApiError) as exc_info:
+    with caplog.at_level("DEBUG"), pytest.raises(ApiError) as exc_info:
         require_gmail_oauth_config()
-    assert exc_info.value.code == "SETUP_REQUIRED"
+    assert exc_info.value.code == "FEATURE_DISABLED"
+    assert exc_info.value.message == "Gmail isn't set up on this server."
+    assert caplog.records == []
 
 
 def test_require_gmail_oauth_config_returns_the_three_values(

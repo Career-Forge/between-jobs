@@ -20,6 +20,7 @@ doesn't parse (or care about) this JSON envelope. Its one HTTPException
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping
 from typing import Any, Literal
 
@@ -83,7 +84,13 @@ that engine changes the answer. It is a deployment capability, so it is neither 
 request (not a 422) nor a failure to retry (not a 503, and `retryable` is false). It is a 409,
 like SETUP_REQUIRED: the request is fine, the server is not set up for it. It is not a 5xx on
 purpose, because every 5xx is logged as our failure and sent to the error tracker, and a person
-clicking a button the server cannot serve is neither. The message says what to do about it."""
+clicking a button the server cannot serve is neither. The message says what to do about it.
+PROVIDER_REJECTED, PROVIDER_RATE_LIMITED and PROVIDER_UNAVAILABLE (`PROVIDER_FAILURE_CODES`) say an
+upstream provider refused or failed a call. They are expected conditions, not bugs here: logged
+at WARNING, never sent to the error tracker. A failed call to the person's model provider names
+what happened in `details["reason"]` (a short token: `key_rejected`, `out_of_credit`,
+`request_rejected`, `rate_limited`, `timeout`, ...; api/llm_client.py has the list and the
+wording), and a PROVIDER_REJECTED the person can fix in Integrations carries `settings_path`."""
 
 _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "AUTH_REQUIRED": 401,
@@ -158,6 +165,33 @@ class ApiError(Exception):
         }
 
 
+PROVIDER_FAILURE_CODES: frozenset[ErrorCode] = frozenset(
+    {"PROVIDER_REJECTED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"}
+)
+"""The codes that say an upstream provider refused or failed a call: a model provider, a search
+provider, Google, the resume engine, the PDF renderer. They are expected conditions, not bugs in
+this service: a person's own key can be revoked or out of credit, a provider throttles or has an
+outage. So they are logged at WARNING with their reason and never sent to the error tracker
+(error_reporting.py), however many times somebody clicks."""
+
+
+def is_provider_failure(error: BaseException) -> bool:
+    """Whether `error` is an `ApiError` carrying one of `PROVIDER_FAILURE_CODES`."""
+    return isinstance(error, ApiError) and error.code in PROVIDER_FAILURE_CODES
+
+
+_REASON = re.compile(r"[a-z][a-z0-9_]{0,31}")
+
+
+def _reason_of(exc: ApiError) -> str | None:
+    """The machine-readable `details["reason"]` of `exc`, when it is a short lower-case token.
+    Anything else (free text, another type) is ignored, so a log line never carries a sentence."""
+    reason = exc.details.get("reason")
+    if isinstance(reason, str) and _REASON.fullmatch(reason):
+        return reason
+    return None
+
+
 def log_api_error(
     logger: logging.Logger, exc: ApiError, *, ctx: Mapping[str, object] | None = None
 ) -> None:
@@ -171,20 +205,46 @@ def log_api_error(
     which is what makes a 500 diagnosable; the cause's message is left out because database
     and provider messages can quote the values involved.
 
-    The level says whose problem it is: a client error is INFO, a provider refusing or failing
-    (a user's own key, a rate limit, the resume engine being down) is WARNING because that is
-    not this service breaking, and anything else is ERROR."""
+    The level says whose problem it is: a provider refusing or failing (a user's own key, a
+    rate limit, the resume engine being down) is WARNING because that is not this service
+    breaking, whatever its status; any other client error is INFO, and anything else is ERROR.
+    When the error names a `reason` in its details (a short token such as `out_of_credit`), the
+    line carries it, so the cause of a provider failure can be told apart without its message."""
     line: dict[str, object] = {"code": exc.code, "status": exc.status_code, **(ctx or {})}
+    reason = _reason_of(exc)
+    if reason is not None:
+        line["reason"] = reason
     cause = exc.__cause__
     if cause is not None:
         line["cause_type"] = f"{type(cause).__module__}.{type(cause).__qualname__}"
         cause_code = getattr(cause, "code", None)
         if isinstance(cause_code, str) and len(cause_code) <= 16:
             line["cause_code"] = cause_code
-    if exc.status_code < 500:
-        level = logging.INFO
-    elif exc.code.startswith("PROVIDER_"):
+    if exc.code in PROVIDER_FAILURE_CODES:
         level = logging.WARNING
+    elif exc.status_code < 500:
+        level = logging.INFO
     else:
         level = logging.ERROR
     logger.log(level, "api error %s", exc.code, extra={"ctx": line})
+
+
+def log_contained_failure(
+    logger: logging.Logger,
+    message: str,
+    failure: Exception,
+    *,
+    task: str,
+    ctx: Mapping[str, object],
+) -> None:
+    """The log line for a failure a background worker contains to one item (one saved search, one
+    draft) so that the rest of its tick goes on.
+
+    A provider failure is an expected condition -- the owner's key was revoked or has no credit
+    left, or the provider is having an outage -- so it is one `log_api_error` line (WARNING, with
+    its code and reason, and no traceback), tagged with `task`. Anything else is a bug and keeps
+    the full traceback at ERROR under `message`. `ctx` is ids and counts only."""
+    if isinstance(failure, ApiError) and is_provider_failure(failure):
+        log_api_error(logger, failure, ctx={**ctx, "task": task})
+    else:
+        logger.error(message, exc_info=failure, extra={"ctx": dict(ctx)})

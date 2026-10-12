@@ -52,6 +52,7 @@ from .env import optional_env, refuse, web_app_url
 from .error_reporting import flush_error_reporting, init_error_reporting, report_exception
 from .errors import ApiError, log_api_error
 from .extension_routes import router as extension_router
+from .gmail_client import check_gmail_configuration
 from .gmail_oauth_routes import router as gmail_oauth_router
 from .gmail_reply_checker import _DEFAULT_CHECK_INTERVAL_SECONDS as REPLY_CHECK_INTERVAL_SECONDS
 from .gmail_reply_checker import run_reply_check_forever
@@ -146,6 +147,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # The web app's public address is optional (the bot's /privacy and /learn link to it when it
     # is set); a malformed one stops the boot here instead of reaching a person's chat.
     web_app_url()
+    # Gmail is optional like Telegram: none of the three GOOGLE_OAUTH_* settings runs without it
+    # (its routes answer 404 FEATURE_DISABLED), and a half-set Gmail is a mistake that stops the
+    # boot here, naming the variables, rather than failing one person's click later.
+    check_gmail_configuration()
     app.state.supabase, app.state.supabase_url = await create_supabase_client()
     app.state.jwks_client = create_jwks_client(app.state.supabase_url)
 
@@ -494,7 +499,8 @@ async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
     log_api_error(logger, exc, ctx={"method": request.method, "route": _route_path(request)})
     if exc.status_code >= 500:
         # A failure of ours, not the caller's: also to the error tracker. A 4xx is the API
-        # saying what was wrong with the request, and is never reported.
+        # saying what was wrong with the request, and is never reported; nor is a provider
+        # failure (a rejected key, an outage), which `report_exception` declines itself.
         report_exception(
             exc,
             tags={

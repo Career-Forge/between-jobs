@@ -33,6 +33,19 @@ function setupError(fields: { path?: unknown; capability?: unknown; missing?: un
   return new FakeApiError(409, message, "SETUP_REQUIRED", fields.path, fields.capability, fields.missing);
 }
 
+// A PROVIDER_REJECTED reply as ApiError carries it: the reason out of `details.reason`, and the
+// settings_path the server sent.
+class FakeProviderError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+    public readonly settingsPath?: unknown,
+    public readonly reason?: unknown,
+  ) {
+    super(message);
+  }
+}
+
 describe("safeSettingsLink", () => {
   it("accepts the routes the server sends, unchanged", () => {
     expect(safeSettingsLink("/profile")).toBe("/profile");
@@ -424,3 +437,90 @@ describe("problemOf", () => {
   });
 });
 
+
+describe("setupRequiredNotice for a model call the provider rejected", () => {
+  const KEY = "Your AI provider rejected the key. Check it in Integrations.";
+
+  it("is the message plus a link to Integrations when the key was rejected", () => {
+    const notice = setupRequiredNotice(
+      new FakeProviderError(KEY, "PROVIDER_REJECTED", "/profile/integrations", "key_rejected"),
+    );
+    expect(notice).toEqual({
+      message: KEY,
+      linkTo: "/profile/integrations",
+      linkLabel: "Check your model key in Integrations",
+    });
+  });
+
+  it.each([
+    ["out_of_credit", "Switch or update your model key in Integrations"],
+    ["request_rejected", "Check your model in Integrations"],
+  ])("labels the link for %s", (reason, label) => {
+    const notice = setupRequiredNotice(
+      new FakeProviderError("A sentence.", "PROVIDER_REJECTED", "/profile/integrations", reason),
+    );
+    expect(notice).toEqual({ message: "A sentence.", linkTo: "/profile/integrations", linkLabel: label });
+  });
+
+  it.each([
+    ["no reason", undefined],
+    ["a reason this page cannot fix", "unknown"],
+    ["a reason that is not text", 502],
+    ["a reason that is an object key of every object", "constructor"],
+  ])("is null for %s -- a plain message, never a guessed link", (_name, reason) => {
+    expect(
+      setupRequiredNotice(
+        new FakeProviderError("Nope.", "PROVIDER_REJECTED", "/profile/integrations", reason),
+      ),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["no path", undefined],
+    ["an external address", "https://example.com/profile/integrations"],
+    ["an unrouted path", "/nowhere"],
+    ["another page of the app", "/profile"],
+  ])("is null for %s", (_name, path) => {
+    expect(
+      setupRequiredNotice(new FakeProviderError("Nope.", "PROVIDER_REJECTED", path, "key_rejected")),
+    ).toBeNull();
+  });
+
+  it("keeps the capability query the resolver adds on the link to Integrations", () => {
+    const notice = setupRequiredNotice(
+      new FakeProviderError(
+        "Nope.",
+        "PROVIDER_REJECTED",
+        "/profile/integrations?capability=job_scoring",
+        "key_rejected",
+      ),
+    );
+    expect(notice?.linkTo).toBe("/profile/integrations?capability=job_scoring");
+  });
+
+  it("leaves the other provider failures alone, whatever reason they carry", () => {
+    for (const code of ["PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE", "RUN_FAILED"]) {
+      expect(
+        setupRequiredNotice(new FakeProviderError("x", code, "/profile/integrations", "key_rejected")),
+      ).toBeNull();
+    }
+  });
+
+  it("reaches every component through failureOf and problemOf", () => {
+    const error = new FakeProviderError(KEY, "PROVIDER_REJECTED", "/profile/integrations", "key_rejected");
+    expect(failureOf(error, "Failed")).toEqual({
+      kind: "setup",
+      notice: {
+        message: KEY,
+        linkTo: "/profile/integrations",
+        linkLabel: "Check your model key in Integrations",
+      },
+    });
+    expect(problemOf(error, "Failed")).toMatchObject({ linkTo: "/profile/integrations" });
+  });
+
+  it("is a plain message for a search key that was rejected on save (no reason, no path)", () => {
+    const error = new FakeProviderError("Apollo rejected that key.", "PROVIDER_REJECTED");
+    expect(failureOf(error, "Failed")).toEqual({ kind: "error", message: "Apollo rejected that key." });
+  });
+});

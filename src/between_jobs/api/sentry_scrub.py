@@ -48,7 +48,7 @@ import unicodedata
 from collections.abc import Mapping
 from typing import Any
 
-from .errors import ApiError
+from .errors import ApiError, is_provider_failure
 from .logging_setup import redact
 
 logger = logging.getLogger(__name__)
@@ -480,19 +480,33 @@ def scrub_breadcrumb(crumb: Any, hint: Any = None) -> dict[str, Any] | None:
         return None
 
 
+def _hinted_error(hint: Any) -> BaseException | None:
+    exc_info = hint.get("exc_info") if isinstance(hint, Mapping) else None
+    error = exc_info[1] if isinstance(exc_info, tuple) and len(exc_info) == 3 else None
+    return error if isinstance(error, BaseException) else None
+
+
 def is_client_error(hint: Any) -> bool:
     """True for an event about an `ApiError` the API deliberately answered with a 4xx:
     the caller was told, nothing is broken, so nothing is reported."""
-    exc_info = hint.get("exc_info") if isinstance(hint, Mapping) else None
-    error = exc_info[1] if isinstance(exc_info, tuple) and len(exc_info) == 3 else None
+    error = _hinted_error(hint)
     return isinstance(error, ApiError) and error.status_code < 500
+
+
+def is_expected_failure(hint: Any) -> bool:
+    """True for an event about an `ApiError` that is a client error (`is_client_error`) or a
+    provider failure (a revoked key, an empty account, a throttle, an outage): expected
+    conditions, not bugs. `report_exception` already declines to hand these over; this is the
+    same rule at the SDK's door, for an event the SDK made on its own."""
+    error = _hinted_error(hint)
+    return is_client_error(hint) or (error is not None and is_provider_failure(error))
 
 
 def before_send(event: Any, hint: Any) -> dict[str, Any] | None:
     """The SDK's `before_send` (and `before_send_transaction`): drops what is not worth
     reporting, then scrubs. Never raises."""
     try:
-        if is_client_error(hint):
+        if is_expected_failure(hint):
             return None
     except Exception as failure:
         _log_dropped("event", failure)

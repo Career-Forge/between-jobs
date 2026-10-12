@@ -5,17 +5,21 @@ typed confirmation, the token it hands on, and how a blocked deletion is answere
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fake_sentry import FakeSentry
 from fastapi.testclient import TestClient
 
-from between_jobs.api import account_routes
+from between_jobs.api import account_routes, error_reporting
 from between_jobs.api.account_deletion import AccountDeletionBlocked, DeletionReport
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase
 from between_jobs.api.auth import require_user_id
+from between_jobs.api.errors import ApiError
 
 _USER = "00000000-0000-0000-0000-0000000000a1"
 _REPORT = DeletionReport(None, 0, 0, 0, True, 0, {})
@@ -118,6 +122,73 @@ def test_a_blocked_deletion_is_a_retryable_503_that_says_nothing_was_deleted(
     assert error["code"] == "PROVIDER_UNAVAILABLE"
     assert error["retryable"] is True
     assert "nothing was deleted" in error["message"]
+
+
+class _BrokenStorage:
+    """A bucket whose listing fails the way an unreachable Storage does."""
+
+    def from_(self, _bucket: str) -> _BrokenStorage:
+        return self
+
+    async def list(self, _prefix: str, _options: dict[str, int]) -> list[dict[str, Any]]:
+        raise ConnectionError("storage is unreachable")
+
+
+@pytest.fixture
+def tracker(monkeypatch: pytest.MonkeyPatch) -> FakeSentry:
+    """The error tracker switched on, over a fake SDK (the app's lifespan starts it)."""
+    monkeypatch.setattr(error_reporting, "_sdk", None)
+    monkeypatch.setattr(error_reporting, "_failure_warned", False)
+    monkeypatch.setenv(
+        "SENTRY_DSN", "https://0123456789abcdef0123456789abcdef@o123456.ingest.sentry.io/4501234567"
+    )
+    return FakeSentry().install(monkeypatch)
+
+
+def test_our_own_storage_failing_is_reported_once_though_it_is_answered_as_unavailable(
+    tracker: FakeSentry, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The 503 is coded PROVIDER_UNAVAILABLE, which the tracker is told not to hear about (an
+    upstream provider having an outage is not a bug here). This is our own bucket, so the failure
+    behind it is reported by itself, and the log line says what it was caused by."""
+    app.dependency_overrides[require_user_id] = lambda: _USER
+    app.dependency_overrides[get_supabase] = lambda: SimpleNamespace(storage=_BrokenStorage())
+    app.dependency_overrides[get_http_client] = lambda: object()
+    try:
+        with caplog.at_level(logging.DEBUG):
+            response = _post({"confirm": "delete my account"})
+    finally:
+        app.dependency_overrides.clear()
+
+    # the answer is unchanged
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert (error["code"], error["retryable"]) == ("PROVIDER_UNAVAILABLE", True)
+    assert "nothing was deleted" in error["message"]
+
+    # exactly one report: the blocked deletion itself, with the real cause chained behind it
+    [(reported, scope)] = tracker.captured
+    assert isinstance(reported, AccountDeletionBlocked)
+    assert not isinstance(reported, ApiError)
+    assert isinstance(reported.__cause__, ConnectionError)
+    assert scope == {
+        "tags": {"task": "account_deletion"},
+        "fingerprint": ["account_deletion_blocked"],
+    }
+
+    # and the log shows the failure, as an ERROR with its traceback
+    [line] = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert line.exc_info is not None and isinstance(line.exc_info[1], AccountDeletionBlocked)
+    assert line.ctx == {"task": "account_deletion"}  # type: ignore[attr-defined]
+
+
+def test_a_provider_failure_is_still_not_reported_next_to_it(tracker: FakeSentry) -> None:
+    """The rule that hides an upstream provider's failure is unchanged; only these two sites of
+    ours stopped being hidden by it."""
+    with TestClient(app):  # starts the tracker
+        error_reporting.report_exception(ApiError("PROVIDER_UNAVAILABLE", "x", retryable=True))
+        error_reporting.report_exception(ApiError("PROVIDER_REJECTED", "x"))
+    assert tracker.captured == []
 
 
 def test_a_malformed_authorization_header_hands_on_no_token(calls: list[dict[str, Any]]) -> None:

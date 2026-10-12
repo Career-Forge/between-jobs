@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 
 from between_jobs.api import product_events, rate_limits
+from between_jobs.api.gmail_client import GOOGLE_OAUTH_VARIABLES
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +37,17 @@ def _disable_outbox_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     # /health would otherwise call Supabase, forge-engines and the LaTeX
     # service for real on every hit; it reports them as not_checked instead.
     monkeypatch.setenv("DISABLE_HEALTH_DEPENDENCY_CHECKS", "1")
+
+
+@pytest.fixture(autouse=True)
+def _no_ambient_google_oauth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gmail is off unless a test turns it on. The lifespan stops the API when a Google client id
+    or secret is set without the rest, and `app.py` loads the checkout's `.env` into the process
+    when it is imported, so a value left in a developer's shell or `.env` would otherwise stop
+    nearly every route test at startup. The Gmail tests set all three themselves (this fixture
+    runs before theirs)."""
+    for name in GOOGLE_OAUTH_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)

@@ -42,7 +42,9 @@ open, because its job is protection and a limiter bug must not take the product 
 a consent gate: letting a request through because the lookup broke would let someone use the
 costly features without the consent being recorded, which is the one thing the gate exists to
 stop. A request that reaches it needs the database for its real work anyway, so an outage that
-fails the lookup was going to fail the request regardless.
+fails the lookup was going to fail the request regardless. The 503 carries the code
+PROVIDER_UNAVAILABLE, which the error tracker treats as an upstream provider's problem and does
+not report; this one is our own database, so the lookup's exception is reported by itself.
 
 Background work is NOT gated. The saved-search matcher and the Gmail reply checker run on a
 schedule, for accounts that saved a search or connected Gmail, using that person's own keys;
@@ -74,6 +76,7 @@ from supabase import AsyncClient
 from .app_state import get_supabase
 from .auth import require_user_id
 from .env import strict_on_off
+from .error_reporting import report_exception
 from .errors import ApiError
 
 logger = logging.getLogger(__name__)
@@ -249,11 +252,18 @@ async def enrollment_error_or_none(supabase: AsyncClient, user_id: str) -> ApiEr
         return None
     try:
         enrolled = await is_enrolled(supabase, user_id)
-    except Exception:
+    except Exception as failure:
         logger.error(
             "tester enrollment lookup failed; refusing the request",
             exc_info=True,
             extra={"ctx": {"check": "tester_enrollment"}},
+        )
+        # The answer is PROVIDER_UNAVAILABLE (retryable) because the client should try again, but
+        # this is OUR database failing, not an upstream provider: the ApiError is not reported
+        # (see `report_exception`), so the failure behind it is, here. The log line above never
+        # reaches the tracker. A fixed fingerprint keeps an outage one issue, not one per request.
+        report_exception(
+            failure, tags={"check": "tester_enrollment"}, fingerprint=["tester_enrollment_lookup"]
         )
         return ApiError("PROVIDER_UNAVAILABLE", LOOKUP_FAILED_MESSAGE, retryable=True)
     if enrolled:

@@ -306,6 +306,50 @@ async def test_a_provider_failure_surfaces_and_the_other_stages_are_cancelled() 
     assert cancelled == ["summary"]
 
 
+@pytest.mark.parametrize(
+    ("code", "reason"),
+    [
+        ("PROVIDER_REJECTED", "key_rejected"),
+        ("PROVIDER_REJECTED", "out_of_credit"),
+        ("PROVIDER_RATE_LIMITED", "rate_limited"),
+    ],
+)
+async def test_a_refusal_from_the_provider_stops_the_run_at_the_first_call_unsoftened(
+    code: Any, reason: str
+) -> None:
+    """Reading the job is optional (a model that cannot read it only costs a note), but a
+    provider that refuses the call is not "could not be read": the person is told, the run
+    stops, and nothing is asked again (the model would only refuse again, on their key)."""
+    refusal = ApiError(
+        code,
+        "Your AI provider rejected the key. Check it in Integrations.",
+        settings_path="/profile/integrations",
+        details={"reason": reason},
+    )
+    model = ScriptedModel(replies={"step0": [refusal]})
+
+    with pytest.raises(ApiError) as raised:
+        await _apply(model)
+
+    assert raised.value is refusal
+    assert [call.stage for call in model.calls] == ["step0"]
+
+
+async def test_reading_the_job_for_the_gap_flow_passes_a_refusal_through_too() -> None:
+    refusal = ApiError("PROVIDER_RATE_LIMITED", "Wait a minute.", retryable=True)
+    model = ScriptedModel(replies={"step0": [refusal]})
+
+    with pytest.raises(ApiError) as raised:
+        await GenericBackend(generate=model).step0(
+            None,  # type: ignore[arg-type]
+            job_description=SNAPSHOT["description_text"],
+            credential=CREDENTIAL,
+        )
+
+    assert raised.value is refusal  # not turned into "took too long"
+    assert len(model.calls) == 1
+
+
 async def test_the_whole_run_is_bounded_in_time(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pipeline, "APPLY_TIMEOUT_SECONDS", 0.05)
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from types import SimpleNamespace
 from typing import Any
 
@@ -370,6 +371,29 @@ async def test_run_reply_check_once_fails_open_when_gmail_oauth_is_not_configure
     processed = await run_reply_check_once(_http(), supabase)  # type: ignore[arg-type]
 
     assert processed == 0
+
+
+@pytest.mark.parametrize("unset", [["CLIENT_ID", "CLIENT_SECRET", "REDIRECT_URI"], ["CLIENT_ID"]])
+async def test_a_server_without_gmail_checks_nothing_and_logs_nothing(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, unset: list[str]
+) -> None:
+    """Gmail is optional: the worker's tick is a quiet no-op, every tick, not a CRITICAL "the
+    API cannot start" line or a crash loop. (A half-set Gmail never gets this far: the boot
+    refuses it. This is the tick's own answer to whatever the environment says.)"""
+    for name in unset:
+        monkeypatch.delenv(f"GOOGLE_OAUTH_{name}")
+
+    def fail_due_drafts(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("should never even look for due drafts")
+
+    supabase = _FakeSupabase()
+    supabase.rpc = fail_due_drafts  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.DEBUG):
+        for _ in range(3):  # tick after tick
+            assert await run_reply_check_once(_http(), supabase) == 0  # type: ignore[arg-type]
+
+    assert [r for r in caplog.records if r.levelno >= logging.INFO] == []
 
 
 async def test_check_one_draft_fails_open_when_no_gmail_connection_exists(
@@ -1117,3 +1141,96 @@ async def test_select_due_drafts_returns_the_rpc_rows_as_is(
     result = await _select_due_drafts(supabase)  # type: ignore[arg-type]
 
     assert result == rows
+
+
+# -- a model provider that refuses the owner's key is expected, not a bug -------------------------
+
+_OTHER_DRAFT_ID = "60000000-0000-0000-0000-000000000005"
+_OTHER_THREAD_ID = "18cabc1234def570"
+
+
+def _two_drafts_one_reply_each() -> _FakeSupabase:
+    return _FakeSupabase(
+        due_drafts=[
+            _due_draft(),
+            _due_draft(draft_id=_OTHER_DRAFT_ID, gmail_thread_id=_OTHER_THREAD_ID),
+        ],
+        outreach_drafts=[
+            {"id": _DRAFT_ID, "last_reply_checked_at": None, "sent_confirmed_at": None},
+            {"id": _OTHER_DRAFT_ID, "last_reply_checked_at": None, "sent_confirmed_at": None},
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    ("code", "reason"),
+    [
+        ("PROVIDER_REJECTED", "key_rejected"),
+        ("PROVIDER_REJECTED", "out_of_credit"),
+        ("PROVIDER_RATE_LIMITED", "rate_limited"),
+        ("PROVIDER_UNAVAILABLE", "timeout"),
+    ],
+)
+async def test_a_draft_whose_owners_model_key_fails_is_one_warning_and_the_other_is_classified(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, code: Any, reason: str
+) -> None:
+    _patch_get_thread(monkeypatch, _sent_and_reply_thread())
+    _patch_refresh(monkeypatch)
+    calls = 0
+
+    async def generate(**_kwargs: Any) -> LLMResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 1:  # whichever draft asks first belongs to the person with the bad key
+            raise ApiError(code, "The provider said no.", details={"reason": reason})
+        return _classifier_response(
+            {
+                "proposed_type": "interview.requested",
+                "confidence": 0.5,
+                "evidence_spans": ["We'd love to schedule a call this week"],
+            }
+        )
+
+    monkeypatch.setattr("between_jobs.api.gmail_reply_checker.llm_generate", generate)
+    supabase = _two_drafts_one_reply_each()
+
+    with caplog.at_level(logging.DEBUG, logger="between_jobs.api.gmail_reply_checker"):
+        processed = await run_reply_check_once(_http(), supabase)  # type: ignore[arg-type]
+
+    assert processed == 2
+    assert calls == 2  # one question each: a refusal is not asked again
+    [proposal] = supabase.application_status_proposals.insert_calls
+    failed_draft = _OTHER_DRAFT_ID if proposal["outreach_draft_id"] == _DRAFT_ID else _DRAFT_ID
+    [record] = [r for r in caplog.records if r.levelno >= logging.INFO]
+    assert record.levelno == logging.WARNING
+    assert record.getMessage() == f"api error {code}"
+    assert record.exc_info is None
+    assert record.ctx == {  # type: ignore[attr-defined]
+        "code": code,
+        "status": ApiError(code, "x").status_code,
+        "draft_id": failed_draft,
+        "task": "reply_check",
+        "reason": reason,
+    }
+
+
+async def test_any_other_failure_of_one_draft_keeps_its_traceback_at_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _patch_get_thread(monkeypatch, _sent_and_reply_thread())
+    _patch_refresh(monkeypatch)
+
+    async def generate(**_kwargs: Any) -> LLMResponse:
+        raise RuntimeError("a bug")
+
+    monkeypatch.setattr("between_jobs.api.gmail_reply_checker.llm_generate", generate)
+
+    with caplog.at_level(logging.DEBUG, logger="between_jobs.api.gmail_reply_checker"):
+        processed = await run_reply_check_once(_http(), _FakeSupabase())  # type: ignore[arg-type]
+
+    assert processed == 1
+    [record] = [r for r in caplog.records if r.levelno >= logging.INFO]
+    assert record.levelno == logging.ERROR
+    assert record.getMessage() == "reply check failed for a draft; retried next tick"
+    assert record.exc_info is not None and isinstance(record.exc_info[1], RuntimeError)
+    assert record.ctx == {"draft_id": _DRAFT_ID}  # type: ignore[attr-defined]

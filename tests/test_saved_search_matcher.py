@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from postgrest.exceptions import APIError
 
+from between_jobs.api.errors import ApiError
 from between_jobs.api.llm_client import LLMResponse
 from between_jobs.api.saved_search_matcher import (
     _MAX_SEARCHES_PER_TICK,
@@ -573,3 +575,75 @@ async def test_run_match_tick_processes_searches_concurrently_but_bounded(
 
     assert processed == 12
     assert 1 < max_in_flight <= 5  # genuinely concurrent, but never past the bound
+
+
+@pytest.mark.parametrize(
+    ("code", "reason"),
+    [
+        ("PROVIDER_REJECTED", "key_rejected"),
+        ("PROVIDER_REJECTED", "out_of_credit"),
+        ("PROVIDER_RATE_LIMITED", "rate_limited"),
+        ("PROVIDER_UNAVAILABLE", "provider_error"),
+    ],
+)
+async def test_a_search_whose_owners_model_key_fails_is_one_warning_and_the_others_still_run(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, code: Any, reason: str
+) -> None:
+    """One person's revoked key or empty account must not fail the tick, stop another person's
+    search, be retried inside the tick, or fill the log with an ERROR and a traceback every six
+    hours: it is an expected condition, logged once at WARNING with its reason."""
+    first = _saved_search(id="search-1")
+    second = _saved_search(id="search-2")
+    supabase = _FakeSupabase(saved_searches=[first, second], registry_postings=[_POSTING_ROW])
+    calls = 0
+
+    async def generate(**_: Any) -> LLMResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 1:  # whichever search asks first has the bad key
+            raise ApiError(code, "The provider said no.", details={"reason": reason})
+        return LLMResponse(content=_score_response(str(_POSTING_ROW["apply_url"]), 80))
+
+    monkeypatch.setattr("between_jobs.api.saved_search_matcher.llm_generate", generate)
+
+    with caplog.at_level(logging.DEBUG, logger="between_jobs.api.saved_search_matcher"):
+        processed = await run_match_tick(supabase)  # type: ignore[arg-type]
+
+    assert processed == 2
+    assert calls == 2  # one question each: the failure was not retried inside the tick
+    [matched] = [e["aggregate_id"] for e in supabase.event_outbox.insert_calls]
+    failed_id = "search-1" if matched == "search-2" else "search-2"
+    [record] = [r for r in caplog.records if r.levelno >= logging.INFO]
+    assert record.levelno == logging.WARNING
+    assert record.getMessage() == f"api error {code}"
+    assert record.exc_info is None
+    assert record.ctx == {  # type: ignore[attr-defined]
+        "code": code,
+        "status": ApiError(code, "x").status_code,
+        "saved_search_id": failed_id,
+        "task": "saved_search_match",
+        "reason": reason,
+    }
+    # the failed search keeps its watermark, to be tried again at the next scheduled tick
+    failed_row = next(r for r in supabase.saved_searches.rows if r["id"] == failed_id)
+    assert failed_row["last_matched_at"] == "2026-08-01T00:00:00Z"
+
+
+async def test_any_other_failure_of_one_search_keeps_its_traceback_at_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def generate(**_: Any) -> LLMResponse:
+        raise RuntimeError("a bug")
+
+    monkeypatch.setattr("between_jobs.api.saved_search_matcher.llm_generate", generate)
+    supabase = _FakeSupabase(registry_postings=[_POSTING_ROW])
+
+    with caplog.at_level(logging.DEBUG, logger="between_jobs.api.saved_search_matcher"):
+        processed = await run_match_tick(supabase)  # type: ignore[arg-type]
+
+    assert processed == 1
+    [record] = [r for r in caplog.records if r.levelno >= logging.INFO]
+    assert record.levelno == logging.ERROR
+    assert record.getMessage() == "saved search match failed; retried next tick"
+    assert record.exc_info is not None and isinstance(record.exc_info[1], RuntimeError)
+    assert record.ctx == {"saved_search_id": _SEARCH_ID}  # type: ignore[attr-defined]

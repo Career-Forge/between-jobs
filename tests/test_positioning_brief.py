@@ -8,6 +8,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
+from between_jobs.api.errors import ApiError
 from between_jobs.api.llm_client import LLMResponse
 from between_jobs.api.positioning_brief import (
     PositioningBrief,
@@ -153,6 +156,40 @@ async def test_generate_positioning_brief_refuses_with_no_gaps() -> None:
     )
     assert brief is None
     assert "no honest gap" in warnings[0]
+
+
+@pytest.mark.parametrize(
+    "code", ["PROVIDER_REJECTED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"]
+)
+async def test_generate_positioning_brief_does_not_ask_again_when_the_provider_refuses(
+    code: Any,
+) -> None:
+    """The retry exists for an answer that fails the rubric, not for a provider that said no: a
+    revoked key or a throttled one only refuses again, on the person's own account."""
+    refusal = ApiError(code, "The provider said no.")
+    calls = 0
+
+    async def refusing_generate(**_kwargs: Any) -> LLMResponse:
+        nonlocal calls
+        calls += 1
+        raise refusal
+
+    with pytest.raises(ApiError) as raised:
+        await generate_positioning_brief(
+            company="Acme",
+            role_title="Staff Engineer",
+            coverage=_COVERAGE,
+            skills=_SKILLS,
+            company_intel_claims=[],
+            fit=None,
+            llm_api_key="key",
+            llm_model="model",
+            llm_base_url=None,
+            generate=refusing_generate,
+        )
+
+    assert raised.value is refusal
+    assert calls == 1
 
 
 async def test_generate_positioning_brief_succeeds_on_first_attempt() -> None:

@@ -30,6 +30,7 @@ from between_jobs.api.sentry_scrub import (
     MESSAGE_OMITTED,
     before_send,
     is_client_error,
+    is_expected_failure,
     is_secret_key,
     scrub_breadcrumb,
     scrub_event,
@@ -840,12 +841,28 @@ def test_an_api_error_with_a_client_status_is_never_reported(code: Any) -> None:
     assert before_send({"level": "error"}, _api_error_hint(code)) is None
 
 
-@pytest.mark.parametrize(
-    "code", ["INTERNAL_ERROR", "RUN_FAILED", "PROVIDER_UNAVAILABLE", "PROVIDER_REJECTED"]
-)
+@pytest.mark.parametrize("code", ["INTERNAL_ERROR", "RUN_FAILED"])
 def test_an_api_error_with_a_server_status_is_reported(code: Any) -> None:
     assert not is_client_error(_api_error_hint(code))
+    assert not is_expected_failure(_api_error_hint(code))
     assert before_send({"level": "error"}, _api_error_hint(code)) == {"level": "error"}
+
+
+@pytest.mark.parametrize(
+    "code", ["PROVIDER_REJECTED", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE"]
+)
+def test_a_provider_failure_is_never_reported_whatever_its_status(code: Any) -> None:
+    """A person's revoked key, an empty account, a throttle and an outage are expected
+    conditions: `report_exception` declines them, and so does the SDK's own door."""
+    hint = _api_error_hint(code)
+    assert is_expected_failure(hint)
+    assert before_send({"level": "error"}, hint) is None
+
+
+def test_a_provider_failure_is_not_a_client_error_by_status_alone() -> None:
+    """503 and 502 are server statuses: it is the code that makes them expected."""
+    assert not is_client_error(_api_error_hint("PROVIDER_UNAVAILABLE"))
+    assert not is_client_error(_api_error_hint("PROVIDER_REJECTED"))
 
 
 @pytest.mark.parametrize(
@@ -862,6 +879,7 @@ def test_an_api_error_with_a_server_status_is_reported(code: Any) -> None:
 )
 def test_anything_else_is_reported(hint: Any) -> None:
     assert not is_client_error(hint)
+    assert not is_expected_failure(hint)
     assert before_send({"level": "error"}, hint) == {"level": "error"}
 
 

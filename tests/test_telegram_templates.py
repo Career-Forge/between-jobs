@@ -110,12 +110,40 @@ def test_privacy_and_learn_are_valid_telegram_html_within_the_size_limit(
     ]
     texts += [channel_messages.learn_text(view, facts, web_url) for view, facts in _learn_views()]
     texts.append(rich(channel_messages.link_first_text(web_url)))
+    texts.append(
+        rich(
+            channel_messages.provider_rejected_text(
+                "Your AI provider rejected the key. Check it in Integrations.",
+                "/profile/integrations",
+                web_url,
+            )
+        )
+    )
     for text in texts:
         rendered = render_html(text)
         assert isinstance(rendered, Html)  # checked markup: nothing but our own tags
         visible = html.unescape(re.sub(r"</?[a-z]+>", "", str(rendered)))
         assert len(visible) <= _TEXT_LIMIT
         assert "`" not in visible and not re.search(r"\*[^*\s][^*]*\*", visible)
+
+
+@pytest.mark.parametrize(
+    ("path", "web_url", "expected"),
+    [
+        ("/profile/integrations", None, "❌ It failed."),
+        (None, "https://between-jobs.tech", "❌ It failed."),
+        (None, None, "❌ It failed."),
+        (
+            "/profile/integrations",
+            "https://between-jobs.tech",
+            "❌ It failed.\n\nhttps://between-jobs.tech/profile/integrations",
+        ),
+    ],
+)
+def test_a_provider_rejection_links_to_the_page_that_fixes_it_when_both_halves_are_known(
+    path: str | None, web_url: str | None, expected: str
+) -> None:
+    assert channel_messages.provider_rejected_text("It failed.", path, web_url) == expected
 
 
 def test_privacy_and_learn_carry_the_website_address_as_text_not_markup() -> None:

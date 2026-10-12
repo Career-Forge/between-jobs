@@ -14,6 +14,11 @@ and `discord_install_url` is the address people open to add the app (DISCORD_INS
 Discord's own install link for the application when that is empty; null only when the operator's
 value was not a usable https address). The web app reads a missing `discord` as false.
 
+`gmail`: present ONLY when the server has Gmail set up (all three GOOGLE_OAUTH_* settings), and then
+true, so a server without it answers exactly what it always did; Gmail is optional like Telegram,
+and without it the connect and callback routes answer 404 FEATURE_DISABLED. A flag only: never a
+client id, a secret or the redirect address. The web app reads a missing `gmail` as unknown.
+
 `tester_program_required`: the operator has switched the tester programme on (see
 `tester_enrollment.py`), so the costly features answer 403 ENROLLMENT_REQUIRED until the person
 has accepted the tester agreement. The web app uses it to send people to the enrollment page
@@ -37,6 +42,7 @@ from fastapi import APIRouter, Depends, Request
 from .app_state import discord_enabled, telegram_enabled
 from .auth import require_user_id
 from .engine_gateway import engine_kind
+from .gmail_client import gmail_enabled
 from .tester_enrollment import tester_program_required
 
 router = APIRouter()
@@ -55,4 +61,6 @@ async def get_capabilities(request: Request) -> dict[str, bool | str | None]:
         config = getattr(request.app.state, "discord_config", None)
         capabilities["discord"] = True
         capabilities["discord_install_url"] = config.install_url if config is not None else None
+    if gmail_enabled():
+        capabilities["gmail"] = True
     return capabilities

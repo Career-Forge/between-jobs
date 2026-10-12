@@ -11,7 +11,13 @@ WHAT IS REPORTED, on purpose and nothing else:
 - an `ApiError` the API answers with a 5xx, on the web or in a chat message (the chat
   boundary in channel_core.py reports for itself, since it never reaches the web handler).
   A 4xx is the API telling a caller what was wrong with the request, so it is never
-  reported (also enforced in `before_send`);
+  reported (also enforced in `before_send`). Neither is a provider failure, whatever its
+  status: PROVIDER_REJECTED (a person's key is revoked or out of credit), PROVIDER_RATE_LIMITED
+  and PROVIDER_UNAVAILABLE (an outage) are expected conditions and not bugs in this service, and
+  one click per person would otherwise be one issue per click. They are logged at WARNING with
+  their reason instead (errors.log_api_error). `report_exception` is the one place that decides
+  this, so the web handler, the chat boundary, the deferred work and a worker's failed tick all
+  follow it;
 - a worker's failed tick (worker_supervision.py), grouped as one issue per worker and
   exception type;
 - an exception from deferred chat work (a resume generation started from a message), which
@@ -51,6 +57,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .env import optional_env, refuse
+from .errors import is_provider_failure
 from .sentry_scrub import before_send, scrub_breadcrumb
 
 logger = logging.getLogger(__name__)
@@ -236,10 +243,13 @@ def report_exception(
 ) -> None:
     """Reports `error` when reporting is on; does nothing otherwise, and never raises.
 
+    A provider failure (`errors.is_provider_failure`) is never reported: see the module
+    docstring.
+
     `tags` are short, non-sensitive labels (a worker's name, a route template, a request
     id). `fingerprint` groups events: events with the same fingerprint are one issue."""
     sdk = _sdk
-    if sdk is None:
+    if sdk is None or is_provider_failure(error):
         return
     try:
         scope_arguments: dict[str, Any] = {}

@@ -46,7 +46,7 @@ from supabase import AsyncClient
 
 from .company_tiers import get_company_tier_index
 from .credential_resolver import resolve
-from .errors import ApiError
+from .errors import ApiError, log_contained_failure
 from .job_fit_scoring import ScoredJob, score_jobs
 from .llm_client import generate as llm_generate
 from .profile import ResumeTemplate
@@ -282,10 +282,15 @@ async def run_match_tick(supabase: AsyncClient) -> int:
         async with semaphore:
             try:
                 await _match_one_search(supabase, search, tier_index)
-            except Exception:
-                logger.exception(
+            except Exception as failure:
+                # A provider failure (the owner's key is revoked or out of credit, an outage) is
+                # an expected condition: one WARNING line with its reason, no traceback.
+                log_contained_failure(
+                    logger,
                     "saved search match failed; retried next tick",
-                    extra={"ctx": {"saved_search_id": search.get("id")}},
+                    failure,
+                    task="saved_search_match",
+                    ctx={"saved_search_id": search.get("id")},
                 )
 
     await asyncio.gather(*(_bounded(search) for search in searches))

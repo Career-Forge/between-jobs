@@ -7,6 +7,7 @@ You.com/Firecrawl/GitHub/Apollo HTTP boundary and the pipeline's own
 from __future__ import annotations
 
 import json
+import logging
 from types import SimpleNamespace
 from typing import Any
 
@@ -1162,6 +1163,55 @@ def test_push_outreach_to_gmail_with_no_gmail_connection_returns_setup_required(
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "SETUP_REQUIRED"
+
+
+def test_push_outreach_to_gmail_on_a_server_without_gmail_is_feature_disabled(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Not "Connect Gmail first": there is nothing to connect on this server, and the Integrations
+    button would only say the same. Answered before the person's connection is looked up."""
+    for name in ("CLIENT_ID", "CLIENT_SECRET", "REDIRECT_URI"):
+        monkeypatch.delenv(f"GOOGLE_OAUTH_{name}")
+    supabase = _FakeSupabaseClient(
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_ENRICHED_CANDIDATE_ROW)]),
+        outreach_drafts=_FakeTable(select_rows=[dict(_DRAFT_ROW)]),
+    )
+    http = _FakeHttpClient()
+
+    with caplog.at_level(logging.DEBUG), _client(supabase, http) as client:
+        response = client.post(
+            f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/push-to-gmail"
+        )
+
+    assert response.status_code == 404
+    error = response.json()["error"]
+    assert error["code"] == "FEATURE_DISABLED"
+    assert error["message"] == "Gmail isn't set up on this server."
+    assert error["settings_path"] is None
+    assert not any(r.levelno >= logging.CRITICAL for r in caplog.records)
+    assert http.post_calls == []
+
+
+def test_an_already_pushed_draft_is_returned_even_on_a_server_that_has_since_lost_gmail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("CLIENT_ID", "CLIENT_SECRET", "REDIRECT_URI"):
+        monkeypatch.delenv(f"GOOGLE_OAUTH_{name}")
+    already_pushed = {**_DRAFT_ROW, "gmail_draft_id": "d-1", "gmail_thread_id": "t-1"}
+    supabase = _FakeSupabaseClient(
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_ENRICHED_CANDIDATE_ROW)]),
+        outreach_drafts=_FakeTable(select_rows=[already_pushed]),
+    )
+
+    with _client(supabase, _FakeHttpClient()) as client:
+        response = client.post(
+            f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/push-to-gmail"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["gmail_draft_id"] == "d-1"
 
 
 def test_push_outreach_to_gmail_success_creates_a_real_gmail_draft() -> None:

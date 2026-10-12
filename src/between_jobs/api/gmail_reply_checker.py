@@ -71,7 +71,7 @@ from .application_status_proposals_store import (
 )
 from .applications_store import change_stage
 from .credential_resolver import resolve
-from .errors import ApiError
+from .errors import ApiError, log_contained_failure
 from .gmail_client import (
     GmailMessage,
     GmailOauthConfig,
@@ -422,10 +422,15 @@ async def run_reply_check_once(http: httpx.AsyncClient, supabase: AsyncClient) -
         async with semaphore:
             try:
                 await _check_one_draft(http, supabase, draft, oauth_config, access_token_tasks)
-            except Exception:
-                logger.exception(
+            except Exception as failure:
+                # A provider failure (the owner's model key is revoked or out of credit, an
+                # outage) is an expected condition: one WARNING line with its reason.
+                log_contained_failure(
+                    logger,
                     "reply check failed for a draft; retried next tick",
-                    extra={"ctx": {"draft_id": draft.get("draft_id")}},
+                    failure,
+                    task="reply_check",
+                    ctx={"draft_id": draft.get("draft_id")},
                 )
 
     await asyncio.gather(*(_bounded(draft) for draft in drafts))

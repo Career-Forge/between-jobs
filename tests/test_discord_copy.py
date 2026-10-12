@@ -85,6 +85,12 @@ def _built_messages() -> list[RichText]:
         rich(messages.not_a_real_stage_text("nope")),
         rich(messages.link_first_text(None)),
         rich(messages.link_first_text("https://between-jobs.tech")),
+        rich(messages.provider_rejected_text("It failed.", "/profile/integrations", None)),
+        rich(
+            messages.provider_rejected_text(
+                "It failed.", "/profile/integrations", "https://between-jobs.tech"
+            )
+        ),
         rich(messages.declined_warnings_text(["a", "b"])),
         rich(messages.format_merge_summary({})),
         rich(messages.format_merge_summary({"applications": 2, "profile_versions": 1})),
