@@ -62,6 +62,8 @@ def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
     for name in GOOGLE_OAUTH_VARIABLES:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("GMAIL_ALLOWED_USER_IDS", raising=False)
+    monkeypatch.delenv("GMAIL_TESTING_MODE", raising=False)
 
 
 @contextmanager
@@ -324,6 +326,9 @@ def test_capabilities_says_gmail_is_on_and_never_shows_a_setting(
         "tester_program_required": False,
         "engine": "remote",
         "gmail": True,
+        # per caller, and the operator's testing-mode switch (see test_gmail_access.py)
+        "gmail_allowed": True,
+        "gmail_testing_mode": False,
     }
     for value in (_ID, _SECRET, _REDIRECT):
         assert value not in response.text

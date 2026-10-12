@@ -6,6 +6,7 @@ creation, and the config helper's clean SETUP_REQUIRED failure mode.
 from __future__ import annotations
 
 import base64
+import json
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -14,10 +15,13 @@ import pytest
 
 from between_jobs.api.errors import ApiError
 from between_jobs.api.gmail_client import (
+    GMAIL_RECONNECT_REASON,
     build_authorize_url,
     create_draft,
     exchange_code_for_tokens,
     get_thread,
+    needs_reconnect,
+    reconnect_required_error,
     refresh_access_token,
     require_gmail_oauth_config,
 )
@@ -477,3 +481,262 @@ async def test_get_thread_raises_provider_unavailable_on_a_network_error() -> No
     with pytest.raises(ApiError) as exc_info:
         await get_thread(_RaisingHttp(), access_token="at-1", thread_id="18cabc1234def567")  # type: ignore[arg-type]
     assert exc_info.value.code == "PROVIDER_UNAVAILABLE"
+
+
+# -- when Google stops honouring a connection, and when it is only having a bad moment ----------
+
+_GOOGLE_TEXT = "Token has been expired or revoked. Internal reference 4c1f-secret-ish"
+_THREAD = "18cabc1234def567"
+
+
+class _RawHttp:
+    """Answers every call with the given status and raw body (which need not be JSON)."""
+
+    def __init__(self, status_code: int, content: bytes | str = b"") -> None:
+        self.status_code = status_code
+        self.content = content if isinstance(content, bytes) else content.encode()
+        self.calls = 0
+
+    async def post(self, url: str, **_kwargs: Any) -> httpx.Response:
+        self.calls += 1
+        return httpx.Response(
+            self.status_code, content=self.content, request=httpx.Request("POST", url)
+        )
+
+    async def get(self, url: str, **_kwargs: Any) -> httpx.Response:
+        self.calls += 1
+        return httpx.Response(
+            self.status_code, content=self.content, request=httpx.Request("GET", url)
+        )
+
+
+class _UnreachableHttp:
+    async def post(self, url: str, **_kwargs: Any) -> httpx.Response:
+        raise httpx.ConnectError("no route", request=httpx.Request("POST", url))
+
+    get = post
+
+
+def _oauth_error(code: str, *, text: str = _GOOGLE_TEXT) -> str:
+    return json.dumps({"error": code, "error_description": text})
+
+
+def _gmail_error(status: int, reason: str | None, *, text: str = _GOOGLE_TEXT) -> str:
+    errors = [{"domain": "global", "reason": reason, "message": text}] if reason else []
+    return json.dumps({"error": {"code": status, "message": text, "errors": errors}})
+
+
+async def _refresh(http: Any) -> str:
+    return await refresh_access_token(
+        http, refresh_token="rt-1", client_id="client-123", client_secret="secret-456"
+    )
+
+
+async def _draft(http: Any) -> Any:
+    return await create_draft(
+        http, access_token="at", to_email="a@b.example", subject="s", body_text="b"
+    )
+
+
+async def _thread(http: Any) -> Any:
+    return await get_thread(http, access_token="at", thread_id=_THREAD)
+
+
+_GMAIL_CALLS = [_draft, _thread]
+_GMAIL_CALL_IDS = ["create_draft", "get_thread"]
+
+
+def _assert_reconnect(error: ApiError) -> None:
+    assert (error.code, error.status_code) == ("PROVIDER_REJECTED", 502)
+    assert (
+        error.details
+        == {"reason": GMAIL_RECONNECT_REASON}
+        == {"reason": "gmail_reconnect_required"}
+    )
+    assert error.settings_path == "/profile/integrations"
+    assert error.retryable is False
+    assert needs_reconnect(error)
+    assert "Reconnect Gmail in Integrations" in error.message
+    assert _GOOGLE_TEXT not in error.message and "secret" not in error.message.lower()
+
+
+def test_the_reconnect_error_is_a_rejected_provider_call_that_points_at_integrations() -> None:
+    _assert_reconnect(reconnect_required_error())
+
+
+def test_nothing_but_that_error_needs_a_reconnect() -> None:
+    assert not needs_reconnect(ApiError("PROVIDER_REJECTED", "Google wouldn't refresh."))
+    assert not needs_reconnect(
+        ApiError("PROVIDER_REJECTED", "x", details={"reason": "key_rejected"})
+    )
+    assert not needs_reconnect(ApiError("PROVIDER_UNAVAILABLE", "x", retryable=True))
+    assert not needs_reconnect(RuntimeError("gmail_reconnect_required"))
+    assert not needs_reconnect(ValueError())
+
+
+@pytest.mark.parametrize("error", ["invalid_grant", "admin_policy_enforced"])
+@pytest.mark.parametrize("status", [400, 401])
+async def test_a_refresh_token_google_no_longer_honours_is_a_reconnect(
+    error: str, status: int
+) -> None:
+    with pytest.raises(ApiError) as raised:
+        await _refresh(_RawHttp(status, _oauth_error(error)))
+    _assert_reconnect(raised.value)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _oauth_error("invalid_client"),  # the operator's client id or secret: not the person's
+        _oauth_error("deleted_client"),
+        _oauth_error("invalid_request"),
+        _oauth_error("unauthorized_client"),
+        json.dumps({"error": "Invalid_Grant"}),  # not the documented spelling
+        json.dumps({"error": {"nested": "invalid_grant"}}),
+        json.dumps(["invalid_grant"]),
+        json.dumps({"error": "invalid_grant extra words"}),
+        json.dumps({"error_description": "invalid_grant"}),
+        "<html>invalid_grant</html>",
+        "",
+    ],
+)
+async def test_any_other_refusal_to_refresh_is_not_a_reason_to_send_the_person_to_reconnect(
+    body: str,
+) -> None:
+    with pytest.raises(ApiError) as raised:
+        await _refresh(_RawHttp(400, body))
+    error = raised.value
+    assert (error.code, error.retryable) == ("PROVIDER_REJECTED", False)
+    assert not needs_reconnect(error) and error.details == {}
+    assert _GOOGLE_TEXT not in error.message
+
+
+@pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
+async def test_a_refresh_that_hits_a_rate_limit_or_an_outage_is_transient_whatever_the_body(
+    status: int,
+) -> None:
+    with pytest.raises(ApiError) as raised:
+        await _refresh(_RawHttp(status, _oauth_error("invalid_grant")))
+    error = raised.value
+    assert (error.code, error.retryable) == ("PROVIDER_UNAVAILABLE", True)
+    assert not needs_reconnect(error)
+
+
+async def test_a_refresh_that_cannot_reach_google_is_transient() -> None:
+    with pytest.raises(ApiError) as raised:
+        await _refresh(_UnreachableHttp())
+    assert (raised.value.code, raised.value.retryable) == ("PROVIDER_UNAVAILABLE", True)
+    assert not needs_reconnect(raised.value)
+
+
+@pytest.mark.parametrize("call", _GMAIL_CALLS, ids=_GMAIL_CALL_IDS)
+@pytest.mark.parametrize(
+    "body",
+    [
+        "",
+        _gmail_error(401, "authError"),
+        "<html>nope</html>",
+        json.dumps(["not", "an", "object"]),
+    ],
+)
+async def test_gmail_answering_401_is_a_reconnect_whatever_it_says(call: Any, body: str) -> None:
+    with pytest.raises(ApiError) as raised:
+        await call(_RawHttp(401, body))
+    _assert_reconnect(raised.value)
+
+
+@pytest.mark.parametrize("call", _GMAIL_CALLS, ids=_GMAIL_CALL_IDS)
+async def test_gmail_saying_a_scope_is_missing_is_a_reconnect(call: Any) -> None:
+    with pytest.raises(ApiError) as raised:
+        await call(_RawHttp(403, _gmail_error(403, "insufficientPermissions")))
+    _assert_reconnect(raised.value)
+
+
+@pytest.mark.parametrize("call", _GMAIL_CALLS, ids=_GMAIL_CALL_IDS)
+@pytest.mark.parametrize(
+    ("status", "reason"),
+    [
+        (403, "rateLimitExceeded"),
+        (403, "userRateLimitExceeded"),
+        (429, None),
+        (429, "rateLimitExceeded"),
+    ],
+)
+async def test_gmail_rate_limits_are_transient(call: Any, status: int, reason: str | None) -> None:
+    with pytest.raises(ApiError) as raised:
+        await call(_RawHttp(status, _gmail_error(status, reason)))
+    error = raised.value
+    assert (error.code, error.status_code, error.retryable) == ("PROVIDER_RATE_LIMITED", 429, True)
+    assert not needs_reconnect(error) and _GOOGLE_TEXT not in error.message
+
+
+@pytest.mark.parametrize("call", _GMAIL_CALLS, ids=_GMAIL_CALL_IDS)
+@pytest.mark.parametrize(
+    "body",
+    [
+        _gmail_error(403, "dailyLimitExceeded"),
+        _gmail_error(403, "domainPolicy"),
+        _gmail_error(403, "somethingNew"),
+        _gmail_error(403, None),
+        _gmail_error(403, "not a token with spaces"),
+        _gmail_error(403, "x" * 200),
+        json.dumps({"error": {"errors": "not a list"}}),
+        json.dumps({"error": {"errors": [None]}}),
+        "",
+        "<html>forbidden</html>",
+    ],
+)
+async def test_a_gmail_403_that_reconnecting_would_not_change_is_a_plain_refusal(
+    call: Any, body: str
+) -> None:
+    with pytest.raises(ApiError) as raised:
+        await call(_RawHttp(403, body))
+    error = raised.value
+    assert (error.code, error.retryable) == ("PROVIDER_REJECTED", False)
+    assert not needs_reconnect(error) and error.details == {}
+    assert error.message.startswith("Gmail refused to ")
+    assert _GOOGLE_TEXT not in error.message
+
+
+@pytest.mark.parametrize("call", _GMAIL_CALLS, ids=_GMAIL_CALL_IDS)
+@pytest.mark.parametrize("status", [400, 404, 408, 500, 502, 503, 504])
+async def test_gmail_failures_that_are_not_about_the_connection_are_transient(
+    call: Any, status: int
+) -> None:
+    with pytest.raises(ApiError) as raised:
+        await call(_RawHttp(status, _gmail_error(status, "backendError")))
+    error = raised.value
+    assert (error.code, error.status_code, error.retryable) == ("PROVIDER_UNAVAILABLE", 503, True)
+    assert not needs_reconnect(error) and _GOOGLE_TEXT not in error.message
+
+
+@pytest.mark.parametrize("call", _GMAIL_CALLS, ids=_GMAIL_CALL_IDS)
+@pytest.mark.parametrize("reason", ["insufficientPermissions", "rateLimitExceeded", "authError"])
+@pytest.mark.parametrize("status", [400, 404, 500, 503])
+async def test_a_403_reason_means_nothing_on_any_other_status(
+    call: Any, reason: str, status: int
+) -> None:
+    """The reasons that make a 403 a reconnect or a rate limit are read only from a 403."""
+    with pytest.raises(ApiError) as raised:
+        await call(_RawHttp(status, _gmail_error(status, reason)))
+    error = raised.value
+    assert (error.code, error.retryable) == ("PROVIDER_UNAVAILABLE", True)
+    assert not needs_reconnect(error)
+
+
+async def test_a_draft_that_cannot_reach_gmail_is_transient() -> None:
+    with pytest.raises(ApiError) as raised:
+        await _draft(_UnreachableHttp())
+    assert (raised.value.code, raised.value.retryable) == ("PROVIDER_UNAVAILABLE", True)
+    assert not needs_reconnect(raised.value)
+
+
+@pytest.mark.parametrize("call", _GMAIL_CALLS, ids=_GMAIL_CALL_IDS)
+async def test_the_refusal_messages_name_what_was_being_done(call: Any) -> None:
+    doing = "create that draft" if call is _draft else "fetch that thread"
+    with pytest.raises(ApiError) as refused:
+        await call(_RawHttp(403, _gmail_error(403, "domainPolicy")))
+    with pytest.raises(ApiError) as down:
+        await call(_RawHttp(503, ""))
+    assert refused.value.message == f"Gmail refused to {doing}."
+    assert down.value.message == f"Gmail couldn't {doing} right now."

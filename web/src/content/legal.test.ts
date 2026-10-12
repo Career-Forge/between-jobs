@@ -8,6 +8,7 @@ import engineGateway from "../../../src/between_jobs/api/engine_gateway.py?raw";
 import forgeEnginesClient from "../../../src/between_jobs/api/forge_engines_client.py?raw";
 import genericEngine from "../../../src/between_jobs/engines/generic/backend.py?raw";
 import gmailClient from "../../../src/between_jobs/api/gmail_client.py?raw";
+import gmailAccess from "../../../src/between_jobs/api/gmail_access.py?raw";
 import gmailReplyChecker from "../../../src/between_jobs/api/gmail_reply_checker.py?raw";
 import hiringSignalCache from "../../../src/between_jobs/api/hiring_signal_cache.py?raw";
 import llmClient from "../../../src/between_jobs/api/llm_client.py?raw";
@@ -637,6 +638,28 @@ describe("what the text says matches the code", () => {
     // And only those: no other Gmail scope is requested.
     const scopes = gmailClient.match(/auth\/gmail\.[a-z]+/g) ?? [];
     expect(new Set(scopes)).toEqual(new Set(["auth/gmail.compose", "auth/gmail.readonly"]));
+  });
+
+  it("what it says about an invite list, the 7-day limit and a connection Google stops accepting is what the code does", () => {
+    const gmailSection = textsOf(PRIVACY).filter((t) => t.includes("Gmail may not be open to everyone") || t.includes("Needs reconnect"));
+    expect(gmailSection).toHaveLength(2);
+    // The list: an operator setting, checked by the access module, which the reply checker
+    // (the background job the text describes) and the draft route both go through.
+    expect(gmailAccess).toContain('"GMAIL_ALLOWED_USER_IDS"');
+    expect(gmailReplyChecker).toContain("user_may_use_gmail");
+    // "we stop using your connection but keep it": the checker skips on the list, nothing in the
+    // access module deletes a credential.
+    expect(gmailAccess).not.toMatch(/delete_credential|\.delete\(\)/);
+    // The reconnect state: recorded on the stored connection (kept, not deleted), shown by the
+    // Integrations card under the name the text uses, and the checker leaves a flagged one alone.
+    expect(gmailAccess).toContain("mark_credential_unvalidated");
+    expect(gmailReplyChecker).toContain("list_unvalidated_user_ids");
+    expect(integrations).toContain("Needs reconnect");
+    expect(privacyText).toContain("'Needs reconnect'");
+    // Transient failures are not that: the client only calls an expired grant a reconnect.
+    expect(gmailClient).toContain("invalid_grant");
+    expect(privacyText).toContain("the next check simply tries again");
+    expect(privacyText).toContain("after 7 days");
   });
 
   it("does not claim that the compose permission cannot send (Google's own description says it can)", () => {

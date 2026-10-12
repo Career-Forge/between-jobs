@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "../lib/api";
+import { copyToClipboard } from "../lib/clipboard";
+import {
+  gmailAccess,
+  gmailState,
+  gmailUnavailableMessage,
+  learnFromGmailRefusal,
+} from "../lib/gmailAccess";
+import { subjectAndBody } from "../lib/mailto";
 import { type Problem, type SetupNotice, setupRequiredNotice } from "../lib/setupRequired";
+import { refreshCapabilities, useCapabilities } from "../lib/useCapabilities";
+import { useGmailConnection } from "../lib/useGmailConnection";
+import { GmailDraftActions } from "./GmailDraftActions";
 import { ProblemView, SetupRequiredNotice } from "./SetupRequiredNotice";
 
 // ContactFinder panel (outreach-contactfinder.md Phase B/C) -- Proposal
@@ -87,6 +98,9 @@ type State =
   | { kind: "setup"; notice: SetupNotice }
   | { kind: "ready"; run: Run | null; candidates: Candidate[] };
 
+// How long "Couldn't copy" stays up before the button reads as before.
+const COPY_FAILED_NOTICE_MS = 6000;
+
 const PERSONA_LABELS: Record<string, string> = {
   hiring_lead: "Hiring lead",
   recruiter: "Recruiter",
@@ -119,8 +133,16 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
   const [draftError, setDraftError] = useState<Problem | null>(null);
   const [drafts, setDrafts] = useState<Record<string, OutreachDraft>>({});
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  // The field whose copy the browser refused, so its button can say so instead of seeming dead.
+  const [copyFailedField, setCopyFailedField] = useState<string | null>(null);
   const [pushingId, setPushingId] = useState<string | null>(null);
   const [pushError, setPushError] = useState<Problem | null>(null);
+  // Whether Gmail is open to this person and what state their connection is in decide what sits
+  // under a draft (GmailDraftActions). Their connection is read only once Gmail is known to be open
+  // to them: nothing is asked when it is not for them, nor while that is not known.
+  const access = gmailAccess(useCapabilities());
+  const { connection, markReconnectNeeded } = useGmailConnection(access === "available");
+  const gmail = gmailState(access, connection);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -259,9 +281,14 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
   }
 
   async function copyText(field: string, text: string) {
-    await navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
+    setCopyFailedField(null);
+    if (await copyToClipboard(text)) {
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } else {
+      setCopyFailedField(field);
+      setTimeout(() => setCopyFailedField(null), COPY_FAILED_NOTICE_MS);
+    }
   }
 
   async function pushToGmail(candidate: Candidate) {
@@ -274,6 +301,11 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
       );
       setDrafts((prev) => ({ ...prev, [candidate.id]: updated }));
     } catch (e) {
+      // The server says what this page only believed: Google stopped accepting the connection, or
+      // Gmail is not open to this person. Either way the draft can still be copied or opened in a
+      // mail app, so show that now and not after a reload. This comes first and runs for every
+      // failure: the reconnect answer is also a notice, which the lines below show and return on.
+      learnFromGmailRefusal(e, { reconnectNeeded: markReconnectNeeded, unavailable: refreshCapabilities });
       const setup = setupRequiredNotice(e);
       if (setup !== null) {
         setPushError(setup);
@@ -457,7 +489,11 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
                             className="bj-link-button"
                             onClick={() => void copyText(`${candidate.id}-${field}`, text)}
                           >
-                            {copiedField === `${candidate.id}-${field}` ? "Copied!" : "Copy"}
+                            {copiedField === `${candidate.id}-${field}`
+                              ? "Copied!"
+                              : copyFailedField === `${candidate.id}-${field}`
+                                ? "Couldn't copy"
+                                : "Copy"}
                           </button>
                         </div>
                       ))}
@@ -465,23 +501,27 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
                         Nothing is sent automatically -- copy whichever message you want and send
                         it yourself.
                       </p>
-                      <div className="bj-actions">
-                        {drafts[candidate.id].gmail_draft_id ? (
-                          <span className="bj-small">Draft created in your Gmail</span>
-                        ) : candidate.enriched_email ? (
-                          <button
-                            className="bj-primary"
-                            onClick={() => void pushToGmail(candidate)}
-                            disabled={pushingId === candidate.id}
-                          >
-                            {pushingId === candidate.id ? "Creating draft..." : "Create Gmail draft"}
-                          </button>
-                        ) : (
-                          <span className="bj-muted bj-small">
-                            Find this contact's work email to create a Gmail draft.
-                          </span>
-                        )}
-                      </div>
+                      <GmailDraftActions
+                        state={gmail}
+                        unavailableMessage={gmailUnavailableMessage(access)}
+                        alreadyPushed={Boolean(drafts[candidate.id].gmail_draft_id)}
+                        recipient={candidate.enriched_email}
+                        subject={drafts[candidate.id].subject}
+                        body={drafts[candidate.id].email_body}
+                        pushing={pushingId === candidate.id}
+                        copied={copiedField === `${candidate.id}-all`}
+                        copyFailed={copyFailedField === `${candidate.id}-all`}
+                        onPush={() => void pushToGmail(candidate)}
+                        onCopyAll={() =>
+                          void copyText(
+                            `${candidate.id}-all`,
+                            subjectAndBody({
+                              subject: drafts[candidate.id].subject,
+                              body: drafts[candidate.id].email_body,
+                            }),
+                          )
+                        }
+                      />
                     </div>
                   )}
                 </div>

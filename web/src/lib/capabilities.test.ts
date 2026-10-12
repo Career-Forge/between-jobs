@@ -261,3 +261,40 @@ describe("the resume engine flag", () => {
     expect(engineKind({ kind: "unavailable" })).toBeNull();
   });
 });
+
+describe("Gmail", () => {
+  it("is not there unless the server says so: the answer a server without Gmail gives is unchanged", () => {
+    const parsed = parseCapabilities({ telegram: false });
+    expect(parsed).toEqual({ telegram: false, telegramBotUsername: null, testerProgramRequired: false });
+    // not even when it sends the per-person flags without the one that makes them mean anything
+    expect(parseCapabilities({ telegram: false, gmail_allowed: false, gmail_testing_mode: true })).toEqual(parsed);
+    expect(parseCapabilities({ telegram: false, gmail: false, gmail_allowed: true })).toEqual(parsed);
+    expect(parseCapabilities({ telegram: false, gmail: "yes" })).toEqual(parsed);
+  });
+
+  it("reads the flag with this person's answer and the operator's testing-mode switch", () => {
+    expect(parseCapabilities({ telegram: false, gmail: true, gmail_allowed: true, gmail_testing_mode: false })).toMatchObject({
+      gmail: true,
+      gmailAllowed: true,
+      gmailTestingMode: false,
+    });
+    expect(parseCapabilities({ telegram: false, gmail: true, gmail_allowed: false, gmail_testing_mode: true })).toMatchObject({
+      gmail: true,
+      gmailAllowed: false,
+      gmailTestingMode: true,
+    });
+  });
+
+  it("takes only a definite false as 'not for you', and only a definite true as testing mode", () => {
+    // a server that predates the per-person flag: the server still refuses anyone it does not allow
+    expect(parseCapabilities({ telegram: false, gmail: true })).toMatchObject({
+      gmailAllowed: true,
+      gmailTestingMode: false,
+    });
+    expect(parseCapabilities({ telegram: false, gmail: true, gmail_allowed: "no", gmail_testing_mode: "on" })).toMatchObject({
+      gmailAllowed: true,
+      gmailTestingMode: false,
+    });
+    expect(parseCapabilities({ telegram: false, gmail: true, gmail_allowed: null })).toMatchObject({ gmailAllowed: true });
+  });
+});

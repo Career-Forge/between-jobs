@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { useAuth } from "../auth";
 import { apiFetch } from "./api";
 import { CAPABILITIES_TIMEOUT_MS, type CapabilitiesState } from "./capabilities";
 import { createCapabilitiesStore } from "./capabilitiesStore";
@@ -17,11 +18,20 @@ const store = createCapabilitiesStore(<T>(path: string) =>
 );
 
 export function useCapabilities(): CapabilitiesState {
+  // Part of the answer is the signed-in person's own (whether Gmail is open to them), so the store
+  // is told who that is, and starts over when it becomes someone else.
+  const userId = useAuth().session?.user.id ?? null;
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
   useEffect(() => {
-    store.ensure();
-  }, []);
+    // In this order, and no other: setPerson starts the store over when it is someone else (back
+    // to "checking", nothing in flight), and ensure then asks for them. Asking first would see the
+    // previous person's answer, do nothing, and be followed by a reset with no ask in flight: the
+    // next person would wait on "Loading..." until they reloaded. (useCapabilities.test.ts runs it.)
+    store.setPerson(userId);
+    // Nobody signed in has nothing to ask about.
+    if (userId !== null) store.ensure();
+  }, [userId]);
 
   return state;
 }

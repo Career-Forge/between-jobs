@@ -12,6 +12,8 @@ from between_jobs.api.provider_credentials_store import (
     delete_credential,
     get_decrypted_credential,
     list_credentials,
+    list_unvalidated_user_ids,
+    mark_credential_unvalidated,
     save_credential,
 )
 
@@ -19,8 +21,14 @@ _USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
 class _ChainBuilder:
-    def __init__(self, rows: list[dict[str, Any]]) -> None:
-        self._rows = rows
+    def __init__(self, rows: list[dict[str, Any]], columns: str = "*") -> None:
+        # Like PostgREST, an answer carries only the columns the query asked for: a column the
+        # code reads but never selected is missing from the row, not quietly present.
+        if columns.strip() == "*":
+            self._rows = rows
+        else:
+            wanted = {column.strip() for column in columns.split(",")}
+            self._rows = [{k: v for k, v in row.items() if k in wanted} for row in rows]
 
     def eq(self, *_: Any, **__: Any) -> _ChainBuilder:
         return self
@@ -37,9 +45,11 @@ class _FakeTable:
         self.upsert_row = upsert_row
         self.upsert_calls: list[tuple[dict[str, Any], str]] = []
         self.delete_calls = 0
+        self.selected: list[str] = []
 
-    def select(self, *_: Any, **__: Any) -> _ChainBuilder:
-        return _ChainBuilder(self.select_rows)
+    def select(self, columns: str = "*", **__: Any) -> _ChainBuilder:
+        self.selected.append(columns)
+        return _ChainBuilder(self.select_rows, columns)
 
     def upsert(self, data: dict[str, Any], on_conflict: str = "") -> _ChainBuilder:
         self.upsert_calls.append((data, on_conflict))
@@ -138,6 +148,7 @@ async def test_get_decrypted_credential_found() -> None:
                 "model": "anthropic/claude-sonnet-4-6",
                 "base_url": None,
                 "scope": None,
+                "is_validated": True,
                 "secret_encrypted": "ciphertext-abc",
                 "secret_2_encrypted": None,
             }
@@ -157,6 +168,7 @@ async def test_get_decrypted_credential_found() -> None:
         "model": "anthropic/claude-sonnet-4-6",
         "base_url": None,
         "scope": None,
+        "is_validated": True,
         "secret": "sk-or-v1-plaintext",
         "secret_2": None,
     }
@@ -331,3 +343,174 @@ async def test_delete_credential_calls_delete() -> None:
     await delete_credential(client, _USER_ID, service="llm", provider="openrouter")  # type: ignore[arg-type]
 
     assert table.delete_calls == 1
+
+
+# -- a connection Google stopped honouring: is_validated is the record ---------------------------
+
+
+class _RecordingQuery:
+    """Remembers the column filters a query was built with, and what it was asked to select or
+    update, so a test can check that every query is scoped to the person it was made for."""
+
+    def __init__(self, table: _RecordingTable, rows: list[dict[str, Any]]) -> None:
+        self._table = table
+        self._rows = rows
+
+    def eq(self, column: str, value: Any) -> _RecordingQuery:
+        self._table.filters.append((column, value))
+        return self
+
+    async def execute(self) -> SimpleNamespace:
+        return SimpleNamespace(data=self._rows)
+
+
+class _RecordingTable:
+    def __init__(self, *, rows: list[dict[str, Any]]) -> None:
+        self.rows = rows
+        self.filters: list[tuple[str, Any]] = []
+        self.selected: str | None = None
+        self.updated: dict[str, Any] | None = None
+
+    def select(self, columns: str) -> _RecordingQuery:
+        self.selected = columns
+        return _RecordingQuery(self, self.rows)
+
+    def update(self, data: dict[str, Any]) -> _RecordingQuery:
+        self.updated = data
+        return _RecordingQuery(self, self.rows)
+
+
+class _TableOnlyClient:
+    def __init__(self, table: _RecordingTable) -> None:
+        self._table = table
+
+    def table(self, name: str) -> _RecordingTable:
+        assert name == "provider_credentials"
+        return self._table
+
+
+async def test_get_decrypted_credential_reports_a_connection_that_was_flagged() -> None:
+    table = _FakeTable(
+        select_rows=[
+            {
+                "provider": "gmail",
+                "model": None,
+                "base_url": None,
+                "scope": "https://www.googleapis.com/auth/gmail.readonly",
+                "is_validated": False,
+                "secret_encrypted": "ciphertext-abc",
+                "secret_2_encrypted": None,
+            }
+        ]
+    )
+    client = _FakeSupabaseClient(table, decrypt_output="refresh-token-value")
+
+    result = await get_decrypted_credential(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        service="oauth",
+        provider="gmail",
+    )
+
+    assert result["is_validated"] is False
+    assert result["secret"] == "refresh-token-value"  # flagging never discards the token
+
+
+async def test_get_decrypted_credential_asks_the_database_for_is_validated() -> None:
+    """The fake above answers with only the selected columns, as PostgREST does, so dropping
+    `is_validated` from the query would already turn a flagged connection back into a validated
+    one there. This pins the query itself, so the failure names what went missing."""
+    table = _FakeTable(
+        select_rows=[
+            {
+                "provider": "gmail",
+                "model": None,
+                "base_url": None,
+                "scope": "https://www.googleapis.com/auth/gmail.readonly",
+                "is_validated": False,
+                "secret_encrypted": "ciphertext-abc",
+                "secret_2_encrypted": None,
+            }
+        ]
+    )
+    client = _FakeSupabaseClient(table, decrypt_output="refresh-token-value")
+
+    await get_decrypted_credential(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        service="oauth",
+        provider="gmail",
+    )
+
+    [selected] = table.selected
+    assert "is_validated" in [column.strip() for column in selected.split(",")]
+
+
+async def test_marking_a_credential_unvalidated_is_one_conditional_update_for_that_person() -> None:
+    table = _RecordingTable(rows=[{"id": "cred-1"}])
+
+    changed = await mark_credential_unvalidated(
+        _TableOnlyClient(table),  # type: ignore[arg-type]
+        _USER_ID,
+        service="oauth",
+        provider="gmail",
+    )
+
+    assert changed is True
+    # Only is_validated is written (the secret and the scope are not touched), and only for this
+    # person's row that is still validated: that condition is what makes it answer "was it me".
+    assert table.updated == {"is_validated": False}
+    assert sorted(table.filters, key=str) == sorted(
+        [
+            ("user_id", _USER_ID),
+            ("service", "oauth"),
+            ("provider", "gmail"),
+            ("is_validated", True),
+        ],
+        key=str,
+    )
+
+
+async def test_marking_a_credential_that_is_already_flagged_or_missing_changes_nothing() -> None:
+    table = _RecordingTable(rows=[])  # the conditional update matched no row
+
+    changed = await mark_credential_unvalidated(
+        _TableOnlyClient(table),  # type: ignore[arg-type]
+        _USER_ID,
+        service="oauth",
+        provider="gmail",
+    )
+
+    assert changed is False
+
+
+async def test_listing_the_unvalidated_returns_lower_case_ids_and_asks_only_for_them() -> None:
+    table = _RecordingTable(
+        rows=[
+            {"user_id": "AAAAAAAA-0000-0000-0000-000000000001"},
+            {"user_id": "bbbbbbbb-0000-0000-0000-000000000002"},
+        ]
+    )
+
+    ids = await list_unvalidated_user_ids(
+        _TableOnlyClient(table),  # type: ignore[arg-type]
+        service="oauth",
+        provider="gmail",
+    )
+
+    assert ids == frozenset(
+        {"aaaaaaaa-0000-0000-0000-000000000001", "bbbbbbbb-0000-0000-0000-000000000002"}
+    )
+    assert table.selected == "user_id"  # never a secret
+    assert sorted(table.filters, key=str) == sorted(
+        [("service", "oauth"), ("provider", "gmail"), ("is_validated", False)], key=str
+    )
+
+
+async def test_listing_the_unvalidated_with_nobody_flagged_is_empty() -> None:
+    ids = await list_unvalidated_user_ids(
+        _TableOnlyClient(_RecordingTable(rows=[])),  # type: ignore[arg-type]
+        service="oauth",
+        provider="gmail",
+    )
+    assert ids == frozenset()

@@ -288,3 +288,156 @@ describe("subscribing", () => {
     expect(store.getSnapshot()).toBe(store.getSnapshot());
   });
 });
+
+describe("Gmail's flags are part of the answer", () => {
+  const withGmail = (allowed: boolean, testing = false) => ({
+    ...BODY(false),
+    gmail: true,
+    gmail_allowed: allowed,
+    gmail_testing_mode: testing,
+  });
+
+  it("a refresh that finds a different one is told to every reader", async () => {
+    const { fetcher, answerNext } = scripted(withGmail(true), withGmail(false), withGmail(false, true));
+    const store = createCapabilitiesStore(fetcher);
+    const listener = vi.fn();
+    store.ensure();
+    await answerNext();
+    store.subscribe(listener);
+
+    store.refresh();
+    await answerNext();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    store.refresh();
+    await answerNext();
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("the same answer again is not news", async () => {
+    const { fetcher, answerNext } = scripted(withGmail(true, true), withGmail(true, true));
+    const store = createCapabilitiesStore(fetcher);
+    const listener = vi.fn();
+    store.ensure();
+    await answerNext();
+    store.subscribe(listener);
+    store.refresh();
+    await answerNext();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("a server that has Gmail and one that does not are different answers", async () => {
+    const { fetcher, answerNext } = scripted(BODY(false), withGmail(true));
+    const store = createCapabilitiesStore(fetcher);
+    const listener = vi.fn();
+    store.ensure();
+    await answerNext();
+    store.subscribe(listener);
+    store.refresh();
+    await answerNext();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("whose answer it is", () => {
+  it("keeps the answer for the same person, however often it is told who they are", async () => {
+    const { calls, fetcher, answerNext } = scripted(BODY(false));
+    const store = createCapabilitiesStore(fetcher);
+    store.setPerson("person-a");
+    store.ensure();
+    await answerNext();
+    const known = store.getSnapshot();
+
+    store.setPerson("person-a");
+    store.ensure();
+
+    expect(store.getSnapshot()).toBe(known);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("forgets it for a different person, and asks again for them", async () => {
+    const { calls, fetcher, answerNext } = scripted(
+      { ...BODY(false), gmail: true, gmail_allowed: false },
+      { ...BODY(false), gmail: true, gmail_allowed: true },
+    );
+    const store = createCapabilitiesStore(fetcher);
+    const listener = vi.fn();
+    store.setPerson("person-a");
+    store.ensure();
+    await answerNext();
+    store.subscribe(listener);
+
+    store.setPerson("person-b");
+
+    expect(store.getSnapshot()).toEqual({ kind: "checking" });
+    expect(listener).toHaveBeenCalledTimes(1);
+    store.ensure();
+    await answerNext();
+    expect(calls).toHaveLength(2);
+    const answer = store.getSnapshot();
+    expect(answer.kind === "ready" && answer.capabilities.gmailAllowed).toBe(true);
+  });
+
+  it("forgets it when the person signs out, and does not keep their answer for the next one", async () => {
+    const { fetcher, answerNext } = scripted(BODY(true));
+    const store = createCapabilitiesStore(fetcher);
+    store.setPerson("person-a");
+    store.ensure();
+    await answerNext();
+
+    store.setPerson(null);
+
+    expect(store.getSnapshot()).toEqual({ kind: "checking" });
+  });
+
+  it("drops an ask that was still in flight for the previous person", async () => {
+    const { calls, fetcher, answerNext } = scripted(
+      { ...BODY(false), gmail: true, gmail_allowed: false },
+      { ...BODY(false), gmail: true, gmail_allowed: true },
+    );
+    const store = createCapabilitiesStore(fetcher);
+    store.setPerson("person-a");
+    store.ensure(); // person-a's ask is still open
+
+    store.setPerson("person-b");
+    store.ensure(); // person-b's own ask goes out beside it
+    expect(calls).toHaveLength(2)
+
+    await answerNext(); // person-a's answer arrives first, and is thrown away
+    expect(store.getSnapshot()).toEqual({ kind: "checking" });
+    await answerNext();
+    const answer = store.getSnapshot();
+    expect(answer.kind === "ready" && answer.capabilities.gmailAllowed).toBe(true);
+  });
+
+  it("gives the new person a fresh set of retries", async () => {
+    const { calls, fetcher, answerNext } = scripted(down);
+    const store = createCapabilitiesStore(fetcher);
+    store.setPerson("person-a");
+    store.ensure();
+    await answerNext();
+    for (let i = 0; i < MAX_CAPABILITY_RETRIES; i += 1) {
+      expect(store.retry()).toBe(true);
+      await answerNext();
+    }
+    expect(store.retry()).toBe(false); // person-a has used theirs
+
+    store.setPerson("person-b");
+    store.ensure();
+    await answerNext();
+    expect(store.retry()).toBe(true);
+    expect(calls.length).toBeGreaterThan(MAX_CAPABILITY_RETRIES + 1);
+  });
+
+  it("is not made to start over by being told who it is for the first time", async () => {
+    const { fetcher, answerNext } = scripted(BODY(true));
+    const store = createCapabilitiesStore(fetcher);
+    store.ensure(); // asked before it was told who is signed in
+    await answerNext();
+    const known = store.getSnapshot();
+
+    store.setPerson("person-a");
+
+    expect(store.getSnapshot()).toBe(known);
+  });
+});

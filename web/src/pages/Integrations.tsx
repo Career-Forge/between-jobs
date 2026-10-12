@@ -9,9 +9,19 @@ import {
   providerNotice,
   type SearchProviderCardSpec,
 } from "../lib/providerStatus";
+import {
+  type GmailAccess,
+  gmailAccess,
+  gmailAvailabilityFailed,
+  gmailConnection,
+  gmailState,
+  gmailTestingMode,
+  gmailUnavailableMessage,
+  learnFromGmailRefusal,
+} from "../lib/gmailAccess";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { type Problem, problemOf } from "../lib/setupRequired";
-import { useCapabilities } from "../lib/useCapabilities";
+import { refreshCapabilities, useCapabilities } from "../lib/useCapabilities";
 import { useHiringSignalsEnabled } from "../lib/useHiringSignalsStatus";
 
 // Integrations (Sprint 2.7f, widened Horizon Sprint 5.0) -- the web
@@ -60,7 +70,6 @@ interface CredentialSummary {
   scope: string | null;
 }
 
-const _GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 
 export default function Integrations() {
   const capabilities = useCapabilities();
@@ -111,7 +120,15 @@ export default function Integrations() {
         <TelegramLinkCard botUsername={telegramBotUsername(capabilities)} />
       )}
       {isDiscordAvailable(capabilities) && <DiscordLinkCard installUrl={discordInstallUrl(capabilities)} />}
-      <GmailConnectCard credential={gmail} onChanged={load} />
+      {credentials !== null && (
+        <GmailConnectCard
+          credential={gmail}
+          access={gmailAccess(capabilities)}
+          availabilityFailed={gmailAvailabilityFailed(capabilities)}
+          testingMode={gmailTestingMode(capabilities)}
+          onChanged={load}
+        />
+      )}
       <SavedSearchesCard />
     </div>
   );
@@ -439,23 +456,38 @@ function DiscordLinkCard({ installUrl }: { installUrl: string | null }) {
   );
 }
 
-function GmailConnectCard({
+// The Gmail card, in one of five honest states (lib/gmailAccess.ts decides which):
+//   - Checking / Couldn't check: it is not known whether Gmail is open to this person (the
+//     server's settings are still being asked, or asking failed; this page is reachable before
+//     they are known). Nothing is offered and no connection is claimed, whatever the credential
+//     list holds: no Connect, no "Connected". "Disconnect Gmail" stays when a connection is stored.
+//   - Not available: Gmail is not open to this person yet (the server limits it to named people)
+//     or the server has none. No Connect button. A connection they made before stays where it is,
+//     unused, and "Disconnect Gmail" is always there.
+//   - Not connected: Connect Gmail.
+//   - Connected: Disconnect Gmail, and -- only while the operator says Google's OAuth client is in
+//     Testing mode -- a note that Google ends the connection after 7 days.
+//   - Needs reconnect: Google stopped accepting the connection, or it was made before the app
+//     asked for read access. Reconnect Gmail (and Disconnect). The server keeps what was stored and
+//     stops using it until then.
+// Draft-only throughout: gmail.compose can't send an email even if the code tried to -- see
+// gmail_client.py's own docstring.
+export function GmailConnectCard({
   credential,
+  access,
+  availabilityFailed = false,
+  testingMode,
   onChanged,
 }: {
   credential: CredentialSummary | null;
+  access: GmailAccess;
+  // With access "unknown": asking the server failed, rather than still being under way.
+  availabilityFailed?: boolean;
+  testingMode: boolean;
   onChanged: () => Promise<void>;
 }) {
-  // outreach-contactfinder.md Phase F. Draft-only: gmail.compose can't
-  // send an email even if the code tried to -- see gmail_client.py's own
-  // docstring. Widened (outreach-v2-search-first.md's Gmail reply/status
-  // parsing) to also request gmail.readonly, needed for the reply-
-  // checker poller. A credential connected before that widening (or
-  // whose own `scope` was never recorded) is missing that grant --
-  // detected here from the real scope string, not assumed, so a stale
-  // compose-only connection shows as needing reconnect rather than a
-  // silently-incomplete "Connected".
-  const needsReconnect = credential !== null && !credential.scope?.includes(_GMAIL_READONLY_SCOPE);
+  const connection = gmailConnection(credential === null ? [] : [credential]);
+  const state = gmailState(access, connection);
   const [connecting, setConnecting] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<Problem | null>(null);
@@ -467,9 +499,10 @@ function GmailConnectCard({
       const result = await apiFetch<{ authorize_url: string }>("/profile/integrations/gmail/connect");
       window.location.href = result.authorize_url;
     } catch (e) {
-      // A setup failure is the server's own sentence ("Gmail draft integration isn't
-      // configured on this server yet."): an operator's setting, so it carries no link
-      // to fix it here.
+      // The server can contradict what this page believed (Gmail was just closed to this person):
+      // ask again, and the card then says so. A setup failure is the server's own sentence, an
+      // operator's setting, so it carries no link to fix it here.
+      learnFromGmailRefusal(e, { unavailable: refreshCapabilities });
       setError(problemOf(e, "Failed to start connecting Gmail."));
     } finally {
       setConnecting(false);
@@ -489,49 +522,89 @@ function GmailConnectCard({
     }
   }
 
+  const connectButton = (label: string) => (
+    <button className="bj-primary" onClick={() => void connect()} disabled={connecting}>
+      {connecting ? "Connecting..." : label}
+    </button>
+  );
+  const disconnectButton = (
+    <button onClick={() => void disconnect()} disabled={removing}>
+      {removing ? "Disconnecting..." : "Disconnect Gmail"}
+    </button>
+  );
+
   return (
     <div className="bj-card">
       <div className="bj-card-header">
         <h2>Gmail</h2>
-        {needsReconnect ? (
+        {state === "unavailable" ? (
+          <span className="bj-badge-muted">Not available</span>
+        ) : state === "availability_unknown" ? (
+          <span className="bj-badge-muted">{availabilityFailed ? "Couldn't check" : "Checking"}</span>
+        ) : state === "reconnect_needed" ? (
           <span className="bj-badge-gold">Needs reconnect</span>
-        ) : credential ? (
+        ) : state === "connected" ? (
           <span className="bj-badge-emerald">Connected</span>
         ) : (
           <span className="bj-badge-gold">Not connected</span>
         )}
       </div>
-      <p className="bj-muted">
-        Lets ContactFinder land an outreach draft directly in your real Gmail -- draft-only,
-        always. Nothing is ever sent automatically; you still open Gmail and press Send yourself.
-        Also lets the platform check a thread you've drafted into for a reply, so a response can
-        surface as a real update -- it never reads anything else in your inbox.
-      </p>
-      {needsReconnect && (
+      {state === "unavailable" ? (
+        <>
+          <p className="bj-muted">
+            {gmailUnavailableMessage(access)} Everything else works, and you can still copy an
+            outreach draft or open it in your mail app.
+          </p>
+          {credential !== null && (
+            <p className="bj-muted bj-small">
+              You have a Gmail connection from before. It is not being used, and nothing has been
+              deleted. Disconnect it if you would rather we did not keep it.
+            </p>
+          )}
+        </>
+      ) : state === "availability_unknown" ? (
+        <>
+          <p className="bj-muted" role="status">
+            {availabilityFailed
+              ? "We couldn't check whether Gmail is available for your account. Reload the page to try again."
+              : "Checking whether Gmail is available for your account..."}
+          </p>
+          {credential !== null && (
+            <p className="bj-muted bj-small">
+              You have a Gmail connection saved. You can disconnect it here at any time.
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="bj-muted">
+          Lets ContactFinder land an outreach draft directly in your real Gmail -- draft-only,
+          always. Nothing is ever sent automatically; you still open Gmail and press Send yourself.
+          Also lets the platform check a thread you've drafted into for a reply, so a response can
+          surface as a real update -- it never reads anything else in your inbox.
+        </p>
+      )}
+      {state === "connected" && testingMode && (
         <p className="bj-muted bj-small">
-          Connected before reply-checking existed -- reconnect to grant the extra read access.
+          Gmail is still in beta, so Google ends the connection after 7 days: expect to reconnect
+          about once a week. When it does, this card says Needs reconnect and the app stops using
+          Gmail until you do. Everything already saved stays.
+        </p>
+      )}
+      {state === "reconnect_needed" && connection.kind === "reconnect_needed" && (
+        <p className="bj-muted bj-small">
+          {connection.cause === "access_ended"
+            ? "Google stopped accepting this connection. It may have expired, or you may have revoked access or changed your Google password. Until you reconnect, drafts aren't created in Gmail and replies aren't checked. Everything already saved stays, and drafts already in your Gmail stay there."
+            : "Connected before reply-checking existed -- reconnect to grant the extra read access."}
         </p>
       )}
       <ProblemView problem={error} />
       <div className="bj-actions">
-        {needsReconnect ? (
-          <button className="bj-primary" onClick={() => void connect()} disabled={connecting}>
-            {connecting ? "Connecting..." : "Reconnect Gmail"}
-          </button>
-        ) : credential ? (
-          <button onClick={() => void disconnect()} disabled={removing}>
-            {removing ? "Disconnecting..." : "Disconnect Gmail"}
-          </button>
-        ) : (
-          <button className="bj-primary" onClick={() => void connect()} disabled={connecting}>
-            {connecting ? "Connecting..." : "Connect Gmail"}
-          </button>
-        )}
-        {needsReconnect && (
-          <button onClick={() => void disconnect()} disabled={removing}>
-            {removing ? "Disconnecting..." : "Disconnect Gmail"}
-          </button>
-        )}
+        {state === "not_connected"
+          ? connectButton("Connect Gmail")
+          : state === "reconnect_needed"
+            ? connectButton("Reconnect Gmail")
+            : null}
+        {credential !== null && disconnectButton}
       </div>
     </div>
   );

@@ -187,6 +187,70 @@ async def list_credentials(ctx: Ctx) -> None:
     await _clear_b_credential(ctx)
 
 
+async def mark_credential_unvalidated(ctx: Ctx) -> None:
+    seeded = await ctx.need("u_credential", ctx.a)
+    await _clear_b_credential(ctx)
+    [before] = await _creds_rows(ctx, ctx.a.user_id)
+    assert before["id"] == seeded["id"]
+
+    # B has no such credential: nothing changes anywhere, and A's row stays as it was.
+    assert not await creds.mark_credential_unvalidated(
+        ctx.sb, ctx.b.user_id, service=_SERVICE, provider=_PROVIDER
+    )
+    assert await _creds_rows(ctx, ctx.a.user_id) == [before]
+
+    # With a credential of their own, B flips exactly that one, once; A's is still untouched.
+    b_secret = ctx.mark(ctx.b, ctx.tag("b-secret"))
+    own = await creds.save_credential(
+        ctx.sb,
+        ctx.b.user_id,
+        service=_SERVICE,
+        provider=_PROVIDER,
+        secret=b_secret,
+        is_validated=True,
+    )
+    assert await creds.mark_credential_unvalidated(
+        ctx.sb, ctx.b.user_id, service=_SERVICE, provider=_PROVIDER
+    )
+    assert not await creds.mark_credential_unvalidated(
+        ctx.sb, ctx.b.user_id, service=_SERVICE, provider=_PROVIDER
+    )
+    [b_row] = await _creds_rows(ctx, ctx.b.user_id)
+    assert b_row["id"] == own["id"] and b_row["is_validated"] is False
+    assert b_row["secret_encrypted"] == own["secret_encrypted"]  # the secret is kept
+    assert await _creds_rows(ctx, ctx.a.user_id) == [before]
+    assert ctx.b.user_id in await creds.list_unvalidated_user_ids(
+        ctx.sb, service=_SERVICE, provider=_PROVIDER
+    )
+    assert ctx.a.user_id not in await creds.list_unvalidated_user_ids(
+        ctx.sb, service=_SERVICE, provider=_PROVIDER
+    )
+    flagged = await creds.get_decrypted_credential(
+        ctx.sb, ctx.b.user_id, service=_SERVICE, provider=_PROVIDER
+    )
+    assert flagged["is_validated"] is False  # and the token still decrypts: nothing was deleted
+    assert flagged["secret"] == b_secret
+
+    # Saving it again (what reconnecting does) clears the flag, and can be flagged once more.
+    await creds.save_credential(
+        ctx.sb,
+        ctx.b.user_id,
+        service=_SERVICE,
+        provider=_PROVIDER,
+        secret=ctx.mark(ctx.b, ctx.tag("b-secret-again")),
+        is_validated=True,
+    )
+    [again] = await _creds_rows(ctx, ctx.b.user_id)
+    assert again["is_validated"] is True
+    assert ctx.b.user_id not in await creds.list_unvalidated_user_ids(
+        ctx.sb, service=_SERVICE, provider=_PROVIDER
+    )
+    assert await creds.mark_credential_unvalidated(
+        ctx.sb, ctx.b.user_id, service=_SERVICE, provider=_PROVIDER
+    )
+    await _clear_b_credential(ctx)
+
+
 async def delete_credential(ctx: Ctx) -> None:
     seeded = await ctx.need("u_credential", ctx.a)
     before = await _creds_rows(ctx, ctx.a.user_id)
@@ -413,6 +477,9 @@ STORE_CASES = [
     StoreCase("provider_credentials_store.delete_credential", delete_credential),
     StoreCase("provider_credentials_store.get_decrypted_credential", get_decrypted_credential),
     StoreCase("provider_credentials_store.list_credentials", list_credentials),
+    StoreCase(
+        "provider_credentials_store.mark_credential_unvalidated", mark_credential_unvalidated
+    ),
     StoreCase("extension_answers_store.match_approved_answer", match_approved_answer),
     StoreCase("extension_answers_store.record_answer_used", record_answer_used),
     StoreCase("extension_answers_store.save_approved_answer", save_approved_answer),

@@ -92,8 +92,10 @@ async def get_decrypted_credential(
     CredentialResolver resolving a BYOK credential for a real API call).
     Returns the full shape a caller needs to actually use the credential
     (provider, model, base_url, decrypted secret, decrypted secret_2 --
-    None for the vast majority of providers that only have one, and
-    scope -- OAuth-specific, None for every non-OAuth credential), not
+    None for the vast majority of providers that only have one,
+    scope -- OAuth-specific, None for every non-OAuth credential -- and
+    is_validated, which a Gmail connection loses when Google stops
+    honouring it, see `mark_credential_unvalidated`), not
     just the secret -- a resolver needs `base_url` too (e.g. a custom/
     self-hosted endpoint), and re-fetching the row separately would be a
     second round trip for data already in hand. An adversarial review
@@ -104,7 +106,9 @@ async def get_decrypted_credential(
     any caller to ever learn what was actually granted."""
     result = (
         await supabase.table("provider_credentials")
-        .select("provider, model, base_url, scope, secret_encrypted, secret_2_encrypted")
+        .select(
+            "provider, model, base_url, scope, is_validated, secret_encrypted, secret_2_encrypted"
+        )
         .eq("user_id", user_id)
         .eq("service", service)
         .eq("provider", provider)
@@ -124,9 +128,54 @@ async def get_decrypted_credential(
         "model": row["model"],
         "base_url": row["base_url"],
         "scope": row.get("scope"),
+        "is_validated": bool(row.get("is_validated", True)),
         "secret": secret,
         "secret_2": secret_2,
     }
+
+
+async def mark_credential_unvalidated(
+    supabase: AsyncClient, user_id: str, *, service: str, provider: str
+) -> bool:
+    """Sets `is_validated` to false on one person's credential, keeping every other column --
+    above all the encrypted secret, which is never deleted by this. For a Gmail connection that
+    is how "Google no longer honours this, the person has to reconnect" is recorded: saving the
+    credential again (a reconnect) sets it back to true.
+
+    A single conditional update, so it answers whether THIS call is the one that changed it:
+    True for the first caller, False when the credential was already unvalidated or does not
+    exist. Callers use that to act once per transition (one log line, however many drafts of the
+    same person failed in the same tick)."""
+    result = await (
+        supabase.table("provider_credentials")
+        .update({"is_validated": False})
+        .eq("user_id", user_id)
+        .eq("service", service)
+        .eq("provider", provider)
+        .eq("is_validated", True)
+        .execute()
+    )
+    return bool(result.data)
+
+
+async def list_unvalidated_user_ids(
+    supabase: AsyncClient, *, service: str, provider: str
+) -> frozenset[str]:
+    """The ids of everyone whose credential for this service and provider is currently
+    unvalidated. It spans users on purpose (a background worker's question: whom to leave
+    alone this tick), returns ids only and never a secret, and is bounded by the number of
+    people who have connected that provider. (PostgREST also caps one answer at its configured
+    maximum, 1,000 rows by default; the worker re-checks each credential itself, so a list cut
+    short there costs a little wasted reading and never a call to Google for a flagged person.)"""
+    result = await (
+        supabase.table("provider_credentials")
+        .select("user_id")
+        .eq("service", service)
+        .eq("provider", provider)
+        .eq("is_validated", False)
+        .execute()
+    )
+    return frozenset(str(row["user_id"]).lower() for row in cast(list[dict[str, Any]], result.data))
 
 
 async def delete_credential(

@@ -19,6 +19,12 @@
 //     driven by a person's action, never by a timer, and one ask at a time collapses a burst of
 //     refusals into one request.
 //
+// WHOSE ANSWER IT IS. Most of the answer is about the server, but `gmailAllowed` is about the
+// signed-in person (the server can open Gmail to chosen people only). So the store is told who is
+// signed in (`setPerson`), and when that becomes someone else what it holds was learned for the
+// previous person: it forgets it, drops an ask still in flight, and gives the new person a fresh
+// set of retries. The same person asking again changes nothing.
+//
 // Pure module: the fetcher is injected (api.ts pulls in the Supabase client, which throws at import
 // time without env vars) and there is no React here -- useCapabilities.ts binds it.
 
@@ -36,6 +42,8 @@ export interface CapabilitiesStore {
   retry: () => boolean;
   /** Asks again, whatever is known; a failure leaves a known answer as it was. */
   refresh: () => void;
+  /** Says who is signed in (null for nobody). A different person than before starts over. */
+  setPerson: (person: string | null) => void;
 }
 
 const CHECKING: CapabilitiesState = { kind: "checking" };
@@ -47,7 +55,13 @@ function sameAnswer(a: CapabilitiesState, b: CapabilitiesState): boolean {
     a.capabilities.telegram === b.capabilities.telegram &&
     a.capabilities.testerProgramRequired === b.capabilities.testerProgramRequired &&
     a.capabilities.telegramBotUsername === b.capabilities.telegramBotUsername &&
-    a.capabilities.engine === b.capabilities.engine
+    a.capabilities.engine === b.capabilities.engine &&
+    // Gmail's flags are the caller's own answer and can change between two asks (the operator
+    // edits the list of people it is open to), so a refresh that finds a different one is news.
+    // The server sends both only when it has Gmail (capabilities.ts), so a server that gains or
+    // loses Gmail shows up as them appearing or going missing.
+    a.capabilities.gmailAllowed === b.capabilities.gmailAllowed &&
+    a.capabilities.gmailTestingMode === b.capabilities.gmailTestingMode
   );
 }
 
@@ -55,6 +69,11 @@ export function createCapabilitiesStore(fetcher: CapabilitiesFetcher): Capabilit
   let state: CapabilitiesState = CHECKING;
   let asking = false;
   let retriesUsed = 0;
+  // Who the answer is for: undefined until the store is told, null for nobody signed in.
+  let person: string | null | undefined;
+  // Counts the times the person changed, so an ask made for the previous one is recognised when it
+  // comes back and thrown away.
+  let generation = 0;
   const listeners = new Set<() => void>();
 
   function set(next: CapabilitiesState): void {
@@ -65,10 +84,24 @@ export function createCapabilitiesStore(fetcher: CapabilitiesFetcher): Capabilit
     for (const listener of [...listeners]) listener();
   }
 
+  function setPerson(next: string | null): void {
+    if (person === next) return;
+    const previous = person;
+    person = next;
+    // The first time the store is told who is signed in, what it holds (if anything) is theirs.
+    if (previous === undefined) return;
+    generation += 1;
+    asking = false;
+    retriesUsed = 0;
+    set(CHECKING);
+  }
+
   function ask(): void {
     if (asking) return;
     asking = true;
+    const askedFor = generation;
     void loadCapabilities(fetcher).then((next) => {
+      if (askedFor !== generation) return;
       asking = false;
       if (next.kind === "ready") {
         set(next);
@@ -101,5 +134,6 @@ export function createCapabilitiesStore(fetcher: CapabilitiesFetcher): Capabilit
     },
     retry,
     refresh: ask,
+    setPerson,
   };
 }

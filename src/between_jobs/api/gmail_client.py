@@ -61,6 +61,104 @@ its own is not, and is ignored."""
 
 GMAIL_DISABLED_MESSAGE = "Gmail isn't set up on this server."
 
+GMAIL_RECONNECT_REASON = "gmail_reconnect_required"
+"""The `details["reason"]` of every error that says Google no longer honours a person's Gmail
+connection and they have to connect again. The web app turns it into a "Reconnect Gmail" prompt,
+and the reply checker and the draft route use it to flag the connection (`gmail_access`)."""
+
+GMAIL_RECONNECT_MESSAGE = (
+    "Google has stopped accepting your Gmail connection (it may have expired or been revoked). "
+    "Reconnect Gmail in Integrations to create drafts and check for replies again."
+)
+
+_INTEGRATIONS_PATH = "/profile/integrations"
+
+_ACCESS_ENDED_OAUTH_ERRORS = frozenset({"invalid_grant", "admin_policy_enforced"})
+"""The token endpoint's `error` values that mean the stored refresh token no longer works and
+only the person can fix it: `invalid_grant` (expired, revoked, the password changed, too many
+live tokens, or a session-control policy) and `admin_policy_enforced` (a Workspace administrator
+restricted the app). Others are not about the person: `invalid_client` and `deleted_client` are
+the operator's client settings, and flagging every connection over them would send everyone to a
+reconnect that cannot help."""
+
+_GMAIL_RATE_LIMIT_REASONS = frozenset({"rateLimitExceeded", "userRateLimitExceeded"})
+"""Gmail reports a rate limit as HTTP 403 with one of these `reason` values, as well as 429."""
+
+_GMAIL_SCOPE_REASONS = frozenset({"insufficientPermissions"})
+"""The 403 `reason` for a token that lacks the scope a call needs (the person unticked a
+permission on Google's consent screen, or withdrew one later): only reconnecting grants it."""
+
+
+def reconnect_required_error() -> ApiError:
+    """The one answer for "Google no longer honours this person's Gmail connection": a rejected
+    provider call (so it is logged as an expected condition, not a bug) that names its reason
+    and points at the Integrations page."""
+    return ApiError(
+        "PROVIDER_REJECTED",
+        GMAIL_RECONNECT_MESSAGE,
+        settings_path=_INTEGRATIONS_PATH,
+        details={"reason": GMAIL_RECONNECT_REASON},
+    )
+
+
+def needs_reconnect(error: BaseException) -> bool:
+    """Whether `error` is `reconnect_required_error`'s answer, as raised by any call below."""
+    return isinstance(error, ApiError) and error.details.get("reason") == GMAIL_RECONNECT_REASON
+
+
+def _json_object(response: httpx.Response) -> dict[str, Any]:
+    try:
+        body = response.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def _text(value: object) -> str | None:
+    """`value` when it is a string, else None. The only things read out of Google's answers are
+    short machine tokens such as `invalid_grant` or `userRateLimitExceeded`, and only to check
+    them against the sets above: its free-text messages are never read, kept or passed on."""
+    return value if isinstance(value, str) else None
+
+
+def _gmail_error_reason(response: httpx.Response) -> str | None:
+    """The first `reason` in a Gmail API error body (`{"error": {"errors": [{"reason": ...}]}}`),
+    or None when there is none or the body is not that shape."""
+    error = _json_object(response).get("error")
+    entries = error.get("errors") if isinstance(error, dict) else None
+    if isinstance(entries, list) and entries and isinstance(entries[0], dict):
+        return _text(entries[0].get("reason"))
+    return None
+
+
+def _raise_for_gmail_status(response: httpx.Response, *, doing: str) -> None:
+    """Turns a failed Gmail API answer into the right `ApiError`, and does nothing for a success.
+
+    Only some failures are about the person's connection (`reconnect_required_error`): a 401
+    (the access token is invalid, or lacks authorization for the scopes) and a 403 for a missing
+    scope. A rate limit (a 429, or a 403 with a rate-limit reason) and a server failure (5xx) are
+    transient and say so. A 403 for anything else (the project's daily limit, a domain policy, a
+    reason this code does not know) is a refusal that reconnecting would not change, so it is
+    reported as one without sending the person on a pointless reconnect. `doing` completes
+    "Gmail couldn't ..." for the messages."""
+    status = response.status_code
+    if status < 400:
+        return
+    if status == 401:
+        raise reconnect_required_error()
+    reason = _gmail_error_reason(response) if status == 403 else None
+    if reason in _GMAIL_SCOPE_REASONS:
+        raise reconnect_required_error()
+    if status == 429 or reason in _GMAIL_RATE_LIMIT_REASONS:
+        raise ApiError(
+            "PROVIDER_RATE_LIMITED",
+            "Gmail is limiting requests right now. Try again in a moment.",
+            retryable=True,
+        )
+    if status == 403:
+        raise ApiError("PROVIDER_REJECTED", f"Gmail refused to {doing}.")
+    raise ApiError("PROVIDER_UNAVAILABLE", f"Gmail couldn't {doing} right now.", retryable=True)
+
 
 def gmail_oauth_config() -> GmailOauthConfig | None:
     """Gmail's settings, or None when Gmail is not set up here: Gmail is OPTIONAL, like
@@ -183,7 +281,13 @@ async def refresh_access_token(
     short-lived (~1hr) and never stored; only the refresh_token is, so
     each use costs one extra round trip to mint a fresh access token.
     Usage here is inherently rare and one-candidate-at-a-time, so that
-    cost is a real, accepted tradeoff, not an oversight."""
+    cost is a real, accepted tradeoff, not an oversight.
+
+    Google answers a refresh token it no longer honours with a 4xx and an `error` of
+    `invalid_grant` (in a project whose consent screen is in Testing mode that is every refresh
+    token after 7 days): that is `reconnect_required_error`, and nothing else is. A network
+    failure, a 429 and a 5xx are transient (`PROVIDER_UNAVAILABLE`, retryable), and any other
+    refusal is a plain `PROVIDER_REJECTED`; none of those says the person has to reconnect."""
     try:
         response = await http.post(
             _TOKEN_URL,
@@ -200,10 +304,15 @@ async def refresh_access_token(
             "PROVIDER_UNAVAILABLE", "Couldn't reach Google to refresh Gmail access.", retryable=True
         ) from e
     if response.status_code >= 400:
-        raise ApiError(
-            "PROVIDER_REJECTED",
-            "Google rejected the stored Gmail connection -- reconnect Gmail in Integrations.",
-        )
+        if response.status_code == 429 or response.status_code >= 500:
+            raise ApiError(
+                "PROVIDER_UNAVAILABLE",
+                "Google couldn't refresh Gmail access right now. Try again in a moment.",
+                retryable=True,
+            )
+        if _text(_json_object(response).get("error")) in _ACCESS_ENDED_OAUTH_ERRORS:
+            raise reconnect_required_error()
+        raise ApiError("PROVIDER_REJECTED", "Google wouldn't refresh Gmail access.")
     return str(response.json()["access_token"])
 
 
@@ -240,15 +349,7 @@ async def create_draft(
         raise ApiError(
             "PROVIDER_UNAVAILABLE", "Couldn't reach Gmail. Try again in a moment.", retryable=True
         ) from e
-    if response.status_code in (401, 403):
-        raise ApiError(
-            "PROVIDER_REJECTED",
-            "Gmail rejected that request -- try reconnecting Gmail in Integrations.",
-        )
-    if response.status_code >= 400:
-        raise ApiError(
-            "PROVIDER_UNAVAILABLE", "Gmail couldn't create that draft right now.", retryable=True
-        )
+    _raise_for_gmail_status(response, doing="create that draft")
     body = response.json()
     thread_id = body.get("message", {}).get("threadId")
     if "id" not in body or not thread_id:
@@ -340,15 +441,7 @@ async def get_thread(http: httpx.AsyncClient, *, access_token: str, thread_id: s
         raise ApiError(
             "PROVIDER_UNAVAILABLE", "Couldn't reach Gmail. Try again in a moment.", retryable=True
         ) from e
-    if response.status_code in (401, 403):
-        raise ApiError(
-            "PROVIDER_REJECTED",
-            "Gmail rejected that request -- try reconnecting Gmail in Integrations.",
-        )
-    if response.status_code >= 400:
-        raise ApiError(
-            "PROVIDER_UNAVAILABLE", "Gmail couldn't fetch that thread right now.", retryable=True
-        )
+    _raise_for_gmail_status(response, doing="fetch that thread")
 
     body = response.json()
     messages: list[GmailMessage] = []

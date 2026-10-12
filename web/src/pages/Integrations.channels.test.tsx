@@ -10,7 +10,10 @@ import Integrations from "./Integrations";
 
 const recorded = vi.hoisted(() => ({ caps: { kind: "checking" } as { kind: string } }));
 
-vi.mock("../lib/useCapabilities", () => ({ useCapabilities: () => recorded.caps }));
+vi.mock("../lib/useCapabilities", () => ({
+  useCapabilities: () => recorded.caps,
+  refreshCapabilities: () => undefined,
+}));
 vi.mock("../lib/useHiringSignalsStatus", () => ({ useHiringSignalsEnabled: () => false }));
 vi.mock("../components/SavedSearchesCard", () => ({ SavedSearchesCard: () => null }));
 

@@ -54,7 +54,13 @@ search or scraping key, it says so:
   app created, to see whether you sent it and whether anyone replied. It has your LLM key
   classify the newest reply, moves that application to the matching stage when it is
   confident (0.85 or above), and queues anything else it proposes for your review on the
-  Today feed.
+  Today feed. If Google stops accepting the connection (it expires, you revoke it, you change
+  your password), the Integrations page says "Needs reconnect", the app stops using it until
+  you reconnect, and your stored connection is kept. While the server's Google OAuth client is
+  in Google's Testing status that happens every 7 days (`GMAIL_TESTING_MODE`), and only the
+  people the server lists can connect (`GMAIL_ALLOWED_USER_IDS`). Anyone who cannot use Gmail,
+  or whose connection needs a reconnect, can still copy a draft or open it in their mail app
+  from the contact panel.
 - **Hiring signals.** Hiring-intent posts found through search-index results; needs a
   Brave, Serper, Firecrawl or You.com key saved on the Integrations page. The code never
   fetches linkedin.com itself.
@@ -316,8 +322,14 @@ These are off until configured. The Telegram bridge needs `TELEGRAM_BOT_TOKEN` a
 `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and `GOOGLE_OAUTH_REDIRECT_URI`, or none
 of them: with none, Gmail is off and its routes answer "Gmail isn't set up on this server."; a
 client id or secret without the others stops the API from starting, and a redirect URI on its
-own is ignored), and the Google consent includes read access to Gmail (see "What works today");
-PDF output needs `latex-service/` running; Discord has its own walk-through below.
+own is ignored), and the Google consent includes read access to Gmail (see "What works today").
+Gmail's two permissions are "restricted" in Google's terms, so until Google has verified your
+OAuth client it stays in Testing status, where only the test users you add can consent and every
+connection expires after 7 days: set `GMAIL_ALLOWED_USER_IDS` to the same people (everyone else
+is told Gmail isn't available for their account yet, and nothing is deleted for someone who is
+later removed) and `GMAIL_TESTING_MODE=on` so the app says so. Leave both unset on a server of
+your own, where every signed-in user may connect. PDF output needs `latex-service/` running;
+Discord has its own walk-through below.
 `.env.example` explains each one. Setting `WEB_APP_URL` to the web app's public https address
 lets the bot's `/privacy` and `/learn` link to its pages.
 

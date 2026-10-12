@@ -188,11 +188,14 @@ function labelFor(pathname: string, capability: string | undefined, missing: rea
   return genericLabel(pathname);
 }
 
-// What the link of a rejected model call says, by the server's reason.
+// What the link of a rejected provider call says, by the server's reason.
 const PROVIDER_FIX_LABELS = new Map<string, string>([
   ["key_rejected", "Check your model key in Integrations"],
   ["out_of_credit", "Switch or update your model key in Integrations"],
   ["request_rejected", "Check your model in Integrations"],
+  // Not a model provider: Google stopped accepting the person's Gmail connection (it expired or
+  // was revoked), and connecting again on the Integrations page is the fix.
+  ["gmail_reconnect_required", "Reconnect Gmail in Integrations"],
 ]);
 
 // ── the notice ─────────────────────────────────────────────────────────────

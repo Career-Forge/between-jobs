@@ -112,12 +112,26 @@ class _FakeTable:
 
 
 class _CredentialTable:
+    """Rows keyed on (service, provider) -- this file's tests have one caller. `update` is the
+    conditional update `mark_credential_unvalidated` makes: it changes (and returns) a row only
+    while the row's `is_validated` still equals the value the query asks for, like Postgres."""
+
     def __init__(self, rows: dict[tuple[str, str], dict[str, Any]]) -> None:
         self._rows = rows
         self._service = ""
         self._provider = ""
+        self._pending_update: dict[str, Any] | None = None
+        self._validated_filter: bool | None = None
+        self.reads = 0
 
     def select(self, *_: Any, **__: Any) -> _CredentialTable:
+        self._pending_update = None
+        self.reads += 1
+        return self
+
+    def update(self, data: dict[str, Any]) -> _CredentialTable:
+        self._pending_update = data
+        self._validated_filter = None
         return self
 
     def eq(self, column: str, value: Any) -> _CredentialTable:
@@ -125,10 +139,21 @@ class _CredentialTable:
             self._service = value
         if column == "provider":
             self._provider = value
+        if column == "is_validated":
+            self._validated_filter = value
         return self
 
     async def execute(self) -> SimpleNamespace:
         row = self._rows.get((self._service, self._provider))
+        if self._pending_update is not None:
+            update, self._pending_update = self._pending_update, None
+            if (
+                row is None
+                or self._validated_filter is None
+                or row.get("is_validated", True) != self._validated_filter
+            ):
+                return SimpleNamespace(data=[])
+            row.update(update)
         return SimpleNamespace(data=[row] if row else [])
 
 
@@ -263,6 +288,7 @@ class _FakeHttpClient:
         google_token_body: dict[str, Any] | None = None,
         gmail_draft_status_code: int = 200,
         gmail_draft_body: dict[str, Any] | None = None,
+        google_token_status_code: int = 200,
     ) -> None:
         self.status_code = status_code
         self.apollo_status_code = apollo_status_code
@@ -274,6 +300,7 @@ class _FakeHttpClient:
         self.google_token_body = (
             google_token_body if google_token_body is not None else {"access_token": "at-1"}
         )
+        self.google_token_status_code = google_token_status_code
         self.gmail_draft_status_code = gmail_draft_status_code
         self.gmail_draft_body = (
             gmail_draft_body
@@ -299,7 +326,9 @@ class _FakeHttpClient:
             )
         if "oauth2.googleapis.com" in url:
             return httpx.Response(
-                status_code=200, json=self.google_token_body, request=httpx.Request("POST", url)
+                status_code=self.google_token_status_code,
+                json=self.google_token_body,
+                request=httpx.Request("POST", url),
             )
         if "gmail.googleapis.com" in url:
             return httpx.Response(
@@ -335,6 +364,7 @@ def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "client-123")
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "secret-456")
     monkeypatch.setenv("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8012/oauth/gmail/callback")
+    monkeypatch.delenv("GMAIL_ALLOWED_USER_IDS", raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -1272,3 +1302,200 @@ def test_push_outreach_to_gmail_is_idempotent_on_a_second_call() -> None:
     assert body["gmail_thread_id"] == "gmail-thread-existing"
     # never re-called Gmail for an already-pushed draft
     assert not any("gmail.googleapis.com" in c for c in http.post_calls)
+
+
+# ── Gmail for invited people only, and a connection Google stopped honouring ─────────────────
+
+_OTHER_USER_ID = "00000000-0000-0000-0000-000000000002"
+_PUSH_URL = f"/applications/{_APPLICATION_ID}/contacts/{_CANDIDATE_ID}/push-to-gmail"
+_RECONNECT_REASON = "gmail_reconnect_required"
+_TOKEN_TEXT = "decrypted-secret"  # what the fake database hands back as the refresh token
+_GOOGLE_FREE_TEXT = "Token has been expired or revoked. (free text from Google)"
+
+
+def _push_world(
+    *, credential: dict[str, Any] | None = None, **http_options: Any
+) -> tuple[_FakeSupabaseClient, _FakeHttpClient]:
+    supabase = _FakeSupabaseClient(
+        provider_credentials={("oauth", "gmail"): credential or dict(_GMAIL_CREDENTIAL_ROW)},
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_ENRICHED_CANDIDATE_ROW)]),
+        outreach_drafts=_FakeTable(select_rows=[dict(_DRAFT_ROW)]),
+    )
+    return supabase, _FakeHttpClient(**http_options)
+
+
+def test_a_person_the_gmail_list_does_not_name_gets_the_not_available_answer_and_no_google_call(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The connection is there (made before they were removed from the list), and it is not
+    used: not read, not refreshed, not asked to create anything."""
+    monkeypatch.setenv("GMAIL_ALLOWED_USER_IDS", _OTHER_USER_ID)
+    supabase, http = _push_world()
+    credential = supabase._credential_table
+
+    with caplog.at_level(logging.DEBUG), _client(supabase, http) as client:
+        response = client.post(_PUSH_URL)
+
+    assert response.status_code == 404
+    error = response.json()["error"]
+    assert error["code"] == "FEATURE_DISABLED"
+    assert error["message"] == "Gmail isn't available for your account yet."
+    assert error["settings_path"] is None and error["details"] == {}
+    assert _OTHER_USER_ID not in response.text  # nothing about who is on the list
+    assert http.post_calls == [] and http.get_calls == []
+    assert credential.reads == 0
+    assert supabase.outreach_drafts.update_calls == []
+    assert [r for r in caplog.records if "gmail" in r.getMessage().lower()] == []
+
+
+def test_a_person_the_gmail_list_names_pushes_as_before(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GMAIL_ALLOWED_USER_IDS", f"{_OTHER_USER_ID}, {_USER_ID.upper()}")
+    supabase, http = _push_world()
+
+    with _client(supabase, http) as client:
+        response = client.post(_PUSH_URL)
+
+    assert response.status_code == 200
+    assert response.json()["gmail_draft_id"] == "gmail-draft-1"
+    assert any("gmail.googleapis.com" in c for c in http.post_calls)
+
+
+def test_the_list_does_not_hide_a_draft_that_was_already_pushed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Returning the existing state touches neither Google nor the connection."""
+    monkeypatch.setenv("GMAIL_ALLOWED_USER_IDS", _OTHER_USER_ID)
+    already_pushed = {**_DRAFT_ROW, "gmail_draft_id": "d-1", "gmail_thread_id": "t-1"}
+    supabase = _FakeSupabaseClient(
+        contact_research_runs=_FakeTable(select_rows=[_RUN_ROW]),
+        contact_candidates=_FakeTable(select_rows=[dict(_ENRICHED_CANDIDATE_ROW)]),
+        outreach_drafts=_FakeTable(select_rows=[already_pushed]),
+    )
+
+    with _client(supabase, _FakeHttpClient()) as client:
+        response = client.post(_PUSH_URL)
+
+    assert response.status_code == 200
+    assert response.json()["gmail_draft_id"] == "d-1"
+
+
+def _assert_reconnect_answer(response: Any) -> None:
+    assert response.status_code == 502
+    error = response.json()["error"]
+    assert error["code"] == "PROVIDER_REJECTED"
+    assert error["details"] == {"reason": _RECONNECT_REASON}
+    assert error["settings_path"] == "/profile/integrations"
+    assert error["retryable"] is False
+    assert "Reconnect Gmail" in error["message"]
+    for leaked in (_TOKEN_TEXT, "secret-456", _GOOGLE_FREE_TEXT, "invalid_grant"):
+        assert leaked not in response.text
+
+
+def test_google_refusing_the_refresh_token_flags_the_connection_and_asks_for_a_reconnect(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    supabase, http = _push_world(
+        google_token_status_code=400,
+        google_token_body={"error": "invalid_grant", "error_description": _GOOGLE_FREE_TEXT},
+    )
+
+    with caplog.at_level(logging.DEBUG), _client(supabase, http) as client:
+        first = client.post(_PUSH_URL)
+        calls_after_first = list(http.post_calls)
+        second = client.post(_PUSH_URL)
+
+    _assert_reconnect_answer(first)
+    _assert_reconnect_answer(second)
+    # flagged, not deleted: the row and its secret are still there
+    row = supabase._credential_table._rows[("oauth", "gmail")]
+    assert row["is_validated"] is False and row["secret_encrypted"] == "rt-cipher"
+    # the second click did not go to Google at all
+    assert calls_after_first == [c for c in http.post_calls if "oauth2.googleapis.com" in c]
+    assert len(calls_after_first) == 1 and http.post_calls == calls_after_first
+    # one WARNING for the transition, with no token and nothing Google said
+    flagged = [r for r in caplog.records if r.getMessage().startswith("a Gmail connection needs")]
+    assert len(flagged) == 1 and flagged[0].levelno == logging.WARNING
+    assert flagged[0].ctx == {"user_id": _USER_ID, "reason": _RECONNECT_REASON}  # type: ignore[attr-defined]
+    for leaked in (_TOKEN_TEXT, "secret-456", _GOOGLE_FREE_TEXT):
+        assert leaked not in caplog.text
+
+
+def test_a_connection_that_is_already_flagged_is_not_tried_again() -> None:
+    supabase, http = _push_world(credential={**_GMAIL_CREDENTIAL_ROW, "is_validated": False})
+
+    with _client(supabase, http) as client:
+        response = client.post(_PUSH_URL)
+
+    _assert_reconnect_answer(response)
+    assert http.post_calls == []
+    assert supabase.outreach_drafts.update_calls == []
+
+
+def test_gmail_answering_401_after_a_fresh_token_flags_the_connection() -> None:
+    supabase, http = _push_world(
+        gmail_draft_status_code=401,
+        gmail_draft_body={"error": {"code": 401, "message": _GOOGLE_FREE_TEXT}},
+    )
+
+    with _client(supabase, http) as client:
+        response = client.post(_PUSH_URL)
+
+    _assert_reconnect_answer(response)
+    assert supabase._credential_table._rows[("oauth", "gmail")]["is_validated"] is False
+
+
+def test_a_google_outage_is_retryable_and_never_flags_the_connection(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    for token_status, draft_status in ((503, 200), (500, 200), (200, 503), (200, 500)):
+        supabase, http = _push_world(
+            google_token_status_code=token_status,
+            google_token_body={"access_token": "at-1"} if token_status == 200 else {},
+            gmail_draft_status_code=draft_status,
+            gmail_draft_body={},
+        )
+        with caplog.at_level(logging.DEBUG), _client(supabase, http) as client:
+            response = client.post(_PUSH_URL)
+
+        assert response.status_code == 503, (token_status, draft_status)
+        error = response.json()["error"]
+        assert (error["code"], error["retryable"]) == ("PROVIDER_UNAVAILABLE", True)
+        assert error["details"] == {}
+        row = supabase._credential_table._rows[("oauth", "gmail")]
+        assert row.get("is_validated", True) is True, (token_status, draft_status)
+    assert not any(r.getMessage().startswith("a Gmail connection needs") for r in caplog.records)
+
+
+def test_a_network_failure_is_retryable_and_never_flags_the_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    supabase, http = _push_world()
+
+    async def unreachable(url: str, **_kwargs: Any) -> httpx.Response:
+        raise httpx.ConnectError("no route", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(http, "post", unreachable)
+
+    with _client(supabase, http) as client:
+        response = client.post(_PUSH_URL)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+    assert supabase._credential_table._rows[("oauth", "gmail")].get("is_validated", True) is True
+
+
+def test_a_server_side_client_problem_is_not_a_reason_to_send_the_person_to_reconnect() -> None:
+    """invalid_client means the operator's OAuth client settings are wrong. Every user would be
+    flagged and told to reconnect, and it could not help."""
+    supabase, http = _push_world(
+        google_token_status_code=401, google_token_body={"error": "invalid_client"}
+    )
+
+    with _client(supabase, http) as client:
+        response = client.post(_PUSH_URL)
+
+    assert response.status_code == 502
+    error = response.json()["error"]
+    assert error["code"] == "PROVIDER_REJECTED" and error["details"] == {}
+    assert supabase._credential_table._rows[("oauth", "gmail")].get("is_validated", True) is True

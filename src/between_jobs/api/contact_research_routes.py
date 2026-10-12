@@ -38,8 +38,9 @@ from .contact_research_store import (
 )
 from .credential_resolver import resolve, try_get_secret
 from .errors import ApiError
+from .gmail_access import flag_reconnect_required, require_gmail_user
 from .gmail_client import create_draft as create_gmail_draft
-from .gmail_client import refresh_access_token, require_gmail_oauth_config
+from .gmail_client import needs_reconnect, reconnect_required_error, refresh_access_token
 from .jobs_store import SnapshotNotFound, get_snapshot
 from .llm_client import generate as llm_generate
 from .outreach_writer import generate_outreach_draft
@@ -418,8 +419,10 @@ async def push_outreach_to_gmail(
         return draft
 
     # Before looking for the person's connection: on a server without Gmail there is nothing to
-    # connect, and "Connect Gmail first" would send them to a button that cannot work.
-    config = require_gmail_oauth_config()
+    # connect, and "Connect Gmail first" would send them to a button that cannot work. The same
+    # call refuses a person the server's Gmail list does not name, whatever connection they may
+    # have from before they were removed from it.
+    config = require_gmail_user(user_id)
     try:
         credential = await get_decrypted_credential(
             supabase, user_id, service="oauth", provider="gmail"
@@ -433,19 +436,32 @@ async def push_outreach_to_gmail(
             settings_path="/profile/integrations",
         ) from e
 
-    access_token = await refresh_access_token(
-        http,
-        refresh_token=credential["secret"],
-        client_id=config["client_id"],
-        client_secret=config["client_secret"],
-    )
-    gmail_draft = await create_gmail_draft(
-        http,
-        access_token=access_token,
-        to_email=candidate["enriched_email"],
-        subject=draft["subject"],
-        body_text=draft["email_body"],
-    )
+    # A connection Google already refused is not tried again: the answer is the same reconnect
+    # prompt, without another call to Google.
+    if not credential["is_validated"]:
+        raise reconnect_required_error()
+
+    try:
+        access_token = await refresh_access_token(
+            http,
+            refresh_token=credential["secret"],
+            client_id=config["client_id"],
+            client_secret=config["client_secret"],
+        )
+        gmail_draft = await create_gmail_draft(
+            http,
+            access_token=access_token,
+            to_email=candidate["enriched_email"],
+            subject=draft["subject"],
+            body_text=draft["email_body"],
+        )
+    except ApiError as error:
+        # Google saying it no longer honours the connection is recorded (so the reply checker
+        # stops trying and the Integrations page says "Needs reconnect"); a network failure or
+        # a Google outage is not, and passes through as the retryable error it is.
+        if needs_reconnect(error):
+            await flag_reconnect_required(supabase, user_id)
+        raise
 
     updated = await mark_pushed_to_gmail(
         supabase,

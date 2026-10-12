@@ -52,6 +52,7 @@ from .env import optional_env, refuse, web_app_url
 from .error_reporting import flush_error_reporting, init_error_reporting, report_exception
 from .errors import ApiError, log_api_error
 from .extension_routes import router as extension_router
+from .gmail_access import check_gmail_access_settings
 from .gmail_client import check_gmail_configuration
 from .gmail_oauth_routes import router as gmail_oauth_router
 from .gmail_reply_checker import _DEFAULT_CHECK_INTERVAL_SECONDS as REPLY_CHECK_INTERVAL_SECONDS
@@ -151,6 +152,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # (its routes answer 404 FEATURE_DISABLED), and a half-set Gmail is a mistake that stops the
     # boot here, naming the variables, rather than failing one person's click later.
     check_gmail_configuration()
+    # The list of people allowed to use Gmail and the testing-mode flag, both read on every
+    # request: a typo in either must stop the boot, not decide who may connect or what they
+    # are told.
+    check_gmail_access_settings()
     app.state.supabase, app.state.supabase_url = await create_supabase_client()
     app.state.jwks_client = create_jwks_client(app.state.supabase_url)
 

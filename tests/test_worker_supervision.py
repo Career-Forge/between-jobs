@@ -476,7 +476,7 @@ async def test_one_failing_draft_does_not_fail_the_reply_check_tick(
         checked.append(draft["draft_id"])
 
     monkeypatch.setattr(gmail_reply_checker, "require_gmail_oauth_config", lambda: object())
-    monkeypatch.setattr(gmail_reply_checker, "_select_due_drafts", drafts)
+    monkeypatch.setattr(gmail_reply_checker, "_select_checkable_drafts", drafts)
     monkeypatch.setattr(gmail_reply_checker, "_check_one_draft", check_one)
 
     processed = await gmail_reply_checker.run_reply_check_once(object(), object())  # type: ignore[arg-type]

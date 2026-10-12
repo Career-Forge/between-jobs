@@ -49,11 +49,33 @@ immediately after, both the real stage change AND a redundant pending-
 review Today item exist -- confusing but not corrupting, and rare enough
 (two back-to-back Supabase calls, the first already having succeeded)
 that building a fully atomic RPC for it isn't worth the machinery.
+
+Whose drafts are checked at all, and what an expired connection does here:
+
+- A person the server's Gmail list does not name (`GMAIL_ALLOWED_USER_IDS`, see `gmail_access`)
+  is left alone: their drafts are not read, nothing is asked of Google, nothing is logged, and
+  nothing is written -- not even `last_reply_checked_at`, so adding them back later still
+  catches a reply that arrived in between.
+- A person whose connection Google stopped honouring (Testing mode expires a refresh token
+  after 7 days, and people revoke access) is recorded as needing a reconnect the first time
+  Google says so (`gmail_access.flag_reconnect_required`: one WARNING, the token kept). From
+  then on every tick skips that person's drafts without a call to Google, and the draft that
+  found out is not marked checked either, so the replies that arrived while access was gone
+  are still seen once they reconnect. Network failures and Google's 5xx answers are NOT that:
+  they are transient, and the draft is retried on the next tick as before.
+- Both groups are filtered out before the per-tick budget is spent. The query hands back the
+  least recently checked drafts first, and a skipped draft is never marked checked, so left in
+  it would sit at the front of every tick and could crowd out everybody else's.
+  `_select_checkable_drafts` therefore reads a bounded multiple of the budget and takes the
+  first `_MAX_DRAFTS_PER_TICK` that remain. Only when more than twice the budget of drafts
+  belong to skipped people can they still crowd out the rest; that is far beyond a server
+  limited to a list of invited people.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -72,15 +94,21 @@ from .application_status_proposals_store import (
 from .applications_store import change_stage
 from .credential_resolver import resolve
 from .errors import ApiError, log_contained_failure
+from .gmail_access import flag_reconnect_required, gmail_allowlist, user_may_use_gmail
 from .gmail_client import (
     GmailMessage,
     GmailOauthConfig,
     get_thread,
+    needs_reconnect,
     refresh_access_token,
     require_gmail_oauth_config,
 )
 from .llm_client import generate as llm_generate
-from .provider_credentials_store import CredentialNotFound, get_decrypted_credential
+from .provider_credentials_store import (
+    CredentialNotFound,
+    get_decrypted_credential,
+    list_unvalidated_user_ids,
+)
 from .worker_supervision import Sleep, WorkerState, run_supervised
 
 logger = logging.getLogger(__name__)
@@ -107,6 +135,11 @@ tick and Google's 6-pages/tick ceilings elsewhere in this codebase --
 cheap insurance against one tick doing unbounded work, not a real limit
 at this project's actual scale."""
 
+_SKIPPED_PEOPLE_HEADROOM = 3
+"""When some people's drafts are skipped (see this module's docstring), the query is asked for
+this many times the per-tick budget so that, after those are dropped, a full budget of drafts
+can still be checked. A bound, not a guarantee: it caps the rows one tick reads."""
+
 _MAX_CONCURRENT_CHECKS = 5
 """Different drafts share no state (each reads/writes only its own row),
 so they don't need to run one at a time -- but each can trigger a real
@@ -127,13 +160,34 @@ def _to_epoch_ms(value: str | None) -> int:
     return int(datetime.fromisoformat(value).timestamp() * 1000)
 
 
-async def _select_due_drafts(supabase: AsyncClient) -> list[dict[str, Any]]:
+async def _select_due_drafts(
+    supabase: AsyncClient, *, limit: int = _MAX_DRAFTS_PER_TICK
+) -> list[dict[str, Any]]:
     cutoff_iso = (datetime.now(UTC) - timedelta(seconds=_STALENESS_SECONDS)).isoformat()
     result = await supabase.rpc(
         "list_drafts_due_for_reply_check",
-        {"staleness_cutoff": cutoff_iso, "result_limit": _MAX_DRAFTS_PER_TICK},
+        {"staleness_cutoff": cutoff_iso, "result_limit": limit},
     ).execute()
     return cast(list[dict[str, Any]], result.data or [])
+
+
+async def _select_checkable_drafts(supabase: AsyncClient) -> list[dict[str, Any]]:
+    """The due drafts of people whose Gmail this server may use and whose connection Google still
+    honours, at most `_MAX_DRAFTS_PER_TICK` of them. See this module's docstring for why the
+    others are dropped here and not left to `_check_one_draft`."""
+    waiting_to_reconnect = await list_unvalidated_user_ids(
+        supabase, service="oauth", provider="gmail"
+    )
+    if not waiting_to_reconnect and gmail_allowlist() is None:
+        return await _select_due_drafts(supabase)
+    due = await _select_due_drafts(supabase, limit=_MAX_DRAFTS_PER_TICK * _SKIPPED_PEOPLE_HEADROOM)
+    checkable = [
+        draft
+        for draft in due
+        if str(draft["user_id"]).lower() not in waiting_to_reconnect
+        and user_may_use_gmail(str(draft["user_id"]))
+    ]
+    return checkable[:_MAX_DRAFTS_PER_TICK]
 
 
 async def _mark_checked(supabase: AsyncClient, draft_id: str) -> None:
@@ -155,6 +209,13 @@ async def _mark_sent_confirmed(supabase: AsyncClient, draft_id: str, sent_at_ms:
     )
 
 
+def _refresh_key(user_id: str, refresh_token: str) -> str:
+    """What a refresh is shared under: the person AND the token being refreshed. A digest, so the
+    plaintext token is not also used as a dictionary key (and so never shows up wherever a
+    frame's variables are captured)."""
+    return f"{user_id}:{hashlib.sha256(refresh_token.encode()).hexdigest()}"
+
+
 async def _get_access_token(
     http: httpx.AsyncClient,
     oauth_config: GmailOauthConfig,
@@ -163,7 +224,13 @@ async def _get_access_token(
     tasks: dict[str, asyncio.Task[str]],
 ) -> str:
     """Single-flights the refresh across every draft due for the same
-    user in one tick. An adversarial review found the original plain
+    user, holding the same token, in one tick. The key includes the
+    token (see `_refresh_key`), not only the user: a person who
+    reconnects while a tick is running has a NEW refresh token, and a
+    draft of theirs that reads it must not be handed the cached failure
+    of the OLD one -- that would flag the fresh connection as needing a
+    reconnect again, without Google ever having seen the new token. An
+    adversarial review found the original plain
     dict-of-strings cache had a real check-then-await-then-set race: two
     concurrently-running bounded tasks for the same user_id (a normal
     case -- one user with two due drafts) would both observe a cache
@@ -173,8 +240,10 @@ async def _get_access_token(
     eventual result) closes this: the check, task creation, and cache
     write below have no `await` between them, so they're atomic from the
     event loop's perspective -- whichever caller reaches this first wins,
-    and every other caller for the same user just awaits that same task."""
-    task = tasks.get(user_id)
+    and every other caller for the same user and token just awaits that
+    same task."""
+    key = _refresh_key(user_id, credential["secret"])
+    task = tasks.get(key)
     if task is None:
         task = asyncio.ensure_future(
             refresh_access_token(
@@ -184,7 +253,7 @@ async def _get_access_token(
                 client_secret=oauth_config["client_secret"],
             )
         )
-        tasks[user_id] = task
+        tasks[key] = task
     return await task
 
 
@@ -300,6 +369,20 @@ async def _publish_pending_proposal_event(
             raise
 
 
+async def _after_failed_gmail_call(
+    supabase: AsyncClient, draft: dict[str, Any], error: ApiError
+) -> None:
+    """What a draft's check does when a call to Google failed. Google saying it no longer honours
+    the connection flags it (once per person) and leaves the draft unmarked, so the replies
+    that arrive meanwhile are still seen after a reconnect. Anything else (a network failure, a
+    Google outage, a refusal that is not about the connection) marks the draft checked, as it
+    always has, and the next tick tries again."""
+    if needs_reconnect(error):
+        await flag_reconnect_required(supabase, draft["user_id"])
+        return
+    await _mark_checked(supabase, draft["draft_id"])
+
+
 async def _check_one_draft(
     http: httpx.AsyncClient,
     supabase: AsyncClient,
@@ -316,6 +399,9 @@ async def _check_one_draft(
     except CredentialNotFound:
         return  # fail open -- no Gmail connection at all
 
+    if not credential["is_validated"]:
+        return  # Google already refused this connection; waiting for the person to reconnect
+
     scope = credential.get("scope") or ""
     if "gmail.readonly" not in scope:
         return  # fail open -- stored credential predates the widened scope; needs reconnect
@@ -324,7 +410,7 @@ async def _check_one_draft(
         access_token = await _get_access_token(
             http, oauth_config, credential, user_id, access_token_tasks
         )
-    except ApiError:
+    except ApiError as error:
         # Any Gmail-call failure here -- a revoked/expired refresh token
         # (PROVIDER_REJECTED) or a transient network blip talking to
         # Google (PROVIDER_UNAVAILABLE) -- must never crash the whole
@@ -332,15 +418,15 @@ async def _check_one_draft(
         # special-cased PROVIDER_REJECTED, letting PROVIDER_UNAVAILABLE
         # propagate out of asyncio.gather and permanently kill this
         # worker's forever-loop task for every user, not just this draft.
-        await _mark_checked(supabase, draft["draft_id"])
+        await _after_failed_gmail_call(supabase, draft, error)
         return
 
     try:
         thread = await get_thread(
             http, access_token=access_token, thread_id=draft["gmail_thread_id"]
         )
-    except ApiError:
-        await _mark_checked(supabase, draft["draft_id"])
+    except ApiError as error:
+        await _after_failed_gmail_call(supabase, draft, error)
         return
 
     sent_messages = [m for m in thread["messages"] if "SENT" in m["label_ids"]]
@@ -408,7 +494,7 @@ async def run_reply_check_once(http: httpx.AsyncClient, supabase: AsyncClient) -
     except ApiError:
         return 0  # fail open -- Gmail integration isn't configured on this server at all
 
-    drafts = await _select_due_drafts(supabase)
+    drafts = await _select_checkable_drafts(supabase)
     if not drafts:
         return 0
 

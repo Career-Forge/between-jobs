@@ -106,6 +106,9 @@ def test_the_scan_finds_the_variables_it_should() -> None:
         "RAILWAY_GIT_COMMIT_SHA",
         # read through the id-list helper, from a module-level constant
         "HIRING_SIGNALS_ALLOWED_USER_IDS",
+        # the same, for Gmail, and a strict on/off switch read through a constant
+        "GMAIL_ALLOWED_USER_IDS",
+        "GMAIL_TESTING_MODE",
         # read through a module-level constant, not a string literal at the call
         "JOB_SCORING_SYSTEM_PROMPT_PATH",
         # the Discord settings, each read through `optional_env` with its name spelled out

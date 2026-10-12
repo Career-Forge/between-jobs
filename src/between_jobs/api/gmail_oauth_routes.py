@@ -16,6 +16,13 @@ The one exception is a server that has no Gmail (the three GOOGLE_OAUTH_*
 variables are unset): Gmail is optional, like Telegram, so both routes then
 answer 404 FEATURE_DISABLED before doing anything else -- no redirect from
 Google can legitimately be headed here, so there is nobody to render HTML for.
+
+A server can also limit Gmail to named people (`GMAIL_ALLOWED_USER_IDS`, see
+`gmail_access`). `connect_gmail` then refuses anyone else with the usual JSON
+404, and the callback -- which learns who is asking only from the consumed
+state -- shows a person who is not listed a plain page saying Gmail is not
+available for their account, before anything is exchanged with Google or stored.
+That matters for a flow started before they were removed from the list.
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ from supabase import AsyncClient
 from .app_state import get_http_client, get_supabase
 from .auth import require_user_id
 from .errors import ApiError
+from .gmail_access import GMAIL_NOT_AVAILABLE_MESSAGE, require_gmail_user, user_may_use_gmail
 from .gmail_client import (
     GmailOauthConfig,
     build_authorize_url,
@@ -55,13 +63,16 @@ _FAILURE_HTML_TEMPLATE = "<html><body><h1>Couldn't connect Gmail</h1><p>{message
 async def connect_gmail(
     user_id: str = Depends(require_user_id),
     supabase: AsyncClient = Depends(get_supabase),
-    config: GmailOauthConfig = Depends(require_gmail_oauth_config),
 ) -> dict[str, str]:
     """Returns a URL for the frontend to navigate the whole browser to
     (`window.location.href = ...`), not a redirect response itself --
     this route is called via the SPA's own authenticated `apiFetch`, and
     a fetch response's redirect can't hand control to the top-level
-    browser window the way a real navigation needs to."""
+    browser window the way a real navigation needs to.
+
+    A server without Gmail answers 404 first, then a person the allowlist does not name; the
+    state is minted only for someone who may use Gmail."""
+    config = require_gmail_user(user_id)
     state = await mint_state(supabase, user_id, _PROVIDER)
     authorize_url = build_authorize_url(
         client_id=config["client_id"], redirect_uri=config["redirect_uri"], state=state
@@ -91,6 +102,11 @@ async def gmail_callback(
                 message="This connection attempt expired -- try again from Integrations."
             ),
             status_code=400,
+        )
+
+    if not user_may_use_gmail(user_id):
+        return HTMLResponse(
+            _FAILURE_HTML_TEMPLATE.format(message=GMAIL_NOT_AVAILABLE_MESSAGE), status_code=403
         )
 
     try:

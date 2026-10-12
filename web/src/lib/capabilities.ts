@@ -47,6 +47,17 @@ export interface Capabilities {
   // address. Absent when the server does not say -- an older one, or a value this app does not
   // know -- which is "unknown", not "remote": nothing may be assumed from its absence.
   engine?: EngineKind;
+  // The server has Gmail set up. Sent only when it does, and then true: a server that says
+  // nothing has no Gmail (or is older than this field), which lib/gmailAccess.ts reads as "not
+  // set up here". The two fields below come with it and mean nothing without it.
+  gmail?: boolean;
+  // For THIS person: false when the server limits Gmail to named people and they are not one of
+  // them. Only a definite false is a no -- a server that sends `gmail` without it is read as
+  // allowing, and still refuses (404 FEATURE_DISABLED) anyone it does not allow.
+  gmailAllowed?: boolean;
+  // The operator says Google's OAuth client is still in Testing mode, where Google expires a
+  // connection after 7 days, so the Integrations page tells connected people that.
+  gmailTestingMode?: boolean;
 }
 
 export type EngineKind = "remote" | "generic";
@@ -82,6 +93,13 @@ export function parseCapabilities(body: unknown): Capabilities | null {
       ? { discord: true, discordInstallUrl: httpsAddress(record.discord_install_url) }
       : {}),
     ...(record.engine === "remote" || record.engine === "generic" ? { engine: record.engine } : {}),
+    ...(record.gmail === true
+      ? {
+          gmail: true,
+          gmailAllowed: record.gmail_allowed !== false,
+          gmailTestingMode: record.gmail_testing_mode === true,
+        }
+      : {}),
   };
 }
 

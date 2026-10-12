@@ -127,6 +127,7 @@ def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "client-123")
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "secret-456")
     monkeypatch.setenv("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8012/oauth/gmail/callback")
+    monkeypatch.delenv("GMAIL_ALLOWED_USER_IDS", raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -408,3 +409,125 @@ def test_gmail_callback_when_google_omits_refresh_token_shows_a_clean_failure_pa
     assert response.status_code == 400
     assert "offline access" in response.text
     assert supabase.provider_credentials.upsert_calls == []
+
+
+# -- Gmail for invited people only -------------------------------------------------------------
+
+_OTHER_USER_ID = "00000000-0000-0000-0000-000000000002"
+_NOT_AVAILABLE = "Gmail isn't available for your account yet."
+
+
+def _pending_flow() -> _FakeSupabaseClient:
+    state_row = {
+        "state": "state-abc",
+        "user_id": _USER_ID,
+        "provider": "gmail",
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    return _FakeSupabaseClient(oauth_states=_OauthStatesTable(select_rows=[state_row]))
+
+
+def test_connect_gmail_for_a_person_the_list_does_not_name_is_the_not_available_404(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("GMAIL_ALLOWED_USER_IDS", _OTHER_USER_ID)
+    supabase, http = _FakeSupabaseClient(), _FakeHttpClient()
+
+    with caplog.at_level(logging.DEBUG), _client(supabase, http) as client:
+        response = client.get("/profile/integrations/gmail/connect")
+
+    assert response.status_code == 404
+    error = response.json()["error"]
+    assert (error["code"], error["message"]) == ("FEATURE_DISABLED", _NOT_AVAILABLE)
+    assert error["retryable"] is False and error["settings_path"] is None
+    assert error["details"] == {}
+    assert _OTHER_USER_ID not in response.text  # nothing about who is on the list
+    assert "authorize_url" not in response.text
+    assert supabase.oauth_states.insert_calls == []  # no state for a flow that cannot finish
+    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
+
+
+@pytest.mark.parametrize("listed", [_USER_ID, _USER_ID.upper(), f"{_OTHER_USER_ID},{_USER_ID}"])
+def test_connect_gmail_for_a_listed_person_works(
+    monkeypatch: pytest.MonkeyPatch, listed: str
+) -> None:
+    monkeypatch.setenv("GMAIL_ALLOWED_USER_IDS", listed)
+    supabase = _FakeSupabaseClient()
+
+    with _client(supabase, _FakeHttpClient()) as client:
+        response = client.get("/profile/integrations/gmail/connect")
+
+    assert response.status_code == 200
+    assert response.json()["authorize_url"].startswith("https://accounts.google.com/")
+    assert supabase.oauth_states.insert_calls[0]["user_id"] == _USER_ID
+
+
+def test_a_server_without_gmail_still_says_so_before_it_says_anything_about_the_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _gmail_off(monkeypatch)
+    monkeypatch.setenv("GMAIL_ALLOWED_USER_IDS", _OTHER_USER_ID)
+
+    with _client(_FakeSupabaseClient(), _FakeHttpClient()) as client:
+        response = client.get("/profile/integrations/gmail/connect")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["message"] == _DISABLED
+
+
+def test_the_callback_will_not_let_a_person_removed_from_the_list_complete_a_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """They started it while listed; by the time Google sends them back they are not. The state
+    is spent, nothing is exchanged with Google, and nothing is stored."""
+    monkeypatch.setenv("GMAIL_ALLOWED_USER_IDS", _OTHER_USER_ID)
+    supabase, http = _pending_flow(), _FakeHttpClient()
+
+    with _client(supabase, http, authenticated=False) as client:
+        response = client.get(
+            "/oauth/gmail/callback", params={"code": "auth-code", "state": "state-abc"}
+        )
+
+    assert response.status_code == 403
+    assert "text/html" in response.headers["content-type"]
+    assert "Couldn't connect Gmail" in response.text and _NOT_AVAILABLE in response.text
+    assert _OTHER_USER_ID not in response.text
+    assert http.post_calls == []  # the authorization code was never taken to Google
+    assert supabase.provider_credentials.upsert_calls == []
+    assert supabase.oauth_states.delete_calls == ["state-abc"]  # and cannot be used again
+
+
+def test_the_callback_still_completes_the_flow_for_a_listed_person(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GMAIL_ALLOWED_USER_IDS", f"{_OTHER_USER_ID}, {_USER_ID}")
+    supabase, http = _pending_flow(), _FakeHttpClient()
+
+    with _client(supabase, http, authenticated=False) as client:
+        response = client.get(
+            "/oauth/gmail/callback", params={"code": "auth-code", "state": "state-abc"}
+        )
+
+    assert response.status_code == 200
+    assert len(http.post_calls) == 1
+    [saved] = supabase.provider_credentials.upsert_calls
+    # a reconnect saves a fresh, validated credential: that is what clears "Needs reconnect"
+    assert saved["is_validated"] is True and saved["user_id"] == _USER_ID
+
+
+def test_the_callback_for_a_person_not_on_the_list_does_not_hide_a_bad_state_either(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no state to recover anybody from, the answer is the usual expired-attempt page; the
+    list is only ever applied to someone the state names."""
+    monkeypatch.setenv("GMAIL_ALLOWED_USER_IDS", _OTHER_USER_ID)
+    supabase, http = _FakeSupabaseClient(), _FakeHttpClient()
+
+    with _client(supabase, http, authenticated=False) as client:
+        response = client.get(
+            "/oauth/gmail/callback", params={"code": "auth-code", "state": "nonexistent"}
+        )
+
+    assert response.status_code == 400
+    assert "expired" in response.text
+    assert _NOT_AVAILABLE not in response.text

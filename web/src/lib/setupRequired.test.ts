@@ -519,6 +519,26 @@ describe("setupRequiredNotice for a model call the provider rejected", () => {
     expect(problemOf(error, "Failed")).toMatchObject({ linkTo: "/profile/integrations" });
   });
 
+  it("turns the server's Gmail reconnect answer into a link that reconnects", () => {
+    const sentence = "Google has stopped accepting your Gmail connection.";
+    const error = new FakeProviderError(sentence, "PROVIDER_REJECTED", "/profile/integrations", "gmail_reconnect_required");
+    expect(setupRequiredNotice(error)).toEqual({
+      message: sentence,
+      linkTo: "/profile/integrations",
+      linkLabel: "Reconnect Gmail in Integrations",
+    });
+    // and it is the same label wherever the failure is shown
+    expect(problemOf(error, "Failed")).toMatchObject({ linkLabel: "Reconnect Gmail in Integrations" });
+  });
+
+  it("does not link a Gmail reconnect answer anywhere but Integrations", () => {
+    for (const path of [undefined, "/profile", "https://example.com/profile/integrations"]) {
+      expect(
+        setupRequiredNotice(new FakeProviderError("x", "PROVIDER_REJECTED", path, "gmail_reconnect_required")),
+      ).toBeNull();
+    }
+  });
+
   it("is a plain message for a search key that was rejected on save (no reason, no path)", () => {
     const error = new FakeProviderError("Apollo rejected that key.", "PROVIDER_REJECTED");
     expect(failureOf(error, "Failed")).toEqual({ kind: "error", message: "Apollo rejected that key." });
