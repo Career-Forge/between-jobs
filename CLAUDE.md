@@ -34,7 +34,7 @@ mypy                        # types (strict)
 # Web app (web/)
 npm ci
 npm run typecheck && npm test
-VITE_API_BASE_URL=https://api.example.com npm run build   # needs an https, non-local API origin
+VITE_API_BASE_URL=https://api.example.com VITE_SUPABASE_URL=https://project.supabase.example npm run build   # needs https, non-local API and Supabase origins (stand-ins)
 
 # Browser extension (extension/)
 npm ci

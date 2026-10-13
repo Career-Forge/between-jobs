@@ -1,0 +1,3 @@
+# The repository ignores .env.* everywhere else; this one file is a committed test fixture of
+# placeholders (see securityHeadersBuild.test.ts).
+!.env.production

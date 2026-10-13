@@ -100,10 +100,12 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       # A production build refuses to run without an https, non-local API origin
-      # (web/scripts/apiBaseGuard.ts); this is a stand-in, nothing is deployed.
+      # (web/scripts/apiBaseGuard.ts) and Supabase origin (web/scripts/securityHeaders.ts, which
+      # writes them into the Content-Security-Policy); these are stand-ins, nothing is deployed.
       - run: npm run build
         env:
           VITE_API_BASE_URL: https://api.example.com
+          VITE_SUPABASE_URL: https://project.supabase.example
 
   extension:
     name: Extension

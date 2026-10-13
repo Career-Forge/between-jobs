@@ -35,6 +35,7 @@ describe("apiBaseProblem", () => {
   it.each([
     ["userinfo", "https://user:pass@api.example.com"],
     ["a bare username", "https://user@api.example.com"],
+    ["a password with no username", "https://:pass@api.example.com"],
   ])("rejects %s, which would put credentials in every request", (_l, raw) => {
     expect(apiBaseProblem(raw)).toMatch(/credentials/);
   });
@@ -72,5 +73,36 @@ describe("assertApiBase", () => {
 
   it("names the variable, the problem and the fix", () => {
     expect(() => assertApiBase(undefined)).toThrowError(/VITE_API_BASE_URL is not set[\s\S]*npm run build/);
+  });
+
+  it("shows the whole build command, both addresses, so following the hint does not hit a second error", () => {
+    expect(() => assertApiBase(undefined)).toThrowError(
+      /VITE_API_BASE_URL=https:\/\/api\.example\.com VITE_SUPABASE_URL=https:\/\/<project>\.supabase\.co npm run build/,
+    );
+  });
+});
+
+// The build log is a CI log, which strangers can read on a public repository, and an API address
+// pasted with a token in it is the kind of mistake this guard exists to catch.
+describe("the guard never prints the value it rejects", () => {
+  const secret = "hunter2-sentinel";
+  it.each([
+    ["userinfo", `https://user:${secret}@host-sentinel.example`],
+    ["a password with no username", `https://:${secret}@host-sentinel.example`],
+    ["cleartext http with a path", `http://host-sentinel.example/${secret}`],
+    ["an out-of-range port", `https://host-sentinel.example:99999/${secret}`],
+    ["a query string", `https://host-sentinel.example/?t=${secret}`],
+    ["a fragment", `https://host-sentinel.example/#${secret}`],
+    ["a local address", `https://localhost/${secret}`],
+    ["something that is not a URL", `host-sentinel.example/${secret}`],
+    ["a spelling the URL parser forgives", `https:host-sentinel.example/${secret}`],
+  ])("%s", (_label, raw) => {
+    const problem = apiBaseProblem(raw);
+    expect(problem).not.toBeNull();
+    expect(problem).not.toContain(secret);
+    expect(problem).not.toContain("host-sentinel");
+    const run = () => assertApiBase(raw);
+    expect(run).toThrowError(/VITE_API_BASE_URL/);
+    expect(run).not.toThrowError(new RegExp(`${secret}|host-sentinel`));
   });
 });

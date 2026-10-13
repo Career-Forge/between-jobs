@@ -88,8 +88,11 @@ The web app (`web/`):
 ```
 npm run typecheck
 npm test
-VITE_API_BASE_URL=https://api.example.com npm run build   # the build needs an https, non-local API origin; this is a stand-in
+VITE_API_BASE_URL=https://api.example.com VITE_SUPABASE_URL=https://project.supabase.example npm run build   # the build needs https, non-local API and Supabase origins; these are stand-ins
 ```
+
+Values passed in the shell win over `web/.env.local`, so the local stack's `http://127.0.0.1:54321`
+there does not get in the way of this build.
 
 The extension (`extension/`):
 

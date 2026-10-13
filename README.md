@@ -296,9 +296,12 @@ npm run dev                    # http://localhost:5173
 
 The dev server forwards `/api/*` to the API on `localhost:8012`, so leave
 `VITE_API_BASE_URL` unset while developing. A production build (`npm run build`) refuses to
-run without `VITE_API_BASE_URL` set to the API's public `https://` origin; `web/.env.example`
-explains why. Create an account on the sign-in page, open Integrations and save an
-OpenRouter key, then import your resume JSON on the Profile page.
+run without `VITE_API_BASE_URL` and `VITE_SUPABASE_URL` set to public `https://` origins;
+`web/.env.example` explains why. The build also writes `dist/_headers`, a Content-Security-Policy
+and other security headers generated from those two origins (Cloudflare Pages applies the file
+as it is; `web/README.md` covers other hosts and what to do when something is blocked).
+Create an account on the sign-in page, open Integrations and save an OpenRouter key, then
+import your resume JSON on the Profile page.
 
 ### 4. The browser extension
 
