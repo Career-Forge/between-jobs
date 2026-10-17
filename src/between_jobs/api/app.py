@@ -234,16 +234,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     #   daily Telegram webhook probe (webhook_probe.py) on a server that has a bot.
     workers = WorkerRegistry()
     app.state.workers = workers
+    # /healthz: False until the instance has once been fully healthy (the deploy gate).
+    app.state.platform_ready = False
     # Healthchecks pings (worker_pings.py): a worker pings after each successful tick when
     # its HEALTHCHECKS_URL_* setting is set, and otherwise not at all.
     pings = WorkerPings()
     app.state.worker_pings = pings
     leases_on = _worker_leases_enabled()
     # One id per process, made here (so it is post-fork and unique per process) and
-    # never the bare Railway deployment id, which every replica of a deployment
-    # shares: two replicas would both pass the lease's holder check. The deployment
-    # prefix is only a label for the logs.
-    holder = f"{(os.environ.get('RAILWAY_DEPLOYMENT_ID') or 'local')[:8]}:{uuid.uuid4().hex}"
+    # never a bare platform deployment id (Railway's is shared by every replica of a
+    # deployment): two replicas would both pass the lease's holder check. The instance or
+    # deployment prefix is only a label for the logs.
+    # The tail, because the head of a platform id can be shared by every instance (Render's
+    # starts with the service id).
+    label = os.environ.get("RENDER_INSTANCE_ID") or os.environ.get("RAILWAY_DEPLOYMENT_ID")
+    holder = f"{(label or 'local')[-8:]}:{uuid.uuid4().hex}"
     leases: list[WorkerLease] = []
 
     # The Telegram webhook probe asks Telegram once a day whether it is delivering (None on a
@@ -637,6 +642,38 @@ async def _check_dependencies(request: Request) -> dict[str, str]:
         return report
 
 
+@app.api_route("/healthz", methods=["GET", "HEAD"])
+async def healthz(request: Request) -> JSONResponse:
+    """The path a hosting platform probes (Render's Health Check Path): strict while the
+    instance is starting, lenient once it has served.
+
+    A platform that moves traffic only once the new instance passes wants the deploy gate
+    `/health` is: a new container whose worker-lease path is broken (a missing migration or
+    grant) must not replace a working one. A platform that keeps probing while the instance
+    runs and stops routing to it (then restarts it) after a minute of 503s must NOT be handed
+    `/health` for that: a worker that fails for 30 minutes, or a database blip longer than a
+    minute, would take the whole API offline, and a restart cures neither. So until the first
+    time every worker is healthy this answers exactly as `/health` does; from then on it
+    answers 503 only when a worker's task has ended (a restart does cure that). `/health`
+    stays the strict view for an uptime monitor and for people.
+
+    What this lets through, on purpose: a worker whose tick hangs (the lease lapses and the
+    worker never ticks again) is not restarted, because cancelling a tick that is merely slow
+    can lose work (worker_lease.py, NO CANCELLING). The dead-man's-switch pings
+    (worker_pings.py) are what notice those quiet failures. With WORKER_LEASES off there is
+    no lease to ask, so the gate covers only a dead worker."""
+    workers: WorkerRegistry = getattr(request.app.state, "workers", WorkerRegistry())
+    now = datetime.now(UTC)
+    if getattr(request.app.state, "platform_ready", False):
+        ok = not workers.any_dead(now)
+    else:
+        ok = workers.healthy(now)
+        request.app.state.platform_ready = ok
+    phase = "serving" if request.app.state.platform_ready else "starting"
+    body = {"status": "ok" if ok else "failing", "phase": phase}
+    return JSONResponse(status_code=200 if ok else 503, content=body)
+
+
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health(request: Request) -> JSONResponse:
     """200 when every enabled worker is running (or starting, or retrying
@@ -661,7 +698,7 @@ async def health(request: Request) -> JSONResponse:
     `status` is `ok`, `problem`, `unknown` or `not_configured` (no bot on this server),
     `last_checked_at` when it was reached, and `reasons` the fixed reason codes. It is reported
     and nothing more: a broken webhook is not this server being unhealthy, and `/health` is
-    what a deploy waits on, so it never changes the status or the status code."""
+    what a deploy is gated on, so it never changes the status or the status code."""
     workers: WorkerRegistry = getattr(request.app.state, "workers", WorkerRegistry())
     now = datetime.now(UTC)
     healthy = workers.healthy(now)

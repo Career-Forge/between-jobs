@@ -45,6 +45,7 @@ _SETTINGS = (
     "SENTRY_DSN",
     "SENTRY_ENVIRONMENT",
     "SENTRY_TRACES_SAMPLE_RATE",
+    "RENDER_GIT_COMMIT",
     "RAILWAY_GIT_COMMIT_SHA",
 )
 
@@ -239,6 +240,34 @@ def test_environment_and_release(monkeypatch: pytest.MonkeyPatch) -> None:
     assert config is not None
     assert config.environment == "staging"
     assert config.release == "2a8c33e5d1f0c9b8a7e6d5c4b3a2f1e0d9c8b7a6"
+
+
+def test_the_render_commit_names_the_release(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SENTRY_DSN", DSN)
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "5c6335c0a1b2c3d4e5f60718293a4b5c6d7e8f90")
+    config = load_sentry_config()
+    assert config is not None
+    assert config.release == "5c6335c0a1b2c3d4e5f60718293a4b5c6d7e8f90"
+
+
+def test_a_blank_render_commit_falls_back_to_the_railway_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SENTRY_DSN", DSN)
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "")
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "railway1")
+    config = load_sentry_config()
+    assert config is not None
+    assert config.release == "railway1"
+
+
+def test_the_render_commit_wins_over_the_railway_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SENTRY_DSN", DSN)
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "render1")
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "railway1")
+    config = load_sentry_config()
+    assert config is not None
+    assert config.release == "render1"
 
 
 @pytest.mark.parametrize("release", ["", "has space", "a/b", "x" * 100, "bad\nline", "-lead"])

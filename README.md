@@ -445,11 +445,23 @@ contains it: the build copies only the package.
   pass `--workers`. If a second copy ever starts (an overlapping deploy, a stray
   replica), the workers that would otherwise do the same work twice stand by instead.
 - The container exits cleanly on SIGTERM. Give your platform a grace period longer than
-  30 seconds before it escalates to SIGKILL (on Railway, set
-  `RAILWAY_DEPLOYMENT_DRAINING_SECONDS`; its default is 0): the API waits up to 20 seconds
+  30 seconds before it escalates to SIGKILL (on Render, raise the service's maximum shutdown
+  delay, default 30 and up to 300, to 45): the API waits up to 20 seconds
   for open requests, then up to 5 more for Discord commands still being handled, then up to 5
   more for a Telegram- or Discord-started resume generation to finish before it cancels one. A generation cut off by a restart is not resumed: the person
   sends the request again.
+- **Which path a platform should probe.** `/health` is the strict view (503 when any worker has
+  died, gone stale, failed for too long or cannot ask its lease): use it for an uptime monitor.
+  A platform that keeps probing a running service and restarts it after a minute of failures
+  (Render's Health Check Path -- set it to `/healthz`: left empty, Render checks only that the
+  port is open and the gate below does not exist) should be pointed at `/healthz` instead. It
+  answers exactly as `/health` does until the instance has once been fully healthy, so a deploy
+  whose worker-lease migration or grants are missing is still refused; after that it answers
+  503 only when a worker's task has ended, because a worker that is merely failing, or a
+  database that is briefly unreachable, is not something a restart fixes. A worker whose tick
+  hangs is not restarted either (cancelling a slow tick can lose work): the Healthchecks pings
+  are what notice it. With `WORKER_LEASES=off` there is no lease to ask, so the gate covers only
+  a dead worker.
 
 ## Operations
 

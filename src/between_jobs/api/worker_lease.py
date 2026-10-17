@@ -2,7 +2,7 @@
 
 Three workers -- the job registry poller, the saved-search matcher and the Gmail
 reply checker -- select their work with no claim at all, so two copies of the API
-(an old and a new container overlapping in a Railway deploy, or an accidental
+(an old and a new container overlapping in a platform deploy, or an accidental
 second replica) would each do all of it, and the matcher and the checker spend the
 user's own LLM credit per tick. They hold a lease on a row in `worker_leases`
 (see the migration and `claim_worker_lease`); this module keeps that lease alive.
@@ -188,8 +188,9 @@ class WorkerLease:
     def _wants(self) -> bool:
         # While the worker's tick has run past its own stale window, stop renewing
         # and let the lease lapse: otherwise a heartbeating but wedged holder would
-        # block every standby forever, and Railway never re-checks health after
-        # go-live. A callable that itself breaks must not stop the heartbeat.
+        # block every standby forever, and nothing restarts a worker that is wedged but
+        # alive (the platform's runtime probe, /healthz, ignores a stale worker on purpose).
+        # A callable that itself breaks must not stop the heartbeat.
         try:
             return self._wants_lease()
         except Exception:

@@ -8,12 +8,12 @@ tick that raises is logged and retried after a capped exponential backoff,
 and `asyncio.CancelledError` still propagates so shutdown works as before.
 
 Each worker's progress is kept in a `WorkerState`, collected in a
-`WorkerRegistry` on `app.state`, which `/health` reads. A worker fails the
-check when its task has ended (dead), when no tick has finished for 3x its
-interval (stale -- this also catches a tick that hangs), or when every tick
-has failed for longer than `FAILING_AFTER_MAX_SECONDS` (failing), so a worker
-with a 6-hour interval that keeps failing is caught in 30 minutes, not 18
-hours.
+`WorkerRegistry` on `app.state`, which `/health` reads (and `/healthz`, more
+leniently: see there). A worker fails the check when its task has ended (dead),
+when no tick has finished for 3x its interval (stale -- this also catches a
+tick that hangs), or when every tick has failed for longer than
+`FAILING_AFTER_MAX_SECONDS` (failing), so a worker with a 6-hour interval that
+keeps failing is caught in 30 minutes, not 18 hours.
 
 A worker may also hold a LEASE (worker_lease.py, launch plan P2.19): then a tick
 starts only while this process holds it. A process that does not is `standby` --
@@ -258,6 +258,13 @@ class WorkerRegistry:
 
     def healthy(self, now: datetime | None = None) -> bool:
         return all(state.healthy(now) for state in self.workers.values())
+
+    def any_dead(self, now: datetime | None = None) -> bool:
+        """Whether a worker's task (or its lease keeper) has ended for good. The one
+        worker failure a restart cures, which is what a platform's runtime probe
+        should act on (`/healthz`): a worker that is merely failing, stale or unable to
+        ask its lease is a dependency problem a restart does not fix."""
+        return any(state.status(now) == "dead" for state in self.workers.values())
 
     def report(self, now: datetime | None = None) -> dict[str, dict[str, Any]]:
         return {name: state.to_report(now) for name, state in self.workers.items()}

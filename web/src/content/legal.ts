@@ -142,7 +142,7 @@ export const PROCESSORS: readonly Processor[] = [
     ],
   },
   {
-    name: "Railway",
+    name: "Render",
     group: "service",
     detail: ["Runs the Between Jobs API, the server that does the work when you use the app."],
   },

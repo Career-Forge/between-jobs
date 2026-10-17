@@ -2,9 +2,10 @@
 
 Each supervised worker can have a check. After every successful tick the supervisor calls
 `WorkerPinger.succeeded()`, which GETs the check's ping URL; the check alerts when the pings
-stop for longer than its grace time. That is the signal `/health` cannot give: Railway only
-looks at `/health` while a deploy is going out, so a worker that dies or hangs a day later
-needs something outside the process to notice the silence.
+stop for longer than its grace time. That is the signal `/health` cannot give: a platform's
+probe (`/healthz`) restarts only an instance whose worker has died, and `/health` is read only
+by an uptime monitor, so a worker that hangs or fails quietly a day later needs something
+outside the process to notice the silence.
 
 OFF UNLESS CONFIGURED. A worker pings only when HEALTHCHECKS_URL_<NAME> is set, where
 <NAME> is the worker's DISABLE_<NAME> flag without the prefix (DISABLE_OUTBOX_WORKER ->

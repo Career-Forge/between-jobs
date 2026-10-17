@@ -34,6 +34,12 @@ happens to a task that is still running, is in `tests/test_telegram_deferred_pre
 
 ## Deliberate changes since the capture
 
+- **Hosting vendor name (2026-10-17).** The `/privacy` summary says who handles the data; the API
+  moved from Railway to Render and the summary (and the web policy's processor list) now name
+  Render. The four `privacy_*` scenarios changed by exactly one character each (Railway to Render:
+  1203 to 1202, 1194 to 1193, 1200 to 1199 characters) and no other scenario changed; the file
+  was regenerated with the command above and the diff reviewed digest by digest.
+
 The file was regenerated twice-over for changes that were meant, each reviewed message by message:
 
 - **One progress message.** A resume generation used to send an acknowledgement, the document and

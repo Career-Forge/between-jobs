@@ -101,6 +101,7 @@ _DB_ONLY = "reads or writes the caller's own rows only: no model, provider, engi
 UNLIMITED: dict[str, str] = {
     # -- not a signed-in user's request at all
     "GET /health": "unauthenticated liveness probe; its dependency checks are cached for 30 s",
+    "GET /healthz": "the hosting platform's own probe: local reads only, no I/O, no user data",
     "POST /telegram/webhook": (
         "authenticated by Telegram's shared secret, not a user session, so it cannot carry a "
         "per-user route dependency; its one expensive action, generating a resume, claims the "

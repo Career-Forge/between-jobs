@@ -13,4 +13,5 @@ from .harness import NotUserScoped
 
 NOT_USER_SCOPED: dict[str, NotUserScoped] = {
     "GET /health": NotUserScoped("public", "liveness and worker status, no user data"),
+    "GET /healthz": NotUserScoped("public", "the platform's probe: a status word, no user data"),
 }

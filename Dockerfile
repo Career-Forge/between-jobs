@@ -51,16 +51,17 @@ USER app
 
 EXPOSE 8000
 
-# For `docker run` / compose users (a platform such as Railway runs its own check).
-# /health is 503 when a worker has died, gone stale, or cannot ask its lease.
+# For `docker run` / compose users (a platform such as Render runs its own check; point it
+# at /healthz, see the README). /health is 503 when a worker has died, gone stale, failed
+# for too long, or cannot ask its lease.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % (os.environ.get('PORT') or '8000'), timeout=4)"]
 
 # `exec` makes uvicorn PID 1, so the platform's SIGTERM reaches it directly instead of
 # a shell that would swallow it. --timeout-graceful-shutdown is how long uvicorn waits
 # for open requests after SIGTERM before the lifespan shutdown stops the workers; keep
-# it below the platform's SIGTERM-to-SIGKILL window (on Railway:
-# RAILWAY_DEPLOYMENT_DRAINING_SECONDS, whose default is 0 -- set it, e.g. to 30).
+# it below the platform's SIGTERM-to-SIGKILL window (on Render: the service's maximum
+# shutdown delay, 30 s by default and up to 300 -- see the README).
 # `${PORT:-8000}`: a blank PORT (docker run -e PORT=) counts as unset, as it does for
 # every other variable here, instead of swallowing the next flag as the port.
 # `--workers 1` is spelled out because uvicorn otherwise takes its worker count from

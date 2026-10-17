@@ -366,9 +366,9 @@ const EVIDENCE: Record<string, Evidence> = {
       { path: "src/between_jobs/api/supabase_client.py", text: supabaseClient, needles: ["acreate_client", "SUPABASE_URL"] },
     ],
   },
-  Railway: {
+  Render: {
     kind: "operator",
-    note: "Where the API is deployed. The repository only knows Railway as an example platform and a deployment-id variable.",
+    note: "Where the API is deployed. The repository only knows Render as an example platform, through its commit and instance variables.",
   },
   Cloudflare: {
     kind: "operator",
@@ -546,7 +546,7 @@ const EVIDENCE: Record<string, Evidence> = {
 
 // The deployment facts the code cannot show. Naming a new one here is a deliberate act that
 // needs the operator's say-so, so it is a list a test pins rather than a free-for-all.
-const OPERATOR_ATTESTED = ["Cloudflare", "Railway", "Resend"];
+const OPERATOR_ATTESTED = ["Cloudflare", "Render", "Resend"];
 
 describe("the processor list", () => {
   it("names each service once, in a known group", () => {
@@ -615,6 +615,8 @@ describe("the processor list", () => {
       "Stripe",
       "Intercom",
       "HubSpot",
+      // the previous host: the policy names the one the API runs on now
+      "Railway",
     ]) {
       expect(text, absent).not.toContain(absent);
     }
@@ -1356,9 +1358,12 @@ describe("the text says who the API checks, and the code agrees", () => {
     expect(unchecked).toEqual(["discord_webhook", "telegram_webhook"]);
   });
 
-  it("the app's own route is the health check, and the webhook accepts only the shared secret", () => {
+  it("the app's own routes are the two health checks, and the webhook accepts only the shared secret", () => {
     const appRoutes = [...apiModule("app").matchAll(/@app\.(?:get|post|put|patch|delete|api_route)\(([^)]*)\)/g)];
-    expect(appRoutes.map((match) => match[1])).toEqual(['"/health", methods=["GET", "HEAD"]']);
+    expect(appRoutes.map((match) => match[1])).toEqual([
+      '"/healthz", methods=["GET", "HEAD"]',
+      '"/health", methods=["GET", "HEAD"]',
+    ]);
 
     const webhook = apiModule("telegram_webhook");
     expect(webhook).toContain('@router.post("/telegram/webhook", dependencies=[Depends(_verify_webhook_secret)])');

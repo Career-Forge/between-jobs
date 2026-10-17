@@ -1338,7 +1338,7 @@ _PRIVACY_CLAIMS = [
     ("no resume or job text", "your resume or any job text"),
     ("numbered lists", "numbered lists of applications"),
     ("Supabase", "Supabase"),
-    ("Railway", "Railway"),
+    ("and Render (runs the API)", 'name: "Render"'),
     ("OpenRouter", "OpenRouter"),
     ("resume engine", "Resume engine"),
     # Where the person's AI key goes: the summary must say what the policy says, not less.

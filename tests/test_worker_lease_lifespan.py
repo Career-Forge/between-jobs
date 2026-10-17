@@ -81,6 +81,7 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("DISCORD_APPLICATION_ID", "DISCORD_PUBLIC_KEY", "DISCORD_BOT_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("RAILWAY_DEPLOYMENT_ID", raising=False)
+    monkeypatch.delenv("RENDER_INSTANCE_ID", raising=False)
     for flag in _DISABLE_FLAGS:
         monkeypatch.delenv(flag)  # all five workers enabled
     monkeypatch.setenv("WORKER_LEASES", "on")
@@ -243,12 +244,21 @@ def test_every_claim_carries_the_ttl_and_one_holder_id_per_process(
     assert next(iter(holders)) not in text  # never in the unauthenticated body
 
 
-def test_the_holder_id_is_a_fresh_uuid_per_process_even_on_one_railway_deployment(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("variable", "other"),
+    [
+        ("RAILWAY_DEPLOYMENT_ID", "RENDER_INSTANCE_ID"),
+        ("RENDER_INSTANCE_ID", "RAILWAY_DEPLOYMENT_ID"),
+    ],
+)
+def test_the_holder_id_is_a_fresh_uuid_per_process_even_on_one_platform_deployment(
+    monkeypatch: pytest.MonkeyPatch, variable: str, other: str
 ) -> None:
-    """RAILWAY_DEPLOYMENT_ID is shared by every replica of a deployment, so it can
-    only be a label: two replicas must still get two different holder ids."""
-    monkeypatch.setenv("RAILWAY_DEPLOYMENT_ID", "d3adb33f-aaaa-bbbb-cccc-dddddddddddd")
+    """Railway's deployment id is shared by every replica of a deployment, so a platform
+    id can only be a label: two replicas must still get two different holder ids. Render's
+    instance id is read the same way."""
+    monkeypatch.delenv(other, raising=False)
+    monkeypatch.setenv(variable, "d3adb33f-aaaa-bbbb-cccc-dddddddddddd")
     seen: list[str] = []
     for _ in range(2):
         client = StrictClient(True)
@@ -257,7 +267,7 @@ def test_the_holder_id_is_a_fresh_uuid_per_process_even_on_one_railway_deploymen
             pass
         seen.append(client.calls[0][1]["p_holder"])
 
-    assert all(h.startswith("d3adb33f:") for h in seen)
+    assert all(h.startswith("dddddddd:") for h in seen)
     assert seen[0] != seen[1]
 
 
@@ -435,7 +445,7 @@ def test_a_refused_lease_is_a_healthy_standby(monkeypatch: pytest.MonkeyPatch) -
 def test_a_lease_that_cannot_be_asked_fails_health_at_once(
     monkeypatch: pytest.MonkeyPatch, error: Exception, kind: str
 ) -> None:
-    """Railway cuts over on the first 2xx. If the migration is missing (or a grant
+    """A platform cuts over on the first 2xx. If the migration is missing (or a grant
     is), answering 200 here would hand traffic to three workers that can never tick."""
     client = StrictClient(error)
     _boot_with(monkeypatch, client)
@@ -451,6 +461,57 @@ def test_a_lease_that_cannot_be_asked_fails_health_at_once(
         assert body["workers"][worker]["lease"]["last_claim_error"] == kind
     for worker in OTHERS:
         assert body["workers"][worker]["status"] != "lease_unknown"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [APIError({"message": "no function", "code": "PGRST202"}), RuntimeError("anything")],
+)
+def test_the_platform_probe_refuses_a_deploy_whose_lease_cannot_be_asked(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    """`/healthz` is what Render's Health Check Path points at: the very first request after
+    boot must carry the strict verdict, or a missing migration would cut over."""
+    _boot_with(monkeypatch, StrictClient(error))
+
+    with TestClient(app) as test_client:
+        response = test_client.get("/healthz")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "failing", "phase": "starting"}
+
+
+def test_the_platform_probe_waits_for_a_claim_that_takes_real_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refusal is a healthy standby; the first probe must report the answer, not a state
+    nobody has asked about yet."""
+    _boot_with(monkeypatch, StrictClient(False, delay=0.3))
+
+    with TestClient(app) as test_client:
+        response = test_client.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "phase": "serving"}
+
+
+def test_a_new_boot_starts_strict_again_even_after_an_earlier_one_was_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The latch lives on `app.state` and the module-level `app` outlives a lifespan in
+    tests: a stale True would let a broken deploy through."""
+    _boot_with(monkeypatch, StrictClient(True))
+    with TestClient(app) as test_client:
+        assert test_client.get("/healthz").json() == {"status": "ok", "phase": "serving"}
+    assert app.state.platform_ready is True
+
+    _boot_with(monkeypatch, StrictClient(RuntimeError("down")))
+    with TestClient(app) as test_client:
+        assert app.state.platform_ready is False
+        response = test_client.get("/healthz")
+
+    assert response.status_code == 503
+    assert response.json()["phase"] == "starting"
 
 
 def test_a_malformed_answer_is_not_mistaken_for_a_refusal(

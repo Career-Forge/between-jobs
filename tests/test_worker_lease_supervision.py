@@ -294,7 +294,7 @@ def test_lease_unknown_is_unhealthy_at_once() -> None:
     state = _leased("unknown", started_at=_now())
 
     assert state.status() == "lease_unknown"
-    assert not state.healthy()  # not after failing_after: Railway's check is 300 s
+    assert not state.healthy()  # not after failing_after: a deploy check cannot wait that long
 
 
 def test_a_dead_worker_is_dead_whatever_its_lease_says() -> None:

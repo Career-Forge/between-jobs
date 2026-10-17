@@ -118,9 +118,11 @@ def _traces_sample_rate() -> float:
 
 
 def _release() -> str | None:
-    """The deployed commit, when the platform says which it is (Railway sets it).
-    Optional and never fatal: a value that is not a plain identifier is ignored."""
-    raw = (optional_env("RAILWAY_GIT_COMMIT_SHA") or "").strip()
+    """The deployed commit, when the platform says which it is (Render sets RENDER_GIT_COMMIT,
+    Railway RAILWAY_GIT_COMMIT_SHA). Optional and never fatal: a value that is not a plain
+    identifier is ignored."""
+    commit = optional_env("RENDER_GIT_COMMIT") or optional_env("RAILWAY_GIT_COMMIT_SHA")
+    raw = (commit or "").strip()
     return raw if _RELEASE.fullmatch(raw) else None
 
 

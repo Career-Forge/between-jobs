@@ -17,7 +17,7 @@ from between_jobs.api.worker_pings import healthcheck_env_name
 _ROOT = Path(__file__).parent.parent
 
 # Set by the platform the API runs on, not by the operator.
-_PLATFORM_PROVIDED = {"RAILWAY_DEPLOYMENT_ID"}
+_PLATFORM_PROVIDED = {"RAILWAY_DEPLOYMENT_ID", "RENDER_INSTANCE_ID"}
 
 
 def _variables_read_by_the_code() -> dict[str, set[str]]:
@@ -103,6 +103,7 @@ def test_the_scan_finds_the_variables_it_should() -> None:
         "SENTRY_DSN",
         "SENTRY_ENVIRONMENT",
         "SENTRY_TRACES_SAMPLE_RATE",
+        "RENDER_GIT_COMMIT",
         "RAILWAY_GIT_COMMIT_SHA",
         # read through the id-list helper, from a module-level constant
         "HIRING_SIGNALS_ALLOWED_USER_IDS",

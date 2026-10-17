@@ -253,7 +253,7 @@ def privacy_text(web_url: str | None, *, linked: bool) -> RichText:
         "(stored encrypted), plus a short record each time you use a main feature (no resume or "
         'job text) and the numbered lists for "apply to #N". From Telegram: only your numeric '
         "Telegram id and a count of failed link-code attempts -- no name, no username.\n"
-        "• Who handles it: Supabase (database and files) and Railway (runs the API). For a "
+        "• Who handles it: Supabase (database and files) and Render (runs the API). For a "
         "resume, an operator-run resume engine gets your profile, the job posting and the AI key "
         "and model you chose, uses the key for that one request and does not store it; a PDF "
         "renderer gets the finished resume. OpenRouter, your AI provider, gets the text a "

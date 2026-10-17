@@ -246,6 +246,38 @@ def test_formatter_strips_client_and_query_from_uvicorn_access_lines() -> None:
     assert entry["msg"].startswith('- - "GET /profile/integrations/gmail/callback?<query-redacted>')
 
 
+@pytest.mark.parametrize(
+    ("path", "status", "kept"),
+    [
+        ("/health", 200, False),
+        ("/healthz", 200, False),
+        ("/healthz?x=1", 200, False),
+        ("/health", 503, True),
+        ("/healthz", 503, True),
+        ("/applications", 200, True),
+        ("/healthzz", 200, True),
+    ],
+)
+def test_a_passed_health_probe_is_not_logged_but_a_failed_one_is(
+    path: str, status: int, kept: bool
+) -> None:
+    configure_logging()
+    record = _record(
+        '%s - "%s %s HTTP/%s" %d', "10.0.0.1:1", "GET", path, "1.1", status, name="uvicorn.access"
+    )
+
+    assert bool(logging.getLogger("uvicorn.access").filter(record)) is kept
+
+
+def test_the_probe_filter_is_attached_once() -> None:
+    configure_logging()
+    configure_logging()
+    filters = [
+        f for f in logging.getLogger("uvicorn.access").filters if "Probe" in type(f).__name__
+    ]
+    assert len(filters) == 1
+
+
 def test_configure_logging_scopes_log_level_to_the_app(monkeypatch: pytest.MonkeyPatch) -> None:
     root = logging.getLogger()
     app_logger = logging.getLogger("between_jobs")

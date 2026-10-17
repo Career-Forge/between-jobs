@@ -239,6 +239,26 @@ def _safe_value(value: Any) -> Any:
 
 _HANDLER_MARK = "_between_jobs_handler"
 
+_PROBE_PATHS = frozenset({"/health", "/healthz"})
+
+
+class _PassedHealthProbeFilter(logging.Filter):
+    """Drops uvicorn's access line for a health probe that passed. A platform probes every few
+    seconds and an uptime monitor every few minutes; a line for each would bury everything
+    else. A probe that FAILED (4xx, 5xx) is kept: that is the line you want."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 5:
+            status = args[4]
+            if (
+                str(args[2]).split("?", 1)[0] in _PROBE_PATHS
+                and isinstance(status, int)
+                and status < 400
+            ):
+                return False
+        return True
+
 
 def configure_logging() -> None:
     """Send every log record (the app's, uvicorn's and the libraries') through
@@ -269,3 +289,6 @@ def configure_logging() -> None:
         if uvicorn_logger.handlers:
             uvicorn_logger.handlers.clear()
             uvicorn_logger.propagate = True
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, _PassedHealthProbeFilter) for f in access_logger.filters):
+        access_logger.addFilter(_PassedHealthProbeFilter())
