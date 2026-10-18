@@ -421,24 +421,38 @@ a.bj-contact-chip {
   flex-wrap: wrap;
 }
 
+/* A group of two or more segments of which one is chosen (the selection primitive in tokens.css:
+   a maroon fill inside an outlined group). */
 .bj-view-toggle {
   display: inline-flex;
-  border: 1px solid var(--bj-border);
-  border-radius: 6px;
-  overflow: hidden;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 10px;
 }
 
 .bj-view-toggle button {
   border: none;
-  border-radius: 0;
+  border-radius: 7px;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--bj-text-small);
   padding: 6px 14px;
 }
 
-.bj-view-toggle button.bj-toggle-active {
-  background: var(--bj-maroon);
-  color: var(--bj-text);
+.bj-view-toggle button:hover {
+  background: var(--bj-hover-bg-raised);
+}
+
+.bj-view-toggle button.bj-toggle-active,
+.bj-view-toggle button[aria-pressed="true"] {
+  background: var(--bj-selected-bg);
+  color: var(--bj-selected-text);
+  font-weight: 600;
+}
+
+.bj-view-toggle button.bj-toggle-active:hover,
+.bj-view-toggle button[aria-pressed="true"]:hover {
+  background: var(--bj-selected-bg-hover);
 }
 
 .bj-json-view {
@@ -818,7 +832,7 @@ a.bj-contact-chip {
 button.bj-danger {
   background: var(--bj-danger);
   border-color: var(--bj-danger);
-  color: #ffffff;
+  color: var(--bj-bg);
   font-weight: 600;
 }
 
@@ -2286,18 +2300,20 @@ button.bj-danger {
   overflow-wrap: anywhere;
 }
 
-/* A link that looks like a button, for the way in. */
+/* A link that looks like a button, for the way in. Secondary (outlined) by default; the primary
+   variant is the cyan fill, with the same one-per-page rule as button.bj-primary. */
 a.bj-button-link {
   display: inline-block;
   padding: 8px 16px;
   border-radius: 6px;
-  border: 1px solid var(--bj-border);
-  background: var(--bj-surface-raised);
+  border: 1px solid var(--bj-outline);
+  background: transparent;
   color: var(--bj-text);
-  font-size: 14px;
+  font-size: var(--bj-text-control);
 }
 
 a.bj-button-link:hover {
+  background: var(--bj-hover-bg);
   border-color: var(--bj-text-muted);
   text-decoration: none;
 }
