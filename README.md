@@ -29,8 +29,9 @@ engine" before you start.
 
 ## What works today
 
-Running the API against a Supabase project, with an [OpenRouter](https://openrouter.ai)
-key saved in the web app (Integrations page), these work. Where a feature also needs a
+Running the API against a Supabase project, with a model key saved in the web app
+(Integrations page; [OpenRouter](https://openrouter.ai) by default, others listed under
+"Model providers"), these work. Where a feature also needs a
 search or scraping key, it says so:
 
 - **Sign-in and your profile.** Email and password through Supabase Auth (Google sign-in
@@ -208,6 +209,89 @@ What a stranger needs to run this: a Supabase project (or the local stack), the 
 `FORGE_ENGINES_BASE_URL` left unset, a model key saved on the Integrations page, and the
 `latex-service/` container for PDFs (see its README), since every PDF is compiled there.
 
+## Model providers
+
+Every model call goes to a provider you hold a key for. The API supports these, each through
+its OpenAI-compatible endpoint:
+
+| Provider | Address the API calls | Notes |
+| --- | --- | --- |
+| OpenRouter | `openrouter.ai` | Paste a key, or connect in one click (OAuth with PKCE) |
+| OpenAI | `api.openai.com` | |
+| Anthropic | `api.anthropic.com` | Anthropic documents its compatibility layer as a way to test and compare, not for production |
+| Google Gemini | `generativelanguage.googleapis.com` | The compatibility endpoint is in beta, per Google |
+| xAI | `api.x.ai` | |
+| DeepSeek | `api.deepseek.com` | |
+| Qwen Cloud | `maas.qwencloudapi.com`, or `<workspace>.<region>.maas.aliyuncs.com` | QwenCloud, or an Alibaba Cloud Model Studio workspace in one of its six regions; a key only works on the platform and region it was made on |
+| Other OpenAI-compatible | Groq, Mistral, Together AI, Fireworks AI, Cohere | One of a fixed list of addresses, below |
+
+**Saving a key and choosing a model are two steps.** `POST /credentials` checks the key with
+the provider's own free call where it has one (a model list, or DeepSeek's balance) and stores
+it, encrypted, only if the provider accepts it. Qwen and the other OpenAI-compatible hosts have
+no documented free check, so they need a model id sent with the key, and the check is one tiny
+real request. A key saved without a model is stored and not usable: the API reports it as
+`needs_model` (`setup_state` on `GET /credentials`, and a `SETUP_REQUIRED` error that says what
+is missing). `POST /credentials/llm/models` lists the models a key can use (newest first, at
+most 500); `PUT /credentials/llm/{provider}/model` proves a model with one real completion of
+at most 16 tokens and only then stores it and makes it the default. `GET /credentials/llm/providers`
+returns what a provider picker needs, including the pages for getting and managing a key.
+`POST /credentials/openrouter/exchange` finishes the OpenRouter sign-in: the browser makes the
+PKCE verifier and challenge, so the server keeps no state, and the exchange is useless without
+the verifier.
+
+**The request is shaped for the provider.** OpenAI-compatible is true of the path and the
+messages and little else. Which field caps the answer, how reasoning is switched off and
+whether a temperature is accepted differ, and a field one provider requires another answers
+with a 400, so the API picks the shape from the host (`provider_registry.py`). OpenRouter's
+request is unchanged and pinned byte for byte by a test. For the others, when a model refuses
+the first reasoning setting (a 400 or 422), the API tries the next, at most three requests in
+all, and remembers what worked for that model.
+
+**What is not claimed.** The provider facts in `provider_registry.py` come from each
+provider's documentation, read on 2026-10-18, and none of it has been run against a live
+service with a real key. Where the documentation was silent the code takes the conservative
+choice and says so in a comment with the page to re-read. Known limits:
+
+- Some models cannot run with reasoning off (Grok, Gemini 3 and later, some Claude models).
+  Their reasoning tokens count against the answer cap, so a small cap can return an empty
+  answer; the model check treats that as accepted, a long generation may not.
+- Gemini's and Qwen's cap field is not confirmed in their documentation. Qwen's model list
+  route is undocumented, so the list may come back `unavailable` and a model id is typed.
+- A key made for Alibaba's "Token Plan" or "Coding Plan" uses other hosts and is not supported.
+- Anything that is not a public https address on the lists above is not supported. That
+  includes Ollama, vLLM and other servers on `localhost` or a private network.
+
+**Key handling.** A key reaches the API in a request body (or from the OAuth exchange), is
+checked, encrypted by the `encrypt_secret` database function and stored. It is decrypted only
+for the single call that needs it, sent to its provider as a request header and nowhere else,
+and is never logged, returned, put in an error message or sent to the error tracker. What a
+provider says in an error body is never repeated: failures are classified from the status and
+a few fixed fields (invalid key, no credit, rate limited, unknown or retired model, provider
+down) and worded by this code.
+
+**Where a key can be sent.** An address is never taken from a request. A provider with one
+address has it in `provider_registry.py`. Qwen's is built from a region in a fixed list and a
+workspace id that must be a valid DNS label. The `custom` provider accepts an address only if
+it is exactly one of these, after normalising (https, no userinfo, no port, no query):
+
+```
+https://api.groq.com/openai/v1
+https://api.mistral.ai/v1
+https://api.together.ai/v1
+https://api.fireworks.ai/inference/v1
+https://api.cohere.ai/compatibility/v1
+```
+
+Adding one is a change to `CUSTOM_ENDPOINTS` in that file and a review. On top of that, every
+call refuses a name that resolves to a private, loopback or link-local address, follows no
+redirect, reads at most 2 MB of an answer and gives up after 20 seconds (a completion has its
+own time limit). Saved addresses are checked again whenever they are used, so a row from before
+this rule cannot send a key anywhere the rule would not.
+
+**Running the resume engine service.** The engine service reads the provider from the address
+it is sent, so deploy it before the API when you upgrade: an engine that predates this sends
+OpenRouter-only fields to any provider, and they are refused.
+
 ## Repository layout
 
 | Path | What it is |
@@ -300,8 +384,8 @@ run without `VITE_API_BASE_URL` and `VITE_SUPABASE_URL` set to public `https://`
 `web/.env.example` explains why. The build also writes `dist/_headers`, a Content-Security-Policy
 and other security headers generated from those two origins (Cloudflare Pages applies the file
 as it is; `web/README.md` covers other hosts and what to do when something is blocked).
-Create an account on the sign-in page, open Integrations and save an OpenRouter key, then
-import your resume JSON on the Profile page.
+Create an account on the sign-in page, open Integrations and save a model key (OpenRouter is
+the default; see "Model providers"), then import your resume JSON on the Profile page.
 
 ### 4. The browser extension
 
