@@ -110,7 +110,26 @@ describe("the production build's security headers", () => {
       expect(href).toMatch(/^\/assets\/.+\.woff2$/);
       expect(files.some((f) => `/${f.fileName}` === href)).toBe(true);
     }
-    expect(html).toContain('content="https://between-jobs.tech/og-image.png"');
+    expect(html).toContain('property="og:image" content="https://between-jobs.tech/og-image.png"');
+    expect(html).not.toContain("%SITE_ORIGIN%");
+    expect(html).not.toContain("og:url");
+  });
+
+  it("points the preview image at the deployment's own origin when VITE_SITE_URL names it", async () => {
+    const files = await runBuild({ VITE_API_BASE_URL: API, VITE_SUPABASE_URL: SUPABASE, VITE_SITE_URL: "https://jobs.example.org/" });
+    const html = text(files.find((f) => f.fileName === "index.html"));
+    expect(html).toContain('property="og:image" content="https://jobs.example.org/og-image.png"');
+    expect(html).toContain('name="twitter:image" content="https://jobs.example.org/og-image.png"');
+    expect(html).not.toContain("between-jobs.tech");
+  });
+
+  it("fails the build, naming the variable and not its value, on a VITE_SITE_URL that is not an https origin", async () => {
+    const failure = await runBuild({ VITE_API_BASE_URL: API, VITE_SUPABASE_URL: SUPABASE, VITE_SITE_URL: "http://jobs.example.org/app" }).then(
+      () => null,
+      (error: unknown) => String(error),
+    );
+    expect(failure).toMatch(/VITE_SITE_URL/);
+    expect(failure).not.toContain("jobs.example.org");
   });
 
   it("names the host the bundle calls, not a path under it", async () => {

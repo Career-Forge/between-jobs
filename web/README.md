@@ -17,6 +17,9 @@ are not local addresses, and refuses to run without them (`scripts/apiBaseGuard.
 `scripts/securityHeaders.ts`). Pass them in the shell rather than in `.env.local`, so a leftover
 local file cannot leak into a bundle you meant to deploy. A change to either needs a new build.
 
+A self-hosted or staging build also sets `VITE_SITE_URL` (an `https://` origin) so the link-preview image
+tags name its own host; left unset they name the hosted site (`scripts/siteOrigin.ts`).
+
 ## Shell, selection and buttons
 
 `src/components/AppShell.tsx` is the signed-in frame. From 960px wide it is a 220px left rail (wordmark,

@@ -2,6 +2,7 @@ import react from "@vitejs/plugin-react";
 import type { Plugin, ResolvedConfig } from "vite";
 import { defineConfig } from "vitest/config";
 import { assertApiBase } from "./scripts/apiBaseGuard.ts";
+import { resolveSiteOrigin } from "./scripts/siteOrigin.ts";
 import { assetsPrefixFor, buildHeadersFile, resolveOrigins } from "./scripts/securityHeaders.ts";
 
 // Fails `vite build` unless VITE_API_BASE_URL is a usable production value
@@ -16,6 +17,23 @@ function requireApiBaseForBuilds(): Plugin {
       if (config.command === "build") {
         assertApiBase(config.env.VITE_API_BASE_URL as string | undefined);
       }
+    },
+  };
+}
+
+// Fills in %SITE_ORIGIN% in index.html -- the absolute URLs of the link-preview image -- from
+// VITE_SITE_URL (scripts/siteOrigin.ts), in the dev server and the build alike, and fails the build
+// on a value that is not a bare https origin.
+function fillSiteOrigin(): Plugin {
+  let origin = "";
+  return {
+    name: "between-jobs:site-origin",
+    configResolved(config) {
+      origin = resolveSiteOrigin(config.env.VITE_SITE_URL as string | undefined);
+    },
+    transformIndexHtml: {
+      order: "pre",
+      handler: (html) => html.replaceAll("%SITE_ORIGIN%", origin),
     },
   };
 }
@@ -78,7 +96,7 @@ function emitSecurityHeaders(): Plugin {
 // (/profile/..., /applications/..., /health). A deployed build has no proxy: the API is a
 // different origin, named by VITE_API_BASE_URL (src/lib/apiUrl.ts).
 export default defineConfig({
-  plugins: [react(), requireApiBaseForBuilds(), emitSecurityHeaders()],
+  plugins: [react(), requireApiBaseForBuilds(), fillSiteOrigin(), emitSecurityHeaders()],
   build: {
     // Never turn a small image or font into a data: URL inside the bundle: the policy allows
     // img-src and font-src from 'self' only, so an inlined asset would be refused in production
