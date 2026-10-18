@@ -4,7 +4,7 @@ import { useAuth } from "../auth";
 import { ConsentNotice } from "../components/ConsentNotice";
 import { LegalLinks } from "../components/LegalLinks";
 import { NextStepSkipLink } from "../components/NextStepSkipLink";
-import { NextStepBand } from "../components/paper/NextStepBand";
+import { NextStepBand, SUBMIT_INTENT } from "../components/paper/NextStepBand";
 import { ResetRequestForm } from "../components/ResetRequestForm";
 import { Wordmark } from "../components/Wordmark";
 import { AUTH_FORM_ID, nextStep } from "../lib/nextStep";
@@ -61,8 +61,8 @@ export default function Login() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    // The page's button is the next-step band's, which cannot show a busy state of its own, so a
-    // second press while a request is out is ignored here.
+    // A second press while a request is out is ignored here too: the band's button is aria-disabled
+    // while busy, but Enter in a field submits the form without going through it.
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -138,7 +138,7 @@ export default function Login() {
           <h1 className="bj-login-brand">
             <Wordmark />
           </h1>
-          <NextStepBand outcome={outcome} />
+          <NextStepBand outcome={outcome} pending={busy ? { intent: SUBMIT_INTENT, label: mode === "sign_in" ? "Signing in..." : "Creating account..." } : null} />
           <div className="bj-login-card">
             <h2>{mode === "sign_in" ? "Sign in" : "Create your account"}</h2>
             <form id={AUTH_FORM_ID} onSubmit={(e) => void onSubmit(e)}>
