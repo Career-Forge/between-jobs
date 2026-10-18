@@ -33,7 +33,7 @@ export interface UnlitStep extends StepWords {
 /** A lit band: the page's one cyan action. */
 export interface LitStep extends StepWords {
   action: NextStepAction;
-  /** One outlined button beside the cyan one, only where the rule table names it. Never a second cyan. */
+  /** One outlined button beside the cyan one, only where a row asks for one. Never a second cyan. */
   secondary?: NextStepAction | null;
   /** The action exists but is locked until the person finishes something; `hint` names what unlocks it. */
   locked?: { hint: string };
@@ -85,7 +85,7 @@ export interface NextStepInput<F = unknown> {
   profile?: SetupCheck<ProfileFacts>;
   /** Supply it only if the page called GET /credentials; leave it out otherwise. */
   credentials?: SetupCheck<CredentialsFacts>;
-  /** The page's own data request failed (network or 5xx): the F1 row. */
+  /** The page's own data request failed (network or 5xx): row F1 in global.ts. */
   pageFailure?: PageFailure | null;
   /** The sign-in page's mode; it changes only the label on the button. */
   authMode?: "sign-in" | "register";
@@ -99,7 +99,7 @@ export interface NextStepInput<F = unknown> {
 export type RowResult = NextStep | "wait" | "none" | null;
 
 export interface NextStepRow<F = unknown> {
-  /** The row's name in the rule table: "G1", "L0". Unique across the global rows and every page. Tests key on it. */
+  /** The row's name: "G1", "L0". Unique across the global rows and every page. Tests key on it. */
   id: string;
   match(input: NextStepInput<F>): RowResult;
 }

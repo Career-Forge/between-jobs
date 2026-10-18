@@ -1,7 +1,6 @@
-// The rule table's global rows: the ones that apply on every page before the page's own rows.
-// Order is the table's precedence, with one correction: G2b (an import is waiting) is checked
-// before G2 (no active profile), because it is G2 with one more fact, and after G2 it could never
-// be reached.
+// The global rows: the ones that apply on every page before the page's own rows. They are tried in
+// the order of the list below. G2b (an import is waiting) comes before G2 (no active profile)
+// because it is G2 with one more fact: after G2 it could never be reached.
 //
 //   LG  legal pages        no band
 //   G0  signed out         sign in
@@ -12,8 +11,8 @@
 //   G2  no active profile
 //   F1  the page's own data request failed
 //
-// G3 (no model key) is not here: the model key is no longer OpenRouter-only, so what counts as
-// "set" is a decision for the page that reads the credentials.
+// There is no row for a missing model key here: a key can belong to any of several providers, so
+// what counts as "set" is for the page that reads the credentials to decide.
 
 import type { NextStep, NextStepInput, NextStepRow, SetupCheck } from "./types";
 

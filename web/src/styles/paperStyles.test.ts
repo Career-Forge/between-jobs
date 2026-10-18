@@ -5,7 +5,7 @@ import { PHONE_QUERY } from "../lib/useMediaQuery";
 import paperCss from "./paper.css?raw";
 
 // paper.css is read as text (there is no layout engine in the test run). What it pins is the
-// design's measurable rules: sizes, the band's shape, motion, and that it defines no color of its own.
+// stylesheet's measurable rules: sizes, the band's shape, motion, and that it defines no color of its own.
 
 const base = withoutMedia(paperCss);
 const phone = blockOf(paperCss, "@media (max-width: 959px)") ?? "";

@@ -4,7 +4,7 @@ import { Icon } from "../icons";
 import "../../styles/paper.css";
 
 // A modal sheet pinned to the bottom of a phone screen. Built by hand rather than on <dialog> so the
-// behavior the design asks for is the same everywhere and can be tested without a browser:
+// behavior this sheet promises is the same everywhere and can be tested without a browser:
 //
 //  - focus moves into the sheet when it opens (to Close) and is trapped there: Tab and Shift+Tab
 //    wrap, and focus that lands outside is pulled back;
