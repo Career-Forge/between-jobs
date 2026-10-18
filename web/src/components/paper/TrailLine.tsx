@@ -70,23 +70,43 @@ export function TrailText({ model }: { model: TrailModel }) {
   );
 }
 
+// A definition list may hold only term/description groups, so a note (a sentence with no label)
+// cannot sit inside one. The rows are cut into runs in their original order: each run of labelled
+// rows is its own <dl>, and each note is a paragraph between them. A receipt of only notes has no
+// <dl> at all.
+function runsOf(rows: ReceiptModel["rows"]) {
+  const runs: ({ notes: string } | { rows: { label: string; value: string }[] })[] = [];
+  for (const row of rows) {
+    if ("note" in row) {
+      runs.push({ notes: row.note });
+      continue;
+    }
+    const last = runs[runs.length - 1];
+    if (last !== undefined && "rows" in last) last.rows.push(row);
+    else runs.push({ rows: [row] });
+  }
+  return runs;
+}
+
 export function ReceiptWell({ receipt, title }: { receipt: ReceiptModel; title: string }) {
   return (
     <div className="bj-receipt" role="group" aria-label={title} tabIndex={0}>
-      <dl>
-        {receipt.rows.map((row, index) =>
-          "note" in row ? (
-            <div key={index} className="bj-receipt-note">
-              {row.note}
-            </div>
-          ) : (
-            <div key={index} className="bj-receipt-row">
-              <dt>{row.label}</dt>
-              <dd>{row.value}</dd>
-            </div>
-          ),
-        )}
-      </dl>
+      {runsOf(receipt.rows).map((run, index) =>
+        "notes" in run ? (
+          <p key={index} className="bj-receipt-note">
+            {run.notes}
+          </p>
+        ) : (
+          <dl key={index}>
+            {run.rows.map((row, rowIndex) => (
+              <div key={rowIndex} className="bj-receipt-row">
+                <dt>{row.label}</dt>
+                <dd>{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ),
+      )}
     </div>
   );
 }

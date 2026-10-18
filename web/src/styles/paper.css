@@ -142,7 +142,14 @@ button.bj-trail-trigger:hover .bj-trail-words {
   margin: 0;
 }
 
+/* A note is a paragraph beside the label rows, never inside their <dl>. */
 .bj-receipt-note {
+  margin: 0;
+}
+
+.bj-receipt dl + .bj-receipt-note,
+.bj-receipt-note + dl,
+.bj-receipt-note + .bj-receipt-note {
   margin-top: var(--bj-space-1);
 }
 

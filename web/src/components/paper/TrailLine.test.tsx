@@ -66,6 +66,49 @@ describe("a trail line with a receipt (wide screens)", () => {
     expect(receipt.textContent).not.toMatch(/pdf|gate/);
   });
 
+  it("keeps notes out of the definition list, in their original order", () => {
+    installViewport(1280);
+    const { container } = render(
+      <TrailLine
+        trail={TRAIL}
+        receipt={[{ label: "run", value: "r1" }, { note: "Model not returned" }, { label: "pdf", value: "p1" }, { label: "gate", value: "g1" }, { note: "Second note" }]}
+      />,
+    );
+    click(trigger(container));
+    const receipt = query(container, ".bj-receipt");
+    expect(rowsOf(receipt)).toEqual(["run r1", "Model not returned", "pdf p1", "gate g1", "Second note"]);
+    expect(receipt.querySelectorAll("dl")).toHaveLength(2);
+    for (const note of receipt.querySelectorAll(".bj-receipt-note")) expect(note.closest("dl")).toBeNull();
+    // Every child of a <dl> is a row group holding a term and its description.
+    for (const group of receipt.querySelectorAll("dl > *")) expect([...group.children].map((cell) => cell.tagName)).toEqual(["DT", "DD"]);
+  });
+
+  it("draws a receipt of only notes with no <dl> at all", () => {
+    installViewport(1280);
+    const { container } = render(<TrailLine trail={TRAIL} receipt={[{ note: "Only a note" }]} />);
+    click(trigger(container));
+    expect(container.querySelector("dl")).toBeNull();
+    expect(rowsOf(query(container, ".bj-receipt"))).toEqual(["Only a note"]);
+  });
+
+  it("has no serious accessibility violation with a note in the receipt, inline or in the sheet", async () => {
+    const receipt: ReceiptRowInput[] = [{ label: "run", value: "r1" }, { note: "Model not returned" }];
+    const notesOnly: ReceiptRowInput[] = [{ note: "Only a note" }];
+    installViewport(1280);
+    for (const rows of [receipt, notesOnly]) {
+      const inline = render(<TrailLine trail={TRAIL} receipt={rows} />);
+      click(trigger(inline.container));
+      await expectNoSeriousA11yViolations(inline.container);
+      inline.unmount();
+    }
+    for (const rows of [receipt, notesOnly]) {
+      const sheet = render(<TrailLine trail={TRAIL} receipt={rows} placement="sheet" />);
+      click(trigger(sheet.container));
+      await expectNoSeriousA11yViolations(query(document.body, ".bj-sheet-root"));
+      sheet.unmount();
+    }
+  });
+
   it("is the same on the keyboard: a button, so Enter and Space click it, and it keeps focus", () => {
     installViewport(1280);
     const { container } = render(<TrailLine trail={TRAIL} receipt={RECEIPT} />);
