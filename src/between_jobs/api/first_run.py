@@ -67,14 +67,14 @@ STEP_LABELS: dict[StepId, str] = {
 """The step names, as the web checklist words them."""
 
 MODEL_CHOICE_LABEL = "Choose a model"
-MODEL_CHOICE_PAGE = "/settings#ai-provider"
-"""What the model-key step becomes while a key is saved and checked and no model is chosen for it
+"""What the model-key step is called while a key is saved and checked and no model is chosen for it
 (the API's `needs_model` state): the key is not what is missing, so it must not say "Add a model
-key", and the link goes to the AI provider section where the model is chosen."""
+key". The page is the same as when there is no key: the AI provider section of Settings, where the
+key is pasted and its model chosen."""
 
 STEP_PAGES: dict[StepId, str] = {
     "profile": "/profile",
-    "model_key": "/settings",
+    "model_key": "/settings#ai-provider",
     "first_search": "/discover",
     "track_job": "/applications",
     "generate_resume": "/applications",
@@ -168,7 +168,7 @@ def derive_first_run(facts: FirstRunFacts, searched: bool | None = None) -> Firs
             MODEL_CHOICE_LABEL
             if step_id == "model_key" and awaiting_model
             else STEP_LABELS[step_id],
-            MODEL_CHOICE_PAGE if step_id == "model_key" and awaiting_model else STEP_PAGES[step_id],
+            STEP_PAGES[step_id],
             statuses[step_id],
         )
         for step_id in STEP_IDS

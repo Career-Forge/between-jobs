@@ -7,8 +7,8 @@
 // with a link of its own); a first search happened; an application is tracked; an application has
 // a resume. Each comes from a list the app already reads (the profile, the credentials,
 // the applications with their `resume_exists`, the saved searches) -- no route was added
-// for this, and nothing here calls a rate-limited endpoint: the checklist runs on every
-// visit to Today, so it may only make cheap GETs, and `/discover` (a full search that
+// for this, and nothing here calls a rate-limited endpoint: the reads run on every
+// visit to Today, so they may only be cheap GETs, and `/discover` (a full search that
 // spends a slot of the user's hourly limit) is not one of them.
 //
 // "FIRST SEARCH" LEAVES NO ROW. A search is not persisted, and the only route that runs
@@ -26,12 +26,17 @@
 // shown neutrally -- and never done and never todo: guessing "todo" would nag someone who
 // finished that step, and guessing "done" would hide one they did not.
 //
-// THE CARD IS FOR ACCOUNTS THAT NEED GUIDANCE. It shows only while some step is KNOWN to
-// be todo. An unknown step alone is not a reason to show it: an account that finished
-// everything must not be told to redo steps because one of the four requests failed. And
-// once an account is seen with all five done, this browser remembers it (per user) and the
-// requests stop altogether -- the checklist runs on every visit to Today, so a finished
-// account would otherwise pay for four requests, one of them heavy, to draw nothing.
+// THE CARD OPENS FOR ACCOUNTS THAT NEED GUIDANCE. It is drawn open only while some step is KNOWN
+// to be todo, and only until it is hidden. An unknown step alone is not a reason to open it: an
+// account that finished everything must not be told to redo steps because one of the four requests
+// failed. Otherwise it is one line that opens on a click -- "Setup ready" when all five are done,
+// the counts when it was hidden or only unknowns remain -- so the person can always get back to it.
+// Once an account is seen with all five done, this browser remembers it (per user) and shows the
+// "ready" line on the next visit before the reads have come back; what the reads say then wins.
+//
+// The reads are Today's (readAccount): it needs profile, credentials, saved searches and
+// applications for the band, the background trail and the sentences' job names as well, so the
+// checklist takes them from there rather than asking for its own.
 //
 // THE CHAT BOT HAS A COPY OF THESE RULES. Its `/learn` command shows the same five steps, derived in
 // src/between_jobs/api/first_run.py from what the account holds. The two are held to one table of
@@ -45,6 +50,7 @@
 // components/FirstRunChecklist.tsx.
 
 import { CROSS_NAV_HASH } from "./applicationsBoard";
+import { MODEL_PROVIDER_PATH } from "./settingsPaths";
 
 // ── the facts ──────────────────────────────────────────────────────────────
 
@@ -69,6 +75,9 @@ export interface ApplicationFacts {
 export interface FirstRunFacts {
   // An active profile exists.
   profile: Fetched<boolean>;
+  // When that profile was activated, as GET /profile/current returned it; absent or null when it did
+  // not, and the step then says nothing of a date.
+  profileActiveSince?: string | null;
   // A validated key with a model chosen exists.
   modelKey: Fetched<boolean>;
   // A key is checked and saved with no model chosen, and no key is ready. Only read when modelKey is
@@ -81,6 +90,9 @@ export interface FirstRunFacts {
 // What this browser knows, apart from the API.
 export interface FirstRunFlags {
   dismissed: boolean;
+  // This browser has seen the account with all five done (written when the facts last said so). It
+  // lets the one-line "Setup ready" show before the reads come back; it never counts a step.
+  seenFinished?: boolean;
   // This browser remembers a first successful search: true; remembers none: false;
   // storage could not be read: null (unknown).
   searched: boolean | null;
@@ -125,61 +137,113 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 
-// What the credentials list says about the model keys: one is ready, or one is checked and waits for
-// its model.
-interface ModelKeyState {
-  ready: boolean;
-  needsModel: boolean;
+// What the four reads returned, before anything is decided from them. Today draws more than the
+// checklist from these (the band's setup rows, the saved searches in the background trail, the
+// application names in a sentence), so they are read once, here, and each consumer takes what it needs.
+export interface AccountReads {
+  // An active profile: `active` false is the 404 ("no active profile yet"), which is the answer, not a failure.
+  profile: Fetched<{ active: boolean; activatedAt: string | null }>;
+  credentials: Fetched<readonly Record<string, unknown>[]>;
+  savedSearches: Fetched<readonly Record<string, unknown>[]>;
+  applications: Fetched<readonly Record<string, unknown>[]>;
 }
+
+export const ACCOUNT_STILL_LOADING: AccountReads = {
+  profile: { kind: "loading" },
+  credentials: { kind: "loading" },
+  savedSearches: { kind: "loading" },
+  applications: { kind: "loading" },
+};
 
 // The four requests, all plain GETs the app already makes elsewhere (Profile, Integrations,
 // Applications, Discover's saved searches). Each fails on its own: one fact failing leaves
 // the other three.
-export async function loadFirstRunFacts(fetcher: Fetcher): Promise<FirstRunFacts> {
-  const [profile, modelKeyState, savedSearches, applications] = await Promise.all([
-    settle<boolean>(async () => {
+export async function readAccount(fetcher: Fetcher): Promise<AccountReads> {
+  const [profile, credentials, savedSearches, applications] = await Promise.all([
+    settle<{ active: boolean; activatedAt: string | null }>(async () => {
       try {
-        return isRecord(await fetcher<unknown>("/profile/current")) ? ok(true) : FAILED;
+        const body = await fetcher<unknown>("/profile/current");
+        if (!isRecord(body)) return FAILED;
+        return ok({ active: true, activatedAt: nonEmptyString(body.activated_at) });
       } catch (e) {
         // "No active profile yet" is a 404, and is the answer, not a failure.
-        return statusOf(e) === 404 ? ok(false) : FAILED;
+        return statusOf(e) === 404 ? ok({ active: false, activatedAt: null }) : FAILED;
       }
     }),
-    settle<ModelKeyState>(async () => {
+    settle(async () => {
       const rows = await readRows(fetcher, "/credentials");
-      if (rows === null) return FAILED;
-      // Validated AND with a model chosen: a checked key with no model is saved and still fails
-      // every generation (the server's `needs_model`), so it does not tick the step.
-      const checked = rows.filter((row) => row.service === "llm" && row.is_validated === true);
-      const ready = checked.some((row) => nonEmptyString(row.model) !== null);
-      return ok({ ready, needsModel: !ready && checked.length > 0 });
+      return rows === null ? FAILED : ok(rows);
     }),
-    settle<number>(async () => {
+    settle(async () => {
       const rows = await readRows(fetcher, "/saved-searches");
-      return rows === null ? FAILED : ok(rows.length);
+      return rows === null ? FAILED : ok(rows);
     }),
-    settle<ApplicationFacts>(async () => {
+    settle(async () => {
       const rows = await readRows(fetcher, "/applications");
-      if (rows === null) return FAILED;
+      return rows === null ? FAILED : ok(rows);
+    }),
+  ]);
+  return { profile, credentials, savedSearches, applications };
+}
+
+function mapFetched<T, U>(fact: Fetched<T>, map: (value: T) => U): Fetched<U> {
+  return fact.kind === "ok" ? ok(map(fact.value)) : fact;
+}
+
+// What the credentials list says about the model keys: one is ready, or one is checked and waits
+// for its model. Validated AND with a model chosen is ready: a checked key with no model is saved
+// and still fails every generation (the server's `needs_model`), so it is not a finished step.
+export interface ModelKeyState {
+  ready: boolean;
+  needsModel: boolean;
+}
+
+export function modelKeyStateOf(rows: readonly Record<string, unknown>[]): ModelKeyState {
+  const checked = rows.filter((row) => row.service === "llm" && row.is_validated === true);
+  const ready = checked.some((row) => nonEmptyString(row.model) !== null);
+  return { ready, needsModel: !ready && checked.length > 0 };
+}
+
+// What the checklist decides from the reads.
+export function firstRunFactsOf(reads: AccountReads): FirstRunFacts {
+  return {
+    profile: mapFetched(reads.profile, (profile) => profile.active),
+    ...(reads.profile.kind === "ok" && reads.profile.value.activatedAt !== null
+      ? { profileActiveSince: reads.profile.value.activatedAt }
+      : {}),
+    modelKey: mapFetched(reads.credentials, (rows) => modelKeyStateOf(rows).ready),
+    modelKeyNeedsModel: mapFetched(reads.credentials, (rows) => modelKeyStateOf(rows).needsModel),
+    savedSearches: mapFetched(reads.savedSearches, (rows) => rows.length),
+    applications: mapFetched(reads.applications, (rows) => {
       const withoutResume = rows.find((row) => row.resume_exists !== true && nonEmptyString(row.id));
       const first = rows.find((row) => nonEmptyString(row.id));
-      return ok({
+      return {
         count: rows.length,
         fromDiscover: rows.filter((row) => row.source_channel === "discover").length,
         withResume: rows.filter((row) => row.resume_exists === true).length,
         resumeTargetId: nonEmptyString((withoutResume ?? first)?.id),
-      });
+      };
     }),
-  ]);
-  const modelKey: Fetched<boolean> = modelKeyState.kind === "ok" ? ok(modelKeyState.value.ready) : modelKeyState;
-  const modelKeyNeedsModel: Fetched<boolean> = modelKeyState.kind === "ok" ? ok(modelKeyState.value.needsModel) : modelKeyState;
-  return { profile, modelKey, modelKeyNeedsModel, savedSearches, applications };
+  };
+}
+
+export async function loadFirstRunFacts(fetcher: Fetcher): Promise<FirstRunFacts> {
+  return firstRunFactsOf(await readAccount(fetcher));
 }
 
 // ── deriving the steps ─────────────────────────────────────────────────────
 
 export type StepId = "profile" | "model_key" | "first_search" | "track_job" | "generate_resume";
 export type StepStatus = "done" | "todo" | "unknown";
+
+// Why a step could not be told. "errored": a read it depends on failed, so it can be tried again.
+// "cant_tell": every read worked and none holds the answer (a search that was not saved or tracked
+// leaves no row), so trying again changes nothing.
+export type UnknownCause = "errored" | "cant_tell";
+
+// The real fact behind a done step, when one was returned: a date from the profile row, or words
+// built from counts of rows. Null when nothing returned says more than "done".
+export type StepFact = { kind: "since"; at: string } | { kind: "text"; text: string };
 
 export interface FirstRunStep {
   id: StepId;
@@ -188,11 +252,26 @@ export interface FirstRunStep {
   // The page where the step is done.
   to: string;
   status: StepStatus;
+  // Set on an unknown step only.
+  cause: UnknownCause | null;
+  // Set on a done step only.
+  fact: StepFact | null;
 }
 
+// How the checklist is drawn. "expanded": the five steps, because some step is known to be to do.
+// "collapsed": one line -- "Setup ready" when all five are done, otherwise the counts -- which opens
+// on a click. "hidden": nothing yet, because the reads have not come back.
+export type SetupPresentation = "expanded" | "collapsed" | "hidden";
+
 export interface FirstRunView {
-  // Whether the card is shown at all.
+  // Whether the card is shown open by default.
   visible: boolean;
+  presentation: SetupPresentation;
+  // All five are done: known from the reads, or remembered by this browser while they are loading.
+  finished: boolean;
+  // Counts for the collapsed line; the steps below are what they come from.
+  todoCount: number;
+  unknownCount: number;
   steps: readonly FirstRunStep[];
   doneCount: number;
   // The first step KNOWN to be todo, or null when there is none. A step that could not be
@@ -201,9 +280,15 @@ export interface FirstRunView {
   nextStep: FirstRunStep | null;
 }
 
-function fromFlag(fact: Fetched<boolean>): StepStatus {
+function statusOfFlag(fact: Fetched<boolean>): StepStatus {
   if (fact.kind !== "ok") return "unknown";
   return fact.value ? "done" : "todo";
+}
+
+// A step that depends on reads that did not all arrive is unknown for one of two reasons.
+function causeOf(status: StepStatus, ...reads: readonly Fetched<unknown>[]): UnknownCause | null {
+  if (status !== "unknown") return null;
+  return reads.some((read) => read.kind === "failed") ? "errored" : "cant_tell";
 }
 
 function firstSearchStatus(facts: FirstRunFacts, flags: FirstRunFlags): StepStatus {
@@ -217,6 +302,20 @@ function firstSearchStatus(facts: FirstRunFacts, flags: FirstRunFlags): StepStat
   return readEverything ? "todo" : "unknown";
 }
 
+function firstSearchFact(facts: FirstRunFacts, flags: FirstRunFlags): StepFact | null {
+  if (facts.savedSearches.kind === "ok" && facts.savedSearches.value > 0) {
+    return { kind: "text", text: count(facts.savedSearches.value, "saved search", "saved searches") };
+  }
+  if (facts.applications.kind === "ok" && facts.applications.value.fromDiscover > 0) {
+    return { kind: "text", text: `${facts.applications.value.fromDiscover} tracked from Discover` };
+  }
+  return flags.searched === true ? { kind: "text", text: "A search finished in this browser" } : null;
+}
+
+function count(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 function resumeLink(facts: FirstRunFacts): string {
   if (facts.applications.kind === "ok" && facts.applications.value.resumeTargetId !== null) {
     return `/applications/${encodeURIComponent(facts.applications.value.resumeTargetId)}#${CROSS_NAV_HASH.generate}`;
@@ -225,7 +324,6 @@ function resumeLink(facts: FirstRunFacts): string {
 }
 
 export const MODEL_CHOICE_LABEL = "Choose a model";
-export const MODEL_CHOICE_PAGE = "/settings#ai-provider";
 
 export function deriveFirstRun(facts: FirstRunFacts, flags: FirstRunFlags): FirstRunView {
   const applications = facts.applications;
@@ -235,13 +333,27 @@ export function deriveFirstRun(facts: FirstRunFacts, flags: FirstRunFlags): Firs
     !facts.modelKey.value &&
     facts.modelKeyNeedsModel?.kind === "ok" &&
     facts.modelKeyNeedsModel.value;
+  const profile = statusOfFlag(facts.profile);
+  const modelKey = statusOfFlag(facts.modelKey);
+  const firstSearch = firstSearchStatus(facts, flags);
+  const tracked: StepStatus =
+    applications.kind === "ok" ? (applications.value.count > 0 ? "done" : "todo") : "unknown";
+  const generated: StepStatus =
+    applications.kind === "ok" ? (applications.value.withResume > 0 ? "done" : "todo") : "unknown";
   const steps: FirstRunStep[] = [
     {
       id: "profile",
       label: "Add your profile",
       hint: "Import your resume as a profile. Everything else is built from it.",
       to: "/profile",
-      status: fromFlag(facts.profile),
+      status: profile,
+      cause: causeOf(profile, facts.profile),
+      fact:
+        profile === "done"
+          ? typeof facts.profileActiveSince === "string" && facts.profileActiveSince !== ""
+            ? { kind: "since", at: facts.profileActiveSince }
+            : null
+          : null,
     },
     {
       id: "model_key",
@@ -249,42 +361,59 @@ export function deriveFirstRun(facts: FirstRunFacts, flags: FirstRunFlags): Firs
       hint: awaitingModel
         ? "Your key is saved and checked, but no model is chosen for it yet. Choose one to use it."
         : "Paste your own model key. This app never runs on a shared key.",
-      to: awaitingModel ? MODEL_CHOICE_PAGE : "/settings",
-      status: fromFlag(facts.modelKey),
+      to: MODEL_PROVIDER_PATH,
+      status: modelKey,
+      cause: causeOf(modelKey, facts.modelKey),
+      fact: modelKey === "done" ? { kind: "text", text: "Key saved and checked" } : null,
     },
     {
       id: "first_search",
       label: "Run a first search",
       hint: "Search for a role, or leave the filters empty to browse the latest postings.",
       to: "/discover",
-      status: firstSearchStatus(facts, flags),
+      status: firstSearch,
+      cause: causeOf(firstSearch, facts.savedSearches, applications),
+      fact: firstSearch === "done" ? firstSearchFact(facts, flags) : null,
     },
     {
       id: "track_job",
       label: "Track a job",
       hint: "Track one from a search, or paste a posting on Applications.",
       to: "/applications",
-      status: applications.kind === "ok" ? (applications.value.count > 0 ? "done" : "todo") : "unknown",
+      status: tracked,
+      cause: causeOf(tracked, applications),
+      fact:
+        applications.kind === "ok" && tracked === "done"
+          ? { kind: "text", text: `${applications.value.count} tracked` }
+          : null,
     },
     {
       id: "generate_resume",
       label: "Generate a resume",
       hint: "Open a tracked job and press Generate resume.",
       to: resumeLink(facts),
-      status:
-        applications.kind === "ok" ? (applications.value.withResume > 0 ? "done" : "todo") : "unknown",
+      status: generated,
+      cause: causeOf(generated, applications),
+      fact:
+        applications.kind === "ok" && generated === "done"
+          ? { kind: "text", text: `${applications.value.withResume} with a resume` }
+          : null,
     },
   ];
 
   const doneCount = steps.filter((step) => step.status === "done").length;
-  const stillLoading = Object.values(facts).some((fact) => fact.kind === "loading");
+  const todoCount = steps.filter((step) => step.status === "todo").length;
+  const unknownCount = steps.filter((step) => step.status === "unknown").length;
+  const stillLoading = !factsArrived(facts);
   const nextStep = steps.find((step) => step.status === "todo") ?? null;
-  return {
-    visible: !flags.dismissed && !stillLoading && nextStep !== null,
-    steps,
-    doneCount,
-    nextStep,
-  };
+  const visible = !flags.dismissed && !stillLoading && nextStep !== null;
+  const finished = stillLoading ? flags.seenFinished === true : doneCount === steps.length;
+  const presentation: SetupPresentation = visible
+    ? "expanded"
+    : stillLoading && !finished
+      ? "hidden"
+      : "collapsed";
+  return { visible, presentation, finished, todoCount, unknownCount, steps, doneCount, nextStep };
 }
 
 // ── what this browser remembers ────────────────────────────────────────────
@@ -362,10 +491,10 @@ export function markSearched(storage: StorageLike | null, userId: string): void 
   }
 }
 
-// An account seen with all five steps done. Remembered per user, per browser, so a finished
-// account neither makes the four requests again nor gets the card back because one of them
-// failed (or because an application was later deleted). A browser that has lost it (site
-// data cleared, a new browser) costs one more check, which sets it again.
+// An account seen with all five steps done. Remembered per user, per browser, so the one-line
+// "Setup ready" shows at once on a later visit, before the four reads come back. It is a first
+// paint only: once they have, the line says what they say, never what was remembered. A browser
+// that has lost it (site data cleared, a new browser) loses nothing but that head start.
 export function completedKey(userId: string): string {
   return `between-jobs:first-run:completed:${userId}`;
 }
@@ -393,8 +522,9 @@ export function writeCompleted(storage: StorageLike | null, userId: string): boo
 
 // Everything useFirstRun.ts keeps, and every decision it makes, so that the hook is only
 // wiring: what is read from storage and under which person's key, what is written when the
-// card is dismissed or the account is seen finished, whether anything is asked of the API
-// at all, and what the card then shows. Each is a plain function over an injected storage.
+// card is hidden or the account is seen finished, and what the card then shows. Each is a plain
+// function over an injected storage. The reads themselves are not here: Today makes them once
+// (readAccount) because it needs more of them than the checklist does, and hands them in.
 export interface FirstRunState {
   dismissed: boolean;
   completed: boolean;
@@ -406,9 +536,15 @@ export interface FirstRunState {
 export const STILL_LOADING: FirstRunFacts = {
   profile: { kind: "loading" },
   modelKey: { kind: "loading" },
+  modelKeyNeedsModel: { kind: "loading" },
   savedSearches: { kind: "loading" },
   applications: { kind: "loading" },
 };
+
+// Whether every read the checklist depends on has answered, well or badly.
+export function factsArrived(facts: FirstRunFacts): boolean {
+  return [facts.profile, facts.modelKey, facts.savedSearches, facts.applications].every((fact) => fact.kind !== "loading");
+}
 
 export function initialFirstRunState(storage: StorageLike | null, userId: string): FirstRunState {
   return {
@@ -419,15 +555,11 @@ export function initialFirstRunState(storage: StorageLike | null, userId: string
   };
 }
 
-// A card that is dismissed, or that belongs to an account already seen finished, is never
-// shown, so nothing is asked of the API for it.
-export function shouldLoadFirstRun(state: FirstRunState): boolean {
-  return !state.dismissed && !state.completed;
-}
-
 // What to take from a load that has arrived. The browser's first-search flag is read now,
 // not at mount: the Discover page sets it, and a fresh visit to Today runs this again. An
-// account with all five steps done is written down as completed, from this answer only.
+// account with all five steps done is written down as completed, from this answer only; an
+// answer that says otherwise (a step to do again, or one that could not be read) clears the
+// in-memory flag for this visit, so the line is never "ready" against the reads.
 export function onFirstRunFactsLoaded(
   facts: FirstRunFacts,
   storage: StorageLike | null,
@@ -452,7 +584,8 @@ export function onFirstRunDismissed(
 
 export function viewOfFirstRun(state: FirstRunState): FirstRunView {
   return deriveFirstRun(state.facts, {
-    dismissed: state.dismissed || state.completed,
+    dismissed: state.dismissed,
+    seenFinished: state.completed,
     searched: state.searched,
   });
 }

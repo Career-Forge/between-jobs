@@ -4,3 +4,6 @@
 
 export const SETTINGS_PATH = "/settings";
 export const LEGACY_INTEGRATIONS_PATH = "/profile/integrations";
+
+// The section of Settings where a model key is added and its model chosen (id="ai-provider").
+export const MODEL_PROVIDER_PATH = `${SETTINGS_PATH}#ai-provider`;

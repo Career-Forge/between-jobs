@@ -1,5 +1,5 @@
 {
-  "about": "One table of accounts and the five first-run steps each must come out with, read by a test in Python (tests/test_first_run.py, against src/between_jobs/api/first_run.py) and one in TypeScript (web/src/lib/firstRunShared.test.ts, against web/src/lib/firstRun.ts). Written by hand from the rules, never computed from either implementation. A null fact is one that could not be read; 'searched' is the web app's browser-side memory of a first search (true, false, or null when it cannot be read: always null in a chat). A case may set facts.model_key_needs_model (a key is checked and saved with no model chosen and none is ready; absent means false), and may carry step_details: the label and page a step then shows in place of the table's own.",
+  "about": "One table of accounts and the five first-run steps each must come out with, read by a test in Python (tests/test_first_run.py, against src/between_jobs/api/first_run.py) and one in TypeScript (web/src/lib/firstRunShared.test.ts, against web/src/lib/firstRun.ts). Written by hand from the rules, never computed from either implementation. A null fact is one that could not be read; 'searched' is the web app's browser-side memory of a first search (true, false, or null when it cannot be read: always null in a chat). A case may set facts.model_key_needs_model (a key is checked and saved with no model chosen and none is ready; absent means false), and may carry step_details: the label (or page) a step then shows in place of the table's own.",
   "step_order": [
     "profile",
     "model_key",
@@ -16,7 +16,7 @@
   },
   "pages": {
     "profile": "/profile",
-    "model_key": "/settings",
+    "model_key": "/settings#ai-provider",
     "first_search": "/discover",
     "track_job": "/applications",
     "generate_resume": "/applications"
@@ -519,8 +519,7 @@
       },
       "step_details": {
         "model_key": {
-          "label": "Choose a model",
-          "page": "/settings#ai-provider"
+          "label": "Choose a model"
         }
       },
       "done_count": 1,
@@ -546,8 +545,7 @@
       },
       "step_details": {
         "model_key": {
-          "label": "Choose a model",
-          "page": "/settings#ai-provider"
+          "label": "Choose a model"
         }
       },
       "done_count": 0,
