@@ -132,6 +132,13 @@ describe("the landing page", () => {
     expect((markup.match(/<li class="bj-landing-item">/g) ?? []).length).toBe(LANDING.features.length);
   });
 
+  it("holds exactly one cyan fill, the hero's Create account, so the header's is outlined", () => {
+    expect(markup.match(/bj-button-link-primary/g) ?? []).toHaveLength(1);
+    const anchors = anchorsOf(markup).filter((anchor) => anchor.attributes.href === "/login?mode=register");
+    const classes = anchors.map((anchor) => anchor.attributes.class);
+    expect(classes).toEqual(["bj-button-link", "bj-button-link bj-button-link-primary"]);
+  });
+
   it("puts Create account and Sign in in the hero as well as the header", () => {
     const hrefs = anchorsOf(markup).map((anchor) => anchor.attributes.href);
     expect(hrefs.filter((href) => href === "/login?mode=register")).toHaveLength(2);
@@ -152,6 +159,12 @@ describe("the landing page", () => {
 });
 
 describe("the legal pages in the public layout", () => {
+  it("have no filled cyan button at all: their header link is outlined and there is no hero", () => {
+    for (const element of [<Privacy key="p" />, <Terms key="t" />]) {
+      expect(page(element)).not.toContain("bj-button-link-primary");
+    }
+  });
+
   it("are the documents themselves: their h1 is the page's h1", () => {
     expect(page(<Privacy />)).toContain("<h1>Privacy Policy</h1>");
     expect(page(<Terms />)).toContain("<h1>Terms of Service</h1>");
