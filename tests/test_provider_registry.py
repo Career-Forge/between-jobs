@@ -86,14 +86,14 @@ from between_jobs.api.provider_registry import (
         (
             "https://maas.qwencloudapi.com/compatible-mode/v1",
             "qwen",
-            "max_tokens",
+            "max_completion_tokens",
             "send",
             {"enable_thinking": False},
         ),
         (
             "https://ws-abc123.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
             "qwen",
-            "max_tokens",
+            "max_completion_tokens",
             "send",
             {"enable_thinking": False},
         ),
@@ -477,3 +477,18 @@ def test_a_key_is_trimmed_and_must_be_printable_ascii_without_spaces() -> None:
         with pytest.raises(ValueError) as caught:
             clean_secret(bad)
         assert bad.strip() == "" or bad.strip() not in str(caught.value)
+
+
+def test_the_qwen_key_hint_says_which_prefix_is_which() -> None:
+    hint = PROVIDERS["qwen"].key_hint
+
+    assert "QwenCloud key looks like sk-" in hint
+    assert "starts with sk-ws" in hint and "older ones with sk-" in hint
+    assert "sk-sp" in hint and "not supported" in hint  # Token Plan keys
+    assert "Starts with sk-ws-" not in hint  # the backwards version
+
+
+def test_anthropic_and_gemini_name_what_makes_a_key_check_fail_that_is_not_a_typo() -> None:
+    assert 400 in PROVIDERS["anthropic"].bad_key_statuses
+    assert "single workspace" in PROVIDERS["anthropic"].rejected_hint
+    assert PROVIDERS["gemini"].bad_key_statuses == {400, 401, 403}

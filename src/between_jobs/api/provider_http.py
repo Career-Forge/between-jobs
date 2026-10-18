@@ -11,8 +11,10 @@ Every one of them goes through `fetch_json`, which holds four guarantees the cal
 - NO REDIRECT IS FOLLOWED. A 3xx is an answer, and it is reported as a failure of the provider.
   A provider has no business sending a request that carries a key somewhere else.
 - THE ANSWER IS BOUNDED, in bytes (a model list can be megabytes) and in time (one limit for
-  the whole call, not per read). It is read as a stream and abandoned the moment it passes the
-  limit; the limit applies after decompression, so a compressed bomb is stopped too.
+  the whole call, resolving the name included, not per read). It is read as a stream and
+  abandoned the moment it passes the limit; the limit applies after decompression, so a
+  compressed bomb is stopped too. A completion, which the OpenAI SDK reads, gets the same byte
+  bound (after decompression) from `bound_response`, an httpx response hook.
 - NOTHING OF THE PROVIDER'S ANSWER IS ECHOED. What comes back is a status, a parsed body for
   the caller to read fields out of, and a few headers; an error body can quote the key, so
   callers compare what they read to fixed strings and never print it.
@@ -26,8 +28,9 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import re
 import socket
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -46,6 +49,17 @@ CALL_TIMEOUT_SECONDS = 20.0
 CONNECT_TIMEOUT_SECONDS = 6.0
 
 _LOCAL_SUFFIXES = (".local", ".localhost", ".internal", ".lan", ".home.arpa")
+_NUMERIC_LABEL = re.compile(r"[0-9]+|0[xX][0-9a-fA-F]*")
+"""A host whose last label looks like this is an IPv4 address in one of the short or hex forms
+(`127.1`, `0x7f.1`, `2130706433`) that URL parsers and `getaddrinfo` accept and `ipaddress`
+does not. No real top-level domain is numeric, so a name that ends this way is refused here
+rather than left for the resolver to turn into an address."""
+
+
+class ResponseTooLarge(Exception):
+    """An answer that passed `MAX_RESPONSE_BYTES`. Raised from inside the HTTP client;
+    `llm_client.generate` finds it on the chain of the SDK's connection error and reports
+    `response_too_large`."""
 
 
 class UpstreamFailure(Exception):
@@ -92,6 +106,7 @@ def check_destination_shape(url: str) -> str:
         or "." not in host
         or host == "localhost"
         or host.endswith(_LOCAL_SUFFIXES)
+        or _NUMERIC_LABEL.fullmatch(host.rsplit(".", 1)[-1])
     ):
         raise refusal
     try:
@@ -99,6 +114,35 @@ def check_destination_shape(url: str) -> str:
     except ValueError:
         return host.lower()
     raise refusal  # an IP literal, whatever range it is in
+
+
+async def bound_response(response: Any) -> None:
+    """An httpx `response` event hook for a client the OpenAI SDK reads through. It refuses a
+    response whose declared length is over `MAX_RESPONSE_BYTES`, and makes the read of any other
+    stop with `ResponseTooLarge` once the DECODED body passes it. It runs after the headers and
+    before the body is read, so nothing past the limit is buffered. (Typed `Any`: the SDK may sit
+    on a different httpx package than this module's, and only `headers` and `aiter_bytes` are
+    used.)
+
+    The SDK reads a non-streaming answer with `response.aread()`, which iterates
+    `response.aiter_bytes()`; shadowing that one method on this response is how the read is
+    bounded without replacing the client's transport (and its proxy settings). A test reads a
+    compressed body through a real client so a change in httpx that stops this from working
+    fails there."""
+    declared = response.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > MAX_RESPONSE_BYTES:
+        raise ResponseTooLarge
+    unbounded = response.aiter_bytes
+
+    async def bounded(chunk_size: int | None = None) -> AsyncIterator[bytes]:
+        total = 0
+        async for chunk in unbounded(chunk_size):
+            total += len(chunk)
+            if total > MAX_RESPONSE_BYTES:
+                raise ResponseTooLarge
+            yield chunk
+
+    response.__dict__["aiter_bytes"] = bounded
 
 
 async def _resolve(host: str) -> list[str]:
@@ -158,10 +202,11 @@ async def fetch_json(
 ) -> UpstreamAnswer:
     """One bounded call. Raises ApiError for a refused destination and UpstreamFailure for a
     call that got no usable answer; any other status is returned for the caller to judge."""
-    await assert_safe_destination(url)
     timeout = httpx.Timeout(timeout_seconds, connect=CONNECT_TIMEOUT_SECONDS)
     try:
         async with asyncio.timeout(timeout_seconds):
+            # Inside the limit: a stalled resolver must not outlast it.
+            await assert_safe_destination(url)
             async with http.stream(
                 method,
                 url,
