@@ -71,12 +71,73 @@ def _base_url() -> str:
     return url
 
 
+REQUIRED_LLM_CONTRACT = 2
+"""The engine's `llm_contract` (its `GET /health`) that understands a model address other than
+OpenRouter's: 2 shapes the request for the provider the address names, where an engine that
+reports nothing (1) shapes every request for OpenRouter. A provider may refuse that request, or
+accept it and quietly ignore the settings it did not understand (reasoning left on, no cap), so
+an address other than OpenRouter's is never sent to an engine that has not said it is 2."""
+
+_CONTRACT_CHECK_TIMEOUT_SECONDS = 5.0
+_engines_known_to_take_providers: set[str] = set()
+"""Engine addresses that have reported the contract. An engine does not go back to an older
+version under the same address within a process's life, so a yes is kept; a no is asked again."""
+
+
+def _too_old_for_providers() -> ApiError:
+    return ApiError(
+        "PROVIDER_UNAVAILABLE",
+        "The resume engine is being updated and can't use that model provider yet. Try again "
+        "in a few minutes.",
+        retryable=True,
+        details={"reason": "engine_too_old"},
+    )
+
+
+async def _require_provider_aware_engine(http: httpx.AsyncClient) -> None:
+    """Returns when the engine at `FORGE_ENGINES_BASE_URL` reports `llm_contract` of at least
+    `REQUIRED_LLM_CONTRACT`; raises a retryable PROVIDER_UNAVAILABLE when it reports less (it is
+    older than this API: the deploy order was wrong), reports nothing readable, or cannot be
+    reached. Fails closed: no credential is sent on a guess."""
+    base = _base_url()
+    if base in _engines_known_to_take_providers:
+        return
+    try:
+        response = await http.get(f"{base}/health", timeout=_CONTRACT_CHECK_TIMEOUT_SECONDS)
+    except httpx.HTTPError as e:
+        raise ApiError(
+            "PROVIDER_UNAVAILABLE",
+            "Couldn't reach the resume engine. Try again in a moment.",
+            retryable=True,
+        ) from e
+    contract: object = None
+    if response.status_code == 200:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        contract = payload.get("llm_contract") if isinstance(payload, dict) else None
+    if (
+        not isinstance(contract, int)
+        or isinstance(contract, bool)
+        or contract < REQUIRED_LLM_CONTRACT
+    ):
+        raise _too_old_for_providers()
+    _engines_known_to_take_providers.add(base)
+
+
 async def _post(
     http: httpx.AsyncClient, path: str, body: dict[str, Any], *, timeout: float
 ) -> dict[str, Any]:
     """Shared error mapping for every forge-engines call: never lets an
     httpx exception or a raw non-2xx response reach the caller, matching
-    this project's structured-error contract (Appendix B)."""
+    this project's structured-error contract (Appendix B).
+
+    A credential that names an address (a model provider other than OpenRouter) is sent only to
+    an engine that has said it understands one (`_require_provider_aware_engine`)."""
+    credential = body.get("credential")
+    if isinstance(credential, dict) and credential.get("base_url"):
+        await _require_provider_aware_engine(http)
     try:
         response = await http.post(f"{_base_url()}{path}", json=body, timeout=timeout)
     except httpx.HTTPError as e:
