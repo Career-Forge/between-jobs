@@ -50,7 +50,9 @@ const FORBIDDEN: [string, RegExp][] = [
   ["results", /\bget hired\b|\bland(?:ed)? (?:a|the|your) (?:job|offer)\b|\bhours? saved\b|\bsave[sd]? you\b|\bhigher response\b|\bmore interviews\b/i],
   ["automation the product refuses", /\bauto-?appl\w*|\bone-click appl\w*|\bapplies for you\b|\bsubmits for you\b|\bsends for you\b/i],
   ["a platform the extension does not support", /\bworkday\b|\bicims\b|\blinkedin easy apply\b/i],
-  ["the product called a studio or a career anything", /career studio|between jobs studio/i],
+  ["the product called a studio (it is always 'Between Jobs')", /\bstudio\b/i],
+  ["a promise that every block or piece of work carries a provenance line, which only some pages draw", /every (?:block|result|piece|surface)\b[^.]*\b(?:trail|came from)|where each piece came from/i],
+  ["every result rated, when only a batch is and none is without a model key", /\b(?:each|every) (?:result|listing)\b[^.]*\b(?:rated|scored|fits)\b/i],
   ["the brand dot, which is a mark and never copy", /\bred dot\b/i],
 ];
 
@@ -82,6 +84,25 @@ describe("the claims the landing page does not make", () => {
   });
 });
 
+describe("the hero's worked example", () => {
+  it("labels its legend as a list, not a paragraph (aria-label is not allowed on a paragraph), with words for every mark", () => {
+    const markup = page();
+    expect(markup).not.toMatch(/<p\b[^>]*aria-label=/);
+    const legend = /<ul class="bj-trail-example-legend"([^>]*)>([\s\S]*?)<\/ul>/.exec(markup);
+    expect(legend?.[1]).toContain('aria-label="What each mark means"');
+    expect(legend?.[1]).toContain('role="list"');
+    const items = [...(legend?.[2] ?? "").matchAll(/<li>([\s\S]*?)<\/li>/g)].map((match) => textOfMarkup(match[1].replace(/<span[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/span>/g, "")));
+    // What a screen reader reads: the marks are hidden from it, so these words are all it gets.
+    expect(items).toEqual(["written by a model", "plain code, no model", "done by you", "waiting for your review"]);
+  });
+
+  it("calls itself a sample and claims no provenance line on blocks the page does not draw one on", () => {
+    expect(LANDING.trailExample.eyebrow).toBe("A sample flagged claim");
+    expect(LANDING.dossier.text).not.toMatch(/where each piece came from/i);
+    expect(LANDING.dossier.eyebrow).toBe("A workspace for what comes next");
+  });
+});
+
 describe("what the page has to disclose", () => {
   it("describes the Gmail connection in full and links the Privacy Policy, which Google's review of the app looks for on the home page", () => {
     expect(rendered).toContain(LANDING.gmail.text);
@@ -108,7 +129,7 @@ describe("what the page has to disclose", () => {
   });
 
   it("says the keys are the visitor's own, and links the source and the license it is under", () => {
-    expect(rendered).toContain("Connect a key from the provider you already use.");
+    expect(rendered).toContain(LANDING.keys.connect);
     expect(rendered).toContain("Between Jobs has no AI provider of its own.");
     expect(rendered).toContain("AGPL-3.0");
     expect(page()).toContain(`href="${REPO_URL}"`);

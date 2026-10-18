@@ -57,7 +57,7 @@ export const STAGES: readonly Stage[] = [
     id: "find",
     label: "Find a role",
     summary:
-      "Search company job boards and the search providers you connect. Each result is rated against your profile, and you track the ones worth a draft.",
+      "Search company job boards and the search providers you connect. Your model rates the top results against your profile, and you track the ones worth a draft.",
     demo: {
       sentence: "Track the jobs worth a draft.",
       why: ["sample results", "scored against your profile"],

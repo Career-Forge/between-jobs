@@ -54,7 +54,7 @@ import {
   type Inline,
   type LegalDocument,
 } from "./legal";
-import { LANDING } from "./landing";
+import { LANDING, LANDING_PROVIDERS } from "./landing";
 import { TESTER_AGREEMENT } from "./testerAgreement";
 import { PRIVACY_EMAIL, REPO_URL, SUPPORT_EMAIL } from "./site";
 
@@ -1620,5 +1620,21 @@ describe("the policy names every model provider the web app can connect", () => 
     expect(providerChecks).toContain("async def list_models");
     expect(providerChecks).toContain("async def probe_model");
     expect(llmCredentialsRoutes).toContain("await probe_model(api_key=secret, model=body.model, base_url=base_url)");
+  });
+
+  it("lists on the landing page the providers of the registry the Settings catalogue is drawn from, and the policy names each", () => {
+    // `ProviderSpec(<id>, "<name>", ...)`: the name is what the Settings chips show (GET /credentials/llm/providers).
+    const labels = new Map(
+      [...providerRegistry.matchAll(/^    (?:"([a-z]+)"|(OPENROUTER|QWEN|CUSTOM)): ProviderSpec\(\s*\S+,\s*"([^"]+)"/gm)].map((m) => [
+        m[1] ?? m[2].toLowerCase(),
+        m[3],
+      ]),
+    );
+    expect([...labels.keys()].sort()).toEqual(Object.keys(PROVIDER_PROCESSOR).sort());
+    // The landing page names the provider brands; the "other OpenAI-compatible" slot is not one.
+    const branded = [...labels.entries()].filter(([id]) => id !== "custom");
+    expect([...LANDING_PROVIDERS]).toEqual(branded.map(([, name]) => name));
+    const named = new Set(modelProcessors.map((processor) => processor.name));
+    for (const [id, name] of branded) expect(named, `${name}: the Privacy Policy does not name it`).toContain(PROVIDER_PROCESSOR[id]);
   });
 });
