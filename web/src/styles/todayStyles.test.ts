@@ -119,7 +119,7 @@ describe("the feed rows", () => {
     expect(marker).toEqual({ color: "var(--bj-danger)" });
     // No other rule of this file turns anything danger-colored except the two crosses.
     const reds = rulesOf(todayCss).filter((rule) => Object.values(rule.declarations).some((value) => value.includes("--bj-danger")));
-    expect(reds.flatMap((rule) => rule.selectors).sort()).toEqual([".bj-band-eyebrow-glyph", ".bj-today-kind-glyph", ".bj-today-marker--danger"]);
+    expect(reds.flatMap((rule) => rule.selectors).sort()).toEqual([".bj-band-eyebrow-glyph", ".bj-today-marker--danger"]);
     for (const rule of reds) {
       expect(Object.keys(rule.declarations).filter((property) => property !== "color" && property !== "margin-right" && property !== "font-family" && property !== "font-size")).toEqual([]);
     }
@@ -151,8 +151,10 @@ describe("the setup checklist", () => {
     expect(declarationsFor(base, ".bj-setup-state").color).toBe("var(--bj-text-muted)");
   });
 
-  it("stacks on a phone, state over link over note", () => {
-    expect(declarationsFor(phone, ".bj-setup-step")["grid-template-columns"]).toBe("minmax(0, 1fr) auto");
+  it("keeps the state beside the link on a phone, with the hint and Try again under it, all 44px", () => {
+    expect(declarationsFor(phone, ".bj-setup-step")["grid-template-columns"]).toBe("9em minmax(0, 1fr)");
+    expect(declarationsFor(phone, ".bj-setup-retry")["min-height"]).toBe("44px");
+    expect(declarationsFor(phone, ".bj-setup-head button")["min-height"]).toBe("44px");
   });
 });
 

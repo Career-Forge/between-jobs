@@ -175,8 +175,6 @@ export default function Today() {
   const profile = account.reads.profile;
   const notes: AccountNotes = {
     setupFailed: profile.kind === "failed" || account.reads.credentials.kind === "failed",
-    profileMissing: profile.kind === "ok" && !profile.value.active,
-    modelKeyMissing: firstRunFacts.modelKey.kind === "ok" && !firstRunFacts.modelKey.value,
     applicationsFailed: account.reads.applications.kind === "failed",
   };
 

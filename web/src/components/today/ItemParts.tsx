@@ -20,17 +20,9 @@ const BUSY_LABELS: Record<BusyKind, string> = {
   dismiss: "Dismissing...",
 };
 
+// The kind in muted mono capitals. A held-back resume's red cross is the row's marker, not part of this line.
 export function KindLine({ view }: { view: RowView }) {
-  return (
-    <p className="bj-today-kind">
-      {view.kind === "resume_failed" && (
-        <span className="bj-today-kind-glyph" aria-hidden="true">
-          {"✕"}
-        </span>
-      )}
-      {view.label}
-    </p>
-  );
+  return <p className="bj-today-kind">{view.label}</p>;
 }
 
 // The words under the headline: the chip, the detail lines, the reply's own words, then the trail.
