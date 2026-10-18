@@ -3,8 +3,9 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { textOfMarkup } from "../testing/markup";
 import { codeBetweenCatchAndCall, sliceBetween } from "../testing/sourcePins";
-import Settings, { GmailConnectCard } from "./Settings";
-import integrationsSource from "./Settings.tsx?raw";
+import { GmailConnectCard } from "../components/settings/ConnectionCards";
+import connectionsSource from "../components/settings/ConnectionCards.tsx?raw";
+import Settings from "./Settings";
 
 // The Gmail card in the states a person can be in, and what it says about Google's 7-day
 // limit. A static render does not run effects, so nothing is fetched: this is only what the card
@@ -236,33 +237,33 @@ describe("the page", () => {
         <Settings />
       </MemoryRouter>,
     );
-    expect(markup).not.toContain("<h2>Gmail</h2>");
+    expect(markup).not.toContain("<h3>Gmail</h3>");
   });
 
   it("reads the capabilities for the card: the card source asks /capabilities' answer, not a guess", async () => {
-    const source = (await import("./Settings.tsx?raw")).default as string;
-    const page = source.slice(source.indexOf("export default function Settings"), source.indexOf("export function SearchProviderCard"));
-    expect(page).toContain("gmailAccess(capabilities)");
-    expect(page).toContain("gmailTestingMode(capabilities)");
+    const source = connectionsSource;
+    const section = source.slice(source.indexOf("export function ConnectionsSection"));
+    expect(section).toContain("gmailAccess(capabilities)");
+    expect(section).toContain("gmailTestingMode(capabilities)");
     // Disconnecting is a plain credential delete that nothing gates
     expect(source).toContain('await apiFetch("/credentials/oauth/gmail", { method: "DELETE" });');
     expect(source).toContain("Disconnect Gmail");
   });
 
   it("starts the connection at the server's route and goes where Google's address says", () => {
-    expect(integrationsSource).toContain('apiFetch<{ authorize_url: string }>("/profile/integrations/gmail/connect")');
-    expect(integrationsSource).toContain("window.location.href = result.authorize_url;");
+    expect(connectionsSource).toContain('apiFetch<{ authorize_url: string }>("/profile/integrations/gmail/connect")');
+    expect(connectionsSource).toContain("window.location.href = result.authorize_url;");
   });
 
   it("hands the card whether asking the server failed, from the capabilities it read", () => {
-    expect(integrationsSource).toContain("availabilityFailed={gmailAvailabilityFailed(capabilities)}");
+    expect(connectionsSource).toContain("availabilityFailed={gmailAvailabilityFailed(capabilities)}");
   });
 
   it("learns from a refusal: when the server says Gmail is not available, the capabilities are asked again", () => {
     // First thing in the failure path and with no condition around it: anything in front of it (an
     // early return, a guard that is never true) would leave the card believing what the server just
     // contradicted. What the helper does with each kind of error is run in gmailAccess.test.ts.
-    const connect = sliceBetween(integrationsSource, "async function connect()", "async function disconnect()");
+    const connect = sliceBetween(connectionsSource, "async function connect()", "async function disconnect()");
     expect(connect).not.toBeNull();
     const call = "learnFromGmailRefusal(e, { unavailable: refreshCapabilities });";
     expect(codeBetweenCatchAndCall(connect ?? "", call)).toBe("");

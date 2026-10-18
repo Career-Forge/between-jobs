@@ -103,7 +103,7 @@ export const PROCESSOR_GROUPS: readonly { id: ProcessorGroup; title: string; int
     id: "model",
     title: "Your AI provider",
     intro:
-      "Between Jobs has no AI provider of its own. You choose one by saving your own key, and you pay it directly.",
+      "Between Jobs has no AI provider of its own. You choose one by saving your own key, and you pay it directly. You can connect more than one. The features send what they need to the one you set as your default model, and every provider you connect also gets the small requests that check its key and the model you choose.",
   },
   {
     id: "search",
@@ -126,6 +126,27 @@ export const PROCESSOR_GROUPS: readonly { id: ProcessorGroup; title: string; int
     title: "Only if the operator turns it on",
     intro:
       "These are off unless whoever runs the server sets them up. While they are off, nothing is sent to them.",
+  },
+];
+
+// The model providers besides OpenRouter that the Settings page can connect (the API's registry,
+// src/between_jobs/api/provider_registry.py). They are alike in what they receive, so their entries
+// share one sentence; each is still its own processor, with its own evidence in legal.test.ts.
+const MODEL_PROVIDER_SENTENCE =
+  "An AI provider you can connect instead of OpenRouter, or as well. You save your own key and pick a model. What it receives depends on the feature, and is listed just below: it is the provider that gets that text when it is your default model. Saving the key asks it to check the key, opening the list of models asks it which models the key can use, and choosing a model sends it one tiny request to check the model.";
+
+const MODEL_PROVIDERS: readonly { name: string; detail: string }[] = [
+  { name: "OpenAI", detail: MODEL_PROVIDER_SENTENCE },
+  { name: "Anthropic", detail: MODEL_PROVIDER_SENTENCE },
+  { name: "Google (Gemini)", detail: MODEL_PROVIDER_SENTENCE },
+  { name: "xAI", detail: MODEL_PROVIDER_SENTENCE },
+  { name: "DeepSeek", detail: MODEL_PROVIDER_SENTENCE },
+  { name: "Alibaba Cloud (Qwen)", detail: MODEL_PROVIDER_SENTENCE },
+  {
+    name: "Other OpenAI-compatible hosts",
+    detail:
+      "Groq, Mistral, Together AI, Fireworks AI and Cohere, and no other host: the Settings page lets you pick one of these five for a key from a provider that is not listed above, and your key goes only to the one you pick. " +
+      MODEL_PROVIDER_SENTENCE.replace("An AI provider you can connect instead of OpenRouter, or as well. ", ""),
   },
 ];
 
@@ -178,9 +199,14 @@ export const PROCESSORS: readonly Processor[] = [
     name: "OpenRouter",
     group: "model",
     detail: [
-      "The AI provider Between Jobs supports today. You save your own OpenRouter key and pick a model, and OpenRouter passes each request to that model. What it receives depends on the feature, and is listed just below. Saving the key sends OpenRouter a request to check it.",
+      "One of the AI providers you can connect. You save your own OpenRouter key, by pasting it or by signing in at OpenRouter and pressing Allow, and pick a model, and OpenRouter passes each request to that model. What it receives depends on the feature, and is listed just below. Saving the key sends OpenRouter a request to check it, and choosing a model sends it one more.",
     ],
   },
+  ...MODEL_PROVIDERS.map((provider): Processor => ({
+    name: provider.name,
+    group: "model",
+    detail: [provider.detail],
+  })),
   {
     name: "You.com",
     group: "search",

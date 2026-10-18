@@ -1,611 +1,194 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { ConnectBanner } from "../components/settings/ConnectBanner";
+import { ConnectionsSection } from "../components/settings/ConnectionCards";
+import { ModelProviderSection, type ProviderPanel } from "../components/settings/ModelProviderSection";
+import { SearchKeysSection } from "../components/settings/SearchKeysSection";
+import { NextStepBand } from "../components/paper/NextStepBand";
+import { PageHeader } from "../components/paper/PageHeader";
+import { FailureState, LoadingState } from "../components/paper/StateViews";
 import { SavedSearchesCard } from "../components/SavedSearchesCard";
-import { ProblemView } from "../components/SetupRequiredNotice";
-import { apiFetch } from "../lib/api";
-import { discordInstallUrl, isDiscordAvailable, isTelegramAvailable, telegramBotUsername } from "../lib/capabilities";
-import {
-  SEARCH_PROVIDER_CARDS,
-  cardNote,
-  providerNotice,
-  type SearchProviderCardSpec,
-} from "../lib/providerStatus";
-import {
-  type GmailAccess,
-  gmailAccess,
-  gmailAvailabilityFailed,
-  gmailConnection,
-  gmailState,
-  gmailTestingMode,
-  gmailUnavailableMessage,
-  learnFromGmailRefusal,
-} from "../lib/gmailAccess";
-import { friendlyApiMessage } from "../lib/rateLimitMessage";
-import { type Problem, problemOf } from "../lib/setupRequired";
-import { refreshCapabilities, useCapabilities } from "../lib/useCapabilities";
+import { nextStep } from "../lib/nextStep";
+import type { SettingsFacts, SettingsLlm } from "../lib/nextStep/pages/settings";
+import { SEARCH_PROVIDER_CARDS } from "../lib/providerStatus";
+import { llmRows, llmSetupState, providerName, searchRows } from "../lib/settings/llmProviders";
+import { useOpenRouterConnect } from "../lib/settings/useOpenRouterConnect";
+import { useProviderCatalog } from "../lib/settings/useProviderCatalog";
+import { useSettingsData } from "../lib/settings/useSettingsData";
+import { useCapabilities } from "../lib/useCapabilities";
 import { useHiringSignalsEnabled } from "../lib/useHiringSignalsStatus";
+import { useScrollToHash } from "../lib/useScrollToHash";
+import "../styles/settings.css";
 
-// Integrations (Sprint 2.7f, widened Horizon Sprint 5.0) -- the web
-// surface over Sprint 2.7's BYOK credential broker (Proposal §11).
-// Reachable at /profile/integrations, matching credential_resolver.py's
-// own settings_path convention exactly: a SETUP_REQUIRED error's link lands
-// here (lib/setupRequired.ts). Not a top-level nav item -- the design
-// book's information architecture is a fixed five: Today/Discover/
-// Applications/Practice/Profile: this is a sub-page of Profile, not a
-// sixth destination.
+// Settings: the model provider, the search and data keys, and the accounts linked to this one. It is
+// the page the API's setup errors send people to (it was the Integrations page at
+// /profile/integrations, which redirects here), and the screen every new person uses to connect the
+// model Between Jobs runs on. A person's own key is the only way anything here is paid for: nothing
+// runs on a shared key.
 //
-// OpenRouter (LLM) plus the search providers (You.com and Firecrawl for the
-// company intelligence pipeline; Brave and Serper too for Discover's job search
-// and an application's "Hiring posts"). The search cards share
-// SearchProviderCard -- unlike OpenRouter, none has a "model" concept, just a
-// key -- rather than forcing them through OpenRouterCard's shape. Hiring posts'
-// setup message names Brave, Serper, Firecrawl and You.com, so all four have a
-// card here: a step the page tells you to take has to be one you can take.
-// The Brave and Serper notes mention hiring posts ONLY for a person Hiring signals is enabled for
-// (useHiringSignalsEnabled, via cardNote): for anyone else the server treats the feature as not
-// existing, so the page must not say their key is used for it.
+// ONE PRIMARY ACTION. The next-step band holds the page's only cyan button. With no model key at
+// all, that button is "Connect with OpenRouter"; every other button on the page, including the same
+// one inside the AI-provider section and "Validate and save", is outlined. Which row applies is in
+// lib/nextStep/pages/settings.ts, which also says why.
 //
-// The page is also where the tester-programme gate (lib/enrollment.ts) lets a person who has
-// not joined, or has withdrawn, switch things off: remove a key, disconnect Gmail, and pause or
-// delete a saved search (the last card), which keep running in the background on their key.
+// SECTIONS (each a component under components/settings/):
+//   AI provider           connected providers with their state, choosing a model, the default model,
+//                         connecting another provider (OpenRouter in one click, or a pasted key)
+//   Search and data keys  the optional keys, as rows with Connected / Not set
+//   Connections           Telegram, Discord and Gmail
+//   Saved searches        pause or delete a search that keeps running in the background
 //
-// Sprint 2.8f adds the Telegram-link card on the same page -- both cards
-// are "connect an external account to this one," the same loose theme
-// the page's own title already claims, so this doesn't need a second
-// route to earn its place. It shows only on a server that has a bot (P2.4):
-// GET /capabilities says so, and until that answer is known the card stays out.
-// The Discord card is the same idea, shown only when /capabilities says the server has the
-// Discord app configured (a link code could not be redeemed otherwise).
-
-interface CredentialSummary {
-  id: string;
-  service: string;
-  provider: string;
-  model: string | null;
-  is_validated: boolean;
-  updated_at: string;
-  // OAuth-specific (Gmail reply/status parsing) -- the real scope
-  // string Google granted, captured at connect time. null for every
-  // credential saved before this field existed, or for a non-OAuth
-  // BYOK credential that never had a scope concept at all.
-  scope: string | null;
-}
-
+// Telegram and Discord show only on a server that has them (GET /capabilities), and Gmail's card
+// follows what that says about this person: nothing here claims a connection that is not known.
+//
+// The tester-programme gate leaves this page open to someone who has not joined or has withdrawn:
+// removing a key, disconnecting Gmail and pausing or deleting a saved search are how they switch off
+// what keeps running in the background on their key (lib/enrollment.ts).
 
 export default function Settings() {
   const capabilities = useCapabilities();
-  const [credentials, setCredentials] = useState<CredentialSummary[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const rows = await apiFetch<CredentialSummary[]>("/credentials");
-      setCredentials(rows);
-      setLoadError(null);
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load integrations");
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
+  const data = useSettingsData();
+  const { catalog, retry: retryCatalog } = useProviderCatalog();
   // False while the answer is awaited, when it is "not enabled", and when asking failed.
   const hiringSignalsEnabled = useHiringSignalsEnabled();
-  const openrouter = credentials?.find((c) => c.service === "llm" && c.provider === "openrouter") ?? null;
-  const gmail = credentials?.find((c) => c.service === "oauth" && c.provider === "gmail") ?? null;
+  const connect = useOpenRouterConnect();
+  const location = useLocation();
+  const [now] = useState(() => new Date());
+  const [panel, setPanel] = useState<ProviderPanel>(null);
+  const [announcement, setAnnouncement] = useState("");
+  // The provider whose model was chosen on this visit. The API has no route that says which model
+  // is the default, so this is the one thing the page can know about it beyond a single key.
+  const [chosenHere, setChosenHere] = useState<string | null>(null);
+
+  const rows = data.credentials.state === "ready" ? data.credentials.value : null;
+  const providers = catalog.kind === "ready" ? catalog.providers : null;
+  const llm = useMemo(() => (rows === null ? [] : llmRows(rows)), [rows]);
+  const gmail = rows?.find((row) => row.service === "oauth" && row.provider === "gmail") ?? null;
+
+  // A return from OpenRouter that worked: re-read the keys, then either choose a model (a first
+  // connection) or say the model it had is unchanged (a reconnection). Once per result.
+  const handled = useRef<unknown>(null);
+  useEffect(() => {
+    const result = connect.result;
+    if (result.phase !== "connected" || handled.current === result) return;
+    handled.current = result;
+    const credential = result.credential;
+    connect.dismiss();
+    void (async () => {
+      await data.reloadCredentials();
+      if (credential !== null && llmSetupState(credential) === "ready") {
+        setAnnouncement("OpenRouter is connected again. Your model is unchanged.");
+      } else {
+        setPanel({ provider: "openrouter", panel: "model" });
+        setAnnouncement("OpenRouter is connected. Choose a model to finish.");
+      }
+    })();
+  }, [connect, data]);
+
+  useScrollToHash(rows !== null, location.hash);
+
+  const facts = useMemo<SettingsFacts | null>(() => {
+    if (rows === null) return null;
+    const states = llm.map((row) => ({ row, state: llmSetupState(row) }));
+    const nameOf = (id: string) => providerName(id, providers);
+    const ready = states.filter((entry) => entry.state === "ready");
+    const awaiting = states.find((entry) => entry.state === "needs_model") ?? states.find((entry) => entry.state === "needs_key");
+    let llmFacts: SettingsLlm;
+    if (ready.length > 0) llmFacts = { state: "ready", names: ready.map((entry) => nameOf(entry.row.provider)) };
+    else if (awaiting !== undefined) llmFacts = { state: awaiting.state === "needs_model" ? "needs_model" : "needs_key", providerName: nameOf(awaiting.row.provider) };
+    else llmFacts = { state: "none" };
+    const connected = SEARCH_PROVIDER_CARDS.filter((card) => searchRows(rows).some((row) => row.provider === card.provider)).length;
+    return {
+      llm: llmFacts,
+      search: { connected, total: SEARCH_PROVIDER_CARDS.length },
+      chosenHere: chosenHere === null ? null : nameOf(chosenHere),
+    };
+  }, [rows, llm, providers, chosenHere]);
+
+  const outcome = nextStep({
+    page: "settings",
+    signedIn: true,
+    profile: data.profile,
+    // No row reads a value from the credentials check, only whether the read worked.
+    credentials: data.credentials.state === "ready" ? { state: "ready", value: {} } : data.credentials,
+    facts: facts ?? undefined,
+  });
+
+  function onAction(intent: string) {
+    switch (intent) {
+      case "connect-openrouter":
+        connect.start();
+        return;
+      case "choose-model": {
+        const row = llm.find((candidate) => llmSetupState(candidate) === "needs_model");
+        if (row !== undefined) setPanel({ provider: row.provider, panel: "model" });
+        return;
+      }
+      case "replace-key": {
+        const row = llm.find((candidate) => llmSetupState(candidate) === "needs_key");
+        if (row !== undefined) setPanel({ provider: row.provider, panel: "replace" });
+        return;
+      }
+      case "retry-setup":
+      case "retry":
+        void data.reloadAll();
+        return;
+    }
+  }
 
   return (
-    <div>
-      <h1>Settings</h1>
-      <p className="bj-muted">
-        Bring your own provider key -- this platform never runs anything on a shared key on your
-        behalf.
+    <div className="bj-settings">
+      <PageHeader title="Settings" subtitle="The model Between Jobs runs on, the search keys you add, and the accounts you link. Everything here is read from what you've saved." />
+      <NextStepBand outcome={outcome} onAction={onAction} />
+      <ConnectBanner result={connect.result} busy={connect.busy} onAgain={connect.start} onRetry={connect.retry} onDismiss={connect.dismiss} />
+      <p className="bj-visually-hidden" role="status" aria-live="polite">
+        {announcement}
       </p>
-      {loadError && <div className="bj-error">{loadError}</div>}
-      {credentials !== null && <OpenRouterCard credential={openrouter} onChanged={load} />}
-      {credentials !== null &&
-        SEARCH_PROVIDER_CARDS.map((card) => (
-          <SearchProviderCard
-            key={card.provider}
-            card={card}
-            hiringSignalsEnabled={hiringSignalsEnabled}
-            credential={
-              credentials.find((c) => c.service === "search" && c.provider === card.provider) ?? null
-            }
-            onChanged={load}
+      {announcement !== "" && (
+        <p className="bj-set-success" aria-hidden="true">
+          <span>{"✓"} </span>
+          {announcement}
+        </p>
+      )}
+
+      {data.credentials.state === "loading" && (
+        <section className="bj-set-section" aria-label="Loading your keys">
+          <LoadingState rows={3} rowHeight={72} label="Loading your saved keys..." />
+        </section>
+      )}
+      {data.credentials.state === "failed" && (
+        <section className="bj-set-section" aria-label="Your keys">
+          <FailureState message="Couldn't read your saved keys, so none are shown. You didn't do anything wrong, and nothing was lost." />
+        </section>
+      )}
+      {rows !== null && (
+        <>
+          {data.refreshFailed && (
+            <FailureState
+              message="That change went through, but your keys couldn't be read again, so what is shown below may be out of date."
+              onRetry={() => void data.reloadCredentials()}
+            />
+          )}
+          <ModelProviderSection
+            credentials={rows}
+            catalog={catalog}
+            retryCatalog={retryCatalog}
+            now={now}
+            openRouter={{ start: connect.start, busy: connect.busy, error: connect.error, unsupported: connect.unsupported }}
+            panel={panel}
+            onPanel={setPanel}
+            reload={data.reloadCredentials}
+            onModelChosen={(providerId) => setChosenHere(providerId)}
+            chosenHere={chosenHere}
+            announce={setAnnouncement}
           />
-        ))}
-      {isTelegramAvailable(capabilities) && (
-        <TelegramLinkCard botUsername={telegramBotUsername(capabilities)} />
-      )}
-      {isDiscordAvailable(capabilities) && <DiscordLinkCard installUrl={discordInstallUrl(capabilities)} />}
-      {credentials !== null && (
-        <GmailConnectCard
-          credential={gmail}
-          access={gmailAccess(capabilities)}
-          availabilityFailed={gmailAvailabilityFailed(capabilities)}
-          testingMode={gmailTestingMode(capabilities)}
-          onChanged={load}
-        />
-      )}
-      <SavedSearchesCard />
-    </div>
-  );
-}
-
-// Exported for providerStatus.test.tsx -- the rest of this file stays page-local plumbing.
-export function SearchProviderCard({
-  card,
-  hiringSignalsEnabled,
-  credential,
-  onChanged,
-}: {
-  card: SearchProviderCardSpec;
-  // Hiring signals is on for this person (see the note at the top of this file).
-  hiringSignalsEnabled: boolean;
-  credential: CredentialSummary | null;
-  onChanged: () => Promise<void>;
-}) {
-  const { title, provider, placeholder } = card;
-  const note = cardNote(card, hiringSignalsEnabled);
-  // Whether this provider has had a successful run against the real service (lib/providerStatus.ts).
-  const notice = providerNotice(provider);
-  const [secret, setSecret] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [removing, setRemoving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      await apiFetch("/credentials", {
-        method: "POST",
-        body: JSON.stringify({ service: "search", provider, secret }),
-      });
-      setSecret("");
-      await onChanged();
-    } catch (e) {
-      setError(friendlyApiMessage(e, "Failed to save that key."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function remove() {
-    setRemoving(true);
-    setError(null);
-    try {
-      await apiFetch(`/credentials/search/${provider}`, { method: "DELETE" });
-      await onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to remove that key.");
-    } finally {
-      setRemoving(false);
-    }
-  }
-
-  return (
-    <div className="bj-card">
-      <div className="bj-card-header">
-        <h2>{title}</h2>
-        <span className="bj-badge-group">
-          {notice !== null && <span className="bj-badge-muted">{notice.label}</span>}
-          {credential ? (
-            <span className="bj-badge-emerald">Configured</span>
-          ) : (
-            <span className="bj-badge-gold">Not configured</span>
-          )}
-        </span>
-      </div>
-      <p className="bj-muted">{note}</p>
-      {notice !== null && (
-        <p className="bj-muted bj-small">
-          {notice.detail}
-          {notice.help !== null && ` ${notice.help}`}
-        </p>
-      )}
-      {credential && (
-        <div className="bj-muted bj-small">
-          Updated {new Date(credential.updated_at).toLocaleString()}
-        </div>
-      )}
-      <label className="bj-field">
-        <span>{credential ? "Replace key" : "API key"}</span>
-        <input
-          type="password"
-          value={secret}
-          placeholder={placeholder}
-          onChange={(e) => setSecret(e.target.value)}
-        />
-      </label>
-      {error && <div className="bj-error">{error}</div>}
-      <div className="bj-actions">
-        <button
-          className="bj-primary"
-          onClick={() => void save()}
-          disabled={saving || secret.trim() === ""}
-        >
-          {saving ? "Validating..." : credential ? "Update key" : "Save key"}
-        </button>
-        {credential && (
-          <button onClick={() => void remove()} disabled={removing}>
-            {removing ? "Removing..." : "Remove key"}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function OpenRouterCard({
-  credential,
-  onChanged,
-}: {
-  credential: CredentialSummary | null;
-  onChanged: () => Promise<void>;
-}) {
-  const [secret, setSecret] = useState("");
-  const [model, setModel] = useState(credential?.model ?? "");
-  const [saving, setSaving] = useState(false);
-  const [removing, setRemoving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      await apiFetch("/credentials", {
-        method: "POST",
-        body: JSON.stringify({ service: "llm", provider: "openrouter", secret, model }),
-      });
-      setSecret("");
-      await onChanged();
-    } catch (e) {
-      setError(friendlyApiMessage(e, "Failed to save that key."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function remove() {
-    setRemoving(true);
-    setError(null);
-    try {
-      await apiFetch("/credentials/llm/openrouter", { method: "DELETE" });
-      setModel("");
-      await onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to remove that key.");
-    } finally {
-      setRemoving(false);
-    }
-  }
-
-  const canSave = secret.trim() !== "" && model.trim() !== "";
-
-  return (
-    <div className="bj-card">
-      <div className="bj-card-header">
-        <h2>OpenRouter</h2>
-        {credential ? (
-          <span className="bj-badge-emerald">Configured</span>
-        ) : (
-          <span className="bj-badge-gold">Not configured</span>
-        )}
-      </div>
-      <p className="bj-muted">
-        Your key is encrypted at rest and validated against OpenRouter before it's saved -- an
-        invalid key is never stored.
-      </p>
-      {credential?.model && (
-        <div className="bj-muted bj-small">
-          Current model: {credential.model} -- updated{" "}
-          {new Date(credential.updated_at).toLocaleString()}
-        </div>
-      )}
-      <label className="bj-field">
-        <span>{credential ? "Replace key" : "API key"}</span>
-        <input
-          type="password"
-          value={secret}
-          placeholder="sk-or-v1-..."
-          onChange={(e) => setSecret(e.target.value)}
-        />
-      </label>
-      <label className="bj-field">
-        <span>Model</span>
-        <input
-          type="text"
-          value={model}
-          placeholder="e.g. anthropic/claude-sonnet-4-6"
-          onChange={(e) => setModel(e.target.value)}
-        />
-      </label>
-      {error && <div className="bj-error">{error}</div>}
-      <div className="bj-actions">
-        <button className="bj-primary" onClick={() => void save()} disabled={saving || !canSave}>
-          {saving ? "Validating..." : credential ? "Update key" : "Save key"}
-        </button>
-        {credential && (
-          <button onClick={() => void remove()} disabled={removing}>
-            {removing ? "Removing..." : "Remove key"}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TelegramLinkCard({ botUsername }: { botUsername: string | null }) {
-  const [code, setCode] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function generate() {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await apiFetch<{ code: string; expires_at: string }>("/link/code", {
-        method: "POST",
-        body: JSON.stringify({ channel: "telegram" }),
-      });
-      setCode(result.code);
-      setExpiresAt(result.expires_at);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to generate a code.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="bj-card">
-      <h2>Telegram</h2>
-      <p className="bj-muted">
-        Link your Telegram account to use {botUsername ? `@${botUsername}` : "this server's Telegram bot"}{" "}
-        with the same profile and applications you see here. If you've already used the bot,
-        linking brings over anything you built up there.
-      </p>
-      {code && (
-        <div>
-          <div className="bj-muted bj-small">Send this to the bot:</div>
-          <div className="bj-link-code">/link {code}</div>
-          {expiresAt && (
-            <div className="bj-muted bj-small">
-              Expires {new Date(expiresAt).toLocaleTimeString()}
-            </div>
-          )}
-        </div>
-      )}
-      {error && <div className="bj-error">{error}</div>}
-      <div className="bj-actions">
-        <button className="bj-primary" onClick={() => void generate()} disabled={busy}>
-          {busy ? "Generating..." : code ? "Generate a new code" : "Generate a code"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// The Discord card. Discord only hands a command or a button tap to the app, never text typed in
-// the chat, so the code goes in as the /link command (it has a field for the code), not as a
-// message. A code can only be redeemed here if the server has the Discord app configured, which is
-// why the card is shown only when /capabilities says so.
-function DiscordLinkCard({ installUrl }: { installUrl: string | null }) {
-  const [code, setCode] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function generate() {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await apiFetch<{ code: string; expires_at: string }>("/link/code", {
-        method: "POST",
-        body: JSON.stringify({ channel: "discord" }),
-      });
-      setCode(result.code);
-      setExpiresAt(result.expires_at);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to generate a code.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="bj-card">
-      <h2>Discord</h2>
-      <p className="bj-muted">
-        Link your Discord account to use this server's Discord app with the same profile and
-        applications you see here. If you've already used the app, linking brings over anything you
-        built up there. The app answers slash commands in a direct message with it; text you type in
-        that chat is not delivered to it.
-      </p>
-      {installUrl && (
-        <p className="bj-muted bj-small">
-          Not added yet?{" "}
-          <a href={installUrl} target="_blank" rel="noopener noreferrer">
-            Add the app to Discord
-          </a>
-          .
-        </p>
-      )}
-      {code && (
-        <div>
-          <div className="bj-muted bj-small">In a direct message with the app, run:</div>
-          <div className="bj-link-code">/link code: {code}</div>
-          {expiresAt && (
-            <div className="bj-muted bj-small">
-              Expires {new Date(expiresAt).toLocaleTimeString()}
-            </div>
-          )}
-        </div>
-      )}
-      {error && <div className="bj-error">{error}</div>}
-      <div className="bj-actions">
-        <button className="bj-primary" onClick={() => void generate()} disabled={busy}>
-          {busy ? "Generating..." : code ? "Generate a new code" : "Generate a code"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// The Gmail card, in one of five honest states (lib/gmailAccess.ts decides which):
-//   - Checking / Couldn't check: it is not known whether Gmail is open to this person (the
-//     server's settings are still being asked, or asking failed; this page is reachable before
-//     they are known). Nothing is offered and no connection is claimed, whatever the credential
-//     list holds: no Connect, no "Connected". "Disconnect Gmail" stays when a connection is stored.
-//   - Not available: Gmail is not open to this person yet (the server limits it to named people)
-//     or the server has none. No Connect button. A connection they made before stays where it is,
-//     unused, and "Disconnect Gmail" is always there.
-//   - Not connected: Connect Gmail.
-//   - Connected: Disconnect Gmail, and -- only while the operator says Google's OAuth client is in
-//     Testing mode -- a note that Google ends the connection after 7 days.
-//   - Needs reconnect: Google stopped accepting the connection, or it was made before the app
-//     asked for read access. Reconnect Gmail (and Disconnect). The server keeps what was stored and
-//     stops using it until then.
-// Draft-only throughout: gmail.compose can't send an email even if the code tried to -- see
-// gmail_client.py's own docstring.
-export function GmailConnectCard({
-  credential,
-  access,
-  availabilityFailed = false,
-  testingMode,
-  onChanged,
-}: {
-  credential: CredentialSummary | null;
-  access: GmailAccess;
-  // With access "unknown": asking the server failed, rather than still being under way.
-  availabilityFailed?: boolean;
-  testingMode: boolean;
-  onChanged: () => Promise<void>;
-}) {
-  const connection = gmailConnection(credential === null ? [] : [credential]);
-  const state = gmailState(access, connection);
-  const [connecting, setConnecting] = useState(false);
-  const [removing, setRemoving] = useState(false);
-  const [error, setError] = useState<Problem | null>(null);
-
-  async function connect() {
-    setConnecting(true);
-    setError(null);
-    try {
-      const result = await apiFetch<{ authorize_url: string }>("/profile/integrations/gmail/connect");
-      window.location.href = result.authorize_url;
-    } catch (e) {
-      // The server can contradict what this page believed (Gmail was just closed to this person):
-      // ask again, and the card then says so. A setup failure is the server's own sentence, an
-      // operator's setting, so it carries no link to fix it here.
-      learnFromGmailRefusal(e, { unavailable: refreshCapabilities });
-      setError(problemOf(e, "Failed to start connecting Gmail."));
-    } finally {
-      setConnecting(false);
-    }
-  }
-
-  async function disconnect() {
-    setRemoving(true);
-    setError(null);
-    try {
-      await apiFetch("/credentials/oauth/gmail", { method: "DELETE" });
-      await onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to disconnect Gmail.");
-    } finally {
-      setRemoving(false);
-    }
-  }
-
-  const connectButton = (label: string) => (
-    <button className="bj-primary" onClick={() => void connect()} disabled={connecting}>
-      {connecting ? "Connecting..." : label}
-    </button>
-  );
-  const disconnectButton = (
-    <button onClick={() => void disconnect()} disabled={removing}>
-      {removing ? "Disconnecting..." : "Disconnect Gmail"}
-    </button>
-  );
-
-  return (
-    <div className="bj-card">
-      <div className="bj-card-header">
-        <h2>Gmail</h2>
-        {state === "unavailable" ? (
-          <span className="bj-badge-muted">Not available</span>
-        ) : state === "availability_unknown" ? (
-          <span className="bj-badge-muted">{availabilityFailed ? "Couldn't check" : "Checking"}</span>
-        ) : state === "reconnect_needed" ? (
-          <span className="bj-badge-gold">Needs reconnect</span>
-        ) : state === "connected" ? (
-          <span className="bj-badge-emerald">Connected</span>
-        ) : (
-          <span className="bj-badge-gold">Not connected</span>
-        )}
-      </div>
-      {state === "unavailable" ? (
-        <>
-          <p className="bj-muted">
-            {gmailUnavailableMessage(access)} Everything else works, and you can still copy an
-            outreach draft or open it in your mail app.
-          </p>
-          {credential !== null && (
-            <p className="bj-muted bj-small">
-              You have a Gmail connection from before. It is not being used, and nothing has been
-              deleted. Disconnect it if you would rather we did not keep it.
-            </p>
-          )}
+          <SearchKeysSection credentials={rows} hiringSignalsEnabled={hiringSignalsEnabled} now={now} onChanged={data.reloadCredentials} />
         </>
-      ) : state === "availability_unknown" ? (
-        <>
-          <p className="bj-muted" role="status">
-            {availabilityFailed
-              ? "We couldn't check whether Gmail is available for your account. Reload the page to try again."
-              : "Checking whether Gmail is available for your account..."}
-          </p>
-          {credential !== null && (
-            <p className="bj-muted bj-small">
-              You have a Gmail connection saved. You can disconnect it here at any time.
-            </p>
-          )}
-        </>
-      ) : (
-        <p className="bj-muted">
-          Lets ContactFinder land an outreach draft directly in your real Gmail -- draft-only,
-          always. Nothing is ever sent automatically; you still open Gmail and press Send yourself.
-          Also lets the platform check a thread you've drafted into for a reply, so a response can
-          surface as a real update -- it never reads anything else in your inbox.
-        </p>
       )}
-      {state === "connected" && testingMode && (
-        <p className="bj-muted bj-small">
-          Gmail is still in beta, so Google ends the connection after 7 days: expect to reconnect
-          about once a week. When it does, this card says Needs reconnect and the app stops using
-          Gmail until you do. Everything already saved stays.
-        </p>
-      )}
-      {state === "reconnect_needed" && connection.kind === "reconnect_needed" && (
-        <p className="bj-muted bj-small">
-          {connection.cause === "access_ended"
-            ? "Google stopped accepting this connection. It may have expired, or you may have revoked access or changed your Google password. Until you reconnect, drafts aren't created in Gmail and replies aren't checked. Everything already saved stays, and drafts already in your Gmail stay there."
-            : "Connected before reply-checking existed -- reconnect to grant the extra read access."}
-        </p>
-      )}
-      <ProblemView problem={error} />
-      <div className="bj-actions">
-        {state === "not_connected"
-          ? connectButton("Connect Gmail")
-          : state === "reconnect_needed"
-            ? connectButton("Reconnect Gmail")
-            : null}
-        {credential !== null && disconnectButton}
-      </div>
+      <ConnectionsSection capabilities={capabilities} gmail={gmail} credentialsReady={rows !== null} onChanged={data.reloadCredentials} />
+      <section id="saved-searches" className="bj-set-section" aria-label="Saved searches">
+        <SavedSearchesCard />
+      </section>
     </div>
   );
 }

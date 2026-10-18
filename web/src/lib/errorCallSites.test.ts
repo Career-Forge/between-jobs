@@ -15,7 +15,12 @@ const sources = import.meta.glob(
     "../components/CompanyIntelPanel.tsx",
     "../components/InterviewPracticePanel.tsx",
     "../pages/Discover.tsx",
-    "../pages/Settings.tsx",
+    "../components/settings/ProviderConnectCard.tsx",
+    "../components/settings/ModelPicker.tsx",
+    "../components/settings/ConnectedProviderRow.tsx",
+    "../components/settings/DefaultModel.tsx",
+    "../components/settings/SearchKeysSection.tsx",
+    "../components/settings/ConnectionCards.tsx",
     "../pages/Today.tsx",
   ],
   { query: "?raw", import: "default", eager: true },
@@ -28,7 +33,15 @@ const MINIMUM_CALL_SITES: Record<string, number> = {
   "../components/CompanyIntelPanel.tsx": 1,
   "../components/InterviewPracticePanel.tsx": 2, // start a session, submit an answer
   "../pages/Discover.tsx": 2, // search, track
-  "../pages/Settings.tsx": 2, // saving a key (credential_save is behind the enrollment gate), two cards
+  // Settings: saving a key (credential_save is behind the enrollment gate), choosing a model, removing
+  // one, connecting Gmail. The model-key components word a failure through settingsFailureMessage,
+  // which sends a rate limit, an oversized request and a refused enrollment to friendlyApiMessage.
+  "../components/settings/ProviderConnectCard.tsx": 1,
+  "../components/settings/ModelPicker.tsx": 2, // list the models, choose one
+  "../components/settings/ConnectedProviderRow.tsx": 1, // remove a key
+  "../components/settings/DefaultModel.tsx": 1,
+  "../components/settings/SearchKeysSection.tsx": 2, // save a key, remove one
+  "../components/settings/ConnectionCards.tsx": 1, // connect Gmail
   "../pages/Today.tsx": 1, // track
 };
 
@@ -42,9 +55,9 @@ describe("components whose actions are rate limited", () => {
     (file, minimum) => {
       const source = sources[file];
       expect(source).toBeTypeOf("string");
-      const calls = source.match(/\b(friendlyApiMessage|failureOf)\(/g) ?? [];
+      const calls = source.match(/\b(friendlyApiMessage|failureOf|problemOf|settingsFailureMessage)\(/g) ?? [];
       expect(calls.length).toBeGreaterThanOrEqual(minimum);
-      expect(source).toMatch(/from "\.\.\/lib\/(rateLimitMessage|setupRequired)"/);
+      expect(source).toMatch(/from "(\.\.\/)+lib\/(rateLimitMessage|setupRequired|settings\/settingsErrors)"/);
     },
   );
 });

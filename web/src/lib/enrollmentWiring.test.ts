@@ -7,7 +7,12 @@ import accountCardSource from "../components/AccountCardView.tsx?raw";
 import gateSource from "../components/EnrollmentGate.tsx?raw";
 import savedSearchesCardSource from "../components/SavedSearchesCard.tsx?raw";
 import savedSearchesCardViewSource from "../components/SavedSearchesCardView.tsx?raw";
-import integrationsSource from "../pages/Settings.tsx?raw";
+import connectionCardsSource from "../components/settings/ConnectionCards.tsx?raw";
+import connectedRowSource from "../components/settings/ConnectedProviderRow.tsx?raw";
+import providerConnectCardSource from "../components/settings/ProviderConnectCard.tsx?raw";
+import removeKeySource from "../components/settings/RemoveKey.tsx?raw";
+import searchKeysSource from "../components/settings/SearchKeysSection.tsx?raw";
+import settingsPageSource from "../pages/Settings.tsx?raw";
 import appCss from "../app.css?raw";
 import apiSource from "./api.ts?raw";
 import enrollmentSource from "./enrollment.ts?raw";
@@ -102,9 +107,12 @@ describe("the gate's exempt pages are real routes of the app", () => {
   // and the Privacy Policy (remove a key, disconnect Gmail). The server leaves what they call open,
   // so the only thing that could take them away is the gate, and this fails if it ever does again.
   it("Settings really has the controls the text names: Remove key, Disconnect Gmail, and Pause / Resume / Delete for a saved search", () => {
-    expect(integrationsSource).toContain("Remove key");
-    expect(integrationsSource).toContain("Disconnect Gmail");
-    expect(integrationsSource).toContain("<SavedSearchesCard />");
+    // a model key and a search key are each removed through the same confirmation
+    expect(removeKeySource).toContain("Remove key");
+    expect(connectedRowSource).toContain("<RemoveKey");
+    expect(searchKeysSource).toContain("<RemoveKey");
+    expect(connectionCardsSource).toContain("Disconnect Gmail");
+    expect(settingsPageSource).toContain("<SavedSearchesCard />");
     expect(savedSearchesCardViewSource).toContain('"Pause" : "Resume"');
     expect(savedSearchesCardViewSource).toContain("Delete");
     expect(savedSearchesCardSource).toContain("setSavedSearchActive(apiFetch, id, isActive)");
@@ -114,8 +122,11 @@ describe("the gate's exempt pages are real routes of the app", () => {
   it("the server calls those controls make are the open ones, never behind the enrollment gate (the inventory is tests/test_rate_limit_inventory.py)", () => {
     // the page asks the list, patches and deletes saved searches, lists credentials, and deletes
     // a Gmail connection or a key: all by path, none through a limiter
-    expect(integrationsSource).toContain('"/credentials/oauth/gmail"');
-    expect(integrationsSource).toContain('"/credentials"');
+    expect(connectionCardsSource).toContain('"/credentials/oauth/gmail"');
+    expect(searchKeysSource).toContain('"/credentials"');
+    expect(searchKeysSource).toContain("`/credentials/search/${provider}`");
+    expect(connectedRowSource).toContain("`/credentials/llm/${encodeURIComponent(credential.provider)}`");
+    expect(providerConnectCardSource).toContain('"/credentials"');
     expect(savedSearchesCardSource).not.toMatch(/\/discover|\/prepare|\/generate/);
   });
 
@@ -222,12 +233,12 @@ describe("the buttons and pages the agreement names exist under those names", ()
 
   it("'Disconnect Gmail' on the Settings page", () => {
     expect(text).toContain("'Disconnect Gmail' on the Settings page");
-    expect(integrationsSource).toContain("Disconnect Gmail");
+    expect(connectionCardsSource).toContain("Disconnect Gmail");
   });
 
   it("pausing or deleting a saved search on the Settings page, which is what a withdrawn tester is told to do to stop the background work", () => {
     expect(text).toContain("Pause or delete a saved search, or disconnect Gmail, on the Settings page to stop them");
-    expect(integrationsSource).toContain("<SavedSearchesCard />");
+    expect(settingsPageSource).toContain("<SavedSearchesCard />");
     expect(savedSearchesCardViewSource).toContain("Pause");
     expect(savedSearchesCardViewSource).toContain("Delete");
   });

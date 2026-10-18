@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CapabilitiesState } from "../lib/capabilities";
+import connectionsSource from "../components/settings/ConnectionCards.tsx?raw";
 import Settings from "./Settings";
 
 // Which chat-channel cards the Settings page draws, from what /capabilities says. A static
@@ -46,7 +47,7 @@ describe("the Discord card", () => {
 
   it("is drawn when the server has Discord, and says that only slash commands reach the app", () => {
     const html = page(ready({ discord: true, discordInstallUrl: null }));
-    expect(html).toContain("<h2>Discord</h2>");
+    expect(html).toContain("<h3>Discord</h3>");
     expect(html).toContain("Link your Discord account");
     expect(html).toContain("slash commands in a direct message");
     expect(html).toContain("text you type in");
@@ -63,21 +64,21 @@ describe("the Discord card", () => {
 
   it("does not turn Telegram on, and Telegram does not turn Discord on", () => {
     const withBoth = page(ready({ telegram: true, discord: true }));
-    expect(withBoth).toContain("<h2>Telegram</h2>");
-    expect(withBoth).toContain("<h2>Discord</h2>");
+    expect(withBoth).toContain("<h3>Telegram</h3>");
+    expect(withBoth).toContain("<h3>Discord</h3>");
     const telegramOnly = page(ready({ telegram: true }));
-    expect(telegramOnly).toContain("<h2>Telegram</h2>");
-    expect(telegramOnly).not.toContain("<h2>Discord</h2>");
+    expect(telegramOnly).toContain("<h3>Telegram</h3>");
+    expect(telegramOnly).not.toContain("<h3>Discord</h3>");
     const discordOnly = page(ready({ discord: true }));
-    expect(discordOnly).not.toContain("<h2>Telegram</h2>");
-    expect(discordOnly).toContain("<h2>Discord</h2>");
+    expect(discordOnly).not.toContain("<h3>Telegram</h3>");
+    expect(discordOnly).toContain("<h3>Discord</h3>");
   });
 });
 
 describe("what the page asks the server for", () => {
   it("mints a code for the channel the card is about: the Discord card asks for discord", async () => {
-    const source = (await import("./Settings.tsx?raw")).default as string;
-    const discordCard = source.slice(source.indexOf("function DiscordLinkCard"), source.indexOf("function GmailConnectCard"));
+    const source = connectionsSource;
+    const discordCard = source.slice(source.indexOf("function DiscordLinkCard"), source.indexOf("export function GmailConnectCard"));
     expect(discordCard).toContain('channel: "discord"');
     expect(discordCard).not.toContain('"telegram"');
   });

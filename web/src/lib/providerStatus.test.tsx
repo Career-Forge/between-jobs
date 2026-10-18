@@ -6,14 +6,18 @@ import discoveryRoutes from "../../../src/between_jobs/api/discovery_routes.py?r
 import hiringSignalSearch from "../../../src/between_jobs/api/hiring_signal_search.py?raw";
 import searchProviders from "../../../src/between_jobs/api/search_providers.py?raw";
 import goldenReadme from "../../../tests/golden/hiring_signals/provider_responses/README.md?raw";
-import integrationsSource from "../pages/Settings.tsx?raw";
-import { SearchProviderCard } from "../pages/Settings";
+import providerRegistry from "../../../src/between_jobs/api/provider_registry.py?raw";
+import searchKeysSource from "../components/settings/SearchKeysSection.tsx?raw";
+import settingsSource from "../pages/Settings.tsx?raw";
+import { SearchKeyRow } from "../components/settings/SearchKeysSection";
 import {
   NOT_VERIFIED_LIVE_DETAIL,
   NOT_VERIFIED_LIVE_LABEL,
+  OPENROUTER_PRICING_URL,
   PROVIDER_STATUS,
   SEARCH_PROVIDER_CARDS,
   cardNote,
+  providerCost,
   providerNotice,
   type SearchProviderCardSpec,
 } from "./providerStatus";
@@ -28,8 +32,13 @@ vi.mock("../lib/api", () => ({
 }));
 vi.mock("../auth", () => ({ useAuth: () => ({ session: null }) }));
 
+// The model providers the registry describes besides OpenRouter: the API has no run of any of them
+// against the real service either (its own module says so).
+const REGISTRY_MODEL_PROVIDERS = ["anthropic", "custom", "deepseek", "gemini", "openai", "qwen", "xai"];
+
 // The providers that carry the label, and the order is the table's.
-const LABELLED = ["adzuna", "apollo", "brave", "exa", "hunter", "jsearch", "serper", "usajobs"];
+const SEARCH_LABELLED = ["adzuna", "apollo", "brave", "exa", "hunter", "jsearch", "serper", "usajobs"];
+const LABELLED = [...SEARCH_LABELLED, ...REGISTRY_MODEL_PROVIDERS].sort();
 
 // The providers the server accepts a key for, read from the server's own table, so that this
 // test needs no list of its own to keep in step.
@@ -42,23 +51,33 @@ function serverProviders(): { service: string; provider: string }[] {
   }));
 }
 
+// Every model provider of the API's registry (provider_registry.py PROVIDERS), read from the file.
+function registryProviders(): string[] {
+  const ids = [...providerRegistry.matchAll(/^    (?:"([a-z]+)"|(OPENROUTER|QWEN|CUSTOM)): ProviderSpec\(/gm)].map((m) => m[1] ?? m[2].toLowerCase());
+  return ids;
+}
+
 describe("the status table", () => {
   it("has an entry for every provider the server accepts a key for, and for no other", () => {
-    const server = serverProviders().map((p) => p.provider).sort();
-    // guards the guard: the scan found the table, and it is not trivially small
-    expect(server.length).toBeGreaterThanOrEqual(11);
+    // OpenRouter is in both lists: it is a model provider of the registry and has its own validator.
+    const server = [...new Set([...serverProviders().map((p) => p.provider), ...registryProviders()])].sort();
+    // guards the guard: the scan found both tables, and neither is trivially small
+    expect(serverProviders().length).toBeGreaterThanOrEqual(11);
+    expect(registryProviders().length).toBe(8);
     expect(server).toContain("serper");
+    expect(server).toContain("qwen");
     expect(Object.keys(PROVIDER_STATUS).sort()).toEqual(server);
   });
 
   // About the TABLE, not about what the page draws: see "the cards of the page" below for which of
   // these have a card.
-  it("marks, in the table, exactly the eight providers with no recorded successful run against the real service", () => {
+  it("marks, in the table, exactly the fifteen providers with no recorded successful run against the real service", () => {
     const labelled = Object.entries(PROVIDER_STATUS)
       .filter(([, entry]) => entry.status === "not_verified_live")
       .map(([provider]) => provider)
       .sort();
     expect(labelled).toEqual(LABELLED);
+    expect(labelled.length).toBe(15);
   });
 
   it("makes no verification claim for the rest (OpenRouter, You.com, Firecrawl): it does not turn an unknown into a 'verified'", () => {
@@ -108,7 +127,7 @@ describe("the cards of the page", () => {
     ).map((card) => card.provider);
     expect(withLabel).toEqual(["brave", "serper", "apollo", "hunter", "exa"]);
     // and the labelled providers with no card are exactly the three the page cannot take a key for
-    const withoutCard = LABELLED.filter((provider) => !SEARCH_PROVIDER_CARDS.some((card) => card.provider === provider));
+    const withoutCard = SEARCH_LABELLED.filter((provider) => !SEARCH_PROVIDER_CARDS.some((card) => card.provider === provider));
     expect(withoutCard).toEqual(["adzuna", "jsearch", "usajobs"]);
   });
 
@@ -124,16 +143,29 @@ describe("the cards of the page", () => {
     ]);
   });
 
-  it("are drawn by the page from the registry, not from a card typed out per provider", () => {
-    expect(integrationsSource).toContain("SEARCH_PROVIDER_CARDS.map((card) => (");
-    expect(integrationsSource).not.toMatch(/<SearchProviderCard\s+title=/);
-    expect(integrationsSource).toContain("const notice = providerNotice(provider);");
+  it("are drawn by the page from the registry, not from a row typed out per provider", () => {
+    expect(searchKeysSource).toContain("SEARCH_PROVIDER_CARDS.map((card) => ({");
+    expect(searchKeysSource).not.toMatch(/<SearchKeyRow\s+title=/);
+    expect(searchKeysSource).toContain("const notice = providerNotice(provider);");
+  });
+
+  it("each name the provider's own page for a key, over https, and say what the check on save was", () => {
+    for (const card of SEARCH_PROVIDER_CARDS) {
+      expect(new URL(card.getKeyUrl).protocol, card.provider).toBe("https:");
+      expect(card.checkNote.trim(), card.provider).not.toBe("");
+      // The trail never says "verified" (lib/trail.ts refuses the word), so neither may its basis.
+      expect(card.checkNote.toLowerCase()).not.toContain("verified");
+    }
   });
 });
 
+const NOW = new Date("2026-10-18T12:00:00Z");
+
 function renderCard(card: SearchProviderCardSpec, hiringSignalsEnabled = false): string {
   return renderToStaticMarkup(
-    <SearchProviderCard card={card} hiringSignalsEnabled={hiringSignalsEnabled} credential={null} onChanged={async () => {}} />,
+    <ul>
+      <SearchKeyRow card={card} hiringSignalsEnabled={hiringSignalsEnabled} credential={null} now={NOW} onChanged={async () => {}} />
+    </ul>,
   );
 }
 
@@ -151,16 +183,16 @@ describe("a provider's card", () => {
       expect(html).toContain(`<span class="bj-badge-muted">${NOT_VERIFIED_LIVE_LABEL}</span>`);
       expect(NOT_VERIFIED_LIVE_LABEL).toBe("Not yet verified live");
       expect(textOfMarkup(html)).toContain(NOT_VERIFIED_LIVE_DETAIL);
-      // still the card it was: the setup state and the key form are untouched
-      expect(html).toContain("Not configured");
-      expect(html).toContain("Save key");
+      // still the row it was: the setup state is a word, and the key form opens from Add key
+      expect(html).toContain("Not set");
+      expect(html).toContain("Add key");
     },
   );
 
   it.each(["you_com", "firecrawl"])("says nothing about live verification for %s", (provider) => {
     const html = render(provider);
     expect(html).not.toContain("Not yet verified live");
-    expect(html).not.toContain("bj-badge-muted");
+    expect(textOfMarkup(html)).not.toContain(NOT_VERIFIED_LIVE_DETAIL);
   });
 
   it("says, on the Apollo card, what its key check has and has not been run with", () => {
@@ -175,7 +207,14 @@ describe("a provider's card", () => {
   // The help text of a provider is drawn under the general notice. No card has one today (JSearch
   // has none), so a card of that shape is drawn here to keep the rendering under test.
   it("draws a provider's own caveat under the general notice, when its card has one", () => {
-    const html = renderCard({ title: "JSearch", provider: "jsearch", placeholder: "x", note: "A note." });
+    const html = renderCard({
+      title: "JSearch",
+      provider: "jsearch",
+      placeholder: "x",
+      note: "A note.",
+      getKeyUrl: "https://example.com/keys",
+      checkNote: "one small search call",
+    });
     const text = textOfMarkup(html);
     expect(text).toContain(NOT_VERIFIED_LIVE_DETAIL);
     expect(text).toContain("remote_jobs_only");
@@ -193,22 +232,26 @@ describe("a provider's card", () => {
     const card = SEARCH_PROVIDER_CARDS.find((c) => c.provider === "serper");
     if (card === undefined) throw new Error("no card");
     const html = renderToStaticMarkup(
-      <SearchProviderCard
-        card={card}
-        hiringSignalsEnabled={false}
-        credential={{
-          id: "c1",
-          service: "search",
-          provider: "serper",
-          model: null,
-          is_validated: true,
-          updated_at: "2026-10-01T00:00:00Z",
-          scope: null,
-        }}
-        onChanged={async () => {}}
-      />,
+      <ul>
+        <SearchKeyRow
+          card={card}
+          hiringSignalsEnabled={false}
+          credential={{
+            id: "c1",
+            service: "search",
+            provider: "serper",
+            model: null,
+            is_validated: true,
+            updated_at: "2026-10-01T00:00:00Z",
+            scope: null,
+          }}
+          now={NOW}
+          onChanged={async () => {}}
+        />
+      </ul>,
     );
-    expect(html).toContain("Configured");
+    expect(html).toContain("Connected");
+    expect(html).not.toContain("Not set");
     expect(html).toContain("Not yet verified live");
   });
 });
@@ -254,12 +297,12 @@ describe("the notes about hiring posts", () => {
   });
 
   it("is asked of the page's own reading of the person's status, once, and handed to every card", () => {
-    expect(integrationsSource).toContain("const hiringSignalsEnabled = useHiringSignalsEnabled();");
-    expect((integrationsSource.match(/useHiringSignalsEnabled\(\)/g) ?? []).length).toBe(1);
-    expect(integrationsSource).toContain("hiringSignalsEnabled={hiringSignalsEnabled}");
-    expect(integrationsSource).toContain("const note = cardNote(card, hiringSignalsEnabled);");
+    expect(settingsSource).toContain("const hiringSignalsEnabled = useHiringSignalsEnabled();");
+    expect((settingsSource.match(/useHiringSignalsEnabled\(\)/g) ?? []).length).toBe(1);
+    expect(settingsSource).toContain("hiringSignalsEnabled={hiringSignalsEnabled}");
+    expect(searchKeysSource).toContain("const note = cardNote(card, hiringSignalsEnabled);");
     // the note is not read straight off the card anywhere else
-    expect(integrationsSource).not.toContain("card.note");
+    expect(searchKeysSource).not.toContain("card.note");
   });
 });
 
@@ -366,5 +409,37 @@ describe("what the repository records about live runs", () => {
     // guards the guard: the glob found the fixtures it is about
     expect(fixtures.some((name) => name.includes("firecrawl_company_posts.json"))).toBe(true);
     expect(fixtures.filter((name) => /apollo|hunter|exa/i.test(name.split("/").pop() ?? ""))).toEqual([]);
+  });
+});
+
+// What a model provider costs the person. The page states no number: this app does not know what a
+// provider charges, and a copied figure would go stale without anyone noticing.
+describe("what a model provider costs", () => {
+  it("says OpenRouter adds a fee when credits are bought, states no percentage, and links its pricing page", () => {
+    const cost = providerCost("openrouter", "OpenRouter");
+    expect(cost.text).toContain("adds a fee when you buy credits");
+    expect(cost.text).not.toMatch(/\d/);
+    expect(cost.link).toEqual({ label: "See OpenRouter's pricing", href: OPENROUTER_PRICING_URL });
+    expect(OPENROUTER_PRICING_URL).toBe("https://openrouter.ai/pricing");
+  });
+
+  it.each([
+    ["openai", "OpenAI", "Billed by OpenAI on your own account."],
+    ["anthropic", "Anthropic", "Billed by Anthropic on your own account."],
+    ["gemini", "Google Gemini", "Billed by Google on your own account."],
+    ["xai", "xAI", "Billed by xAI on your own account."],
+    ["deepseek", "DeepSeek", "Billed by DeepSeek on your own account."],
+    ["qwen", "Qwen Cloud", "Billed by Alibaba Cloud on your own account."],
+  ])("says %s bills the person on their own account, with no fee of ours", (id, name, sentence) => {
+    expect(providerCost(id, name)).toEqual({ text: sentence, link: null });
+  });
+
+  it("says the custom provider is billed by whichever host the person picks", () => {
+    expect(providerCost("custom", "Other OpenAI-compatible provider").text).toContain("whichever provider's address you choose");
+  });
+
+  it("never claims a model provider was seen working: every provider other than OpenRouter carries the not-verified label", () => {
+    for (const id of REGISTRY_MODEL_PROVIDERS) expect(providerNotice(id)?.label, id).toBe(NOT_VERIFIED_LIVE_LABEL);
+    expect(providerNotice("openrouter")).toBeNull();
   });
 });

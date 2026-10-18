@@ -127,7 +127,7 @@ const SITES: Record<string, Site> = {
     keeps: [/setState\(failureOf\(e, "Failed to search"\)\)/, /state\.kind === "setup" && \(/, NOTICE_FROM_STATE],
     forbids: [/setState\(\{ kind: "error", message: friendlyApiMessage\(e, "Failed to search"\)/],
   },
-  "../pages/Settings.tsx": {
+  "../components/settings/ConnectionCards.tsx": {
     calls: 1, // connect Gmail
     draws: 1,
     keeps: [/setError\(problemOf\(e, /, /<ProblemView problem=\{error\} \/>/],
