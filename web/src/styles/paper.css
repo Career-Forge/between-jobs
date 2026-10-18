@@ -11,6 +11,16 @@
   }
 }
 
+/* The same fade under another name; see .bj-band-body--fade-b. */
+@keyframes bj-paper-fade-again {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Trail line                                                           */
 /* ------------------------------------------------------------------ */
@@ -218,8 +228,15 @@ button.bj-sheet-close {
   gap: var(--bj-space-4) var(--bj-space-6);
 }
 
-.bj-band-body--fade {
+/* A new sentence restarts the fade on the same element (a remount would drop keyboard focus). A
+   class swap alone does not restart an animation that keeps its name, so the two classes use two
+   copies of the same keyframes and the band alternates between them. */
+.bj-band-body--fade-a {
   animation: bj-paper-fade 200ms ease-out;
+}
+
+.bj-band-body--fade-b {
+  animation: bj-paper-fade-again 200ms ease-out;
 }
 
 .bj-band-text {
@@ -507,7 +524,8 @@ h1.bj-page-title {
   .bj-trail-receipt,
   .bj-sheet-scrim,
   .bj-sheet,
-  .bj-band-body--fade {
+  .bj-band-body--fade-a,
+  .bj-band-body--fade-b {
     animation: none;
   }
 }

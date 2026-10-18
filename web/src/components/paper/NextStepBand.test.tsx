@@ -20,6 +20,7 @@ const band = (outcome: NextStepOutcome, onAction?: (intent: string) => void) => 
 );
 const text = (element: Element) => (element.textContent ?? "").replace(/\s+/g, " ").trim();
 const CYAN_FILLS = ".bj-primary, .bj-button-link-primary";
+const FADING = ".bj-band-body--fade-a, .bj-band-body--fade-b";
 
 describe("a lit band", () => {
   it("shows the eyebrow, the sentence, a why line that starts `why:`, and one cyan button", () => {
@@ -134,8 +135,36 @@ describe("an unlit band", () => {
   });
 
   it("ignores a secondary action: with no cyan button there is nothing to sit beside", () => {
-    const { container } = render(band(ready(step({ action: null, secondary: { kind: "button", label: "Generate anyway", intent: "force" } }))));
+    // The types no longer allow this shape; data that slipped past them is still not drawn.
+    const stray = { sentence: "s.", why: [], action: null, secondary: { kind: "button", label: "Generate anyway", intent: "force" } };
+    const { container } = render(band(ready(stray as unknown as NextStep)));
     expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("is also what a lit step becomes when its only action is an address the band refuses", () => {
+    for (const href of ["javascript:alert(1)", "data:text/html,x", "//evil.test", "/relative"]) {
+      const { container, unmount } = render(
+        band(ready(step({ action: { kind: "external", label: "Open the posting", href }, secondary: { kind: "button", label: "Skip", intent: "skip" } }))),
+      );
+      const section = query(container, "section");
+      expect(section.classList.contains("bj-band--unlit")).toBe(true);
+      expect(section.classList.contains("bj-band--lit")).toBe(false);
+      expect(section.querySelector(".bj-band-actions")).toBeNull();
+      expect(section.querySelector("button, a")).toBeNull();
+      const target = container.querySelector(`#${NEXT_STEP_FOCUS_ID}`);
+      expect(target).toBe(query(section, ".bj-band-sentence"));
+      expect(target?.getAttribute("tabindex")).toBe("-1");
+      unmount();
+    }
+  });
+
+  it("drops a secondary external address the band refuses, and keeps the primary", () => {
+    const { container } = render(
+      band(ready(step({ secondary: { kind: "external", label: "Open", href: "javascript:alert(1)" } }))),
+    );
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.querySelectorAll("button")).toHaveLength(1);
+    expect(query(container, "section").classList.contains("bj-band--lit")).toBe(true);
   });
 });
 
@@ -222,14 +251,49 @@ describe("when the sentence changes", () => {
     expect(live.getAttribute("role")).toBe("status");
     expect(live.getAttribute("aria-live")).toBe("polite");
     expect(live.textContent).toBe("");
-    expect(container.querySelector(".bj-band-body--fade")).toBeNull();
+    expect(container.querySelector(FADING)).toBeNull();
   });
 
   it("announces the new sentence once through a polite live region, and fades it in", () => {
     const view = render(band(first));
     view.rerender(band(second));
     expect(query(view.container, ".bj-band-live").textContent).toBe("Read the 2 flagged claims, then download.");
-    expect(view.container.querySelector(".bj-band-body--fade")).not.toBeNull();
+    expect(view.container.querySelector(FADING)).not.toBeNull();
+  });
+
+  it("restarts the fade on each later sentence by swapping the class on the same element", () => {
+    const view = render(band(first));
+    const body = query(view.container, ".bj-band-body");
+    const classes: string[] = [];
+    for (const sentence of ["Two.", "Three.", "Four."]) {
+      view.rerender(band(ready(step({ sentence }))));
+      expect(query(view.container, ".bj-band-body")).toBe(body);
+      classes.push(body.className);
+    }
+    expect(classes[0]).not.toBe(classes[1]);
+    expect(classes[1]).not.toBe(classes[2]);
+    expect(classes[0]).toBe(classes[2]);
+  });
+
+  it("keeps keyboard focus on the action when the next step arrives (it is the same element)", () => {
+    const view = render(band(first));
+    const button = query<HTMLButtonElement>(view.container, `#${NEXT_STEP_FOCUS_ID}`);
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    click(button);
+    view.rerender(band(second));
+    expect(button.isConnected).toBe(true);
+    expect(document.activeElement).toBe(button);
+    expect(text(button)).toBe("Download PDF");
+  });
+
+  it("keeps focus on the sentence of an unlit band when the sentence changes", () => {
+    const view = render(band(ready(step({ action: null }))));
+    const sentence = query<HTMLElement>(view.container, `#${NEXT_STEP_FOCUS_ID}`);
+    sentence.focus();
+    view.rerender(band(ready(step({ action: null, sentence: "Nothing needs you now." }))));
+    expect(document.activeElement).toBe(sentence);
+    expect(text(sentence)).toBe("Nothing needs you now.");
   });
 
   it("does not announce a rerender with the same sentence, or the move from loading to the first step", () => {
@@ -238,7 +302,7 @@ describe("when the sentence changes", () => {
     expect(query(view.container, ".bj-band-live").textContent).toBe("");
     view.rerender(band(ready(step({ why: ["status saved"] }))));
     expect(query(view.container, ".bj-band-live").textContent).toBe("");
-    expect(view.container.querySelector(".bj-band-body--fade")).toBeNull();
+    expect(view.container.querySelector(FADING)).toBeNull();
   });
 });
 
