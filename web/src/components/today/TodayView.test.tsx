@@ -219,7 +219,7 @@ describe("the band holds the lit item, and the list does not", () => {
     const section = band(container);
     expect(words(query(section, ".bj-band-eyebrow"))).toBe("Next step · Resume ready");
     const link = query<HTMLAnchorElement>(section, "a.bj-button-link-primary");
-    expect(link.getAttribute("href")).toBe("/applications/app-2#ch-check");
+    expect(link.getAttribute("href")).toBe("/applications/app-2");
     expect(words(link)).toBe("Open workspace");
     expect(words(query(section, ".bj-today-chip"))).toBe("◆Ready for your review");
     expect(words(query(section, ".bj-band-why"))).toBe("why: resume ready · ATS score 72 / 100");
@@ -426,12 +426,12 @@ describe("what a failed action looks like", () => {
   });
 
   it("names what is missing, with a link, when generating needs a profile or a key", () => {
-    const notice = { message: "Add a model key first.", linkTo: "/profile/integrations", linkLabel: "Add a model key in Integrations" };
+    const notice = { message: "Add a model key first.", linkTo: "/settings", linkLabel: "Add a model key in Settings" };
     const { container } = draw({ items: [held], problems: { f1: { kind: "setup", notice } } });
     const setup = query(band(container), ".bj-state--setup");
     expect(words(setup)).toContain("Add a model key first.");
-    expect(query(setup, "a").getAttribute("href")).toBe("/profile/integrations");
-    expect(words(query(setup, "a"))).toBe("Add a model key in Integrations");
+    expect(query(setup, "a").getAttribute("href")).toBe("/settings");
+    expect(words(query(setup, "a"))).toBe("Add a model key in Settings");
   });
 
   it("falls back to the settings page, so a setup failure always has a link", () => {

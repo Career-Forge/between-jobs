@@ -7,7 +7,7 @@ import type { ModelKeyReading } from "../modelKey";
 // What the cyan button (or a link styled as it) does. The engine never holds a handler: it names
 // the action and the page that owns the band maps `intent` to a real function.
 export type NextStepAction =
-  /** Goes to one of the app's own routes (a hash is fine: "/profile#import-review"). */
+  /** Goes to one of the app's own routes (a hash is fine, as in a link to a section of a page). */
   | { kind: "link"; label: string; to: string }
   /** Runs a handler the page registered under `intent`. */
   | { kind: "button"; label: string; intent: string }

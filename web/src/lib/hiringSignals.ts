@@ -35,6 +35,7 @@ import {
   type SignalCounts,
 } from "./hiringSignalsTypes";
 import { setupRequiredNotice } from "./setupRequired";
+import { SETTINGS_PATH } from "./settingsPaths";
 
 // ── embed and post urls ────────────────────────────────────────────────────
 
@@ -563,7 +564,7 @@ export function classifyFailure(error: unknown, unreachableMessage: string): Pan
 // What a hiring-signals search needs is always a search key, and those are saved on
 // the Settings page, so a setup failure whose reply named no usable link still
 // goes there rather than leaving the person with a sentence and nowhere to go.
-export const SETUP_FALLBACK_PATH = "/settings";
+export const SETUP_FALLBACK_PATH = SETTINGS_PATH;
 export const SETUP_FALLBACK_LABEL = "Open Settings";
 
 // Where a setup_required failure's link goes: the server's own (already checked), else

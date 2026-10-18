@@ -159,7 +159,7 @@ export const ACCOUNT_STILL_LOADING: AccountReads = {
   applications: { kind: "loading" },
 };
 
-// The four requests, all plain GETs the app already makes elsewhere (Profile, Integrations,
+// The four requests, all plain GETs the app already makes elsewhere (Profile, Settings,
 // Applications, Discover's saved searches). Each fails on its own: one fact failing leaves
 // the other three.
 export async function readAccount(fetcher: Fetcher): Promise<AccountReads> {

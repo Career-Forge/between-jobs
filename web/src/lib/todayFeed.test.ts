@@ -593,7 +593,7 @@ describe("what a row can do", () => {
   });
 
   it("links a ready resume to the workspace's review section, and a held-back one to the fit check", () => {
-    expect(ids(rowActions(item({ id: "r", kind: "resume_ready", application_id: "a1" }), null))).toEqual(["link:Open workspace:/applications/a1#ch-check", "dismiss"]);
+    expect(ids(rowActions(item({ id: "r", kind: "resume_ready", application_id: "a1" }), null))).toEqual(["link:Open workspace:/applications/a1", "dismiss"]);
     expect(ids(rowActions(item({ id: "f", kind: "resume_failed", application_id: "a1" }), null))).toEqual(["link:See why:/applications/a1#generate", "generate-anyway", "dismiss"]);
   });
 

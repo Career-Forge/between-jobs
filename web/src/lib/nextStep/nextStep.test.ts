@@ -126,7 +126,7 @@ const ROWS: Row[] = [
     id: "G2b",
     input: inApp({ profile: ready({ active: false, importWaiting: true }) }),
     sentence: "Your import is waiting. Check every field, then activate.",
-    action: { kind: "link", label: "Review the import", to: "/profile#import-review" },
+    action: { kind: "link", label: "Review the import", to: "/profile" },
     why: ["import waiting for review", "not active until you confirm"],
   },
   {

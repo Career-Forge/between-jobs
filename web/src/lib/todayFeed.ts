@@ -18,7 +18,6 @@ import { gmailConnection, gmailState, type GmailAccess, type GmailCredentialRow 
 import { CROSS_NAV_HASH } from "./applicationsBoard";
 import {
   AUTO_MOVE_PERCENT,
-  REVIEW_HASH,
   confidencePercent,
   TODAY_KINDS,
   newestFirst,
@@ -147,7 +146,7 @@ export interface BackgroundSearch {
 }
 
 // Null when a row is not a search: the whole list is then unknown, never a shorter list than the
-// server has (the same rule the Integrations card applies).
+// server has (the same rule the Settings page applies).
 export function backgroundSearches(rows: readonly Record<string, unknown>[]): BackgroundSearch[] | null {
   const searches: BackgroundSearch[] = [];
   for (const row of rows) {
@@ -494,7 +493,7 @@ export function rowActions(item: TodayItem, trackedApplicationId: string | null,
       }
       break;
     case "resume_ready":
-      if (applicationId !== null) actions.push({ id: "link", label: "Open workspace", to: workspacePath(applicationId, REVIEW_HASH) });
+      if (applicationId !== null) actions.push({ id: "link", label: "Open workspace", to: workspacePath(applicationId) });
       break;
     case "resume_failed":
       if (applicationId !== null && fit?.state === "moved_on") {

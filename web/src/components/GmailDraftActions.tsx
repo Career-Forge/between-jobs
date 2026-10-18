@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { buildMailto } from "../lib/mailto";
 import { type GmailState, mayOfferGmailDraft } from "../lib/gmailAccess";
+import { SETTINGS_PATH } from "../lib/settingsPaths";
 
 // What sits under an outreach draft in the contact panel (ContactFinderPanel): the way to put it
 // in Gmail when that works, and otherwise the two ways that need no Gmail at all -- open it in the
@@ -41,7 +42,7 @@ export interface GmailDraftActionsProps {
   onCopyAll: () => void;
 }
 
-const SETTINGS = "/settings";
+const SETTINGS = SETTINGS_PATH;
 
 function fallbackExplanation(state: GmailState, unavailableMessage: string | null): string {
   switch (state) {
