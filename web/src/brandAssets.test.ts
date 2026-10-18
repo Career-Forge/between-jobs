@@ -162,8 +162,12 @@ describe("index.html", () => {
     for (const href of hrefs) expect(fontFiles, href).toContain(`.${href.slice("/src".length)}`);
   });
 
-  it("carries Open Graph and Twitter card tags that use the absolute og-image URL", () => {
-    const image = "https://between-jobs.tech/og-image.png";
+  it("carries Open Graph and Twitter card tags that use the absolute og-image URL, on an origin the build fills in", () => {
+    // %SITE_ORIGIN% becomes VITE_SITE_URL (the hosted origin by default) at build time; the built
+    // page is checked in scripts/securityHeadersBuild.test.ts.
+    const image = "%SITE_ORIGIN%/og-image.png";
+    expect(indexHtml).not.toContain("between-jobs.tech");
+    expect(indexHtml).not.toContain("og:url");
     expect(metaContent("property", "og:image")).toBe(image);
     expect(metaContent("name", "twitter:image")).toBe(image);
     expect(metaContent("name", "twitter:card")).toBe("summary_large_image");
