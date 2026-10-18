@@ -579,6 +579,10 @@ async def generate(
                     break
     except TimeoutError as e:
         raise _error("timeout") from e
+    except ResponseTooLarge as e:
+        # Older SDKs wrap what the HTTP client's response hook raises in a connection error
+        # (`_caused_by_oversize` finds it there); newer ones let it through as it is.
+        raise _error("response_too_large") from e
     except OpenAIAPIError as e:
         raise classify_provider_error(
             e, named_model_errors=not is_openrouter, dialect=dialect

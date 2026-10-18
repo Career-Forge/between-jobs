@@ -1,14 +1,17 @@
-"""The exact request `generate` sends to OpenRouter, byte for byte.
+"""The request `generate` sends to OpenRouter: every field and value, pinned.
 
 Other providers get their own request shape (api/provider_registry.py), chosen from the host the
 request goes to. OpenRouter must keep the payload it has always had: it is the default for every
 caller, the reasoning-off field it takes is the one thing the other providers reject, and a
-change in field order or a stray `null` would be a behaviour change nobody asked for. These
-tests pin the bytes, so any change to the OpenRouter request has to be made on purpose.
+dropped field or a stray `null` would be a behaviour change nobody asked for. These tests pin the
+fields and values, so any change to the OpenRouter request has to be made on purpose. The body is
+compared as parsed JSON: the order the SDK writes the keys in depends on its version and is not
+part of the request's meaning.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import openai
@@ -61,21 +64,23 @@ async def _captured_request(monkeypatch: pytest.MonkeyPatch, **options: Any) -> 
     return request
 
 
-def _expected_with_cap(cap: int) -> bytes:
-    return (
-        b'{"messages":[{"role":"system","content":"be brief"},{"role":"user","content":"hi"}],'
-        b'"model":"test/model","max_tokens":%d,"reasoning":{"effort":"none"}}' % cap
-    )
+def _expected_with_cap(cap: int | None) -> dict[str, Any]:
+    return {
+        "messages": [{"role": "system", "content": "be brief"}, {"role": "user", "content": "hi"}],
+        "model": "test/model",
+        "max_tokens": cap,
+        "reasoning": {"effort": "none"},
+    }
 
 
-async def test_the_openrouter_request_body_is_pinned_byte_for_byte(
+async def test_the_openrouter_request_body_is_pinned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request = await _captured_request(monkeypatch, max_tokens=123)
 
     assert str(request.url) == "https://openrouter.ai/api/v1/chat/completions"
     assert request.headers["authorization"] == "Bearer test-key-not-real"
-    assert request.content == _expected_with_cap(123)
+    assert json.loads(request.content) == _expected_with_cap(123)
 
 
 async def test_an_uncapped_openrouter_request_still_sends_a_null_cap(
@@ -83,10 +88,7 @@ async def test_an_uncapped_openrouter_request_still_sends_a_null_cap(
 ) -> None:
     request = await _captured_request(monkeypatch)
 
-    assert request.content == (
-        b'{"messages":[{"role":"system","content":"be brief"},{"role":"user","content":"hi"}],'
-        b'"model":"test/model","max_tokens":null,"reasoning":{"effort":"none"}}'
-    )
+    assert json.loads(request.content) == _expected_with_cap(None)
 
 
 async def test_naming_the_openrouter_host_outright_changes_nothing(
@@ -96,4 +98,4 @@ async def test_naming_the_openrouter_host_outright_changes_nothing(
         monkeypatch, max_tokens=123, base_url="https://openrouter.ai/api/v1"
     )
 
-    assert request.content == _expected_with_cap(123)
+    assert json.loads(request.content) == _expected_with_cap(123)
