@@ -148,6 +148,33 @@ _EMPTY = ("PROVIDER_UNAVAILABLE", "empty_response", True)
         ("gemini", 402, None, _NO_CREDIT),  # prepaid credits depleted
         ("gemini", 429, None, _THROTTLED),
         ("anthropic", 401, {"type": "authentication_error"}, _REJECTED),
+        # a key that works on several workspaces, used without `anthropic-workspace-id`
+        (
+            "anthropic",
+            400,
+            {
+                "type": "error",
+                "error": {
+                    "type": "invalid_request_error",
+                    "message": "anthropic-workspace-id is required when authenticating with an "
+                    "identity-linked API key",
+                },
+            },
+            _REJECTED,
+        ),
+        (
+            "gemini",
+            400,
+            {"error": {"code": 400, "status": "INVALID_ARGUMENT", "message": "API key not valid"}},
+            _REJECTED,
+        ),
+        # billing not enabled, or a region without the free tier: the account, not the key
+        (
+            "gemini",
+            400,
+            {"error": {"code": 400, "status": "FAILED_PRECONDITION", "message": "free tier"}},
+            ("PROVIDER_REJECTED", "request_rejected", False),
+        ),
         ("anthropic", 402, {"type": "billing_error"}, _NO_CREDIT),
         ("anthropic", 429, {"details": {"error_code": "enforced_spend_limit_reached"}}, _NO_CREDIT),
         ("anthropic", 529, None, _DOWN),
@@ -190,6 +217,29 @@ async def test_a_wrong_platform_hint_is_added_for_qwen_only() -> None:
     assert "platform and region" in qwen.value.message
     assert "platform" not in openai.value.message
     assert qwen.value.message.startswith("Qwen Cloud rejected that key.")
+
+
+async def test_a_workspace_key_hint_is_added_for_anthropic_only() -> None:
+    async with http_client(lambda r: json_response(400, {"error": {"type": "x"}})) as http:
+        with pytest.raises(ApiError) as anthropic:
+            await check_key(http, PROVIDERS["anthropic"], None, KEY)
+        with pytest.raises(ApiError) as xai:
+            await check_key(http, PROVIDERS["xai"], None, KEY)
+
+    assert anthropic.value.message.startswith("Anthropic rejected that key.")
+    assert "single workspace" in anthropic.value.message
+    assert "workspace" not in xai.value.message
+
+
+async def test_a_gemini_account_problem_is_not_called_a_rejected_key() -> None:
+    body = {"error": {"code": 400, "status": "FAILED_PRECONDITION", "message": "region"}}
+    async with http_client(lambda r: json_response(400, body)) as http:
+        with pytest.raises(ApiError) as caught:
+            await check_key(http, PROVIDERS["gemini"], None, KEY)
+
+    assert "rejected that key" not in caught.value.message
+    assert "account" in caught.value.message
+    assert caught.value.settings_path == "/profile/integrations"
 
 
 @pytest.mark.parametrize("provider", ["qwen", "custom"])

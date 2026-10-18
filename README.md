@@ -245,7 +245,11 @@ whether a temperature is accepted differ, and a field one provider requires anot
 with a 400, so the API picks the shape from the host (`provider_registry.py`). OpenRouter's
 request is unchanged and pinned byte for byte by a test. For the others, when a model refuses
 the first reasoning setting (a 400 or 422), the API tries the next, at most three requests in
-all, and remembers what worked for that model. Every request to these providers carries a
+all, and remembers what worked for that model. A 400 is not retried when it says the key is
+bad (Google and xAI answer a revoked key with a 400), the account is empty or the model is
+missing or retired. Nor is an empty answer that stopped on the length limit taken for an answer:
+it counts as the setting having been ignored, steps down the same list, and at the end of it is
+an `empty_response` error rather than a blank string. Every request to these providers carries a
 cap on the answer (8,192 tokens when the caller sets none) and a time limit.
 
 **What is not claimed.** The provider facts in `provider_registry.py` come from each
@@ -254,10 +258,19 @@ service with a real key. Where the documentation was silent the code takes the c
 choice and says so in a comment with the page to re-read. Known limits:
 
 - Some models cannot run with reasoning off (Grok, Gemini 3 and later, some Claude models).
-  Their reasoning tokens count against the answer cap, so a small cap can return an empty
-  answer; the model check treats that as accepted, a long generation may not.
-- Gemini's and Qwen's cap field is not confirmed in their documentation. Qwen's model list
+  Where the cap counts reasoning tokens, a small cap can return an empty answer: the model check
+  treats that as accepted, and a generation walks the settings and then reports it. The cap does
+  not bound reasoning everywhere: OpenAI and Qwen's `max_completion_tokens` do, while xAI's
+  reference says its current field counts visible output only (the deprecated `max_tokens`
+  that is sent instead is still accepted; see the comment in `provider_registry.py`).
+- OpenAI's `reasoning_effort: none` together with `max_completion_tokens` was reported in April
+  2026 to be ignored by one model, which then answered nothing; that pair is still the first
+  attempt, and the empty answer is now caught as above.
+- Gemini's cap field is not confirmed in its documentation. Qwen's model list
   route is undocumented, so the list may come back `unavailable` and a model id is typed.
+- An Anthropic key that works on more than one workspace needs an `anthropic-workspace-id`
+  header on every request, which this server does not send: such a key is reported as rejected,
+  with the hint to create one inside a single workspace.
 - A key made for Alibaba's "Token Plan" or "Coding Plan" uses other hosts and is not supported.
 - Anything that is not a public https address on the lists above is not supported. That
   includes Ollama, vLLM and other servers on `localhost` or a private network.
@@ -285,13 +298,18 @@ https://api.cohere.ai/compatibility/v1
 
 Adding one is a change to `CUSTOM_ENDPOINTS` in that file and a review. On top of that, every
 call refuses a name that resolves to a private, loopback or link-local address, follows no
-redirect, reads at most 2 MB of an answer and gives up after 20 seconds (a completion has its
-own time limit). Saved addresses are checked again whenever they are used, so a row from before
+redirect, reads at most 2 MB of an answer (after decompression; a completion included) and gives
+up after 20 seconds, the name lookup counted in (a completion has its own time limit). Saved
+addresses are checked again whenever they are used, so a row from before
 this rule cannot send a key anywhere the rule would not.
 
 **Running the resume engine service.** The engine service reads the provider from the address
 it is sent, so deploy it before the API when you upgrade: an engine that predates this sends
-OpenRouter-only fields to any provider, and they are refused.
+OpenRouter-only fields to any provider. The order is also enforced: before the API sends the
+address of a provider other than OpenRouter it reads `llm_contract` from the engine's
+`GET /health`, and an engine that does not report 2 or more gets no key and no address (the
+request fails with a retryable `PROVIDER_UNAVAILABLE`, `engine_too_old`). OpenRouter credentials
+are not affected.
 
 ## Repository layout
 

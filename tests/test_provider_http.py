@@ -63,6 +63,13 @@ def test_a_plain_https_dns_name_is_a_destination() -> None:
         "https://100.64.0.1/v1",
         "https://0.0.0.0/v1",
         "https://8.8.8.8/v1",  # a public IP literal is refused too: names only
+        # IPv4 in the short, hex and single-number spellings that `ipaddress` does not parse
+        "https://127.1/v1",
+        "https://0x7f.1/v1",
+        "https://127.0.1/v1",
+        "https://169.254.43518/latest",
+        "https://2130706433/v1",
+        "https://0x7f000001/v1",
         "https://[::1]/v1",
         "https://[::ffff:10.0.0.1]/v1",
         "https://[fe80::1]/v1",
@@ -333,3 +340,107 @@ async def test_the_post_body_is_sent_as_json() -> None:
         await fetch_json(http, "POST", URL, headers={}, json_body={"code": "c"})
 
     assert seen[0].content == b'{"code":"c"}'
+
+
+# -- one limit for the whole call, the name lookup included -------------------------------------
+
+
+async def test_a_stalled_name_lookup_does_not_outlast_the_call_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def stalled(_host: str) -> list[str]:
+        await asyncio.sleep(30)
+        return ["104.18.7.192"]
+
+    monkeypatch.setattr(provider_http, "_resolve", stalled)
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return json_response(200, {})
+
+    async with http_client(handler) as http:
+        started = asyncio.get_running_loop().time()
+        with pytest.raises(UpstreamFailure) as caught:
+            await fetch_json(http, "GET", URL, headers={}, timeout_seconds=0.2)
+        elapsed = asyncio.get_running_loop().time() - started
+
+    assert caught.value.reason == "timeout"
+    assert elapsed < 2.0
+    assert sent == []
+
+
+# -- the bound on a completion the SDK reads (bound_response) -------------------------------------
+
+
+class _Chunks(httpx.AsyncByteStream):
+    """A body that is still on the wire when the response hook runs, as a real transport's is
+    (a body handed to `httpx.Response(content=...)` is already read and decoded)."""
+
+    def __init__(self, data: bytes, size: int = 65_536) -> None:
+        self._data, self._size = data, size
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for start in range(0, len(self._data), self._size):
+            yield self._data[start : start + self._size]
+
+
+def _bounded_client(handler: Any) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        event_hooks={"response": [provider_http.bound_response]},
+    )
+
+
+async def test_a_body_under_the_limit_is_read_whole() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=_Chunks(b'{"ok": true}'))
+
+    async with _bounded_client(handler) as http:
+        response = await http.get(URL)
+
+    assert response.json() == {"ok": True}
+
+
+async def test_a_body_over_the_limit_stops_the_read() -> None:
+    big = b"x" * (MAX_RESPONSE_BYTES + 1)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=_Chunks(big))
+
+    async with _bounded_client(handler) as http:
+        with pytest.raises(provider_http.ResponseTooLarge):
+            await http.get(URL)
+
+
+async def test_a_declared_length_over_the_limit_is_refused_before_a_byte_is_read() -> None:
+    read = 0
+
+    class Body(httpx.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            nonlocal read
+            read += 1
+            yield b"{}"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, headers={"content-length": str(MAX_RESPONSE_BYTES + 1)}, stream=Body()
+        )
+
+    async with _bounded_client(handler) as http:
+        with pytest.raises(provider_http.ResponseTooLarge):
+            await http.get(URL)
+
+    assert read == 0
+
+
+async def test_a_compressed_body_is_bounded_after_it_is_decompressed() -> None:
+    bomb = gzip.compress(b"0" * (MAX_RESPONSE_BYTES * 5))
+    assert len(bomb) < MAX_RESPONSE_BYTES // 100  # tiny on the wire, huge once decoded
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-encoding": "gzip"}, stream=_Chunks(bomb))
+
+    async with _bounded_client(handler) as http:
+        with pytest.raises(provider_http.ResponseTooLarge):
+            await http.get(URL)

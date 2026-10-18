@@ -129,14 +129,27 @@ def _error_object(body: Any) -> Any:
     return body
 
 
+_ABOUT_THE_ACCOUNT = frozenset({"FAILED_PRECONDITION"})
+"""Google's `status` for a 400 that is the account and not the key: billing not enabled, or
+the free tier not available where the request comes from (its errors page)."""
+
+
+def _status_word(error: Any) -> str | None:
+    value = error.get("status") if isinstance(error, dict) else None
+    return value if isinstance(value, str) else None
+
+
 def _reason_of(spec: ProviderSpec, answer: UpstreamAnswer) -> ProviderReason | None:
     """None for a 2xx, else why not. A bare GET has no parameters to get wrong, so a 4xx that
     the general rules call a bad request is this provider's way of refusing the key when its
     registry entry says so, and an unexpected answer otherwise."""
     if 200 <= answer.status < 300:
         return None
-    reason = status_reason(answer.status, _error_object(answer.body))
+    error = _error_object(answer.body)
+    reason = status_reason(answer.status, error)
     if reason == "request_rejected":
+        if _status_word(error) in _ABOUT_THE_ACCOUNT:
+            return "request_rejected"
         return "key_rejected" if answer.status in spec.bad_key_statuses else "provider_error"
     if reason == "unknown":  # a redirect, or any status that is not an answer to this
         return "provider_error"
@@ -146,6 +159,11 @@ def _reason_of(spec: ProviderSpec, answer: UpstreamAnswer) -> ProviderReason | N
 _REASON_TEXT: dict[ProviderReason, str] = {
     "key_rejected": "{name} rejected that key.{hint}",
     "out_of_credit": "{name} says that account has no credit left. Add credit, then try again.",
+    "request_rejected": (
+        "{name} turned that request down. That points at the account rather than the key -- "
+        "billing that is not enabled, or a region the service is not offered in. Check the "
+        "account with {name}, then try again."
+    ),
     "rate_limited": "{name} is rate limiting this key. Wait a minute, then try again.",
     "provider_error": "{name} couldn't answer that right now. Try again in a moment.",
     "unreachable": "Couldn't reach {name}. Try again in a moment.",
@@ -426,4 +444,5 @@ async def probe_model(*, api_key: str, model: str, base_url: str | None) -> None
         user_prompt="ok",
         max_tokens=PROBE_MAX_TOKENS,
         timeout=PROBE_TIMEOUT_SECONDS,
+        allow_empty_truncation=True,
     )

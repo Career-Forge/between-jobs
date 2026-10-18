@@ -42,7 +42,10 @@ Three more reasons are named for providers other than OpenRouter, from documente
 error body or the status: `model_not_found` (404, or a body code that says so), `model_retired`
 (410, or a body code that says so) and, in the key and model-list checks, `response_too_large`.
 A 429 or a 400/403 whose body code names an exhausted balance or spend limit is `out_of_credit`,
-not a throttle, whichever provider said it: those codes appear nowhere else.
+not a throttle, except where the provider's dialect lists the code as its own throttle (Qwen's
+`insufficient_quota`). A 400 whose text carries a provider's fixed fragment for a bad key
+(Google and xAI answer a revoked key with a 400) is `key_rejected`; the text is compared with
+those fragments and never printed or kept.
 
 WHAT A REQUEST LOOKS LIKE. The cap field, whether reasoning is switched off and how, and
 whether a temperature goes out all depend on the provider, and the provider is known from the
@@ -51,6 +54,10 @@ module has always sent, byte for byte. For the others the dialect lists reasonin
 first, and `generate` falls to the next only when the provider answers 400 or 422 to the shape
 (a model that does not take the setting), within the one time limit and at most as many
 requests as the dialect has settings.
+
+A completion is also bounded in bytes (provider_http.bound_response: 2 MB, after decompression),
+and an empty answer that stopped on the length limit is an `empty_response` error where it used
+to pass as a blank string (see `generate`).
 
 Not in scope, deliberately: marking the person's stored key as bad. The callers of `generate` are
 handed a bare secret and know no credential id; the person gets the message with the link instead.
@@ -74,7 +81,12 @@ from openai import (
 from openai import APIError as OpenAIAPIError
 
 from .errors import ApiError, ErrorCode
-from .provider_http import UpstreamFailure, assert_safe_destination
+from .provider_http import (
+    ResponseTooLarge,
+    UpstreamFailure,
+    assert_safe_destination,
+    bound_response,
+)
 from .provider_registry import Dialect, dialect_for_base_url
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -240,15 +252,52 @@ def _body_tokens(body: object) -> frozenset[str]:
     return frozenset(found)
 
 
+def _message_of(body: object) -> str:
+    """The text of an error body, in the shapes seen: the SDK's `error` object with a
+    `message`, a list wrapping that (Google's compatibility layer), or a bare string (xAI's
+    `{"code": ..., "error": "<text>"}`, which the SDK hands over as the string)."""
+    if isinstance(body, list) and body:
+        body = body[0]
+    if isinstance(body, str):
+        return body[:500]
+    if isinstance(body, Mapping):
+        inner = body.get("error")
+        if isinstance(inner, str):
+            return inner[:500]
+        message = (inner if isinstance(inner, Mapping) else body).get("message")
+        if isinstance(message, str):
+            return message[:500]
+    return ""
+
+
+def _names_a_bad_key(body: object, dialect: Dialect | None) -> bool:
+    """Whether the text of an error body contains one of the dialect's fixed fragments for a
+    rejected key. Only compared: never stored, printed or returned."""
+    if dialect is None or not dialect.bad_key_markers:
+        return False
+    text = _message_of(body).lower()
+    return any(marker in text for marker in dialect.bad_key_markers)
+
+
 def _reason_for_status(
-    status: int, body: object, *, named_model_errors: bool = False
+    status: int,
+    body: object,
+    *,
+    named_model_errors: bool = False,
+    dialect: Dialect | None = None,
 ) -> ProviderReason:
     """`named_model_errors` is for every provider but OpenRouter: there a 404, a 410 or a body
     code that names the model is a missing or retired model, where OpenRouter's own 4xx answers
-    have always been the general `request_rejected`."""
+    have always been the general `request_rejected`. `dialect` carries what is particular to the
+    provider: codes it uses for a throttle, and the text by which it says a 400 is a bad key."""
     metadata = _metadata(body)
     tokens = _body_tokens(body)
-    if status in (400, 402, 403, 429) and tokens & _OUT_OF_CREDIT_CODES:
+    credit_tokens = tokens & _OUT_OF_CREDIT_CODES
+    if dialect is not None:
+        credit_tokens = credit_tokens - dialect.throttle_codes
+    if status == 400 and _names_a_bad_key(body, dialect):
+        return "key_rejected"
+    if status in (400, 402, 403, 429) and credit_tokens:
         return "out_of_credit"
     if named_model_errors and tokens & _MODEL_RETIRED_CODES:
         return "model_retired"
@@ -307,7 +356,9 @@ def outcome_for(reason: ProviderReason) -> tuple[ErrorCode, bool]:
     return outcome.code, outcome.retryable
 
 
-def classify_provider_error(exc: BaseException, *, named_model_errors: bool = False) -> ApiError:
+def classify_provider_error(
+    exc: BaseException, *, named_model_errors: bool = False, dialect: Dialect | None = None
+) -> ApiError:
     """The `ApiError` a failed model call is answered with: the code, the plain-words message,
     whether trying again can help, the Integrations link when the person can fix it there, and
     the machine-readable reason in `details`. Anything this does not recognise is a retryable
@@ -318,13 +369,31 @@ def classify_provider_error(exc: BaseException, *, named_model_errors: bool = Fa
     cause (`raise classify_provider_error(e) from e`)."""
     if isinstance(exc, APIStatusError):
         return _error(
-            _reason_for_status(exc.status_code, exc.body, named_model_errors=named_model_errors)
+            _reason_for_status(
+                exc.status_code,
+                exc.body,
+                named_model_errors=named_model_errors,
+                dialect=dialect,
+            )
         )
     if isinstance(exc, APITimeoutError):
         return _error("timeout")
     if isinstance(exc, APIConnectionError):
-        return _error("unreachable")
+        return _error("response_too_large" if _caused_by_oversize(exc) else "unreachable")
     return _error("unknown")
+
+
+def _caused_by_oversize(exc: BaseException) -> bool:
+    """Whether `ResponseTooLarge` (raised by the response hook inside the HTTP client) is on
+    the chain of `exc`: the SDK wraps whatever the client raised in a connection error."""
+    seen = 0
+    link: BaseException | None = exc
+    while link is not None and seen < 8:
+        if isinstance(link, ResponseTooLarge):
+            return True
+        link = link.__cause__ or link.__context__
+        seen += 1
+    return False
 
 
 def _completion_error(source: object) -> ApiError:
@@ -388,14 +457,28 @@ def request_fields(
     return fields, (extra or None)
 
 
-def _is_shape_rejection(exc: OpenAIAPIError) -> bool:
+def _is_shape_rejection(exc: OpenAIAPIError, dialect: Dialect) -> bool:
     """A 400 or 422 that says nothing more specific than "I do not take this request": the
-    case where a plainer request may be accepted."""
+    case where a plainer request may be accepted. Not an empty account, not a model that is
+    missing or retired, and not a rejected key."""
     return (
         isinstance(exc, APIStatusError)
         and exc.status_code in (400, 422)
-        and _reason_for_status(exc.status_code, exc.body, named_model_errors=True)
+        and _reason_for_status(exc.status_code, exc.body, named_model_errors=True, dialect=dialect)
         == "request_rejected"
+    )
+
+
+def _is_empty_truncation(response: object) -> bool:
+    """A 200 whose first choice stopped on the length limit with nothing visible in it: a
+    reasoning model that spent its whole cap thinking."""
+    choices = getattr(response, "choices", None)
+    if not isinstance(choices, list) or not choices:
+        return False
+    choice = choices[0]
+    content = getattr(getattr(choice, "message", None), "content", None)
+    return getattr(choice, "finish_reason", None) == "length" and not (
+        isinstance(content, str) and content
     )
 
 
@@ -409,22 +492,25 @@ async def generate(
     max_tokens: int | None = None,
     temperature: float | None = None,
     timeout: float | None = None,
+    allow_empty_truncation: bool = False,
 ) -> LLMResponse:
-    """One system+user turn. `timeout` is the most this call may take in all, the SDK's own
-    retry and the dialect's fallbacks included (the default depends on the size of the answer
-    asked for, see `default_timeout_seconds`). A provider failure raises the `ApiError` that
-    `classify_provider_error` makes of it."""
+    """One system+user turn. `timeout` is the most this call may take in all, the name lookup,
+    the SDK's own retry and the dialect's fallbacks included (the default depends on the size of
+    the answer asked for, see `default_timeout_seconds`). A provider failure raises the
+    `ApiError` that `classify_provider_error` makes of it.
+
+    For a provider other than OpenRouter, an answer that is empty because it stopped on the
+    length limit (a reasoning model that spent its whole cap thinking) is a sign the reasoning
+    setting was ignored: the next setting of the dialect is tried, and when none is left it is an
+    `empty_response` error rather than a blank string. `allow_empty_truncation` returns the
+    blank answer instead, with no further request: the probe that proves a model uses it, as a
+    16-token cap says nothing about the answer and only the acceptance of the request counts."""
     budget = default_timeout_seconds(max_tokens) if timeout is None else timeout
     if budget <= 0:
         raise ValueError("timeout must be positive")
     target = base_url or OPENROUTER_BASE_URL
     dialect = dialect_for_base_url(target)
     is_openrouter = target == OPENROUTER_BASE_URL
-    if not is_openrouter:
-        try:
-            await assert_safe_destination(target)
-        except UpstreamFailure as e:
-            raise _error(e.reason) from e
     if max_tokens is None and not is_openrouter:
         max_tokens = UNCAPPED_CEILING_TOKENS
     memory_key = (_host_key(target), model)
@@ -432,52 +518,79 @@ async def generate(
     if attempt >= len(dialect.attempts):
         attempt = 0
     try:
-        async with (
-            asyncio.timeout(budget),
-            DefaultAsyncHttpxClient(follow_redirects=False) as http_client,
-            AsyncOpenAI(
-                api_key=api_key,
-                base_url=target,
-                timeout=Timeout(budget, connect=min(CONNECT_TIMEOUT_SECONDS, budget)),
-                max_retries=MAX_SDK_RETRIES,
-                # No redirect is followed: a provider has no business sending a request that
-                # carries a key to another host. (The SDK's own client follows them.)
-                http_client=http_client,
-            ) as client,
-        ):
-            while True:
-                fields, extra = request_fields(
-                    dialect, attempt, max_tokens=max_tokens, temperature=temperature
-                )
+        async with asyncio.timeout(budget):
+            if not is_openrouter:
+                # Inside the limit: a stalled resolver must not outlast it.
                 try:
-                    response = await client.chat.completions.create(
-                        model=model,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt},
-                        ],
-                        # This is grounded extraction from provided evidence, not a task
-                        # that benefits from chain-of-thought -- and OpenRouter's own
-                        # docs warn that reasoning tokens count against max_tokens, so a
-                        # reasoning model can silently burn the whole budget and return
-                        # empty content. `effort: "none"` is OpenRouter's documented,
-                        # cross-model way to turn that off; non-reasoning models ignore it.
-                        # Other providers' equivalents are the dialect's attempts.
-                        extra_body=extra,
-                        **fields,
+                    await assert_safe_destination(target)
+                except UpstreamFailure as e:
+                    raise _error(e.reason) from e
+            async with (
+                DefaultAsyncHttpxClient(
+                    follow_redirects=False, event_hooks={"response": [bound_response]}
+                ) as http_client,
+                AsyncOpenAI(
+                    api_key=api_key,
+                    base_url=target,
+                    timeout=Timeout(budget, connect=min(CONNECT_TIMEOUT_SECONDS, budget)),
+                    max_retries=MAX_SDK_RETRIES,
+                    # No redirect is followed: a provider has no business sending a request that
+                    # carries a key to another host, and no answer past 2 MB is read. (The SDK's
+                    # own client follows redirects and reads everything.)
+                    http_client=http_client,
+                ) as client,
+            ):
+                while True:
+                    fields, extra = request_fields(
+                        dialect, attempt, max_tokens=max_tokens, temperature=temperature
                     )
-                except OpenAIAPIError as e:
-                    if attempt + 1 < len(dialect.attempts) and _is_shape_rejection(e):
+                    try:
+                        response = await client.chat.completions.create(
+                            model=model,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt},
+                            ],
+                            # This is grounded extraction from provided evidence, not a task
+                            # that benefits from chain-of-thought -- and OpenRouter's own
+                            # docs warn that reasoning tokens count against max_tokens, so a
+                            # reasoning model can silently burn the whole budget and return
+                            # empty content. `effort: "none"` is OpenRouter's documented,
+                            # cross-model way to turn that off; non-reasoning models ignore it.
+                            # Other providers' equivalents are the dialect's attempts.
+                            extra_body=extra,
+                            **fields,
+                        )
+                    except OpenAIAPIError as e:
+                        if attempt + 1 < len(dialect.attempts) and _is_shape_rejection(e, dialect):
+                            attempt += 1
+                            continue
+                        raise
+                    if (
+                        not is_openrouter
+                        and not allow_empty_truncation
+                        and attempt + 1 < len(dialect.attempts)
+                        and _is_empty_truncation(response)
+                    ):
+                        # Accepted and ignored: the model thought until the cap and said
+                        # nothing. Try the next, plainer setting.
                         attempt += 1
                         continue
-                    raise
-                break
+                    break
     except TimeoutError as e:
         raise _error("timeout") from e
     except OpenAIAPIError as e:
-        raise classify_provider_error(e, named_model_errors=not is_openrouter) from e
+        raise classify_provider_error(
+            e, named_model_errors=not is_openrouter, dialect=dialect
+        ) from e
 
-    if attempt:
+    truncated_empty = _is_empty_truncation(response)
+    if truncated_empty and not is_openrouter and not allow_empty_truncation:
+        # Every setting of the dialect was tried and the model still spent its cap on
+        # reasoning. A blank string would be taken for an answer further on.
+        raise _error("empty_response")
+
+    if attempt and not truncated_empty:
         if len(_working_attempt) >= _ATTEMPT_MEMORY_LIMIT:
             _working_attempt.clear()
         _working_attempt[memory_key] = attempt

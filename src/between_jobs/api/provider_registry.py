@@ -70,6 +70,12 @@ class Dialect:
     attempts: tuple[Mapping[str, Any], ...]
     """Extra top-level body fields, one mapping per attempt, best first (see the module
     docstring). Never empty."""
+    throttle_codes: frozenset[str] = frozenset()
+    """Body codes that mean a throttle on this provider although another provider uses them for
+    an empty account (Qwen's `insufficient_quota` is a per-minute token limit)."""
+    bad_key_markers: tuple[str, ...] = ()
+    """Lower-case fragments of the error text by which this provider says a 400 is a bad key
+    (Google and xAI fold a bad key into 400). Compared with the text, never printed."""
 
 
 def _attempts(*steps: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
@@ -99,24 +105,37 @@ OPENAI_DIALECT = Dialect(
     False,
     # Reasoning models refuse temperature unless reasoning is off.
     "omit",
-    # `none` is accepted by the small models and refused (400) by the flagship, which takes
-    # only low and up; plain last, for a model that takes neither.
+    # A model may refuse `none` (a 400; OpenAI's reasoning guide says so of at least one current
+    # model), so `low` and then the plain request follow. A reported pitfall of the FIRST
+    # attempt: community.openai.com/t/1378362 (2 April 2026) says gpt-5.4 given `none` together
+    # with `max_completion_tokens` reasoned anyway, spent the whole cap and answered "" with
+    # finish_reason "length"; OpenAI support replied there and the thread was closed on
+    # 11 May 2026. Whether that holds on every snapshot was not tested, so the pair stays the
+    # first attempt (tests/test_llm_dialects.py pins it) and an empty "length" answer steps down
+    # the ladder, and is an error at the end of it, instead of passing as a blank answer
+    # (`llm_client.generate`). https://developers.openai.com/api/docs/guides/reasoning
     _attempts({"reasoning_effort": "none"}, {"reasoning_effort": "low"}, {}),
 )
 
 XAI_DIALECT = Dialect(
     "xai",
-    # xAI's comparison page says Chat Completions `max_tokens` maps onto the Responses
-    # `max_output_tokens`, so this field is documented. `max_completion_tokens` is reported by
-    # a third party only. Re-check: https://docs.x.ai/developers/model-capabilities/legacy/chat-completions
+    # xAI's Chat Completions reference (docs.x.ai/developers/rest-api-reference/inference/
+    # chat-completions) lists `max_completion_tokens` as the current cap, counting visible
+    # output only, and marks `max_tokens` as deprecated in favour of it. `max_tokens` is kept on
+    # purpose: it is still accepted and no live key was available to confirm that the newer
+    # field behaves the same way. If xAI ever refuses it, the answer is a 400 that reads as
+    # `request_rejected`; switch the field then.
     "max_tokens",
     False,
-    # Not found in xAI's pages; unverified, so not sent.
+    # The reference documents `temperature` (0 to 2). It stays out of the request: nothing on
+    # this path needs one, and a field the provider declines costs a rejected request.
     "omit",
     # xAI says reasoning cannot be disabled on the current Grok models; `low` is the least.
     # A model without reasoning may refuse the field, hence the plain second attempt.
     # Re-check: https://docs.x.ai/developers/model-capabilities/text/reasoning
     _attempts({"reasoning_effort": "low"}, {}),
+    # xAI's debugging page lists "an incorrect API key was supplied" under 400.
+    bad_key_markers=("incorrect api key",),
 )
 
 ANTHROPIC_DIALECT = Dialect(
@@ -144,6 +163,8 @@ GEMINI_DIALECT = Dialect(
     # accepted, `low` elsewhere. How the layer maps `minimal` for every model is not
     # documented. Re-check: https://ai.google.dev/gemini-api/docs/thinking
     _attempts({"reasoning_effort": "minimal"}, {"reasoning_effort": "low"}, {}),
+    # A bad key arrives as a 400 INVALID_ARGUMENT whose text starts "API key not valid".
+    bad_key_markers=("api key not valid", "api_key_invalid"),
 )
 
 DEEPSEEK_DIALECT = Dialect(
@@ -158,15 +179,19 @@ DEEPSEEK_DIALECT = Dialect(
 
 QWEN_DIALECT = Dialect(
     "qwen",
-    # `max_completion_tokens` is documented for the newest models only, `max_tokens` is the
-    # safe field outside thinking mode, and thinking is switched off below.
-    "max_tokens",
+    # Qwen's thinking page recommends `max_completion_tokens` for new integrations: it limits
+    # the whole output, chain of thought included, and has no 32768 ceiling, where `max_tokens`
+    # limits the final reply only, is being deprecated and is a 400 above 32768 with thinking on.
+    "max_completion_tokens",
     False,
     "send",  # 0 <= t < 2
     # `enable_thinking` is not an OpenAI field: it is a top-level body field on this API.
     # A model that cannot be switched off refuses it, hence the plain second attempt.
     # Re-check: https://docs.qwencloud.com/developer-guides/text-generation/thinking
     _attempts({"enable_thinking": False}, {}),
+    # Alibaba's error-code page: 429 `insufficient_quota` is a per-second or per-minute token
+    # limit ("wait and retry"), not an empty account (that one is `Arrearage`).
+    throttle_codes=frozenset({"insufficient_quota"}),
 )
 
 OPENAI_STYLE_DIALECT = Dialect("openai-style", "max_tokens", False, "send", _attempts({}))
@@ -327,8 +352,16 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "models",
         "anthropic",
         "anthropic",
-        _BAD_KEY,
+        # A key that works on more than one workspace (a personal or service-account key) must
+        # name the workspace in an `anthropic-workspace-id` header on every request, and is
+        # answered 400 invalid_request_error without it. This server does not send one, so such
+        # a key is reported as rejected, with the way out in `rejected_hint`.
+        # https://platform.claude.com/docs/en/manage-claude/authentication#select-a-workspace
+        frozenset({400, 401, 403}),
         False,
+        rejected_hint=" A key that works on more than one workspace is refused too, because "
+        "this server cannot say which workspace to use -- create the key inside a single "
+        "workspace.",
         docs_url="https://platform.claude.com/docs/en/api/openai-sdk",
     ),
     "gemini": ProviderSpec(
@@ -341,8 +374,12 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "models",
         "gemini",
         "google",
-        # The docs' troubleshooting page says 403 is a bad key; INVALID_ARGUMENT (400) is
-        # what a malformed one has been seen to produce. Unverified for this endpoint.
+        # Google's errors page lists a malformed request as 400 INVALID_ARGUMENT, a region or
+        # billing problem as 400 FAILED_PRECONDITION and a key without access as 403
+        # PERMISSION_DENIED; its troubleshooting page groups 400, 402 and 403 as errors that
+        # "indicate issues like invalid API keys". A bad key has been seen as a 400 and as a
+        # 401, so all three count as a rejected key, except a FAILED_PRECONDITION, which is the
+        # account and not the key (provider_checks.py reads the body for that).
         frozenset({400, 401, 403}),
         False,
         docs_url="https://ai.google.dev/gemini-api/docs/troubleshooting",
@@ -382,7 +419,8 @@ PROVIDERS: dict[str, ProviderSpec] = {
         None,
         "https://home.qwencloud.com/api-keys",
         "https://home.qwencloud.com/api-keys",
-        "Starts with sk-ws- on QwenCloud; Model Studio keys start with sk-.",
+        "A QwenCloud key looks like sk-...; a newer Alibaba Model Studio key starts with sk-ws "
+        "(older ones with sk-). Token Plan keys (sk-sp-...) are not supported.",
         "models",
         "openai",
         "bearer",
