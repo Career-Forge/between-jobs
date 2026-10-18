@@ -119,7 +119,9 @@ export default function Settings() {
     page: "settings",
     signedIn: true,
     profile: data.profile,
-    // No row reads a value from the credentials check, only whether the read worked.
+    // Only whether the read worked. `modelKey` is left out on purpose: the global row that asks for a
+    // key (G3) would link to this page from this page, and S1, S2 and S2k below say the same thing
+    // with the buttons that act in place. Both read the keys with llmSetupState (lib/modelKey.ts).
     credentials: data.credentials.state === "ready" ? { state: "ready", value: {} } : data.credentials,
     facts: facts ?? undefined,
   });

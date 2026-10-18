@@ -143,7 +143,7 @@ paper.
   buttons are outlined pictures, never controls. The hero holds the page's one next-step band, so the one cyan
   fill on the page is its button.
 - A header link such as `/#circuit` scrolls and moves focus to the section's heading through
-  `lib/useHashTarget.ts` (the router does neither).
+  `lib/useScrollToHash.ts`, the same hook Settings and the workspace use (the router does neither).
 - The sign-in screen's cyan button is the band's: it sits outside the form and names it
   (`AUTH_FORM_ID`), so Enter in a field submits as before. The password reset form has no band and keeps its own
   button.
