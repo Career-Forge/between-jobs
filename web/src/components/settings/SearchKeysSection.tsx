@@ -168,7 +168,9 @@ export function SearchKeysSection({ credentials, hiringSignalsEnabled, now, onCh
   return (
     <section id="search-keys" className="bj-set-section" aria-labelledby="search-keys-h">
       <div className="bj-set-section-head">
-        <h2 id="search-keys-h">Search and data keys</h2>
+        <h2 id="search-keys-h" tabIndex={-1}>
+          Search and data keys
+        </h2>
         <p className="bj-set-count">
           {connected} of {rows.length} connected
         </p>

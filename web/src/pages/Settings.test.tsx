@@ -93,6 +93,20 @@ describe("the page", () => {
   });
 });
 
+describe("arriving at #ai-provider (the first-run step's link)", () => {
+  it("leaves keyboard focus on the section heading, not at the top of the page", async () => {
+    Element.prototype.scrollIntoView = () => undefined;
+    describeAccount([key("openai", { setup_state: "needs_model" })]);
+    const { container } = render(
+      <MemoryRouter initialEntries={["/settings#ai-provider"]}>
+        <Settings />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(document.activeElement).toBe(query(container, "#ai-provider-h"));
+  });
+});
+
 describe("with no model key", () => {
   it("lights the band with Connect with OpenRouter, the page's only cyan, and outlines the same button in the section", async () => {
     describeAccount([]);
@@ -168,6 +182,30 @@ describe("with a key that has no model", () => {
     expect(text(band(container))).toContain("OpenAI model chosen this visit");
     expect(container.querySelector(".bj-set-picker")).toBeNull();
     expect(text(query(container, "#provider-openai"))).toContain("✓ Validated");
+  });
+});
+
+describe("the polite announcement", () => {
+  it("changes what the live region holds even when the same words are said twice, so the second is read too", async () => {
+    describeAccount([key("openai", { model: "vendor/model-a", setup_state: "ready" })]);
+    on("POST /credentials/llm/models", { ...MODELS, provider: "openai" });
+    on("PUT /credentials/llm/openai/model", key("openai", { model: "vendor/model-a", setup_state: "ready" }));
+    const { container } = page();
+    await settle();
+    const region = query(container, 'p.bj-visually-hidden[role="status"]');
+    const seen: string[] = [];
+    new MutationObserver(() => seen.push(region.textContent ?? "")).observe(region, { childList: true, characterData: true, subtree: true });
+    for (let round = 0; round < 2; round++) {
+      click(buttonIn(query(container, "#provider-openai"), "Change model"));
+      await settle();
+      click(query<HTMLInputElement>(container, 'input[type="radio"]'));
+      click(buttonIn(container, "Use this model"));
+      await settle();
+    }
+    await settle();
+    const said = seen.filter((value) => value.includes("vendor/model-a is now your default model."));
+    expect(said.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(said).size).toBe(2);
   });
 });
 

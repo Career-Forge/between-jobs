@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { ConnectBanner } from "../components/settings/ConnectBanner";
 import { ConnectionsSection } from "../components/settings/ConnectionCards";
@@ -55,7 +55,11 @@ export default function Settings() {
   const location = useLocation();
   const [now] = useState(() => new Date());
   const [panel, setPanel] = useState<ProviderPanel>(null);
-  const [announcement, setAnnouncement] = useState("");
+  // What the polite live region says. `count` changes with every announcement, so the same words
+  // said twice in a row ("x is now your default model." after choosing x again) still change what
+  // the region holds and are read again: a live region only speaks when its content changes.
+  const [announcement, setAnnouncement] = useState({ text: "", count: 0 });
+  const announce = useCallback((text: string) => setAnnouncement((previous) => ({ text, count: previous.count + 1 })), []);
   // The provider whose model was chosen on this visit. The API has no route that says which model
   // is the default, so this is the one thing the page can know about it beyond a single key.
   const [chosenHere, setChosenHere] = useState<string | null>(null);
@@ -80,13 +84,13 @@ export default function Settings() {
     void (async () => {
       await data.reloadCredentials();
       if (credential !== null && llmSetupState(credential) === "ready") {
-        setAnnouncement("OpenRouter is connected again. Your model is unchanged.");
+        announce("OpenRouter is connected again. Your model is unchanged.");
       } else {
         setPanel({ provider: "openrouter", panel: "model" });
-        setAnnouncement("OpenRouter is connected. Choose a model to finish.");
+        announce("OpenRouter is connected. Choose a model to finish.");
       }
     })();
-  }, [connect, data]);
+  }, [connect, data, announce]);
 
   useScrollToHash(rows !== null, location.hash);
 
@@ -148,12 +152,13 @@ export default function Settings() {
       <NextStepBand outcome={outcome} onAction={onAction} />
       <ConnectBanner result={connect.result} busy={connect.busy} onAgain={connect.start} onRetry={connect.retry} onDismiss={connect.dismiss} />
       <p className="bj-visually-hidden" role="status" aria-live="polite">
-        {announcement}
+        {announcement.text}
+        {announcement.count % 2 === 0 ? "" : "\u00a0"}
       </p>
-      {announcement !== "" && (
+      {announcement.text !== "" && (
         <p className="bj-set-success" aria-hidden="true">
           <span>{"✓"} </span>
-          {announcement}
+          {announcement.text}
         </p>
       )}
 
@@ -194,7 +199,7 @@ export default function Settings() {
               setDroppedModelFor(providerId);
               setChosenHere((current) => (current === providerId ? null : current));
             }}
-            announce={setAnnouncement}
+            announce={announce}
           />
           <SearchKeysSection credentials={rows} hiringSignalsEnabled={hiringSignalsEnabled} now={now} onChanged={data.reloadCredentials} />
         </>

@@ -4,6 +4,8 @@ import "../../styles/settings.css";
 // "Remove key" asks once before it acts: removing a key stops Between Jobs using it, and the person
 // may have pressed it by mistake. It says what removing does and does not do, then offers the real
 // action and a way back. The first press moves focus to the answer; Keep it (or Escape) returns it.
+// The confirming button is an ordinary outlined one: red is for failure, and removing a healthy key
+// that the person chose to remove is not one.
 
 export interface RemoveKeyProps {
   /** "OpenRouter key", "Brave Search key": what is being removed, in the confirmation's words. */
@@ -48,7 +50,7 @@ export function RemoveKey({ what, holder, busy, onRemove }: RemoveKeyProps) {
         Remove the {what}? Between Jobs stops using it and deletes our copy. It stays valid at {holder} until you delete it there.
       </p>
       <div className="bj-set-actions">
-        <button ref={confirm} type="button" className="bj-danger" aria-disabled={busy} onClick={() => !busy && onRemove()}>
+        <button ref={confirm} type="button" aria-disabled={busy} onClick={() => !busy && onRemove()}>
           {busy ? "Removing..." : "Remove key"}
         </button>
         <button type="button" disabled={busy} onClick={() => setAsking(false)}>
