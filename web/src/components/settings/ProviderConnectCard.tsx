@@ -105,6 +105,7 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
   return (
     <form
       ref={root}
+      id={mode === "add" && provider.id === OPENROUTER_ID ? "openrouter" : undefined}
       tabIndex={-1}
       className="bj-set-card bj-set-connect"
       method="post"

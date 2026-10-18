@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 // A masked field for a secret, with a Show / Hide button. The value is held by the parent so it can
 // clear the field the moment a key is saved: a key that was stored is never left in the page.
@@ -22,6 +22,11 @@ export function KeyField({ label, value, onChange, placeholder, hint, disabled, 
   const [shown, setShown] = useState(false);
   const inputId = useId();
   const hintId = useId();
+  // Once the field is empty (the key was saved, or cleared) it goes back to masked: the next key
+  // someone types is not shown just because the last one was.
+  useEffect(() => {
+    if (value === "") setShown(false);
+  }, [value]);
   const described = [hint === undefined ? null : hintId, describedBy ?? null].filter((id): id is string => id !== null).join(" ");
   return (
     <div className="bj-set-field">

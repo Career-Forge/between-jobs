@@ -16,6 +16,9 @@ import "../../styles/settings.css";
 //   needs_model   "needs a model" (gold): checked and saved, unusable until a model is chosen
 //   needs_key     "needs a key" (gold): not checked, so not usable
 //
+// OpenRouter's row has the id `openrouter`, the anchor a link to /settings#openrouter lands on (the
+// connect form has it too while OpenRouter is not connected); the others are `provider-<id>`.
+//
 // The model id is the stored string, drawn as text. A trail line says who checked it and when; the
 // "when" is the row's own `updated_at`, and a date that cannot be read is left out.
 
@@ -54,7 +57,7 @@ export function ConnectedProviderRow({ credential, provider, hostName, now, pane
   }
 
   return (
-    <li className="bj-set-item" id={`provider-${credential.provider}`} data-state={state}>
+    <li className="bj-set-item" id={credential.provider === "openrouter" ? "openrouter" : `provider-${credential.provider}`} data-state={state}>
       <div className="bj-set-row">
         <div className="bj-set-row-main">
           <div className="bj-set-row-title">

@@ -119,7 +119,7 @@ export function ModelPicker({ providerId, providerName, currentModel, onChosen, 
   return (
     <div ref={root} tabIndex={-1} className="bj-set-card bj-set-picker" aria-busy={load.kind === "loading"}>
       <div className="bj-set-card-head">
-        <h3>{currentModel === null ? `Choose a ${providerName} model` : `Change the ${providerName} model`}</h3>
+        <h3>{currentModel === null ? `Choose a model for ${providerName}` : `Change the model for ${providerName}`}</h3>
         {onClose !== undefined && (
           <button type="button" className="bj-quiet" onClick={onClose}>
             Close
