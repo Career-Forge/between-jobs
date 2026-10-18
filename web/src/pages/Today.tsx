@@ -3,7 +3,7 @@ import { FirstRunChecklist } from "../components/FirstRunChecklist";
 import type { BusyKind } from "../components/today/ItemParts";
 import { TodayView, type AccountNotes, type FeedState } from "../components/today/TodayView";
 import { apiFetch } from "../lib/api";
-import { ACCOUNT_STILL_LOADING, firstRunFactsOf, readAccount, type AccountReads } from "../lib/firstRun";
+import { ACCOUNT_STILL_LOADING, firstRunFactsOf, hasOpenRouterKey, readAccount, type AccountReads } from "../lib/firstRun";
 import { nextStepWithRow, type NextStepInput, type SetupCheck } from "../lib/nextStep";
 import { parseTodayIntent, todayLit, type TodayRowId } from "../lib/nextStep/pages/today";
 import { gmailAccess } from "../lib/gmailAccess";
@@ -157,7 +157,9 @@ export default function Today() {
         // A waiting import is known only in the session that made it, and this is not that page.
         importWaiting: false,
       })),
-      credentials: checkOf(account.reads.credentials, "GET /credentials", account.at, () => ({}) as Record<string, never>),
+      credentials: checkOf(account.reads.credentials, "GET /credentials", account.at, (rows: readonly Record<string, unknown>[]) => ({
+        openrouter: hasOpenRouterKey(rows),
+      })),
       pageFailure:
         feed.kind === "failed" ? { what: "Couldn't load Today", call: "GET /today", at: feed.at, intent: "retry" } : null,
       facts,

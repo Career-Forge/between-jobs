@@ -60,9 +60,12 @@ export interface ProfileFacts {
   importWaiting: boolean;
 }
 
-// Nothing is read from the credentials list yet: the check can only be loading, failed or ready.
-// A row that needs a value from it will widen this when it is registered.
-export type CredentialsFacts = Record<string, never>;
+// What the credentials list says that a row reads. `openrouter` is whether the list has an OpenRouter
+// key row (service "llm", provider "openrouter"). It is left out by a page that did not work it out,
+// and only a definite `false` lights G3: a page that does not say is never told to add a key.
+export interface CredentialsFacts {
+  openrouter?: boolean;
+}
 
 export interface PageFailure {
   /** What failed, as a sentence start: "Couldn't load Today". */

@@ -9,11 +9,13 @@
 //       always; the credentials read only when the page supplied it)
 //   G2b no profile, an import waiting
 //   G2  no active profile
+//   G3  an active profile and no OpenRouter key
 //   F1  the page's own data request failed
 //
-// There is no row for a missing model key here: a key can belong to any of several providers, so
-// what counts as "set" is for the page that reads the credentials to decide.
+// G3 reads one credentials fact, `openrouter`, which only a page that worked it out supplies, and
+// only a definite false lights it: a page that says nothing about keys is never sent to add one.
 
+import { SETTINGS_PATH } from "../settingsPaths";
 import type { NextStep, NextStepInput, NextStepRow, SetupCheck } from "./types";
 
 // Pages that are outside the signed-in app. A signed-out visitor to any other address is shown the
@@ -129,6 +131,23 @@ const G2: NextStepRow = {
   },
 };
 
+// Where a model key is added. The Integrations page has no element with this id yet, so the link
+// opens the page at its top until it does; the address is fixed here so it need not change then.
+export const OPENROUTER_PATH = `${SETTINGS_PATH}#openrouter`;
+
+const G3: NextStepRow = {
+  id: "G3",
+  match: (input) => {
+    if (!inApp(input) || input.profile?.state !== "ready" || !input.profile.value.active) return null;
+    if (input.credentials?.state !== "ready" || input.credentials.value.openrouter !== false) return null;
+    return {
+      sentence: "Add an OpenRouter key so Between Jobs can draft and score.",
+      action: { kind: "link", label: "Add a model key", to: OPENROUTER_PATH },
+      why: ["profile active", "OpenRouter not set"],
+    };
+  },
+};
+
 const F1: NextStepRow = {
   id: "F1",
   match: (input) => {
@@ -147,4 +166,4 @@ const F1: NextStepRow = {
   },
 };
 
-export const GLOBAL_ROWS: readonly NextStepRow[] = [LG, G0, G1, SETUP_LOADING, G2B, G2, F1];
+export const GLOBAL_ROWS: readonly NextStepRow[] = [LG, G0, G1, SETUP_LOADING, G2B, G2, G3, F1];
