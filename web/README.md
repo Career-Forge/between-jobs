@@ -57,7 +57,8 @@ what it has read, and they draw only that.
   (`components/paper/BottomSheet.tsx`) under 960px; `StaticTrailLine` is the same line with nothing to open.
 - `src/lib/nextStep/` is the rule table behind the band, as a pure function:
   `nextStep(input)` answers `loading`, `none` or a step `{ sentence, action, why }`. Global rows
-  (`global.ts`) run before a page's own rows, and the first row that applies wins. To add a page, write its
+  (`global.ts`: signed out, setup check failed, no profile, no OpenRouter key, the page's own read failed)
+  run before a page's own rows, and the first row that applies wins. To add a page, write its
   rows in a new file `src/lib/nextStep/pages/<name>.ts` that exports `rules = definePage(...)`. The registry is
   built from the files in that folder, so there is no list to edit, and a duplicate page name or row id fails
   when the module loads.
@@ -99,18 +100,26 @@ model, adding a provider), the search and data keys, and the connections (Telegr
 `src/pages/Today.tsx` is the page a signed-in person lands on, and it says one thing to do next. The
 next-step band holds the most urgent feed item itself -- its words, its trail line and a quiet Dismiss --
 and that item is left out of the list below it, so no action shows twice. Which item that is comes from
-the rows in `src/lib/nextStep/pages/today.ts` (a status proposal with a stage to move to, then a resume
-the fit check held back, a resume ready for review, a high fit job; with none of those, an unlit "nothing
-needs a decision"), which read only the facts the page has: a number or a name appears in a sentence only
+the rows in `src/lib/nextStep/pages/today.ts` (a still-pending status proposal with a stage to move to,
+then a resume the fit check held back and nothing has replaced, a resume ready for review, a high fit job;
+with none of those, an unlit "nothing needs a decision"), which read only the facts the page has: a number or a name appears in a sentence only
 when a returned field carries it. `src/lib/todayFeed.ts` builds those facts and each row's words, trail and
 receipt from the same fields.
 
 - Requests: `GET /today` is the page's own data (when it fails the band says so and offers Try again).
   `GET /profile/current`, `/credentials`, `/saved-searches` and `/applications` are read once (`readAccount`
   in `lib/firstRun.ts`) and shared by the band's setup rows, the setup checklist, the "In the background" trail
-  and the job names in sentences. A held-back resume reads `GET /applications/{id}/prepare-result` once for the
-  fit check's score. Dismiss, accept, track and "Generate anyway" (the workspace's generation with the fit
-  gate bypassed) keep their failures under the item they were for.
+  and the job names in sentences. Every visit makes all five, including for an account that has finished
+  setup: the band, the trail and the sentences need the lists whether or not the checklist does, so there is
+  no shortcut for a finished account. Held-back resumes read `GET /applications/{id}/prepare-result` for
+  the fit check's score and to learn whether a resume exists by now (a card whose application has one is
+  not lit and says so); that is at most five reads (`FIT_READ_CAP`, the newest cards first) for each load of
+  the feed. Gmail is named in the trail only once `GET /capabilities` (asked once by the shell, not by Today)
+  says it is open to the person. Dismiss, accept, track and "Generate anyway" (the workspace's generation
+  with the fit gate bypassed) keep their failures under the item they were for; while one runs, the band's
+  button shows it (the pressed one reads "Moving...", "Tracking..." or "Generating..." and every handler
+  button is `aria-disabled`), a polite status says what was done, and focus goes back to the band or the
+  list's heading when the control that had it is gone.
 - The setup checklist (`components/FirstRunChecklistView.tsx`, rules in `lib/firstRun.ts`) is five steps in
   three states -- to do, done with the real fact, can't tell or couldn't check -- and folds to one line
   ("Setup ready", or the counts) that opens again. It holds no cyan fill.
