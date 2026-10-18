@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PHONE_QUERY } from "../lib/useMediaQuery";
 import tokensCss from "../tokens.css?raw";
 import { blockOf, declarationsFor, rulesOf, tokenResolver, withoutMedia } from "../testing/css";
+import paperCss from "./paper.css?raw";
 import todayCss from "./today.css?raw";
 import pageSource from "../pages/Today.tsx?raw";
 
@@ -155,6 +156,27 @@ describe("the setup checklist", () => {
     expect(declarationsFor(phone, ".bj-setup-step")["grid-template-columns"]).toBe("9em minmax(0, 1fr)");
     expect(declarationsFor(phone, ".bj-setup-retry")["min-height"]).toBe("44px");
     expect(declarationsFor(phone, ".bj-setup-head button")["min-height"]).toBe("44px");
+  });
+});
+
+describe("links in a sentence", () => {
+  it("are underlined in the empty state and the background trail, so colour is not the only cue", () => {
+    for (const selector of [".bj-state--empty .bj-state-body a", ".bj-bg-line a"]) {
+      expect(declarationsFor(base, selector)["text-decoration"], selector).toBe("underline");
+    }
+  });
+
+  it("keep the phone's 44px target for the link a failed action leaves under its item", () => {
+    const link = declarationsFor(phone, ".bj-today-problem .bj-state-missing a");
+    expect(link["min-height"]).toBe("44px");
+    expect(link.display).toBe("inline-flex");
+  });
+
+  it("centers the words of a link drawn as the band's button here, not in the shared primitives", () => {
+    expect(declarationsFor(base, ".bj-band a.bj-band-action")["text-align"]).toBe("center");
+    for (const rule of rulesOf(paperCss).filter((candidate) => candidate.selectors.includes("a.bj-band-action"))) {
+      expect(rule.declarations["text-align"]).toBeUndefined();
+    }
   });
 });
 

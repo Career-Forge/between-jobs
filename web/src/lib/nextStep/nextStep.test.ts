@@ -146,6 +146,25 @@ const ROWS: Row[] = [
     why: ["no active profile"],
   },
   {
+    name: "G3 an active profile and no OpenRouter key",
+    id: "G3",
+    input: inApp({ credentials: ready({ openrouter: false }) }),
+    sentence: "Add an OpenRouter key so Between Jobs can draft and score.",
+    action: { kind: "link", label: "Add a model key", to: "/profile/integrations#openrouter" },
+    why: ["profile active", "OpenRouter not set"],
+  },
+  {
+    name: "G3 beats the page's own failure: a key is the first thing to fix",
+    id: "G3",
+    input: inApp({
+      credentials: ready({ openrouter: false }),
+      pageFailure: { what: "Couldn't load Today", call: "GET /today", at: "09:14" },
+    }),
+    sentence: "Add an OpenRouter key so Between Jobs can draft and score.",
+    action: { kind: "link", label: "Add a model key", to: "/profile/integrations#openrouter" },
+    why: ["profile active", "OpenRouter not set"],
+  },
+  {
     name: "F1 the page's own data request failed",
     id: "F1",
     input: inApp({ pageFailure: { what: "Couldn't load Today", call: "GET /today", at: "09:14" } }),
@@ -178,6 +197,25 @@ describe("the global and landing rows", () => {
         ...(row.tone === undefined ? {} : { tone: row.tone }),
       },
     });
+  });
+
+  it("G3 waits behind G2 and G2b: with no active profile the profile is the first step, not a key", () => {
+    const credentialsMissing = ready({ openrouter: false });
+    expect(nextStepWithRow(inApp({ profile: ready({ active: false, importWaiting: false }), credentials: credentialsMissing })).rowId).toBe("G2");
+    expect(nextStepWithRow(inApp({ profile: ready({ active: false, importWaiting: true }), credentials: credentialsMissing })).rowId).toBe("G2b");
+  });
+
+  it("G3 needs a definite no: a key that is there, or a page that did not say, never lights it", () => {
+    const pageRow: NextStepRow = { id: "T1", match: () => ({ sentence: "The page's own.", action: null, why: ["w"] }) };
+    const pages = [definePage("today", [pageRow])];
+    for (const credentials of [ready({ openrouter: true }), ready({}), undefined]) {
+      expect(evaluateWithRow(inApp({ credentials }), GLOBAL_ROWS, pages).rowId).toBe("T1");
+    }
+  });
+
+  it("G3 waits for the credentials read, and a failed one is G1", () => {
+    expect(nextStepWithRow(inApp({ credentials: { state: "loading" } })).rowId).toBe("SETUP");
+    expect(nextStepWithRow(inApp({ credentials: { state: "failed", call: "GET /credentials", at: "09:14" } })).rowId).toBe("G1");
   });
 
   it("LG gives the legal pages no band, signed in or out", () => {
