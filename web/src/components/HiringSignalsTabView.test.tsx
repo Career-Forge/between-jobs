@@ -308,7 +308,7 @@ describe("the idle tab", () => {
   it("offers 24 hours, 3 days and 7 days as a labelled group, defaulting to 3 days", () => {
     expect(idle).toContain('role="group" aria-label="How recent"');
     expect(idle).toMatch(/aria-pressed="false"[^>]*>24 hours</);
-    expect(idle).toMatch(/class="bj-toggle-active"[^>]*aria-pressed="true"[^>]*>3 days</);
+    expect(idle).toMatch(/aria-pressed="true"[^>]*>3 days</);
     expect(idle).toMatch(/aria-pressed="false"[^>]*>7 days</);
   });
 

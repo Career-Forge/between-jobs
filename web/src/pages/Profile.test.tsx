@@ -92,6 +92,14 @@ describe("ActiveProfile with the new Personal details card", () => {
     expect(html).toContain("Active");
   });
 
+  it("announces which of Sections and Raw JSON is showing, with aria-pressed rather than a class", () => {
+    const html = render(profile());
+    expect(html).toContain('role="group" aria-label="View"');
+    expect(html).toMatch(/aria-pressed="true"[^>]*>Sections</);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>Raw JSON</);
+    expect(html).not.toContain("bj-toggle-active");
+  });
+
   it("still shows the name, headline and the Google Scholar chip exactly as before", () => {
     const html = render(
       profile({ headline: "Backend Engineer", links: { scholar: "scholar.google.com/citations?x" } }),

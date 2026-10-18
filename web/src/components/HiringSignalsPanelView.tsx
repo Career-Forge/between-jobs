@@ -77,7 +77,6 @@ export function HiringSignalsPanelView({
             <button
               key={option.value}
               type="button"
-              className={freshness === option.value ? "bj-toggle-active" : undefined}
               aria-pressed={freshness === option.value}
               aria-disabled={busy ? true : undefined}
               onClick={() => actions.setFreshness(option.value)}

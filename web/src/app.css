@@ -817,14 +817,12 @@ a.bj-contact-chip {
   background: var(--bj-hover-bg-raised);
 }
 
-.bj-view-toggle button.bj-toggle-active,
 .bj-view-toggle button[aria-pressed="true"] {
   background: var(--bj-selected-bg);
   color: var(--bj-selected-text);
   font-weight: 600;
 }
 
-.bj-view-toggle button.bj-toggle-active:hover,
 .bj-view-toggle button[aria-pressed="true"]:hover {
   background: var(--bj-selected-bg-hover);
 }

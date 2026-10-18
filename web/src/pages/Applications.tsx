@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApplicationActionsSelect } from "../components/ApplicationActionsSelect";
 import ApplicationsBoard from "../components/ApplicationsBoard";
+import { ViewToggle } from "../components/ViewToggle";
 import { ProblemView } from "../components/SetupRequiredNotice";
 import { apiFetch } from "../lib/api";
 import { ALL_STATUSES, type Application, type ApplicationStatus } from "../lib/applicationsTypes";
@@ -91,20 +92,15 @@ export default function Applications() {
       {applications !== null && applications.length > 0 && (
         <>
           <div className="bj-profile-toolbar">
-            <div className="bj-view-toggle">
-              <button
-                className={view === "list" ? "bj-toggle-active" : ""}
-                onClick={() => setView("list")}
-              >
-                List
-              </button>
-              <button
-                className={view === "board" ? "bj-toggle-active" : ""}
-                onClick={() => setView("board")}
-              >
-                Board
-              </button>
-            </div>
+            <ViewToggle
+              label="View"
+              options={[
+                { value: "list", label: "List" },
+                { value: "board", label: "Board" },
+              ]}
+              value={view}
+              onChange={setView}
+            />
           </div>
           {view === "list" ? (
             <div className="bj-application-list">

@@ -75,7 +75,7 @@ describe("HiringSignalsPanel, idle", () => {
     // The selection is announced (aria-pressed) and bold, never color alone.
     expect(html).toMatch(/aria-pressed="false"[^>]*>24 hours</);
     expect(html).toMatch(/aria-pressed="false"[^>]*>3 days</);
-    expect(html).toMatch(/class="bj-toggle-active"[^>]*aria-pressed="true"[^>]*>7 days</);
+    expect(html).toMatch(/aria-pressed="true"[^>]*>7 days</);
   });
 
   it("has an always-mounted polite live region, so later results are announced", () => {
