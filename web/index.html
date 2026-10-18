@@ -17,6 +17,23 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
 
+    <!-- The two files nearly every first paint needs: body text and the serif headings. Fonts are
+         always fetched in anonymous CORS mode, so a preload needs crossorigin even on the same origin. -->
+    <link
+      rel="preload"
+      href="/src/fonts/ibm-plex-sans/IBMPlexSans-Regular-Latin1.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/src/fonts/newsreader/newsreader-latin-opsz-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Between Jobs" />
     <meta property="og:title" content="Between Jobs" />

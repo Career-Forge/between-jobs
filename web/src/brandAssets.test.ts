@@ -11,6 +11,7 @@ const binaries = import.meta.glob("../public/*.{png,ico}", { query: "?inline", i
   string,
   string
 >;
+const fontFiles = Object.keys(import.meta.glob("./fonts/**/*.woff2"));
 const publicFiles = Object.keys(import.meta.glob("../public/*")).map((path) => path.replace("../public/", ""));
 
 function bytesOf(name: string): Uint8Array {
@@ -132,7 +133,9 @@ describe("index.html", () => {
   });
 
   it("links the SVG icon, PNG and ICO fallbacks, the touch icon and the manifest, all of which exist", () => {
-    const links = [...indexHtml.matchAll(/<link\s+rel="([^"]+)"\s+href="(\/[^"]+)"/g)].map((m) => [m[1], m[2]] as const);
+    const links = [...indexHtml.matchAll(/<link\s+rel="((?:icon|apple-touch-icon|manifest))"\s+href="(\/[^"]+)"/g)].map(
+      (m) => [m[1], m[2]] as const,
+    );
     expect(links.map(([rel, href]) => `${rel} ${href}`)).toEqual([
       "icon /favicon.svg",
       "icon /favicon-32x32.png",
@@ -141,6 +144,22 @@ describe("index.html", () => {
       "manifest /site.webmanifest",
     ]);
     for (const [, href] of links) expect(publicFiles, href).toContain(href.slice(1));
+  });
+
+  it("preloads the body face and the serif, as same-origin font files, so the first paint is not in the fallback", () => {
+    const preloads = [...indexHtml.matchAll(/<link\s+rel="preload"([^>]*)>/g)].map((m) => m[1]);
+    expect(preloads).toHaveLength(2);
+    const hrefs = preloads.map((attributes) => /href="([^"]+)"/.exec(attributes)?.[1] ?? "");
+    expect(hrefs).toEqual([
+      "/src/fonts/ibm-plex-sans/IBMPlexSans-Regular-Latin1.woff2",
+      "/src/fonts/newsreader/newsreader-latin-opsz-normal.woff2",
+    ]);
+    for (const attributes of preloads) {
+      expect(attributes).toContain('as="font"');
+      expect(attributes).toContain('type="font/woff2"');
+      expect(attributes).toMatch(/\scrossorigin\s*\/?$/);
+    }
+    for (const href of hrefs) expect(fontFiles, href).toContain(`.${href.slice("/src".length)}`);
   });
 
   it("carries Open Graph and Twitter card tags that use the absolute og-image URL", () => {

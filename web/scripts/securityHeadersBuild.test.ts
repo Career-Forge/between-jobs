@@ -103,6 +103,13 @@ describe("the production build's security headers", () => {
     // src/brandAssets.test.ts checks they exist); the page must link them at the site root.
     const html = text(files.find((f) => f.fileName === "index.html"));
     expect(html).toContain('href="/site.webmanifest"');
+    // The font preloads are rewritten to the hashed files the stylesheet names, not left at /src.
+    const preloads = [...html.matchAll(/<link\s+rel="preload"[^>]*href="([^"]+)"/g)].map((m) => m[1]);
+    expect(preloads).toHaveLength(2);
+    for (const href of preloads) {
+      expect(href).toMatch(/^\/assets\/.+\.woff2$/);
+      expect(files.some((f) => `/${f.fileName}` === href)).toBe(true);
+    }
     expect(html).toContain('content="https://between-jobs.tech/og-image.png"');
   });
 
