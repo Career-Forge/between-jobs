@@ -8,7 +8,7 @@ import { SOURCE_LICENSE } from "./site";
 // The model providers a key can be connected for: the API's provider registry, the same list the
 // Settings page draws its chips from, without its "other OpenAI-compatible" slot. The Privacy Policy
 // names every one (content/legal.ts); content/legal.test.ts checks that the three agree.
-export const LANDING_PROVIDERS = ["OpenRouter", "OpenAI", "Anthropic", "Gemini", "xAI", "DeepSeek", "Qwen Cloud"] as const;
+export const LANDING_PROVIDERS = ["OpenRouter", "OpenAI", "Anthropic", "Google Gemini", "xAI", "DeepSeek", "Qwen Cloud"] as const;
 
 // The in-page sections the header links to, in page order.
 export const LANDING_SECTION_IDS = {
