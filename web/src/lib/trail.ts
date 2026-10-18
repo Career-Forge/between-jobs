@@ -75,7 +75,7 @@ export interface TrailInput {
   glyph?: TrailGlyphName | null;
   /** "Drafted by your model", "Parsed by code", "You tracked this", "via registry". */
   actor?: Slot;
-  /** "on your OpenRouter key", "no model involved". */
+  /** "on your key", "no model involved". */
   basis?: Slot;
   /** A date or time from a real returned field. Always drawn in mono. */
   when?: Slot;

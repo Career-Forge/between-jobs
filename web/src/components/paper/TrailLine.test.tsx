@@ -9,7 +9,7 @@ import { StaticTrailLine, TrailLine } from "./TrailLine";
 const TRAIL: TrailInput = {
   glyph: "model",
   actor: "Drafted by your model",
-  basis: "on your OpenRouter key",
+  basis: "on your key",
   when: "Sep 22",
 };
 const RECEIPT: ReceiptRowInput[] = [
@@ -32,7 +32,7 @@ describe("a trail line with a receipt (wide screens)", () => {
     expect(button.tagName).toBe("BUTTON");
     expect(button.getAttribute("type")).toBe("button");
     expect(button.getAttribute("aria-expanded")).toBe("false");
-    expect(words(button)).toBe("✦ Drafted by your model · on your OpenRouter key · Sep 22");
+    expect(words(button)).toBe("✦ Drafted by your model · on your key · Sep 22");
     const hidden = [...button.querySelectorAll('[aria-hidden="true"]')].map((element) => element.textContent);
     expect(hidden).toEqual(["✦"]);
   });
@@ -243,7 +243,7 @@ describe("the static variant", () => {
     installViewport(1280);
     const { container } = render(<StaticTrailLine trail={TRAIL} />);
     expect(container.querySelector("button")).toBeNull();
-    expect(words(query(container, "p.bj-trail"))).toBe("✦ Drafted by your model · on your OpenRouter key · Sep 22");
+    expect(words(query(container, "p.bj-trail"))).toBe("✦ Drafted by your model · on your key · Sep 22");
   });
 
   it("is what a line with no receipt, or with every receipt row omitted, becomes", () => {
