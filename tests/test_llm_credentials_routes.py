@@ -530,6 +530,230 @@ def test_the_credentials_list_carries_the_setup_state_and_no_ciphertext(
     assert all("secret_encrypted" not in r for r in rows)
 
 
+# -- the model rule on the save route, a blank model, and a key that moves host -------
+
+
+def _default(db: FakeDb, user: str, provider: str, model: str) -> None:
+    db.rows["capability_preferences"].append(
+        {
+            "user_id": user,
+            "capability": "default",
+            "execution_mode": "byok_first_party",
+            "provider": provider,
+            "model": model,
+        }
+    )
+
+
+@pytest.mark.parametrize("provider", ["openai", "openrouter", "custom"])
+@pytest.mark.parametrize(
+    "model",
+    [
+        "<img src=x onerror=alert(1)>../..//" + "A" * 150_000,
+        "x" * 201,
+        "has space",
+        "../../etc/passwd",
+        "https://evil.example",
+        "a;b",
+        "new\nline",
+        "\u00e9",
+    ],
+)
+def test_a_model_id_that_is_not_one_is_refused_on_the_save_route_too(
+    client: TestClient, server: Server, provider: str, model: str
+) -> None:
+    fields = {"base_url": GROQ} if provider == "custom" else {}
+
+    response = client.post("/credentials", json=_save(provider, model=model, **fields))
+
+    assert response.status_code == 422
+    assert server.requests == []  # nothing was sent to the provider
+    assert server.db.credentials_of(ALICE) == [] and server.db.preferences_of(ALICE) == []
+    assert "A" * 1000 not in response.text  # and the body is not echoed back
+
+
+@pytest.mark.parametrize("model", ["", "   "])
+def test_a_blank_model_from_the_web_form_still_means_no_model(
+    client: TestClient, server: Server, model: str
+) -> None:
+    server.upstream = lambda r: json_response(200, {})
+
+    response = client.post("/credentials", json=_save("openrouter", model=model))
+
+    assert response.status_code == 201, response.text
+    assert response.json()["setup_state"] == "needs_model"
+    assert server.db.preferences_of(ALICE) == []
+
+
+@pytest.mark.parametrize(
+    "model", ["gpt-fixture", "vendor/model:free", "accounts/x/models/y", "m@2026-01-01", "a~b+c"]
+)
+def test_the_ids_providers_really_use_are_accepted_when_saving(
+    client: TestClient, server: Server, model: str
+) -> None:
+    server.upstream = lambda r: json_response(200, {})
+
+    response = client.post("/credentials", json=_save("openrouter", model=model))
+
+    assert response.status_code == 201, response.text
+    assert response.json()["model"] == model
+
+
+MISTRAL = "https://api.mistral.ai/v1"
+
+
+def test_a_key_moved_to_another_custom_host_does_not_keep_the_old_hosts_model(
+    client: TestClient, server: Server
+) -> None:
+    server.db.add_credential(ALICE, "custom", OTHER_KEY, model="groq-model", base_url=GROQ)
+    _default(server.db, ALICE, "custom", "groq-model")
+    server.upstream = lambda r: json_response(200, {"data": [{"id": "mistral-model"}]})
+
+    response = client.post("/credentials", json=_save("custom", base_url=MISTRAL))
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert (body["base_url"], body["model"], body["setup_state"]) == (MISTRAL, None, "needs_model")
+    [row] = server.db.credentials_of(ALICE)
+    assert row["model"] is None and row["base_url"] == MISTRAL
+    # the default named the old host's model; leaving it would call Mistral with it
+    assert server.db.preferences_of(ALICE) == []
+
+
+def test_a_key_saved_again_for_the_same_custom_host_keeps_its_model_and_default(
+    client: TestClient, server: Server
+) -> None:
+    server.db.add_credential(ALICE, "custom", OTHER_KEY, model="groq-model", base_url=GROQ)
+    _default(server.db, ALICE, "custom", "groq-model")
+    server.upstream = lambda r: json_response(200, {"data": []})
+
+    response = client.post("/credentials", json=_save("custom", base_url=GROQ))
+
+    assert response.status_code == 201, response.text
+    assert (response.json()["model"], response.json()["setup_state"]) == ("groq-model", "ready")
+    [pref] = server.db.preferences_of(ALICE)
+    assert (pref["provider"], pref["model"]) == ("custom", "groq-model")
+
+
+def test_a_new_key_without_a_model_leaves_another_providers_default_alone(
+    client: TestClient, server: Server
+) -> None:
+    server.db.add_credential(ALICE, "openrouter", OTHER_KEY, model="vendor/m")
+    _default(server.db, ALICE, "openrouter", "vendor/m")
+    server.upstream = lambda r: json_response(200, {"data": []})
+
+    response = client.post("/credentials", json=_save("openai"))
+
+    assert response.status_code == 201
+    [pref] = server.db.preferences_of(ALICE)
+    assert (pref["provider"], pref["model"]) == ("openrouter", "vendor/m")
+
+
+# -- removing a key must not strand the default -----------------------------------------
+
+
+def test_removing_the_default_key_moves_the_default_to_the_one_other_ready_key(
+    client: TestClient, server: Server
+) -> None:
+    server.db.add_credential(ALICE, "openai", KEY, model="gpt-fixture")
+    server.db.add_credential(ALICE, "openrouter", OTHER_KEY, model="vendor/m")
+    _default(server.db, ALICE, "openai", "gpt-fixture")
+
+    assert client.delete("/credentials/llm/openai").status_code == 204
+
+    [pref] = server.db.preferences_of(ALICE)
+    assert (pref["provider"], pref["model"]) == ("openrouter", "vendor/m")
+    assert [r["provider"] for r in server.db.credentials_of(ALICE)] == ["openrouter"]
+
+
+def test_with_two_other_ready_keys_the_choice_is_the_persons_so_the_default_is_cleared(
+    client: TestClient, server: Server
+) -> None:
+    server.db.add_credential(ALICE, "openai", KEY, model="gpt-fixture")
+    server.db.add_credential(ALICE, "openrouter", OTHER_KEY, model="vendor/m")
+    server.db.add_credential(ALICE, "deepseek", OTHER_KEY, model="deepseek-fixture")
+    _default(server.db, ALICE, "openai", "gpt-fixture")
+
+    assert client.delete("/credentials/llm/openai").status_code == 204
+
+    assert server.db.preferences_of(ALICE) == []
+
+
+def test_other_keys_that_are_not_ready_are_not_a_place_to_move_the_default(
+    client: TestClient, server: Server
+) -> None:
+    server.db.add_credential(ALICE, "openai", KEY, model="gpt-fixture")
+    server.db.add_credential(ALICE, "openrouter", OTHER_KEY, model=None)  # needs a model
+    server.db.add_credential(ALICE, "deepseek", OTHER_KEY, model="m", validated=False)
+    _default(server.db, ALICE, "openai", "gpt-fixture")
+
+    assert client.delete("/credentials/llm/openai").status_code == 204
+
+    assert server.db.preferences_of(ALICE) == []
+
+
+def test_removing_a_key_that_is_not_the_default_leaves_the_default(
+    client: TestClient, server: Server
+) -> None:
+    server.db.add_credential(ALICE, "openai", KEY, model="gpt-fixture")
+    server.db.add_credential(ALICE, "openrouter", OTHER_KEY, model="vendor/m")
+    _default(server.db, ALICE, "openrouter", "vendor/m")
+
+    assert client.delete("/credentials/llm/openai").status_code == 204
+
+    [pref] = server.db.preferences_of(ALICE)
+    assert (pref["provider"], pref["model"]) == ("openrouter", "vendor/m")
+
+
+def test_removing_a_key_never_touches_anyone_elses_default(
+    client: TestClient, server: Server
+) -> None:
+    server.db.add_credential(ALICE, "openai", KEY, model="gpt-fixture")
+    server.db.add_credential(BOB, "openai", OTHER_KEY, model="gpt-fixture")
+    _default(server.db, ALICE, "openai", "gpt-fixture")
+    _default(server.db, BOB, "openai", "gpt-fixture")
+
+    assert client.delete("/credentials/llm/openai").status_code == 204
+
+    assert server.db.preferences_of(ALICE) == []
+    [bobs] = server.db.preferences_of(BOB)
+    assert bobs["provider"] == "openai"
+    assert len(server.db.credentials_of(BOB)) == 1
+
+
+def test_removing_a_search_key_leaves_the_model_default_alone(
+    client: TestClient, server: Server
+) -> None:
+    server.db.add_credential(ALICE, "openai", KEY, model="gpt-fixture")
+    _default(server.db, ALICE, "openai", "gpt-fixture")
+
+    assert client.delete("/credentials/search/openai").status_code == 204
+
+    assert len(server.db.preferences_of(ALICE)) == 1
+
+
+async def test_after_the_default_key_is_removed_the_resolver_finds_another_or_says_so(
+    server: Server,
+) -> None:
+    server.db.add_credential(ALICE, "openai", KEY, model="gpt-fixture")
+    server.db.add_credential(ALICE, "openrouter", OTHER_KEY, model="vendor/m")
+    _default(server.db, ALICE, "openai", "gpt-fixture")
+
+    await credentials_routes.delete_credential_route("llm", "openai", ALICE, server.db)  # type: ignore[arg-type]
+    resolved = await resolve(server.db, ALICE, capability="x")  # type: ignore[arg-type]
+    assert (resolved.provider, resolved.model, resolved.secret) == (
+        "openrouter",
+        "vendor/m",
+        OTHER_KEY,
+    )
+
+    await credentials_routes.delete_credential_route("llm", "openrouter", ALICE, server.db)  # type: ignore[arg-type]
+    with pytest.raises(ApiError) as caught:
+        await resolve(server.db, ALICE, capability="x")  # type: ignore[arg-type]
+    assert caught.value.code == "SETUP_REQUIRED"
+    assert "openai" not in caught.value.message  # not a dead end on the key that was removed
+
+
 # -- a key with no model is not ready, and says what to do ----------------------------------------
 
 
