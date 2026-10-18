@@ -16,6 +16,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
+from between_jobs.api import forge_engines_client
 from between_jobs.api.credential_resolver import ResolvedCredential
 from between_jobs.api.engine_contract import ForgeFitResult
 from between_jobs.api.errors import ApiError
@@ -689,3 +690,128 @@ async def test_call_apply_sends_the_saved_header_layout_when_given() -> None:
     )
 
     assert http.requests[0][1]["json"]["header_layout"] == layout
+
+
+# -- a model address other than OpenRouter's goes only to an engine that understands one ---
+
+_OPENAI_CREDENTIAL = ResolvedCredential(
+    provider="openai",
+    model="gpt-fixture",
+    secret="sk-test-plaintext",
+    base_url="https://api.openai.com/v1",
+    source="byok",
+)
+
+
+@pytest.fixture(autouse=True)
+def _forget_which_engines_were_checked() -> None:
+    forge_engines_client._engines_known_to_take_providers.clear()
+
+
+class _EngineHttp(_FakeHttpClient):
+    """The engine over a fake: `/health` answers `health`, `/apply` the usual body."""
+
+    def __init__(self, health: Any = None, *, health_status: int = 200, health_error: bool = False):
+        super().__init__()
+        self.health = health
+        self.health_status = health_status
+        self.health_error = health_error
+        self.gets: list[str] = []
+
+    async def get(self, url: str, **kwargs: Any) -> httpx.Response:
+        self.gets.append(url)
+        if self.health_error:
+            raise httpx.ConnectError("connection refused")
+        if isinstance(self.health, str):
+            return httpx.Response(
+                self.health_status, content=self.health.encode(), request=httpx.Request("GET", url)
+            )
+        return httpx.Response(
+            self.health_status, json=self.health, request=httpx.Request("GET", url)
+        )
+
+
+async def _apply(http: _EngineHttp, credential: ResolvedCredential) -> None:
+    await call_apply(
+        http,  # type: ignore[arg-type]
+        resume_template=_RESUME_TEMPLATE,
+        job_snapshot=_SNAPSHOT,
+        credential=credential,
+        now="2026-08-15T00:00:00.000Z",
+    )
+
+
+async def test_an_engine_that_reports_the_contract_gets_the_providers_address() -> None:
+    http = _EngineHttp({"status": "ok", "llm_contract": 2})
+
+    await _apply(http, _OPENAI_CREDENTIAL)
+
+    assert http.gets == ["http://resume-engine.test/health"]
+    [(url, kwargs)] = http.requests
+    assert url.endswith("/apply")
+    assert kwargs["json"]["credential"]["base_url"] == "https://api.openai.com/v1"
+
+
+async def test_a_yes_is_remembered_so_the_engine_is_asked_once() -> None:
+    http = _EngineHttp({"status": "ok", "llm_contract": 3})
+
+    await _apply(http, _OPENAI_CREDENTIAL)
+    await _apply(http, _OPENAI_CREDENTIAL)
+
+    assert len(http.gets) == 1 and len(http.requests) == 2
+
+
+@pytest.mark.parametrize(
+    "health",
+    [
+        {"status": "ok"},  # an engine from before the contract existed
+        {"status": "ok", "llm_contract": 1},
+        {"status": "ok", "llm_contract": "2"},
+        {"status": "ok", "llm_contract": True},
+        {"status": "ok", "llm_contract": None},
+        ["not", "an", "object"],
+        "<html>not json</html>",
+    ],
+)
+async def test_an_engine_that_does_not_report_it_is_sent_no_provider_address_and_no_key(
+    health: Any,
+) -> None:
+    http = _EngineHttp(health)
+
+    with pytest.raises(ApiError) as caught:
+        await _apply(http, _OPENAI_CREDENTIAL)
+
+    assert (caught.value.code, caught.value.retryable) == ("PROVIDER_UNAVAILABLE", True)
+    assert caught.value.details["reason"] == "engine_too_old"
+    assert http.requests == []  # the key was not sent
+    assert "sk-test-plaintext" not in repr(caught.value.__dict__)
+
+
+async def test_a_refusal_is_not_remembered_so_the_deploy_catching_up_is_noticed() -> None:
+    http = _EngineHttp({"status": "ok"})
+    with pytest.raises(ApiError):
+        await _apply(http, _OPENAI_CREDENTIAL)
+
+    http.health = {"status": "ok", "llm_contract": 2}
+    await _apply(http, _OPENAI_CREDENTIAL)
+
+    assert len(http.gets) == 2 and len(http.requests) == 1
+
+
+@pytest.mark.parametrize("failure", [{"health_status": 503}, {"health_error": True}])
+async def test_an_engine_that_cannot_say_is_not_sent_the_key_either(failure: Any) -> None:
+    http = _EngineHttp({"status": "ok", "llm_contract": 2}, **failure)
+
+    with pytest.raises(ApiError) as caught:
+        await _apply(http, _OPENAI_CREDENTIAL)
+
+    assert caught.value.code == "PROVIDER_UNAVAILABLE" and caught.value.retryable
+    assert http.requests == []
+
+
+async def test_an_openrouter_credential_never_waits_on_the_contract() -> None:
+    http = _EngineHttp({"status": "ok"})  # an old engine
+
+    await _apply(http, _CREDENTIAL)
+
+    assert http.gets == [] and len(http.requests) == 1
