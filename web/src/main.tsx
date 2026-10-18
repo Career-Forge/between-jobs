@@ -1,3 +1,5 @@
+// Must stay first: it takes a return from OpenRouter off the address before anything reads it.
+import "./lib/settings/captureOAuthReturn";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
