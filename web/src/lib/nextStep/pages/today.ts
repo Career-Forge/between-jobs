@@ -63,6 +63,22 @@ export interface ProposalFact {
   proposedType: string;
   /** 0 to 1, as returned. */
   confidence: number;
+  /**
+   * Where the proposal stands, as returned. Only a "pending" one can still be accepted or
+   * dismissed: the server refuses both for any other status, and it leaves the item of a sibling
+   * proposal it resolved on its own in the feed.
+   */
+  status: string;
+}
+
+/**
+ * The whole percent a 0 to 1 confidence stands for, rounded down (a share is never shown as higher
+ * than it is), or null for a value that is not a share. The product is cleaned of float error
+ * first: 0.57 * 100 is 56.99999999999999, which must not read as 56.
+ */
+export function confidencePercent(confidence: number): number | null {
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) return null;
+  return Math.floor(Math.round(confidence * 1e6) / 1e4);
 }
 
 export interface MatchFact {
@@ -162,10 +178,18 @@ function newestFirst(items: readonly TodayItemFact[]): TodayItemFact[] {
 }
 
 // Which item the band holds, if any. Precedence is the row order; within a row, the newest item.
-// An item with no application can never light T2 or T3 (nothing to link to), so it falls through.
+// An item with no application can never light T2 or T3 (nothing to link to), so it falls through,
+// and a proposal that is no longer pending can never light T1 (Accept and Dismiss would both be
+// refused), so it stays in the list as a plain item.
 export function todayLit(items: readonly TodayItemFact[]): Lit | null {
   const ordered = newestFirst(items);
-  const t1 = ordered.find((item) => item.kind === "status_proposal" && item.proposal !== null && isMappableProposal(item.proposal.proposedType));
+  const t1 = ordered.find(
+    (item) =>
+      item.kind === "status_proposal" &&
+      item.proposal !== null &&
+      item.proposal.status === "pending" &&
+      isMappableProposal(item.proposal.proposedType),
+  );
   if (t1 !== undefined) return { row: "T1", item: t1 };
   const t2 = ordered.find((item) => item.kind === "resume_failed" && item.applicationId !== null);
   if (t2 !== undefined) return { row: "T2", item: t2 };
@@ -212,11 +236,12 @@ function proposalStep(item: TodayItemFact): NextStep | null {
   const words = PROPOSAL_STEPS[proposal.proposedType];
   if (words === undefined) return null;
   const subject = item.company ?? "A reply to your application";
-  const percent = Number.isFinite(proposal.confidence) && proposal.confidence >= 0 && proposal.confidence <= 1 ? Math.trunc(proposal.confidence * 100) : null;
+  const percent = confidencePercent(proposal.confidence);
   const why = ["status proposal"];
   if (percent !== null) {
     why.push(`${percent}%`);
-    if (percent < AUTO_MOVE_PERCENT) why.push(`under the ${AUTO_MOVE_PERCENT}% auto-move line`);
+    // Compared on the confidence itself, the way the server compares it, not on the rounded share.
+    if (proposal.confidence < AUTO_MOVE_PERCENT / 100) why.push(`under the ${AUTO_MOVE_PERCENT}% auto-move line`);
   }
   return {
     sentence: `${subject} may have ${words.verb}. Read ${item.company === null ? "the" : "their"} words, then decide.`,

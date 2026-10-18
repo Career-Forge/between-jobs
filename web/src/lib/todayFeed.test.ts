@@ -314,6 +314,19 @@ describe("a row's words", () => {
       expect(view.details).toEqual([]);
     });
 
+    it("is not called a decision once it has been decided", () => {
+      for (const status of ["accepted", "dismissed"] as const) {
+        const decided = item({ id: "p", kind: "status_proposal", status_proposal: { id: "sp", proposed_type: "interview.requested", confidence: 0.72, evidence_spans: [], status } });
+        expect(rowView(decided, context()).chip).toBeNull();
+      }
+    });
+
+    it("shows the share the stored confidence stands for in the trail and the receipt", () => {
+      const view = rowView(proposal("interview.requested", 0.57), context());
+      expect(trailText(view)).toBe("Read by your model · from a Gmail reply · Sep 22 · 57% · under the 85% auto-move line");
+      expect(view.receipt).toContainEqual({ label: "confidence", value: "57%" });
+    });
+
     it("is not called a decision when there is no stage to move to", () => {
       const view = rowView(proposal("recruiter.replied", 0.5), context());
       expect(view.chip).toBeNull();
@@ -473,6 +486,13 @@ describe("what a row can do", () => {
     expect(rowActions(mappable, null)).toEqual([{ id: "accept", label: "Accept: move to Offer" }, { id: "dismiss", label: "Dismiss" }]);
     expect(ids(rowActions(unmappable, null))).toEqual(["dismiss"]);
     expect(ids(rowActions(item({ id: "p", kind: "status_proposal" }), null))).toEqual(["dismiss"]);
+  });
+
+  it("offers a proposal that was already decided Dismiss only: Accept would be refused", () => {
+    for (const status of ["accepted", "dismissed"] as const) {
+      const decided = item({ id: "p", kind: "status_proposal", status_proposal: { id: "s", proposed_type: "offer.received", confidence: 0.6, evidence_spans: [], status } });
+      expect(ids(rowActions(decided, null))).toEqual(["dismiss"]);
+    }
   });
 
   it("offers Track for a match, and Open workspace once it is tracked", () => {

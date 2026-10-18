@@ -13,6 +13,7 @@ import {
   backgroundView,
   clockTime,
   fitReadOf,
+  isPending,
   searchesRead,
   todayFacts,
   trackRequestBody,
@@ -200,7 +201,9 @@ export default function Today() {
     try {
       switch (action) {
         case "dismiss":
-          await apiFetch(item.status_proposal ? `/today/${item.id}/dismiss-proposal` : `/today/${item.id}/dismiss`, { method: "POST" });
+          // Only a pending proposal has a proposal to resolve; the server refuses the proposal
+          // route (409) for one that was already decided, so that item is retired like any other.
+          await apiFetch(isPending(item.status_proposal) ? `/today/${item.id}/dismiss-proposal` : `/today/${item.id}/dismiss`, { method: "POST" });
           removeItem(item.id);
           break;
         case "accept":

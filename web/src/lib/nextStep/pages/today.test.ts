@@ -4,6 +4,7 @@ import { nextStep, nextStepWithRow } from "../index";
 import type { NextStep, NextStepInput, SetupCheck } from "../types";
 import {
   AUTO_MOVE_PERCENT,
+  confidencePercent,
   PROPOSAL_STEPS,
   isMappableProposal,
   isTodayFacts,
@@ -65,7 +66,7 @@ const proposal = (overrides: Partial<TodayItemFact> = {}) =>
     kind: "status_proposal",
     applicationId: "app-1",
     company: "Northstar Labs",
-    proposal: { proposedType: "interview.requested", confidence: 0.72 },
+    proposal: { proposedType: "interview.requested", confidence: 0.72, status: "pending" },
     ...overrides,
   });
 const held = (overrides: Partial<TodayItemFact> = {}) =>
@@ -104,7 +105,7 @@ const ROWS: Row[] = [
   {
     name: "T1 an assessment, which moves the application to Screening",
     id: "T1",
-    facts: facts([proposal({ proposal: { proposedType: "assessment.received", confidence: 0.6 } })]),
+    facts: facts([proposal({ proposal: { proposedType: "assessment.received", confidence: 0.6, status: "pending" } })]),
     sentence: "Northstar Labs may have sent an assessment. Read their words, then decide.",
     action: { kind: "button", label: "Accept: move to Screening", intent: "accept:p1" },
     why: ["status proposal", "60%", "under the 85% auto-move line"],
@@ -112,7 +113,7 @@ const ROWS: Row[] = [
   {
     name: "T1 an offer",
     id: "T1",
-    facts: facts([proposal({ proposal: { proposedType: "offer.received", confidence: 0.5 } })]),
+    facts: facts([proposal({ proposal: { proposedType: "offer.received", confidence: 0.5, status: "pending" } })]),
     sentence: "Northstar Labs may have made an offer. Read their words, then decide.",
     action: { kind: "button", label: "Accept: move to Offer", intent: "accept:p1" },
     why: ["status proposal", "50%", "under the 85% auto-move line"],
@@ -120,7 +121,7 @@ const ROWS: Row[] = [
   {
     name: "T1 a rejection",
     id: "T1",
-    facts: facts([proposal({ proposal: { proposedType: "application.rejected", confidence: 0.55 } })]),
+    facts: facts([proposal({ proposal: { proposedType: "application.rejected", confidence: 0.55, status: "pending" } })]),
     sentence: "Northstar Labs may have turned this application down. Read their words, then decide.",
     action: { kind: "button", label: "Accept: move to Rejected", intent: "accept:p1" },
     why: ["status proposal", "55%", "under the 85% auto-move line"],
@@ -275,10 +276,34 @@ const ROWS: Row[] = [
   {
     name: "T5 a proposal with no stage to move to is for Dismiss only, so nothing is lit",
     id: "T5",
-    facts: facts([proposal({ proposal: { proposedType: "recruiter.replied", confidence: 0.4 } })]),
+    facts: facts([proposal({ proposal: { proposedType: "recruiter.replied", confidence: 0.4, status: "pending" } })]),
     sentence: "Nothing needs a decision right now. 1 update below.",
     action: null,
     why: ["0 items need a decision", "2 saved searches active"],
+  },
+  {
+    name: "T5 a proposal that was already decided is not lit: Accept and Dismiss would both be refused",
+    id: "T5",
+    facts: facts([proposal({ proposal: { proposedType: "interview.requested", confidence: 0.72, status: "dismissed" } })]),
+    sentence: "Nothing needs a decision right now. 1 update below.",
+    action: null,
+    why: ["0 items need a decision", "2 saved searches active"],
+  },
+  {
+    name: "T5 an accepted proposal is not lit either",
+    id: "T5",
+    facts: facts([proposal({ proposal: { proposedType: "interview.requested", confidence: 0.72, status: "accepted" } })]),
+    sentence: "Nothing needs a decision right now. 1 update below.",
+    action: null,
+    why: ["0 items need a decision", "2 saved searches active"],
+  },
+  {
+    name: "T3 a decided proposal does not take the band ahead of a real next step",
+    id: "T3",
+    facts: facts([proposal({ proposal: { proposedType: "interview.requested", confidence: 0.72, status: "dismissed" } }), ready_()]),
+    sentence: "Your resume for ML Engineer at Orbit is ready for review.",
+    action: { kind: "link", label: "Open workspace", to: "/applications/app-3#ch-check" },
+    why: ["resume ready", "ATS score 72 / 100"],
   },
   {
     name: "T5 an item with no application can never light T2 or T3",
@@ -438,20 +463,34 @@ describe("proposals and intents", () => {
 
   it("leaves the percentage and the line out of a confidence that is not a share", () => {
     for (const confidence of [Number.NaN, -0.1, 1.5]) {
-      const step = stepOf(facts([proposal({ proposal: { proposedType: "interview.requested", confidence } })]));
+      const step = stepOf(facts([proposal({ proposal: { proposedType: "interview.requested", confidence, status: "pending" } })]));
       expect(step.why).toEqual(["status proposal"]);
     }
   });
 
   it("does not say a proposal is under the line when it is not", () => {
-    const step = stepOf(facts([proposal({ proposal: { proposedType: "interview.requested", confidence: 0.9 } })]));
+    const step = stepOf(facts([proposal({ proposal: { proposedType: "interview.requested", confidence: 0.9, status: "pending" } })]));
     expect(step.why).toEqual(["status proposal", "90%"]);
   });
 
-  it("truncates the percentage the way the server writes it", () => {
-    // The server writes int(confidence * 100): 0.29 is 28%, never 29%.
-    const step = stepOf(facts([proposal({ proposal: { proposedType: "interview.requested", confidence: 0.29 } })]));
-    expect(step.why[1]).toBe("28%");
+  it("shows the share the stored confidence stands for, not a float artifact of it", () => {
+    // 0.57 * 100 is 56.99999999999999 and 0.29 * 100 is 28.999999999999996: neither is one short.
+    for (const [confidence, shown] of [[0.57, "57%"], [0.58, "58%"], [0.29, "29%"], [0.07, "7%"], [1, "100%"], [0, "0%"]] as const) {
+      const step = stepOf(facts([proposal({ proposal: { proposedType: "interview.requested", confidence, status: "pending" } })]));
+      expect(step.why[1]).toBe(shown);
+    }
+  });
+
+  it("rounds a share down, so it is never shown higher than it is", () => {
+    expect(confidencePercent(0.579)).toBe(57);
+    expect(confidencePercent(0.8499)).toBe(84);
+    expect(confidencePercent(Number.NaN)).toBeNull();
+  });
+
+  it("puts the line on the confidence itself: 0.85 is on it, not under it", () => {
+    const at = (confidence: number) => stepOf(facts([proposal({ proposal: { proposedType: "interview.requested", confidence, status: "pending" } })])).why;
+    expect(at(0.85)).toEqual(["status proposal", "85%"]);
+    expect(at(0.8499)).toEqual(["status proposal", "84%", "under the 85% auto-move line"]);
   });
 
   it("round-trips an intent with the item id in it", () => {
