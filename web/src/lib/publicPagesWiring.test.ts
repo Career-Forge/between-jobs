@@ -25,7 +25,9 @@ describe("the shell", () => {
     expect(TERMS_PATH).toBe("/terms");
     expect(app).toContain("<PublicLayout>\n        <Privacy />\n      </PublicLayout>");
     expect(app).toContain("<PublicLayout>\n        <Terms />\n      </PublicLayout>");
-    expect(app).toContain("<PublicLayout>\n        <Landing />\n      </PublicLayout>");
+    // The landing page is the one public page with a next-step band, so it asks for the layout that has
+    // the section links and the "Skip to next step" link; the legal pages have no band and ask for none.
+    expect(app).toContain('<PublicLayout variant="landing">\n        <Landing />\n      </PublicLayout>');
   });
 
   it("links the legal pages from the nav footer, beneath Sign out", () => {

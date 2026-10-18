@@ -1,0 +1,776 @@
+/* The landing page (pages/Landing.tsx) and the pictures drawn for it (components/landing/). Tokens
+ * only, with one exception: the printed resume page in the dossier picture is white, because it
+ * stands for a sheet of paper, not for this app's chrome, so it carries its own colors in
+ * .bj-resume-sheet. Nothing here is filled cyan: the page's one cyan fill is the next-step band's
+ * button in the hero. Layout is a 1200px column that gives way to one column at 960px; every
+ * flex or grid child that holds text can shrink (min-width: 0) so nothing pushes a phone sideways. */
+
+.bj-landing {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bj-landing h2,
+.bj-landing h3 {
+  font-family: var(--bj-font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+/* Section headings take focus when a header link lands on them; the ring is the global one. */
+.bj-landing h2:focus-visible {
+  outline-offset: 6px;
+}
+
+.bj-landing-section {
+  padding: 80px 0 0;
+  margin-top: 80px;
+  border-top: 1px solid var(--bj-border);
+  scroll-margin-top: 16px;
+}
+
+/* The hero and the circuit are the first two blocks and need no rule above them. */
+.bj-landing-hero + .bj-landing-section {
+  margin-top: 0;
+  padding-top: 24px;
+  border-top: 0;
+}
+
+.bj-landing-section h2 {
+  margin: 0;
+  font-size: clamp(34px, 5vw, 56px);
+  line-height: 1.06;
+}
+
+.bj-landing-section p {
+  max-width: 680px;
+  overflow-wrap: anywhere;
+}
+
+/* The small mono label above a heading. */
+.bj-landing-eyebrow {
+  margin: 0 0 14px;
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+.bj-landing-intro {
+  margin: 22px 0 0;
+  font-size: 19px;
+  line-height: 1.6;
+  color: var(--bj-text-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Hero                                                                 */
+/* ------------------------------------------------------------------ */
+
+.bj-landing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 48px 64px;
+  align-items: start;
+  padding: 56px 0 48px;
+}
+
+.bj-landing-hero-copy {
+  min-width: 0;
+}
+
+.bj-landing-hero h1 {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-weight: 400;
+  font-size: clamp(44px, 5.6vw, 84px);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.bj-landing-line {
+  display: block;
+}
+
+.bj-landing-hero p.bj-landing-lead {
+  max-width: 540px;
+  margin: 28px 0 0;
+  font-size: 20px;
+  line-height: 1.55;
+  color: var(--bj-text-muted);
+}
+
+/* The hero's band is the one place the page's cyan fill lives. It sits under the lead, a step down
+   from the sentence's size so the headline stays the loudest thing on the screen. */
+.bj-landing-hero .bj-band {
+  max-width: 600px;
+  margin: 32px 0 0;
+}
+
+/* The band's link action is drawn as a link button, and app.css's plain link-button rule (display:
+   inline-block) ties the primitives' own rule on specificity and wins the order, so the label would sit
+   at the left of the full-width button on a phone. Say it again here, one step more specific. */
+.bj-landing-hero .bj-band a.bj-band-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bj-landing-hero-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 24px;
+}
+
+.bj-landing-hero-links a.bj-button-link,
+.bj-landing-signin {
+  display: inline-flex;
+  align-items: center;
+  min-height: 46px;
+  font-size: var(--bj-text-body);
+}
+
+.bj-landing-hero-links a.bj-button-link {
+  padding: 0 22px;
+  border-radius: 8px;
+}
+
+.bj-landing-motto {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 32px 0 0;
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+.bj-landing-motto-rule {
+  flex: none;
+  width: 44px;
+  height: 1px;
+  background: var(--bj-outline);
+}
+
+.bj-landing-hero-art {
+  min-width: 0;
+}
+
+/* The worked trail example. */
+.bj-trail-example {
+  padding: 28px 28px 24px;
+  border: 1px solid var(--bj-border);
+  border-radius: 16px;
+  background: var(--bj-surface);
+}
+
+.bj-trail-example .bj-landing-eyebrow {
+  margin-bottom: 18px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+
+.bj-trail-example-chip {
+  display: inline-block;
+  margin: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 6px;
+  font-size: var(--bj-text-badge);
+  color: var(--bj-text);
+}
+
+.bj-trail-example-claim {
+  margin: 14px 0 0;
+  font-family: var(--bj-font-display);
+  font-style: italic;
+  font-size: 26px;
+  line-height: 1.3;
+  color: var(--bj-text);
+}
+
+.bj-trail-example-reason {
+  margin: 10px 0 0;
+  font-size: var(--bj-text-small);
+  line-height: 1.5;
+  color: var(--bj-text-muted);
+}
+
+.bj-trail-example-trails {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-trail-example-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 16px 0 0;
+  font-size: var(--bj-text-trail);
+  color: var(--bj-text-muted);
+}
+
+.bj-trail-example-note {
+  margin: 14px 0 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* The dossier chapter                                                  */
+/* ------------------------------------------------------------------ */
+
+.bj-landing-dossier {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 48px 56px;
+  align-items: center;
+}
+
+.bj-landing-dossier-copy {
+  min-width: 0;
+}
+
+.bj-landing-dossier-copy p:not(.bj-landing-eyebrow) {
+  margin: 24px 0 0;
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--bj-text-muted);
+}
+
+.bj-dossier-figure {
+  min-width: 0;
+  margin: 0;
+}
+
+.bj-dossier-art {
+  position: relative;
+  height: 600px;
+}
+
+.bj-dossier-caption {
+  margin-top: 8px;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-dossier-card {
+  position: absolute;
+  left: 0;
+  top: 56px;
+  width: min(400px, 76%);
+  padding: 22px 22px 20px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 16px;
+  background: var(--bj-surface-raised);
+  transform: rotate(-1.4deg);
+}
+
+.bj-dossier-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bj-dossier-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px;
+  border: 1px solid var(--bj-border);
+  border-radius: 999px;
+  font-size: var(--bj-text-badge);
+  color: var(--bj-text);
+}
+
+.bj-dossier-chip--sample {
+  border-radius: 6px;
+  border-color: var(--bj-outline);
+}
+
+.bj-dossier-role {
+  margin: 20px 0 0;
+  font-family: var(--bj-font-display);
+  font-size: 32px;
+  line-height: 1.1;
+}
+
+.bj-dossier-company {
+  margin: 4px 0 0;
+  font-family: var(--bj-font-display);
+  font-size: 19px;
+  color: var(--bj-text-muted);
+}
+
+.bj-dossier-tabs {
+  display: flex;
+  gap: 18px;
+  margin: 20px 0 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--bj-border);
+  font-size: var(--bj-text-control);
+  color: var(--bj-text-muted);
+}
+
+.bj-dossier-tabs span:first-child {
+  color: var(--bj-text);
+}
+
+.bj-dossier-label {
+  margin: 18px 0 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-dossier-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.bj-dossier-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bj-border);
+}
+
+.bj-dossier-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  font-size: var(--bj-text-control);
+}
+
+.bj-dossier-row-sub {
+  display: block;
+  font-size: 12.5px;
+  color: var(--bj-text-muted);
+}
+
+.bj-dossier-dot {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 50%;
+}
+
+.bj-dossier-card .bj-trail {
+  margin-top: 14px;
+}
+
+/* Width classes shared by the bars in both pictures. */
+.bj-dossier-bar--full,
+.bj-circuit-line--full {
+  width: 100%;
+}
+
+.bj-dossier-bar--wide,
+.bj-circuit-line--wide {
+  width: 88%;
+}
+
+.bj-dossier-bar--mid,
+.bj-circuit-line--mid {
+  width: 64%;
+}
+
+.bj-dossier-bar--short {
+  width: 44%;
+}
+
+.bj-dossier-bar--role {
+  width: 46%;
+}
+
+/* The printed page. Its colors belong to the paper, not to the app. */
+.bj-resume-sheet {
+  --sheet-paper: #f6f1e7;
+  --sheet-ink: #1b1718;
+  --sheet-faint: #6b625a;
+  --sheet-bar: #cfc6b8;
+  --sheet-bar-strong: #b5aba0;
+  position: absolute;
+  right: 0;
+  top: 8px;
+  width: min(380px, 70%);
+  min-height: 520px;
+  padding: 34px;
+  border-radius: 4px;
+  background: var(--sheet-paper);
+  color: var(--sheet-ink);
+  transform: rotate(2.5deg);
+}
+
+.bj-resume-name {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.bj-resume-contact {
+  margin: 4px 0 0;
+  font-size: 10px;
+  color: var(--sheet-faint);
+}
+
+.bj-resume-heading {
+  margin: 20px 0 0;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sheet-faint);
+}
+
+.bj-resume-sheet .bj-dossier-bars {
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.bj-resume-sheet .bj-dossier-bar {
+  height: 5px;
+  border-radius: 0;
+  background: var(--sheet-bar);
+}
+
+.bj-resume-sheet .bj-dossier-bar--role {
+  height: 6px;
+  background: var(--sheet-bar-strong);
+}
+
+/* ------------------------------------------------------------------ */
+/* The three chapters                                                   */
+/* ------------------------------------------------------------------ */
+
+.bj-landing-chapters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 72px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-landing-chapter {
+  display: flex;
+  gap: 18px;
+  min-width: 0;
+  padding: 30px 32px 10px;
+}
+
+.bj-landing-chapter + .bj-landing-chapter {
+  border-left: 1px solid var(--bj-border);
+}
+
+.bj-landing-chapter:first-child {
+  padding-left: 0;
+}
+
+.bj-landing-chapter:last-child {
+  padding-right: 0;
+}
+
+.bj-landing-chapter-number {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1.5px solid var(--bj-outline);
+  border-radius: 50%;
+  font-family: var(--bj-font-display);
+  font-size: 18px;
+}
+
+.bj-landing-chapter > div {
+  min-width: 0;
+}
+
+.bj-landing-chapter h3 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.bj-landing-chapter p {
+  margin: 10px 0 0;
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--bj-text-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* You always submit                                                    */
+/* ------------------------------------------------------------------ */
+
+.bj-landing-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 24px;
+  margin-top: 48px;
+}
+
+.bj-landing-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 26px 26px 24px;
+  border: 1px solid var(--bj-border);
+  border-radius: 16px;
+  background: var(--bj-surface);
+}
+
+.bj-landing-card h3 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.bj-landing-card p {
+  margin: 14px 0 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--bj-text);
+}
+
+.bj-landing-card p.bj-landing-availability {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--bj-border);
+  font-size: var(--bj-text-control);
+  color: var(--bj-text-muted);
+}
+
+.bj-landing-providers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-landing-providers li {
+  padding: 5px 12px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 999px;
+  font-size: var(--bj-text-small);
+}
+
+/* ------------------------------------------------------------------ */
+/* Open source, early days                                              */
+/* ------------------------------------------------------------------ */
+
+.bj-landing-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 32px 64px;
+  padding: 36px 40px;
+  border: 1px solid var(--bj-border);
+  border-radius: 18px;
+  background: var(--bj-surface);
+}
+
+.bj-landing-source-copy {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.bj-landing-source h2 {
+  font-size: clamp(30px, 3.6vw, 40px);
+}
+
+.bj-landing-source-copy p:not(.bj-landing-eyebrow) {
+  margin: 14px 0 0;
+  font-size: 16.5px;
+  line-height: 1.6;
+  color: var(--bj-text-muted);
+}
+
+.bj-landing-source-link {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.bj-landing-source-link a.bj-button-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 8px;
+  font-size: var(--bj-text-body);
+}
+
+.bj-landing-repo {
+  max-width: 100%;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-badge);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-landing-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 680px;
+  margin: 28px 0 0;
+  padding-left: 20px;
+  font-size: 16.5px;
+  line-height: 1.55;
+  color: var(--bj-text-muted);
+}
+
+#early h2 {
+  font-size: clamp(32px, 4vw, 48px);
+}
+
+/* A link inside a sentence is told apart by an underline, not by colour alone: cyan beside ivory or
+   muted text is about 1.5:1, under the 3:1 WCAG 1.4.1 asks for when colour is the only cue. Button
+   links and the header's links keep the plain style. */
+.bj-landing section p a {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.bj-landing section p a:hover {
+  color: var(--bj-cyan-hover);
+  text-decoration-thickness: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Under 960px: one column                                              */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 959px) {
+  .bj-landing-section {
+    padding-top: 56px;
+    margin-top: 56px;
+  }
+
+  .bj-landing-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 36px 0 24px;
+  }
+
+  .bj-landing-hero h1 {
+    font-size: clamp(40px, 11.4vw, 64px);
+  }
+
+  .bj-landing-hero p.bj-landing-lead {
+    margin-top: 22px;
+    font-size: 17px;
+  }
+
+  .bj-landing-hero .bj-band {
+    max-width: none;
+    margin-top: 28px;
+  }
+
+  .bj-trail-example {
+    padding: 22px 20px 20px;
+  }
+
+  .bj-trail-example-claim {
+    font-size: 22px;
+  }
+
+  .bj-landing-dossier {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bj-landing-dossier-copy p:not(.bj-landing-eyebrow) {
+    font-size: 16.5px;
+  }
+
+  /* The card is about 565px tall at 335px of room, so the picture is taller than the card by the
+     resume page's offset and the caption below it never ends up behind it. */
+  .bj-dossier-art {
+    height: 610px;
+  }
+
+  .bj-dossier-card {
+    top: 0;
+    width: min(330px, 78%);
+  }
+
+  .bj-dossier-role {
+    font-size: 27px;
+  }
+
+  .bj-resume-sheet {
+    top: 150px;
+    width: min(250px, 56%);
+    min-height: 360px;
+    padding: 24px 22px;
+  }
+
+  .bj-landing-chapters {
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 48px;
+  }
+
+  .bj-landing-chapter,
+  .bj-landing-chapter:first-child,
+  .bj-landing-chapter:last-child {
+    padding: 24px 0 8px;
+  }
+
+  .bj-landing-chapter + .bj-landing-chapter {
+    border-left: 0;
+    border-top: 1px solid var(--bj-border);
+  }
+
+  .bj-landing-intro {
+    font-size: 16.5px;
+  }
+
+  .bj-landing-cards {
+    margin-top: 32px;
+  }
+
+  .bj-landing-source {
+    padding: 26px 20px;
+  }
+
+  .bj-landing-hero-links a.bj-button-link,
+  .bj-landing-source-link a.bj-button-link {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .bj-landing-source-link {
+    align-items: stretch;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bj-landing * {
+    transition: none;
+    animation: none;
+  }
+}

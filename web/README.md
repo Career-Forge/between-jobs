@@ -128,6 +128,31 @@ receipt from the same fields.
   and lifts the shell's 960px cap on the column where the margin needs the room.
 - Links to set something up use `SETTINGS_PATH` and `MODEL_PROVIDER_PATH` (`lib/settingsPaths.ts`), the one place that names the Settings page.
 
+## Signed-out pages
+
+`/` (signed out), `/login`, `/privacy` and `/terms` are the pages a stranger sees first, and each has its
+own stylesheet next to the component that uses it: `styles/public.css` (the header, the one `<main>` and the
+footer in `components/PublicLayout.tsx`), `styles/landing.css` and `styles/circuit.css` (the landing page),
+`styles/auth.css` (sign in, register and password reset) and `styles/legal.css` (the two documents). They use
+tokens only, apart from the printed resume page drawn on the landing page, which is white because it stands for
+paper.
+
+- The landing page's words are `content/landing.ts` and the five stages of its circuit are
+  `content/landingCircuit.ts`, so a test can scan every claim. The circuit
+  (`components/landing/CircuitDemo.tsx`) is built from a sample role that is labeled as fictional; its depicted
+  buttons are outlined pictures, never controls. The hero holds the page's one next-step band, so the one cyan
+  fill on the page is its button.
+- A header link such as `/#circuit` scrolls and moves focus to the section's heading through
+  `lib/useHashTarget.ts` (the router does neither).
+- The sign-in screen's cyan button is the band's: it sits outside the form and names it
+  (`AUTH_FORM_ID`), so Enter in a field submits as before. The password reset form has no band and keeps its own
+  button.
+- The legal pages have no band, and the text itself (`content/legal.ts`) is not styled into anything else.
+
+`pages/Landing.test.tsx` holds the guard on what the landing page may claim: a list of words it never uses, no
+digits, and the disclosures that must stay (the Gmail paragraph and its Privacy Policy link, the extension's
+early-tester status).
+
 ## Fonts and brand files
 
 The typefaces are Newsreader (display), IBM Plex Sans (body) and IBM Plex Mono (provenance), served from
