@@ -134,6 +134,13 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     # Saving a key makes a live call to the provider to check it. Without a bound this is a
     # way to test other people's stolen keys through this server.
     "credential_save": (30, HOUR),
+    # Listing a provider's models with a key the caller sends is a key check by another name
+    # (a good key answers, a bad one is refused), so it is bounded the same way as saving one.
+    "credential_models": (30, HOUR),
+    # Choosing a model makes one real, tiny completion on the caller's own key.
+    "credential_model": (30, HOUR),
+    # The OpenRouter sign-in exchange: one call to OpenRouter and one key check per click.
+    "credential_exchange": (30, HOUR),
     # The extension reports one small count-only record each time an autofill finishes: a
     # single insert, no model, provider or compile call. A person fills a handful of forms an
     # hour; the bound is only there so a stuck client loop cannot grow the event log without

@@ -69,6 +69,7 @@ from .job_registry_poller import run_poller_forever
 from .latex_service_client import _base_url as latex_service_base_url
 from .latex_service_client import latex_max_concurrency
 from .link_routes import router as link_router
+from .llm_credentials_routes import router as llm_credentials_router
 from .logging_setup import configure_logging, request_id_var
 from .outbox_store import _DEFAULT_POLL_INTERVAL_SECONDS as OUTBOX_POLL_INTERVAL_SECONDS
 from .outbox_store import run_worker_forever
@@ -478,6 +479,7 @@ app.include_router(discord_router)
 app.include_router(profile_router)
 app.include_router(applications_router)
 app.include_router(credentials_router)
+app.include_router(llm_credentials_router)
 app.include_router(link_router)
 app.include_router(resume_documents_router)
 app.include_router(today_router)

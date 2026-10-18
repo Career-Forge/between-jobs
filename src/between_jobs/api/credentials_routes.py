@@ -36,7 +36,18 @@ current docs, not a regular saved API key) -- validating an Exa key
 costs a real, tiny (`numResults=1`) search call, same tradeoff as the
 other six.
 
-Saving an LLM credential also upserts the "default" capability_preference
+MODEL PROVIDERS BEYOND OPENROUTER (OpenAI, Anthropic, Google Gemini, xAI, DeepSeek, Qwen and a
+custom OpenAI-compatible host from an allowlist) live in `provider_registry.py`, which is also
+why they are not in `_SUPPORTED_CREDENTIALS` below: that table is the list of providers with a
+hand-written validator in this file, and the web app's status table is checked against it. Their
+key checks are in `provider_checks.py`, and the routes that list models, choose one and connect
+OpenRouter in one click are in `llm_credentials_routes.py`. The rules that hold for every one of
+them: a key is only stored after the provider accepts it; an address comes from the registry,
+never from the request (a `base_url` is taken only for the `custom` provider, and only if it is
+one of the allowed addresses); and a key can be stored with no model, which is then a credential
+that is saved and not usable (`setup_state` is `needs_model`) until one is chosen.
+
+Saving an LLM credential WITH a model also upserts the "default" capability_preference
 to point at it -- the only capability distinction this platform draws for
 LLM execution mode is "configured or not." Search-provider credentials
 (You.com, Firecrawl, Serper, Brave, JSearch, Adzuna, USAJobs) don't touch
@@ -60,9 +71,19 @@ from supabase import AsyncClient
 from .app_state import get_http_client, get_supabase
 from .auth import require_user_id
 from .capability_preferences_store import DEFAULT_CAPABILITY, set_preference
+from .credential_resolver import llm_setup_state
 from .errors import ApiError
 from .models import SaveCredentialRequest
+from .provider_checks import Inconclusive, check_key, probe_model
 from .provider_credentials_store import delete_credential, list_credentials, save_credential
+from .provider_registry import (
+    OPENROUTER,
+    PROVIDERS,
+    BaseUrlRejected,
+    effective_base_url,
+    invalid_input,
+    storable_base_url,
+)
 from .rate_limits import limit
 
 router = APIRouter(prefix="/credentials")
@@ -441,6 +462,87 @@ def _redact(row: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in row.items() if k not in ("secret_encrypted", "secret_2_encrypted")}
 
 
+async def _model_already_chosen(
+    supabase: AsyncClient, user_id: str, provider: str, sent: str | None
+) -> str | None:
+    """The model to store with a key: the one sent, else the one this person's saved key for
+    the provider already has, so replacing a key (a rotation) does not forget which model it
+    was used with."""
+    if sent:
+        return sent
+    for row in await list_credentials(supabase, user_id, service="llm"):
+        if row.get("provider") == provider:
+            kept = row.get("model")
+            return kept if isinstance(kept, str) and kept else None
+    return None
+
+
+def public_credential(row: dict[str, Any]) -> dict[str, Any]:
+    """A credential row as the client sees it: no ciphertext, and for a model key a
+    `setup_state` (`ready`, `needs_model` or `needs_key`, see `llm_setup_state`)."""
+    out = _redact(row)
+    if out.get("service") == "llm":
+        out["setup_state"] = llm_setup_state(row)
+    return out
+
+
+async def _save_registry_llm_credential(
+    body: SaveCredentialRequest,
+    user_id: str,
+    supabase: AsyncClient,
+    http: httpx.AsyncClient,
+) -> dict[str, Any]:
+    """Saves a key for a provider in the registry (everything but OpenRouter): the address is
+    worked out first, the key is checked, and a model, if one was sent, is proved with a real
+    completion. Nothing is stored unless every step passed."""
+    spec = PROVIDERS.get(body.provider)
+    if spec is None or spec.id == OPENROUTER:
+        raise ApiError("INVALID_INPUT", f"llm/{body.provider} isn't a supported credential yet.")
+    try:
+        stored_url = storable_base_url(
+            spec, region=body.region, workspace_id=body.workspace_id, base_url=body.base_url
+        )
+        call_url = effective_base_url(spec.id, stored_url)
+    except BaseUrlRejected as e:
+        raise invalid_input(e) from e
+
+    try:
+        await check_key(http, spec, call_url, body.secret)
+    except Inconclusive:
+        # This provider has no route that can say whether a key is good: one real completion
+        # with a model the person names is the check (below).
+        if not body.model:
+            raise ApiError(
+                "INVALID_INPUT",
+                f"{spec.name} has no free way to check a key. Send a model id too, so the key "
+                "can be checked with one tiny request.",
+                details={"reason": "model_required_to_check_key", "provider": spec.id},
+            ) from None
+    if body.model:
+        await probe_model(api_key=body.secret, model=body.model, base_url=call_url)
+
+    saved = await save_credential(
+        supabase,
+        user_id,
+        service="llm",
+        provider=spec.id,
+        secret=body.secret,
+        model=await _model_already_chosen(supabase, user_id, spec.id, body.model),
+        base_url=stored_url,
+        is_validated=True,
+    )
+    if body.model:
+        await set_preference(
+            supabase,
+            user_id,
+            capability=DEFAULT_CAPABILITY,
+            execution_mode="byok_first_party",
+            provider=spec.id,
+            model=body.model,
+        )
+    return public_credential(saved)
+
+
 @router.post("", status_code=201, dependencies=[Depends(limit("credential_save"))])
 async def save_credential_route(
     body: SaveCredentialRequest,
@@ -449,10 +551,24 @@ async def save_credential_route(
     http: httpx.AsyncClient = Depends(get_http_client),
 ) -> dict[str, Any]:
     key = (body.service, body.provider)
+    if body.service == "llm" and body.provider in PROVIDERS and body.provider != OPENROUTER:
+        return await _save_registry_llm_credential(body, user_id, supabase, http)
     if key not in _SUPPORTED_CREDENTIALS:
         raise ApiError(
             "INVALID_INPUT", f"{body.service}/{body.provider} isn't a supported credential yet."
         )
+    if key == ("llm", OPENROUTER) and (body.region or body.workspace_id):
+        raise ApiError("INVALID_INPUT", "OpenRouter does not take a region or workspace id.")
+    if key == ("llm", OPENROUTER):
+        try:
+            storable_base_url(
+                PROVIDERS[OPENROUTER],
+                region=None,
+                workspace_id=None,
+                base_url=body.base_url,
+            )
+        except BaseUrlRejected as e:
+            raise invalid_input(e) from e
 
     if key in _TWO_SECRET_PROVIDERS:
         if not body.secret_2:
@@ -469,12 +585,21 @@ async def save_credential_route(
         service=body.service,
         provider=body.provider,
         secret=body.secret,
-        model=body.model,
-        base_url=body.base_url,
+        model=(
+            await _model_already_chosen(supabase, user_id, body.provider, body.model)
+            if body.service == "llm"
+            else body.model
+        ),
+        # OpenRouter has one address and the resolver supplies it; nothing is stored for it. (A
+        # custom address used to be stored here and sent the key wherever it pointed.)
+        base_url=None if key == ("llm", OPENROUTER) else body.base_url,
         secret_2=body.secret_2 if key in _TWO_SECRET_PROVIDERS else None,
         is_validated=True,
     )
-    if body.service == "llm":
+    if body.service == "llm" and body.model:
+        # A key with no model sets no default: it is saved, and `needs_model` until a model is
+        # chosen (llm_credentials_routes.py). The model sent along with an OpenRouter key is
+        # stored as it always was, without a completion; choosing it afterwards proves it.
         await set_preference(
             supabase,
             user_id,
@@ -483,7 +608,7 @@ async def save_credential_route(
             provider=body.provider,
             model=body.model,
         )
-    return _redact(saved)
+    return public_credential(saved)
 
 
 @router.get("")
@@ -492,7 +617,7 @@ async def list_credentials_route(
     supabase: AsyncClient = Depends(get_supabase),
 ) -> list[dict[str, Any]]:
     rows = await list_credentials(supabase, user_id)
-    return [_redact(row) for row in rows]
+    return [public_credential(row) for row in rows]
 
 
 @router.delete("/{service}/{provider}", status_code=204)

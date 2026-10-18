@@ -134,6 +134,24 @@ async def get_decrypted_credential(
     }
 
 
+async def set_credential_model(
+    supabase: AsyncClient, user_id: str, *, service: str, provider: str, model: str
+) -> dict[str, Any] | None:
+    """Sets which model one person's saved key is used with, leaving the encrypted secret and
+    every other column alone. The updated row, or None when the person has no such credential
+    (it was deleted since the caller read it): nothing is created."""
+    result = await (
+        supabase.table("provider_credentials")
+        .update({"model": model})
+        .eq("user_id", user_id)
+        .eq("service", service)
+        .eq("provider", provider)
+        .execute()
+    )
+    rows = cast(list[dict[str, Any]], result.data)
+    return rows[0] if rows else None
+
+
 async def mark_credential_unvalidated(
     supabase: AsyncClient, user_id: str, *, service: str, provider: str
 ) -> bool:

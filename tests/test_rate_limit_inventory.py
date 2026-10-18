@@ -79,6 +79,11 @@ LIMITED: dict[str, str] = {
     "POST /discover/track": "job_ingest",
     # Saving a key makes a live call to the provider to check it.
     "POST /credentials": "credential_save",
+    # Listing a provider's models with a key from the body is a key check by another name; the
+    # model choice makes one real, tiny completion; the OpenRouter exchange calls OpenRouter.
+    "POST /credentials/llm/models": "credential_models",
+    "PUT /credentials/llm/{provider}/model": "credential_model",
+    "POST /credentials/openrouter/exchange": "credential_exchange",
     # One small insert per finished autofill, bounded so a stuck client cannot grow the log.
     "POST /extension/fill-outcome": "fill_outcome",
     # Importing a resume file: server-side text extraction and one or two model calls.
@@ -175,6 +180,7 @@ UNLIMITED: dict[str, str] = {
     "POST /hiring-signals/searches": _DB_ONLY,
     "DELETE /hiring-signals/searches/{search_id}": _DB_ONLY,
     "GET /credentials": _DB_ONLY,
+    "GET /credentials/llm/providers": "returns the static provider registry; no I/O at all",
     "DELETE /credentials/{service}/{provider}": _DB_ONLY,
     "GET /profile/current": _DB_ONLY,
     "GET /profile/versions/{version_id}": _DB_ONLY,
@@ -458,9 +464,14 @@ EXPENSIVE_NAMES = frozenset(
         "enrich_candidate",
         "enrich_hunter",
         "find_linkedin_exa",
-        # the key validators, which call the provider (credentials_routes)
+        # the key validators, which call the provider (credentials_routes), and the model
+        # providers' own checks, model lists, completion probe and OAuth exchange
         "_VALIDATORS",
         "_TWO_SECRET_VALIDATORS",
+        "check_key",
+        "list_models",
+        "probe_model",
+        "exchange_code",
     }
 )
 """What it means for a handler to spend money or heavy compute. A name, not a type: the scan
