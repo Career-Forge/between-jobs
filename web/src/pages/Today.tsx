@@ -6,6 +6,7 @@ import { apiFetch } from "../lib/api";
 import { ACCOUNT_STILL_LOADING, firstRunFactsOf, readAccount, type AccountReads } from "../lib/firstRun";
 import { nextStepWithRow, type NextStepInput, type SetupCheck } from "../lib/nextStep";
 import { parseTodayIntent, todayLit, type TodayRowId } from "../lib/nextStep/pages/today";
+import { gmailAccess } from "../lib/gmailAccess";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { failureOf, type Failure } from "../lib/setupRequired";
 import {
@@ -21,6 +22,7 @@ import {
   type RowContext,
   type TodayItem,
 } from "../lib/todayFeed";
+import { useCapabilities } from "../lib/useCapabilities";
 import { useMediaQuery } from "../lib/useMediaQuery";
 
 // Today, the page a signed-in person lands on. It says one thing to do next: the next-step band
@@ -171,7 +173,10 @@ export default function Today() {
   );
 
   const firstRunFacts = useMemo(() => firstRunFactsOf(account.reads), [account.reads]);
-  const background = useMemo(() => backgroundView(searches, account.reads.credentials), [searches, account.reads.credentials]);
+  // Whether Gmail is open to this person is the server's answer (GET /capabilities, asked once by
+  // the shell); the trail claims nothing about Gmail until it is a definite yes.
+  const gmail = gmailAccess(useCapabilities());
+  const background = useMemo(() => backgroundView(searches, account.reads.credentials, gmail), [searches, account.reads.credentials, gmail]);
 
   const profile = account.reads.profile;
   const notes: AccountNotes = {

@@ -14,7 +14,7 @@ import { formatTrailDate, formatTrailTime, mono } from "./trail";
 import type { TrackDiscoveredJobBody } from "./discoverTypes";
 import { savedSearchLabel } from "./discover";
 import { parseSavedSearch } from "./savedSearches";
-import { gmailConnection, type GmailConnection, type GmailCredentialRow } from "./gmailAccess";
+import { gmailConnection, gmailState, type GmailAccess, type GmailCredentialRow } from "./gmailAccess";
 import { CROSS_NAV_HASH } from "./applicationsBoard";
 import {
   AUTO_MOVE_PERCENT,
@@ -487,7 +487,16 @@ export interface BackgroundView {
         checkedAt: string | null;
         entries: readonly SearchEntry[];
       };
-  gmail: { state: "loading" } | { state: "failed" } | { state: "ready"; connection: GmailConnection["kind"] };
+  /**
+   * "hidden": nothing is said about Gmail, because it is not known to be open to this person
+   * (the capabilities are still being asked, or asking failed) or it is known not to be: a stored
+   * connection is then not being read, whatever the credential list holds.
+   */
+  gmail:
+    | { state: "hidden" }
+    | { state: "loading" }
+    | { state: "failed" }
+    | { state: "ready"; connection: "none" | "connected" | "reconnect_needed" };
 }
 
 // The fields of a credential row the Gmail check reads. A row missing one is read as it is: a
@@ -501,13 +510,31 @@ function gmailRowOf(row: Record<string, unknown>): GmailCredentialRow {
   };
 }
 
-export function backgroundView(searches: SearchesRead, credentials: Fetched<readonly Record<string, unknown>[]>): BackgroundView {
-  const gmail: BackgroundView["gmail"] =
-    credentials.kind === "loading"
-      ? { state: "loading" }
-      : credentials.kind === "failed"
-        ? { state: "failed" }
-        : { state: "ready", connection: gmailConnection(credentials.value.map(gmailRowOf)).kind };
+// What the trail says about Gmail is decided the way every other Gmail surface decides it
+// (gmailState): the connection the credential list shows counts only for a person Gmail is open
+// to. The reply checker reads nothing for anyone else, so "replies read on your key" would be false.
+function gmailViewOf(
+  credentials: Fetched<readonly Record<string, unknown>[]>,
+  access: GmailAccess,
+): BackgroundView["gmail"] {
+  const connection = credentials.kind === "ok" ? gmailConnection(credentials.value.map(gmailRowOf)) : ({ kind: "unknown" } as const);
+  const state = gmailState(access, connection);
+  if (state === "availability_unknown" || state === "unavailable") return { state: "hidden" };
+  if (credentials.kind === "loading") return { state: "loading" };
+  if (credentials.kind === "failed") return { state: "failed" };
+  if (state === "not_connected") return { state: "ready", connection: "none" };
+  if (state === "connected") return { state: "ready", connection: "connected" };
+  if (state === "reconnect_needed") return { state: "ready", connection: "reconnect_needed" };
+  // "unknown" cannot happen once the list is read; the credential list is not claimed about.
+  return { state: "failed" };
+}
+
+export function backgroundView(
+  searches: SearchesRead,
+  credentials: Fetched<readonly Record<string, unknown>[]>,
+  access: GmailAccess,
+): BackgroundView {
+  const gmail = gmailViewOf(credentials, access);
   if (searches.state !== "ready") return { searches, gmail };
   const entries: SearchEntry[] = searches.searches.map((search) => {
     const at = checkedAt(search);

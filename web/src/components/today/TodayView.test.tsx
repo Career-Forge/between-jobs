@@ -2,6 +2,7 @@
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type { Fetched } from "../../lib/firstRun";
+import type { GmailAccess } from "../../lib/gmailAccess";
 import { nextStepWithRow, type NextStepInput } from "../../lib/nextStep";
 import { todayLit, type TodayRowId } from "../../lib/nextStep/pages/today";
 import { SETTINGS_PATH } from "../../lib/settingsPaths";
@@ -82,6 +83,8 @@ interface Scenario {
   busy?: TodayViewProps["busy"];
   problems?: TodayViewProps["problems"];
   trackedUrls?: Record<string, string>;
+  /** Whether Gmail is open to this person; open unless a case says otherwise. */
+  gmail?: GmailAccess;
 }
 
 // Builds the props the way pages/Today.tsx does, then lets a test override what it is about.
@@ -121,7 +124,7 @@ function props(scenario: Scenario = {}, handlers: Partial<TodayViewProps> = {}):
     tracked: scenario.trackedUrls ?? {},
     busy: scenario.busy ?? {},
     problems: scenario.problems ?? {},
-    background: backgroundView(searches, credentials),
+    background: backgroundView(searches, credentials, scenario.gmail ?? "available"),
     account: { ...NO_NOTES, ...scenario.notes },
     checklist: null,
     onBandAction: vi.fn(),
@@ -562,6 +565,28 @@ describe("the margin and the inline trail", () => {
     expect(words(query(container, "button.bj-bg-toggle"))).toContain("Gmail replies read on your key");
     click(query(container, "button.bj-bg-toggle"));
     expect(words(query(container, ".bj-bg-body"))).toContain("✦ Gmail replies read by your model · on your key");
+  });
+
+  it("says nothing about Gmail replies while it is not known to be open to this person, or when it is not", () => {
+    const connected = ok([{ service: "oauth", provider: "gmail", is_validated: true, scope: "https://www.googleapis.com/auth/gmail.readonly" }]);
+    for (const gmail of ["unknown", "not_for_you", "not_on_server"] as const) {
+      const wide = draw({ items: [], credentials: connected, gmail, wide: true });
+      const margin = words(query(wide.container, ".bj-today-margin"));
+      expect(margin).not.toContain("Gmail");
+      expect(margin).not.toContain("replies");
+      wide.unmount();
+      const narrow = draw({ items: [], credentials: connected, gmail, wide: false });
+      expect(words(query(narrow.container, "button.bj-bg-toggle"))).not.toContain("Gmail");
+      click(query(narrow.container, "button.bj-bg-toggle"));
+      expect(words(query(narrow.container, ".bj-bg-body"))).not.toContain("Gmail");
+      narrow.unmount();
+    }
+  });
+
+  it("does not offer to reconnect a Gmail connection it is not reading", () => {
+    const ended = ok([{ service: "oauth", provider: "gmail", is_validated: false, scope: "https://www.googleapis.com/auth/gmail.readonly" }]);
+    const { container } = draw({ items: [], credentials: ended, gmail: "not_for_you", wide: true });
+    expect(words(query(container, ".bj-today-margin"))).not.toContain("Reconnect");
   });
 
   it("says Not connected, in words with no glyph, and does not say replies are read", () => {

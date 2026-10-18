@@ -23,6 +23,7 @@ import {
   type RowContext,
   type TodayItem,
 } from "./todayFeed";
+import type { GmailAccess } from "./gmailAccess";
 import { buildReceipt, buildTrail, findForbiddenWord } from "./trail";
 
 // The feed as the page draws it. Every line a person reads is built from a returned field, so these
@@ -397,6 +398,7 @@ describe("the background trail", () => {
     const view = backgroundView(
       searchesRead(ok([search("a", { last_matched_at: "2026-09-22T06:00:00Z" }), search("b", { is_active: false }), search("c", { last_matched_at: "2026-09-21T06:00:00Z" })])),
       ok([]),
+      "available",
     );
     expect(view.searches).toMatchObject({ state: "ready", total: 3, active: 2, paused: 1, checkedAt: "2026-09-22T06:00:00Z" });
     if (view.searches.state !== "ready") throw new Error("expected searches");
@@ -404,14 +406,14 @@ describe("the background trail", () => {
   });
 
   it("has no check time when no search has run", () => {
-    const view = backgroundView(searchesRead(ok([search("a")])), ok([]));
+    const view = backgroundView(searchesRead(ok([search("a")])), ok([]), "available");
     expect(view.searches).toMatchObject({ checkedAt: null });
     if (view.searches.state !== "ready") throw new Error("expected searches");
     expect(view.searches.entries[0].status).toBe("not_checked");
   });
 
   it("reads Gmail from the credentials in its three states, and as its own failure", () => {
-    const gmail = (rows: unknown) => backgroundView({ state: "loading" }, rows as never).gmail;
+    const gmail = (rows: unknown, access: GmailAccess = "available") => backgroundView({ state: "loading" }, rows as never, access).gmail;
     expect(gmail(loading)).toEqual({ state: "loading" });
     expect(gmail(failed)).toEqual({ state: "failed" });
     expect(gmail(ok([]))).toEqual({ state: "ready", connection: "none" });
@@ -420,9 +422,22 @@ describe("the background trail", () => {
     expect(gmail(ok([{ service: "oauth", provider: "gmail", is_validated: true, scope: null }]))).toEqual({ state: "ready", connection: "reconnect_needed" });
   });
 
+  it("claims nothing about Gmail unless it is open to this person, whatever the credential list holds", () => {
+    const connected = ok([{ service: "oauth", provider: "gmail", is_validated: true, scope: "https://www.googleapis.com/auth/gmail.readonly" }]);
+    const ended = ok([{ service: "oauth", provider: "gmail", is_validated: false, scope: "https://www.googleapis.com/auth/gmail.readonly" }]);
+    const gmail = (rows: unknown, access: GmailAccess) => backgroundView({ state: "loading" }, rows as never, access).gmail;
+    // Still being asked, or asking failed: not known, so neither "connected" nor "reconnect" is said.
+    for (const rows of [connected, ended, ok([]), loading, failed]) expect(gmail(rows, "unknown")).toEqual({ state: "hidden" });
+    // Known not to be for this person, or not on this server: a stored connection is not being read.
+    for (const access of ["not_for_you", "not_on_server"] as const) {
+      for (const rows of [connected, ended, ok([])]) expect(gmail(rows, access)).toEqual({ state: "hidden" });
+    }
+    expect(gmail(connected, "available")).toEqual({ state: "ready", connection: "connected" });
+  });
+
   it("passes a loading or failed searches read through unchanged", () => {
-    expect(backgroundView({ state: "loading" }, ok([])).searches).toEqual({ state: "loading" });
-    expect(backgroundView({ state: "failed" }, ok([])).searches).toEqual({ state: "failed" });
+    expect(backgroundView({ state: "loading" }, ok([]), "available").searches).toEqual({ state: "loading" });
+    expect(backgroundView({ state: "failed" }, ok([]), "available").searches).toEqual({ state: "failed" });
   });
 
   describe("the words for a check", () => {
@@ -442,7 +457,7 @@ describe("the background trail", () => {
 
   describe("the saved-search line", () => {
     const ready = (rows: unknown[]) => {
-      const view = backgroundView(searchesRead(ok(rows as Record<string, unknown>[])), ok([]));
+      const view = backgroundView(searchesRead(ok(rows as Record<string, unknown>[])), ok([]), "available");
       if (view.searches.state !== "ready") throw new Error("expected searches");
       return view.searches;
     };

@@ -14,6 +14,11 @@ import Today from "./Today";
 const api = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock("../lib/api", () => ({ apiFetch: api.apiFetch }));
 vi.mock("../auth", () => ({ useAuth: () => ({ session: { user: { id: "user-1" } } }) }));
+// What the shell learned from GET /capabilities. It is asked once by the gate above the pages, not
+// by Today, so it is a mocked state here and not one of the page's own requests.
+const recorded = vi.hoisted(() => ({ caps: { kind: "checking" } as unknown }));
+vi.mock("../lib/useCapabilities", () => ({ useCapabilities: () => recorded.caps }));
+const GMAIL_OPEN = { kind: "ready", capabilities: { telegram: false, testerProgramRequired: false, telegramBotUsername: null, gmail: true, gmailAllowed: true } };
 
 type Reply = unknown | Error | (() => unknown);
 
@@ -117,6 +122,7 @@ beforeEach(() => {
     return typeof found === "function" ? (found as () => unknown)() : found;
   });
   answer();
+  recorded.caps = GMAIL_OPEN;
   memory.clear();
   Object.defineProperty(window, "localStorage", { configurable: true, value: storage });
   if (typeof crypto === "undefined" || typeof crypto.randomUUID !== "function") {
@@ -412,6 +418,47 @@ describe("a resume the fit check held back", () => {
     const setup = query(band(container), ".bj-state--setup");
     expect(words(setup)).toContain("Add a model key first.");
     expect(query(setup, "a").getAttribute("href")).toBe("/profile/integrations");
+  });
+});
+
+describe("what the trail says about Gmail", () => {
+  const CONNECTED = { service: "oauth", provider: "gmail", is_validated: true, scope: "https://www.googleapis.com/auth/gmail.readonly" };
+  const gmailLines = (container: HTMLElement) => words(query(container, "aside.bj-today-margin"));
+
+  it("says replies are read on the person's key once Gmail is open to them and connected", async () => {
+    answer({ "/credentials": [...GOOD_CREDENTIALS, CONNECTED] });
+    const { container } = await draw(1400);
+    expect(gmailLines(container)).toContain("Gmail replies read by your model");
+  });
+
+  it("claims nothing while it is not known whether Gmail is open to this person", async () => {
+    answer({ "/credentials": [...GOOD_CREDENTIALS, CONNECTED] });
+    for (const caps of [{ kind: "checking" }, { kind: "unavailable" }]) {
+      recorded.caps = caps;
+      const wide = await draw(1400);
+      expect(gmailLines(wide.container)).not.toContain("Gmail");
+      wide.unmount();
+      const narrow = await draw(1000);
+      expect(words(query(narrow.container, "button.bj-bg-toggle"))).not.toContain("Gmail");
+      narrow.unmount();
+    }
+  });
+
+  it("says nothing about reads or reconnecting for a person Gmail is not for, whatever they once connected", async () => {
+    recorded.caps = { kind: "ready", capabilities: { ...GMAIL_OPEN.capabilities, gmailAllowed: false } };
+    answer({ "/credentials": [...GOOD_CREDENTIALS, CONNECTED] });
+    const connected = await draw(1400);
+    expect(gmailLines(connected.container)).not.toContain("Gmail");
+    connected.unmount();
+    answer({ "/credentials": [...GOOD_CREDENTIALS, { ...CONNECTED, is_validated: false }] });
+    const ended = await draw(1400);
+    expect(gmailLines(ended.container)).not.toContain("Gmail");
+    expect(ended.container.textContent).not.toContain("Reconnect Gmail");
+  });
+
+  it("asks for nothing to learn it: the shell has already asked", async () => {
+    await draw();
+    expect(calls()).not.toContain("GET /capabilities");
   });
 });
 
