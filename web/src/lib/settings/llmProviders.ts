@@ -183,6 +183,8 @@ export interface ModelList {
   /** The server cut the list (at 500, newest first). */
   truncated: boolean;
   models: readonly ModelEntry[];
+  /** Entries the provider sent that were left out because their id is not one this page can use. */
+  skipped: number;
 }
 
 // The server's own rule for a model id (models.py MODEL_ID_PATTERN), so that an id typed here is
@@ -202,8 +204,13 @@ export function parseModelList(body: unknown): ModelList | null {
   const listing = body.listing === "unavailable" ? "unavailable" : "live";
   const models: ModelEntry[] = [];
   const seen = new Set<string>();
+  let skipped = 0;
   for (const raw of body.models) {
-    if (!isRecord(raw) || typeof raw.id !== "string" || !isModelId(raw.id) || seen.has(raw.id)) continue;
+    if (!isRecord(raw) || typeof raw.id !== "string" || !isModelId(raw.id)) {
+      skipped += 1;
+      continue;
+    }
+    if (seen.has(raw.id)) continue;
     seen.add(raw.id);
     const name = text(raw.name, 120);
     models.push({
@@ -214,7 +221,7 @@ export function parseModelList(body: unknown): ModelList | null {
       created: positiveInt(raw.created),
     });
   }
-  return { provider: body.provider, listing, truncated: body.truncated === true, models };
+  return { provider: body.provider, listing, truncated: body.truncated === true, models, skipped };
 }
 
 // The models matching what the person typed: every word of the query must appear in the id or the
