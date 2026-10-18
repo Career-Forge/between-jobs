@@ -16,7 +16,10 @@
 //  - WORDS NOT TO SAY. A trail never says a link was "verified" (a link check means "not found
 //    closed", never "verified live") and never names a model it was not told. A slot that does is
 //    left out, the same as a missing field; `findForbiddenWord` is exported so a page's tests can
-//    pin their own strings.
+//    pin their own strings. The ban is on the word, on purpose, so that it can be checked by a
+//    plain search: "unverified" and "not verified" are left out too. A trail that has to say what
+//    was not done says "not checked" or "not found closed"; wording that needs "verified" belongs
+//    in the receipt, where this rule does not apply.
 //
 // "Not set" has no trail and no glyph: `notSet()` is the plain muted word.
 
@@ -193,57 +196,96 @@ export function notSet(word: "Not set" | "Not connected" = "Not set"): TrailMode
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
-export interface TrailDateOptions {
+export interface TrailTimeOptions {
   /** Zone to read an instant in. Omit for the viewer's own; tests pass "UTC". */
   timeZone?: string;
-  /** With this, a date in another year than this one's is written with its year. */
-  now?: Date;
+}
+
+export interface TrailDateOptions extends TrailTimeOptions {
+  /**
+   * The moment "this year" is read from. Required: a date from another year than this one is
+   * written with its year, and without a clock to compare with, "Sep 22" could be any September.
+   * (This module has no clock of its own; the caller passes `new Date()`.)
+   */
+  now: Date;
 }
 
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-function dayWords(year: number, monthIndex: number, day: number, now: Date | undefined, timeZone: string | undefined): string {
+function dayWords(year: number, monthIndex: number, day: number, options: TrailDateOptions): string {
   const words = `${MONTHS[monthIndex]} ${day}`;
-  if (now === undefined) return words;
-  const nowYear = Number(new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone }).format(now));
+  const nowYear = Number(new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: options.timeZone }).format(options.now));
   return nowYear === year ? words : `${words}, ${year}`;
 }
 
-// "2026-09-22" -> "Sep 22"; "2026-09-22T14:00:00Z" -> "Sep 22" in the zone asked for. A date-only
-// value is a calendar day and is never shifted by a zone. Anything unreadable, or a day that does
-// not exist (2026-02-31), is null.
-export function formatTrailDate(value: unknown, options: TrailDateOptions = {}): string | null {
-  if (typeof value !== "string") return null;
-  const text = value.trim();
-  const plain = DATE_ONLY.exec(text);
-  if (plain !== null) {
-    const [year, month, day] = [Number(plain[1]), Number(plain[2]), Number(plain[3])];
-    const probe = new Date(Date.UTC(year, month - 1, day));
-    if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) return null;
-    return dayWords(year, month - 1, day, options.now, options.timeZone);
+// "2026-09-22" -> "Sep 22"; "2026-09-22T14:00:00Z" -> "Sep 22" in the zone asked for; a year other
+// than `now`'s is written out. A date-only value is a calendar day and is never shifted by a zone.
+// Anything unreadable is null: a day that does not exist (2026-02-31, with or without a time), an
+// hour or minute out of range, a zone the runtime does not know, or a missing or invalid `now`.
+export function formatTrailDate(value: unknown, options: TrailDateOptions): string | null {
+  // `options?.` because an untyped caller can still leave the whole argument out.
+  const now: unknown = options?.now;
+  if (typeof value !== "string" || !(now instanceof Date) || Number.isNaN(now.getTime())) return null;
+  try {
+    const text = value.trim();
+    const plain = DATE_ONLY.exec(text);
+    if (plain !== null) {
+      const [year, month, day] = [Number(plain[1]), Number(plain[2]), Number(plain[3])];
+      if (!isCalendarDay(year, month, day)) return null;
+      return dayWords(year, month - 1, day, options);
+    }
+    const instant = readInstant(text);
+    if (instant === null) return null;
+    const parts = zonedParts(instant, options.timeZone);
+    return dayWords(parts.year, parts.month - 1, parts.day, options);
+  } catch {
+    // Intl throws a RangeError for a time zone it does not know.
+    return null;
   }
-  const instant = readInstant(text);
-  if (instant === null) return null;
-  const parts = zonedParts(instant, options.timeZone);
-  return dayWords(parts.year, parts.month - 1, parts.day, options.now, options.timeZone);
 }
 
 // "2026-09-22T06:00:00Z" -> "06:00" (24-hour). A date with no time in it has no time to show.
-export function formatTrailTime(value: unknown, options: TrailDateOptions = {}): string | null {
+export function formatTrailTime(value: unknown, options: TrailTimeOptions = {}): string | null {
   if (typeof value !== "string") return null;
-  const text = value.trim();
-  if (DATE_ONLY.test(text)) return null;
-  const instant = readInstant(text);
-  if (instant === null) return null;
-  const parts = zonedParts(instant, options.timeZone);
-  return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+  try {
+    const text = value.trim();
+    if (DATE_ONLY.test(text)) return null;
+    const instant = readInstant(text);
+    if (instant === null) return null;
+    const parts = zonedParts(instant, options.timeZone);
+    return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+  } catch {
+    return null;
+  }
 }
 
+function isCalendarDay(year: number, month: number, day: number): boolean {
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  return probe.getUTCFullYear() === year && probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day;
+}
+
+const INSTANT = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(?:Z|([+-])(\d{2}):?(\d{2}))$/;
+
 // An ISO 8601 instant with a zone designator (Z or +hh:mm); a bare local time is not an instant.
+// Every field is range-checked rather than handed to Date.parse, which rolls an impossible day
+// ("2026-02-31T10:00:00Z") over into the next month instead of refusing it.
 function readInstant(text: string): Date | null {
-  if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/.test(text)) return null;
-  const date = new Date(text.replace(" ", "T"));
-  return Number.isNaN(date.getTime()) ? null : date;
+  const match = INSTANT.exec(text);
+  if (match === null) return null;
+  const [year, month, day, hour, minute] = [match[1], match[2], match[3], match[4], match[5]].map(Number);
+  const second = match[6] === undefined ? 0 : Number(match[6]);
+  const millis = match[7] === undefined ? 0 : Math.floor(Number(`0.${match[7]}`) * 1000);
+  if (!isCalendarDay(year, month, day) || hour > 23 || minute > 59 || second > 59) return null;
+  let offsetMinutes = 0;
+  if (match[8] !== undefined) {
+    const [offsetHour, offsetMinute] = [Number(match[9]), Number(match[10])];
+    if (offsetHour > 23 || offsetMinute > 59) return null;
+    offsetMinutes = (match[8] === "-" ? -1 : 1) * (offsetHour * 60 + offsetMinute);
+  }
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(hour, minute, second, millis);
+  return new Date(date.getTime() - offsetMinutes * 60_000);
 }
 
 function zonedParts(date: Date, timeZone: string | undefined) {
@@ -284,7 +326,9 @@ export function buildReceipt(rows: readonly ReceiptRowInput[]): ReceiptModel | n
       if (note !== "") kept.push({ note });
       continue;
     }
-    const value = typeof row.value === "number" ? String(row.value) : typeof row.value === "string" ? row.value.trim() : "";
+    // NaN and Infinity are what a failed calculation leaves behind, not something that was returned.
+    const value =
+      typeof row.value === "number" ? (Number.isFinite(row.value) ? String(row.value) : "") : typeof row.value === "string" ? row.value.trim() : "";
     if (value !== "" && row.label.trim() !== "") kept.push({ label: row.label.trim(), value });
   }
   return kept.length === 0 ? null : { rows: kept };
