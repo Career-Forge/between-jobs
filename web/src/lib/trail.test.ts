@@ -194,6 +194,17 @@ describe("words a trail never says", () => {
     expect(findForbiddenWord("Link checked")).toBeNull();
   });
 
+  it("bans the word itself, honest negatives included, and keeps them for the receipt", () => {
+    // Deliberate: a plain search for the word has to be enough to check a page. A trail that must
+    // say what was not done says "not checked"; the receipt is where other wording may go.
+    for (const text of ["unverified", "not verified", "couldn't be verified"]) {
+      expect(findForbiddenWord(text)).not.toBeNull();
+      expect(buildTrail({ actor: "Checked by code", basis: text })?.text).toBe("Checked by code");
+      expect(buildReceipt([{ label: "link", value: text }])?.rows).toEqual([{ label: "link", value: text }]);
+    }
+    expect(buildTrail({ actor: "Checked by code", basis: "not checked" })?.text).toBe("Checked by code · not checked");
+  });
+
   it("leaves a slot out rather than say them", () => {
     const model = buildTrail({ glyph: "passed", actor: "Link verified", basis: "on the company's job board at last poll" });
     expect(model?.text).toBe("on the company's job board at last poll");
@@ -220,30 +231,72 @@ describe("words a trail never says", () => {
 });
 
 describe("dates and times from returned fields", () => {
+  const now = new Date("2026-10-18T12:00:00Z");
+  const utc = { now, timeZone: "UTC" };
+
   it("reads a calendar day without shifting it by a zone", () => {
-    expect(formatTrailDate("2026-09-22")).toBe("Sep 22");
-    expect(formatTrailDate("2026-01-05", { timeZone: "Pacific/Kiritimati" })).toBe("Jan 5");
+    expect(formatTrailDate("2026-09-22", { now })).toBe("Sep 22");
+    expect(formatTrailDate("2026-01-05", { now, timeZone: "Pacific/Kiritimati" })).toBe("Jan 5");
   });
 
   it("reads an instant in the zone asked for", () => {
-    expect(formatTrailDate("2026-09-22T23:30:00Z", { timeZone: "UTC" })).toBe("Sep 22");
-    expect(formatTrailDate("2026-09-22T23:30:00Z", { timeZone: "Asia/Kolkata" })).toBe("Sep 23");
+    expect(formatTrailDate("2026-09-22T23:30:00Z", utc)).toBe("Sep 22");
+    expect(formatTrailDate("2026-09-22T23:30:00Z", { now, timeZone: "Asia/Kolkata" })).toBe("Sep 23");
     expect(formatTrailTime("2026-09-22T06:00:00Z", { timeZone: "UTC" })).toBe("06:00");
     expect(formatTrailTime("2026-09-22T06:00:00-04:00", { timeZone: "UTC" })).toBe("10:00");
+    expect(formatTrailTime("2026-09-22T06:00:00-0400", { timeZone: "UTC" })).toBe("10:00");
+    expect(formatTrailTime("2026-09-22 06:00:00.250+05:30", { timeZone: "UTC" })).toBe("00:30");
   });
 
-  it("adds the year only when another year than `now` is meant", () => {
-    const now = new Date("2026-10-18T12:00:00Z");
-    expect(formatTrailDate("2026-09-22", { now, timeZone: "UTC" })).toBe("Sep 22");
-    expect(formatTrailDate("2025-09-22", { now, timeZone: "UTC" })).toBe("Sep 22, 2025");
+  it("adds the year when it is another year than `now`'s", () => {
+    expect(formatTrailDate("2026-09-22", utc)).toBe("Sep 22");
+    expect(formatTrailDate("2025-09-22", utc)).toBe("Sep 22, 2025");
+    expect(formatTrailDate("2025-09-22T10:00:00Z", utc)).toBe("Sep 22, 2025");
+  });
+
+  it("never reads an old date as this year's: `now` is not optional", () => {
+    // @ts-expect-error the options (and with them `now`) are required
+    expect(formatTrailDate("2019-09-22")).toBeNull();
+    // @ts-expect-error `now` is required, even when only a zone is given
+    expect(formatTrailDate("2019-09-22", { timeZone: "UTC" })).toBeNull();
+    expect(formatTrailDate("2019-09-22", { now: new Date("not a date") })).toBeNull();
   });
 
   it("says nothing for what it cannot read exactly", () => {
     for (const bad of [null, undefined, 42, "", "yesterday", "2026-02-31", "2026-13-01", "2026-09-22T06:00:00", "09/22/2026", {}]) {
-      expect(formatTrailDate(bad)).toBeNull();
+      expect(formatTrailDate(bad, utc)).toBeNull();
     }
     expect(formatTrailTime("2026-09-22")).toBeNull();
     expect(formatTrailTime("not a time")).toBeNull();
+  });
+
+  it("does not roll an impossible instant into the next month or day", () => {
+    const impossible = [
+      "2026-02-31T10:00:00Z",
+      "2026-04-31T10:00:00Z",
+      "2025-02-29T10:00:00Z",
+      "2026-13-01T10:00:00Z",
+      "2026-00-10T10:00:00Z",
+      "2026-09-00T10:00:00Z",
+      "2026-09-22T24:00:00Z",
+      "2026-09-22T25:00:00Z",
+      "2026-09-22T10:60:00Z",
+      "2026-09-22T10:00:60Z",
+      "2026-09-22T10:00:00+24:00",
+      "2026-09-22T10:00:00+05:60",
+    ];
+    for (const bad of impossible) {
+      expect(formatTrailDate(bad, utc), bad).toBeNull();
+      expect(formatTrailTime(bad, { timeZone: "UTC" }), bad).toBeNull();
+    }
+    // A real leap day is fine.
+    expect(formatTrailDate("2024-02-29T10:00:00Z", utc)).toBe("Feb 29, 2024");
+  });
+
+  it("says nothing, rather than throwing, for a time zone it does not know", () => {
+    expect(formatTrailDate("2026-09-22T10:00:00Z", { now, timeZone: "Bogus/Zone" })).toBeNull();
+    expect(formatTrailDate("2026-09-22", { now, timeZone: "Bogus/Zone" })).toBeNull();
+    expect(formatTrailTime("2026-09-22T10:00:00Z", { timeZone: "Bogus/Zone" })).toBeNull();
   });
 });
 
@@ -263,6 +316,14 @@ describe("receipts", () => {
       { label: "ATS", value: "64 -> 72" },
       { label: "attempts", value: "2" },
       { note: "From an earlier successful generation" },
+    ]);
+  });
+
+  it("leaves out a number that is not a number, so a failed calculation is not shown as returned", () => {
+    expect(buildReceipt([{ label: "a", value: Number.NaN }, { label: "b", value: Number.POSITIVE_INFINITY }, { label: "c", value: Number.NEGATIVE_INFINITY }])).toBeNull();
+    expect(buildReceipt([{ label: "a", value: Number.NaN }, { label: "zero", value: 0 }, { label: "neg", value: -1.5 }])?.rows).toEqual([
+      { label: "zero", value: "0" },
+      { label: "neg", value: "-1.5" },
     ]);
   });
 
