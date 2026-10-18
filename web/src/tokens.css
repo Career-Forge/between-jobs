@@ -130,7 +130,12 @@ body {
   padding: 0;
 }
 
+/* viewport-fit=cover (index.html) lets the page draw under a notch, so the left and right insets are
+   padded here for everything in the flow. The top and bottom insets belong to the top bar and the tab
+   bar, and the fixed tab bar and More sheet pad their own sides. All of it is 0 off a notched phone. */
 body {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   background: var(--bj-bg);
   color: var(--bj-text);
   font-family: var(--bj-font-body);

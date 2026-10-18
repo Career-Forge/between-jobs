@@ -8,8 +8,8 @@
 /* The first tab stop of a page: out of sight until it has focus. */
 .bj-skip-link {
   position: absolute;
-  top: var(--bj-space-2);
-  left: var(--bj-space-2);
+  top: calc(var(--bj-space-2) + env(safe-area-inset-top));
+  left: calc(var(--bj-space-2) + env(safe-area-inset-left));
   z-index: 100;
   display: inline-flex;
   align-items: center;
@@ -219,7 +219,7 @@
   z-index: 30;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 2px;
-  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  padding: 4px max(4px, env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left));
   background: var(--bj-bg);
   border-top: 1px solid var(--bj-border);
 }
@@ -261,7 +261,11 @@
 
 .bj-tab span {
   max-width: 100%;
-  white-space: nowrap;
+  text-align: center;
+  /* The labels fit on one line at every width down to 320px, so this only ever applies when a
+     person's own text-spacing or zoom settings make a label wider than its cell: a long word then
+     breaks instead of running into its neighbour or out of the selection pill. */
+  overflow-wrap: anywhere;
 }
 
 /* The More sheet: a modal <dialog> pinned to the bottom edge. */
@@ -294,7 +298,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--bj-space-2);
-  padding: var(--bj-space-4) var(--bj-space-4) calc(var(--bj-space-4) + env(safe-area-inset-bottom));
+  padding: var(--bj-space-4) max(var(--bj-space-4), env(safe-area-inset-right)) calc(var(--bj-space-4) + env(safe-area-inset-bottom))
+    max(var(--bj-space-4), env(safe-area-inset-left));
 }
 
 .bj-more-head {
@@ -350,7 +355,17 @@
 }
 
 .bj-more-sheet .bj-legal-links {
-  padding: var(--bj-space-2) var(--bj-space-3) 0;
+  flex-direction: column;
+  gap: 0;
+  padding: var(--bj-space-2) 0 0;
+}
+
+/* The two legal links are rows of the sheet, so they get the same 44px phone target as the rest. */
+.bj-more-sheet .bj-legal-links a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--bj-space-3);
 }
 
 /* The page behind an open sheet does not scroll. */
@@ -377,6 +392,14 @@ body:has(.bj-more-sheet[open]) {
 }
 
 @media (max-width: 959px) {
+  /* The sticky top bar and the fixed tab bar are opaque, so a focused control, or the target of a
+     fragment link, that the browser scrolls to the very edge would sit underneath one. This keeps
+     the scrolled-to element clear of both: bar height + safe area + 8px of air. */
+  html {
+    scroll-padding-top: calc(56px + env(safe-area-inset-top) + var(--bj-space-2));
+    scroll-padding-bottom: calc(65px + env(safe-area-inset-bottom) + var(--bj-space-2));
+  }
+
   .bj-shell {
     flex-direction: column;
   }
@@ -397,6 +420,19 @@ body:has(.bj-more-sheet[open]) {
     width: 100%;
     max-width: none;
     padding: var(--bj-space-4) var(--bj-space-4) calc(72px + var(--bj-space-4) + env(safe-area-inset-bottom));
+  }
+}
+
+/* Phones narrower than 375px: the longest label ("Applications", 70px at 12px) no longer fits its
+   cell with the 2px gaps (68.8px at 360px, 60.8px at 320px). The gaps go and the label drops to
+   11px, which fits down to 320px, so the word stays inside its own pill. */
+@media (max-width: 374px) {
+  .bj-tabbar {
+    gap: 0;
+  }
+
+  .bj-tab {
+    font-size: 11px;
   }
 }
 
