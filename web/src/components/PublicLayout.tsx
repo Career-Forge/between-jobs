@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { PRIVACY_EMAIL, REPO_URL, SUPPORT_EMAIL } from "../content/site";
+import { FONT_LICENSES_PATH, PRIVACY_EMAIL, REPO_URL, SUPPORT_EMAIL } from "../content/site";
 import { LANDING_PATH, LOGIN_PATH, REGISTER_PATH } from "../lib/publicRoutes";
 import { LegalLinks } from "./LegalLinks";
 import { MAIN_CONTENT_ID, SkipLink } from "./SkipLink";
@@ -39,6 +39,11 @@ export function PublicLayout({ children }: { children: ReactNode }) {
         <p className="bj-muted bj-small">
           <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
             Source code
+            <span className="bj-visually-hidden"> (opens in a new tab)</span>
+          </a>
+          {" · "}
+          <a href={FONT_LICENSES_PATH} target="_blank" rel="noopener noreferrer">
+            Font licenses
             <span className="bj-visually-hidden"> (opens in a new tab)</span>
           </a>
         </p>

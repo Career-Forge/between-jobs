@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { PublicLayout } from "../components/PublicLayout";
 import { LANDING } from "../content/landing";
-import { PRIVACY_EMAIL, REPO_URL, SUPPORT_EMAIL } from "../content/site";
+import { FONT_LICENSES_PATH, PRIVACY_EMAIL, REPO_URL, SUPPORT_EMAIL } from "../content/site";
 import { anchorsOf, headingLevels, tagsOf, textOfMarkup } from "../testing/markup";
 import Landing from "./Landing";
 import Privacy from "./Privacy";
@@ -130,6 +130,15 @@ describe("the landing page", () => {
       expect(text).toContain(feature.text);
     }
     expect((markup.match(/<li class="bj-landing-item">/g) ?? []).length).toBe(LANDING.features.length);
+  });
+
+  it("links the font licenses from the footer, in a new tab, with the same-origin text file", () => {
+    const footer = markup.slice(markup.indexOf("<footer"));
+    const link = anchorsOf(footer).find((anchor) => anchor.attributes.href === FONT_LICENSES_PATH);
+    expect(FONT_LICENSES_PATH).toBe("/licenses/fonts.txt");
+    expect(link?.attributes.target).toBe("_blank");
+    expect(link?.attributes.rel).toBe("noopener noreferrer");
+    expect(link?.text).toContain("Font licenses");
   });
 
   it("holds exactly one cyan fill, the hero's Create account, so the header's is outlined", () => {

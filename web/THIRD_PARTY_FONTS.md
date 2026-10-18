@@ -5,6 +5,10 @@ License 1.1; each family's license text is kept beside its files (`src/fonts/<fa
 requests a font from another host: the Content-Security-Policy allows `font-src 'self'` only, and
 `src/fonts.css` is the one place that names the files.
 
+The deployed site carries the notice too: `public/licenses/fonts.txt` holds the three license texts and is
+served at `/licenses/fonts.txt`, linked from the public footer. It is each `OFL.txt` copied verbatim, and
+`src/fonts.test.ts` fails when one of them changes and the served copy does not.
+
 | Family | Role | Copyright | Reserved Font Name |
 | --- | --- | --- | --- |
 | Newsreader | Display serif: job identity, headings, the next-step sentence | The Newsreader Project Authors (Production Type) | none |
@@ -66,5 +70,5 @@ cut from the font size and one file serves every weight. Newsreader declares no 
 
 ## Updating a font
 
-Download the new release from the source above, replace the files and the `OFL.txt` beside them, update the
-table, and run `npm test`. A file that has been changed by hand will not match its recorded hash.
+Download the new release from the source above, replace the files and the `OFL.txt` beside them (and the matching text in
+`public/licenses/fonts.txt`), update the table, and run `npm test`. A file that has been changed by hand will not match its recorded hash.
