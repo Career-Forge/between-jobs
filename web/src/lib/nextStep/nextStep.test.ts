@@ -331,3 +331,14 @@ describe("what a step is allowed to say", () => {
     expect(step.why).toEqual(["GET /today failed", "09:14"]);
   });
 });
+
+describe("the shape of a step", () => {
+  it("cannot carry a lock or a secondary without an action to hang them on", () => {
+    // Both would be dropped silently by the band, so the types refuse them (tsc checks this file).
+    // @ts-expect-error a locked step needs an action
+    const locked: NextStep = { sentence: "s.", action: null, why: ["w"], locked: { hint: "h" } };
+    // @ts-expect-error a secondary needs a cyan action beside it
+    const secondary: NextStep = { sentence: "s.", action: null, why: ["w"], secondary: { kind: "button", label: "L", intent: "i" } };
+    expect([locked.action, secondary.action]).toEqual([null, null]);
+  });
+});

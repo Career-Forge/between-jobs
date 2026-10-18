@@ -137,10 +137,20 @@ describe("the next-step band", () => {
 
 describe("motion", () => {
   it("fades in over 200ms, and not at all for someone who asked for less motion", () => {
-    for (const selector of [".bj-band-body--fade", ".bj-trail-receipt", ".bj-sheet", ".bj-sheet-scrim"]) {
+    for (const selector of [".bj-band-body--fade-a", ".bj-trail-receipt", ".bj-sheet", ".bj-sheet-scrim"]) {
       expect(declarationsFor(base, selector).animation).toBe("bj-paper-fade 200ms ease-out");
       expect(declarationsFor(reduced, selector).animation).toBe("none");
     }
+  });
+
+  it("restarts the band's fade without a remount: two classes, two names for one set of keyframes", () => {
+    // A class swap alone would not restart an animation that keeps its name, and a remount would drop
+    // keyboard focus, so the band alternates between these two.
+    expect(declarationsFor(base, ".bj-band-body--fade-b").animation).toBe("bj-paper-fade-again 200ms ease-out");
+    expect(declarationsFor(reduced, ".bj-band-body--fade-b").animation).toBe("none");
+    expect(blockOf(paperCss, "@keyframes bj-paper-fade-again")?.replace(/\s+/g, "")).toBe(
+      blockOf(paperCss, "@keyframes bj-paper-fade")?.replace(/\s+/g, ""),
+    );
   });
 });
 

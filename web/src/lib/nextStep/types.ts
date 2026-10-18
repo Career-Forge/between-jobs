@@ -14,20 +14,32 @@ export type NextStepAction =
   /** Opens another site; the band never submits anything for the person. */
   | { kind: "external"; label: string; href: string };
 
-export interface NextStep {
+interface StepWords {
   /** One plain sentence, chosen by code. Never written by a model. */
   sentence: string;
-  /** The page's one cyan action, or null for an unlit band (nothing needs you, or the choice is per row). */
-  action: NextStepAction | null;
   /** The facts that picked this step, each read from the input; drawn as `why: a · b`. */
   why: readonly string[];
   /** "failure" draws the red cross before the sentence. Absent means an ordinary step. */
   tone?: "failure";
+}
+
+/** An unlit band: nothing needs you, or the choice is per row. It has no button, so it can carry neither a secondary nor a lock. */
+export interface UnlitStep extends StepWords {
+  action: null;
+  secondary?: undefined;
+  locked?: undefined;
+}
+
+/** A lit band: the page's one cyan action. */
+export interface LitStep extends StepWords {
+  action: NextStepAction;
   /** One outlined button beside the cyan one, only where the rule table names it. Never a second cyan. */
   secondary?: NextStepAction | null;
   /** The action exists but is locked until the person finishes something; `hint` names what unlocks it. */
   locked?: { hint: string };
 }
+
+export type NextStep = UnlitStep | LitStep;
 
 // What the engine answers. `loading` means an input the answer depends on has not arrived, so the
 // band shows its eyebrow and "Loading..." and nothing else -- never a guess that is later replaced.

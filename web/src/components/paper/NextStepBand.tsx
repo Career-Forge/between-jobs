@@ -20,9 +20,15 @@ import "../../styles/paper.css";
 // An action is a route link, a handler (`onAction` gets the action's `intent`), a form submit, or an
 // external link; the band never fires anything itself and never submits for the person. When the
 // sentence changes after the first one, it fades in over 200ms (not under prefers-reduced-motion)
-// and is announced once through a polite live region.
+// and is announced once through a polite live region. The fade is a class swap on the one body
+// element, never a remount, so the action (or the sentence a skip link focused) keeps keyboard focus
+// when the next step arrives.
 //
-// Not built: the phone's docked sticky 56px bar, which the design marks optional.
+// An action the band cannot honor -- an external address that is not http(s) -- is dropped before
+// anything is decided, so the band is then unlit: no empty button row, and the sentence takes the
+// focus id instead of pointing at a control that is not there.
+//
+// Not built: the phone's docked sticky 56px bar (optional, and not part of this component).
 
 // The id of the element a "Skip to next step" link should focus: the button when the band is lit,
 // otherwise the sentence (which takes focus without being a tab stop).
@@ -38,6 +44,13 @@ export interface NextStepBandProps {
 // outside http(s) -- a javascript: URL smuggled in through a scraped posting -- is not a link.
 function safeExternal(href: string): string | null {
   return /^https?:\/\//i.test(href) ? href : null;
+}
+
+// The action the band can really draw: an external address outside http(s) is no action at all.
+function usableAction(action: NextStepAction | null | undefined): NextStepAction | null {
+  if (action === null || action === undefined) return null;
+  if (action.kind === "external" && safeExternal(action.href) === null) return null;
+  return action;
 }
 
 function LockIcon() {
@@ -70,6 +83,7 @@ function ActionControl({
         </Link>
       );
     case "external": {
+      // Already filtered by usableAction; checked again so this component can never draw a bad link.
       const href = safeExternal(action.href);
       if (href === null) return null;
       return (
@@ -97,7 +111,9 @@ export function NextStepBand({ outcome, onAction }: NextStepBandProps) {
   const step = outcome.status === "ready" ? outcome.step : null;
   const sentence = step?.sentence ?? null;
   const lastSentence = useRef<string | null>(null);
-  const [changed, setChanged] = useState(false);
+  // 0: no change yet. 1 and 2 alternate, each naming its own copy of the fade keyframes, so every
+  // new sentence restarts the animation on the same element.
+  const [fade, setFade] = useState<0 | 1 | 2>(0);
   const [announcement, setAnnouncement] = useState("");
   const hintId = useId();
 
@@ -105,7 +121,7 @@ export function NextStepBand({ outcome, onAction }: NextStepBandProps) {
   useEffect(() => {
     if (sentence === null) return;
     if (lastSentence.current !== null && lastSentence.current !== sentence) {
-      setChanged(true);
+      setFade((current) => (current === 1 ? 2 : 1));
       setAnnouncement(sentence);
     }
     lastSentence.current = sentence;
@@ -129,13 +145,16 @@ export function NextStepBand({ outcome, onAction }: NextStepBandProps) {
     );
   }
 
-  const lit = step.action !== null;
+  const action = usableAction(step.action);
+  const secondary = usableAction(step.secondary);
+  const lit = action !== null;
   const focusOnSentence = !lit;
   const locked = lit && step.locked !== undefined;
+  const bodyClass = fade === 0 ? "bj-band-body" : `bj-band-body bj-band-body--fade-${fade === 1 ? "a" : "b"}`;
 
   return (
     <section className={`bj-band ${lit ? "bj-band--lit" : "bj-band--unlit"}`} aria-label="Next step">
-      <div key={step.sentence} className={changed ? "bj-band-body bj-band-body--fade" : "bj-band-body"}>
+      <div className={bodyClass}>
         <div className="bj-band-text">
           <p className="bj-band-eyebrow">Next step</p>
           <p
@@ -152,24 +171,22 @@ export function NextStepBand({ outcome, onAction }: NextStepBandProps) {
           </p>
           {step.why.length > 0 && <p className="bj-band-why">why: {step.why.join(" · ")}</p>}
         </div>
-        {step.action !== null && (
+        {action !== null && (
           <div className="bj-band-actions">
             {locked ? (
               <>
                 <button id={NEXT_STEP_FOCUS_ID} type="button" className="bj-band-action bj-band-locked" aria-disabled="true" aria-describedby={hintId}>
                   <LockIcon />
-                  {step.action.label}
+                  {action.label}
                 </button>
                 <p id={hintId} className="bj-band-hint">
                   {step.locked?.hint}
                 </p>
               </>
             ) : (
-              <ActionControl action={step.action} primary onAction={onAction} focusId={NEXT_STEP_FOCUS_ID} />
+              <ActionControl action={action} primary onAction={onAction} focusId={NEXT_STEP_FOCUS_ID} />
             )}
-            {step.secondary !== null && step.secondary !== undefined && (
-              <ActionControl action={step.secondary} primary={false} onAction={onAction} />
-            )}
+            {secondary !== null && <ActionControl action={secondary} primary={false} onAction={onAction} />}
           </div>
         )}
       </div>
