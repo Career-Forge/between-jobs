@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { REGISTER_PATH } from "../publicRoutes";
 import { findForbiddenWord } from "../trail";
-import { evaluate, evaluateWithRow } from "./engine";
+import { collectPages, evaluate, evaluateWithRow } from "./engine";
 import { GLOBAL_ROWS } from "./global";
-import { nextStep, nextStepWithRow } from "./index";
+import { PAGES, nextStep, nextStepWithRow } from "./index";
 import { definePage, type NextStep, type NextStepInput, type NextStepRow, type ProfileFacts, type SetupCheck } from "./types";
 
 // One row of the rule table per case: the input a page can read, the row that decides, and what it says.
@@ -340,5 +340,97 @@ describe("the shape of a step", () => {
     // @ts-expect-error a secondary needs a cyan action beside it
     const secondary: NextStep = { sentence: "s.", action: null, why: ["w"], secondary: { kind: "button", label: "L", intent: "i" } };
     expect([locked.action, secondary.action]).toEqual([null, null]);
+  });
+});
+
+describe("the page registry", () => {
+  const rowOf = (id: string): NextStepRow => ({ id, match: () => null });
+  const module = (page: string, ...ids: string[]) => ({ rules: definePage(page, ids.map(rowOf)) });
+
+  it("holds every file in pages/, so adding a page is adding one file", () => {
+    const files = Object.keys(import.meta.glob(["./pages/*.ts", "!./pages/*.test.ts"]));
+    expect(files.length).toBeGreaterThan(0);
+    expect(PAGES).toHaveLength(files.length);
+    expect(PAGES.map((rules) => rules.page)).toContain("landing");
+  });
+
+  it("has unique page names and unique row ids across the global rows and every page", () => {
+    const names = PAGES.map((rules) => rules.page);
+    expect(new Set(names).size).toBe(names.length);
+    const ids = [...GLOBAL_ROWS, ...PAGES.flatMap((rules) => rules.rows)].map((row) => row.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("orders pages by file path and takes new files without any other edit", () => {
+    const pages = collectPages({ "./pages/settings.ts": module("settings", "S0"), "./pages/today.ts": module("today", "T0") }, GLOBAL_ROWS);
+    expect(pages.map((rules) => rules.page)).toEqual(["settings", "today"]);
+    const more = collectPages(
+      { "./pages/today.ts": module("today", "T0"), "./pages/settings.ts": module("settings", "S0"), "./pages/discover.ts": module("discover", "D0") },
+      GLOBAL_ROWS,
+    );
+    expect(more.map((rules) => rules.page)).toEqual(["discover", "settings", "today"]);
+  });
+
+  it("refuses a page name used twice, which would otherwise let the first one silently win", () => {
+    expect(() => collectPages({ "./pages/a.ts": module("today", "A0"), "./pages/b.ts": module("today", "B0") }, GLOBAL_ROWS)).toThrow(
+      /page "today" is defined in both \.\/pages\/a\.ts and \.\/pages\/b\.ts/,
+    );
+  });
+
+  it("refuses a row id used twice, on one page, across pages, or against a global row", () => {
+    expect(() => collectPages({ "./pages/a.ts": module("a", "X1", "X1") }, GLOBAL_ROWS)).toThrow(/row id "X1"/);
+    expect(() => collectPages({ "./pages/a.ts": module("a", "X1"), "./pages/b.ts": module("b", "X1") }, GLOBAL_ROWS)).toThrow(/row id "X1" in \.\/pages\/b\.ts/);
+    expect(() => collectPages({ "./pages/a.ts": module("a", "G1") }, GLOBAL_ROWS)).toThrow(/row id "G1".*global rows/);
+    expect(() => collectPages({}, [rowOf("G"), rowOf("G")])).toThrow(/global row id/);
+  });
+
+  it("refuses a file that does not export its page as `rules`", () => {
+    expect(() => collectPages({ "./pages/a.ts": {} }, GLOBAL_ROWS)).toThrow(/does not export its page as `rules`/);
+    expect(() => collectPages({ "./pages/a.ts": { rules: { page: "a" } as never } }, GLOBAL_ROWS)).toThrow(/does not export/);
+  });
+});
+
+describe("a page's facts", () => {
+  interface TodayFacts {
+    items: readonly string[];
+  }
+  const isTodayFacts = (value: unknown): value is TodayFacts =>
+    typeof value === "object" && value !== null && Array.isArray((value as { items?: unknown }).items);
+  const seen: unknown[] = [];
+  const todayRows: NextStepRow<TodayFacts>[] = [
+    {
+      id: "TX",
+      match: (input) => {
+        seen.push(input.facts);
+        return { sentence: `${input.facts?.items.length ?? 0} items.`, action: null, why: ["items read"] };
+      },
+    },
+  ];
+  const pages = [definePage("today", todayRows, { facts: isTodayFacts })];
+
+  it("runs the page's rows only on facts its guard accepts", () => {
+    seen.length = 0;
+    expect(evaluateWithRow(inApp({ facts: { items: ["a", "b"] } }), GLOBAL_ROWS, pages)).toMatchObject({ rowId: "TX" });
+    expect(seen).toHaveLength(1);
+  });
+
+  it("answers none, and never calls a row, for facts it does not accept", () => {
+    seen.length = 0;
+    for (const facts of ["junk", null, undefined, 42, {}, { items: "no" }]) {
+      expect(evaluateWithRow(inApp({ facts }), GLOBAL_ROWS, pages)).toEqual({ outcome: { status: "none" }, rowId: null });
+    }
+    expect(seen).toHaveLength(0);
+  });
+
+  it("still runs the global rows first, whatever the facts", () => {
+    const signedOut = evaluateWithRow({ page: "today", signedIn: false, facts: "junk" }, GLOBAL_ROWS, pages);
+    expect(signedOut.rowId).toBe("G0");
+  });
+
+  it("ties a guard to its rows' type", () => {
+    const numberRow: NextStepRow<number> = { id: "N", match: () => null };
+    // @ts-expect-error the guard checks for a string, the rows read a number
+    definePage("n", [numberRow], { facts: (value: unknown): value is string => typeof value === "string" });
+    expect(isTodayFacts({ items: [] })).toBe(true);
   });
 });

@@ -97,7 +97,7 @@ export interface NextStepInput<F = unknown> {
 export type RowResult = NextStep | "wait" | "none" | null;
 
 export interface NextStepRow<F = unknown> {
-  /** The rule table's own name for the row: "G1", "T3". Tests key on it. */
+  /** The row's name in the rule table: "G1", "L0". Unique across the global rows and every page. Tests key on it. */
   id: string;
   match(input: NextStepInput<F>): RowResult;
 }
@@ -106,8 +106,19 @@ export interface PageRules<F = unknown> {
   /** Matches `input.page`. */
   page: string;
   rows: readonly NextStepRow<F>[];
+  /**
+   * Checks that `input.facts` really has the shape this page's rows read. Without it a row sees
+   * whatever the caller passed (the string-keyed entry point cannot tie a page name to a type).
+   * When it answers false the page's rows are not run, so the answer is `none` -- the engine does
+   * not guess a step from facts it cannot read.
+   */
+  facts?: (value: unknown) => boolean;
 }
 
-export function definePage<F>(page: string, rows: readonly NextStepRow<F>[]): PageRules<F> {
-  return { page, rows };
+export function definePage<F>(
+  page: string,
+  rows: readonly NextStepRow<F>[],
+  options: { facts?: (value: unknown) => value is F } = {},
+): PageRules<F> {
+  return options.facts === undefined ? { page, rows } : { page, rows, facts: options.facts };
 }

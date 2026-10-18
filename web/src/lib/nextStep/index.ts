@@ -7,19 +7,22 @@
 // reads only the input, and every fact in a why line comes from a field of it, so the answer can
 // never name a state the page did not read.
 //
-// ADDING A PAGE. Write the page's rows in their own file (today.ts, settings.ts, ...) with
-// `definePage("today", [rows])`, then add one import and one entry to PAGES below. Nothing else
-// changes, and two pages never edit the same lines.
+// ADDING A PAGE. Add one file, pages/<name>.ts, that exports the page's rows as `rules`:
+//
+//   export const rules = definePage("today", [rows], { facts: isTodayFacts });
+//
+// Nothing else changes: the registry below is built from the files in pages/, so two pages are
+// two files and never edit the same line. A file that exports no `rules`, a page name used twice
+// and a row id used twice all throw when this module loads.
 
-import { evaluate, evaluateWithRow, type Evaluation } from "./engine";
+import { collectPages, evaluate, evaluateWithRow, type Evaluation } from "./engine";
 import { GLOBAL_ROWS } from "./global";
-import { landingRules } from "./landing";
 import type { NextStepInput, NextStepOutcome, PageRules } from "./types";
 
-const PAGES: readonly PageRules<never>[] = [
-  landingRules,
-  // one entry per page: todayRules, settingsRules, ...
-];
+// Test files in pages/ are not pages.
+const modules = import.meta.glob<{ rules?: PageRules<never> }>(["./pages/*.ts", "!./pages/*.test.ts"], { eager: true });
+
+export const PAGES: readonly PageRules<never>[] = collectPages(modules, GLOBAL_ROWS);
 
 export function nextStep(input: NextStepInput): NextStepOutcome {
   return evaluate(input, GLOBAL_ROWS, PAGES);
@@ -32,6 +35,7 @@ export function nextStepWithRow(input: NextStepInput): Evaluation {
 
 export { evaluate, evaluateWithRow } from "./engine";
 export { AUTH_FORM_ID, GLOBAL_ROWS, LEGAL_PAGES, PUBLIC_PAGES, SIGNED_OUT_WHY } from "./global";
+export { collectPages } from "./engine";
 export { definePage } from "./types";
 export type {
   CredentialsFacts,
