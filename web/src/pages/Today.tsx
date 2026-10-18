@@ -14,6 +14,7 @@ import {
   backgroundView,
   clockTime,
   fitReadOf,
+  fitReadTargets,
   isPending,
   searchesRead,
   todayFacts,
@@ -73,6 +74,9 @@ export default function Today() {
   const [problems, setProblems] = useState<Record<string, Failure | undefined>>({});
   const [tracked, setTracked] = useState<Record<string, string>>({});
   const [fits, setFits] = useState<Record<string, FitRead | undefined>>({});
+  // The applications whose stored fit result this feed's held-back cards ask for: chosen once per
+  // load of the feed (a capped few, newest first), so what is waited for never changes while it is.
+  const [fitTargets, setFitTargets] = useState<readonly string[]>([]);
   const [now] = useState(() => new Date());
   const wide = useMediaQuery(WIDE_QUERY);
   const inFlight = useRef(new Set<string>());
@@ -84,6 +88,7 @@ export default function Today() {
     try {
       const items = await apiFetch<TodayItem[]>("/today");
       setFeed({ kind: "ready", items });
+      setFitTargets(fitReadTargets(items));
     } catch (e) {
       setFeed({ kind: "failed", message: e instanceof Error ? e.message : "Failed to load", at: clockTime(new Date()) });
     }
@@ -106,20 +111,27 @@ export default function Today() {
 
   const retryAccount = useCallback(() => setAccountAttempt((attempt) => attempt + 1), []);
 
-  // A held-back resume's chip carries the fit check's score, which only the stored result has. One
-  // read per held-back application, and never a retry: a failed read just leaves the chip without a number.
+  // A held-back resume's chip carries the fit check's score, and whether the card is still true
+  // (a resume may exist by now), which only the stored result has. One read per targeted
+  // application, at most FIT_READ_CAP for each load of the feed, and never a retry: a failed read
+  // just leaves the card saying only what it is.
   useEffect(() => {
-    if (feed.kind !== "ready") return;
-    for (const item of feed.items) {
-      const applicationId = item.kind === "resume_failed" ? item.application_id : null;
-      if (applicationId === null || applicationId === undefined || askedFit.current.has(applicationId)) continue;
+    for (const applicationId of fitTargets) {
+      if (askedFit.current.has(applicationId)) continue;
       askedFit.current.add(applicationId);
-      setFits((current) => ({ ...current, [applicationId]: { state: "loading" } }));
       apiFetch<unknown>(`/applications/${encodeURIComponent(applicationId)}/prepare-result`)
         .then((body) => setFits((current) => ({ ...current, [applicationId]: fitReadOf(body) })))
         .catch(() => setFits((current) => ({ ...current, [applicationId]: { state: "unavailable" } })));
     }
-  }, [feed]);
+  }, [fitTargets]);
+
+  // What is known about each targeted application: a read still out is "loading" from the render
+  // that chose it, so the band never lights a card a moment before its read can take it back.
+  const fitReads = useMemo(() => {
+    const reads: Record<string, FitRead | undefined> = { ...fits };
+    for (const applicationId of fitTargets) reads[applicationId] ??= { state: "loading" };
+    return reads;
+  }, [fits, fitTargets]);
 
   // ── what the band is given ───────────────────────────────────────────────
 
@@ -131,8 +143,9 @@ export default function Today() {
         applications: account.reads.applications,
         searches,
         tracked,
+        fits: fitReads,
       }),
-    [feed, account.reads.applications, searches, tracked],
+    [feed, account.reads.applications, searches, tracked, fitReads],
   );
 
   const input: NextStepInput = useMemo(
@@ -167,9 +180,9 @@ export default function Today() {
       now,
       names: account.reads.applications.kind === "ok" ? applicationNames(account.reads.applications.value) : new Map(),
       searchLabels: new Map(searches.state === "ready" ? searches.searches.map((search) => [search.id, search.label] as const) : []),
-      fits,
+      fits: fitReads,
     }),
-    [now, account.reads.applications, searches, fits],
+    [now, account.reads.applications, searches, fitReads],
   );
 
   const firstRunFacts = useMemo(() => firstRunFactsOf(account.reads), [account.reads]);

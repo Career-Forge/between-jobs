@@ -7,7 +7,10 @@ import {
   checkedAt,
   checkedWords,
   clockTime,
+  FIT_READ_CAP,
+  fitFactOf,
   fitReadOf,
+  fitReadTargets,
   formatTenScale,
   jobLabel,
   kindLabel,
@@ -19,6 +22,7 @@ import {
   todayFacts,
   trackRequestBody,
   type BackgroundSearch,
+  type FitRead,
   type JobMatch,
   type RowContext,
   type TodayItem,
@@ -143,6 +147,7 @@ describe("the facts the rows read", () => {
       applications,
       searches,
       tracked: {},
+      fits: {},
     });
     if (facts.feed.state !== "ready") throw new Error("expected a feed");
     const [resume, match, proposal] = facts.feed.items;
@@ -154,26 +159,26 @@ describe("the facts the rows read", () => {
   });
 
   it("is loading until the feed has arrived, and says so for the names and the searches", () => {
-    const facts = todayFacts({ items: null, applications: loading, searches: { state: "loading" }, tracked: {} });
+    const facts = todayFacts({ items: null, applications: loading, searches: { state: "loading" }, tracked: {}, fits: {} });
     expect(facts).toEqual({ feed: { state: "loading" }, names: "loading", savedSearches: { state: "loading" } });
   });
 
   it("settles the names when the applications could not be read, and names no job", () => {
-    const facts = todayFacts({ items: [item({ id: "r", kind: "resume_ready", application_id: "app-1" })], applications: failed, searches, tracked: {} });
+    const facts = todayFacts({ items: [item({ id: "r", kind: "resume_ready", application_id: "app-1" })], applications: failed, searches, tracked: {}, fits: {} });
     expect(facts.names).toBe("settled");
     if (facts.feed.state !== "ready") throw new Error("expected a feed");
     expect(facts.feed.items[0]).toMatchObject({ job: null, company: null });
   });
 
   it("names no search when the saved searches could not be read, and does not invent a label", () => {
-    const facts = todayFacts({ items: [item({ id: "m", kind: "high_fit_job", job_match: MATCH })], applications, searches: { state: "failed" }, tracked: {} });
+    const facts = todayFacts({ items: [item({ id: "m", kind: "high_fit_job", job_match: MATCH })], applications, searches: { state: "failed" }, tracked: {}, fits: {} });
     if (facts.feed.state !== "ready") throw new Error("expected a feed");
     expect(facts.feed.items[0].match?.searchLabel).toBeNull();
     expect(facts.savedSearches).toEqual({ state: "failed" });
   });
 
   it("carries the application a Track created in this visit, by the job's apply URL", () => {
-    const facts = todayFacts({ items: [item({ id: "m", kind: "high_fit_job", job_match: MATCH })], applications, searches, tracked: { [MATCH.apply_url]: "app-9" } });
+    const facts = todayFacts({ items: [item({ id: "m", kind: "high_fit_job", job_match: MATCH })], applications, searches, tracked: { [MATCH.apply_url]: "app-9" }, fits: {} });
     if (facts.feed.state !== "ready") throw new Error("expected a feed");
     expect(facts.feed.items[0].trackedApplicationId).toBe("app-9");
   });
@@ -207,19 +212,73 @@ describe("the held-back chip's number", () => {
     expect(formatTenScale(7)).toBe("7");
   });
 
-  it("is absent once a newer run produced a resume, or the gate let it through", () => {
-    expect(fitReadOf({ result: { ...held.result, resume: { artifact_id: "a" } } })).toEqual({ state: "unavailable" });
-    expect(fitReadOf({ result: { ...held.result, gate_outcome: "proceed" } })).toEqual({ state: "unavailable" });
+  it("says the card has moved on once a newer run produced a resume, or the gate let it through", () => {
+    expect(fitReadOf({ result: { ...held.result, resume: { artifact_id: "a" } } })).toEqual({ state: "moved_on" });
+    expect(fitReadOf({ result: { ...held.result, gate_outcome: "proceed" } })).toEqual({ state: "moved_on" });
   });
 
-  it("is absent when there is no result, no fit, or a score that is not a number", () => {
-    for (const body of [null, {}, { result: null }, { result: { resume: null } }, { result: { resume: null, fit: null } }, { result: { resume: null, fit: { overall_score: "3" } } }, { result: { resume: null, fit: { overall_score: Number.NaN } } }]) {
+  it("knows nothing from a body that is not a result", () => {
+    for (const body of [null, {}, { result: null }, { result: "x" }, []]) {
       expect(fitReadOf(body)).toEqual({ state: "unavailable" });
+    }
+  });
+
+  it("is still held, with no number, when the result has no fit or a score that is not a number", () => {
+    for (const body of [{ result: { resume: null } }, { result: { resume: null, fit: null } }, { result: { resume: null, fit: { overall_score: "3" } } }, { result: { resume: null, fit: { overall_score: Number.NaN } } }]) {
+      expect(fitReadOf(body)).toEqual({ state: "held", score: null });
     }
   });
 
   it("treats a result with no resume key at all as having none", () => {
     expect(fitReadOf({ result: { fit: { overall_score: 2 } } })).toEqual({ state: "held", score: 2 });
+  });
+
+  it("maps a read to the fact the rows see, and a read that was never made to 'unread'", () => {
+    expect(fitFactOf(undefined)).toBe("unread");
+    expect(fitFactOf({ state: "unavailable" })).toBe("unread");
+    expect(fitFactOf({ state: "loading" })).toBe("loading");
+    expect(fitFactOf({ state: "held", score: null })).toBe("held");
+    expect(fitFactOf({ state: "moved_on" })).toBe("moved_on");
+  });
+});
+
+describe("which held-back cards are read", () => {
+  const heldItem = (id: string, applicationId: string | null, created_at: string) => item({ id, kind: "resume_failed", application_id: applicationId, created_at });
+
+  it("is the newest held-back cards, one application once, and never more than the cap", () => {
+    const items = Array.from({ length: 25 }, (_, index) => heldItem(`f${index}`, `app-${index}`, `2026-09-${String(1 + index).padStart(2, "0")}T10:00:00Z`));
+    const targets = fitReadTargets(items);
+    expect(targets).toHaveLength(FIT_READ_CAP);
+    expect(targets).toEqual(["app-24", "app-23", "app-22", "app-21", "app-20"]);
+    expect(fitReadTargets(items, 2)).toEqual(["app-24", "app-23"]);
+  });
+
+  it("asks once for an application with two cards, and not for any other kind or a card with no application", () => {
+    const items = [
+      heldItem("a", "app-1", "2026-09-22T10:00:00Z"),
+      heldItem("b", "app-1", "2026-09-21T10:00:00Z"),
+      heldItem("c", null, "2026-09-20T10:00:00Z"),
+      item({ id: "d", kind: "resume_ready", application_id: "app-2" }),
+    ];
+    expect(fitReadTargets(items)).toEqual(["app-1"]);
+  });
+});
+
+describe("what a held-back card is told about its application", () => {
+  const applications = ok([{ id: "app-1", snapshot: { title: "Data Engineer", company_name: "Acme" } }]);
+  const factsFor = (fits: Record<string, FitRead | undefined>) =>
+    todayFacts({ items: [item({ id: "f", kind: "resume_failed", application_id: "app-1" }), item({ id: "r", kind: "resume_ready", application_id: "app-1" })], applications, searches: { state: "loading" }, tracked: {}, fits });
+
+  it("carries what the stored result said, and 'unread' for an application that was not asked", () => {
+    const fact = (fits: Record<string, FitRead | undefined>) => {
+      const facts = factsFor(fits);
+      if (facts.feed.state !== "ready") throw new Error("expected a feed");
+      return facts.feed.items.map((entry) => entry.fit);
+    };
+    expect(fact({ "app-1": { state: "held", score: 3 } })).toEqual(["held", null]);
+    expect(fact({ "app-1": { state: "moved_on" } })).toEqual(["moved_on", null]);
+    expect(fact({ "app-1": { state: "loading" } })).toEqual(["loading", null]);
+    expect(fact({})).toEqual(["unread", null]);
   });
 });
 
@@ -257,10 +316,18 @@ describe("a row's words", () => {
     });
 
     it("says only that it was held back when the score could not be read", () => {
-      for (const fit of [undefined, { state: "loading" } as const, { state: "unavailable" } as const]) {
+      for (const fit of [undefined, { state: "loading" } as const, { state: "unavailable" } as const, { state: "held", score: null } as const]) {
         const view = rowView(held, context({ names, fits: fit === undefined ? {} : { "app-1": fit } }));
         expect(view.chip?.text).toBe("Fit check held it back");
       }
+    });
+
+    it("stops saying it is waiting on anyone once a resume exists: no chip, no red, the reason replaced", () => {
+      const view = rowView(held, context({ names, fits: { "app-1": { state: "moved_on" } } }));
+      expect(view.label).toBe("Held back earlier");
+      expect(view.chip).toBeNull();
+      expect(view.details).toEqual(["A resume exists for this application now."]);
+      expect(view.title).toBe("Data Engineer at Acme");
     });
 
     it("does not take the job out of the server's headline", () => {
@@ -507,6 +574,14 @@ describe("what a row can do", () => {
     for (const status of ["accepted", "dismissed"] as const) {
       const decided = item({ id: "p", kind: "status_proposal", status_proposal: { id: "s", proposed_type: "offer.received", confidence: 0.6, evidence_spans: [], status } });
       expect(ids(rowActions(decided, null))).toEqual(["dismiss"]);
+    }
+  });
+
+  it("offers a held-back card that has moved on the workspace, not a forced generation", () => {
+    const held = item({ id: "f", kind: "resume_failed", application_id: "a1" });
+    expect(ids(rowActions(held, null, { state: "moved_on" }))).toEqual(["link:Open workspace:/applications/a1", "dismiss"]);
+    for (const fit of [undefined, { state: "loading" } as const, { state: "held", score: 3 } as const, { state: "unavailable" } as const]) {
+      expect(ids(rowActions(held, null, fit))).toEqual(["link:See why:/applications/a1#generate", "generate-anyway", "dismiss"]);
     }
   });
 

@@ -3,6 +3,7 @@ import { findForbiddenWord } from "../../trail";
 import { nextStep, nextStepWithRow } from "../index";
 import type { NextStep, NextStepInput, SetupCheck } from "../types";
 import {
+  REVIEW_HASH,
   AUTO_MOVE_PERCENT,
   confidencePercent,
   PROPOSAL_STEPS,
@@ -30,6 +31,7 @@ function item(overrides: Partial<TodayItemFact> & Pick<TodayItemFact, "id" | "ki
     match: null,
     atsScore: null,
     trackedApplicationId: null,
+    fit: null,
     ...overrides,
   };
 }
@@ -70,7 +72,7 @@ const proposal = (overrides: Partial<TodayItemFact> = {}) =>
     ...overrides,
   });
 const held = (overrides: Partial<TodayItemFact> = {}) =>
-  item({ id: "f1", kind: "resume_failed", applicationId: "app-2", job: "Data Engineer at Acme", ...overrides });
+  item({ id: "f1", kind: "resume_failed", applicationId: "app-2", job: "Data Engineer at Acme", fit: "held", ...overrides });
 const ready_ = (overrides: Partial<TodayItemFact> = {}) =>
   item({ id: "r1", kind: "resume_ready", applicationId: "app-3", job: "ML Engineer at Orbit", atsScore: 72, ...overrides });
 const match = (overrides: Partial<TodayItemFact> = {}) =>
@@ -159,6 +161,31 @@ const ROWS: Row[] = [
     action: { kind: "link", label: "See why", to: "/applications/app-2#generate" },
     secondary: { kind: "button", label: "Generate anyway", intent: "generate-anyway:f1" },
     why: ["held back by the fit check", "no resume generated"],
+  },
+  {
+    name: "T2 a card whose stored result could not be read says only what the card is, not that no resume exists",
+    id: "T2",
+    facts: facts([held({ fit: "unread" })]),
+    sentence: "The fit check held back your draft for Data Engineer at Acme. Read why, then decide.",
+    action: { kind: "link", label: "See why", to: "/applications/app-2#generate" },
+    secondary: { kind: "button", label: "Generate anyway", intent: "generate-anyway:f1" },
+    why: ["held back by the fit check"],
+  },
+  {
+    name: "T3 a held-back card whose application has a resume now is not lit: the card is out of date",
+    id: "T3",
+    facts: facts([held({ fit: "moved_on" }), ready_()]),
+    sentence: "Your resume for ML Engineer at Orbit is ready for review.",
+    action: { kind: "link", label: "Open workspace", to: "/applications/app-3#ch-check" },
+    why: ["resume ready", "ATS score 72 / 100"],
+  },
+  {
+    name: "T5 a held-back card that has moved on is only an update below",
+    id: "T5",
+    facts: facts([held({ fit: "moved_on" })]),
+    sentence: "Nothing needs a decision right now. 1 update below.",
+    action: null,
+    why: ["0 items need a decision", "2 saved searches active"],
   },
   {
     name: "T2 wins over a ready resume and a high fit job",
@@ -406,6 +433,25 @@ describe("what the band waits for", () => {
     }
   });
 
+  it("waits for a held-back card's stored result, which may take the card back", () => {
+    expect(nextStep(input(facts([held({ fit: "loading" })])))).toEqual({ status: "loading" });
+    // It also holds back what the card would outrank, so a lower step is not lit and then replaced.
+    expect(nextStep(input(facts([held({ fit: "loading" }), ready_()])))).toEqual({ status: "loading" });
+    expect(nextStep(input(facts([held({ fit: "loading" }), match()])))).toEqual({ status: "loading" });
+    expect(nextStep(input(facts([held({ fit: "loading" })], { savedSearches: { state: "ready", total: 0, active: 0 } })))).toEqual({ status: "loading" });
+  });
+
+  it("does not wait for a read that cannot change the answer", () => {
+    // A proposal outranks any held-back card.
+    expect(nextStep(input(facts([proposal(), held({ fit: "loading" })]))).status).toBe("ready");
+    // An older card still being read cannot replace the newer one that is already lit.
+    const newer = held({ id: "newer", createdAt: "2026-09-22T10:00:00Z", fit: "held" });
+    const older = held({ id: "older", createdAt: "2026-09-21T10:00:00Z", fit: "loading" });
+    expect(nextStepWithRow(input(facts([newer, older]))).rowId).toBe("T2");
+    // A card with no application is never lit, so its read does not matter.
+    expect(nextStep(input(facts([held({ applicationId: null, fit: "loading" }), ready_()]))).status).toBe("ready");
+  });
+
   it("does not wait for names it does not use", () => {
     expect(nextStep(input(facts([match()], { names: "loading" }))).status).toBe("ready");
   });
@@ -444,6 +490,14 @@ describe("facts the page cannot read", () => {
         rowId: null,
       });
     }
+  });
+});
+
+describe("the review anchor", () => {
+  it("is the address the design names for the workspace's Review section, which the ready step links to", () => {
+    expect(REVIEW_HASH).toBe("ch-check");
+    const step = stepOf(facts([ready_()]));
+    expect(step.action).toEqual({ kind: "link", label: "Open workspace", to: `/applications/app-3#${REVIEW_HASH}` });
   });
 });
 

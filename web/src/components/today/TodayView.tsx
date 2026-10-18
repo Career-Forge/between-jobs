@@ -127,6 +127,7 @@ export function TodayView(props: TodayViewProps) {
                   item={item}
                   view={rowView(item, context)}
                   trackedApplicationId={trackedId}
+                  fit={item.application_id == null ? undefined : context.fits[item.application_id]}
                   busy={busy[item.id]}
                   problem={problems[item.id]}
                   onAction={props.onItemAction}

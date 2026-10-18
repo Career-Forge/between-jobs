@@ -368,15 +368,43 @@ describe("a resume the fit check held back", () => {
     expect(words(query(band(container), ".bj-today-chip"))).toBe("◆Fit check held it back · 3.6 / 10");
   });
 
-  it("shows the chip with no number when that read fails or the result has moved on", async () => {
+  it("shows the chip with no number, and does not claim no resume exists, when that read fails", async () => {
     answer({ "/today": [heldItem], "/applications/app-1/prepare-result": new FakeApiError(500, "boom") });
-    const failed = await draw();
-    expect(words(query(band(failed.container), ".bj-today-chip"))).toBe("◆Fit check held it back");
-    failed.unmount();
+    const { container } = await draw();
+    expect(words(query(band(container), ".bj-today-chip"))).toBe("◆Fit check held it back");
+    expect(words(query(band(container), ".bj-band-why"))).toBe("why: held back by the fit check");
+  });
 
-    answer({ "/today": [heldItem], "/applications/app-1/prepare-result": { result: { resume: { artifact_id: "a" }, gate_outcome: "proceed", fit: { overall_score: 8 } } } });
-    const moved = await draw();
-    expect(words(query(moved.container, ".bj-today-chip"))).toBe("◆Fit check held it back");
+  it("does not light a held-back card once a resume exists for its application, and says why it is quiet", async () => {
+    answer({
+      "/today": [heldItem, trackedItem],
+      "/applications/app-1/prepare-result": { result: { resume: { artifact_id: "a" }, gate_outcome: "proceed", fit: { overall_score: 8 } } },
+    });
+    const { container } = await draw();
+    expect(band(container).className).toContain("bj-band--unlit");
+    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Nothing needs a decision right now. 2 updates below.");
+    const row = container.querySelector("li[data-kind='resume_failed']") as HTMLElement;
+    expect(words(query(row, ".bj-today-kind"))).toBe("Held back earlier");
+    expect(row.textContent).not.toContain("Generate anyway");
+  });
+
+  it("keeps the band on Loading... until the stored result of a held-back card has answered, then lights the right thing", async () => {
+    let release: (value: unknown) => void = () => {};
+    answer({
+      "/today": [heldItem, readyItem],
+      "/applications/app-1/prepare-result": () => new Promise((resolve) => (release = resolve)),
+    });
+    const { container } = await draw();
+    expect(band(container).getAttribute("aria-busy")).toBe("true");
+    await act(async () => release({ result: { resume: { artifact_id: "a" }, gate_outcome: "proceed" } }));
+    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Your resume for ML Engineer at Orbit is ready for review.");
+  });
+
+  it("asks for the stored result of the newest few held-back cards only, however many there are", async () => {
+    const many = Array.from({ length: 25 }, (_, index) => ({ ...heldItem, id: `f${index}`, application_id: `app-${index}`, created_at: `2026-09-${String(1 + index).padStart(2, "0")}T08:00:00Z` }));
+    answer({ "/today": many });
+    await draw();
+    expect(calls().filter((call) => call.includes("prepare-result"))).toHaveLength(5);
   });
 
   it("generates anyway with the gate bypassed, then retires the card", async () => {

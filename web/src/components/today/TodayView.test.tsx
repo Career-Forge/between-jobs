@@ -95,7 +95,7 @@ function props(scenario: Scenario = {}, handlers: Partial<TodayViewProps> = {}):
   const items = scenario.items === undefined ? [] : scenario.items;
   const feed: FeedState =
     scenario.feedFailure !== undefined ? { state: "failed", message: scenario.feedFailure } : items === null ? { state: "loading" } : { state: "ready", items };
-  const facts = todayFacts({ items: feed.state === "ready" ? feed.items : null, applications, searches, tracked: scenario.trackedUrls ?? {} });
+  const facts = todayFacts({ items: feed.state === "ready" ? feed.items : null, applications, searches, tracked: scenario.trackedUrls ?? {}, fits: scenario.fits ?? {} });
   const input: NextStepInput = {
     page: "today",
     signedIn: true,
@@ -289,13 +289,35 @@ describe("a resume the fit check held back", () => {
     expect(row.textContent).not.toContain("needs attention");
   });
 
-  it("says only that the fit check held it back when no score could be read", () => {
-    const cases: Record<string, FitRead>[] = [{}, { "app-1": { state: "loading" } }, { "app-1": { state: "unavailable" } }];
+  it("says only that the fit check held it back when no score could be read, and no longer claims no resume exists", () => {
+    const cases: Record<string, FitRead>[] = [{}, { "app-1": { state: "unavailable" } }, { "app-1": { state: "held", score: null } }];
     for (const fits of cases) {
       const { container, unmount } = draw({ items: [held], fits });
       expect(words(query(band(container), ".bj-today-chip"))).toBe("◆Fit check held it back");
+      const why = words(query(band(container), ".bj-band-why"));
+      // Only a stored result that was read and still says so supports "no resume generated".
+      expect(why).toBe(fits["app-1"]?.state === "held" ? "why: held back by the fit check · no resume generated" : "why: held back by the fit check");
       unmount();
     }
+  });
+
+  it("shows only Loading... while the stored result that could take the card back is still being read", () => {
+    const { container } = draw({ items: [held], fits: { "app-1": { state: "loading" } } });
+    expect(band(container).getAttribute("aria-busy")).toBe("true");
+    expect(container.querySelector(".bj-today-chip")).toBeNull();
+  });
+
+  it("does not light a card whose application has a resume now: it is a quiet row that says so", () => {
+    const { container } = draw({ items: [held, ready], fits: { "app-1": { state: "moved_on" } } });
+    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Your resume for ML Engineer at Orbit is ready for review.");
+    const row = rows(container).find((candidate) => candidate.getAttribute("data-kind") === "resume_failed") as HTMLElement;
+    expect(words(query(row, ".bj-today-kind"))).toBe("Held back earlier");
+    expect(row.textContent).toContain("A resume exists for this application now.");
+    expect(row.querySelector(".bj-today-chip")).toBeNull();
+    expect(query(row, ".bj-today-marker").className).not.toContain("danger");
+    const names = [...row.querySelectorAll("button, a")].map(words);
+    expect(names).toContain("Open workspace");
+    expect(names).not.toContain("Generate anyway");
   });
 
   it("with no application keeps Dismiss only, and falls through to nothing lit", () => {
