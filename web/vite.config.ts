@@ -108,8 +108,8 @@ export default defineConfig({
     // included. app.css is read as text by src/lib/publicPagesStyles.test.ts (there is no DOM, so
     // no computed style): the rules that keep prose links underlined and the footer aligned. The
     // tokens and fonts sheets are read the same way, by the tests that pin the design tokens and
-    // the self-hosted font files.
-    css: { include: [/src\/(?:app|tokens|fonts)\.css/] },
+    // the self-hosted font files, and so is every per-feature sheet in src/styles/.
+    css: { include: [/src\/(?:(?:app|tokens|fonts)\.css|styles\/[\w-]+\.css)/] },
     // src/lib/supabase.ts throws at import without these, and several components reach it
     // through api.ts. Placeholders, so `npm test` passes on a clean clone and in CI
     // instead of only on a machine that has a .env.local. Nothing in the suite connects.
