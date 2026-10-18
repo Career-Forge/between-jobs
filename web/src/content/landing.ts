@@ -5,7 +5,9 @@
 
 import { SOURCE_LICENSE } from "./site";
 
-// The model providers a key can be connected for (the registry the API's key routes read).
+// The model providers a key can be connected for: the API's provider registry, the same list the
+// Settings page draws its chips from, without its "other OpenAI-compatible" slot. The Privacy Policy
+// names every one (content/legal.ts); content/legal.test.ts checks that the three agree.
 export const LANDING_PROVIDERS = ["OpenRouter", "OpenAI", "Anthropic", "Gemini", "xAI", "DeepSeek", "Qwen Cloud"] as const;
 
 // The in-page sections the header links to, in page order.
@@ -33,7 +35,7 @@ export const LANDING = {
   // The hero's worked example: one flagged claim in the claim check, with the trail that says who
   // acted. The sentence is invented for this page and says so.
   trailExample: {
-    eyebrow: "Every block ends in a trail",
+    eyebrow: "A sample flagged claim",
     chip: "Unverifiable",
     claim: "Led the move of the evaluation harness to async workers.",
     reason: "None of the achievements picked for this draft mention async workers.",
@@ -53,9 +55,9 @@ export const LANDING = {
   },
 
   dossier: {
-    eyebrow: "A studio for what comes next",
+    eyebrow: "A workspace for what comes next",
     title: "One role. Every piece of work together.",
-    text: "A role is a dossier: the posting, your evidence, the resume and cover letter drafted from it, the people to write to, the practice questions. Open it and everything is there, with a note on where each piece came from.",
+    text: "A role is a dossier: the posting, your evidence, the resume and cover letter drafted from it, the people to write to, the practice questions. Open it and everything is there.",
     sampleChip: "Sample dossier",
     sampleNote: "Drawn for this page. Your own dossiers show your own roles.",
   },
@@ -63,7 +65,7 @@ export const LANDING = {
   chapters: [
     {
       title: "Discover",
-      text: "Search public job boards and the search providers you connect, and see how each listing fits your profile.",
+      text: "Search public job boards and the search providers you connect, and, with your own model key, see how the top listings fit your profile.",
     },
     {
       title: "Prepare",
