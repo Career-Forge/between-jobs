@@ -70,7 +70,12 @@ from supabase import AsyncClient
 
 from .app_state import get_http_client, get_supabase
 from .auth import require_user_id
-from .capability_preferences_store import DEFAULT_CAPABILITY, set_preference
+from .capability_preferences_store import (
+    DEFAULT_CAPABILITY,
+    delete_preference,
+    get_preference,
+    set_preference,
+)
 from .credential_resolver import llm_setup_state
 from .errors import ApiError
 from .models import SaveCredentialRequest
@@ -464,18 +469,53 @@ def _redact(row: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _model_already_chosen(
-    supabase: AsyncClient, user_id: str, provider: str, sent: str | None
+    supabase: AsyncClient, user_id: str, provider: str, sent: str | None, base_url: str | None
 ) -> str | None:
     """The model to store with a key: the one sent, else the one this person's saved key for
     the provider already has, so replacing a key (a rotation) does not forget which model it
-    was used with."""
+    was used with. The kept model belongs to the ADDRESS it was chosen at: when the new key goes
+    to another one (the `custom` provider is one row for five hosts, Qwen's has a region) it is
+    not carried over, and the key is `needs_model` until a model is chosen for the new host."""
     if sent:
         return sent
     for row in await list_credentials(supabase, user_id, service="llm"):
         if row.get("provider") == provider:
             kept = row.get("model")
+            if row.get("base_url") != base_url:
+                return None
             return kept if isinstance(kept, str) and kept else None
     return None
+
+
+async def _repair_default_preference(
+    supabase: AsyncClient, user_id: str, provider: str, *, may_repoint: bool
+) -> None:
+    """Keeps the default model preference from pointing at something that no longer works. Run
+    after a model key is removed, or saved without a model: if the default names `provider`, it
+    is repointed at the person's one other ready key (`may_repoint`, and only when there is
+    exactly one: with two the choice is theirs, and a guess would be a silent switch of
+    provider), or else cleared, so the next call says what is missing (`needs_model`, or no
+    execution mode) instead of failing on a key or a model that is not there."""
+    pref = await get_preference(supabase, user_id, DEFAULT_CAPABILITY)
+    if pref is None or pref.get("provider") != provider:
+        return
+    if may_repoint:
+        others = [
+            row
+            for row in await list_credentials(supabase, user_id, service="llm")
+            if row.get("provider") != provider and llm_setup_state(row) == "ready"
+        ]
+        if len(others) == 1:
+            await set_preference(
+                supabase,
+                user_id,
+                capability=DEFAULT_CAPABILITY,
+                execution_mode="byok_first_party",
+                provider=str(others[0]["provider"]),
+                model=str(others[0]["model"]),
+            )
+            return
+    await delete_preference(supabase, user_id, DEFAULT_CAPABILITY)
 
 
 def public_credential(row: dict[str, Any]) -> dict[str, Any]:
@@ -534,10 +574,14 @@ async def _save_registry_llm_credential(
         service="llm",
         provider=spec.id,
         secret=secret,
-        model=await _model_already_chosen(supabase, user_id, spec.id, body.model),
+        model=await _model_already_chosen(supabase, user_id, spec.id, body.model, stored_url),
         base_url=stored_url,
         is_validated=True,
     )
+    if not saved.get("model"):
+        # Saved with no model: a default that still names this provider names a model chosen
+        # for the key it replaced (another host's), which is not this key's.
+        await _repair_default_preference(supabase, user_id, spec.id, may_repoint=False)
     if body.model:
         await set_preference(
             supabase,
@@ -593,7 +637,7 @@ async def save_credential_route(
         provider=body.provider,
         secret=body.secret,
         model=(
-            await _model_already_chosen(supabase, user_id, body.provider, body.model)
+            await _model_already_chosen(supabase, user_id, body.provider, body.model, None)
             if body.service == "llm"
             else body.model
         ),
@@ -635,3 +679,5 @@ async def delete_credential_route(
     supabase: AsyncClient = Depends(get_supabase),
 ) -> None:
     await delete_credential(supabase, user_id, service=service, provider=provider)
+    if service == "llm":
+        await _repair_default_preference(supabase, user_id, provider, may_repoint=True)

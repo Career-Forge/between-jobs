@@ -5,7 +5,15 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from .product_events import AtsType
 
@@ -113,6 +121,12 @@ class ChangeApplicationStageRequest(BaseModel):
     idempotency_key: str = Field(min_length=1)
 
 
+MODEL_ID_PATTERN = r"^(?!.*(?:\.\.|//))[A-Za-z0-9][A-Za-z0-9._:/@+~-]{0,199}$"
+"""What a model id may look like: the characters OpenRouter, Fireworks, Google and the others
+use in theirs (`vendor/model:free`, `accounts/x/models/y`), and nothing that could be a URL
+(`//`), a path escape (`..`) or markup. It needs the Python regex engine for the look-ahead."""
+
+
 class SaveCredentialRequest(BaseModel):
     """`model` is free-text, not a dropdown of known models -- every model
     identifier is configuration, never durable domain data, and a hardcoded
@@ -130,10 +144,20 @@ class SaveCredentialRequest(BaseModel):
     real values (Adzuna: app_id + app_key; USAJobs: an Authorization-Key
     AND a registered email). Every other provider leaves it unset."""
 
+    model_config = ConfigDict(regex_engine="python-re")
+
     service: str = Field(min_length=1)
     provider: str = Field(min_length=1)
     secret: str = Field(min_length=1)
-    model: str | None = None
+    model: str | None = Field(default=None, min_length=1, max_length=200, pattern=MODEL_ID_PATTERN)
+    """The same rule as `ChooseModelRequest.model`, whichever route the model arrives by. An
+    empty or blank string (the web form sends one when its field is left empty) means none."""
+
+    @field_validator("model", mode="before")
+    @classmethod
+    def _blank_model_is_none(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
     base_url: str | None = None
     secret_2: str | None = None
     region: str | None = Field(default=None, max_length=32)
@@ -141,12 +165,6 @@ class SaveCredentialRequest(BaseModel):
     """`region` and `workspace_id` are for Qwen only: the server builds its address from them
     (api/provider_registry.py). `base_url` is accepted only for the `custom` provider, and only
     when it is one of the addresses the server allows."""
-
-
-MODEL_ID_PATTERN = r"^(?!.*(?:\.\.|//))[A-Za-z0-9][A-Za-z0-9._:/@+~-]{0,199}$"
-"""What a model id may look like: the characters OpenRouter, Fireworks, Google and the others
-use in theirs (`vendor/model:free`, `accounts/x/models/y`), and nothing that could be a URL
-(`//`), a path escape (`..`) or markup. It needs the Python regex engine for the look-ahead."""
 
 
 class ListModelsRequest(BaseModel):
