@@ -58,11 +58,11 @@ describe.each([false, true])("the shell, with Hiring signals on = %s", (hiringSi
     expect(expected.some((item) => item.label === "Hiring signals")).toBe(hiringSignals);
   });
 
-  it("gives the phone the same destinations: four tabs and a More sheet that holds the rest and Settings", () => {
+  it("gives the phone the same destinations: four tabs and a More sheet that holds the rest and Integrations", () => {
     const tabs = linksOf(tabBar(markup));
     expect(tabs.map((tab) => tab.label)).toEqual(["Today", "Discover", "Applications", "Profile"]);
     const more = linksOf(moreSheet(markup));
-    expect(more.map((link) => link.label)).toEqual([...(hiringSignals ? ["Hiring signals"] : []), "Practice", "Settings", "Privacy Policy", "Terms of Service"]);
+    expect(more.map((link) => link.label)).toEqual([...(hiringSignals ? ["Hiring signals"] : []), "Practice", "Integrations", "Privacy Policy", "Terms of Service"]);
 
     const everyPhoneDestination = [...tabs, ...more.filter((link) => link.label !== "Privacy Policy" && link.label !== "Terms of Service")]
       .map((link) => link.href)
@@ -106,12 +106,12 @@ describe("the page you are on", () => {
     expect(current(railNav(shell("/hiring-signals", true)))).toEqual(["Hiring signals"]);
   });
 
-  it("marks Settings, not Profile, on the integrations page, which Settings links to", () => {
+  it("marks Integrations, not Profile, on the integrations page, which it links to", () => {
     const markup = shell("/profile/integrations");
     expect(current(railNav(markup))).toEqual([]);
-    expect(current(railFooter(markup))).toEqual(["Settings"]);
-    expect(linksOf(railFooter(markup)).find((link) => link.label === "Settings")?.href).toBe("/profile/integrations");
-    expect(current(moreSheet(markup))).toEqual(["Settings"]);
+    expect(current(railFooter(markup))).toEqual(["Integrations"]);
+    expect(linksOf(railFooter(markup)).find((link) => link.label === "Integrations")?.href).toBe("/profile/integrations");
+    expect(current(moreSheet(markup))).toEqual(["Integrations"]);
   });
 
   it("uses the selection class on every navigation link, so the fill comes from one rule", () => {
@@ -160,9 +160,9 @@ describe("landmarks and the way in", () => {
     }
   });
 
-  it("keeps the signed-in address, Settings, Sign out and the legal links in the rail's footer, in that order", () => {
+  it("keeps the signed-in address, Integrations, Sign out and the legal links in the rail's footer, in that order", () => {
     const footer = railFooter(markup);
-    const order = [EMAIL, "Settings", "Sign out", "Privacy Policy"].map((text) => footer.indexOf(text));
+    const order = [EMAIL, "Integrations", "Sign out", "Privacy Policy"].map((text) => footer.indexOf(text));
     expect(order.every((i) => i > -1)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });

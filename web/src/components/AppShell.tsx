@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { SETTINGS_ITEM } from "../lib/nav";
+import { INTEGRATIONS_ITEM } from "../lib/nav";
 import { BottomTabBar } from "./BottomTabBar";
 import { Icon } from "./icons";
 import { LegalLinks } from "./LegalLinks";
@@ -10,7 +10,7 @@ import { MAIN_CONTENT_ID, SkipLink } from "./SkipLink";
 import { Wordmark } from "./Wordmark";
 
 // The signed-in frame around every page. At 960px and wider: a 220px rail on the left (wordmark,
-// the reserved palette row, the main navigation, then the address, Settings, Sign out and the
+// the reserved palette row, the main navigation, then the address, Integrations, Sign out and the
 // legal links) and the page beside it. Under 960px: a slim top bar with the wordmark, the page, and
 // a bottom tab bar with a More sheet. Both navigations are always in the markup; CSS shows one.
 //
@@ -40,9 +40,9 @@ export function AppShell({ email, onSignOut, children }: AppShellProps) {
         <PrimaryNav />
         <div className="bj-nav-footer">
           {email !== null && <p className="bj-rail-email">{email}</p>}
-          <NavLink to={SETTINGS_ITEM.to} end={SETTINGS_ITEM.end} className="bj-nav-item bj-selectable">
-            <Icon name={SETTINGS_ITEM.icon} />
-            {SETTINGS_ITEM.label}
+          <NavLink to={INTEGRATIONS_ITEM.to} end={INTEGRATIONS_ITEM.end} className="bj-nav-item bj-selectable">
+            <Icon name={INTEGRATIONS_ITEM.icon} />
+            {INTEGRATIONS_ITEM.label}
           </NavLink>
           <button type="button" className="bj-rail-signout" onClick={onSignOut}>
             Sign out

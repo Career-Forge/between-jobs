@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { NAV, SETTINGS_ITEM, navItemsFor, phoneMoreItemsFor, phoneTabsFor } from "./nav";
+import integrationsPage from "../pages/Integrations.tsx?raw";
+import { NAV, INTEGRATIONS_ITEM, navItemsFor, phoneMoreItemsFor, phoneTabsFor } from "./nav";
 
 // The navigation as data: one list feeds the rail and the phone, so the rule that nothing in the
 // rail is out of reach on a phone is a property of the list, not of two components agreeing.
@@ -29,12 +30,17 @@ describe("the entries", () => {
   });
 
   it("gives every entry an icon, and matches Today and Profile on their own address only", () => {
-    for (const item of [...NAV, SETTINGS_ITEM]) expect(item.icon.length).toBeGreaterThan(0);
+    for (const item of [...NAV, INTEGRATIONS_ITEM]) expect(item.icon.length).toBeGreaterThan(0);
     expect(NAV.filter((item) => item.end).map((item) => item.to)).toEqual(["/", "/profile"]);
   });
 
-  it("points Settings at the existing Integrations page, which no longer marks Profile", () => {
-    expect(SETTINGS_ITEM).toMatchObject({ to: "/profile/integrations", label: "Settings", end: true });
+  it("points Integrations at its page, which no longer marks Profile", () => {
+    expect(INTEGRATIONS_ITEM).toMatchObject({ to: "/profile/integrations", label: "Integrations", end: true });
     expect(NAV.find((item) => item.to === "/profile")?.end).toBe(true);
+  });
+
+  it("names the entry exactly as the page it opens is headed, so the label and the copy that says 'Integrations' agree", () => {
+    const heading = /<h1>([^<]+)<\/h1>/.exec(integrationsPage)?.[1];
+    expect(heading).toBe(INTEGRATIONS_ITEM.label);
   });
 });
