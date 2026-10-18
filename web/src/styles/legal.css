@@ -79,6 +79,8 @@
 
 .bj-legal-toc li {
   break-inside: avoid;
+  font-size: var(--bj-text-control);
+  line-height: 1.4;
 }
 
 .bj-legal-toc a {
