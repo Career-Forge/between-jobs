@@ -199,24 +199,35 @@ describe("the band as the answers arrive", () => {
     expect(container.querySelector(".bj-state--setup")).toBeNull();
   });
 
-  it("sends a person with an active profile and no OpenRouter key to add one, ahead of any item or saved search", async () => {
+  it("sends a person with an active profile and no usable model key to add one, ahead of any item or saved search", async () => {
     answer({ "/credentials": [], "/saved-searches": [] });
     const empty = await draw();
-    expect(words(query(band(empty.container), ".bj-band-sentence"))).toBe("Add an OpenRouter key so Between Jobs can draft and score.");
-    expect(words(query(band(empty.container), ".bj-band-why"))).toBe("why: profile active · OpenRouter not set");
-    expect(query(band(empty.container), "a.bj-button-link-primary").getAttribute("href")).toBe("/profile/integrations#openrouter");
+    expect(words(query(band(empty.container), ".bj-band-sentence"))).toBe("Add a model key so Between Jobs can draft and score.");
+    expect(words(query(band(empty.container), ".bj-band-why"))).toBe("why: profile active · no model key saved");
+    expect(query(band(empty.container), "a.bj-button-link-primary").getAttribute("href")).toBe("/settings#ai-provider");
     empty.unmount();
 
     // Nothing is lifted into the band, so an item waiting keeps its own controls in the list.
     answer({ "/credentials": [], "/today": [matchItem] });
     const waiting = await draw();
-    expect(words(query(band(waiting.container), ".bj-band-sentence"))).toBe("Add an OpenRouter key so Between Jobs can draft and score.");
+    expect(words(query(band(waiting.container), ".bj-band-sentence"))).toBe("Add a model key so Between Jobs can draft and score.");
     expect(rows(waiting.container)).toEqual(["high_fit_job"]);
+  });
+
+  it("does not count a key that is saved with no model as a usable one: the band still asks, and says why", async () => {
+    answer({ "/credentials": [{ service: "llm", provider: "openai", is_validated: true, model: null, setup_state: "needs_model" }] });
+    const { container } = await draw();
+    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Add a model key so Between Jobs can draft and score.");
+    expect(words(query(band(container), ".bj-band-why"))).toBe("why: profile active · a key is saved, no model chosen");
+    // The checklist names what is left to do on that key, and links to the same section of Settings.
+    const step = query(container, ".bj-setup-step:nth-child(2)");
+    expect(words(query(step, "a"))).toBe("Choose a model");
+    expect(query(step, "a").getAttribute("href")).toBe("/settings#ai-provider");
   });
 
   it("does not ask for a key when the credentials list has one, or when it could not be read", async () => {
     const present = await draw();
-    expect(words(query(band(present.container), ".bj-band-sentence"))).not.toContain("OpenRouter");
+    expect(words(query(band(present.container), ".bj-band-sentence"))).not.toContain("model key");
     present.unmount();
     answer({ "/credentials": new FakeApiError(500, "boom") });
     const failed = await draw();
@@ -228,7 +239,7 @@ describe("the band as the answers arrive", () => {
     const { container } = await draw();
     const step = query(container, ".bj-setup-step:nth-child(2)");
     expect(words(query(step, ".bj-setup-state"))).toBe("◆To do");
-    expect(query(step, "a").getAttribute("href")).toBe("/profile/integrations");
+    expect(query(step, "a").getAttribute("href")).toBe("/settings#ai-provider");
     expect(words(query(step, "a"))).toBe("Add a model key");
   });
 });
@@ -519,7 +530,8 @@ describe("a resume the fit check held back", () => {
     await flush();
     const setup = query(band(container), ".bj-state--setup");
     expect(words(setup)).toContain("Add a model key first.");
-    expect(query(setup, "a").getAttribute("href")).toBe("/profile/integrations");
+    // The API still names the old address; the link goes to Settings.
+    expect(query(setup, "a").getAttribute("href")).toBe("/settings");
   });
 });
 

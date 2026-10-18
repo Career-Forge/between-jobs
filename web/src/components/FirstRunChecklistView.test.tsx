@@ -57,7 +57,7 @@ describe("the open checklist", () => {
     const links = [...container.querySelectorAll("a.bj-setup-link")].map((a) => [a.getAttribute("href"), words(a)]);
     expect(links).toEqual([
       ["/profile", "Add your profile"],
-      ["/settings", "Add a model key"],
+      ["/settings#ai-provider", "Add a model key"],
       ["/discover", "Run a first search"],
       ["/applications", "Track a job"],
       ["/applications", "Generate a resume"],
