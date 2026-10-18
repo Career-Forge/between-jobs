@@ -20,7 +20,7 @@ local file cannot leak into a bundle you meant to deploy. A change to either nee
 ## Shell, selection and buttons
 
 `src/components/AppShell.tsx` is the signed-in frame. From 960px wide it is a 220px left rail (wordmark,
-a reserved command-palette row, the main navigation, then the signed-in address, Settings, Sign out and the
+a reserved command-palette row, the main navigation, then the signed-in address, Integrations, Sign out and the
 legal links). Under 960px the rail is replaced by a slim top bar and a bottom tab bar with four tabs and a
 More button, whose sheet holds the entries that have no tab. Both navigations are always in the markup and
 CSS shows one; the destinations come from one list in `src/lib/nav.ts`. The page is the one `<main>`, and the
