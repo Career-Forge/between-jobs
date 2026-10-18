@@ -58,7 +58,9 @@ what it has read, and they draw only that.
 - `src/lib/nextStep/` is the rule table behind the band, as a pure function:
   `nextStep(input)` answers `loading`, `none` or a step `{ sentence, action, why }`. Global rows
   (`global.ts`) run before a page's own rows, and the first row that applies wins. To add a page, write its
-  rows in their own file with `definePage` and add one import and one entry to `PAGES` in `index.ts`.
+  rows in a new file `src/lib/nextStep/pages/<name>.ts` that exports `rules = definePage(...)`. The registry is
+  built from the files in that folder, so there is no list to edit, and a duplicate page name or row id fails
+  when the module loads.
   `components/paper/NextStepBand.tsx` draws the answer and holds the page's only cyan fill.
 - `components/paper/PageHeader.tsx` (breadcrumb, the page's one `<h1>`, subtitle, actions) and
   `components/paper/StateViews.tsx` (loading, empty, partial, stale, setup-required, failure).

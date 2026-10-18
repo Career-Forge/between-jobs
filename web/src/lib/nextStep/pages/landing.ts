@@ -2,9 +2,9 @@
 // says that and nothing about an account, a profile or a key the visitor may or may not have.
 // Signed in, the landing address is Today and this page's rows never run.
 
-import { REGISTER_PATH } from "../publicRoutes";
-import { SIGNED_OUT_WHY } from "./global";
-import { definePage, type NextStepRow } from "./types";
+import { REGISTER_PATH } from "../../publicRoutes";
+import { SIGNED_OUT_WHY } from "../global";
+import { definePage, type NextStepRow } from "../types";
 
 const L0: NextStepRow = {
   id: "L0",
@@ -18,4 +18,5 @@ const L0: NextStepRow = {
   },
 };
 
-export const landingRules = definePage("landing", [L0]);
+// Every file in pages/ exports its page as `rules`; index.ts collects them.
+export const rules = definePage("landing", [L0]);
