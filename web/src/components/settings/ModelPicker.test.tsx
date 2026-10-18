@@ -82,6 +82,15 @@ describe("loading the list", () => {
     expect(unavailable.container.querySelector('input[type="text"]')).not.toBeNull();
   });
 
+  it("does not say the provider returned nothing when it sent models whose ids this page cannot use", async () => {
+    on("POST /credentials/llm/models", listing({ models: [{ id: "model (preview)", name: "A", context_length: null, created: null }, { id: "other model", name: "B", context_length: null, created: null }] }));
+    const { container } = mount();
+    await settle();
+    expect(text(container)).not.toContain("returned no models");
+    expect(text(container)).toContain("OpenAI sent 2 models, but their ids are not in a form this page can use, so they were left out. Type a model id below if you know one.");
+    expect(container.querySelector('input[type="text"]')).not.toBeNull();
+  });
+
   it("says the list was cut when the API says so", async () => {
     on("POST /credentials/llm/models", listing({ truncated: true }));
     const { container } = mount();

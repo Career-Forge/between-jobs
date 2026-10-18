@@ -203,6 +203,12 @@ describe("a model list", () => {
       models: [{ id: "good/model:free" }, { id: "has space" }, { id: "../etc" }, { id: "<script>alert(1)</script>" }, { id: "good/model:free" }, { id: 5 }, null, { id: "a".repeat(201) }],
     });
     expect(list?.models.map((m) => m.id)).toEqual(["good/model:free"]);
+    // six entries could not be used (a repeat is not one of them: nothing is lost by it)
+    expect(list?.skipped).toBe(6);
+  });
+
+  it("counts none as left out for a list that is all usable", () => {
+    expect(parseModelList(body)?.skipped).toBe(0);
   });
 
   it("keeps markup in a provider's name as plain text, cut to a sane length", () => {

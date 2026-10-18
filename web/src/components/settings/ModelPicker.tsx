@@ -151,7 +151,11 @@ export function ModelPicker({ providerId, providerName, currentModel, onChosen, 
       )}
 
       {list !== null && list.listing === "live" && list.models.length === 0 && (
-        <p className="bj-set-notice">{providerName} returned no models for this key. Type a model id below if you know one.</p>
+        <p className="bj-set-notice">
+          {list.skipped > 0
+            ? `${providerName} sent ${list.skipped} ${list.skipped === 1 ? "model" : "models"}, but ${list.skipped === 1 ? "its id is" : "their ids are"} not in a form this page can use, so ${list.skipped === 1 ? "it was" : "they were"} left out. Type a model id below if you know one.`
+            : `${providerName} returned no models for this key. Type a model id below if you know one.`}
+        </p>
       )}
 
       {list !== null && list.models.length > 0 && (
