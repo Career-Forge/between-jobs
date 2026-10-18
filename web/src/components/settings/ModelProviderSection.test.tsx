@@ -3,7 +3,7 @@ import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../../testing/fakeApi";
-import { choose, settle, text, typeInto } from "../../testing/forms";
+import { choose, pick, settle, text, typeInto } from "../../testing/forms";
 import { click, query, render } from "../../testing/render";
 import type { CredentialSummary } from "../../lib/settings/credentials";
 import { parseProviderCatalog } from "../../lib/settings/llmProviders";
@@ -27,7 +27,22 @@ const providers = parseProviderCatalog({
       get_key_url: null,
       manage_url: null,
       model_list: "best_effort",
-      endpoints: [{ id: "groq", name: "Groq", base_url: "https://api.groq.com/openai/v1", get_key_url: "https://console.groq.com/keys" }],
+      endpoints: [
+        { id: "groq", name: "Groq", base_url: "https://api.groq.com/openai/v1", get_key_url: "https://console.groq.com/keys" },
+        { id: "mistral", name: "Mistral", base_url: "https://api.mistral.ai/v1", get_key_url: "https://console.mistral.ai/api-keys" },
+      ],
+    },
+    {
+      id: "qwen",
+      name: "Qwen Cloud",
+      key_hint: "A QwenCloud key looks like sk-...",
+      get_key_url: "https://home.qwencloud.com/api-keys",
+      manage_url: null,
+      model_list: "best_effort",
+      regions: [
+        { id: "qwencloud", name: "QwenCloud", needs_workspace: false, get_key_url: "https://home.qwencloud.com/api-keys" },
+        { id: "us-east-1", name: "Alibaba Cloud Model Studio, US (Virginia)", needs_workspace: true, get_key_url: "https://modelstudio.console.alibabacloud.com/us-east-1/model/settings/api-key" },
+      ],
     },
   ],
 })!;
@@ -159,6 +174,98 @@ describe("what is connected", () => {
   });
 });
 
+describe("replacing a key keeps its address", () => {
+  it("opens a custom key's replace form on the host it was saved with, not the first one listed", () => {
+    const { container } = mount({ credentials: [row("custom", { model: "m", setup_state: "ready", base_url: "https://api.mistral.ai/v1" })] });
+    click(button(container, "Replace key"));
+    expect(query<HTMLSelectElement>(container, "#provider-custom form select").value).toBe("mistral");
+  });
+
+  it("shows the region a Qwen key was saved in, and opens its replace form on it", () => {
+    const { container } = mount({
+      credentials: [row("qwen", { model: "m", setup_state: "ready", base_url: "https://ws1.us-east-1.maas.aliyuncs.com/compatible-mode/v1" })],
+    });
+    expect(text(query(container, "#provider-qwen"))).toContain("Region: Alibaba Cloud Model Studio, US (Virginia)");
+    click(button(container, "Replace key"));
+    expect(query<HTMLSelectElement>(container, "#provider-qwen form select").value).toBe("us-east-1");
+  });
+
+  it("says the key stays valid at the host that holds it, not at the umbrella name", () => {
+    const { container } = mount({ credentials: [row("custom", { model: "m", base_url: "https://api.mistral.ai/v1" })] });
+    click(button(container, "Remove key"));
+    expect(text(query(container, ".bj-set-confirm"))).toContain("It stays valid at Mistral until you delete it there.");
+  });
+
+  it("goes straight to choosing a model when a replaced key came back without one, and says so", async () => {
+    on("POST /credentials", row("qwen", { setup_state: "needs_model", base_url: "https://maas.qwencloudapi.com/compatible-mode/v1" }));
+    on("POST /credentials/llm/models", { provider: "qwen", listing: "unavailable", truncated: false, models: [] });
+    const onModelDropped = vi.fn();
+    const onModelChosen = vi.fn();
+    const announce = vi.fn();
+    const { container } = mount({
+      credentials: [row("qwen", { model: "qwen3-max", setup_state: "ready", base_url: "https://ws1.us-east-1.maas.aliyuncs.com/compatible-mode/v1" })],
+      onModelDropped,
+      onModelChosen,
+      announce,
+    });
+    click(button(container, "Replace key"));
+    choose(query<HTMLSelectElement>(container, "#provider-qwen form select"), "qwencloud");
+    expect(text(query(container, "#provider-qwen form"))).toContain("does not carry over");
+    typeInto(query<HTMLInputElement>(container, 'input[placeholder="Paste your key"]'), KEY);
+    click(button(container, "Validate and save"));
+    await settle();
+    expect(callsTo("POST /credentials")[0].body).toEqual({ service: "llm", provider: "qwen", secret: KEY, region: "qwencloud" });
+    expect(onModelDropped).toHaveBeenCalledWith("qwen");
+    expect(announce).toHaveBeenCalledWith("Your Qwen Cloud key was replaced. Choose a model to finish.");
+    expect(container.querySelector("#provider-qwen .bj-set-picker")).not.toBeNull();
+    expect(onModelChosen).not.toHaveBeenCalled();
+  });
+});
+
+describe("keyboard focus after a change", () => {
+  it("returns to the row's heading after a model is chosen, instead of falling to the page", async () => {
+    on("POST /credentials/llm/models", { provider: "openai", listing: "live", truncated: false, models: [{ id: "gpt-5.5", name: "", context_length: null, created: null }] });
+    on("PUT /credentials/llm/openai/model", row("openai", { model: "gpt-5.5", setup_state: "ready" }));
+    const { container } = mount({ credentials: [row("openai", { setup_state: "needs_model" })], panel: { provider: "openai", panel: "model" } });
+    await settle();
+    pick(query<HTMLInputElement>(container, 'input[type="radio"][value="gpt-5.5"]'));
+    click(button(container, "Use this model"));
+    await settle();
+    expect(container.querySelector(".bj-set-picker")).toBeNull();
+    expect(document.activeElement).toBe(query(container, "#provider-openai-heading"));
+  });
+
+  it("returns to the row's heading after a key is replaced", async () => {
+    on("POST /credentials", row("openai", { model: "gpt-5.5", setup_state: "ready" }));
+    const { container } = mount({ credentials: [row("openai", { model: "gpt-5.5", setup_state: "ready" })] });
+    click(button(container, "Replace key"));
+    typeInto(query<HTMLInputElement>(container, 'input[placeholder="Paste your key"]'), KEY);
+    click(button(container, "Validate and save"));
+    await settle();
+    expect(document.activeElement).toBe(query(container, "#provider-openai-heading"));
+  });
+
+  it("returns to the button that opened a panel when the panel is closed without a change", async () => {
+    on("POST /credentials/llm/models", { provider: "openai", listing: "live", truncated: false, models: [] });
+    const { container } = mount({ credentials: [row("openai", { model: "gpt-5.5", setup_state: "ready" })], panel: { provider: "openai", panel: "model" } });
+    await settle();
+    click(button(container, "Close"));
+    expect(document.activeElement).toBe(query(container, "#provider-openai-model-button"));
+    click(button(container, "Replace key"));
+    click(button(container, "Cancel"));
+    expect(document.activeElement).toBe(query(container, "#provider-openai-replace-button"));
+  });
+
+  it("moves to the section heading when the key it was on is removed", async () => {
+    on("DELETE /credentials/llm/openai", undefined);
+    const { container } = mount({ credentials: [row("openai", { model: "m" })] });
+    click(button(container, "Remove key"));
+    click(button(container, "Remove key"));
+    await settle();
+    expect(document.activeElement).toBe(query(container, "#ai-provider-h"));
+  });
+});
+
 describe("removing a key", () => {
   it("asks first, says what removing does and does not do, and keeps the key if you decline", () => {
     const { container } = mount({ credentials: [row("openai", { model: "m" })] });
@@ -209,6 +316,18 @@ describe("the default model", () => {
     expect(block.querySelector("select")).toBeNull();
   });
 
+  it("claims no default while the stored one may be gone, and lets even a single ready model be made the default", async () => {
+    on("PUT /credentials/llm/openai/model", row("openai", { model: "gpt-5.5" }));
+    const { container } = mount({ credentials: [row("openai", { model: "gpt-5.5" }), row("qwen", { setup_state: "needs_model" })], defaultUnknown: true });
+    const block = query(container, "#default-model");
+    expect(text(block)).not.toContain("gpt-5.5 on OpenAI.");
+    expect(text(block)).toContain("can't tell whether it is your default");
+    choose(query<HTMLSelectElement>(block, "select"), "openai");
+    click(button(block, "Make default"));
+    await settle();
+    expect(callsTo("PUT /credentials/llm/openai/model")).toHaveLength(1);
+  });
+
   it("does not guess which of several is the default, and changes it by proving the model again", async () => {
     on("PUT /credentials/llm/anthropic/model", row("anthropic", { model: "claude-x" }));
     const onModelChosen = vi.fn();
@@ -243,8 +362,8 @@ describe("adding a provider", () => {
   it("offers only the providers that are not connected yet, OpenRouter first, as a group of chips", () => {
     const { container } = mount({ credentials: [row("anthropic", { model: "m" })] });
     const chips = [...container.querySelectorAll('.bj-set-chips button')];
-    expect(chips.map((chip) => text(chip))).toEqual(["OpenRouter", "OpenAI", "Other OpenAI-compatible provider"]);
-    expect(chips.map((chip) => chip.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);
+    expect(chips.map((chip) => text(chip))).toEqual(["OpenRouter", "OpenAI", "Other OpenAI-compatible provider", "Qwen Cloud"]);
+    expect(chips.map((chip) => chip.getAttribute("aria-pressed"))).toEqual(["true", "false", "false", "false"]);
     expect(chips.every((chip) => chip.classList.contains("bj-selectable"))).toBe(true);
     expect(query(container, ".bj-segmented").getAttribute("role")).toBe("group");
     expect(text(query(container, ".bj-set-add h3"))).toBe("Add another provider");
@@ -283,6 +402,7 @@ describe("adding a provider", () => {
     const announce = vi.fn();
     const { container } = mount({ credentials: [], onModelChosen, onPanel, announce });
     click(button(container, "Other OpenAI-compatible provider"));
+    choose(query<HTMLSelectElement>(container, "select"), "groq");
     typeInto(query<HTMLInputElement>(container, 'input[placeholder="Paste your key"]'), KEY);
     click(button(container, "Validate and save"));
     await settle();

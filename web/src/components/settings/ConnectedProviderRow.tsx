@@ -16,6 +16,9 @@ import "../../styles/settings.css";
 //   needs_model   "needs a model" (gold): checked and saved, unusable until a model is chosen
 //   needs_key     "needs a key" (gold): not checked, so not usable
 //
+// The row's heading and its two panel buttons have ids (`provider-<id>-heading`, `-model-button`,
+// `-replace-button`) so the section can put keyboard focus back on something after a panel closes.
+//
 // OpenRouter's row has the id `openrouter`, the anchor a link to /settings#openrouter lands on (the
 // connect form has it too while OpenRouter is not connected); the others are `provider-<id>`.
 //
@@ -28,6 +31,8 @@ export interface ConnectedProviderRowProps {
   provider: LlmProvider | undefined;
   /** An address the row shows when the provider has a saved host (the custom provider). */
   hostName: string | null;
+  /** The region the row shows when the provider has a saved one (Qwen). */
+  regionName?: string | null;
   now: Date;
   /** Open ModelPicker / the replace form / neither, for this row. */
   panel: "model" | "replace" | null;
@@ -37,7 +42,7 @@ export interface ConnectedProviderRowProps {
   children?: ReactNode;
 }
 
-export function ConnectedProviderRow({ credential, provider, hostName, now, panel, onPanel, onRemoved, children }: ConnectedProviderRowProps) {
+export function ConnectedProviderRow({ credential, provider, hostName, regionName = null, now, panel, onPanel, onRemoved, children }: ConnectedProviderRowProps) {
   const name = provider?.name ?? credential.provider;
   const state = llmSetupState(credential);
   const [removing, setRemoving] = useState(false);
@@ -61,7 +66,9 @@ export function ConnectedProviderRow({ credential, provider, hostName, now, pane
       <div className="bj-set-row">
         <div className="bj-set-row-main">
           <div className="bj-set-row-title">
-            <h3>{name}</h3>
+            <h3 id={`provider-${credential.provider}-heading`} tabIndex={-1}>
+              {name}
+            </h3>
             {state === "ready" && <span className="bj-badge-emerald">{"✓"} Validated</span>}
             {state === "needs_model" && <span className="bj-badge-gold">Needs a model</span>}
             {state === "needs_key" && <span className="bj-badge-gold">Needs a key</span>}
@@ -72,6 +79,7 @@ export function ConnectedProviderRow({ credential, provider, hostName, now, pane
           {state === "needs_model" && <p className="bj-set-hint">Your key is saved and checked. Choose a model to use it.</p>}
           {state === "needs_key" && <p className="bj-set-hint">This key isn't confirmed, so it can't be used. Replace it with a working one.</p>}
           {hostName !== null && <p className="bj-set-hint">Host: {hostName}</p>}
+          {regionName !== null && <p className="bj-set-hint">Region: {regionName}</p>}
           <ProviderFacts providerId={credential.provider} providerName={name} />
           {credential.is_validated && (
             <StaticTrailLine trail={{ glyph: "code", actor: "Checked by code on save", when: when === null ? null : mono(when) }} />
@@ -79,14 +87,14 @@ export function ConnectedProviderRow({ credential, provider, hostName, now, pane
         </div>
         <div className="bj-set-row-actions">
           {state !== "needs_key" && (
-            <button type="button" aria-expanded={panel === "model"} onClick={() => onPanel(panel === "model" ? null : "model")}>
+            <button type="button" id={`provider-${credential.provider}-model-button`} aria-expanded={panel === "model"} onClick={() => onPanel(panel === "model" ? null : "model")}>
               {state === "ready" ? "Change model" : "Choose a model"}
             </button>
           )}
-          <button type="button" aria-expanded={panel === "replace"} onClick={() => onPanel(panel === "replace" ? null : "replace")}>
+          <button type="button" id={`provider-${credential.provider}-replace-button`} aria-expanded={panel === "replace"} onClick={() => onPanel(panel === "replace" ? null : "replace")}>
             Replace key
           </button>
-          <RemoveKey what={`${name} key`} holder={name} busy={removing} onRemove={() => void remove()} />
+          <RemoveKey what={`${name} key`} holder={hostName ?? name} busy={removing} onRemove={() => void remove()} />
           {provider?.manageUrl != null && (
             <a href={provider.manageUrl} target="_blank" rel="noopener noreferrer">
               Manage on {name}

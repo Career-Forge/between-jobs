@@ -4,6 +4,7 @@ import { parseCredentialRows } from "./credentials";
 import {
   MODEL_ID_PATTERN,
   MODEL_ROWS_SHOWN,
+  endpointForAddress,
   filterModels,
   formatContext,
   isModelId,
@@ -12,6 +13,7 @@ import {
   parseModelList,
   parseProviderCatalog,
   providerName,
+  regionForAddress,
   safeHttpsUrl,
   searchRows,
 } from "./llmProviders";
@@ -96,6 +98,35 @@ describe("the provider catalogue", () => {
     expect(providerName("qwen", providers)).toBe("Qwen Cloud");
     expect(providerName("openai", providers)).toBe("openai");
     expect(providerName("openai", null)).toBe("openai");
+  });
+});
+
+describe("which address a saved key goes to", () => {
+  const catalog = parseProviderCatalog(catalogBody) ?? [];
+  const custom = catalog.find((provider) => provider.id === "custom");
+  const qwen = catalog.find((provider) => provider.id === "qwen");
+
+  it("finds the custom host by its exact address, ignoring a trailing slash, and nothing else", () => {
+    const first = custom?.endpoints[0];
+    expect(first).toBeDefined();
+    expect(endpointForAddress(custom, first?.baseUrl)?.id).toBe(first?.id);
+    expect(endpointForAddress(custom, `${first?.baseUrl}/`)?.id).toBe(first?.id);
+    expect(endpointForAddress(custom, "https://api.elsewhere.example/v1")).toBeNull();
+    expect(endpointForAddress(custom, null)).toBeNull();
+    expect(endpointForAddress(custom, "")).toBeNull();
+    expect(endpointForAddress(qwen, first?.baseUrl)).toBeNull();
+    expect(endpointForAddress(undefined, first?.baseUrl)).toBeNull();
+  });
+
+  it("reads Qwen's region from the address the API built, and knows nothing about other hosts", () => {
+    expect(regionForAddress(qwen, "https://maas.qwencloudapi.com/compatible-mode/v1")?.id).toBe("qwencloud");
+    expect(regionForAddress(qwen, "https://ws-1.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")?.id).toBe("ap-southeast-1");
+    // a region this catalogue does not list, a lookalike host, a non-address and a missing one
+    expect(regionForAddress(qwen, "https://ws-1.us-east-1.maas.aliyuncs.com/compatible-mode/v1")).toBeNull();
+    expect(regionForAddress(qwen, "https://ws-1.ap-southeast-1.maas.aliyuncs.com.evil.example/v1")).toBeNull();
+    expect(regionForAddress(qwen, "not an address")).toBeNull();
+    expect(regionForAddress(qwen, null)).toBeNull();
+    expect(regionForAddress(custom, "https://maas.qwencloudapi.com/compatible-mode/v1")).toBeNull();
   });
 });
 
