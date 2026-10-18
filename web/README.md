@@ -17,6 +17,23 @@ are not local addresses, and refuses to run without them (`scripts/apiBaseGuard.
 `scripts/securityHeaders.ts`). Pass them in the shell rather than in `.env.local`, so a leftover
 local file cannot leak into a bundle you meant to deploy. A change to either needs a new build.
 
+## Shell, selection and buttons
+
+`src/components/AppShell.tsx` is the signed-in frame. From 960px wide it is a 220px left rail (wordmark,
+a reserved command-palette row, the main navigation, then the signed-in address, Settings, Sign out and the
+legal links). Under 960px the rail is replaced by a slim top bar and a bottom tab bar with four tabs and a
+More button, whose sheet holds the entries that have no tab. Both navigations are always in the markup and
+CSS shows one; the destinations come from one list in `src/lib/nav.ts`. The page is the one `<main>`, and the
+first tab stop is a "Skip to content" link to it. The command palette and the assistant drawer are reserved
+(`src/components/ReservedSlots.tsx`): inert, hidden from assistive technology, no behavior.
+
+One style marks a chosen item everywhere: a maroon fill with ivory text and weight 600, set by the item's
+ARIA state (`aria-current`, `aria-pressed`, `aria-selected` or `aria-checked`) on an element with
+`.bj-selectable`; a group of them sits in `.bj-segmented`. Focus is separate: a 2px cyan outline, offset 2px.
+Buttons are primary (`.bj-primary`, the one cyan fill on a page), secondary (a plain `<button>`, outlined),
+quiet (`.bj-quiet`, text only) or a cyan text link. The tokens are in `src/tokens.css`, and
+`src/tokens.test.ts` computes the contrast of every pair they introduce.
+
 ## Fonts and brand files
 
 The typefaces are Newsreader (display), IBM Plex Sans (body) and IBM Plex Mono (provenance), served from
