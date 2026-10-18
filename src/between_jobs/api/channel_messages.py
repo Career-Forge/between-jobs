@@ -284,7 +284,7 @@ _STEP_HINTS: dict[StepId, str] = {
 }
 _STEP_WEB_PAGES: dict[StepId, str] = {
     "profile": "the Profile page",
-    "model_key": "the Integrations page (under Profile)",
+    "model_key": "the Settings page",
     "first_search": "the Discover page",
     "track_job": "the Applications page",
     "generate_resume": "the Applications page",

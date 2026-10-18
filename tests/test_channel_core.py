@@ -1590,7 +1590,7 @@ _PROFILE_TAIL = (
 )
 _KEY_TAIL = (
     "Paste your own model key on the website. This app never runs on a shared key.\n"
-    "On the website: the Integrations page (under Profile)."
+    "On the website: the Settings page."
 )
 _TRACK_TAIL = (
     'Send me a job here ("track a job" shows the format), or paste one on the website.\n'
