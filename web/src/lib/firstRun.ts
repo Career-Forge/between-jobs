@@ -52,6 +52,7 @@
 // components/FirstRunChecklist.tsx.
 
 import { CROSS_NAV_HASH } from "./applicationsBoard";
+import { modelKeyOf } from "./modelKey";
 import { MODEL_PROVIDER_PATH } from "./settingsPaths";
 
 // ── the facts ──────────────────────────────────────────────────────────────
@@ -193,20 +194,6 @@ function mapFetched<T, U>(fact: Fetched<T>, map: (value: T) => U): Fetched<U> {
   return fact.kind === "ok" ? ok(map(fact.value)) : fact;
 }
 
-// What the credentials list says about the model keys: one is ready, or one is checked and waits
-// for its model. Validated AND with a model chosen is ready: a checked key with no model is saved
-// and still fails every generation (the server's `needs_model`), so it is not a finished step.
-export interface ModelKeyState {
-  ready: boolean;
-  needsModel: boolean;
-}
-
-export function modelKeyStateOf(rows: readonly Record<string, unknown>[]): ModelKeyState {
-  const checked = rows.filter((row) => row.service === "llm" && row.is_validated === true);
-  const ready = checked.some((row) => nonEmptyString(row.model) !== null);
-  return { ready, needsModel: !ready && checked.length > 0 };
-}
-
 // What the checklist decides from the reads.
 export function firstRunFactsOf(reads: AccountReads): FirstRunFacts {
   return {
@@ -214,8 +201,10 @@ export function firstRunFactsOf(reads: AccountReads): FirstRunFacts {
     ...(reads.profile.kind === "ok" && reads.profile.value.activatedAt !== null
       ? { profileActiveSince: reads.profile.value.activatedAt }
       : {}),
-    modelKey: mapFetched(reads.credentials, (rows) => modelKeyStateOf(rows).ready),
-    modelKeyNeedsModel: mapFetched(reads.credentials, (rows) => modelKeyStateOf(rows).needsModel),
+    // Usable means checked with a model chosen (lib/modelKey.ts): a key saved with no model is not a
+    // finished step, and the step then says what is left.
+    modelKey: mapFetched(reads.credentials, (rows) => modelKeyOf(rows) === "ready"),
+    modelKeyNeedsModel: mapFetched(reads.credentials, (rows) => modelKeyOf(rows) === "needs_model"),
     savedSearches: mapFetched(reads.savedSearches, (rows) => rows.length),
     applications: mapFetched(reads.applications, (rows) => {
       const withoutResume = rows.find((row) => row.resume_exists !== true && nonEmptyString(row.id));

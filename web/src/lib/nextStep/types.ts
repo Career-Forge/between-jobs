@@ -2,6 +2,8 @@
 // Pure types -- nothing here runs. See engine.ts for how rules are evaluated and index.ts for how a
 // page registers its own.
 
+import type { ModelKeyReading } from "../modelKey";
+
 // What the cyan button (or a link styled as it) does. The engine never holds a handler: it names
 // the action and the page that owns the band maps `intent` to a real function.
 export type NextStepAction =
@@ -60,11 +62,12 @@ export interface ProfileFacts {
   importWaiting: boolean;
 }
 
-// What the credentials list says that a row reads. `openrouter` is whether the list has an OpenRouter
-// key row (service "llm", provider "openrouter"). It is left out by a page that did not work it out,
-// and only a definite `false` lights G3: a page that does not say is never told to add a key.
+// What the credentials list says that a row reads: the person's model keys, as lib/modelKey.ts
+// reads them. It is left out by a page that did not work it out -- or that has its own rows for it,
+// as Settings does -- and only a definite "needs_model", "needs_key" or "none" lights G3, so a page
+// that says nothing about keys is never told to add one.
 export interface CredentialsFacts {
-  openrouter?: boolean;
+  modelKey?: ModelKeyReading;
 }
 
 export interface PageFailure {

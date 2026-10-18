@@ -4,7 +4,7 @@ import { findForbiddenWord } from "../trail";
 import { collectPages, evaluate, evaluateWithRow } from "./engine";
 import { GLOBAL_ROWS } from "./global";
 import { PAGES, nextStep, nextStepWithRow } from "./index";
-import { definePage, type NextStep, type NextStepInput, type NextStepRow, type ProfileFacts, type SetupCheck } from "./types";
+import { definePage, type CredentialsFacts, type NextStep, type NextStepInput, type NextStepRow, type ProfileFacts, type SetupCheck } from "./types";
 
 // One row per case: the input a page can read, the row that decides, and what it says.
 
@@ -146,23 +146,39 @@ const ROWS: Row[] = [
     why: ["no active profile"],
   },
   {
-    name: "G3 an active profile and no OpenRouter key",
+    name: "G3 an active profile and no model key at all",
     id: "G3",
-    input: inApp({ credentials: ready({ openrouter: false }) }),
-    sentence: "Add an OpenRouter key so Between Jobs can draft and score.",
-    action: { kind: "link", label: "Add a model key", to: "/profile/integrations#openrouter" },
-    why: ["profile active", "OpenRouter not set"],
+    input: inApp({ credentials: ready({ modelKey: "none" }) }),
+    sentence: "Add a model key so Between Jobs can draft and score.",
+    action: { kind: "link", label: "Add a model key", to: "/settings#ai-provider" },
+    why: ["profile active", "no model key saved"],
+  },
+  {
+    name: "G3 a key is saved and checked but has no model: it is not a usable key",
+    id: "G3",
+    input: inApp({ credentials: ready({ modelKey: "needs_model" }) }),
+    sentence: "Add a model key so Between Jobs can draft and score.",
+    action: { kind: "link", label: "Add a model key", to: "/settings#ai-provider" },
+    why: ["profile active", "a key is saved, no model chosen"],
+  },
+  {
+    name: "G3 a key is saved but the provider did not confirm it",
+    id: "G3",
+    input: inApp({ credentials: ready({ modelKey: "needs_key" }) }),
+    sentence: "Add a model key so Between Jobs can draft and score.",
+    action: { kind: "link", label: "Add a model key", to: "/settings#ai-provider" },
+    why: ["profile active", "a key is saved, not confirmed"],
   },
   {
     name: "G3 beats the page's own failure: a key is the first thing to fix",
     id: "G3",
     input: inApp({
-      credentials: ready({ openrouter: false }),
+      credentials: ready({ modelKey: "none" }),
       pageFailure: { what: "Couldn't load Today", call: "GET /today", at: "09:14" },
     }),
-    sentence: "Add an OpenRouter key so Between Jobs can draft and score.",
-    action: { kind: "link", label: "Add a model key", to: "/profile/integrations#openrouter" },
-    why: ["profile active", "OpenRouter not set"],
+    sentence: "Add a model key so Between Jobs can draft and score.",
+    action: { kind: "link", label: "Add a model key", to: "/settings#ai-provider" },
+    why: ["profile active", "no model key saved"],
   },
   {
     name: "F1 the page's own data request failed",
@@ -200,15 +216,15 @@ describe("the global and landing rows", () => {
   });
 
   it("G3 waits behind G2 and G2b: with no active profile the profile is the first step, not a key", () => {
-    const credentialsMissing = ready({ openrouter: false });
+    const credentialsMissing = ready<CredentialsFacts>({ modelKey: "none" });
     expect(nextStepWithRow(inApp({ profile: ready({ active: false, importWaiting: false }), credentials: credentialsMissing })).rowId).toBe("G2");
     expect(nextStepWithRow(inApp({ profile: ready({ active: false, importWaiting: true }), credentials: credentialsMissing })).rowId).toBe("G2b");
   });
 
-  it("G3 needs a definite no: a key that is there, or a page that did not say, never lights it", () => {
+  it("G3 needs a definite no: a usable key, or a page that did not say, never lights it", () => {
     const pageRow: NextStepRow = { id: "T1", match: () => ({ sentence: "The page's own.", action: null, why: ["w"] }) };
     const pages = [definePage("today", [pageRow])];
-    for (const credentials of [ready({ openrouter: true }), ready({}), undefined]) {
+    for (const credentials of [ready({ modelKey: "ready" }), ready({}), undefined]) {
       expect(evaluateWithRow(inApp({ credentials }), GLOBAL_ROWS, pages).rowId).toBe("T1");
     }
   });
