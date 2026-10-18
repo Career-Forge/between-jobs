@@ -170,6 +170,26 @@ describe("selection and buttons", () => {
     );
   });
 
+  it("paints no hover fill behind a flat text-style button, which the global button:hover fill would otherwise reach", () => {
+    // Each of these is declared in app.css with no background and no border, and a class selector
+    // (0,1,0) loses to the global `button:hover` (0,1,1), so tokens.css has to switch the fill off.
+    const flat = [
+      "button.bj-link-button",
+      "button.bj-modal-close",
+      "button.bj-score-disclosure-toggle",
+      "button.bj-workauth-disclosure-toggle",
+      "button.bj-gap-ghost",
+      ".bj-chip-removable button",
+    ];
+    for (const selector of flat) {
+      const own = declarationsFor(appCss, selector.replace(/^button\./, "."));
+      expect(own.border, selector).toBe("none");
+      expect(["none", "transparent"], selector).toContain(own.background);
+      expect(declarationsFor(tokensCss, `${selector}:hover`).background, selector).toBe("transparent");
+    }
+    expect(declarationsFor(tokensCss, "button:hover").background).toBe("var(--bj-hover-bg)");
+  });
+
   it("dims a busy control that keeps focus the way a disabled one is dimmed", () => {
     const rule = rulesOf(tokensCss).find((r) => r.selectors.includes('button[aria-disabled="true"]'));
     expect(rule?.selectors).toContain("button:disabled");
