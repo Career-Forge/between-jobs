@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fontsCss from "./fonts.css?raw";
 import tokensCss from "./tokens.css?raw";
 import notices from "../THIRD_PARTY_FONTS.md?raw";
+import shippedLicenses from "../public/licenses/fonts.txt?raw";
 
 // The typefaces are self-hosted and unmodified (IBM Plex reserves its name, so a changed file would
 // no longer be allowed to carry it). These read the shipped files as base64, which is the only way
@@ -85,5 +86,16 @@ describe("the font files", () => {
       expect(text, family).toContain("SIL OPEN FONT LICENSE Version 1.1");
     }
     expect(licenses["./fonts/ibm-plex-sans/OFL.txt"]).toContain('Reserved Font Name "Plex"');
+  });
+
+  it("ships every family's full license text at /licenses/fonts.txt, so the deployed site carries the notice", () => {
+    // public/ is copied into the build as it is, so this file is what a visitor or a mirror receives.
+    // It holds each OFL.txt verbatim, so a license updated beside the fonts fails here until the
+    // shipped copy is regenerated.
+    // (Two of the upstream files use CRLF line endings; the shipped copy uses LF throughout.)
+    for (const [path, text] of Object.entries(licenses)) {
+      expect(shippedLicenses, path).toContain(text.replaceAll("\r\n", "\n").trim());
+    }
+    for (const holder of ["The Newsreader Project Authors", "IBM Corp."]) expect(shippedLicenses).toContain(holder);
   });
 });
