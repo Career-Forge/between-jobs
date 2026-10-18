@@ -452,6 +452,7 @@ class Wire:
     def __init__(self, handler: Handler) -> None:
         self.handler = handler
         self.built: list[dict[str, Any]] = []
+        self.http_clients: list[Any] = []
         self.clients: list[openai.AsyncOpenAI] = []
         self.requests: list[Any] = []
 
@@ -461,6 +462,9 @@ class Wire:
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> Wire:
         def build(**options: Any) -> openai.AsyncOpenAI:
+            # `generate` hands the SDK its own HTTP client (one that follows no redirect); the
+            # test swaps in the mock transport, and keeps the original to inspect.
+            self.http_clients.append(options.pop("http_client", None))
             self.built.append(options)
             client = openai.AsyncOpenAI(
                 http_client=HTTP.AsyncClient(transport=HTTP.MockTransport(self._handle)),

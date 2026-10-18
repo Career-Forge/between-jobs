@@ -41,16 +41,19 @@ _NOT_ALNUM_BEFORE = r"(?<![A-Za-z0-9])"
 _SECRET_NAMES = (
     r"(?:api[_-]?key|apikey|app[_-]?key|x-api-key|rapidapi-key|x-rapidapi-key|access[_-]?token|"
     r"refresh[_-]?token|id[_-]?token|token|client[_-]?secret|secret(?:[_-]?\d+)?|password|"
-    r"authorization(?:-key)?)"
+    r"code[_-]?verifier|x-goog-api-key|anthropic-api-key|authorization(?:-key)?)"
 )
 
 _REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
-    # LLM and search provider keys: OpenRouter/OpenAI/Anthropic (sk-...), Firecrawl
-    # (fc-...), xAI (xai-...), Tavily (tvly-...), Groq (gsk_...), Google OAuth
-    # client secrets (GOCSPX-...).
+    # LLM and search provider keys: OpenRouter/OpenAI/Anthropic/DeepSeek/Qwen (sk-...),
+    # Firecrawl (fc-...), xAI (xai-...), Tavily (tvly-...), Groq (gsk_...), Fireworks (fw_...),
+    # Google OAuth client secrets (GOCSPX-...). Mistral, Together and Cohere keys have no fixed
+    # prefix, so nothing here can recognise them: no code path puts one in a log line, and the
+    # tests check that none does.
     (re.compile(_NOT_ALNUM_BEFORE + r"sk-[A-Za-z0-9_\-]{8,}"), "sk-<redacted>"),
     (re.compile(_NOT_ALNUM_BEFORE + r"(?:fc|xai|tvly(?:-dev)?)-[A-Za-z0-9_\-]{16,}"), "<key>"),
     (re.compile(_NOT_ALNUM_BEFORE + r"gsk_[A-Za-z0-9]{20,}"), "<key>"),
+    (re.compile(_NOT_ALNUM_BEFORE + r"fw_[A-Za-z0-9]{16,}"), "<key>"),
     (re.compile(_NOT_ALNUM_BEFORE + r"GOCSPX-[A-Za-z0-9_\-]{20,}"), "<key>"),
     (re.compile(r"(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._\-~+/]+=*"), "<auth-redacted>"),
     # JWTs (Supabase access tokens, legacy service-role keys).
