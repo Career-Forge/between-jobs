@@ -33,16 +33,21 @@ import "../../styles/paper.css";
 // and may replace the eyebrow's words with the item's kind (`eyebrow`). Neither changes what the band
 // is: the sentence, the why line and the one cyan button still come from the rule table.
 //
-// While the page has a request out for the step (`pending`), the band's handler buttons stay where
-// they are but are aria-disabled -- not disabled, so a focused one keeps focus -- and ignore presses,
-// and the one the request was for reads the words the page gives it ("Generating..."). A route link is
-// not a handler and stays as it is.
+// While the page has a request out for the step (`pending`), the band's handler buttons and its form
+// submit button stay where they are but are aria-disabled -- not disabled, so a focused one keeps focus
+// -- and ignore presses, and the one the request was for reads the words the page gives it
+// ("Generating...", "Signing in..."). A route link is not a handler and stays as it is. A handler is
+// named by its `intent`; the form submit button is named by SUBMIT_INTENT.
 //
 // Not built: the phone's docked sticky 56px bar (optional, and not part of this component).
 
 // The id of the element a "Skip to next step" link should focus: the button when the band is lit,
 // otherwise the sentence (which takes focus without being a tab stop).
 export const NEXT_STEP_FOCUS_ID = "next-step-focus";
+
+// The `intent` that names a band's form submit button in `pending` (a submit action has no intent of
+// its own: the form it submits is what it does).
+export const SUBMIT_INTENT = "submit";
 
 export interface NextStepBandProps {
   outcome: NextStepOutcome;
@@ -53,8 +58,10 @@ export interface NextStepBandProps {
   /** The item a step is about, drawn inside the band under its text and buttons. */
   children?: ReactNode;
   /**
-   * A request the page has out for this step. `intent` names the button it was for (null when it was
-   * for something the band has no button for), and `label` replaces that button's words meanwhile.
+   * A request the page has out for this step. `intent` names the button it was for -- a `button`
+   * action's intent, or SUBMIT_INTENT for the form submit button; null when it was for something the
+   * band has no button for -- and `label` replaces that button's words meanwhile. Meanwhile every
+   * handler and submit button in the band ignores presses.
    */
   pending?: NextStepPending | null;
 }
@@ -99,6 +106,11 @@ function ActionControl({
   focusId?: string;
   pending?: NextStepPending | null;
 }) {
+  // A request out for the step: every handler and submit button holds still (aria-disabled, not
+  // disabled, so a focused one keeps focus), and the one the request was for says what is happening.
+  const waiting = pending !== undefined && pending !== null;
+  const wordsFor = (intent: string, label: string) =>
+    waiting && pending.intent === intent && pending.label !== undefined ? pending.label : label;
   const button = primary ? "bj-primary bj-band-action" : "bj-band-action bj-band-secondary";
   const link = primary ? "bj-button-link bj-button-link-primary bj-band-action" : "bj-button-link bj-band-action bj-band-secondary";
   switch (action.kind) {
@@ -120,13 +132,18 @@ function ActionControl({
     }
     case "submit":
       return (
-        <button id={focusId} type="submit" form={action.form} className={button}>
-          {action.label}
+        <button
+          id={focusId}
+          type="submit"
+          form={action.form}
+          className={button}
+          aria-disabled={waiting ? true : undefined}
+          onClick={waiting ? (event) => event.preventDefault() : undefined}
+        >
+          {wordsFor(SUBMIT_INTENT, action.label)}
         </button>
       );
     case "button": {
-      const waiting = pending !== undefined && pending !== null;
-      const words = waiting && pending.intent === action.intent && pending.label !== undefined ? pending.label : action.label;
       return (
         <button
           id={focusId}
@@ -137,7 +154,7 @@ function ActionControl({
             if (!waiting) onAction?.(action.intent);
           }}
         >
-          {words}
+          {wordsFor(action.intent, action.label)}
         </button>
       );
     }

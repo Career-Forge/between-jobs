@@ -67,11 +67,13 @@ const G0: NextStepRow = {
   id: "G0",
   match: (input) => {
     if (input.signedIn || PUBLIC_PAGES.includes(input.page)) return null;
+    // The sentence follows the form on the page: someone who chose "Create account" is not told to sign in.
+    const registering = input.authMode === "register";
     return {
-      sentence: "Sign in to your job search workspace.",
+      sentence: registering ? "Create an account to start your job search workspace." : "Sign in to your job search workspace.",
       action: {
         kind: "submit",
-        label: input.authMode === "register" ? "Create account" : "Sign in",
+        label: registering ? "Create account" : "Sign in",
         form: AUTH_FORM_ID,
       },
       why: [SIGNED_OUT_WHY],

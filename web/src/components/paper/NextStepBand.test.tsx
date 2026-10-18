@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
+import { act } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type { NextStep, NextStepOutcome } from "../../lib/nextStep";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
 import { click, query, render } from "../../testing/render";
-import { NEXT_STEP_FOCUS_ID, NextStepBand, type NextStepPending } from "./NextStepBand";
+import { NEXT_STEP_FOCUS_ID, NextStepBand, SUBMIT_INTENT, type NextStepPending } from "./NextStepBand";
 
 const step = (overrides: Partial<NextStep> = {}): NextStep => ({
   sentence: "Generate a tailored resume for this posting.",
@@ -238,6 +239,66 @@ describe("the locked button", () => {
     expect(button.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     click(button);
     expect(onAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("a request out for the primary action", () => {
+  const signIn = ready(step({ action: { kind: "submit", label: "Sign in", form: "auth-form" } }));
+  const waiting = (outcome: NextStepOutcome, pending: NextStepPending | null, onAction?: (intent: string) => void) => (
+    <MemoryRouter>
+      <NextStepBand outcome={outcome} onAction={onAction} pending={pending} />
+    </MemoryRouter>
+  );
+
+  it("reads the page's words on a handler button it was for, keeps it aria-disabled but focusable, and does not call the handler", () => {
+    const onAction = vi.fn();
+    const { container } = render(waiting(ready(step()), { intent: "generate", label: "Generating..." }, onAction));
+    const button = query<HTMLButtonElement>(container, "button.bj-primary");
+    expect(text(button)).toBe("Generating...");
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.disabled).toBe(false);
+    click(button);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("does the same on a form's submit button, named by SUBMIT_INTENT, and cancels the press so the form is not submitted again", () => {
+    const { container } = render(waiting(signIn, { intent: SUBMIT_INTENT, label: "Signing in..." }));
+    const button = query<HTMLButtonElement>(container, "button.bj-primary");
+    expect(text(button)).toBe("Signing in...");
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.disabled).toBe(false);
+    const press = new MouseEvent("click", { bubbles: true, cancelable: true });
+    act(() => {
+      button.dispatchEvent(press);
+    });
+    expect(press.defaultPrevented).toBe(true);
+  });
+
+  it("holds a submit button still without renaming it when the request was for something else", () => {
+    const { container } = render(waiting(signIn, { intent: "generate", label: "Generating..." }));
+    const button = query<HTMLButtonElement>(container, "button.bj-primary");
+    expect(text(button)).toBe("Sign in");
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("shows the ordinary label, with no aria-disabled, and lets the form submit when nothing is pending", () => {
+    const { container } = render(waiting(signIn, null));
+    const button = query<HTMLButtonElement>(container, "button.bj-primary");
+    expect(text(button)).toBe("Sign in");
+    expect(button.hasAttribute("aria-disabled")).toBe(false);
+    const press = new MouseEvent("click", { bubbles: true, cancelable: true });
+    act(() => {
+      button.dispatchEvent(press);
+    });
+    expect(press.defaultPrevented).toBe(false);
+  });
+
+  it("leaves a link action alone: a route link is not work that can be pending", () => {
+    const outcome = ready(step({ action: { kind: "link", label: "Review the import", to: "/profile" } }));
+    const { container } = render(waiting(outcome, { intent: SUBMIT_INTENT, label: "Working..." }));
+    const link = query<HTMLAnchorElement>(container, "a.bj-button-link-primary");
+    expect(text(link)).toBe("Review the import");
+    expect(link.hasAttribute("aria-disabled")).toBe(false);
   });
 });
 

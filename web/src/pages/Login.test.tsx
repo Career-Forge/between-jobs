@@ -57,9 +57,9 @@ beforeEach(() => {
 });
 
 describe.each([
-  ["sign-in", "", "Sign in", "current-password"],
-  ["register", "?mode=register", "Create account", "new-password"],
-])("the %s form", (_name, search, buttonLabel, passwordAutocomplete) => {
+  ["sign-in", "", "Sign in", "current-password", "Sign in to your job search workspace."],
+  ["register", "?mode=register", "Create account", "new-password", "Create an account to start your job search workspace."],
+])("the %s form", (_name, search, buttonLabel, passwordAutocomplete, bandSentence) => {
   it("labels its two fields, so a screen reader and a tap on the label both reach them, and asks the phone for the right keyboard", () => {
     const root = open(search);
     const email = query<HTMLInputElement>(root, 'input[type="email"]');
@@ -98,7 +98,8 @@ describe.each([
   it("puts the band, in the signed-out words, above the card", () => {
     const root = open(search);
     const band = query(root, 'section[aria-label="Next step"]');
-    expect(text(query(band, ".bj-band-sentence"))).toBe("Sign in to your job search workspace.");
+    // The sentence agrees with the form: nobody on the register screen is told to sign in.
+    expect(text(query(band, ".bj-band-sentence"))).toBe(bandSentence);
     expect(text(query(band, ".bj-band-why"))).toBe("why: you're signed out");
     expect(band.compareDocumentPosition(query(root, ".bj-login-card")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -194,7 +195,7 @@ describe("signing in", () => {
     expect(alert.classList.contains("bj-error")).toBe(true);
   });
 
-  it("ignores a second press while the first request is out, since the band's button cannot show it is busy", async () => {
+  it("shows the band's button busy while the request is out, and ignores a second press", async () => {
     let resolve: (value: null) => void = () => undefined;
     auth.signIn.mockReturnValue(new Promise<null>((done) => (resolve = done)));
     const root = open();
@@ -205,8 +206,18 @@ describe("signing in", () => {
     await submit(form);
     expect(auth.signIn).toHaveBeenCalledTimes(1);
     expect(text(query(root, ".bj-login-busy"))).toBe("Signing in...");
+    // The band's own button carries the state: aria-disabled (still focusable), reading what is under way.
+    const band = query(root, 'section[aria-label="Next step"]');
+    const button = query<HTMLButtonElement>(band, "button.bj-band-action");
+    expect(text(button)).toBe("Signing in...");
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.disabled).toBe(false);
+    click(button);
+    expect(auth.signIn).toHaveBeenCalledTimes(1);
     await act(async () => resolve(null));
     expect(text(query(root, ".bj-login-busy"))).toBe("");
+    expect(text(query(band, "button.bj-band-action"))).toBe("Sign in");
+    expect(query(band, "button.bj-band-action").hasAttribute("aria-disabled")).toBe(false);
   });
 
   it("shows an error from Google's redirect and lets the person try again", async () => {

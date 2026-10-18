@@ -47,7 +47,7 @@ const ROWS: Row[] = [
     name: "G0 signed out, in register mode, creates the account",
     id: "G0",
     input: { page: "login", signedIn: false, authMode: "register" },
-    sentence: "Sign in to your job search workspace.",
+    sentence: "Create an account to start your job search workspace.",
     action: { kind: "submit", label: "Create account", form: "auth-form" },
     why: ["you're signed out"],
   },
