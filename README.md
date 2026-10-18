@@ -245,7 +245,8 @@ whether a temperature is accepted differ, and a field one provider requires anot
 with a 400, so the API picks the shape from the host (`provider_registry.py`). OpenRouter's
 request is unchanged and pinned byte for byte by a test. For the others, when a model refuses
 the first reasoning setting (a 400 or 422), the API tries the next, at most three requests in
-all, and remembers what worked for that model.
+all, and remembers what worked for that model. Every request to these providers carries a
+cap on the answer (8,192 tokens when the caller sets none) and a time limit.
 
 **What is not claimed.** The provider facts in `provider_registry.py` come from each
 provider's documentation, read on 2026-10-18, and none of it has been run against a live

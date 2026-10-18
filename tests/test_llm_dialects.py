@@ -136,7 +136,7 @@ async def test_the_first_request_to_each_provider_is_in_its_own_dialect(
         "https://llm.example.test/v1",
     ],
 )
-async def test_an_uncapped_request_leaves_the_cap_out_except_for_openrouter(
+async def test_an_uncapped_request_gets_a_ceiling_except_for_openrouter(
     monkeypatch: pytest.MonkeyPatch, base_url: str
 ) -> None:
     wire = _wire(monkeypatch, completion())
@@ -144,8 +144,19 @@ async def test_an_uncapped_request_leaves_the_cap_out_except_for_openrouter(
     await _generate(base_url, max_tokens=None, temperature=None)
 
     [body] = wire.bodies()
-    assert "max_tokens" not in body and "max_completion_tokens" not in body
+    field = dialect_for_base_url(base_url).token_field
+    assert body[field] == llm_client.UNCAPPED_CEILING_TOKENS == 8192
     assert "temperature" not in body
+
+
+async def test_an_uncapped_openrouter_request_keeps_its_null_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    wire = _wire(monkeypatch, completion())
+
+    await _generate(None, max_tokens=None, temperature=None)
+
+    assert wire.bodies()[0]["max_tokens"] is None
 
 
 async def test_a_temperature_is_dropped_where_the_provider_refuses_one(
