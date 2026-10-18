@@ -37,6 +37,12 @@ Buttons are primary (`.bj-primary`, the one cyan fill on a page), secondary (a p
 quiet (`.bj-quiet`, text only) or a cyan text link. The tokens are in `src/tokens.css`, and
 `src/tokens.test.ts` computes the contrast of every pair they introduce.
 
+Two properties of the shell are choices rather than accidents. The rail and the page share the one canvas
+color (`--bj-bg`) and are told apart by the rail's 1px border: a page tinted a step lighter would sit under
+every card that already uses `--bj-surface` and flatten them all. And the chosen item is a fill with no edge
+bar and no underline, so under a forced-colors mode (Windows High Contrast) it is redrawn as a system
+`Highlight` fill rather than left to the browser, which would erase it.
+
 ## Fonts and brand files
 
 The typefaces are Newsreader (display), IBM Plex Sans (body) and IBM Plex Mono (provenance), served from
@@ -45,8 +51,10 @@ which live in `src/fonts/` with their license texts; `THIRD_PARTY_FONTS.md` says
 records a SHA-256 for every file, which `npm test` checks.
 
 The favicon, touch icons, web app manifest and the link-preview image are in `public/` and are linked from
-`index.html`. The PNG and ICO files are generated, not drawn by hand; to change the mark or the preview
-image, edit `scripts/generateBrandAssets.mjs` and run:
+`index.html`. The icon (two bars with a dot between them) and the wordmark lockup (the name with a dot after
+"Jobs", `src/components/Wordmark.tsx`) are separate drawings that share the dot. The PNG and ICO files are
+generated, not drawn by hand, and the icon is drawn in one place, `markShapes()`; to change the mark or the
+preview image, edit `scripts/generateBrandAssets.mjs` and run:
 
 ```bash
 node scripts/generateBrandAssets.mjs     # needs Chrome; set CHROME_BIN if it is not in the usual place
