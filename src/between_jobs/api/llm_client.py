@@ -355,6 +355,14 @@ class LLMResponse:
     content: str
 
 
+UNCAPPED_CEILING_TOKENS = 8_192
+"""The cap sent to a provider other than OpenRouter when the caller sets none. Every request
+path carries a cap: some providers refuse a request without one (Anthropic's API requires it)
+and the rest would let a model write until its own limit. 8,192 is below the output limit of
+every model this was checked against, so it cannot be refused as too large, and is far above what
+the callers that set none (a batch of job scores) write. OpenRouter keeps the `null` it always
+sent."""
+
 _ATTEMPT_MEMORY_LIMIT = 256
 _working_attempt: dict[tuple[str, str], int] = {}
 """(host, model) -> index of the dialect attempt that last worked, so a model that refuses the
@@ -417,6 +425,8 @@ async def generate(
             await assert_safe_destination(target)
         except UpstreamFailure as e:
             raise _error(e.reason) from e
+    if max_tokens is None and not is_openrouter:
+        max_tokens = UNCAPPED_CEILING_TOKENS
     memory_key = (_host_key(target), model)
     attempt = _working_attempt.get(memory_key, 0)
     if attempt >= len(dialect.attempts):
