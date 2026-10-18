@@ -1,5 +1,6 @@
 import { isValidElement, type ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { STILL_LOADING } from "../lib/firstRun";
 import { FirstRunChecklist } from "./FirstRunChecklist";
 
 // The one decision the connected checklist makes: it is keyed by the signed-in person, so a
@@ -11,10 +12,10 @@ const auth = vi.hoisted(() => ({ session: null as { user: { id: string } } | nul
 
 // The real auth module pulls in the Supabase client, which throws at import without env vars.
 vi.mock("../auth", () => ({ useAuth: () => ({ session: auth.session }) }));
-vi.mock("../lib/useFirstRun", () => ({ useFirstRun: () => ({ view: { visible: false }, dismiss: () => {} }) }));
+vi.mock("../lib/useFirstRun", () => ({ useFirstRun: () => ({ view: { presentation: "hidden" }, dismiss: () => {} }) }));
 
 function render(): ReactElement | null {
-  const node = FirstRunChecklist();
+  const node = FirstRunChecklist({ facts: STILL_LOADING });
   if (node === null) return null;
   if (!isValidElement(node)) throw new Error("expected an element");
   return node as ReactElement<{ userId: string }>;

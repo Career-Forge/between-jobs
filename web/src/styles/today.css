@@ -1,0 +1,451 @@
+/* Today: the feed rows, the item the band holds, the setup checklist and the "In the background"
+ * trail (pages/Today.tsx, components/today/). Tokens only -- no color is defined here -- and no rule
+ * fills anything cyan: the page's one cyan fill is the next-step band's button.
+ *
+ * Widths. From 1280px the page has a right margin of 280px (the background trail) beside a feed no
+ * wider than 880px. Under 1280px there is no margin: the same trail is one disclosure line under the
+ * band. Under 960px (the shell's phone breakpoint) every control is at least 44px tall and the band's
+ * button is full width (paper.css). */
+
+/* The shell caps the page column at 960px, which leaves no room for the margin. The page opts out of
+   the cap from 1280px, where the margin exists. */
+@media (min-width: 1280px) {
+  .bj-main:has(.bj-today) {
+    max-width: none;
+    padding: 40px 32px;
+  }
+
+  .bj-today-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 880px) 280px;
+    column-gap: var(--bj-space-6);
+    align-items: start;
+  }
+
+  .bj-today-margin {
+    position: sticky;
+    top: var(--bj-space-5);
+    padding-left: var(--bj-space-4);
+    border-left: 1px solid var(--bj-maroon);
+  }
+}
+
+.bj-today {
+  min-width: 0;
+}
+
+.bj-today-main {
+  min-width: 0;
+  max-width: 880px;
+}
+
+.bj-today-section {
+  margin-bottom: var(--bj-space-6);
+}
+
+.bj-today-heading {
+  margin: 0 0 var(--bj-space-3);
+  font-family: var(--bj-font-display);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--bj-text);
+}
+
+.bj-today-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  margin-bottom: var(--bj-space-5);
+}
+
+/* ------------------------------------------------------------------ */
+/* What the band holds: the lit item's own words                        */
+/* ------------------------------------------------------------------ */
+
+.bj-band-eyebrow-glyph {
+  margin-right: 0.4em;
+  font-family: var(--bj-font-body);
+  font-size: 1.1em;
+  color: var(--bj-danger);
+}
+
+.bj-band-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--bj-space-2);
+  min-width: 0;
+  max-width: 680px;
+  margin-top: var(--bj-space-3);
+}
+
+.bj-band-item > * {
+  max-width: 100%;
+}
+
+/* ------------------------------------------------------------------ */
+/* Item parts, shared by the band and the rows                          */
+/* ------------------------------------------------------------------ */
+
+.bj-today-kind {
+  margin: 0;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+.bj-today-kind-glyph {
+  margin-right: 0.45em;
+  color: var(--bj-danger);
+}
+
+.bj-today-title {
+  margin: 0;
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+/* The job of a held-back resume reads as a title, as it does in the workspace. */
+.bj-today-title--serif {
+  font-family: var(--bj-font-display);
+  font-size: 19px;
+  line-height: 1.25;
+}
+
+.bj-today-detail {
+  margin: 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Verbatim words from the reply: the one use of the serif italic. */
+.bj-today-quote {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-style: italic;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+/* A gold chip: waiting on you, or the reason a draft was held back. An outline, never a fill. */
+.bj-today-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  max-width: 100%;
+  margin: 0;
+  padding: 2px 10px;
+  border: 1px solid var(--bj-gold);
+  border-radius: 999px;
+  font-size: var(--bj-text-badge);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--bj-gold);
+  overflow-wrap: anywhere;
+}
+
+.bj-today-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-2);
+}
+
+a.bj-today-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 var(--bj-space-4);
+  font-size: var(--bj-text-control);
+}
+
+button.bj-today-action {
+  min-height: 36px;
+}
+
+/* An item's own failure: under the item, never over the page. */
+.bj-today-problem {
+  align-self: stretch;
+}
+
+/* ------------------------------------------------------------------ */
+/* The feed                                                             */
+/* ------------------------------------------------------------------ */
+
+.bj-today-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-today-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: var(--bj-space-3);
+  padding: var(--bj-space-4) 0;
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-today-marker {
+  padding-top: 1px;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.bj-today-marker--gold {
+  color: var(--bj-gold);
+}
+
+.bj-today-marker--muted {
+  color: var(--bj-text-muted);
+}
+
+/* The one red mark on a held-back resume's card: the cross, and nothing else about the card. */
+.bj-today-marker--danger {
+  color: var(--bj-danger);
+}
+
+.bj-today-row-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--bj-space-1);
+  min-width: 0;
+}
+
+.bj-today-row-body > .bj-trail-block,
+.bj-today-row-body > .bj-trail {
+  align-self: stretch;
+}
+
+.bj-today-row-actions {
+  grid-column: 2;
+  margin-top: var(--bj-space-2);
+}
+
+@media (min-width: 960px) {
+  .bj-today-row {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+  }
+
+  .bj-today-row-actions {
+    grid-column: 3;
+    grid-row: 1;
+    margin-top: 0;
+    justify-content: flex-end;
+    padding-left: var(--bj-space-3);
+  }
+}
+
+@media (max-width: 959px) {
+  .bj-today-row-actions > a,
+  .bj-today-row-actions > button,
+  .bj-band-item button,
+  a.bj-today-action,
+  button.bj-today-action {
+    min-height: 44px;
+  }
+
+  .bj-today-row-actions > a,
+  .bj-today-row-actions > button {
+    flex: 1 1 auto;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Setup checklist                                                      */
+/* ------------------------------------------------------------------ */
+
+.bj-setup {
+  margin-bottom: var(--bj-space-5);
+  padding-top: var(--bj-space-3);
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-setup-head {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-3);
+}
+
+.bj-setup-title {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--bj-text);
+}
+
+.bj-setup-count {
+  margin-right: auto;
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+  color: var(--bj-text-muted);
+}
+
+.bj-setup-steps {
+  margin: var(--bj-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-setup-step {
+  display: grid;
+  grid-template-columns: 9em minmax(0, 1fr) auto;
+  grid-template-areas:
+    "state link retry"
+    ". note retry";
+  column-gap: var(--bj-space-3);
+  align-items: center;
+  padding: 2px 0 var(--bj-space-2);
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-setup-state {
+  grid-area: state;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  white-space: nowrap;
+}
+
+.bj-setup-glyph {
+  margin-right: 0.4em;
+}
+
+.bj-setup-state--todo .bj-setup-glyph {
+  color: var(--bj-gold);
+}
+
+.bj-setup-state--done .bj-setup-glyph {
+  color: var(--bj-emerald);
+}
+
+.bj-setup-link {
+  grid-area: link;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--bj-text-body);
+  overflow-wrap: anywhere;
+}
+
+.bj-setup-note {
+  grid-area: note;
+  margin: 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-setup-retry {
+  grid-area: retry;
+}
+
+/* The collapsed forms: one 44px line that opens the list. */
+button.bj-setup-line {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-2);
+  min-height: 44px;
+  margin-bottom: var(--bj-space-4);
+  padding: 0 var(--bj-space-2);
+  border-color: transparent;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  text-align: left;
+}
+
+button.bj-setup-line:hover {
+  color: var(--bj-text);
+  border-color: transparent;
+}
+
+.bj-setup-line-glyph--done {
+  color: var(--bj-emerald);
+}
+
+@media (max-width: 959px) {
+  .bj-setup-step {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "state retry"
+      "link link"
+      "note note";
+    row-gap: 0;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* In the background                                                    */
+/* ------------------------------------------------------------------ */
+
+.bj-bg-title {
+  margin: 0 0 var(--bj-space-2);
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-small);
+  font-weight: 600;
+  color: var(--bj-text);
+}
+
+.bj-bg-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-2);
+}
+
+.bj-bg-line {
+  margin: 0;
+  font-size: var(--bj-text-trail);
+  line-height: 1.4;
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-bg-line-label {
+  color: var(--bj-text);
+}
+
+/* Under 1280px the trail is a disclosure line under the band: the same lines, opened inline. */
+button.bj-bg-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-2);
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: var(--bj-space-4);
+  padding: 0 var(--bj-space-3);
+  border-color: var(--bj-border);
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-trail);
+  line-height: 1.4;
+  text-align: left;
+}
+
+button.bj-bg-toggle:hover {
+  color: var(--bj-text);
+}
+
+.bj-bg-toggle-words {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bj-bg-body {
+  margin-bottom: var(--bj-space-5);
+  padding: 0 var(--bj-space-3);
+}
+
+.bj-today-kinds {
+  margin: var(--bj-space-2) 0;
+  padding-left: var(--bj-space-5);
+}

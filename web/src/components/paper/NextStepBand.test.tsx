@@ -323,3 +323,52 @@ describe("accessibility", () => {
     }
   });
 });
+
+describe("a band that holds an item", () => {
+  const held = (eyebrow?: React.ReactNode, children?: React.ReactNode) => (
+    <MemoryRouter>
+      <NextStepBand outcome={ready(step())} eyebrow={eyebrow} onAction={() => {}}>
+        {children}
+      </NextStepBand>
+    </MemoryRouter>
+  );
+
+  it("draws the item inside the band, under the sentence and the buttons", () => {
+    const { container } = render(held(undefined, <p className="mine">The item</p>));
+    const section = query(container, 'section[aria-label="Next step"]');
+    expect(text(query(section, ".bj-band-item .mine"))).toBe("The item");
+    expect(section.querySelector(".bj-band-body")?.nextElementSibling).toBe(query(section, ".bj-band-item"));
+  });
+
+  it("draws no empty item box for nothing, null or false", () => {
+    for (const nothing of [undefined, null, false]) {
+      const { container, unmount } = render(held(undefined, nothing));
+      expect(container.querySelector(".bj-band-item")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("replaces the words in the eyebrow when asked, and keeps the band's name and its one cyan fill", () => {
+    const { container } = render(held("Next step · Resume ready", <p>x</p>));
+    const section = query(container, 'section[aria-label="Next step"]');
+    expect(text(query(section, ".bj-band-eyebrow"))).toBe("Next step · Resume ready");
+    expect(section.querySelectorAll(CYAN_FILLS)).toHaveLength(1);
+  });
+
+  it("leaves the loading band's eyebrow alone", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <NextStepBand outcome={{ status: "loading" }} eyebrow="Something else">
+          <p>item</p>
+        </NextStepBand>
+      </MemoryRouter>,
+    );
+    expect(text(query(container, ".bj-band-eyebrow"))).toBe("Next step");
+    expect(container.querySelector(".bj-band-item")).toBeNull();
+  });
+
+  it("has no serious accessibility violation", async () => {
+    const { container } = render(held("Next step · Resume ready", <p>The item</p>));
+    await expectNoSeriousA11yViolations(container);
+  });
+});

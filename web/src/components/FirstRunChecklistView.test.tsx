@@ -1,18 +1,15 @@
-import { renderToStaticMarkup } from "react-dom/server";
+// @vitest-environment jsdom
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
-import {
-  deriveFirstRun,
-  type FirstRunFacts,
-  type FirstRunFlags,
-  type FirstRunView,
-} from "../lib/firstRun";
-import { expand, findAll, press, prop, textOf } from "../testing/reactTree";
+import { describe, expect, it, vi } from "vitest";
+import { deriveFirstRun, type FirstRunFacts, type FirstRunFlags, type FirstRunView } from "../lib/firstRun";
+import { expectNoSeriousA11yViolations } from "../testing/a11y";
+import { buttonNamed, click, query, render } from "../testing/render";
 import { FirstRunChecklistView } from "./FirstRunChecklistView";
 
-// The card as a person meets it: a labelled region, a list, every step saying its state in
-// words, and a real Dismiss button. What is done, and whether the card shows, is tested in
-// firstRun.test.ts; this pins what the view does with a derived view.
+// The checklist as a person meets it: a labelled region, an ordered list of five steps each linking
+// to where it is done, every state said in words (the glyphs are decoration), a way to hide it that
+// never hides it for good, and the two one-line forms that open it again. What is done, and how it
+// is presented, is tested in lib/firstRun.test.ts; this pins what the view does with a derived view.
 
 const ok = <T,>(value: T) => ({ kind: "ok", value }) as const;
 const failed = { kind: "failed" } as const;
@@ -23,147 +20,168 @@ const BRAND_NEW: FirstRunFacts = {
   savedSearches: ok(0),
   applications: ok({ count: 0, fromDiscover: 0, withResume: 0, resumeTargetId: null }),
 };
+const FINISHED: FirstRunFacts = {
+  profile: ok(true),
+  profileActiveSince: "2026-09-12T10:00:00Z",
+  modelKey: ok(true),
+  savedSearches: ok(1),
+  applications: ok({ count: 2, fromDiscover: 0, withResume: 1, resumeTargetId: "app-1" }),
+};
 const FLAGS: FirstRunFlags = { dismissed: false, searched: false };
+const NOW = new Date("2026-10-18T12:00:00Z");
 
-function render(view: FirstRunView, onDismiss: () => void = () => {}): string {
-  return renderToStaticMarkup(
+function draw(view: FirstRunView, handlers: { onDismiss?: () => void; onRetry?: () => void } = {}) {
+  return render(
     <MemoryRouter>
-      <FirstRunChecklistView view={view} onDismiss={onDismiss} />
+      <FirstRunChecklistView view={view} onDismiss={handlers.onDismiss ?? (() => {})} onRetry={handlers.onRetry} now={NOW} />
     </MemoryRouter>,
   );
 }
 
-function text(html: string): string {
-  return html.replace(/<[^>]*>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
-}
+const words = (element: Element) => (element.textContent ?? "").replace(/\s+/g, " ").trim();
+const steps = (container: HTMLElement) => [...container.querySelectorAll("li.bj-setup-step")];
 
-describe("FirstRunChecklistView", () => {
-  it("is a labelled region holding an ordered list of the five steps", () => {
-    const html = render(deriveFirstRun(BRAND_NEW, FLAGS));
-    expect(html).toContain("<section");
-    expect(html).toContain('aria-labelledby="bj-first-run-title"');
-    expect(html).toContain('id="bj-first-run-title"');
-    expect(html).toContain("<ol");
-    expect((html.match(/<li/g) ?? []).length).toBe(5);
-    expect(text(html)).toContain("0 of 5 done.");
-    expect(text(html)).toContain("Next: Add your profile.");
+describe("the open checklist", () => {
+  it("is a labelled region holding an ordered list of the five steps, with a count in mono", () => {
+    const { container } = draw(deriveFirstRun(BRAND_NEW, FLAGS));
+    const section = query(container, "section");
+    expect(section.getAttribute("aria-labelledby")).toBe("bj-setup-title");
+    expect(words(query(container, "#bj-setup-title"))).toBe("Setup");
+    expect(query(container, "ol")).toBeTruthy();
+    expect(steps(container)).toHaveLength(5);
+    expect(words(query(container, ".bj-setup-count"))).toBe("0 of 5 done");
   });
 
-  it("links each step to the page where it is done", () => {
-    const html = render(deriveFirstRun(BRAND_NEW, FLAGS));
-    for (const [href, label] of [
+  it("links each step to the page where it is done, each link at least 44px by its class", () => {
+    const { container } = draw(deriveFirstRun(BRAND_NEW, FLAGS));
+    const links = [...container.querySelectorAll("a.bj-setup-link")].map((a) => [a.getAttribute("href"), words(a)]);
+    expect(links).toEqual([
       ["/profile", "Add your profile"],
       ["/settings", "Add a model key"],
       ["/discover", "Run a first search"],
       ["/applications", "Track a job"],
       ["/applications", "Generate a resume"],
-    ]) {
-      expect(html).toMatch(new RegExp(`<a href="${href}"[^>]*>${label}</a>`));
-    }
+    ]);
   });
 
-  it("says in words that a step is done, and marks only the first open one as next", () => {
-    const facts: FirstRunFacts = { ...BRAND_NEW, profile: ok(true) };
-    const html = render(deriveFirstRun(facts, FLAGS));
-    expect(html).toContain('data-status="done"');
-    expect(html).toContain(">Done</span>");
-    expect(text(html)).toContain("1 of 5 done.");
-    expect((html.match(/>Next</g) ?? []).length).toBe(1);
-    expect(text(html)).toContain("Next: Add a model key.");
-    // The other open steps are announced as to do, without being drawn.
-    expect((html.match(/bj-visually-hidden">To do</g) ?? []).length).toBe(3);
+  it("says To do in words with a hint, and keeps the glyph out of what a screen reader hears", () => {
+    const { container } = draw(deriveFirstRun(BRAND_NEW, FLAGS));
+    const first = steps(container)[0];
+    expect(words(query(first, ".bj-setup-state"))).toBe("◆To do");
+    expect(query(first, ".bj-setup-glyph").getAttribute("aria-hidden")).toBe("true");
+    expect(words(query(first, ".bj-setup-note"))).toBe("Import your resume as a profile. Everything else is built from it.");
   });
 
-  it("labels an input that could not be loaded as such, not as done and not as to do", () => {
-    const facts: FirstRunFacts = { ...BRAND_NEW, profile: failed };
-    const html = render(deriveFirstRun(facts, FLAGS));
-    expect(html).toContain('data-status="unknown"');
-    expect(text(html)).toContain("Can't check right now");
-    // A step that could not be checked is never named as the next one: the guide moves on
-    // to the first step known to be left.
-    expect(text(html)).toContain("Next: Add a model key.");
-    expect(text(html)).not.toContain("Next: Add your profile.");
+  it("says Done with the real fact each step returned, and a date from the profile row", () => {
+    const { container } = draw(deriveFirstRun(FINISHED, FLAGS));
+    click(query(container, "button.bj-setup-line"));
+    const notes = steps(container).map((step) => words(query(step, ".bj-setup-note")));
+    expect(notes).toEqual(["Active since Sep 12", "Key saved and checked", "1 saved search", "2 tracked", "1 with a resume"]);
+    expect(steps(container).map((step) => words(query(step, ".bj-setup-state")))).toEqual(Array(5).fill("✓Done"));
   });
 
-  it("hides the tick glyph from a screen reader (the words carry the state)", () => {
-    const html = render(deriveFirstRun({ ...BRAND_NEW, profile: ok(true) }, FLAGS));
-    expect(html).toContain('class="bj-first-run-mark" aria-hidden="true"');
+  it("leaves a done step with no fact without a note, rather than inventing one", () => {
+    const { container } = draw(deriveFirstRun({ ...FINISHED, profileActiveSince: undefined }, FLAGS));
+    click(query(container, "button.bj-setup-line"));
+    expect(steps(container)[0].querySelector(".bj-setup-note")).toBeNull();
   });
 
-  describe("the glyph and the badge each step shows", () => {
-    // A done step, an unknown one, a todo one that is next, and one more todo that is not.
-    const facts: FirstRunFacts = {
-      profile: ok(true),
-      modelKey: failed,
-      savedSearches: ok(0),
-      applications: ok({ count: 0, fromDiscover: 0, withResume: 0, resumeTargetId: null }),
-    };
-    const view = deriveFirstRun(facts, FLAGS);
-    const items = findAll(expand(FirstRunChecklistView({ view, onDismiss: () => {} })), (el) => el.type === "li");
-    // One <li> per step, in the order of view.steps.
-    const byId = (id: string) => items[view.steps.findIndex((s) => s.id === id)];
-    const mark = (id: string) =>
-      textOf(findAll(byId(id).children, (el) => el.type === "span" && prop(el, "className") === "bj-first-run-mark")[0]);
-    const badge = (id: string) =>
-      findAll(byId(id).children, (el) => el.type === "span" && String(prop(el, "className")).startsWith("bj-badge"));
-
-    it("ticks a done step, with the emerald Done badge", () => {
-      expect(mark("profile")).toBe("✓");
-      expect(prop(badge("profile")[0], "className")).toBe("bj-badge-emerald");
-      expect(textOf(badge("profile")[0])).toBe("Done");
-    });
-
-    it("marks an unknown step with a question mark and the muted badge", () => {
-      expect(mark("model_key")).toBe("?");
-      expect(prop(badge("model_key")[0], "className")).toBe("bj-badge-muted");
-    });
-
-    it("leaves a step that is next, and one that is not, as an open circle, gold only on the next", () => {
-      expect(view.nextStep?.id).toBe("first_search");
-      expect(mark("first_search")).toBe("○");
-      expect(prop(badge("first_search")[0], "className")).toBe("bj-badge-gold");
-      expect(mark("track_job")).toBe("○");
-      expect(badge("track_job")).toHaveLength(0);
-    });
+  it("says Couldn't check, with its own Try again, for a read that failed, and Can't tell yet for none that holds the answer", () => {
+    const retry = vi.fn();
+    const view = deriveFirstRun({ ...BRAND_NEW, profile: failed }, { dismissed: false, searched: null });
+    const { container } = draw(view, { onRetry: retry });
+    const [profile, , search] = steps(container);
+    expect(words(query(profile, ".bj-setup-state"))).toBe("○Couldn't check");
+    click(buttonNamed(profile, "Try again: Add your profile"));
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(words(query(search, ".bj-setup-state"))).toBe("○Can't tell yet");
+    // Trying again would change nothing for a step no read can answer, so it has no button.
+    expect(search.querySelector("button")).toBeNull();
   });
 
-  it("renders nothing when the derived view says to hide it", () => {
-    expect(render(deriveFirstRun(BRAND_NEW, { dismissed: true, searched: false }))).toBe("");
-    const done: FirstRunFacts = {
-      profile: ok(true),
-      modelKey: ok(true),
-      savedSearches: ok(1),
-      applications: ok({ count: 1, fromDiscover: 0, withResume: 1, resumeTargetId: "a" }),
-    };
-    expect(render(deriveFirstRun(done, FLAGS))).toBe("");
-    const loading: FirstRunFacts = {
-      profile: { kind: "loading" },
-      modelKey: { kind: "loading" },
-      savedSearches: { kind: "loading" },
-      applications: { kind: "loading" },
-    };
-    expect(render(deriveFirstRun(loading, FLAGS))).toBe("");
+  it("has no Try again when the page gave it nothing to run", () => {
+    const view = deriveFirstRun({ ...BRAND_NEW, profile: failed }, FLAGS);
+    const { container } = draw(view);
+    expect(container.querySelector(".bj-setup-retry")).toBeNull();
   });
 
-  describe("the Dismiss button", () => {
-    function dismissButton(onDismiss: () => void) {
-      const nodes = expand(FirstRunChecklistView({ view: deriveFirstRun(BRAND_NEW, FLAGS), onDismiss }));
-      const buttons = findAll(nodes, (el) => el.type === "button");
-      expect(buttons).toHaveLength(1);
-      return buttons[0];
-    }
+  it("draws nothing for a view that is hidden while its reads load", () => {
+    const loading = { kind: "loading" } as const;
+    const { container } = draw(deriveFirstRun({ profile: loading, modelKey: loading, savedSearches: loading, applications: loading }, FLAGS));
+    expect(container.innerHTML).toBe("");
+  });
 
-    it("is a real button with a name that says what it dismisses", () => {
-      const button = dismissButton(() => {});
-      expect(prop(button, "type")).toBe("button");
-      expect(textOf(button)).toBe("Dismiss");
-      expect(prop(button, "aria-label")).toBe("Dismiss the getting started checklist");
-    });
+  it("holds no cyan fill: the next-step band holds the page's only one", () => {
+    const { container } = draw(deriveFirstRun(BRAND_NEW, FLAGS));
+    expect(container.querySelector(".bj-primary, .bj-button-link-primary")).toBeNull();
+  });
 
-    it("calls its handler once when pressed", () => {
-      let calls = 0;
-      press(dismissButton(() => calls++));
-      expect(calls).toBe(1);
-    });
+  it("has no serious accessibility violation", async () => {
+    const { container } = draw(deriveFirstRun({ ...BRAND_NEW, profile: failed }, FLAGS), { onRetry: () => {} });
+    await expectNoSeriousA11yViolations(container);
+  });
+});
+
+describe("hiding", () => {
+  it("is a quiet button named for what it hides, and remembers the choice for an unfinished account", () => {
+    const onDismiss = vi.fn();
+    const { container } = draw(deriveFirstRun(BRAND_NEW, FLAGS), { onDismiss });
+    const hide = query<HTMLButtonElement>(container, 'button[aria-label="Hide the setup checklist"]');
+    expect(hide.className).toContain("bj-quiet");
+    expect(words(hide)).toBe("Hide");
+    click(hide);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    // It folds to the counting line at once, and the line opens it again.
+    expect(container.querySelector("section")).toBeNull();
+    const line = query<HTMLButtonElement>(container, "button.bj-setup-line");
+    expect(words(line)).toBe("Setup · 5 to do›");
+    expect(line.getAttribute("aria-expanded")).toBe("false");
+    click(line);
+    expect(container.querySelector("section")).not.toBeNull();
+  });
+
+  it("only folds the list away for an account that is finished, and remembers nothing", () => {
+    const onDismiss = vi.fn();
+    const { container } = draw(deriveFirstRun(FINISHED, FLAGS), { onDismiss });
+    click(query(container, "button.bj-setup-line"));
+    click(buttonNamed(container, "Hide the setup checklist"));
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(words(query(container, "button.bj-setup-line"))).toBe("✓Setup ready›");
+  });
+});
+
+describe("the one-line forms", () => {
+  it("is '✓ Setup ready ›' for an account with all five done, and opens on a click", () => {
+    const { container } = draw(deriveFirstRun(FINISHED, FLAGS));
+    const line = query<HTMLButtonElement>(container, "button.bj-setup-line");
+    expect(words(line)).toBe("✓Setup ready›");
+    expect(line.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector("section")).toBeNull();
+    click(line);
+    expect(steps(container)).toHaveLength(5);
+  });
+
+  it("counts what is to do and what cannot be told, and never says ready", () => {
+    const view = deriveFirstRun({ ...FINISHED, applications: failed }, FLAGS);
+    const { container } = draw(view);
+    expect(words(query(container, "button.bj-setup-line"))).toBe("Setup · 2 can't tell›");
+    const hidden = deriveFirstRun(BRAND_NEW, { dismissed: true, searched: false });
+    const again = draw(hidden);
+    expect(words(query(again.container, "button.bj-setup-line"))).toBe("Setup · 5 to do›");
+  });
+
+  it("shows the ready line before the reads come back for an account this browser saw finished", () => {
+    const loading = { kind: "loading" } as const;
+    const view = deriveFirstRun(
+      { profile: loading, modelKey: loading, savedSearches: loading, applications: loading },
+      { dismissed: false, searched: null, seenFinished: true },
+    );
+    const { container } = draw(view);
+    expect(words(query(container, "button.bj-setup-line"))).toBe("✓Setup ready›");
+  });
+
+  it("is a 44px line by its class, and has no serious accessibility violation", async () => {
+    const { container } = draw(deriveFirstRun(FINISHED, FLAGS));
+    await expectNoSeriousA11yViolations(container);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { Children, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { NextStepAction, NextStepOutcome } from "../../lib/nextStep";
 import "../../styles/paper.css";
@@ -28,6 +28,11 @@ import "../../styles/paper.css";
 // anything is decided, so the band is then unlit: no empty button row, and the sentence takes the
 // focus id instead of pointing at a control that is not there.
 //
+// Today is the one page whose band holds the item itself. It passes the item's own words as
+// `children` (evidence, the trail line, a quiet Dismiss), drawn inside the band under the buttons,
+// and may replace the eyebrow's words with the item's kind (`eyebrow`). Neither changes what the band
+// is: the sentence, the why line and the one cyan button still come from the rule table.
+//
 // Not built: the phone's docked sticky 56px bar (optional, and not part of this component).
 
 // The id of the element a "Skip to next step" link should focus: the button when the band is lit,
@@ -38,6 +43,10 @@ export interface NextStepBandProps {
   outcome: NextStepOutcome;
   /** Called with the `intent` of a `button` action when it is pressed. */
   onAction?: (intent: string) => void;
+  /** Replaces the words "Next step" in the eyebrow of a ready band (Today names the item's kind). */
+  eyebrow?: ReactNode;
+  /** The item a step is about, drawn inside the band under its text and buttons. */
+  children?: ReactNode;
 }
 
 // A route the band links to, or an address it opens, is data from a rule. An external address
@@ -107,7 +116,7 @@ function ActionControl({
   }
 }
 
-export function NextStepBand({ outcome, onAction }: NextStepBandProps) {
+export function NextStepBand({ outcome, onAction, eyebrow, children }: NextStepBandProps) {
   const step = outcome.status === "ready" ? outcome.step : null;
   const sentence = step?.sentence ?? null;
   const lastSentence = useRef<string | null>(null);
@@ -156,7 +165,7 @@ export function NextStepBand({ outcome, onAction }: NextStepBandProps) {
     <section className={`bj-band ${lit ? "bj-band--lit" : "bj-band--unlit"}`} aria-label="Next step">
       <div className={bodyClass}>
         <div className="bj-band-text">
-          <p className="bj-band-eyebrow">Next step</p>
+          <p className="bj-band-eyebrow">{eyebrow ?? "Next step"}</p>
           <p
             className="bj-band-sentence"
             id={focusOnSentence ? NEXT_STEP_FOCUS_ID : undefined}
@@ -190,6 +199,7 @@ export function NextStepBand({ outcome, onAction }: NextStepBandProps) {
           </div>
         )}
       </div>
+      {Children.toArray(children).length > 0 && <div className="bj-band-item">{children}</div>}
       {region}
     </section>
   );
