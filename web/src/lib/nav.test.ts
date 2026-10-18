@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import integrationsPage from "../pages/Settings.tsx?raw";
+import settingsPage from "../pages/Settings.tsx?raw";
 import { NAV, SETTINGS_ITEM, navItemsFor, phoneMoreItemsFor, phoneTabsFor } from "./nav";
 
 // The navigation as data: one list feeds the rail and the phone, so the rule that nothing in the
@@ -40,7 +40,7 @@ describe("the entries", () => {
   });
 
   it("names the entry exactly as the page it opens is headed, so the label and the copy that says 'Settings' agree", () => {
-    const heading = /<h1>([^<]+)<\/h1>/.exec(integrationsPage)?.[1];
+    const heading = /<PageHeader title="([^"]+)"/.exec(settingsPage)?.[1];
     expect(heading).toBe(SETTINGS_ITEM.label);
   });
 });

@@ -1,0 +1,505 @@
+/* The Settings page: its sections, rows, forms and the model list. Tokens only -- no color is
+ * defined here, and nothing here fills anything cyan: the page's one cyan fill is the next-step band's
+ * button (components/paper/NextStepBand.tsx), so every button on this page is the global outlined
+ * button, a quiet text button, or a link. Phone rules sit under the shell's own 960px breakpoint. */
+
+.bj-settings {
+  min-width: 0;
+  max-width: 880px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sections                                                             */
+/* ------------------------------------------------------------------ */
+
+.bj-set-section {
+  min-width: 0;
+  margin-top: var(--bj-space-7);
+}
+
+.bj-set-section > h2,
+.bj-set-section-head > h2 {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.bj-set-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--bj-space-1) var(--bj-space-4);
+}
+
+.bj-set-count {
+  margin: 0;
+  font-family: var(--bj-font-mono);
+  font-size: 12.5px;
+  color: var(--bj-text-muted);
+}
+
+.bj-set-lede {
+  max-width: 680px;
+  margin: var(--bj-space-2) 0 var(--bj-space-5);
+  color: var(--bj-text-muted);
+}
+
+.bj-set-add {
+  margin-top: var(--bj-space-6);
+}
+
+.bj-set-add > h3,
+.bj-set-default > h3,
+.bj-set-card-head > h3,
+.bj-set-row-title > h3 {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 20px;
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------------------ */
+/* Rows: a saved model key, a search key                                */
+/* ------------------------------------------------------------------ */
+
+.bj-set-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-set-item {
+  min-width: 0;
+  padding: var(--bj-space-5) 0;
+  border-bottom: 1px solid var(--bj-border);
+  scroll-margin-top: var(--bj-space-5);
+}
+
+.bj-set-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--bj-space-3) var(--bj-space-5);
+}
+
+.bj-set-row-main {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.bj-set-row-main > p {
+  margin: var(--bj-space-1) 0 0;
+}
+
+.bj-set-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-2) var(--bj-space-3);
+}
+
+.bj-set-row-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--bj-space-2) var(--bj-space-3);
+  max-width: 340px;
+}
+
+.bj-set-model-line {
+  overflow-wrap: anywhere;
+}
+
+.bj-set-note {
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-set-hint {
+  margin: var(--bj-space-1) 0 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-set-facts {
+  margin-top: var(--bj-space-1);
+}
+
+.bj-set-cost {
+  margin: var(--bj-space-1) 0 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-set-mono {
+  font-family: var(--bj-font-mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
+/* Cards: a form, the model picker, the default model                   */
+/* ------------------------------------------------------------------ */
+
+.bj-set-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+  margin-top: var(--bj-space-4);
+  padding: var(--bj-space-5);
+  border: 1px solid var(--bj-border);
+  border-radius: 12px;
+  background: var(--bj-surface);
+}
+
+/* Cards that stand alone on the page (the connections) sit apart; the ones inside a row do not. */
+.bj-set-section > .bj-set-card {
+  margin-top: var(--bj-space-4);
+}
+
+.bj-set-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--bj-space-1) var(--bj-space-4);
+}
+
+.bj-set-card > p {
+  margin: 0;
+}
+
+.bj-set-chips {
+  margin-top: var(--bj-space-3);
+  max-width: 100%;
+}
+
+/* ------------------------------------------------------------------ */
+/* Fields                                                               */
+/* ------------------------------------------------------------------ */
+
+.bj-set-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bj-set-field > label {
+  font-size: var(--bj-text-small);
+  color: var(--bj-text);
+}
+
+.bj-set-field input,
+.bj-set-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 8px;
+  background: var(--bj-bg);
+  color: var(--bj-text);
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-control);
+}
+
+.bj-set-field input.bj-set-mono-input {
+  font-family: var(--bj-font-mono);
+  font-size: 13.5px;
+}
+
+.bj-set-field input::placeholder {
+  color: var(--bj-text-muted);
+}
+
+.bj-set-field input[aria-invalid="true"] {
+  border-color: var(--bj-danger);
+}
+
+.bj-set-field .bj-set-hint {
+  margin: 0;
+}
+
+.bj-set-keyline {
+  display: flex;
+  gap: var(--bj-space-2);
+}
+
+.bj-set-keyline input {
+  flex: 1 1 0;
+}
+
+button.bj-set-reveal {
+  flex: none;
+  min-width: 64px;
+}
+
+.bj-set-or {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-3);
+  margin: var(--bj-space-1) 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-set-or::before,
+.bj-set-or::after {
+  content: "";
+  flex: 1 1 0;
+  height: 1px;
+  background: var(--bj-border);
+}
+
+.bj-set-oneclick p {
+  margin: var(--bj-space-2) 0 0;
+}
+
+.bj-set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-2) var(--bj-space-3);
+}
+
+button.bj-set-action {
+  min-height: 40px;
+  padding: 0 18px;
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------------------ */
+/* Messages                                                             */
+/* ------------------------------------------------------------------ */
+
+.bj-set-error {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--bj-danger);
+  border-radius: 8px;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+.bj-set-status {
+  margin: 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-set-success {
+  margin: var(--bj-space-3) 0 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text);
+}
+
+.bj-set-success > span:first-child {
+  color: var(--bj-emerald);
+}
+
+.bj-set-notice {
+  margin: var(--bj-space-3) 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 8px;
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-set-notice p {
+  margin: 0;
+}
+
+.bj-set-notice--failure {
+  border-color: var(--bj-danger);
+}
+
+.bj-set-notice > .bj-set-actions,
+.bj-set-notice > button {
+  margin-top: var(--bj-space-3);
+}
+
+.bj-set-confirm {
+  flex-basis: 100%;
+  max-width: 340px;
+  padding: 10px 14px;
+  border: 1px solid var(--bj-danger);
+  border-radius: 8px;
+}
+
+.bj-set-confirm p {
+  margin: 0 0 var(--bj-space-2);
+  font-size: var(--bj-text-small);
+}
+
+/* ------------------------------------------------------------------ */
+/* The model list                                                       */
+/* ------------------------------------------------------------------ */
+
+.bj-set-models-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+/* The list scrolls inside itself: the page never gets wider or a mile long for 500 models. */
+.bj-set-models {
+  max-height: 340px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--bj-outline);
+  border-radius: 10px;
+}
+
+.bj-set-models li + li {
+  border-top: 1px solid var(--bj-border);
+}
+
+/* A row is a native radio, so the list is one tab stop and the arrow keys move through it. The radio
+   itself is hidden; the row shows the choice the way every chosen item in the app is shown -- the
+   maroon fill with ivory text, and weight 600 -- set here from :checked because a native radio's
+   state is not an ARIA attribute the shared .bj-selectable rule reads. Focus is the separate cyan
+   ring, drawn inside the row so the scroller does not clip it. */
+.bj-set-model {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bj-space-3);
+  min-height: 52px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.bj-set-model input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+}
+
+.bj-set-model:hover {
+  background: var(--bj-hover-bg-raised);
+}
+
+.bj-set-model:has(input:checked) {
+  background: var(--bj-selected-bg);
+  color: var(--bj-selected-text);
+}
+
+.bj-set-model:has(input:checked):hover {
+  background: var(--bj-selected-bg-hover);
+}
+
+.bj-set-model:has(input:checked) .bj-set-model-name {
+  font-weight: 600;
+}
+
+.bj-set-model:has(input:checked) .bj-set-mono {
+  color: var(--bj-selected-text);
+}
+
+.bj-set-model:has(input:focus-visible) {
+  outline: var(--bj-focus-ring-width) solid var(--bj-focus-ring);
+  outline-offset: calc(var(--bj-focus-ring-width) * -1);
+}
+
+@media (forced-colors: active) {
+  .bj-set-model:has(input:checked),
+  .bj-set-model:has(input:checked):hover {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
+.bj-set-model-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bj-set-model-name {
+  overflow-wrap: anywhere;
+}
+
+.bj-set-model-context {
+  flex: none;
+  color: var(--bj-text-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Phones                                                               */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 959px) {
+  .bj-set-section {
+    margin-top: var(--bj-space-6);
+  }
+
+  .bj-set-section > h2,
+  .bj-set-section-head > h2 {
+    font-size: 24px;
+  }
+
+  .bj-set-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bj-set-row-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .bj-set-card {
+    padding: var(--bj-space-4);
+  }
+
+  .bj-set-confirm {
+    max-width: none;
+  }
+
+  .bj-set-actions > button,
+  .bj-set-row-actions > button,
+  button.bj-set-reveal {
+    min-height: 44px;
+  }
+
+  .bj-set-field input,
+  .bj-set-field select {
+    min-height: 44px;
+  }
+
+  .bj-set-row-actions > a,
+  .bj-set-card-head > a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .bj-set-model {
+    min-height: 56px;
+  }
+
+  .bj-set-models {
+    max-height: 300px;
+  }
+}

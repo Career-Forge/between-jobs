@@ -42,7 +42,7 @@ const STATE_BYTES = 32;
 // ── the PKCE values ───────────────────────────────────────────────────────
 
 export interface CryptoLike {
-  getRandomValues<T extends ArrayBufferView>(array: T): T;
+  getRandomValues(array: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer>;
   subtle?: { digest(algorithm: string, data: BufferSource): Promise<ArrayBuffer> };
 }
 
@@ -54,7 +54,7 @@ export function base64Url(bytes: Uint8Array): string {
 }
 
 function randomToken(crypto: CryptoLike, byteLength: number): string {
-  return base64Url(crypto.getRandomValues(new Uint8Array(byteLength)));
+  return base64Url(crypto.getRandomValues(new Uint8Array(new ArrayBuffer(byteLength))));
 }
 
 export function makeVerifier(crypto: CryptoLike): string {

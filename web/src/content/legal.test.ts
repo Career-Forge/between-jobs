@@ -17,6 +17,9 @@ import searchProviders from "../../../src/between_jobs/api/search_providers.py?r
 import supabaseClient from "../../../src/between_jobs/api/supabase_client.py?raw";
 import telegramClient from "../../../src/between_jobs/api/telegram_client.py?raw";
 import discordClient from "../../../src/between_jobs/api/discord_client.py?raw";
+import providerRegistry from "../../../src/between_jobs/api/provider_registry.py?raw";
+import providerChecks from "../../../src/between_jobs/api/provider_checks.py?raw";
+import llmCredentialsRoutes from "../../../src/between_jobs/api/llm_credentials_routes.py?raw";
 import latexCompiler from "../../../latex-service/src/latex_service/compiler.py?raw";
 import latexServiceClient from "../../../src/between_jobs/api/latex_service_client.py?raw";
 import linkCodes from "../../../src/between_jobs/api/link_codes_store.py?raw";
@@ -32,7 +35,7 @@ import webViteConfig from "../../vite.config.ts?raw";
 // list is the one the store listing is written from.
 import extensionReadme from "../../../extension/README.md?raw";
 import accountCard from "../components/AccountCardView.tsx?raw";
-import integrations from "../pages/Settings.tsx?raw";
+import connectionCards from "../components/settings/ConnectionCards.tsx?raw";
 import profile from "../pages/Profile.tsx?raw";
 import authSource from "../auth.tsx?raw";
 import hiringSignalsLib from "../lib/hiringSignals.ts?raw";
@@ -411,6 +414,28 @@ const EVIDENCE: Record<string, Evidence> = {
       { path: "src/between_jobs/api/credentials_routes.py", text: credentialsRoutes, needles: ["https://openrouter.ai/api/v1/key"] },
     ],
   },
+  OpenAI: { kind: "code", checks: [{ path: "src/between_jobs/api/provider_registry.py", text: providerRegistry, needles: ["https://api.openai.com/v1"] }] },
+  Anthropic: { kind: "code", checks: [{ path: "src/between_jobs/api/provider_registry.py", text: providerRegistry, needles: ["https://api.anthropic.com/v1/"] }] },
+  "Google (Gemini)": {
+    kind: "code",
+    checks: [{ path: "src/between_jobs/api/provider_registry.py", text: providerRegistry, needles: ["https://generativelanguage.googleapis.com/v1beta/openai/"] }],
+  },
+  xAI: { kind: "code", checks: [{ path: "src/between_jobs/api/provider_registry.py", text: providerRegistry, needles: ["https://api.x.ai/v1"] }] },
+  DeepSeek: { kind: "code", checks: [{ path: "src/between_jobs/api/provider_registry.py", text: providerRegistry, needles: ["https://api.deepseek.com"] }] },
+  "Alibaba Cloud (Qwen)": {
+    kind: "code",
+    checks: [{ path: "src/between_jobs/api/provider_registry.py", text: providerRegistry, needles: ["maas.qwencloudapi.com", "maas.aliyuncs.com"] }],
+  },
+  "Other OpenAI-compatible hosts": {
+    kind: "code",
+    checks: [
+      {
+        path: "src/between_jobs/api/provider_registry.py",
+        text: providerRegistry,
+        needles: ["https://api.groq.com/openai/v1", "https://api.mistral.ai/v1", "https://api.together.ai/v1", "https://api.fireworks.ai/inference/v1", "https://api.cohere.ai/compatibility/v1"],
+      },
+    ],
+  },
   "You.com": {
     kind: "code",
     checks: [{ path: "src/between_jobs/api/research_clients.py", text: researchClients, needles: ["ydc-index.io"] }],
@@ -656,7 +681,7 @@ describe("what the text says matches the code", () => {
     // Settings card under the name the text uses, and the checker leaves a flagged one alone.
     expect(gmailAccess).toContain("mark_credential_unvalidated");
     expect(gmailReplyChecker).toContain("list_unvalidated_user_ids");
-    expect(integrations).toContain("Needs reconnect");
+    expect(connectionCards).toContain("Needs reconnect");
     expect(privacyText).toContain("'Needs reconnect'");
     // Transient failures are not that: the client only calls an expired grant a reconnect.
     expect(gmailClient).toContain("invalid_grant");
@@ -825,7 +850,7 @@ describe("what the text says matches the code", () => {
   it("the buttons the text names exist under those names", () => {
     expect(profile).toContain("Export JSON");
     expect(accountCard).toContain("Delete my account");
-    expect(integrations).toContain("Disconnect Gmail");
+    expect(connectionCards).toContain("Disconnect Gmail");
     expect(privacyText).toContain("'Export JSON'");
     expect(privacyText).toContain("'Delete my account'");
     expect(privacyText).toContain("'Disconnect Gmail'");
@@ -1535,42 +1560,70 @@ describe("the landing page's claims", () => {
   });
 });
 
-// ── the policy names OpenRouter as the one provider the web app connects ──────────────────────
+// ── the policy names every model provider the web app can connect ───────────────────────────────
 //
-// The API accepts a key for seven more model providers (api/provider_registry.py), and a key saved
-// that way sends resume and posting text to that provider exactly as OpenRouter's does. The web app
-// does not offer any of them yet, which is what keeps "The AI provider Between Jobs supports today"
-// true of the product people use. This is the tripwire for the change that adds a picker: it must
-// update the provider list in legal.ts (a new entry per provider, a new LEGAL_VERSION and its
-// "what changed" line) in the same change, and then take this guard out.
+// The Settings page draws its provider chips from the API's catalogue (api/provider_registry.py), so
+// a provider added there appears on the page without a change in the web app. A key saved for one
+// sends resume and posting text to that provider exactly as OpenRouter's does. So this reads the
+// registry: every provider in it, and every host the custom provider allows, must be named in the
+// processor list, which is what the Privacy Policy prints. Adding a provider to the registry fails
+// here until legal.ts names it.
 
-const webSources = import.meta.glob("../**/*.{ts,tsx}", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
+const PROVIDER_PROCESSOR: Record<string, string> = {
+  openrouter: "OpenRouter",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  gemini: "Google (Gemini)",
+  xai: "xAI",
+  deepseek: "DeepSeek",
+  qwen: "Alibaba Cloud (Qwen)",
+  custom: "Other OpenAI-compatible hosts",
+};
 
-describe("the web app connects no model provider but OpenRouter, which is all the policy names", () => {
-  const appFiles = Object.entries(webSources).filter(
-    ([path]) => !/\.test\.tsx?$/.test(path) && !path.startsWith("../testing/"),
-  );
+function registryProviderIds(): string[] {
+  return [...providerRegistry.matchAll(/^    (?:"([a-z]+)"|(OPENROUTER|QWEN|CUSTOM)): ProviderSpec\(/gm)].map((m) => m[1] ?? m[2].toLowerCase());
+}
 
-  it("reads the web source it is guarding", () => {
-    expect(appFiles.length).toBeGreaterThan(20);
-    expect(appFiles.some(([path]) => path === "../pages/Settings.tsx")).toBe(true);
+function allowedCustomHosts(): string[] {
+  return [...providerRegistry.matchAll(/CustomEndpoint\(\s*"[a-z]+",\s*"([^"]+)"/g)].map((m) => m[1]);
+}
+
+describe("the policy names every model provider the web app can connect", () => {
+  const modelProcessors = PROCESSORS.filter((processor) => processor.group === "model");
+
+  it("reads the registry it is guarding", () => {
+    expect(registryProviderIds().sort()).toEqual(Object.keys(PROVIDER_PROCESSOR).sort());
+    expect(allowedCustomHosts()).toEqual(["Groq", "Mistral", "Together AI", "Fireworks AI", "Cohere"]);
   });
 
-  it("saves a model key for no provider of the API's registry other than OpenRouter", () => {
-    const offenders = appFiles
-      .filter(([, source]) =>
-        /provider:\s*"(openai|anthropic|gemini|xai|deepseek|qwen|custom)"|\/credentials\/llm\/(?!openrouter["`])/.test(
-          source,
-        ),
-      )
-      .map(([path]) => path);
-    expect(
-      offenders,
-      `${offenders.join(", ")} connects a model provider the Privacy Policy does not name: add it to the provider list in legal.ts (and bump LEGAL_VERSION) in the same change`,
-    ).toEqual([]);
+  it("lists a processor for each provider in the registry, in the model group, and none that is not in it", () => {
+    expect(modelProcessors.map((processor) => processor.name).sort()).toEqual(Object.values(PROVIDER_PROCESSOR).sort());
+  });
+
+  it("names, on the entry for the custom provider, each host it can send a key to and no other", () => {
+    const entry = PROCESSORS.find((processor) => processor.name === "Other OpenAI-compatible hosts");
+    const text = (entry?.detail ?? []).map((part) => (typeof part === "string" ? part : "")).join(" ");
+    for (const host of allowedCustomHosts()) expect(text, host).toContain(host);
+    expect(text).toContain("and no other host");
+  });
+
+  it("no longer says one provider is all the product supports", () => {
+    const text = textsOf(PRIVACY).join("\n");
+    expect(text).not.toMatch(/supports today/i);
+    expect(text).not.toMatch(/the only AI provider/i);
+    expect(text).toContain("You can connect more than one.");
+  });
+
+  it("says the provider that gets the text of a request is the person's default model's, and that every provider connected gets the small checking requests", () => {
+    const group = PROCESSOR_GROUPS.find((candidate) => candidate.id === "model");
+    expect(group?.intro).toContain("the one you set as your default model");
+    expect(group?.intro).toContain("the small requests that check its key and the model you choose");
+  });
+
+  it("is true of the code: a key is checked with a request, the models are listed with the key, and a chosen model is proved with one tiny completion", () => {
+    expect(providerChecks).toContain("async def check_key");
+    expect(providerChecks).toContain("async def list_models");
+    expect(providerChecks).toContain("async def probe_model");
+    expect(llmCredentialsRoutes).toContain("await probe_model(api_key=secret, model=body.model, base_url=base_url)");
   });
 });
