@@ -171,6 +171,56 @@ describe("with a key that has no model", () => {
   });
 });
 
+describe("a key replaced at another address", () => {
+  it("claims no default and asks for a model, because the API may have cleared the default", async () => {
+    const qwen = { id: "qwen", name: "Qwen Cloud", key_hint: "", get_key_url: "https://home.qwencloud.com/api-keys", manage_url: null, model_list: "best_effort", regions: [{ id: "qwencloud", name: "QwenCloud", needs_workspace: false, get_key_url: "https://home.qwencloud.com/api-keys" }] };
+    describeAccount([key("openai", { model: "gpt-x", setup_state: "ready" }), key("qwen", { model: "qwen3-max", setup_state: "ready", base_url: "https://maas.qwencloudapi.com/compatible-mode/v1" })]);
+    on("GET /credentials/llm/providers", { providers: [...CATALOG.providers, qwen] });
+    on("POST /credentials/llm/models", { provider: "qwen", listing: "unavailable", truncated: false, models: [] });
+    const { container } = page();
+    await settle();
+    expect(text(band(container))).toContain("Your model is set.");
+    // the replacement lands at another address, so the API returns it with no model
+    on("POST /credentials", key("qwen", { setup_state: "needs_model", base_url: "https://maas.qwencloudapi.com/compatible-mode/v1" }));
+    on("GET /credentials", [key("openai", { model: "gpt-x", setup_state: "ready" }), key("qwen", { setup_state: "needs_model" })]);
+    click(buttonIn(query(container, "#provider-qwen"), "Replace key"));
+    const form = query(container, "#provider-qwen form");
+    const input = query<HTMLInputElement>(form, 'input[placeholder="Paste your key"]');
+    const { typeInto } = await import("../testing/forms");
+    typeInto(input, "sk-" + "q".repeat(32));
+    click(buttonIn(form, "Validate and save"));
+    await settle();
+    expect(text(band(container))).toContain("Your Qwen Cloud key is saved. Choose a model to finish.");
+    expect(text(band(container))).not.toContain("Your model is set");
+    expect(text(query(container, "#default-model"))).not.toContain("gpt-x on OpenAI.");
+    expect(text(query(container, "#default-model"))).toContain("can't tell whether it is your default");
+  });
+});
+
+describe("a model chosen on this visit", () => {
+  it("is no longer called chosen once its key has been removed", async () => {
+    describeAccount([key("openai", { setup_state: "needs_model" }), key("openrouter", { model: "m", setup_state: "ready" })]);
+    on("POST /credentials/llm/models", { ...MODELS, provider: "openai" });
+    const { container } = page();
+    await settle();
+    click(buttonIn(query(container, "#provider-openai"), "Choose a model"));
+    await settle();
+    on("PUT /credentials/llm/openai/model", key("openai", { model: "vendor/model-a", setup_state: "ready" }));
+    on("GET /credentials", [key("openai", { model: "vendor/model-a", setup_state: "ready" }), key("openrouter", { model: "m", setup_state: "ready" })]);
+    click(query<HTMLInputElement>(container, 'input[type="radio"]'));
+    click(buttonIn(container, "Use this model"));
+    await settle();
+    expect(text(band(container))).toContain("OpenAI model chosen this visit");
+    on("DELETE /credentials/llm/openai", undefined);
+    on("GET /credentials", [key("openrouter", { model: "m", setup_state: "ready" })]);
+    click(buttonIn(query(container, "#provider-openai"), "Remove key"));
+    click(buttonIn(query(container, "#provider-openai"), "Remove key"));
+    await settle();
+    expect(text(band(container))).not.toContain("model chosen this visit");
+    expect(text(band(container))).toContain("OpenRouter ready");
+  });
+});
+
 describe("with a model ready", () => {
   it("is unlit: nothing needs you, and nothing on the page is cyan", async () => {
     describeAccount([key("openrouter", { model: "vendor/model-a", setup_state: "ready" })]);

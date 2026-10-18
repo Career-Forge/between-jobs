@@ -115,6 +115,32 @@ export const OPENROUTER_ID = "openrouter";
 export const QWEN_ID = "qwen";
 export const CUSTOM_ID = "custom";
 
+// ── a saved key's address ────────────────────────────────────────────────
+
+const withoutTrailingSlash = (url: string) => url.replace(/\/+$/, "");
+
+// The custom provider's host a saved address is, or null when it is none of the allowed ones.
+export function endpointForAddress(provider: LlmProvider | undefined, baseUrl: string | null | undefined): CustomEndpoint | null {
+  if (provider === undefined || provider.id !== CUSTOM_ID || typeof baseUrl !== "string" || baseUrl === "") return null;
+  const wanted = withoutTrailingSlash(baseUrl);
+  return provider.endpoints.find((endpoint) => withoutTrailingSlash(endpoint.baseUrl) === wanted) ?? null;
+}
+
+// Qwen's region a saved address was built for, or null when it is none of the listed ones. QwenCloud
+// has one address; a Model Studio key's is "<workspace>.<region>.maas.aliyuncs.com".
+export function regionForAddress(provider: LlmProvider | undefined, baseUrl: string | null | undefined): Region | null {
+  if (provider === undefined || provider.id !== QWEN_ID || typeof baseUrl !== "string" || baseUrl === "") return null;
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (host === "maas.qwencloudapi.com") return provider.regions.find((region) => !region.needsWorkspace) ?? null;
+  const match = /^[^.]+\.([a-z0-9-]+)\.maas\.aliyuncs\.com$/.exec(host);
+  return match === null ? null : (provider.regions.find((region) => region.needsWorkspace && region.id === match[1]) ?? null);
+}
+
 // ── a saved key's setup state ────────────────────────────────────────────
 
 export type LlmSetupState = "ready" | "needs_model" | "needs_key";

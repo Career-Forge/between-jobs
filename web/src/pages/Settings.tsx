@@ -59,6 +59,9 @@ export default function Settings() {
   // The provider whose model was chosen on this visit. The API has no route that says which model
   // is the default, so this is the one thing the page can know about it beyond a single key.
   const [chosenHere, setChosenHere] = useState<string | null>(null);
+  // A key replaced on this visit came back with no model (the model it had belonged to its old
+  // address), so the API may have cleared the default. Until a model is chosen the page claims none.
+  const [droppedModelFor, setDroppedModelFor] = useState<string | null>(null);
 
   const rows = data.credentials.state === "ready" ? data.credentials.value : null;
   const providers = catalog.kind === "ready" ? catalog.providers : null;
@@ -92,18 +95,21 @@ export default function Settings() {
     const states = llm.map((row) => ({ row, state: llmSetupState(row) }));
     const nameOf = (id: string) => providerName(id, providers);
     const ready = states.filter((entry) => entry.state === "ready");
-    const awaiting = states.find((entry) => entry.state === "needs_model") ?? states.find((entry) => entry.state === "needs_key");
+    const dropped = droppedModelFor === null ? undefined : states.find((entry) => entry.row.provider === droppedModelFor && entry.state === "needs_model");
+    const awaiting = dropped ?? states.find((entry) => entry.state === "needs_model") ?? states.find((entry) => entry.state === "needs_key");
     let llmFacts: SettingsLlm;
-    if (ready.length > 0) llmFacts = { state: "ready", names: ready.map((entry) => nameOf(entry.row.provider)) };
+    if (ready.length > 0 && dropped === undefined) llmFacts = { state: "ready", names: ready.map((entry) => nameOf(entry.row.provider)) };
     else if (awaiting !== undefined) llmFacts = { state: awaiting.state === "needs_model" ? "needs_model" : "needs_key", providerName: nameOf(awaiting.row.provider) };
     else llmFacts = { state: "none" };
     const connected = SEARCH_PROVIDER_CARDS.filter((card) => searchRows(rows).some((row) => row.provider === card.provider)).length;
     return {
       llm: llmFacts,
       search: { connected, total: SEARCH_PROVIDER_CARDS.length },
-      chosenHere: chosenHere === null ? null : nameOf(chosenHere),
+      // Only while that provider is still ready: a key removed since is not a model chosen.
+      chosenHere: chosenHere !== null && ready.some((entry) => entry.row.provider === chosenHere) ? nameOf(chosenHere) : null,
     };
-  }, [rows, llm, providers, chosenHere]);
+  }, [rows, llm, providers, chosenHere, droppedModelFor]);
+  const defaultUnknown = droppedModelFor !== null && llm.some((row) => row.provider === droppedModelFor && llmSetupState(row) === "needs_model");
 
   const outcome = nextStep({
     page: "settings",
@@ -178,8 +184,16 @@ export default function Settings() {
             panel={panel}
             onPanel={setPanel}
             reload={data.reloadCredentials}
-            onModelChosen={(providerId) => setChosenHere(providerId)}
+            onModelChosen={(providerId) => {
+              setChosenHere(providerId);
+              setDroppedModelFor(null);
+            }}
             chosenHere={chosenHere}
+            defaultUnknown={defaultUnknown}
+            onModelDropped={(providerId) => {
+              setDroppedModelFor(providerId);
+              setChosenHere((current) => (current === providerId ? null : current));
+            }}
             announce={setAnnouncement}
           />
           <SearchKeysSection credentials={rows} hiringSignalsEnabled={hiringSignalsEnabled} now={now} onChanged={data.reloadCredentials} />

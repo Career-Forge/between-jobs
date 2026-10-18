@@ -14,7 +14,9 @@ import "../../styles/settings.css";
 //   - with one ready key, that key and its model are the default (the API repoints the default to
 //     the only other ready key when one is removed, and clears it when there is none);
 //   - with several, which one is the default is not known here until it is chosen on this visit;
-//   - with none, there is nothing to show.
+//   - with none, there is nothing to show;
+//   - after a key was replaced at another address and lost its model, the API may have cleared the
+//     default, so the page claims none until one is chosen (`defaultUnknown`).
 // The page says which of these it is rather than guessing.
 //
 // Making a key the default again sends the same one tiny real request choosing a model does, so a
@@ -25,10 +27,15 @@ export interface DefaultModelProps {
   catalog: readonly LlmProvider[] | null;
   /** The provider made the default on this visit, if any. */
   chosenHere: string | null;
+  /**
+   * The page has reason to think the stored default is gone even though a key is ready (a key
+   * was replaced at another address and lost its model): it claims no default until one is chosen.
+   */
+  defaultUnknown?: boolean;
   onChanged: (row: CredentialSummary | null, providerId: string) => void;
 }
 
-export function DefaultModel({ credentials, catalog, chosenHere, onChanged }: DefaultModelProps) {
+export function DefaultModel({ credentials, catalog, chosenHere, defaultUnknown = false, onChanged }: DefaultModelProps) {
   const ready = credentials.filter((row) => llmSetupState(row) === "ready" && row.model !== null);
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,7 +45,8 @@ export function DefaultModel({ credentials, catalog, chosenHere, onChanged }: De
 
   if (ready.length === 0) return null;
 
-  const knownDefault = ready.length === 1 ? ready[0] : (ready.find((row) => row.provider === chosenHere) ?? null);
+  const knownDefault = defaultUnknown ? null : ready.length === 1 ? ready[0] : (ready.find((row) => row.provider === chosenHere) ?? null);
+  const canChoose = ready.length > 1 || defaultUnknown;
 
   async function setDefault() {
     const row = ready.find((candidate) => candidate.provider === pick);
@@ -70,10 +78,12 @@ export function DefaultModel({ credentials, catalog, chosenHere, onChanged }: De
         </p>
       ) : (
         <p>
-          You have {ready.length} connected models, and this page can't tell which one is your default. Choose one to make it the default.
+          {ready.length === 1
+            ? "You have 1 connected model, and this page can't tell whether it is your default. Choose it to make it the default."
+            : `You have ${ready.length} connected models, and this page can't tell which one is your default. Choose one to make it the default.`}
         </p>
       )}
-      {ready.length > 1 && (
+      {canChoose && (
         <>
           <div className="bj-set-field">
             <label htmlFor={selectId}>Use as the default</label>

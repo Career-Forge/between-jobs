@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CatalogState } from "../../lib/settings/useProviderCatalog";
 import type { CredentialSummary } from "../../lib/settings/credentials";
-import { OPENROUTER_ID, llmRows, providerName, type LlmProvider } from "../../lib/settings/llmProviders";
+import { OPENROUTER_ID, endpointForAddress, llmRows, providerName, regionForAddress, type LlmProvider } from "../../lib/settings/llmProviders";
 import { FailureState, LoadingState } from "../paper/StateViews";
 import { ConnectedProviderRow } from "./ConnectedProviderRow";
 import { DefaultModel } from "./DefaultModel";
@@ -16,6 +16,11 @@ import "../../styles/settings.css";
 //
 // The row of a key that was just saved opens its model picker by itself: a key with no model is
 // "needs a model", never a silent default, and the next thing to do is obvious.
+//
+// KEYBOARD FOCUS. A panel that closes, a key that is replaced or removed, each takes away the element
+// that had focus. Focus is put back on purpose: on the row's heading after a change, on the button
+// that opened a panel when it is closed without a change, and on the section heading when the row
+// is gone.
 
 export type ProviderPanel = { provider: string; panel: "model" | "replace" } | null;
 
@@ -41,13 +46,20 @@ export interface ModelProviderSectionProps {
   onModelChosen: (providerId: string, model: string) => void;
   /** The provider made the default on this visit. */
   chosenHere: string | null;
+  /** The stored default may be gone (a key was replaced at another address and lost its model). */
+  defaultUnknown?: boolean;
+  /** A replaced key came back with no model: the model it had belonged to its old address. */
+  onModelDropped?: (providerId: string) => void;
   /** Words for a polite announcement ("Connected OpenAI."). */
   announce: (message: string) => void;
 }
 
 function hostNameOf(credential: CredentialSummary, provider: LlmProvider | undefined): string | null {
-  if (credential.provider !== "custom" || credential.base_url == null) return null;
-  return provider?.endpoints.find((endpoint) => endpoint.baseUrl.replace(/\/+$/, "") === credential.base_url?.replace(/\/+$/, ""))?.name ?? null;
+  return endpointForAddress(provider, credential.base_url)?.name ?? null;
+}
+
+function regionNameOf(credential: CredentialSummary, provider: LlmProvider | undefined): string | null {
+  return regionForAddress(provider, credential.base_url)?.name ?? null;
 }
 
 export function ModelProviderSection({
@@ -61,6 +73,8 @@ export function ModelProviderSection({
   reload,
   onModelChosen,
   chosenHere,
+  defaultUnknown = false,
+  onModelDropped,
   announce,
 }: ModelProviderSectionProps) {
   const providers = catalog.kind === "ready" ? catalog.providers : null;
@@ -69,6 +83,12 @@ export function ModelProviderSection({
   const available = providers === null ? [] : providers.filter((provider) => !connectedIds.has(provider.id));
   const [chip, setChip] = useState<string | null>(null);
   const selected = available.find((provider) => provider.id === chip) ?? available.find((provider) => provider.id === OPENROUTER_ID) ?? available[0];
+  // Where keyboard focus goes once the change just made has been drawn (an element id).
+  const [focusRequest, setFocusRequest] = useState<{ id: string } | null>(null);
+  useEffect(() => {
+    if (focusRequest !== null) document.getElementById(focusRequest.id)?.focus();
+  }, [focusRequest]);
+  const focusOn = (id: string) => setFocusRequest({ id });
 
   async function afterSave(provider: LlmProvider, row: CredentialSummary | null) {
     await reload();
@@ -77,16 +97,26 @@ export function ModelProviderSection({
       onPanel(null);
       onModelChosen(provider.id, row.model as string);
       announce(`${provider.name} is connected and ready.`);
+      focusOn(`provider-${provider.id}-heading`);
     } else {
       onPanel({ provider: provider.id, panel: "model" });
       announce(`${provider.name} is connected. Choose a model to finish.`);
     }
   }
 
-  async function afterReplace(provider: LlmProvider) {
+  async function afterReplace(provider: LlmProvider, row: CredentialSummary | null) {
     await reload();
+    if (row !== null && (typeof row.model !== "string" || row.model === "")) {
+      // The key now goes to another address (or never had a model): the API kept no model for it
+      // and may have cleared the default. Say so, and go straight to choosing one.
+      onModelDropped?.(provider.id);
+      onPanel({ provider: provider.id, panel: "model" });
+      announce(`Your ${provider.name} key was replaced. Choose a model to finish.`);
+      return;
+    }
     onPanel(null);
     announce(`Your ${provider.name} key was replaced.`);
+    focusOn(`provider-${provider.id}-heading`);
   }
 
   async function afterModel(providerId: string, model: string) {
@@ -94,11 +124,14 @@ export function ModelProviderSection({
     onPanel(null);
     onModelChosen(providerId, model);
     announce(`${model} is now your default model.`);
+    focusOn(`provider-${providerId}-heading`);
   }
 
   return (
     <section id="ai-provider" className="bj-set-section" aria-labelledby="ai-provider-h">
-      <h2 id="ai-provider-h">AI provider</h2>
+      <h2 id="ai-provider-h" tabIndex={-1}>
+        AI provider
+      </h2>
       <p className="bj-set-lede">
         Connect a provider once. Saving always sends one real request to it, so a key it refuses is never stored. Between Jobs has no model of its
         own and never runs on a shared key.
@@ -116,6 +149,7 @@ export function ModelProviderSection({
                 credential={credential}
                 provider={provider}
                 hostName={hostNameOf(credential, provider)}
+                regionName={regionNameOf(credential, provider)}
                 now={now}
                 panel={open}
                 onPanel={(next) => onPanel(next === null ? null : { provider: credential.provider, panel: next })}
@@ -123,6 +157,7 @@ export function ModelProviderSection({
                   onPanel(null);
                   await reload();
                   announce(`${name} was removed.`);
+                  focusOn("ai-provider-h");
                 }}
               >
                 {open === "model" && (
@@ -131,7 +166,10 @@ export function ModelProviderSection({
                     providerName={name}
                     currentModel={credential.model}
                     onChosen={(_row, model) => void afterModel(credential.provider, model)}
-                    onClose={() => onPanel(null)}
+                    onClose={() => {
+                      onPanel(null);
+                      focusOn(`provider-${credential.provider}-model-button`);
+                    }}
                   />
                 )}
                 {open === "replace" && provider !== undefined && (
@@ -139,9 +177,13 @@ export function ModelProviderSection({
                     provider={provider}
                     mode="replace"
                     autoFocus
+                    savedBaseUrl={credential.base_url}
                     openRouter={provider.id === OPENROUTER_ID ? openRouter : undefined}
-                    onSaved={() => void afterReplace(provider)}
-                    onCancel={() => onPanel(null)}
+                    onSaved={(saved) => void afterReplace(provider, saved)}
+                    onCancel={() => {
+                      onPanel(null);
+                      focusOn(`provider-${credential.provider}-replace-button`);
+                    }}
                   />
                 )}
                 {open === "replace" && provider === undefined && (
@@ -157,6 +199,7 @@ export function ModelProviderSection({
         credentials={connected}
         catalog={providers}
         chosenHere={chosenHere}
+        defaultUnknown={defaultUnknown}
         onChanged={(_row, providerId) => {
           const model = connected.find((row) => row.provider === providerId)?.model ?? "";
           onModelChosen(providerId, model);

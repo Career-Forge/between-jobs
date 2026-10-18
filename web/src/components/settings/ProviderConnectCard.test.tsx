@@ -260,10 +260,18 @@ describe("the custom provider", () => {
     const { container } = mount({ provider: provider("custom") });
     const select = query<HTMLSelectElement>(container, "select");
     expect(query(container, "label[for]").textContent).toBe("Base URL");
-    expect([...select.options].map((o) => o.textContent)).toEqual(["Groq -- https://api.groq.com/openai/v1", "Mistral -- https://api.mistral.ai/v1"]);
+    expect([...select.options].map((o) => o.textContent)).toEqual([
+      "Choose the host your key is from",
+      "Groq -- https://api.groq.com/openai/v1",
+      "Mistral -- https://api.mistral.ai/v1",
+    ]);
     expect(text(container)).toContain("Only these OpenAI-compatible hosts are accepted (Groq, Mistral).");
     expect(text(container)).toContain("Your key is sent to the one you pick and nowhere else.");
     expect(container.querySelector('input[type="url"]')).toBeNull();
+    // nothing is picked for the person, so there is no key link until one is
+    expect(select.value).toBe("");
+    expect(container.querySelector("a")).toBeNull();
+    choose(select, "groq");
     expect(query<HTMLAnchorElement>(container, "a").href).toBe("https://console.groq.com/keys");
     expect(text(query<HTMLAnchorElement>(container, "a"))).toContain("Get your key at Groq");
     choose(select, "mistral");
@@ -282,6 +290,97 @@ describe("the custom provider", () => {
   });
 });
 
+describe("where a key is sent is never a default", () => {
+  it("will not send a custom-provider key until a host is picked, and says why", async () => {
+    on("POST /credentials", { ...SAVED_ROW, provider: "custom" });
+    const { container, form } = mount({ provider: provider("custom") });
+    typeInto(keyInput(container), KEY);
+    submit(form);
+    await settle();
+    expect(calls).toHaveLength(0);
+    expect(text(query(container, '[role="alert"]'))).toBe("Choose which provider's address to use.");
+    expect(keyInput(container).value).toBe(KEY);
+    // and the words around the form do not name a company the person did not choose
+    expect(container.querySelector("a")).toBeNull();
+    expect(text(container)).toContain("checks the key with the host you choose first");
+  });
+
+  it("names the host that was picked in the status and the footer, not the umbrella name", async () => {
+    let release: (value: unknown) => void = () => undefined;
+    on("POST /credentials", () => new Promise((resolve) => (release = resolve)));
+    const { container, form } = mount({ provider: provider("custom") });
+    choose(query<HTMLSelectElement>(container, "select"), "mistral");
+    expect(text(container)).toContain("checks the key with Mistral first");
+    typeInto(keyInput(container), KEY);
+    submit(form);
+    await settle();
+    expect(text(query(container, '[role="status"]'))).toBe("Checking your key with Mistral...");
+    release({ ...SAVED_ROW, provider: "custom" });
+    await settle();
+  });
+
+  it("replaces a custom key at the host it was saved with, and sends that host", async () => {
+    on("POST /credentials", { ...SAVED_ROW, provider: "custom", model: "m", setup_state: "ready" });
+    const { container, form } = mount({ provider: provider("custom"), mode: "replace", savedBaseUrl: "https://api.mistral.ai/v1/" });
+    expect(query<HTMLSelectElement>(container, "select").value).toBe("mistral");
+    expect(text(query<HTMLAnchorElement>(container, "a"))).toContain("Get your key at Mistral");
+    expect(container.querySelector(".bj-set-notice")).toBeNull();
+    typeInto(keyInput(container), KEY);
+    submit(form);
+    await settle();
+    expect(callsTo("POST /credentials")[0].body).toEqual({ service: "llm", provider: "custom", secret: KEY, base_url: "https://api.mistral.ai/v1" });
+  });
+
+  it("warns that another host starts the model over, when a replacement is pointed somewhere else", () => {
+    const { container } = mount({ provider: provider("custom"), mode: "replace", savedBaseUrl: "https://api.mistral.ai/v1" });
+    choose(query<HTMLSelectElement>(container, "select"), "groq");
+    expect(text(query(container, ".bj-set-notice"))).toContain("the model it had does not carry over");
+  });
+
+  it("asks for a choice, and sends nothing, when the saved host is none of the listed ones", async () => {
+    on("POST /credentials", { ...SAVED_ROW, provider: "custom" });
+    const { container, form } = mount({ provider: provider("custom"), mode: "replace", savedBaseUrl: "https://api.elsewhere.example/v1" });
+    expect(query<HTMLSelectElement>(container, "select").value).toBe("");
+    typeInto(keyInput(container), KEY);
+    submit(form);
+    await settle();
+    expect(calls).toHaveLength(0);
+    expect(text(query(container, '[role="alert"]'))).toBe("Choose which provider's address to use.");
+  });
+
+  it("replaces a Model Studio Qwen key in the region it was saved in, which needs its workspace id again", async () => {
+    on("POST /credentials", { ...SAVED_ROW, provider: "qwen", model: "m", setup_state: "ready" });
+    const { container, form } = mount({
+      provider: provider("qwen"),
+      mode: "replace",
+      savedBaseUrl: "https://ws-abc-123.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+    });
+    expect(query<HTMLSelectElement>(container, "select").value).toBe("ap-southeast-1");
+    expect(container.querySelector('input[placeholder="From your Model Studio console"]')).not.toBeNull();
+    expect(container.querySelector(".bj-set-notice")).toBeNull();
+    typeInto(keyInput(container), KEY);
+    typeInto(query<HTMLInputElement>(container, 'input[placeholder="From your Model Studio console"]'), "ws-abc-123");
+    submit(form);
+    await settle();
+    expect(callsTo("POST /credentials")[0].body).toEqual({ service: "llm", provider: "qwen", secret: KEY, region: "ap-southeast-1", workspace_id: "ws-abc-123" });
+  });
+
+  it("replaces a QwenCloud key on QwenCloud, and asks for a region when the saved address is not known", async () => {
+    on("POST /credentials", { ...SAVED_ROW, provider: "qwen" });
+    const known = mount({ provider: provider("qwen"), mode: "replace", savedBaseUrl: "https://maas.qwencloudapi.com/compatible-mode/v1" });
+    expect(query<HTMLSelectElement>(known.container, "select").value).toBe("qwencloud");
+    known.unmount();
+    const { container, form } = mount({ provider: provider("qwen"), mode: "replace", savedBaseUrl: null });
+    expect(query<HTMLSelectElement>(container, "select").value).toBe("");
+    expect(container.querySelector("a")).toBeNull();
+    typeInto(keyInput(container), KEY);
+    submit(form);
+    await settle();
+    expect(calls).toHaveLength(0);
+    expect(text(query(container, '[role="alert"]'))).toBe("Choose the region your key came from.");
+  });
+});
+
 describe("a provider that has no free way to check a key", () => {
   it("asks for a model id only after the API says so, keeps the key, and sends the model with it", async () => {
     on(
@@ -290,6 +389,7 @@ describe("a provider that has no free way to check a key", () => {
     );
     const { container, form, onSaved } = mount({ provider: provider("custom") });
     expect(container.querySelector('input[placeholder="provider/model-name"]')).toBeNull();
+    choose(query<HTMLSelectElement>(container, "select"), "groq");
     typeInto(keyInput(container), KEY);
     submit(form);
     await settle();
@@ -310,6 +410,7 @@ describe("a provider that has no free way to check a key", () => {
   it("refuses a model id that cannot be one before sending anything", async () => {
     on("POST /credentials", new FakeApiError("x", "INVALID_INPUT", "model_required_to_check_key"));
     const { container, form } = mount({ provider: provider("custom") });
+    choose(query<HTMLSelectElement>(container, "select"), "groq");
     typeInto(keyInput(container), KEY);
     submit(form);
     await settle();

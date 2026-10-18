@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { parseCredentialRows, type CredentialSummary } from "../../lib/settings/credentials";
-import { CUSTOM_ID, OPENROUTER_ID, QWEN_ID, isModelId, type LlmProvider } from "../../lib/settings/llmProviders";
+import { CUSTOM_ID, OPENROUTER_ID, QWEN_ID, endpointForAddress, isModelId, regionForAddress, type LlmProvider } from "../../lib/settings/llmProviders";
 import { settingsFailureMessage } from "../../lib/settings/settingsErrors";
 import { KeyField } from "./KeyField";
 import { ProviderFacts } from "./ProviderFacts";
@@ -20,6 +20,12 @@ import "../../styles/settings.css";
 // never from free text. A provider with no free way to check a key (custom and Qwen may have none)
 // asks for a model id too, and only when the API says so.
 //
+// WHERE THE KEY GOES IS NEVER DECIDED BY A DEFAULT. Adding a custom-provider key starts on "Choose
+// the host your key is from" and will not save until one is picked, so a key from one company is
+// not sent to another because the first host in the list was already selected. Replacing a key
+// starts on the host or region it was saved with (`savedBaseUrl`), so a rotation keeps its address
+// and its model; an address that matches none of the listed ones asks for a choice instead.
+//
 // SAVING A KEY IS NOT CHOOSING A MODEL. The key is stored with no model unless one was needed to
 // check it; the model is the next step (ModelPicker), because the list of models comes from the key.
 //
@@ -31,6 +37,8 @@ export interface ProviderConnectCardProps {
   mode: "add" | "replace";
   /** Move focus into the form when it opens (it was opened by a button, not by choosing a chip). */
   autoFocus?: boolean;
+  /** For replacing: the address the saved key goes to (Qwen's region, the custom host), if it has one. */
+  savedBaseUrl?: string | null;
   /** Present for OpenRouter: the one-click sign-in. */
   openRouter?: { start: () => void; busy: boolean; error: string | null; unsupported: boolean };
   /** The row the API returned, once the key is stored (null if the reply could not be read). */
@@ -38,11 +46,15 @@ export interface ProviderConnectCardProps {
   onCancel?: () => void;
 }
 
-export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onSaved, onCancel }: ProviderConnectCardProps) {
+export function ProviderConnectCard({ provider, mode, autoFocus, savedBaseUrl, openRouter, onSaved, onCancel }: ProviderConnectCardProps) {
   const [secret, setSecret] = useState("");
-  const [regionId, setRegionId] = useState(provider.regions[0]?.id ?? "");
+  const savedEndpoint = mode === "replace" ? endpointForAddress(provider, savedBaseUrl) : null;
+  const savedRegion = mode === "replace" ? regionForAddress(provider, savedBaseUrl) : null;
+  // Qwen adds on its first region (QwenCloud) but replaces on the region the key was saved with;
+  // the custom provider never starts on a host.
+  const [regionId, setRegionId] = useState(mode === "replace" ? (savedRegion?.id ?? "") : (provider.regions[0]?.id ?? ""));
   const [workspaceId, setWorkspaceId] = useState("");
-  const [endpointId, setEndpointId] = useState(provider.endpoints[0]?.id ?? "");
+  const [endpointId, setEndpointId] = useState(savedEndpoint?.id ?? "");
   const [askModel, setAskModel] = useState(false);
   const [model, setModel] = useState("");
   const [saving, setSaving] = useState(false);
@@ -56,12 +68,18 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
   const endpointSelectId = useId();
   const modelInputId = useId();
 
-  const region = provider.regions.find((candidate) => candidate.id === regionId) ?? provider.regions[0];
-  const endpoint = provider.endpoints.find((candidate) => candidate.id === endpointId) ?? provider.endpoints[0];
+  const region = provider.regions.find((candidate) => candidate.id === regionId);
+  const endpoint = provider.endpoints.find((candidate) => candidate.id === endpointId);
   const needsWorkspace = provider.id === QWEN_ID && region?.needsWorkspace === true;
-  const getKeyUrl = region?.getKeyUrl ?? endpoint?.getKeyUrl ?? provider.getKeyUrl;
-  // The custom provider is several hosts: the link names the one picked, not the umbrella.
-  const keyHost = provider.id === CUSTOM_ID && endpoint !== undefined ? endpoint.name : provider.name;
+  // Until a Qwen region is picked there is no page to send the person to: the QwenCloud one would
+  // be the wrong one for a Model Studio key.
+  const getKeyUrl = provider.id === QWEN_ID && region === undefined ? null : (region?.getKeyUrl ?? endpoint?.getKeyUrl ?? provider.getKeyUrl);
+  // The custom provider is several hosts: the words name the one picked, not the umbrella.
+  const holder = provider.id === CUSTOM_ID ? (endpoint?.name ?? "the host you choose") : provider.name;
+  // Replacing at another address starts the key over: the model it had belonged to the old one.
+  const addressChanged =
+    mode === "replace" &&
+    ((provider.id === CUSTOM_ID && endpoint?.id !== savedEndpoint?.id) || (provider.id === QWEN_ID && region !== undefined && region.id !== savedRegion?.id));
 
   useEffect(() => {
     if (autoFocus === true) root.current?.focus();
@@ -76,6 +94,7 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
     const key = secret.trim();
     if (key === "") return setError(`Paste your ${provider.name} key first.`);
     if (needsWorkspace && workspaceId.trim() === "") return setError("This region needs your Model Studio workspace id.");
+    if (provider.id === QWEN_ID && provider.regions.length > 0 && region === undefined) return setError("Choose the region your key came from.");
     if (provider.id === CUSTOM_ID && endpoint === undefined) return setError("Choose which provider's address to use.");
     if (askModel && model.trim() !== "" && !isModelId(model.trim())) return setError("That doesn't look like a model id. Copy it exactly as the provider shows it.");
     setSaving(true);
@@ -94,7 +113,7 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
       setWorkspaceId("");
       onSaved(parseCredentialRows([saved])?.[0] ?? null);
     } catch (e) {
-      setError(settingsFailureMessage(e, { action: "save_key", provider: provider.name }, "Couldn't save that key."));
+      setError(settingsFailureMessage(e, { action: "save_key", provider: holder }, "Couldn't save that key."));
       if ((e as { reason?: unknown }).reason === "model_required_to_check_key") setAskModel(true);
     } finally {
       setSaving(false);
@@ -122,7 +141,7 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
         <h3 id={headingId}>{title}</h3>
         {getKeyUrl !== null && (
           <a href={getKeyUrl} target="_blank" rel="noopener noreferrer">
-            Get your key at {keyHost}
+            Get your key at {holder}
             <span className="bj-visually-hidden"> (opens in a new tab)</span>
           </a>
         )}
@@ -152,6 +171,7 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
         <div className="bj-set-field">
           <label htmlFor={regionSelectId}>Region</label>
           <select id={regionSelectId} value={region?.id ?? ""} onChange={(event) => setRegionId(event.target.value)}>
+            {region === undefined && <option value="">Choose your region</option>}
             {provider.regions.map((candidate) => (
               <option key={candidate.id} value={candidate.id}>
                 {candidate.name}
@@ -181,6 +201,7 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
         <div className="bj-set-field">
           <label htmlFor={endpointSelectId}>Base URL</label>
           <select id={endpointSelectId} value={endpoint?.id ?? ""} onChange={(event) => setEndpointId(event.target.value)}>
+            {endpoint === undefined && <option value="">Choose the host your key is from</option>}
             {provider.endpoints.map((candidate) => (
               <option key={candidate.id} value={candidate.id}>
                 {candidate.name} -- {candidate.baseUrl}
@@ -192,6 +213,13 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
             sent to the one you pick and nowhere else. A host that isn't on the list can't be added here.
           </p>
         </div>
+      )}
+
+      {addressChanged && (
+        <p className="bj-set-notice">
+          This is a different address from the one your key was saved with, so the model it had does not carry over. You will choose a model again
+          after saving.
+        </p>
       )}
 
       <KeyField
@@ -229,7 +257,7 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
       )}
       {saving && (
         <p className="bj-set-status" role="status">
-          Checking your key with {provider.name}...
+          Checking your key with {holder}...
         </p>
       )}
 
@@ -244,8 +272,8 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
         )}
       </div>
       <p className="bj-set-hint">
-        Saving checks the key with {provider.name} first, so a key it refuses is never stored. It is kept encrypted and used to make calls to{" "}
-        {provider.name} for you.
+        Saving checks the key with {holder} first, so a key it refuses is never stored. It is kept encrypted and used to make calls to {holder} for
+        you.
       </p>
     </form>
   );
