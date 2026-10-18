@@ -21,9 +21,11 @@ import {
   REVIEW_HASH,
   confidencePercent,
   TODAY_KINDS,
+  newestFirst,
   isMappableProposal,
   PROPOSAL_STEPS,
   workspacePath,
+  type FitFact,
   type SavedSearchesFact,
   type TodayFacts,
   type TodayItemFact,
@@ -196,6 +198,8 @@ export interface FactsInput {
   searches: SearchesRead;
   /** The application a Track in this visit created, by the apply URL it was for. */
   tracked: Readonly<Record<string, string>>;
+  /** What each held-back application's stored fit result said, where it was asked. */
+  fits: Readonly<Record<string, FitRead | undefined>>;
 }
 
 // The ATS score the server writes into a resume item's detail ("ATS score 72/100"); null for any
@@ -243,6 +247,7 @@ export function todayFacts(input: FactsInput): TodayFacts {
                   },
             atsScore: item.kind === "resume_ready" ? atsScoreOf(item.detail) : null,
             trackedApplicationId: match === null ? null : (input.tracked[match.apply_url] ?? null),
+            fit: item.kind === "resume_failed" && applicationId !== null ? fitFactOf(input.fits[applicationId]) : null,
           };
         });
   return {
@@ -254,22 +259,50 @@ export function todayFacts(input: FactsInput): TodayFacts {
 
 // ── one item, as a row ─────────────────────────────────────────────────────
 
-// What the fit check's own read said about a held-back item, when it could be read.
-export type FitRead = { state: "loading" } | { state: "unavailable" } | { state: "held"; score: number };
+// What the fit check's own stored result said about a held-back item, when it could be read.
+//  - "unavailable": it was not read, the read failed, or the body was not a result: nothing is known;
+//  - "moved_on": the latest result has a resume, or the gate let it through, so the card is out of date;
+//  - "held": the latest result is still a hold, with the fit check's overall score when it carries one.
+export type FitRead =
+  | { state: "loading" }
+  | { state: "unavailable" }
+  | { state: "moved_on" }
+  | { state: "held"; score: number | null };
+
+export function fitFactOf(read: FitRead | undefined): FitFact {
+  if (read === undefined) return "unread";
+  return read.state === "unavailable" ? "unread" : read.state;
+}
 
 // The number the "Resume not generated" chip carries, from GET /applications/{id}/prepare-result:
 // the fit check's overall score on its own 0 to 10 scale, and only while that latest result is
 // still a held-back one (no resume, and the gate did not let it through). A newer run that
-// produced a resume, a result with no fit, or a score that is not a number is "unavailable": the
-// chip then says only that the fit check held it back.
+// produced a resume is "moved_on"; a body that is not a result is "unavailable". A held result
+// whose score is missing or not a number is still held: the chip then carries no number.
 export function fitReadOf(body: unknown): FitRead {
   if (!isRecord(body) || !isRecord(body.result)) return { state: "unavailable" };
   const result = body.result;
-  if (result.resume !== null && result.resume !== undefined) return { state: "unavailable" };
-  if (result.gate_outcome === "proceed") return { state: "unavailable" };
+  if (result.resume !== null && result.resume !== undefined) return { state: "moved_on" };
+  if (result.gate_outcome === "proceed") return { state: "moved_on" };
   const fit = isRecord(result.fit) ? result.fit : null;
   const score = fit === null ? null : fit.overall_score;
-  return typeof score === "number" && Number.isFinite(score) ? { state: "held", score } : { state: "unavailable" };
+  return { state: "held", score: typeof score === "number" && Number.isFinite(score) ? score : null };
+}
+
+// The applications whose stored fit result the page asks for: the newest held-back cards first,
+// one read per application, and never more than `cap` reads in a visit. A card past the cap is
+// simply never read ("unread"), and says only what the card is.
+export const FIT_READ_CAP = 5;
+
+export function fitReadTargets(items: readonly TodayItem[], cap: number = FIT_READ_CAP): string[] {
+  const ids: string[] = [];
+  for (const item of newestFirst(items.filter((candidate) => candidate.kind === "resume_failed"), (candidate) => candidate.created_at)) {
+    const applicationId = text(item.application_id);
+    if (applicationId === null || ids.includes(applicationId)) continue;
+    ids.push(applicationId);
+    if (ids.length === cap) break;
+  }
+  return ids;
 }
 
 // A 0 to 10 score as the fit check wrote it, to one decimal place at most.
@@ -337,18 +370,31 @@ export function rowView(item: TodayItem, context: RowContext): RowView {
       };
     case "resume_failed": {
       const fit = applicationId === null ? undefined : context.fits[applicationId];
+      const score = fit?.state === "held" ? fit.score : null;
+      if (fit?.state === "moved_on") {
+        // A resume exists now: the card keeps what happened but no longer says it is waiting on anyone.
+        return {
+          ...base,
+          label: "Held back earlier",
+          title: job ?? "An application you track",
+          serifTitle: true,
+          details: ["A resume exists for this application now."],
+          trail: { glyph: "engine", actor: "Held back by the fit check", basis: "code-weighted from your model's sub-scores", when },
+          receipt: [{ label: "kind", value: item.kind }, logged],
+        };
+      }
       return {
         ...base,
         // The server's headline reads "needs attention"; the card is calm and says what happened.
         title: job ?? "An application you track",
         serifTitle: true,
-        chip: { tone: "gold", text: fit?.state === "held" ? `Fit check held it back · ${formatTenScale(fit.score)} / 10` : "Fit check held it back" },
+        chip: { tone: "gold", text: score !== null ? `Fit check held it back · ${formatTenScale(score)} / 10` : "Fit check held it back" },
         details: detail === null ? [] : [detail],
         trail: { glyph: "engine", actor: "Held back by the fit check", basis: "code-weighted from your model's sub-scores", when },
         receipt: [
           { label: "kind", value: item.kind },
           logged,
-          { label: "fit check", value: fit?.state === "held" ? `${formatTenScale(fit.score)} / 10` : null },
+          { label: "fit check", value: score !== null ? `${formatTenScale(score)} / 10` : null },
         ],
       };
     }
@@ -429,7 +475,7 @@ export type RowAction =
   | { id: "link"; label: string; to: string }
   | { id: "accept" | "track" | "generate-anyway" | "dismiss"; label: string };
 
-export function rowActions(item: TodayItem, trackedApplicationId: string | null): RowAction[] {
+export function rowActions(item: TodayItem, trackedApplicationId: string | null, fit?: FitRead): RowAction[] {
   const applicationId = text(item.application_id);
   const actions: RowAction[] = [];
   switch (item.kind) {
@@ -451,7 +497,10 @@ export function rowActions(item: TodayItem, trackedApplicationId: string | null)
       if (applicationId !== null) actions.push({ id: "link", label: "Open workspace", to: workspacePath(applicationId, REVIEW_HASH) });
       break;
     case "resume_failed":
-      if (applicationId !== null) {
+      if (applicationId !== null && fit?.state === "moved_on") {
+        // A resume exists now, so there is nothing to force; the workspace shows it.
+        actions.push({ id: "link", label: "Open workspace", to: workspacePath(applicationId) });
+      } else if (applicationId !== null) {
         actions.push({ id: "link", label: "See why", to: workspacePath(applicationId, CROSS_NAV_HASH.generate) });
         actions.push({ id: "generate-anyway", label: "Generate anyway" });
       }

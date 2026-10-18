@@ -3,7 +3,7 @@
 // wins.
 //
 //   T1   a status proposal with a stage to move to, newest first
-//   T2   a resume the fit check held back (the application is known)
+//   T2   a resume the fit check held back (the application is known, and no resume exists now)
 //   T3   a resume ready for review (the application is known)
 //   T4   a high fit job found by a saved search
 //   T5a  nothing in the feed and no saved search: save one
@@ -90,6 +90,16 @@ export interface MatchFact {
   searchLabel: string | null;
 }
 
+/**
+ * What the fit check's stored result says about a held-back resume, as far as it has been read:
+ *  - "loading": the read is out;
+ *  - "unread": it was not made, or failed, or the result could not be understood -- nothing is known;
+ *  - "held": the latest result is still a hold, with no resume;
+ *  - "moved_on": a resume exists now (a later run made one, or the gate let it through), so the
+ *    card describes something that is no longer so.
+ */
+export type FitFact = "loading" | "unread" | "held" | "moved_on";
+
 export interface TodayItemFact {
   id: string;
   kind: TodayKind;
@@ -106,6 +116,8 @@ export interface TodayItemFact {
   atsScore: number | null;
   /** The application a Track in this visit created, for the Open workspace that replaces Track. */
   trackedApplicationId: string | null;
+  /** What the stored fit check says about a held-back resume; null on any other kind of item. */
+  fit: FitFact | null;
 }
 
 export type SavedSearchesFact =
@@ -153,7 +165,9 @@ export function parseTodayIntent(intent: string): { name: TodayIntentName; itemI
 
 // ── the choice ─────────────────────────────────────────────────────────────
 
-// The workspace's Review section.
+// The anchor for the workspace's Review section. The workspace does not give any section this id
+// yet, so until it does the link opens the workspace at its top. It is fixed here so that the link
+// does not have to change when the section arrives.
 export const REVIEW_HASH = "ch-check";
 
 export type TodayRowId = "T1" | "T2" | "T3" | "T4";
@@ -163,9 +177,11 @@ export interface Lit {
   item: TodayItemFact;
 }
 
-function newestFirst(items: readonly TodayItemFact[]): TodayItemFact[] {
-  const time = (item: TodayItemFact) => {
-    const parsed = Date.parse(item.createdAt);
+// Newest first by the item's own time; an unreadable time sorts last, and equal times keep the
+// order the feed returned them in.
+export function newestFirst<T>(items: readonly T[], createdAt: (item: T) => string): T[] {
+  const time = (item: T) => {
+    const parsed = Date.parse(createdAt(item));
     return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
   };
   return items
@@ -177,12 +193,17 @@ function newestFirst(items: readonly TodayItemFact[]): TodayItemFact[] {
     .map(({ item }) => item);
 }
 
+// A held-back card can light T2 only while the held-back fact may still be true.
+function heldBack(item: TodayItemFact): boolean {
+  return item.kind === "resume_failed" && item.applicationId !== null && item.fit !== "moved_on";
+}
+
 // Which item the band holds, if any. Precedence is the row order; within a row, the newest item.
 // An item with no application can never light T2 or T3 (nothing to link to), so it falls through,
 // and a proposal that is no longer pending can never light T1 (Accept and Dismiss would both be
 // refused), so it stays in the list as a plain item.
 export function todayLit(items: readonly TodayItemFact[]): Lit | null {
-  const ordered = newestFirst(items);
+  const ordered = newestFirst(items, (item) => item.createdAt);
   const t1 = ordered.find(
     (item) =>
       item.kind === "status_proposal" &&
@@ -191,7 +212,7 @@ export function todayLit(items: readonly TodayItemFact[]): Lit | null {
       isMappableProposal(item.proposal.proposedType),
   );
   if (t1 !== undefined) return { row: "T1", item: t1 };
-  const t2 = ordered.find((item) => item.kind === "resume_failed" && item.applicationId !== null);
+  const t2 = ordered.find(heldBack);
   if (t2 !== undefined) return { row: "T2", item: t2 };
   const t3 = ordered.find((item) => item.kind === "resume_ready" && item.applicationId !== null);
   if (t3 !== undefined) return { row: "T3", item: t3 };
@@ -206,6 +227,16 @@ function decide(facts: TodayFacts): Decision {
   if (facts.feed.state === "loading") return { kind: "wait" };
   const items = facts.feed.items;
   const lit = todayLit(items);
+  // A held-back card whose fit read is still out could turn out to have moved on, and would then be
+  // replaced by the next choice. It matters only to a choice it would outrank (anything below T1),
+  // and only if it is the card that is lit or newer than it: an older one cannot replace it.
+  if (lit?.row !== "T1") {
+    const ordered = newestFirst(items, (item) => item.createdAt);
+    const limit = lit?.row === "T2" ? ordered.indexOf(lit.item) + 1 : ordered.length;
+    if (ordered.slice(0, limit).some((item) => item.kind === "resume_failed" && item.applicationId !== null && item.fit === "loading")) {
+      return { kind: "wait" };
+    }
+  }
   if (lit !== null) {
     // T1 to T3 name the job or the company in their sentence; arriving a moment later would change
     // the sentence under the person's eyes.
@@ -252,11 +283,14 @@ function proposalStep(item: TodayItemFact): NextStep | null {
 
 function heldBackStep(item: TodayItemFact): NextStep | null {
   if (item.applicationId === null) return null;
+  // "No resume generated" is a claim about the application now, so it is made only when the stored
+  // result was read and still says so; a card whose read failed says only what the card is.
+  const why = item.fit === "held" ? ["held back by the fit check", "no resume generated"] : ["held back by the fit check"];
   return {
     sentence: `The fit check held back your draft${item.job === null ? "" : ` for ${item.job}`}. Read why, then decide.`,
     action: { kind: "link", label: "See why", to: workspacePath(item.applicationId, CROSS_NAV_HASH.generate) },
     secondary: { kind: "button", label: "Generate anyway", intent: todayIntent("generate-anyway", item.id) },
-    why: ["held back by the fit check", "no resume generated"],
+    why,
   };
 }
 
