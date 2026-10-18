@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import app from "../App.tsx?raw";
+import appShell from "../components/AppShell.tsx?raw";
 import consentNotice from "../components/ConsentNotice.tsx?raw";
 import legalLinks from "../components/LegalLinks.tsx?raw";
 import publicLayout from "../components/PublicLayout.tsx?raw";
@@ -28,7 +29,7 @@ describe("the shell", () => {
   });
 
   it("links the legal pages from the nav footer, beneath Sign out", () => {
-    const footer = app.slice(app.indexOf('<div className="bj-nav-footer">'));
+    const footer = appShell.slice(appShell.indexOf('<div className="bj-nav-footer">'));
     expect(footer.indexOf("Sign out")).toBeGreaterThan(-1);
     expect(footer.indexOf("<LegalLinks />")).toBeGreaterThan(footer.indexOf("Sign out"));
   });
@@ -110,6 +111,13 @@ describe("the sign-in page", () => {
     const call = login.indexOf("useDocumentTitle(loginPageTitle(mode));");
     expect(call).toBeGreaterThan(-1);
     expect(call).toBeLessThan(login.indexOf('if (mode === "reset")'));
+  });
+
+  it("is the page's one <main> in both of its forms, with the wordmark as the heading", () => {
+    expect((login.match(/<main className="bj-login">/g) ?? []).length).toBe(2);
+    expect((login.match(/<\/main>/g) ?? []).length).toBe(2);
+    expect(login).not.toMatch(/<div className="bj-login">/);
+    expect((login.match(/<h1>\s*<Wordmark \/>\s*<\/h1>/g) ?? []).length).toBe(2);
   });
 
   it("puts the legal links on the card, opening in a new tab so the form is kept", () => {

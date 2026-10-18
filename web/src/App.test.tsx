@@ -2,6 +2,7 @@ import { isValidElement, type ReactElement } from "react";
 import { Navigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { AppShell } from "./components/AppShell";
 import { PublicLayout } from "./components/PublicLayout";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -144,8 +145,16 @@ describe("App", () => {
     for (const pathname of ["/", "/privacy", "/terms", "/applications/123"]) {
       current.pathname = pathname;
       expect(shell().type, pathname).not.toBe(Navigate);
-      expect(shell().props, pathname).toMatchObject({ className: "bj-shell" });
+      expect(shell().type, pathname).toBe(AppShell);
     }
+  });
+
+  it("hands the shell the signed-in address (none when the session has none) and a way to sign out", () => {
+    current.pathname = "/";
+    expect(shell().props).toMatchObject({ email: null });
+    current.auth.session = { user: { id: "user-1", email: "someone@example.test" } } as typeof current.auth.session;
+    expect(shell().props).toMatchObject({ email: "someone@example.test" });
+    expect(typeof (shell().props as { onSignOut: unknown }).onSignOut).toBe("function");
   });
 
   it("sends a signed-in person away from the sign-in page, to Today", () => {
@@ -177,7 +186,7 @@ describe("App", () => {
     current.auth.recovery = true;
     current.pathname = "/update-password";
     expect(shell().type).not.toBe(Navigate);
-    expect(shell().props).toMatchObject({ className: "bj-shell" });
+    expect(shell().type).toBe(AppShell);
   });
 
   it("does not redirect a signed-in person who is not in a recovery -- including after one is done", () => {
@@ -185,7 +194,7 @@ describe("App", () => {
     for (const pathname of ["/", "/applications/123", "/update-password"]) {
       current.pathname = pathname;
       expect(shell().type).not.toBe(Navigate);
-      expect(shell().props).toMatchObject({ className: "bj-shell" });
+      expect(shell().type).toBe(AppShell);
     }
   });
 });

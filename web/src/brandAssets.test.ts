@@ -122,6 +122,10 @@ describe("index.html", () => {
     expect(description).not.toMatch(/\b(best|leading|revolutionary|powerful|ultimate|#1|world-class|magic)\b/i);
   });
 
+  it("fits the screen and reaches the edges of a notched phone, for the safe-area padding of the tab bar", () => {
+    expect(metaContent("name", "viewport")).toBe("width=device-width, initial-scale=1.0, viewport-fit=cover");
+  });
+
   it("is dark: a theme color and color scheme that match the canvas", () => {
     expect(metaContent("name", "theme-color")).toBe("#070607");
     expect(metaContent("name", "color-scheme")).toBe("dark");
