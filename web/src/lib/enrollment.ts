@@ -35,6 +35,7 @@ import {
   pageTitle,
 } from "./publicRoutes";
 import { friendlyApiMessage } from "./rateLimitMessage";
+import { LEGACY_INTEGRATIONS_PATH, SETTINGS_PATH } from "./settingsPaths";
 
 export const ENROLLMENT_PATH = "/tester/enrollment";
 export const WITHDRAW_PATH = "/tester/enrollment/withdraw";
@@ -563,8 +564,9 @@ export function enrollPageReducer(state: EnrollPageState, event: EnrollPageEvent
 // or leaves:
 //   - the enrollment page itself, and the two legal documents they are asked to agree to;
 //   - Profile, where account deletion lives;
-//   - Integrations, where a provider key is removed, Gmail is disconnected, and a saved search is
-//     paused or deleted. Gmail reply checking and saved searches run in the background on the
+//   - Settings, where a provider key is removed, Gmail is disconnected, and a saved search is
+//     paused or deleted. Its old address, /profile/integrations, only redirects there, and stays on
+//     the list so the redirect is not itself held up by the gate. Gmail reply checking and saved searches run in the background on the
 //     person's own key whether or not they are enrolled, so a person who withdrew (or never
 //     joined, on a server that switched the programme on later) must be able to reach the
 //     controls that stop them. Saving a key there is still refused by the server, which the page
@@ -573,19 +575,20 @@ export function enrollPageReducer(state: EnrollPageState, event: EnrollPageEvent
 //     address (passwordReset.ts), has a session that sign-out would lose, and can do nothing else
 //     until the password is set, so consent to a programme is never a condition of recovery.
 export const PROFILE_PATH = "/profile";
-export const INTEGRATIONS_PATH = "/profile/integrations";
+export { LEGACY_INTEGRATIONS_PATH, SETTINGS_PATH };
 export const GATE_EXEMPT_PATHS: readonly string[] = [
   ENROLL_PATH,
   PRIVACY_PATH,
   TERMS_PATH,
   PROFILE_PATH,
-  INTEGRATIONS_PATH,
+  SETTINGS_PATH,
+  LEGACY_INTEGRATIONS_PATH,
   UPDATE_PASSWORD_PATH,
 ];
 
 /** Whether this address is one the gate never stands in front of. Matched exactly, like every
  *  path in the app (publicRoutes.ts): "/profile/" is "/profile", while "/Profile" and
- *  "/profile/integrations/extra" are not, and a spelling the gate does not recognise is gated,
+ *  "/settings/extra" are not, and a spelling the gate does not recognise is gated,
  *  which is the safe direction. */
 export function isGateExempt(pathname: string): boolean {
   return GATE_EXEMPT_PATHS.includes(normalizePath(pathname));

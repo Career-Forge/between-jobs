@@ -40,6 +40,7 @@
 // without regard to case, exactly as it did before this module existed.
 
 import { LOGIN_REGISTER_QUERY, urlCarriesAuthError, type LoginMode } from "./passwordReset";
+import { SETTINGS_PATH } from "./settingsPaths";
 
 export const LANDING_PATH = "/";
 export const LOGIN_PATH = "/login";
@@ -136,6 +137,7 @@ export function documentTitleFor(view: AppView, pathname: string): string | null
       if (path === PRIVACY_PATH) return pageTitle("Privacy Policy");
       if (path === TERMS_PATH) return pageTitle("Terms of Service");
       if (path === ENROLL_PATH) return pageTitle(ENROLL_PAGE_NAME);
+      if (path === SETTINGS_PATH) return pageTitle("Settings");
       return pageTitle(null);
     }
   }

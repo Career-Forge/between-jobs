@@ -3,8 +3,8 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { textOfMarkup } from "../testing/markup";
 import { codeBetweenCatchAndCall, sliceBetween } from "../testing/sourcePins";
-import Integrations, { GmailConnectCard } from "./Integrations";
-import integrationsSource from "./Integrations.tsx?raw";
+import Settings, { GmailConnectCard } from "./Settings";
+import integrationsSource from "./Settings.tsx?raw";
 
 // The Gmail card in the states a person can be in, and what it says about Google's 7-day
 // limit. A static render does not run effects, so nothing is fetched: this is only what the card
@@ -233,15 +233,15 @@ describe("the page", () => {
   it("does not draw the Gmail card until the credentials are read (a static render has not read them)", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>
-        <Integrations />
+        <Settings />
       </MemoryRouter>,
     );
     expect(markup).not.toContain("<h2>Gmail</h2>");
   });
 
   it("reads the capabilities for the card: the card source asks /capabilities' answer, not a guess", async () => {
-    const source = (await import("./Integrations.tsx?raw")).default as string;
-    const page = source.slice(source.indexOf("export default function Integrations"), source.indexOf("export function SearchProviderCard"));
+    const source = (await import("./Settings.tsx?raw")).default as string;
+    const page = source.slice(source.indexOf("export default function Settings"), source.indexOf("export function SearchProviderCard"));
     expect(page).toContain("gmailAccess(capabilities)");
     expect(page).toContain("gmailTestingMode(capabilities)");
     // Disconnecting is a plain credential delete that nothing gates

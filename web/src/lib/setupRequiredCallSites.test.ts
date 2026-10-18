@@ -127,7 +127,7 @@ const SITES: Record<string, Site> = {
     keeps: [/setState\(failureOf\(e, "Failed to search"\)\)/, /state\.kind === "setup" && \(/, NOTICE_FROM_STATE],
     forbids: [/setState\(\{ kind: "error", message: friendlyApiMessage\(e, "Failed to search"\)/],
   },
-  "../pages/Integrations.tsx": {
+  "../pages/Settings.tsx": {
     calls: 1, // connect Gmail
     draws: 1,
     keeps: [/setError\(problemOf\(e, /, /<ProblemView problem=\{error\} \/>/],
@@ -170,7 +170,7 @@ describe("every place a SETUP_REQUIRED error is shown", () => {
     for (const [file, source] of Object.entries(sources)) {
       // The old shape of every branch: the code check followed straight by a text-only state.
       expect(codeOnly(source), file).not.toMatch(/e\.code === "SETUP_REQUIRED"/);
-      expect(codeOnly(source), file).not.toMatch(/\bAdd (a|an) [A-Za-z ]+ key in Integrations\./);
+      expect(codeOnly(source), file).not.toMatch(/\bAdd (a|an) [A-Za-z ]+ key in (Integrations|Settings)\./);
     }
   });
 

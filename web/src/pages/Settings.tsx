@@ -71,7 +71,7 @@ interface CredentialSummary {
 }
 
 
-export default function Integrations() {
+export default function Settings() {
   const capabilities = useCapabilities();
   const [credentials, setCredentials] = useState<CredentialSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -97,7 +97,7 @@ export default function Integrations() {
 
   return (
     <div>
-      <h1>Integrations</h1>
+      <h1>Settings</h1>
       <p className="bj-muted">
         Bring your own provider key -- this platform never runs anything on a shared key on your
         behalf.

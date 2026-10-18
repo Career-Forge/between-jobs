@@ -16,7 +16,7 @@
   },
   "pages": {
     "profile": "/profile",
-    "model_key": "/profile/integrations",
+    "model_key": "/settings",
     "first_search": "/discover",
     "track_job": "/applications",
     "generate_resume": "/applications"

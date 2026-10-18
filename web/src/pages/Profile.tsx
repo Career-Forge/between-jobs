@@ -180,7 +180,7 @@ function PageFrame({ children }: { children?: React.ReactNode }) {
     <div>
       <div className="bj-card-header">
         <h1>Profile</h1>
-        <button onClick={() => navigate("/profile/integrations")}>Integrations</button>
+        <button onClick={() => navigate("/settings")}>Settings</button>
       </div>
       {children}
     </div>

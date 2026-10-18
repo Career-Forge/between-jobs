@@ -172,18 +172,18 @@ describe("without Gmail", () => {
 });
 
 describe("what it says, and where it sends people", () => {
-  it("not connected: points at Integrations to connect", () => {
+  it("not connected: points at Settings to connect", () => {
     const markup = html({ state: "not_connected" });
     expect(textOfMarkup(markup)).toContain("Connect Gmail to have drafts created for you.");
-    const link = anchorsOf(markup).find((a) => a.text === "Connect Gmail in Integrations");
-    expect(link?.attributes.href).toBe("/profile/integrations");
+    const link = anchorsOf(markup).find((a) => a.text === "Connect Gmail in Settings");
+    expect(link?.attributes.href).toBe("/settings");
   });
 
-  it("needs a reconnect: says so and points at Integrations to reconnect", () => {
+  it("needs a reconnect: says so and points at Settings to reconnect", () => {
     const markup = html({ state: "reconnect_needed" });
     expect(textOfMarkup(markup)).toContain("Your Gmail connection needs to be reconnected before it can create drafts.");
-    const link = anchorsOf(markup).find((a) => a.text === "Reconnect Gmail in Integrations");
-    expect(link?.attributes.href).toBe("/profile/integrations");
+    const link = anchorsOf(markup).find((a) => a.text === "Reconnect Gmail in Settings");
+    expect(link?.attributes.href).toBe("/settings");
   });
 
   it("availability not known: says it cannot tell, and sends nobody to connect a Gmail that may not be theirs", () => {
@@ -193,7 +193,7 @@ describe("what it says, and where it sends people", () => {
     expect(text).toContain("You can still copy this email or open it in your mail app.");
     expect(text).not.toContain("Create Gmail draft");
     expect(text).not.toMatch(/connect gmail|reconnect gmail/i);
-    expect(anchorsOf(markup).some((a) => a.attributes.href === "/profile/integrations")).toBe(false);
+    expect(anchorsOf(markup).some((a) => a.attributes.href === "/settings")).toBe(false);
     expect(markup).not.toContain("bj-primary");
     expect(anchorsOf(markup).some((a) => a.text === MAIL_APP)).toBe(true);
     expect(text).toContain(COPY);
@@ -205,7 +205,7 @@ describe("what it says, and where it sends people", () => {
       const text = textOfMarkup(markup);
       expect(text).toContain(message);
       expect(text).toContain("You can still copy this email or open it in your mail app.");
-      expect(anchorsOf(markup).some((a) => a.attributes.href === "/profile/integrations")).toBe(false);
+      expect(anchorsOf(markup).some((a) => a.attributes.href === "/settings")).toBe(false);
       expect(text).not.toMatch(/connect gmail|reconnect gmail/i);
     }
   });

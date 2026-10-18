@@ -79,7 +79,7 @@ describe("deriveFirstRun", () => {
     const view = deriveFirstRun(BRAND_NEW, FRESH);
     expect(Object.fromEntries(view.steps.map((s) => [s.id, s.to]))).toEqual({
       profile: "/profile",
-      model_key: "/profile/integrations",
+      model_key: "/settings",
       first_search: "/discover",
       track_job: "/applications",
       generate_resume: "/applications",

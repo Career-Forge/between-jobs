@@ -67,7 +67,7 @@ export function TabFailureView({ failure, onRetry }: { failure: Failure; onRetry
       </div>
     );
   }
-  // setup_required (a link to Integrations) and every other error, retry button
+  // setup_required (a link to Settings) and every other error, retry button
   // included, are worded exactly as on the per-application panel.
   return <FailureView failure={failure} onRetry={onRetry} />;
 }
@@ -145,7 +145,7 @@ export function TabResults({
           {emptyNote !== null && <div className="bj-small">{emptyNote}</div>}
           {emptyNote === TAB_YOU_COM_NO_LINKEDIN_NOTE && (
             <div className="bj-small">
-              <Link to="/profile/integrations">Open Integrations settings</Link>
+              <Link to="/settings">Open Settings</Link>
             </div>
           )}
           {hints.map((hint) => (

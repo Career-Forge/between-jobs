@@ -964,12 +964,12 @@ describe("an empty result", () => {
     expect(visibleText(html(emptyState()))).toContain(TAB_NO_POSTS_SEEN_NOTE);
   });
 
-  it("blames the index, not the role, for a provider known to hold no such posts, and links to Integrations", () => {
+  it("blames the index, not the role, for a provider known to hold no such posts, and links to Settings", () => {
     const text = visibleText(html(emptyState({ provider: "you_com" })));
     expect(text).toContain(TAB_YOU_COM_NO_LINKEDIN_NOTE);
-    expect(html(emptyState({ provider: "you_com" }))).toContain('href="/profile/integrations"');
+    expect(html(emptyState({ provider: "you_com" }))).toContain('href="/settings"');
     // ... and only then.
-    expect(html(emptyState({ provider: "firecrawl" }))).not.toContain("/profile/integrations");
+    expect(html(emptyState({ provider: "firecrawl" }))).not.toContain("/settings");
   });
 
   it("offers hints only where they are true of the search: a shorter role, and dropping the location", () => {
@@ -1039,10 +1039,10 @@ describe("a failed search", () => {
     return ready({ search: { kind: "failed", failure, request: REQUEST } });
   }
 
-  it("sends setup-required to Integrations as a to-do (gold, not red), with no pointless retry", () => {
+  it("sends setup-required to Settings as a to-do (gold, not red), with no pointless retry", () => {
     const markup = html(failed({ kind: "setup_required", message: "Connect a search provider first." }));
     expect(visibleText(markup)).toContain("Connect a search provider first.");
-    expect(markup).toContain('href="/profile/integrations"');
+    expect(markup).toContain('href="/settings"');
     expect(markup).toContain("bj-hs-callout");
     expect(markup).not.toContain("bj-error");
     expect(visibleText(markup)).not.toContain("Try again");

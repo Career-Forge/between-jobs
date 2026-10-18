@@ -411,7 +411,7 @@ describe("what each failure says, and whether to offer a retry", () => {
       "SETUP_REQUIRED",
       false,
       undefined,
-      "/profile/integrations?capability=profile_import",
+      "/settings?capability=profile_import",
       "profile_import",
       ["execution_mode"],
     );
@@ -421,8 +421,8 @@ describe("what each failure says, and whether to offer a retry", () => {
       kind: "setup",
       notice: {
         message: IMPORT_SETUP_MESSAGE,
-        linkTo: "/profile/integrations?capability=profile_import",
-        linkLabel: "Add a model key in Integrations",
+        linkTo: "/settings?capability=profile_import",
+        linkLabel: "Add a model key in Settings",
       },
     });
   });

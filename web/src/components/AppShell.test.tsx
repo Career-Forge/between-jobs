@@ -58,15 +58,15 @@ describe.each([false, true])("the shell, with Hiring signals on = %s", (hiringSi
     expect(expected.some((item) => item.label === "Hiring signals")).toBe(hiringSignals);
   });
 
-  it("gives the phone the same destinations: four tabs and a More sheet that holds the rest and Integrations", () => {
+  it("gives the phone the same destinations: four tabs and a More sheet that holds the rest and Settings", () => {
     const tabs = linksOf(tabBar(markup));
     expect(tabs.map((tab) => tab.label)).toEqual(["Today", "Discover", "Applications", "Profile"]);
     const more = linksOf(moreSheet(markup));
-    expect(more.map((link) => link.label)).toEqual([...(hiringSignals ? ["Hiring signals"] : []), "Practice", "Integrations", "Privacy Policy", "Terms of Service"]);
+    expect(more.map((link) => link.label)).toEqual([...(hiringSignals ? ["Hiring signals"] : []), "Practice", "Settings", "Privacy Policy", "Terms of Service"]);
 
     const everyPhoneDestination = [...tabs, ...more.filter((link) => link.label !== "Privacy Policy" && link.label !== "Terms of Service")]
       .map((link) => link.href)
-      .filter((href) => href !== "/profile/integrations");
+      .filter((href) => href !== "/settings");
     expect([...everyPhoneDestination].sort()).toEqual(expected.map((item) => item.to).sort());
   });
 
@@ -106,12 +106,12 @@ describe("the page you are on", () => {
     expect(current(railNav(shell("/hiring-signals", true)))).toEqual(["Hiring signals"]);
   });
 
-  it("marks Integrations, not Profile, on the integrations page, which it links to", () => {
-    const markup = shell("/profile/integrations");
+  it("marks Settings, not Profile, on the settings page, which it links to", () => {
+    const markup = shell("/settings");
     expect(current(railNav(markup))).toEqual([]);
-    expect(current(railFooter(markup))).toEqual(["Integrations"]);
-    expect(linksOf(railFooter(markup)).find((link) => link.label === "Integrations")?.href).toBe("/profile/integrations");
-    expect(current(moreSheet(markup))).toEqual(["Integrations"]);
+    expect(current(railFooter(markup))).toEqual(["Settings"]);
+    expect(linksOf(railFooter(markup)).find((link) => link.label === "Settings")?.href).toBe("/settings");
+    expect(current(moreSheet(markup))).toEqual(["Settings"]);
   });
 
   it("uses the selection class on every navigation link, so the fill comes from one rule", () => {
@@ -160,9 +160,9 @@ describe("landmarks and the way in", () => {
     }
   });
 
-  it("keeps the signed-in address, Integrations, Sign out and the legal links in the rail's footer, in that order", () => {
+  it("keeps the signed-in address, Settings, Sign out and the legal links in the rail's footer, in that order", () => {
     const footer = railFooter(markup);
-    const order = [EMAIL, "Integrations", "Sign out", "Privacy Policy"].map((text) => footer.indexOf(text));
+    const order = [EMAIL, "Settings", "Sign out", "Privacy Policy"].map((text) => footer.indexOf(text));
     expect(order.every((i) => i > -1)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
@@ -178,12 +178,17 @@ describe("landmarks and the way in", () => {
 });
 
 describe("the reserved assistant slots", () => {
-  it("draw the palette row dashed, labelled, hidden from assistive technology and inert", () => {
+  it("render the palette slot as an empty, hidden, inert element that shows no placeholder text", () => {
     const markup = renderToStaticMarkup(<CommandPaletteSlot />);
+    expect(markup).toMatch(/^<div [^>]*\bhidden\b/);
     expect(markup).toContain('aria-hidden="true"');
     expect(markup).toContain("inert");
-    expect(markup).toContain("Command palette -- reserved");
+    expect(textOfMarkup(markup)).toBe("");
     expect(markup).not.toMatch(/<(a|button|input|select|textarea)\b|tabindex|onclick|accesskey/i);
+  });
+
+  it("never print the word reserved to a person, in the rail or anywhere in the shell", () => {
+    expect(textOfMarkup(shell("/")).toLowerCase()).not.toContain("reserved");
   });
 
   it("render the drawer as an empty, hidden, inert element", () => {

@@ -610,14 +610,14 @@ describe("classifyFailure", () => {
     }
     expect(
       classifyFailure(
-        new SetupError("Add a search key.", "/profile/integrations", "hiring_signals", ["search_credential"]),
+        new SetupError("Add a search key.", "/settings", "hiring_signals", ["search_credential"]),
         unreachable,
       ),
     ).toEqual({
       kind: "setup_required",
       message: "Add a search key.",
-      linkTo: "/profile/integrations",
-      linkLabel: "Add a search key in Integrations",
+      linkTo: "/settings",
+      linkLabel: "Add a search key in Settings",
     });
     // A path that is not one of the app's own routes is dropped, not passed on.
     for (const path of ["https://evil.example", "//evil.example", "javascript:alert(1)", "/admin"]) {
@@ -846,17 +846,17 @@ describe("setupFailureLink", () => {
       setupFailureLink({
         kind: "setup_required",
         message: "x",
-        linkTo: "/profile/integrations?capability=hiring_signals",
-        linkLabel: "Add a search key in Integrations",
+        linkTo: "/settings?capability=hiring_signals",
+        linkLabel: "Add a search key in Settings",
       }),
     ).toEqual({
-      to: "/profile/integrations?capability=hiring_signals",
-      label: "Add a search key in Integrations",
+      to: "/settings?capability=hiring_signals",
+      label: "Add a search key in Settings",
     });
   });
 
-  it("is the Integrations page when it gave none, because the missing thing is always a search key", () => {
-    expect(SETUP_FALLBACK_PATH).toBe("/profile/integrations");
+  it("is the Settings page when it gave none, because the missing thing is always a search key", () => {
+    expect(SETUP_FALLBACK_PATH).toBe("/settings");
     expect(setupFailureLink({ kind: "setup_required", message: "x" })).toEqual({
       to: SETUP_FALLBACK_PATH,
       label: SETUP_FALLBACK_LABEL,

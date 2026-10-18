@@ -22,12 +22,13 @@
 // time without env vars), and there is no React here -- the component that renders
 // the result is components/SetupRequiredNotice.tsx.
 
+import { LEGACY_INTEGRATIONS_PATH, SETTINGS_PATH } from "./settingsPaths";
 import { friendlyApiMessage } from "./rateLimitMessage";
 
 export const SETUP_REQUIRED_CODE = "SETUP_REQUIRED";
 
 // A model provider that refused the call is fixed in the same place as a missing key: the
-// Integrations page. The server answers PROVIDER_REJECTED with `details.reason` (read into
+// Settings page. The server answers PROVIDER_REJECTED with `details.reason` (read into
 // ApiError.reason) saying which kind it was, and `settings_path` where to go. A PROVIDER_REJECTED
 // without both (a search provider rejecting a key that was being saved, the resume engine) is not
 // this, and stays a plain message.
@@ -48,7 +49,8 @@ export const ROUTED_SETTINGS_PATHS: readonly string[] = [
   "/applications",
   "/practice",
   "/profile",
-  "/profile/integrations",
+  SETTINGS_PATH,
+  LEGACY_INTEGRATIONS_PATH,
 ];
 
 const ROUTED = new Set(ROUTED_SETTINGS_PATHS);
@@ -71,8 +73,10 @@ export function safeSettingsLink(path: unknown): string | null {
   if (UNSAFE_LINK_CHARACTERS.test(path) || path.includes("://") || path.includes("#")) return null;
 
   const queryStart = path.indexOf("?");
-  const pathname = queryStart === -1 ? path : path.slice(0, queryStart);
-  if (!ROUTED.has(pathname)) return null;
+  const named = queryStart === -1 ? path : path.slice(0, queryStart);
+  if (!ROUTED.has(named)) return null;
+  // The API still says /profile/integrations; the link goes straight to where that now lives.
+  const pathname = named === LEGACY_INTEGRATIONS_PATH ? SETTINGS_PATH : named;
   if (queryStart === -1) return pathname;
 
   const query = CAPABILITY_QUERY.exec(path.slice(queryStart + 1));
@@ -111,23 +115,23 @@ export function parseSetupFields(envelopeError: unknown): SetupFields {
 
 // ── labels ─────────────────────────────────────────────────────────────────
 
-const INTEGRATIONS = "/profile/integrations";
+const SETTINGS = SETTINGS_PATH;
 
 interface Target {
   // The page the label describes. A label is only used on a link to this page: a
-  // "Finish your profile" label on a link to Integrations would be a lie.
+  // "Finish your profile" label on a link to Settings would be a lie.
   path: string;
   label: string;
 }
 
-const MODEL_KEY: Target = { path: INTEGRATIONS, label: "Add a model key in Integrations" };
+const MODEL_KEY: Target = { path: SETTINGS, label: "Add a model key in Settings" };
 // A key is saved and checked and no model is chosen for it (the server's `needs_model` state: it
 // answers SETUP_REQUIRED with `missing: ["model"]` and says so in its sentence). Adding a key
 // would be the wrong instruction.
-const MODEL_CHOICE: Target = { path: INTEGRATIONS, label: "Choose a model in Integrations" };
+const MODEL_CHOICE: Target = { path: SETTINGS, label: "Choose a model in Settings" };
 const PROFILE: Target = { path: "/profile", label: "Finish your profile" };
 // Apollo and Hunter are tried together for one lookup, so either one missing is the same fix.
-const ENRICHMENT_KEY: Target = { path: INTEGRATIONS, label: "Add an Apollo or Hunter key in Integrations" };
+const ENRICHMENT_KEY: Target = { path: SETTINGS, label: "Add an Apollo or Hunter key in Settings" };
 
 // What the server's `missing` list names (credential_resolver.py and the routes that
 // raise SETUP_REQUIRED themselves). The first token that is known decides, because
@@ -142,15 +146,15 @@ const TARGET_BY_MISSING = new Map<string, Target>([
   ["credential", MODEL_KEY],
   ["apollo_credential", ENRICHMENT_KEY],
   ["hunter_credential", ENRICHMENT_KEY],
-  ["exa_credential", { path: INTEGRATIONS, label: "Add an Exa key in Integrations" }],
-  ["gmail_oauth", { path: INTEGRATIONS, label: "Connect Gmail in Integrations" }],
-  ["firecrawl_credential", { path: INTEGRATIONS, label: "Add a Firecrawl key in Integrations" }],
+  ["exa_credential", { path: SETTINGS, label: "Add an Exa key in Settings" }],
+  ["gmail_oauth", { path: SETTINGS, label: "Connect Gmail in Settings" }],
+  ["firecrawl_credential", { path: SETTINGS, label: "Add a Firecrawl key in Settings" }],
   [
     "you_com_or_firecrawl_credential",
-    { path: INTEGRATIONS, label: "Add a You.com or Firecrawl key in Integrations" },
+    { path: SETTINGS, label: "Add a You.com or Firecrawl key in Settings" },
   ],
   // Several providers would do here (Brave, Serper, Firecrawl, You.com).
-  ["search_credential", { path: INTEGRATIONS, label: "Add a search key in Integrations" }],
+  ["search_credential", { path: SETTINGS, label: "Add a search key in Settings" }],
 ]);
 
 // The capabilities that run on the person's own model, so a failure to resolve one
@@ -175,7 +179,7 @@ const TARGET_BY_CAPABILITY = new Map<string, Target>([
 
 // What to call a link to a page nothing more specific is known about.
 function genericLabel(pathname: string): string {
-  if (pathname === INTEGRATIONS) return "Open Integrations";
+  if (pathname === SETTINGS) return "Open Settings";
   if (pathname === "/profile") return "Open your profile";
   return "Continue";
 }
@@ -194,15 +198,15 @@ function labelFor(pathname: string, capability: string | undefined, missing: rea
 
 // What the link of a rejected provider call says, by the server's reason.
 const PROVIDER_FIX_LABELS = new Map<string, string>([
-  ["key_rejected", "Check your model key in Integrations"],
-  ["out_of_credit", "Switch or update your model key in Integrations"],
-  ["request_rejected", "Check your model in Integrations"],
+  ["key_rejected", "Check your model key in Settings"],
+  ["out_of_credit", "Switch or update your model key in Settings"],
+  ["request_rejected", "Check your model in Settings"],
   // The provider has no such model for this account, or has retired it: another one is the fix.
-  ["model_not_found", "Choose another model in Integrations"],
-  ["model_retired", "Choose another model in Integrations"],
+  ["model_not_found", "Choose another model in Settings"],
+  ["model_retired", "Choose another model in Settings"],
   // Not a model provider: Google stopped accepting the person's Gmail connection (it expired or
-  // was revoked), and connecting again on the Integrations page is the fix.
-  ["gmail_reconnect_required", "Reconnect Gmail in Integrations"],
+  // was revoked), and connecting again on the Settings page is the fix.
+  ["gmail_reconnect_required", "Reconnect Gmail in Settings"],
 ]);
 
 // ── the notice ─────────────────────────────────────────────────────────────
@@ -218,7 +222,7 @@ export interface SetupNotice {
 export type Problem = string | SetupNotice;
 
 // The notice for a SETUP_REQUIRED error -- or for a PROVIDER_REJECTED one that names a reason the
-// person fixes on the Integrations page (their model key was rejected, the account is out of
+// person fixes on the Settings page (their model key was rejected, the account is out of
 // credit, the model was turned down) and a safe link there -- and null for anything else (any
 // other code, a bare Error such as a failed fetch, a value that is not an Error). It reads the
 // fields `ApiError` carries -- `code`, `settingsPath`, `capability`, `missing`, `reason` --
@@ -246,7 +250,7 @@ export function setupRequiredNotice(error: unknown): SetupNotice | null {
   return { message, linkTo, linkLabel: labelFor(pathnameOf(linkTo), capability, missing) };
 }
 
-// The notice for a rejected model call: the server's sentence plus the link to Integrations. Null
+// The notice for a rejected model call: the server's sentence plus the link to Settings. Null
 // (so the plain message shows) unless the server named a reason this page can fix AND sent a link
 // that passes `safeSettingsLink`: a label is never a reason to guess a destination.
 function providerRejectedNotice(
@@ -255,7 +259,7 @@ function providerRejectedNotice(
 ): SetupNotice | null {
   const label = typeof fields.reason === "string" ? PROVIDER_FIX_LABELS.get(fields.reason) : undefined;
   const linkTo = safeSettingsLink(fields.settingsPath);
-  if (label === undefined || linkTo === null || pathnameOf(linkTo) !== INTEGRATIONS) return null;
+  if (label === undefined || linkTo === null || pathnameOf(linkTo) !== SETTINGS) return null;
   return { message: error.message, linkTo, linkLabel: label };
 }
 

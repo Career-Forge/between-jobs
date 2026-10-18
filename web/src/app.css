@@ -91,17 +91,12 @@
   text-decoration: none;
 }
 
-/* Reserved for the command palette; drawn so the space is honest, and nothing in it can be used. */
+/* Reserved for the command palette: the slot stays in the markup, `hidden` and inert, and no rule
+   here gives it a display, so nothing is drawn and no row looks unfinished. When the palette is
+   built it replaces the component and sets its own display. */
 .bj-palette-slot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   height: 40px;
-  border: 1px dashed var(--bj-border);
   border-radius: 7px;
-  color: var(--bj-text-muted);
-  font-size: var(--bj-text-badge);
-  text-align: center;
 }
 
 .bj-rail-nav {

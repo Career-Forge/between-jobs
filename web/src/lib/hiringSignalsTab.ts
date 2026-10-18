@@ -402,7 +402,7 @@ export function tabCountsSummary(input: TabCountsSummaryInput): string | null {
 // the role. These are the honest things an empty list can be, in order of how
 // much is known.
 export const TAB_YOU_COM_NO_LINKEDIN_NOTE =
-  "You.com's search index does not appear to include LinkedIn posts, so an empty result from it says nothing about this role. Another provider, such as Firecrawl, may cover them -- connect one in Integrations settings.";
+  "You.com's search index does not appear to include LinkedIn posts, so an empty result from it says nothing about this role. Another provider, such as Firecrawl, may cover them -- connect one in Settings.";
 export const TAB_NO_POSTS_SEEN_NOTE =
   "The search returned no LinkedIn posts at all, which says little about whether anyone is hiring for this role -- coverage depends on your search provider.";
 export const TAB_NOTHING_SHOWN_NOTE =

@@ -6,8 +6,8 @@ import discoveryRoutes from "../../../src/between_jobs/api/discovery_routes.py?r
 import hiringSignalSearch from "../../../src/between_jobs/api/hiring_signal_search.py?raw";
 import searchProviders from "../../../src/between_jobs/api/search_providers.py?raw";
 import goldenReadme from "../../../tests/golden/hiring_signals/provider_responses/README.md?raw";
-import integrationsSource from "../pages/Integrations.tsx?raw";
-import { SearchProviderCard } from "../pages/Integrations";
+import integrationsSource from "../pages/Settings.tsx?raw";
+import { SearchProviderCard } from "../pages/Settings";
 import {
   NOT_VERIFIED_LIVE_DETAIL,
   NOT_VERIFIED_LIVE_LABEL,

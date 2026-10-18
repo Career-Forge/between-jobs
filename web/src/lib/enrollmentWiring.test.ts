@@ -7,14 +7,14 @@ import accountCardSource from "../components/AccountCardView.tsx?raw";
 import gateSource from "../components/EnrollmentGate.tsx?raw";
 import savedSearchesCardSource from "../components/SavedSearchesCard.tsx?raw";
 import savedSearchesCardViewSource from "../components/SavedSearchesCardView.tsx?raw";
-import integrationsSource from "../pages/Integrations.tsx?raw";
+import integrationsSource from "../pages/Settings.tsx?raw";
 import appCss from "../app.css?raw";
 import apiSource from "./api.ts?raw";
 import enrollmentSource from "./enrollment.ts?raw";
 import useCapabilitiesSource from "./useCapabilities.ts?raw";
 import useEnrollmentSource from "./useEnrollment.ts?raw";
 import { TESTER_AGREEMENT, TESTER_AGREEMENT_VERSION } from "../content/testerAgreement";
-import { GATE_EXEMPT_PATHS, INTEGRATIONS_PATH } from "./enrollment";
+import { GATE_EXEMPT_PATHS, SETTINGS_PATH } from "./enrollment";
 import { UPDATE_PASSWORD_PATH } from "./passwordReset";
 import { ENROLL_PATH, PRIVACY_PATH, TERMS_PATH, appView, documentTitleFor } from "./publicRoutes";
 import { rulesOf } from "../testing/css";
@@ -63,6 +63,7 @@ describe("the enrollment address", () => {
     expect(documentTitleFor("app", ENROLL_PATH)).toBe("Tester programme -- Between Jobs");
     expect(documentTitleFor("app", "/enroll/")).toBe("Tester programme -- Between Jobs");
     expect(documentTitleFor("app", "/discover")).toBe("Between Jobs");
+    expect(documentTitleFor("app", "/settings")).toBe("Settings -- Between Jobs");
   });
 });
 
@@ -84,23 +85,23 @@ describe("the gate's exempt pages are real routes of the app", () => {
     expect([ENROLL_PATH, PRIVACY_PATH, TERMS_PATH, "/profile"].sort()).toEqual(["/enroll", "/privacy", "/profile", "/terms"]);
   });
 
-  it("also include Integrations and the new-password page, each a route that App.tsx draws inside the gate", () => {
-    expect(INTEGRATIONS_PATH).toBe("/profile/integrations");
-    expect(appSource).toContain('<Route path="/profile/integrations" element={<Integrations />} />');
+  it("also include Settings and the new-password page, each a route that App.tsx draws inside the gate", () => {
+    expect(SETTINGS_PATH).toBe("/settings");
+    expect(appSource).toContain('<Route path="/settings" element={<Settings />} />');
     expect(appSource).toContain("<Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />");
-    expect(GATE_EXEMPT_PATHS).toContain(INTEGRATIONS_PATH);
+    expect(GATE_EXEMPT_PATHS).toContain(SETTINGS_PATH);
     expect(GATE_EXEMPT_PATHS).toContain(UPDATE_PASSWORD_PATH);
     // the list takes the new-password path from the one place that names it
     expect(enrollmentSource).toContain('import { UPDATE_PASSWORD_PATH } from "./passwordReset";');
     expect(enrollmentSource).toMatch(/GATE_EXEMPT_PATHS: readonly string\[\] = \[[^\]]*UPDATE_PASSWORD_PATH/);
-    expect(enrollmentSource).toMatch(/GATE_EXEMPT_PATHS: readonly string\[\] = \[[^\]]*INTEGRATIONS_PATH/);
+    expect(enrollmentSource).toMatch(/GATE_EXEMPT_PATHS: readonly string\[\] = \[[^\]]*SETTINGS_PATH/);
   });
 
   // The public text promises these controls to a person who withdrew or never joined: the Tester
-  // Agreement ('Disconnect Gmail' on the Integrations page; pause or delete a saved search there)
+  // Agreement ('Disconnect Gmail' on the Settings page; pause or delete a saved search there)
   // and the Privacy Policy (remove a key, disconnect Gmail). The server leaves what they call open,
   // so the only thing that could take them away is the gate, and this fails if it ever does again.
-  it("Integrations really has the controls the text names: Remove key, Disconnect Gmail, and Pause / Resume / Delete for a saved search", () => {
+  it("Settings really has the controls the text names: Remove key, Disconnect Gmail, and Pause / Resume / Delete for a saved search", () => {
     expect(integrationsSource).toContain("Remove key");
     expect(integrationsSource).toContain("Disconnect Gmail");
     expect(integrationsSource).toContain("<SavedSearchesCard />");
@@ -122,7 +123,7 @@ describe("the gate's exempt pages are real routes of the app", () => {
     const open = appSource.indexOf("<EnrollmentGate>");
     const close = appSource.indexOf("</EnrollmentGate>");
     const inside = appSource.slice(open, close);
-    expect(inside).toContain('path="/profile/integrations"');
+    expect(inside).toContain('path="/settings"');
     expect(inside).toContain("UPDATE_PASSWORD_PATH");
   });
 });
@@ -219,13 +220,13 @@ describe("the buttons and pages the agreement names exist under those names", ()
     expect(accountCardSource).toContain("Delete my account");
   });
 
-  it("'Disconnect Gmail' on the Integrations page", () => {
-    expect(text).toContain("'Disconnect Gmail' on the Integrations page");
+  it("'Disconnect Gmail' on the Settings page", () => {
+    expect(text).toContain("'Disconnect Gmail' on the Settings page");
     expect(integrationsSource).toContain("Disconnect Gmail");
   });
 
-  it("pausing or deleting a saved search on the Integrations page, which is what a withdrawn tester is told to do to stop the background work", () => {
-    expect(text).toContain("Pause or delete a saved search, or disconnect Gmail, on the Integrations page to stop them");
+  it("pausing or deleting a saved search on the Settings page, which is what a withdrawn tester is told to do to stop the background work", () => {
+    expect(text).toContain("Pause or delete a saved search, or disconnect Gmail, on the Settings page to stop them");
     expect(integrationsSource).toContain("<SavedSearchesCard />");
     expect(savedSearchesCardViewSource).toContain("Pause");
     expect(savedSearchesCardViewSource).toContain("Delete");

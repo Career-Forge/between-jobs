@@ -170,9 +170,9 @@ describe("the card before anything is chosen", () => {
     const text = textOfMarkup(html);
     expect(text).toContain(IMPORT_PRIVACY_STATEMENT);
     // the whole sentence, so that whose key is used cannot change unnoticed: it is the person's own
-    // model key, saved in Integrations (the route resolves the caller's own credential)
+    // model key, saved in Settings (the route resolves the caller's own credential)
     expect(IMPORT_PRIVACY_STATEMENT).toBe(
-      "The text of your file is sent to your own AI provider, using the model key you saved in Integrations, so a model can fill in a draft profile for you to review. We do not keep the file itself.",
+      "The text of your file is sent to your own AI provider, using the model key you saved in Settings, so a model can fill in a draft profile for you to review. We do not keep the file itself.",
     );
     expect(text).toContain(IMPORT_LIMITS);
     expect(IMPORT_LIMITS).toBe("PDF or DOCX, up to 5 MiB.");
@@ -319,7 +319,7 @@ describe("when nothing was imported", () => {
     expect(actions.calls).toEqual(["close"]);
   });
 
-  it("shows a missing model key as the shared notice with its link to Integrations", () => {
+  it("shows a missing model key as the shared notice with its link to Settings", () => {
     const state = run(
       { type: "file_chosen", fileName: "a.pdf" },
       { type: "upload_started" },
@@ -329,8 +329,8 @@ describe("when nothing was imported", () => {
           kind: "setup",
           notice: {
             message: "Reading a resume file needs your own AI model.",
-            linkTo: "/profile/integrations?capability=profile_import",
-            linkLabel: "Add a model key in Integrations",
+            linkTo: "/settings?capability=profile_import",
+            linkLabel: "Add a model key in Settings",
           },
         },
         retry: false,
@@ -339,8 +339,8 @@ describe("when nothing was imported", () => {
     const html = render(state);
     expect(html).toContain('id="bj-import-error"');
     expect(html).toContain("bj-setup-notice");
-    expect(html).toContain('href="/profile/integrations?capability=profile_import"');
-    expect(textOfMarkup(html)).toContain("Add a model key in Integrations");
+    expect(html).toContain('href="/settings?capability=profile_import"');
+    expect(textOfMarkup(html)).toContain("Add a model key in Settings");
     expect(buttonsLabelled(tree(state), "Try again")).toHaveLength(0);
   });
 });

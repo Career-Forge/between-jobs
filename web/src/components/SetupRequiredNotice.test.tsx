@@ -36,7 +36,7 @@ describe("SetupRequiredNotice", () => {
         notice={noticeFor(
           new FakeApiError(
             "No openrouter key configured for 'job_scoring'.",
-            "/profile/integrations?capability=job_scoring",
+            "/settings?capability=job_scoring",
             "job_scoring",
             ["credential"],
           ),
@@ -44,8 +44,8 @@ describe("SetupRequiredNotice", () => {
       />,
     );
     expect(html).toContain("No openrouter key configured for &#x27;job_scoring&#x27;.");
-    expect(html).toContain('href="/profile/integrations?capability=job_scoring"');
-    expect(html).toContain(">Add a model key in Integrations</a>");
+    expect(html).toContain('href="/settings?capability=job_scoring"');
+    expect(html).toContain(">Add a model key in Settings</a>");
     expect(html).toContain('role="alert"');
   });
 
@@ -94,12 +94,12 @@ describe("ProblemView", () => {
 
   it("draws a setup notice as the callout, with its link", () => {
     const html = render(
-      <ProblemView problem={noticeFor(new FakeApiError("Add a key.", "/profile/integrations", "contact_enrichment", ["apollo_credential"]))} />,
+      <ProblemView problem={noticeFor(new FakeApiError("Add a key.", "/settings", "contact_enrichment", ["apollo_credential"]))} />,
     );
     expect(html).toContain("bj-setup-notice");
     expect(html).not.toContain("bj-error");
-    expect(html).toContain('href="/profile/integrations"');
-    expect(html).toContain("Add an Apollo or Hunter key in Integrations");
+    expect(html).toContain('href="/settings"');
+    expect(html).toContain("Add an Apollo or Hunter key in Settings");
   });
 
   it("draws nothing for no problem", () => {

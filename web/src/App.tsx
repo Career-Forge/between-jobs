@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
 import { AppShell } from "./components/AppShell";
 import { EnrollmentGate } from "./components/EnrollmentGate";
+import { LegacyIntegrationsRedirect } from "./components/LegacyIntegrationsRedirect";
 import { PublicLayout } from "./components/PublicLayout";
 import { UPDATE_PASSWORD_PATH, recoveryRedirect } from "./lib/passwordReset";
 import {
@@ -18,7 +19,7 @@ import ApplicationWorkspace from "./pages/ApplicationWorkspace";
 import Discover from "./pages/Discover";
 import Enroll from "./pages/Enroll";
 import HiringSignals from "./pages/HiringSignals";
-import Integrations from "./pages/Integrations";
+import Settings from "./pages/Settings";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Practice from "./pages/Practice";
@@ -107,7 +108,8 @@ export default function App() {
           <Route path="/applications/:id" element={<ApplicationWorkspace />} />
           <Route path="/practice" element={<Practice />} />
           <Route path="/profile" element={<Profile />} />
-          <Route path="/profile/integrations" element={<Integrations />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/profile/integrations" element={<LegacyIntegrationsRedirect />} />
           <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
           <Route path={PRIVACY_PATH} element={<Privacy />} />
           <Route path={TERMS_PATH} element={<Terms />} />
