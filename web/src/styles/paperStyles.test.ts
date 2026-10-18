@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import tokensCss from "../tokens.css?raw";
 import { blockOf, declarationsFor, rulesOf, tokenResolver, withoutMedia } from "../testing/css";
+import { PHONE_QUERY } from "../lib/useMediaQuery";
 import paperCss from "./paper.css?raw";
 
 // paper.css is read as text (there is no layout engine in the test run). What it pins is the
@@ -16,6 +17,14 @@ describe("paper.css", () => {
     expect(paperCss.length).toBeGreaterThan(1000);
     expect(phone).not.toBe("");
     expect(reduced).not.toBe("");
+  });
+
+  it("stacks at the same width the components switch to a sheet at", () => {
+    // TrailLine decides sheet or inline from PHONE_QUERY while this file decides the stacked layout;
+    // the two have to name one breakpoint or the band and a receipt disagree at that width.
+    expect(blockOf(paperCss, `@media ${PHONE_QUERY}`)).toBe(phone);
+    expect(phone).not.toBe("");
+    expect(PHONE_QUERY).toBe("(max-width: 959px)");
   });
 
   it("defines no color: no hex value, no rgb or hsl, only tokens", () => {

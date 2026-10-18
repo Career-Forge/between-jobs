@@ -213,6 +213,17 @@ describe("a trail line with a receipt (phones)", () => {
     await expectNoSeriousA11yViolations(query(document.body, ".bj-sheet-root"));
   });
 
+  it("changes over at the 960px edge itself: 959px is a sheet, 960px is inline", () => {
+    for (const [width, sheet] of [[959, true], [960, false], [961, false], [958, true]] as const) {
+      installViewport(width);
+      const { container, unmount } = render(<TrailLine trail={TRAIL} receipt={RECEIPT} />);
+      click(trigger(container));
+      expect(document.querySelector('[role="dialog"]') !== null, `${width}px`).toBe(sheet);
+      expect(container.querySelector(".bj-receipt") !== null, `${width}px`).toBe(!sheet);
+      unmount();
+    }
+  });
+
   it("can be forced to a sheet or inline whatever the screen", () => {
     installViewport(1280);
     const sheet = render(<TrailLine trail={TRAIL} receipt={RECEIPT} placement="sheet" />);
