@@ -112,7 +112,7 @@ describe("with no model key", () => {
     describeAccount([]);
     const { container } = page();
     await settle();
-    expect(text(band(container))).toContain("Connect a model so Between Jobs can draft and score.");
+    expect(text(band(container))).toContain("Add a model key so Between Jobs can draft and score.");
     expect(text(band(container))).toContain("why: profile active · no model key saved");
     const primaries = [...container.querySelectorAll(".bj-primary, .bj-button-link-primary")];
     expect(primaries).toHaveLength(1);

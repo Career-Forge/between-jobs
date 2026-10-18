@@ -3,7 +3,7 @@
 // read has answered, and the page is not in a whole-page failure. Every sentence is chosen by code,
 // and every fact in a `why` line is a field the page read.
 //
-//   S1  no model key at all        "Connect a model ..."        Connect with OpenRouter (the page's one cyan)
+//   S1  no model key at all        "Add a model key ..."        Connect with OpenRouter (the page's one cyan)
 //   S2  a key is checked, no model "Your X key is saved ..."    Choose a model
 //   S2k a key is not confirmed     "Your X key isn't ..."       Replace the key
 //   S3  a model was chosen just now "Your model is set ..."     Go to Discover
@@ -70,7 +70,7 @@ const S1: NextStepRow<SettingsFacts> = {
   match: (input) => {
     if (input.facts?.llm.state !== "none") return null;
     return {
-      sentence: "Connect a model so Between Jobs can draft and score.",
+      sentence: "Add a model key so Between Jobs can draft and score.",
       action: { kind: "button", label: "Connect with OpenRouter", intent: "connect-openrouter" },
       why: [...(profileActive(input) ? ["profile active"] : []), "no model key saved"],
     };

@@ -154,11 +154,11 @@ const ROWS: Row[] = [
     why: ["profile active", "no model key saved"],
   },
   {
-    name: "G3 a key is saved and checked but has no model: it is not a usable key",
+    name: "G3 a key is saved and checked but has no model: it is not a usable key, and its model is what is missing",
     id: "G3",
     input: inApp({ credentials: ready({ modelKey: "needs_model" }) }),
-    sentence: "Add a model key so Between Jobs can draft and score.",
-    action: { kind: "link", label: "Add a model key", to: "/settings#ai-provider" },
+    sentence: "Your model key is saved. Choose a model so Between Jobs can draft and score.",
+    action: { kind: "link", label: "Choose a model", to: "/settings#ai-provider" },
     why: ["profile active", "a key is saved, no model chosen"],
   },
   {
@@ -213,6 +213,20 @@ describe("the global and landing rows", () => {
         ...(row.tone === undefined ? {} : { tone: row.tone }),
       },
     });
+  });
+
+  it("G3 and Settings' S1 ask for a model key in the same words, so a person sees one request wherever they are", () => {
+    const today = nextStepWithRow(inApp({ page: "today", credentials: ready({ modelKey: "none" }) }));
+    const settings = nextStepWithRow(
+      inApp({
+        page: "settings",
+        credentials: ready({}),
+        facts: { llm: { state: "none" }, search: { connected: 0, total: 7 }, chosenHere: null },
+      }),
+    );
+    expect([today.rowId, settings.rowId]).toEqual(["G3", "S1"]);
+    const sentence = (evaluation: typeof today) => (evaluation.outcome.status === "ready" ? evaluation.outcome.step.sentence : null);
+    expect(sentence(settings)).toBe(sentence(today));
   });
 
   it("G3 waits behind G2 and G2b: with no active profile the profile is the first step, not a key", () => {

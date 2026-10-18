@@ -214,12 +214,13 @@ describe("the band as the answers arrive", () => {
     expect(rows(waiting.container)).toEqual(["high_fit_job"]);
   });
 
-  it("does not count a key that is saved with no model as a usable one: the band still asks, and says why", async () => {
+  it("does not count a key that is saved with no model as a usable one: the band asks for the model, and says why", async () => {
     answer({ "/credentials": [{ service: "llm", provider: "openai", is_validated: true, model: null, setup_state: "needs_model" }] });
     const { container } = await draw();
-    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Add a model key so Between Jobs can draft and score.");
+    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Your model key is saved. Choose a model so Between Jobs can draft and score.");
     expect(words(query(band(container), ".bj-band-why"))).toBe("why: profile active · a key is saved, no model chosen");
-    // The checklist names what is left to do on that key, and links to the same section of Settings.
+    expect(words(query(band(container), "a.bj-button-link-primary"))).toBe("Choose a model");
+    // The checklist under it says the same thing and links to the same section of Settings.
     const step = query(container, ".bj-setup-step:nth-child(2)");
     expect(words(query(step, "a"))).toBe("Choose a model");
     expect(query(step, "a").getAttribute("href")).toBe("/settings#ai-provider");
