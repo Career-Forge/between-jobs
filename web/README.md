@@ -43,6 +43,32 @@ every card that already uses `--bj-surface` and flatten them all. And the chosen
 bar and no underline, so under a forced-colors mode (Windows High Contrast) it is redrawn as a system
 `Highlight` fill rather than left to the browser, which would erase it.
 
+## Trail, next-step band and state primitives
+
+Small building blocks the pages are being moved onto. None of them fetches anything: a page hands in
+what it has read, and they draw only that.
+
+- `src/lib/trail.ts` is the grammar of the trail line (`[glyph] actor · basis · when`): `buildTrail`
+  turns the slots a page was given into a line, leaving out any slot that was not returned together with
+  its separator, and `buildReceipt` does the same for the receipt that opens under it. It owns the glyph
+  set (`TRAIL_GLYPHS`), refuses the words a trail never says ("verified" about a link, "unknown model"),
+  and has date helpers that return null rather than guess. `components/paper/TrailLine.tsx` draws it: a
+  44px button that opens the receipt inline, or as a focus-trapped bottom sheet
+  (`components/paper/BottomSheet.tsx`) under 960px; `StaticTrailLine` is the same line with nothing to open.
+- `src/lib/nextStep/` is the rule table behind the band, as a pure function:
+  `nextStep(input)` answers `loading`, `none` or a step `{ sentence, action, why }`. Global rows
+  (`global.ts`) run before a page's own rows, and the first row that applies wins. To add a page, write its
+  rows in their own file with `definePage` and add one import and one entry to `PAGES` in `index.ts`.
+  `components/paper/NextStepBand.tsx` draws the answer and holds the page's only cyan fill.
+- `components/paper/PageHeader.tsx` (breadcrumb, the page's one `<h1>`, subtitle, actions) and
+  `components/paper/StateViews.tsx` (loading, empty, partial, stale, setup-required, failure).
+- Their styles are in `src/styles/paper.css`, which defines no color of its own.
+
+Tests that need a DOM (events, focus) start with `// @vitest-environment jsdom` and use
+`src/testing/render.tsx`. `src/testing/a11y.ts` runs axe-core over a rendered container and fails on a
+serious or critical violation; jsdom has no layout, so it cannot check color contrast (`tokens.test.ts` does
+that for the token pairs).
+
 ## Fonts and brand files
 
 The typefaces are Newsreader (display), IBM Plex Sans (body) and IBM Plex Mono (provenance), served from
