@@ -94,6 +94,31 @@ model, adding a provider), the search and data keys, and the connections (Telegr
 - Provider-supplied model ids and names are untrusted text: parsed for shape in `src/lib/settings/llmProviders.ts`
   and drawn as text only.
 
+## Today
+
+`src/pages/Today.tsx` is the page a signed-in person lands on, and it says one thing to do next. The
+next-step band holds the most urgent feed item itself -- its words, its trail line and a quiet Dismiss --
+and that item is left out of the list below it, so no action shows twice. Which item that is comes from
+the rows in `src/lib/nextStep/pages/today.ts` (a status proposal with a stage to move to, then a resume
+the fit check held back, a resume ready for review, a high fit job; with none of those, an unlit "nothing
+needs a decision"), which read only the facts the page has: a number or a name appears in a sentence only
+when a returned field carries it. `src/lib/todayFeed.ts` builds those facts and each row's words, trail and
+receipt from the same fields.
+
+- Requests: `GET /today` is the page's own data (when it fails the band says so and offers Try again).
+  `GET /profile/current`, `/credentials`, `/saved-searches` and `/applications` are read once (`readAccount`
+  in `lib/firstRun.ts`) and shared by the band's setup rows, the setup checklist, the "In the background" trail
+  and the job names in sentences. A held-back resume reads `GET /applications/{id}/prepare-result` once for the
+  fit check's score. Dismiss, accept, track and "Generate anyway" (the workspace's generation with the fit
+  gate bypassed) keep their failures under the item they were for.
+- The setup checklist (`components/FirstRunChecklistView.tsx`, rules in `lib/firstRun.ts`) is five steps in
+  three states -- to do, done with the real fact, can't tell or couldn't check -- and folds to one line
+  ("Setup ready", or the counts) that opens again. It holds no cyan fill.
+- From 1280px a right margin carries "In the background" (saved-search checks and Gmail reads, on whose key);
+  below that the same lines are one disclosure line under the band. `src/styles/today.css` holds the layout
+  and lifts the shell's 960px cap on the column where the margin needs the room.
+- Links to set something up use `SETTINGS_PATH` and `MODEL_PROVIDER_PATH` (`lib/settingsPaths.ts`), the one place that names the Settings page.
+
 ## Fonts and brand files
 
 The typefaces are Newsreader (display), IBM Plex Sans (body) and IBM Plex Mono (provenance), served from

@@ -84,6 +84,11 @@
   max-width: 100%;
 }
 
+/* The lone quiet Dismiss keeps its hit area but lines its words up with the item's text. */
+.bj-band-item .bj-today-item-actions {
+  margin-left: calc(-1 * var(--bj-space-4));
+}
+
 /* ------------------------------------------------------------------ */
 /* Item parts, shared by the band and the rows                          */
 /* ------------------------------------------------------------------ */
@@ -95,11 +100,6 @@
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--bj-text-muted);
-}
-
-.bj-today-kind-glyph {
-  margin-right: 0.45em;
-  color: var(--bj-danger);
 }
 
 .bj-today-title {
@@ -255,8 +255,9 @@ button.bj-today-action {
     min-height: 44px;
   }
 
+  /* The main control takes the room; a quiet Dismiss keeps its own width. */
   .bj-today-row-actions > a,
-  .bj-today-row-actions > button {
+  .bj-today-row-actions > button:not(.bj-quiet) {
     flex: 1 1 auto;
   }
 }
@@ -374,13 +375,22 @@ button.bj-setup-line:hover {
 }
 
 @media (max-width: 959px) {
+  /* The state stays beside the link; the hint and Try again go under the link. */
   .bj-setup-step {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 9em minmax(0, 1fr);
     grid-template-areas:
-      "state retry"
-      "link link"
-      "note note";
-    row-gap: 0;
+      "state link"
+      ". note"
+      ". retry";
+  }
+
+  .bj-setup-retry {
+    justify-self: start;
+    min-height: 44px;
+  }
+
+  .bj-setup-head button {
+    min-height: 44px;
   }
 }
 

@@ -184,14 +184,20 @@ describe("the band as the answers arrive", () => {
     expect(query(band(container), "a.bj-button-link-primary").getAttribute("href")).toBe("/profile");
     // Nothing is lifted into the band, so the item stays in the list with its own controls.
     expect(rows(container)).toEqual(["status_proposal"]);
-    // The body says what is missing, with links.
-    expect([...query(container, ".bj-state--setup").querySelectorAll("a")].map((a) => a.getAttribute("href"))).toEqual(["/profile"]);
+    // The checklist says it is to do, with the link to where it is done. No second box repeats it.
+    const step = query(container, ".bj-setup-step:nth-child(1)");
+    expect(words(query(step, ".bj-setup-state"))).toBe("◆To do");
+    expect(query(step, "a").getAttribute("href")).toBe("/profile");
+    expect(container.querySelector(".bj-state--setup")).toBeNull();
   });
 
-  it("names a key that is not set, with a link, when the profile is there", async () => {
+  it("names a key that is not set in the checklist, with a link, when the profile is there", async () => {
     answer({ "/credentials": [] });
     const { container } = await draw();
-    expect([...query(container, ".bj-state--setup").querySelectorAll("a")].map((a) => a.getAttribute("href"))).toEqual(["/profile/integrations"]);
+    const step = query(container, ".bj-setup-step:nth-child(2)");
+    expect(words(query(step, ".bj-setup-state"))).toBe("◆To do");
+    expect(query(step, "a").getAttribute("href")).toBe("/profile/integrations");
+    expect(words(query(step, "a"))).toBe("Add a model key");
   });
 });
 

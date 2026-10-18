@@ -51,7 +51,7 @@ const APPLICATIONS = ok([
 const SEARCH_ROWS = ok([
   { id: "ss-1", query: "analytics engineer", location: null, companies: [], remote_only: false, is_active: true, created_at: "2026-09-01T00:00:00Z", last_matched_at: "2026-09-22T06:00:00Z" },
 ]);
-const NO_NOTES: AccountNotes = { setupFailed: false, profileMissing: false, modelKeyMissing: false, applicationsFailed: false };
+const NO_NOTES: AccountNotes = { setupFailed: false, applicationsFailed: false };
 
 const proposal = item({
   id: "p1",
@@ -271,9 +271,9 @@ describe("a resume the fit check held back", () => {
     const { container } = draw({ items: [held, { ...held, id: "f2", application_id: "app-2" }] });
     // In the band there is no red class at all (the cross in the eyebrow has its own).
     expect(band(container).innerHTML).not.toMatch(/danger|bj-error|bj-badge-danger/);
-    // The second one is in the list: its cross in the kind line and its marker are the only red.
+    // The second one is in the list: its marker is the only red, and the kind line is muted words.
     const row = rows(container)[0];
-    expect(words(query(row, ".bj-today-kind"))).toBe("✕Resume not generated");
+    expect(words(query(row, ".bj-today-kind"))).toBe("Resume not generated");
     expect(query(row, ".bj-today-marker").className).toContain("bj-today-marker--danger");
     const red = [...row.querySelectorAll("[class*='danger'], [class*='error']")];
     expect(red.map((element) => words(element))).toEqual(["✕"]);
@@ -490,26 +490,16 @@ describe("stale", () => {
 });
 
 describe("setup required", () => {
-  it("names what is missing, each with a link to where it is fixed", () => {
+  it("is the band's to carry: a missing profile lights the fix over any item, with a link", () => {
     const profile = { state: "ready", value: { active: false, importWaiting: false } } as const;
-    const { container } = draw({ items: [], profile, notes: { profileMissing: true, modelKeyMissing: true } });
-    const setup = query(container, ".bj-state--setup");
-    expect(words(setup)).toBe("Resumes, match scores and reply reading all run on your profile and your own model key.Missing:Add your profileAdd a model key");
-    expect([...setup.querySelectorAll("a")].map((a) => [words(a), a.getAttribute("href")])).toEqual([
-      ["Add your profile", "/profile"],
-      ["Add a model key", SETTINGS_PATH],
-    ]);
-    // The band carries the same fix (G2).
+    const { container } = draw({ items: [proposal], profile });
     expect(words(query(band(container), ".bj-band-sentence"))).toBe("Everything here starts from your profile. Import it first.");
-  });
-
-  it("names only the key when the profile is there", () => {
-    const { container } = draw({ items: [], notes: { modelKeyMissing: true } });
-    expect([...query(container, ".bj-state--setup").querySelectorAll("a")].map(words)).toEqual(["Add a model key"]);
-  });
-
-  it("draws no setup block when nothing is known to be missing", () => {
-    const { container } = draw({ items: [] });
+    const link = query<HTMLAnchorElement>(band(container), "a.bj-button-link-primary");
+    expect(link.getAttribute("href")).toBe("/profile");
+    expect(words(query(band(container), ".bj-band-why"))).toBe("why: no active profile");
+    // Nothing is lifted into the band, so the item keeps its own controls in the list.
+    expect(rows(container).map((row) => row.getAttribute("data-kind"))).toEqual(["status_proposal"]);
+    // No second box repeats it: the checklist names each missing step with its own link.
     expect(container.querySelector(".bj-state--setup")).toBeNull();
   });
 });
@@ -652,7 +642,7 @@ describe("keyboard and accessibility", () => {
     ["empty", { items: [], searches: ok([]) }],
     ["a failed feed", { feedFailure: "Request failed (500)" }],
     ["a failed action", { items: [tracked], problems: { t1: { kind: "error", message: "Failed" } } }],
-    ["setup required", { items: [], notes: { profileMissing: true, modelKeyMissing: true }, profile: { state: "ready", value: { active: false, importWaiting: false } } }],
+    ["setup required", { items: [proposal], profile: { state: "ready", value: { active: false, importWaiting: false } } }],
     ["partial", { items: [tracked], applications: failed, notes: { applicationsFailed: true } }],
     ["wide, with the margin", { items: [proposal, tracked], wide: true }],
   ];

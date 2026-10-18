@@ -1,13 +1,11 @@
 import type { ReactNode } from "react";
 import type { NextStepOutcome } from "../../lib/nextStep";
 import type { TodayRowId } from "../../lib/nextStep/pages/today";
-import { PROFILE_PATH } from "../../lib/enrollment";
-import { MODEL_PROVIDER_PATH } from "../../lib/settingsPaths";
 import type { Failure } from "../../lib/setupRequired";
 import { kindLabel, rowView, type BackgroundView, type RowContext, type TodayItem } from "../../lib/todayFeed";
 import { NextStepBand } from "../paper/NextStepBand";
 import { PageHeader } from "../paper/PageHeader";
-import { FailureState, LoadingState, PartialState, SetupRequiredState, type StateLink } from "../paper/StateViews";
+import { FailureState, LoadingState, PartialState } from "../paper/StateViews";
 import { TodayEmptyState } from "../TodayEmptyState";
 import { BackgroundTrail } from "./BackgroundTrail";
 import type { BusyKind, ItemActionsProps } from "./ItemParts";
@@ -26,12 +24,12 @@ export type FeedState =
   | { state: "failed"; message: string }
   | { state: "ready"; items: readonly TodayItem[] };
 
-// What the setup and applications reads said, as far as the body is concerned.
+// What the setup and applications reads said, as far as the body is concerned. A missing profile or
+// key is not drawn here: the band carries the fix for a missing profile, and the checklist names
+// each missing step with its link.
 export interface AccountNotes {
   /** The profile or credentials read failed. The band holds Try again, so the body has none. */
   setupFailed: boolean;
-  profileMissing: boolean;
-  modelKeyMissing: boolean;
   /** The applications list could not be read, so items carry no job names. */
   applicationsFailed: boolean;
 }
@@ -84,23 +82,11 @@ export function TodayView(props: TodayViewProps) {
   const items = feed.state === "ready" ? feed.items.filter((item) => item.id !== litItem?.id) : [];
   const hasNamedItems = feed.state === "ready" && feed.items.some((item) => item.application_id != null);
 
-  const missing: StateLink[] = [];
-  if (account.profileMissing) missing.push({ label: "Add your profile", to: PROFILE_PATH });
-  if (account.modelKeyMissing) missing.push({ label: "Add a model key", to: MODEL_PROVIDER_PATH });
-
   const body = (
     <div className="bj-today-main">
       {account.setupFailed && (
         <div className="bj-today-stack">
           <FailureState message="Your profile or your credentials couldn't be read, so setup can't be checked. Nothing was lost." />
-        </div>
-      )}
-      {missing.length > 0 && (
-        <div className="bj-today-stack">
-          <SetupRequiredState
-            message="Resumes, match scores and reply reading all run on your profile and your own model key."
-            missing={missing as [StateLink, ...StateLink[]]}
-          />
         </div>
       )}
       {props.checklist}

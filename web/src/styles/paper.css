@@ -316,6 +316,9 @@ a.bj-band-action {
   padding: 0 22px;
   border-radius: 8px;
   font-size: var(--bj-text-body);
+  /* A link drawn as the button is made inline-block by app.css (a.bj-button-link, later in the
+     cascade), so on a phone, where it is full width, its words are centered here and not by flex. */
+  text-align: center;
   white-space: nowrap;
 }
 
