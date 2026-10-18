@@ -263,6 +263,15 @@ describe("choosing a model", () => {
     expect(change.onClose).toHaveBeenCalled();
   });
 
+  it("says what choosing does: one tiny real request, nothing changes if it refuses, and the model becomes the default", async () => {
+    on("POST /credentials/llm/models", listing());
+    const { container } = mount();
+    await settle();
+    expect(text(container)).toContain(
+      "Choosing sends one tiny real request to OpenAI to prove the model works with your key. If it refuses, nothing changes. The model you choose becomes your default model.",
+    );
+  });
+
   it("has no cyan button, and is one tab stop for the whole list", async () => {
     on("POST /credentials/llm/models", listing());
     const { container } = mount();

@@ -60,6 +60,8 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
   const endpoint = provider.endpoints.find((candidate) => candidate.id === endpointId) ?? provider.endpoints[0];
   const needsWorkspace = provider.id === QWEN_ID && region?.needsWorkspace === true;
   const getKeyUrl = region?.getKeyUrl ?? endpoint?.getKeyUrl ?? provider.getKeyUrl;
+  // The custom provider is several hosts: the link names the one picked, not the umbrella.
+  const keyHost = provider.id === CUSTOM_ID && endpoint !== undefined ? endpoint.name : provider.name;
 
   useEffect(() => {
     if (autoFocus === true) root.current?.focus();
@@ -120,7 +122,7 @@ export function ProviderConnectCard({ provider, mode, autoFocus, openRouter, onS
         <h3 id={headingId}>{title}</h3>
         {getKeyUrl !== null && (
           <a href={getKeyUrl} target="_blank" rel="noopener noreferrer">
-            Get your key at {provider.name}
+            Get your key at {keyHost}
             <span className="bj-visually-hidden"> (opens in a new tab)</span>
           </a>
         )}

@@ -23,12 +23,12 @@ tags name its own host; left unset they name the hosted site (`scripts/siteOrigi
 ## Shell, selection and buttons
 
 `src/components/AppShell.tsx` is the signed-in frame. From 960px wide it is a 220px left rail (wordmark,
-a reserved command-palette row, the main navigation, then the signed-in address, Integrations, Sign out and the
-legal links). Under 960px the rail is replaced by a slim top bar and a bottom tab bar with four tabs and a
+the main navigation, then the signed-in address, Settings, Sign out and the legal links). Under 960px the rail is replaced by a slim top bar and a bottom tab bar with four tabs and a
 More button, whose sheet holds the entries that have no tab. Both navigations are always in the markup and
 CSS shows one; the destinations come from one list in `src/lib/nav.ts`. The page is the one `<main>`, and the
 first tab stop is a "Skip to content" link to it. The command palette and the assistant drawer are reserved
-(`src/components/ReservedSlots.tsx`): inert, hidden from assistive technology, no behavior.
+(`src/components/ReservedSlots.tsx`): `hidden` and inert, so they take no room, print no placeholder and have no
+behavior.
 
 One style marks a chosen item everywhere: a maroon fill with ivory text and weight 600, set by the item's
 ARIA state (`aria-current`, `aria-pressed`, `aria-selected` or `aria-checked`) on an element with
@@ -70,6 +70,29 @@ Tests that need a DOM (events, focus) start with `// @vitest-environment jsdom` 
 `src/testing/render.tsx`. `src/testing/a11y.ts` runs axe-core over a rendered container and fails on a
 serious or critical violation; jsdom has no layout, so it cannot check color contrast (`tokens.test.ts` does
 that for the token pairs).
+
+## Settings
+
+`src/pages/Settings.tsx` (the old Integrations page: `/profile/integrations` redirects to `/settings`, keeping its
+query and fragment, because the API still names the old address in its setup errors). Its sections are components
+under `src/components/settings/`: the AI provider (connected keys and their state, the model list, the default
+model, adding a provider), the search and data keys, and the connections (Telegram, Discord, Gmail).
+
+- A model key is saved first and given a model second: the models a key can use come from the key. A key with no
+  model is "needs a model" (the API's `setup_state`), never a silent default, and the model list opens for it.
+- The providers to add are drawn from `GET /credentials/llm/providers`; nothing about a provider is typed into
+  the page. `src/lib/providerStatus.ts` says which have been seen working against the real service (none of the
+  model providers other than OpenRouter has) and what each costs the person.
+- "Connect with OpenRouter" is OAuth with PKCE: `src/lib/settings/openrouterOAuth.ts` makes the verifier and its
+  S256 challenge, keeps the verifier and a state in `sessionStorage` for ten minutes, and on return takes the
+  parameters off the address (`captureOAuthReturn`, imported first by `main.tsx`) before anything reads them. The
+  code and verifier go to `POST /credentials/openrouter/exchange` and are never put in a URL, `localStorage` or
+  a log. OpenRouter's callback must be this site's `/settings`; on a plain-http address that is not localhost the
+  browser has no Web Crypto and the page falls back to pasting a key.
+- The page's one cyan button is the next-step band's. With no model key it is "Connect with OpenRouter" and the
+  same button inside the section is outlined; the rows are in `src/lib/nextStep/pages/settings.ts`.
+- Provider-supplied model ids and names are untrusted text: parsed for shape in `src/lib/settings/llmProviders.ts`
+  and drawn as text only.
 
 ## Fonts and brand files
 

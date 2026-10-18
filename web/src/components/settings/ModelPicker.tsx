@@ -261,7 +261,8 @@ export function ModelPicker({ providerId, providerName, currentModel, onChosen, 
         </button>
       </div>
       <p className="bj-set-hint">
-        Choosing sends one tiny real request to {providerName} to prove the model works with your key. If it refuses, nothing changes.         choose becomes the default for everything Between Jobs asks a model to do.
+        Choosing sends one tiny real request to {providerName} to prove the model works with your key. If it refuses, nothing changes. The model you
+        choose becomes your default model.
       </p>
     </div>
   );
