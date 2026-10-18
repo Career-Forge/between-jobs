@@ -38,14 +38,73 @@
   --bj-cyan-hover: #55dfda;
   --bj-focus-ring: #38d6d0;
 
-  /* Typography: editorial serif for display/job identity; readable sans
-   * for controls and body; mono only for provenance IDs, timestamps,
-   * logs. Final production typefaces are an open decision -- these
-   * stacks are placeholders honoring the roles. */
-  --bj-font-display: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  /* Outline for secondary buttons and for the border around a group of
+   * selectable segments. A maroon fill alone is 1.7:1 against the canvas, so
+   * the group needs this line to read as a group. */
+  --bj-outline: #7d6870;
+
+  /* The red dot after "Jobs" in the wordmark and the middle of the icon. It is
+   * a brand mark, the one documented exception to "red means failure": it is
+   * never a status, never text, and never appears inside the app's content. */
+  --bj-brand-dot: #e0414f;
+
+  /* Selection -- one style everywhere: maroon fill, ivory text, weight 600,
+   * plus the ARIA state (aria-current, aria-pressed, aria-selected or
+   * aria-checked). Never an underline, an edge bar, maroon text or a colored
+   * border. Focus is separate and always visible (--bj-focus-ring below). */
+  --bj-selected-bg: var(--bj-maroon);
+  --bj-selected-bg-hover: var(--bj-maroon-hover);
+  --bj-selected-text: var(--bj-text);
+  /* Hover on something that is not selected: a surface fill, one step up
+   * when the control already sits on a surface. */
+  --bj-hover-bg: var(--bj-surface);
+  --bj-hover-bg-raised: var(--bj-surface-raised);
+
+  --bj-focus-ring-width: 2px;
+  --bj-focus-ring-offset: 2px;
+
+  /* Spacing, in 4px steps. */
+  --bj-space-1: 4px;
+  --bj-space-2: 8px;
+  --bj-space-3: 12px;
+  --bj-space-4: 16px;
+  --bj-space-5: 24px;
+  --bj-space-6: 32px;
+  --bj-space-7: 48px;
+
+  /* Type scale. Display sizes belong to the serif, everything else to the
+   * sans; the trail line (who acted, on what basis, when) is the smallest
+   * text in the app and always muted. */
+  --bj-text-title: 22px;
+  --bj-text-h1: 34px;
+  --bj-text-body: 15px;
+  --bj-text-control: 14px;
+  --bj-text-small: 13px;
+  --bj-text-badge: 12px;
+  --bj-text-eyebrow: 11px;
+  --bj-text-trail: 12px;
+  --bj-text-trail-mono: 11px;
+
+  /* Typography: editorial serif for display and job identity; a readable sans
+   * for controls and body; mono only for provenance, ids and timestamps. The
+   * three faces are self-hosted (fonts.css); the fallbacks are what shows
+   * while a file loads, or if it never does. */
+  --bj-font-display: "Newsreader", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --bj-font-body:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --bj-font-mono: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
+    "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --bj-font-mono:
+    "IBM Plex Mono", "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
+
+  color-scheme: dark;
+}
+
+/* On a screen with a pixel density under 1.5, 12px text is thin; the trail
+ * line steps up to 12.5px in the same families rather than switching them. */
+@media (max-resolution: 1.49dppx) {
+  :root {
+    --bj-text-trail: 12.5px;
+  }
 }
 
 * {
@@ -62,7 +121,7 @@ body {
   background: var(--bj-bg);
   color: var(--bj-text);
   font-family: var(--bj-font-body);
-  font-size: 15px;
+  font-size: var(--bj-text-body);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
@@ -76,27 +135,38 @@ a:hover {
   text-decoration: underline;
 }
 
+/* Buttons come in four weights, so a page can show one thing as the main action:
+ *   primary    cyan fill        .bj-primary -- one per page
+ *   secondary  outlined         a plain <button>, or .bj-secondary
+ *   quiet      text only        .bj-quiet
+ *   text link  cyan text        a plain <a>, or .bj-link-button for a button that acts like one
+ * Anything that is not primary stays outlined or plain, so a second filled cyan
+ * button cannot appear by accident. */
 button {
   font-family: var(--bj-font-body);
-  font-size: 14px;
+  font-size: var(--bj-text-control);
   cursor: pointer;
   border-radius: 6px;
-  border: 1px solid var(--bj-border);
-  background: var(--bj-surface-raised);
+  border: 1px solid var(--bj-outline);
+  background: transparent;
   color: var(--bj-text);
   padding: 8px 16px;
 }
 
 button:hover {
+  background: var(--bj-hover-bg);
   border-color: var(--bj-text-muted);
 }
 
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid var(--bj-focus-ring);
-  outline-offset: 2px;
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: var(--bj-focus-ring-width) solid var(--bj-focus-ring);
+  outline-offset: var(--bj-focus-ring-offset);
+}
+
+/* A page's main landmark takes focus when the skip link is used; it is a
+ * target, not a control, so it gets no ring. */
+main[tabindex="-1"]:focus-visible {
+  outline: none;
 }
 
 button.bj-primary {
@@ -108,17 +178,72 @@ button.bj-primary {
 
 button.bj-primary:hover {
   background: var(--bj-cyan-hover);
+  border-color: var(--bj-cyan-hover);
 }
 
-button:disabled {
+button.bj-quiet {
+  border-color: transparent;
+  color: var(--bj-text-muted);
+}
+
+button.bj-quiet:hover {
+  color: var(--bj-text);
+  border-color: transparent;
+}
+
+button:disabled,
+button[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* Selection: the one style for anything that is chosen out of a set. Add
+ * .bj-selectable to the control; the ARIA state turns the fill on. A group of
+ * them sits inside .bj-segmented. */
+.bj-selectable[aria-current="page"],
+.bj-selectable[aria-current="location"],
+.bj-selectable[aria-pressed="true"],
+.bj-selectable[aria-selected="true"],
+.bj-selectable[aria-checked="true"] {
+  background: var(--bj-selected-bg);
+  color: var(--bj-selected-text);
+  font-weight: 600;
+}
+
+.bj-selectable[aria-current="page"]:hover,
+.bj-selectable[aria-current="location"]:hover,
+.bj-selectable[aria-pressed="true"]:hover,
+.bj-selectable[aria-selected="true"]:hover,
+.bj-selectable[aria-checked="true"]:hover {
+  background: var(--bj-selected-bg-hover);
+}
+
+.bj-segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 10px;
+}
+
+.bj-segmented > * {
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  font-size: var(--bj-text-small);
+  padding: 6px 14px;
+}
+
+.bj-segmented > *:hover {
+  background: var(--bj-hover-bg-raised);
+  color: var(--bj-text);
 }
 
 input,
 textarea {
   font-family: var(--bj-font-body);
-  font-size: 14px;
+  font-size: var(--bj-text-control);
   background: var(--bj-surface);
   color: var(--bj-text);
   border: 1px solid var(--bj-border);
