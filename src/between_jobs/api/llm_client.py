@@ -38,6 +38,20 @@ body (compared to fixed strings, never printed) are read. The original exception
 chained as `__cause__`, which the log formatter and the error tracker's scrubber reduce to its
 type, because they drop the message of every exception from this SDK.
 
+Three more reasons are named for providers other than OpenRouter, from documented fields of the
+error body or the status: `model_not_found` (404, or a body code that says so), `model_retired`
+(410, or a body code that says so) and, in the key and model-list checks, `response_too_large`.
+A 429 or a 400/403 whose body code names an exhausted balance or spend limit is `out_of_credit`,
+not a throttle, whichever provider said it: those codes appear nowhere else.
+
+WHAT A REQUEST LOOKS LIKE. The cap field, whether reasoning is switched off and how, and
+whether a temperature goes out all depend on the provider, and the provider is known from the
+host of the address (api/provider_registry.py, `Dialect`). OpenRouter's request is the one this
+module has always sent, byte for byte. For the others the dialect lists reasoning settings best
+first, and `generate` falls to the next only when the provider answers 400 or 422 to the shape
+(a model that does not take the setting), within the one time limit and at most as many
+requests as the dialect has settings.
+
 Not in scope, deliberately: marking the person's stored key as bad. The callers of `generate` are
 handed a bare secret and know no credential id; the person gets the message with the link instead.
 """
@@ -47,12 +61,21 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
-from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, Timeout
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+    DefaultAsyncHttpxClient,
+    Timeout,
+)
 from openai import APIError as OpenAIAPIError
 
 from .errors import ApiError, ErrorCode
+from .provider_http import UpstreamFailure, assert_safe_destination
+from .provider_registry import Dialect, dialect_for_base_url
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 """Per this project's standing rule: LLM calls always route through
@@ -101,6 +124,14 @@ RATE_LIMITED_MESSAGE = "The AI provider is rate limiting this key. Wait a minute
 UNAVAILABLE_MESSAGE = "Couldn't reach the AI provider. Try again in a moment."
 TIMEOUT_MESSAGE = "The AI provider took too long to answer. Try again in a moment."
 EMPTY_RESPONSE_MESSAGE = "The AI provider didn't return an answer. Try again in a moment."
+MODEL_NOT_FOUND_MESSAGE = (
+    "The AI provider doesn't have that model for your account. Pick a different model in "
+    "Integrations."
+)
+MODEL_RETIRED_MESSAGE = (
+    "The AI provider has retired that model. Pick a different model in Integrations."
+)
+RESPONSE_TOO_LARGE_MESSAGE = "The AI provider's answer was larger than this server will read."
 
 ProviderReason = Literal[
     "key_rejected",
@@ -112,6 +143,9 @@ ProviderReason = Literal[
     "unreachable",
     "provider_error",
     "empty_response",
+    "model_not_found",
+    "model_retired",
+    "response_too_large",
     "unknown",
 ]
 
@@ -138,6 +172,13 @@ _OUTCOMES: Mapping[ProviderReason, _Outcome] = {
     "unreachable": _Outcome("PROVIDER_UNAVAILABLE", UNAVAILABLE_MESSAGE, True),
     "provider_error": _Outcome("PROVIDER_UNAVAILABLE", UNAVAILABLE_MESSAGE, True),
     "empty_response": _Outcome("PROVIDER_UNAVAILABLE", EMPTY_RESPONSE_MESSAGE, True),
+    "model_not_found": _Outcome(
+        "PROVIDER_REJECTED", MODEL_NOT_FOUND_MESSAGE, False, _INTEGRATIONS_PATH
+    ),
+    "model_retired": _Outcome(
+        "PROVIDER_REJECTED", MODEL_RETIRED_MESSAGE, False, _INTEGRATIONS_PATH
+    ),
+    "response_too_large": _Outcome("PROVIDER_UNAVAILABLE", RESPONSE_TOO_LARGE_MESSAGE, False),
     "unknown": _Outcome("PROVIDER_UNAVAILABLE", UNAVAILABLE_MESSAGE, True),
 }
 
@@ -158,8 +199,68 @@ def _metadata(body: object) -> Mapping[str, object]:
     return {}
 
 
-def _reason_for_status(status: int, body: object) -> ProviderReason:
+_OUT_OF_CREDIT_CODES = frozenset(
+    {
+        # OpenAI's error-codes guide: a 429 that is a balance or a spend limit, not a throttle.
+        "credit_balance_exhausted",
+        "insufficient_quota",
+        "organization_spend_limit_exceeded",
+        "project_spend_limit_exceeded",
+        "organization_usage_limit_exceeded",
+        # Anthropic: an organisation's spend cap, and a billing problem.
+        "enforced_spend_limit_reached",
+        "billing_error",
+        # Qwen: arrears, and a free quota that is the only thing left.
+        "Arrearage",
+        "AllocationQuota.FreeTierOnly",
+    }
+)
+_MODEL_NOT_FOUND_CODES = frozenset(
+    {"model_not_found", "not_found_error", "not-found", "not_found", "ModelNotFound"}
+)
+# Unverified: Groq-style decommissioning code, and a generic spelling. A status of 410 is the
+# documented-by-HTTP signal; these are extra. Re-check each provider's error page before relying.
+_MODEL_RETIRED_CODES = frozenset({"model_decommissioned", "model_retired"})
+
+
+def _body_tokens(body: object) -> frozenset[str]:
+    """The short `code`, `type` and `details.error_code` strings of an error body, for comparing
+    with the fixed sets above. Never printed or stored: a body can quote the key."""
+    found: set[str] = set()
+    if isinstance(body, Mapping):
+        for field in ("code", "type"):
+            value = body.get(field)
+            if isinstance(value, str) and len(value) <= 64:
+                found.add(value)
+        details = body.get("details")
+        if isinstance(details, Mapping):
+            value = details.get("error_code")
+            if isinstance(value, str) and len(value) <= 64:
+                found.add(value)
+    return frozenset(found)
+
+
+def _reason_for_status(
+    status: int, body: object, *, named_model_errors: bool = False
+) -> ProviderReason:
+    """`named_model_errors` is for every provider but OpenRouter: there a 404, a 410 or a body
+    code that names the model is a missing or retired model, where OpenRouter's own 4xx answers
+    have always been the general `request_rejected`."""
     metadata = _metadata(body)
+    tokens = _body_tokens(body)
+    if status in (400, 402, 403, 429) and tokens & _OUT_OF_CREDIT_CODES:
+        return "out_of_credit"
+    if named_model_errors and tokens & _MODEL_RETIRED_CODES:
+        return "model_retired"
+    if (
+        named_model_errors
+        and (status == 404 or tokens & _MODEL_NOT_FOUND_CODES)
+        and 400 <= status < 500
+        and status not in (401, 402, 403, 429)
+    ):
+        return "model_not_found"
+    if named_model_errors and status == 410:
+        return "model_retired"
     if status == 401:
         return "key_rejected"
     if status == 402:
@@ -183,6 +284,12 @@ def _reason_for_status(status: int, body: object) -> ProviderReason:
     return "unknown"
 
 
+def status_reason(status: int, body: object) -> ProviderReason:
+    """The reason an HTTP status and error body stand for, for a call that is not a completion
+    (the key and model-list checks): the same rules `generate` classifies with."""
+    return _reason_for_status(status, body)
+
+
 def _error(reason: ProviderReason) -> ApiError:
     outcome = _OUTCOMES[reason]
     return ApiError(
@@ -194,7 +301,19 @@ def _error(reason: ProviderReason) -> ApiError:
     )
 
 
-def classify_provider_error(exc: BaseException) -> ApiError:
+def error_for_reason(reason: ProviderReason) -> ApiError:
+    """The `ApiError` a failure with this reason is answered with, for the code outside this
+    module that classifies a failure itself (the key and model-list checks)."""
+    return _error(reason)
+
+
+def outcome_for(reason: ProviderReason) -> tuple[ErrorCode, bool]:
+    """(code, retryable) of a reason, so a check can word its own message and keep the code."""
+    outcome = _OUTCOMES[reason]
+    return outcome.code, outcome.retryable
+
+
+def classify_provider_error(exc: BaseException, *, named_model_errors: bool = False) -> ApiError:
     """The `ApiError` a failed model call is answered with: the code, the plain-words message,
     whether trying again can help, the Integrations link when the person can fix it there, and
     the machine-readable reason in `details`. Anything this does not recognise is a retryable
@@ -204,7 +323,9 @@ def classify_provider_error(exc: BaseException) -> ApiError:
     its body. Never its message (see the module docstring). The caller chains `exc` as the
     cause (`raise classify_provider_error(e) from e`)."""
     if isinstance(exc, APIStatusError):
-        return _error(_reason_for_status(exc.status_code, exc.body))
+        return _error(
+            _reason_for_status(exc.status_code, exc.body, named_model_errors=named_model_errors)
+        )
     if isinstance(exc, APITimeoutError):
         return _error("timeout")
     if isinstance(exc, APIConnectionError):
@@ -240,6 +361,42 @@ class LLMResponse:
     content: str
 
 
+_ATTEMPT_MEMORY_LIMIT = 256
+_working_attempt: dict[tuple[str, str], int] = {}
+"""(host, model) -> index of the dialect attempt that last worked, so a model that refuses the
+first setting is not asked for it again by every call in this process. Bounded; cleared when
+full (a lost entry costs one rejected request)."""
+
+
+def _host_key(base_url: str) -> str:
+    return base_url.split("//", 1)[-1].split("/", 1)[0].lower()
+
+
+def request_fields(
+    dialect: Dialect, attempt: int, *, max_tokens: int | None, temperature: float | None
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """(the keyword arguments for the SDK call, the extra body fields) of one attempt of a
+    dialect. Pure, so the shape of each provider's request is testable without a client."""
+    fields: dict[str, Any] = {}
+    if max_tokens is not None or dialect.send_null_cap:
+        fields[dialect.token_field] = max_tokens
+    if temperature is not None and dialect.temperature == "send":
+        fields["temperature"] = temperature
+    extra = dict(dialect.attempts[attempt])
+    return fields, (extra or None)
+
+
+def _is_shape_rejection(exc: OpenAIAPIError) -> bool:
+    """A 400 or 422 that says nothing more specific than "I do not take this request": the
+    case where a plainer request may be accepted."""
+    return (
+        isinstance(exc, APIStatusError)
+        and exc.status_code in (400, 422)
+        and _reason_for_status(exc.status_code, exc.body, named_model_errors=True)
+        == "request_rejected"
+    )
+
+
 async def generate(
     *,
     api_key: str,
@@ -248,44 +405,78 @@ async def generate(
     system_prompt: str,
     user_prompt: str,
     max_tokens: int | None = None,
+    temperature: float | None = None,
     timeout: float | None = None,
 ) -> LLMResponse:
     """One system+user turn. `timeout` is the most this call may take in all, the SDK's own
-    retry included (the default depends on the size of the answer asked for, see
-    `default_timeout_seconds`). A provider failure raises the `ApiError` that
+    retry and the dialect's fallbacks included (the default depends on the size of the answer
+    asked for, see `default_timeout_seconds`). A provider failure raises the `ApiError` that
     `classify_provider_error` makes of it."""
     budget = default_timeout_seconds(max_tokens) if timeout is None else timeout
     if budget <= 0:
         raise ValueError("timeout must be positive")
+    target = base_url or OPENROUTER_BASE_URL
+    dialect = dialect_for_base_url(target)
+    is_openrouter = target == OPENROUTER_BASE_URL
+    if not is_openrouter:
+        try:
+            await assert_safe_destination(target)
+        except UpstreamFailure as e:
+            raise _error(e.reason) from e
+    memory_key = (_host_key(target), model)
+    attempt = _working_attempt.get(memory_key, 0)
+    if attempt >= len(dialect.attempts):
+        attempt = 0
     try:
         async with (
             asyncio.timeout(budget),
+            DefaultAsyncHttpxClient(follow_redirects=False) as http_client,
             AsyncOpenAI(
                 api_key=api_key,
-                base_url=base_url or OPENROUTER_BASE_URL,
+                base_url=target,
                 timeout=Timeout(budget, connect=min(CONNECT_TIMEOUT_SECONDS, budget)),
                 max_retries=MAX_SDK_RETRIES,
+                # No redirect is followed: a provider has no business sending a request that
+                # carries a key to another host. (The SDK's own client follows them.)
+                http_client=http_client,
             ) as client,
         ):
-            response = await client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=max_tokens,
-                # This is grounded extraction from provided evidence, not a task
-                # that benefits from chain-of-thought -- and OpenRouter's own
-                # docs warn that reasoning tokens count against max_tokens, so a
-                # reasoning model can silently burn the whole budget and return
-                # empty content. `effort: "none"` is OpenRouter's documented,
-                # cross-model way to turn that off; non-reasoning models ignore it.
-                extra_body={"reasoning": {"effort": "none"}},
-            )
+            while True:
+                fields, extra = request_fields(
+                    dialect, attempt, max_tokens=max_tokens, temperature=temperature
+                )
+                try:
+                    response = await client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        # This is grounded extraction from provided evidence, not a task
+                        # that benefits from chain-of-thought -- and OpenRouter's own
+                        # docs warn that reasoning tokens count against max_tokens, so a
+                        # reasoning model can silently burn the whole budget and return
+                        # empty content. `effort: "none"` is OpenRouter's documented,
+                        # cross-model way to turn that off; non-reasoning models ignore it.
+                        # Other providers' equivalents are the dialect's attempts.
+                        extra_body=extra,
+                        **fields,
+                    )
+                except OpenAIAPIError as e:
+                    if attempt + 1 < len(dialect.attempts) and _is_shape_rejection(e):
+                        attempt += 1
+                        continue
+                    raise
+                break
     except TimeoutError as e:
         raise _error("timeout") from e
     except OpenAIAPIError as e:
-        raise classify_provider_error(e) from e
+        raise classify_provider_error(e, named_model_errors=not is_openrouter) from e
+
+    if attempt:
+        if len(_working_attempt) >= _ATTEMPT_MEMORY_LIMIT:
+            _working_attempt.clear()
+        _working_attempt[memory_key] = attempt
 
     # An HTTP 200 is not always a completion, and the SDK does not treat any of these as an
     # error, so each needs its own guard rather than a crash on `.choices[0].message`:

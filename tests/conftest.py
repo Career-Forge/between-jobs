@@ -73,6 +73,19 @@ def _no_real_model_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(llm_client, "AsyncOpenAI", refuse)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The check that a provider's host resolves only to public addresses
+    (api/provider_http.py) asks DNS, and no test may: every name resolves to a public address,
+    unless the test of that check says otherwise."""
+    from between_jobs.api import provider_http
+
+    async def public(_host: str) -> list[str]:
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(provider_http, "_resolve", public)
+
+
 async def _allow_every_request(*_: object) -> rate_limits.RateLimitDecision:
     return rate_limits.RateLimitDecision(allowed=True, retry_after_seconds=0)
 

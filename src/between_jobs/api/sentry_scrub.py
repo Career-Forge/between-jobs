@@ -110,6 +110,7 @@ _SECRET_WORDS = frozenset(
         "secrets",
         "token",
         "tokens",
+        "verifier",
     }
 )
 _SECRET_SUFFIXES = ("apikey", "cookie", "email", "password", "phone", "secret", "token")
