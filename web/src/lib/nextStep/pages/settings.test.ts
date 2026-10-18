@@ -45,7 +45,7 @@ describe("the table", () => {
       name: "no model key saved",
       input: { facts: facts({ state: "none" }) },
       row: "S1",
-      sentence: "Connect a model so Between Jobs can draft and score.",
+      sentence: "Add a model key so Between Jobs can draft and score.",
       action: "button:Connect with OpenRouter:connect-openrouter",
       why: ["profile active", "no model key saved"],
     },

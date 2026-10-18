@@ -67,7 +67,8 @@ what it has read, and they draw only that.
   submit button (named `SUBMIT_INTENT`) turn `aria-disabled` and ignore presses, and the one named by
   `intent` reads `label` ("Generating...", "Signing in..."). A route link is left alone.
   "No usable model key" is one row, G3, read by every page that supplies `credentials.modelKey`
-  (`lib/modelKey.ts`: a key counts only when it is checked and has a model chosen). Settings does not supply
+  (`lib/modelKey.ts`: a key counts only when it is checked and has a model chosen). Its words follow the
+  setup checklist: "Add a model key", or "Choose a model" for a saved key that has none. Settings does not supply
   it; its own rows (S1, S2, S2k) say the same thing with buttons that act in place.
 - `components/paper/PageHeader.tsx` (breadcrumb, the page's one `<h1>`, subtitle, actions) and
   `components/paper/StateViews.tsx` (loading, empty, partial, stale, setup-required, failure).

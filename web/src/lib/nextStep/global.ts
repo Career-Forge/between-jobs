@@ -139,10 +139,27 @@ const G2: NextStepRow = {
   },
 };
 
-const NO_USABLE_KEY_WHY = {
-  none: "no model key saved",
-  needs_model: "a key is saved, no model chosen",
-  needs_key: "a key is saved, not confirmed",
+// One row, three states of the same problem. The words follow the Settings page and the setup
+// checklist for the same state, so a person is not told "add a key" on one card and "choose a model"
+// on the next: a saved key that has no model is not added again, its model is chosen.
+const NO_USABLE_KEY = {
+  none: {
+    sentence: "Add a model key so Between Jobs can draft and score.",
+    label: "Add a model key",
+    why: "no model key saved",
+  },
+  needs_model: {
+    sentence: "Your model key is saved. Choose a model so Between Jobs can draft and score.",
+    label: "Choose a model",
+    why: "a key is saved, no model chosen",
+  },
+  // The setup checklist calls this "Add a model key" too; Settings, which knows the provider and can
+  // open the replace panel in place, is the page that says "Replace the key".
+  needs_key: {
+    sentence: "Add a model key so Between Jobs can draft and score.",
+    label: "Add a model key",
+    why: "a key is saved, not confirmed",
+  },
 } as const;
 
 const G3: NextStepRow = {
@@ -152,10 +169,11 @@ const G3: NextStepRow = {
     if (input.credentials?.state !== "ready") return null;
     const reading = input.credentials.value.modelKey;
     if (reading === undefined || reading === "ready") return null;
+    const words = NO_USABLE_KEY[reading];
     return {
-      sentence: "Add a model key so Between Jobs can draft and score.",
-      action: { kind: "link", label: "Add a model key", to: MODEL_PROVIDER_PATH },
-      why: ["profile active", NO_USABLE_KEY_WHY[reading]],
+      sentence: words.sentence,
+      action: { kind: "link", label: words.label, to: MODEL_PROVIDER_PATH },
+      why: ["profile active", words.why],
     };
   },
 };
