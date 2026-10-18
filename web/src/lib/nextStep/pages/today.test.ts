@@ -494,7 +494,7 @@ describe("facts the page cannot read", () => {
 });
 
 describe("the review anchor", () => {
-  it("is the address the design names for the workspace's Review section, which the ready step links to", () => {
+  it("is the anchor of the workspace's Review section, which the ready step links to", () => {
     expect(REVIEW_HASH).toBe("ch-check");
     const step = stepOf(facts([ready_()]));
     expect(step.action).toEqual({ kind: "link", label: "Open workspace", to: `/applications/app-3#${REVIEW_HASH}` });
