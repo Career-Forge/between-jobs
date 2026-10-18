@@ -1534,3 +1534,43 @@ describe("the landing page's claims", () => {
     ]);
   });
 });
+
+// ── the policy names OpenRouter as the one provider the web app connects ──────────────────────
+//
+// The API accepts a key for seven more model providers (api/provider_registry.py), and a key saved
+// that way sends resume and posting text to that provider exactly as OpenRouter's does. The web app
+// does not offer any of them yet, which is what keeps "The AI provider Between Jobs supports today"
+// true of the product people use. This is the tripwire for the change that adds a picker: it must
+// update the provider list in legal.ts (a new entry per provider, a new LEGAL_VERSION and its
+// "what changed" line) in the same change, and then take this guard out.
+
+const webSources = import.meta.glob("../**/*.{ts,tsx}", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
+describe("the web app connects no model provider but OpenRouter, which is all the policy names", () => {
+  const appFiles = Object.entries(webSources).filter(
+    ([path]) => !/\.test\.tsx?$/.test(path) && !path.startsWith("../testing/"),
+  );
+
+  it("reads the web source it is guarding", () => {
+    expect(appFiles.length).toBeGreaterThan(20);
+    expect(appFiles.some(([path]) => path === "../pages/Integrations.tsx")).toBe(true);
+  });
+
+  it("saves a model key for no provider of the API's registry other than OpenRouter", () => {
+    const offenders = appFiles
+      .filter(([, source]) =>
+        /provider:\s*"(openai|anthropic|gemini|xai|deepseek|qwen|custom)"|\/credentials\/llm\/(?!openrouter["`])/.test(
+          source,
+        ),
+      )
+      .map(([path]) => path);
+    expect(
+      offenders,
+      `${offenders.join(", ")} connects a model provider the Privacy Policy does not name: add it to the provider list in legal.ts (and bump LEGAL_VERSION) in the same change`,
+    ).toEqual([]);
+  });
+});

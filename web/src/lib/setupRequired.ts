@@ -121,6 +121,10 @@ interface Target {
 }
 
 const MODEL_KEY: Target = { path: INTEGRATIONS, label: "Add a model key in Integrations" };
+// A key is saved and checked and no model is chosen for it (the server's `needs_model` state: it
+// answers SETUP_REQUIRED with `missing: ["model"]` and says so in its sentence). Adding a key
+// would be the wrong instruction.
+const MODEL_CHOICE: Target = { path: INTEGRATIONS, label: "Choose a model in Integrations" };
 const PROFILE: Target = { path: "/profile", label: "Finish your profile" };
 // Apollo and Hunter are tried together for one lookup, so either one missing is the same fix.
 const ENRICHMENT_KEY: Target = { path: INTEGRATIONS, label: "Add an Apollo or Hunter key in Integrations" };
@@ -134,7 +138,7 @@ const TARGET_BY_MISSING = new Map<string, Target>([
   ["profile_version", PROFILE],
   ["execution_mode", MODEL_KEY],
   ["provider", MODEL_KEY],
-  ["model", MODEL_KEY],
+  ["model", MODEL_CHOICE],
   ["credential", MODEL_KEY],
   ["apollo_credential", ENRICHMENT_KEY],
   ["hunter_credential", ENRICHMENT_KEY],
@@ -193,6 +197,9 @@ const PROVIDER_FIX_LABELS = new Map<string, string>([
   ["key_rejected", "Check your model key in Integrations"],
   ["out_of_credit", "Switch or update your model key in Integrations"],
   ["request_rejected", "Check your model in Integrations"],
+  // The provider has no such model for this account, or has retired it: another one is the fix.
+  ["model_not_found", "Choose another model in Integrations"],
+  ["model_retired", "Choose another model in Integrations"],
   // Not a model provider: Google stopped accepting the person's Gmail connection (it expired or
   // was revoked), and connecting again on the Integrations page is the fix.
   ["gmail_reconnect_required", "Reconnect Gmail in Integrations"],

@@ -7,9 +7,9 @@ accounts and the steps each must come out with, read by a test on each side (`te
 test_first_run.py` and `web/src/lib/firstRunShared.test.ts`). Change a rule in one place and the
 other side's test fails until it follows.
 
-THE FIVE STEPS tick from real data and never from a click: an active profile exists; a validated
-model key exists; a first search happened; an application is tracked; an application has a
-resume.
+THE FIVE STEPS tick from real data and never from a click: an active profile exists; a model key
+that is validated and has a model chosen exists; a first search happened; an application is
+tracked; an application has a resume.
 
 THREE STATES, NEVER TWO. A step is done, todo, or UNKNOWN. A fact that could not be read (a
 failed query) makes the steps that depend on it unknown, never done and never todo: guessing
@@ -37,6 +37,7 @@ from supabase import AsyncClient
 
 from .applications_store import list_applications
 from .artifact_versions_store import artifact_id_for, get_existing_artifact_ids
+from .credential_resolver import llm_setup_state
 from .profile_store import get_active_version
 from .provider_credentials_store import list_credentials
 from .saved_searches_store import list_saved_searches
@@ -182,10 +183,11 @@ async def _has_profile(supabase: AsyncClient, user_id: str) -> bool:
 
 
 async def _has_validated_model_key(supabase: AsyncClient, user_id: str) -> bool:
-    """A validated key for a model. Saving one points the default capability at it, so "a
-    validated model key" and "a validated key for the default capability" are one fact."""
+    """A key for a model that can be used: checked, and with a model chosen (`ready`, see
+    `llm_setup_state`). A checked key with no model is saved and still fails every generation
+    with "no model is chosen", so it does not tick the step."""
     rows = await list_credentials(supabase, user_id, service="llm")
-    return any(row.get("is_validated") is True for row in rows)
+    return any(llm_setup_state(row) == "ready" for row in rows)
 
 
 async def _count_saved_searches(supabase: AsyncClient, user_id: str) -> int:

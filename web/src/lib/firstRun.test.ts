@@ -350,7 +350,7 @@ function fakeFetcher(replies: Record<string, Reply>) {
 const GOOD: Record<string, Reply> = {
   "/profile/current": { id: "pv-1", canonical_json: {} },
   "/credentials": [
-    { service: "llm", provider: "openrouter", is_validated: true },
+    { service: "llm", provider: "openrouter", is_validated: true, model: "vendor/model" },
     { service: "search", provider: "brave", is_validated: true },
   ],
   "/applications": [
@@ -401,11 +401,15 @@ describe("loadFirstRunFacts", () => {
     }
   });
 
-  it("wants a validated key for the model, and a search key does not count", async () => {
+  it("wants a validated key with a model chosen, and a search key does not count", async () => {
     const cases: Array<[unknown, ReturnType<typeof ok<boolean>>]> = [
-      [[{ service: "llm", is_validated: true }], ok(true)],
-      [[{ service: "llm", is_validated: false }], ok(false)],
-      [[{ service: "search", is_validated: true }], ok(false)],
+      [[{ service: "llm", is_validated: true, model: "vendor/model" }], ok(true)],
+      [[{ service: "llm", is_validated: false, model: "vendor/model" }], ok(false)],
+      // checked, but no model chosen yet: saved and still unusable (the server's `needs_model`)
+      [[{ service: "llm", is_validated: true }], ok(false)],
+      [[{ service: "llm", is_validated: true, model: null }], ok(false)],
+      [[{ service: "llm", is_validated: true, model: "" }], ok(false)],
+      [[{ service: "search", is_validated: true, model: "vendor/model" }], ok(false)],
       [[], ok(false)],
       [[null, "x", 3, { service: "llm" }], ok(false)],
     ];

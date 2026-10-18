@@ -61,7 +61,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const FINISHED: Record<string, unknown> = {
   "/profile/current": { id: "pv-1" },
-  "/credentials": [{ service: "llm", is_validated: true }],
+  "/credentials": [{ service: "llm", is_validated: true, model: "vendor/model" }],
   "/saved-searches": [{ id: "s-1" }],
   "/applications": [{ id: "a-1", resume_exists: true, source_channel: "discover" }],
 };

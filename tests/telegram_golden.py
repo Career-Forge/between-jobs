@@ -483,7 +483,14 @@ _add(
         "existing_user": "web",
         "profile": {"select_rows": [_CHECK_RESUME_ROW]},
         "applications": [{**webhook_fakes._APP_1, "id": "app-1", "source_channel": "telegram"}],
-        "credentials": [{"service": "llm", "provider": "openrouter", "is_validated": True}],
+        "credentials": [
+            {
+                "service": "llm",
+                "provider": "openrouter",
+                "is_validated": True,
+                "model": "vendor/model",
+            }
+        ],
         "saved_searches": [{"id": "search-1"}],
     },
     env=_WEB_ENV,
@@ -495,7 +502,14 @@ _add(
         "existing_user": "web",
         "profile": {"select_rows": [_CHECK_RESUME_ROW]},
         "applications": [{**webhook_fakes._APP_1, "id": "app-1", "source_channel": "web"}],
-        "credentials": [{"service": "llm", "provider": "openrouter", "is_validated": True}],
+        "credentials": [
+            {
+                "service": "llm",
+                "provider": "openrouter",
+                "is_validated": True,
+                "model": "vendor/model",
+            }
+        ],
         "saved_searches": [],
         "resume_for": ["app-1"],
     },
@@ -507,7 +521,14 @@ _add(
         "existing_user": "web",
         "profile": {"select_rows": [_CHECK_RESUME_ROW]},
         "unreadable": ["applications", "saved_searches"],
-        "credentials": [{"service": "llm", "provider": "openrouter", "is_validated": True}],
+        "credentials": [
+            {
+                "service": "llm",
+                "provider": "openrouter",
+                "is_validated": True,
+                "model": "vendor/model",
+            }
+        ],
     },
     env=_WEB_ENV,
 )

@@ -190,7 +190,12 @@ async def test_the_facts_are_what_the_accounts_rows_say() -> None:
         profile_versions=_Table([{"id": "v1", "activated_at": "2026-10-01T00:00:00Z"}]),
         provider_credentials=_Table(
             [
-                {"service": "llm", "provider": "openrouter", "is_validated": True},
+                {
+                    "service": "llm",
+                    "provider": "openrouter",
+                    "is_validated": True,
+                    "model": "vendor/m",
+                },
             ]
         ),
         saved_searches=_Table([{"id": "s1"}, {"id": "s2"}]),
@@ -307,7 +312,7 @@ async def test_one_validated_key_among_unvalidated_ones_is_a_model_key(
     """Rows are unique per provider, so a person can hold a validated key next to one that was
     never validated; the validated one is what counts, wherever it sits in the list."""
     rows: list[dict[str, Any]] = [
-        {"service": "llm", "provider": "openrouter", "is_validated": True},
+        {"service": "llm", "provider": "openrouter", "is_validated": True, "model": "vendor/m"},
         {"service": "llm", "provider": "other", "is_validated": False},
         {"service": "llm", "provider": "another", "is_validated": None},
     ]
@@ -318,6 +323,23 @@ async def test_one_validated_key_among_unvalidated_ones_is_a_model_key(
     facts = await load_first_run_facts(supabase, _USER)  # type: ignore[arg-type]
 
     assert facts.model_key is True
+
+
+@pytest.mark.parametrize("model", [None, ""])
+async def test_a_checked_key_with_no_model_chosen_is_not_a_model_key_yet(
+    model: str | None,
+) -> None:
+    """Saved and checked, but every generation would answer "no model is chosen": the step
+    stays todo until a model is chosen (`setup_state` is `needs_model`)."""
+    supabase = _Supabase(
+        provider_credentials=_Table(
+            [{"service": "llm", "provider": "openai", "is_validated": True, "model": model}]
+        )
+    )
+
+    facts = await load_first_run_facts(supabase, _USER)  # type: ignore[arg-type]
+
+    assert facts.model_key is False
 
 
 async def test_every_read_is_for_the_verified_user_and_the_keys_are_only_the_models() -> None:
