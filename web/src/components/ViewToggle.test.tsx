@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import appCss from "../app.css?raw";
-import { declarationsFor } from "../testing/css";
+import { declarationsFor, withoutMedia } from "../testing/css";
 import { ViewToggle } from "./ViewToggle";
 
 const options = [
@@ -21,6 +21,6 @@ describe("ViewToggle", () => {
     const html = renderToStaticMarkup(<ViewToggle label="View" options={options} value="list" onChange={() => undefined} />);
     expect(html).not.toContain("bj-toggle-active");
     expect(appCss).not.toContain("bj-toggle-active");
-    expect(declarationsFor(appCss, '.bj-view-toggle button[aria-pressed="true"]').background).toBe("var(--bj-selected-bg)");
+    expect(declarationsFor(withoutMedia(appCss), '.bj-view-toggle button[aria-pressed="true"]').background).toBe("var(--bj-selected-bg)");
   });
 });
