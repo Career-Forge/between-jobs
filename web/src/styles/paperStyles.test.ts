@@ -133,6 +133,17 @@ describe("the next-step band", () => {
     expect([action.width, action["min-height"]]).toEqual(["100%", "48px"]);
   });
 
+  it("centers and sizes a link drawn as the band's button exactly as the button, and out-ranks app.css's link-button rule", () => {
+    // app.css: a.bj-button-link is (0,1,1) and sets display: inline-block. The band's link form is
+    // named under .bj-band, (0,2,1), so it wins whichever stylesheet is bundled last.
+    const link = declarationsFor(base, ".bj-band a.bj-band-action");
+    expect(link.display).toBe("inline-flex");
+    expect(link["justify-content"]).toBe("center");
+    expect(link["text-align"]).toBe("center");
+    expect(link["min-height"]).toBe("46px");
+    expect(declarationsFor(phone, ".bj-band a.bj-band-action").width).toBe("100%");
+  });
+
   it("draws the locked button as a dashed cyan outline, not a fill", () => {
     const locked = declarationsFor(base, "button.bj-band-locked");
     expect(locked.border).toBe("1px dashed var(--bj-cyan)");

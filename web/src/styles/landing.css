@@ -111,15 +111,6 @@
   margin: 32px 0 0;
 }
 
-/* The band's link action is drawn as a link button, and app.css's plain link-button rule (display:
-   inline-block) ties the primitives' own rule on specificity and wins the order, so the label would sit
-   at the left of the full-width button on a phone. Say it again here, one step more specific. */
-.bj-landing-hero .bj-band a.bj-band-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .bj-landing-hero-links {
   display: flex;
   flex-wrap: wrap;

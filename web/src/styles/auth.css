@@ -51,20 +51,22 @@
   gap: 16px;
 }
 
-.bj-field {
+/* Scoped to the card: .bj-field is also the label-wrapped field of Profile, Applications and the
+   dialogs, defined in app.css, and these rules would change them. */
+.bj-login-card .bj-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 0;
 }
 
-.bj-field label {
+.bj-login-card .bj-field label {
   font-size: var(--bj-text-small);
   font-weight: 500;
   color: var(--bj-text-muted);
 }
 
-.bj-field-hint {
+.bj-login-card .bj-field-hint {
   font-size: var(--bj-text-small);
   color: var(--bj-text-muted);
 }

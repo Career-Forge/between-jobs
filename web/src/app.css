@@ -1524,13 +1524,13 @@ button.bj-danger {
 /* Application workspace                                               */
 /* ------------------------------------------------------------------ */
 
-.bj-breadcrumb {
+.bj-workspace-breadcrumb {
   color: var(--bj-text-muted);
   font-size: 13px;
   margin-bottom: 8px;
 }
 
-.bj-breadcrumb a {
+.bj-workspace-breadcrumb a {
   color: var(--bj-cyan);
 }
 
