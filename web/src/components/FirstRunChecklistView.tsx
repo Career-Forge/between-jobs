@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { FirstRunStep, FirstRunView } from "../lib/firstRun";
 import { formatTrailDate } from "../lib/trail";
@@ -17,7 +17,12 @@ import "../styles/today.css";
 // holds the page's only one.
 //
 // Open it is the list. Closed it is one 44px line that opens it again: "✓ Setup ready" when all five
-// are done, otherwise the counts ("Setup · 2 to do"). Hiding it never hides it for good.
+// are done, otherwise the counts ("Setup · 2 to do"). Hiding it never hides it for good. While the
+// reads are out the line (kept for an account this browser has seen finished) says only that it is
+// checking, and is not a button: there is nothing yet to open.
+//
+// The line and the list are different elements, so a keyboard user's place is carried across by
+// hand: opening moves focus to the list's heading, and Hide moves it to the line.
 
 const TITLE_ID = "bj-setup-title";
 
@@ -56,16 +61,34 @@ export function FirstRunChecklistView({
 }) {
   // null: follow the view (open while a step is to do, closed otherwise); a click decides.
   const [chosen, setChosen] = useState<boolean | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const lineRef = useRef<HTMLButtonElement>(null);
+  // Where focus goes once the click's change is on screen; nothing for a view that changed by itself.
+  const focusNext = useRef<"heading" | "line" | null>(null);
+  useEffect(() => {
+    const target = focusNext.current;
+    focusNext.current = null;
+    if (target === "heading") headingRef.current?.focus();
+    if (target === "line") lineRef.current?.focus();
+  });
   if (view.presentation === "hidden") return null;
   const open = chosen ?? view.presentation === "expanded";
+
+  if (view.loading && !open) {
+    return <p className="bj-setup-line bj-setup-line--checking">Setup {"·"} checking</p>;
+  }
 
   if (!open) {
     return (
       <button
+        ref={lineRef}
         type="button"
         className="bj-setup-line"
         aria-expanded={false}
-        onClick={() => setChosen(true)}
+        onClick={() => {
+          focusNext.current = "heading";
+          setChosen(true);
+        }}
       >
         {view.finished ? (
           <>
@@ -85,7 +108,7 @@ export function FirstRunChecklistView({
   return (
     <section className="bj-setup" aria-labelledby={TITLE_ID}>
       <div className="bj-setup-head">
-        <h2 id={TITLE_ID} className="bj-setup-title">
+        <h2 id={TITLE_ID} className="bj-setup-title" ref={headingRef} tabIndex={-1}>
           Setup
         </h2>
         <span className="bj-setup-count">
@@ -98,6 +121,7 @@ export function FirstRunChecklistView({
           onClick={() => {
             // A finished account only folds the list away; hiding an unfinished one is remembered.
             if (!view.finished) onDismiss();
+            focusNext.current = "line";
             setChosen(false);
           }}
         >

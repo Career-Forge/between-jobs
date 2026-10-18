@@ -1,14 +1,16 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import type { NextStepOutcome } from "../../lib/nextStep";
 import type { TodayRowId } from "../../lib/nextStep/pages/today";
 import type { Failure } from "../../lib/setupRequired";
 import { kindLabel, rowView, type BackgroundView, type RowContext, type TodayItem } from "../../lib/todayFeed";
-import { NextStepBand } from "../paper/NextStepBand";
+import { todayIntent } from "../../lib/nextStep/pages/today";
+import { NextStepBand, type NextStepPending } from "../paper/NextStepBand";
 import { PageHeader } from "../paper/PageHeader";
 import { FailureState, LoadingState, PartialState } from "../paper/StateViews";
 import { TodayEmptyState } from "../TodayEmptyState";
 import { BackgroundTrail } from "./BackgroundTrail";
-import type { BusyKind, ItemActionsProps } from "./ItemParts";
+import { BUSY_LABELS, type BusyKind, type ItemActionsProps } from "./ItemParts";
 import { LitItem } from "./LitItem";
 import { TodayRow } from "./TodayRow";
 import "../../styles/today.css";
@@ -53,11 +55,32 @@ export interface TodayViewProps {
   account: AccountNotes;
   /** The setup checklist (it reads its own flags from the browser). */
   checklist: ReactNode;
+  /** What was just done, for a screen reader: the polite status the page speaks through. */
+  announcement: string;
+  /** A confirmation that outlives the item it was about (a forced generation retires its card). */
+  confirmation: TodayConfirmation | null;
   onBandAction: (intent: string) => void;
   onItemAction: ItemActionsProps["onAction"];
   onRetryProblem: (itemId: string) => void;
   onRetryAccount: () => void;
 }
+
+export interface TodayConfirmation {
+  text: string;
+  /** Where to see the result. */
+  link: { label: string; to: string };
+}
+
+// The request the lit item has out, in the band's terms: the button it was for reads its busy
+// words, and every handler button waits. A Dismiss has no button in the band, so it renames none.
+function pendingFor(item: TodayItem | null, busy: TodayViewProps["busy"]): NextStepPending | null {
+  const kind = item === null ? undefined : busy[item.id];
+  if (item === null || kind === undefined) return null;
+  return kind === "dismiss" ? { intent: null } : { intent: todayIntent(kind, item.id), label: BUSY_LABELS[kind] };
+}
+
+// The id of the list's heading: where focus goes when a row it held is gone.
+export const ACTIVITY_HEADING_ID = "bj-today-activity";
 
 function eyebrowFor(row: TodayRowId | null, item: TodayItem | null): ReactNode {
   if (row === "T2") {
@@ -81,6 +104,9 @@ export function TodayView(props: TodayViewProps) {
   const { now, wide, outcome, litRow, litItem, feed, context, tracked, busy, problems, background, account } = props;
   const items = feed.state === "ready" ? feed.items.filter((item) => item.id !== litItem?.id) : [];
   const hasNamedItems = feed.state === "ready" && feed.items.some((item) => item.application_id != null);
+  // Until the band knows what it holds, the list is held back too: the item it will lift out would
+  // otherwise show here with live buttons, and then move.
+  const holding = feed.state === "ready" && feed.items.length > 0 && outcome.status === "loading";
 
   const body = (
     <div className="bj-today-main">
@@ -89,8 +115,13 @@ export function TodayView(props: TodayViewProps) {
           <FailureState message="Your profile or your credentials couldn't be read, so setup can't be checked. Nothing was lost." />
         </div>
       )}
+      {props.confirmation !== null && (
+        <p className="bj-today-confirmation">
+          {props.confirmation.text} <Link to={props.confirmation.link.to}>{props.confirmation.link.label}</Link>
+        </p>
+      )}
       {props.checklist}
-      {feed.state === "loading" && (
+      {(feed.state === "loading" || holding) && (
         <div className="bj-today-section">
           <LoadingState rows={3} rowHeight={72} label="Loading Today..." />
         </div>
@@ -113,9 +144,9 @@ export function TodayView(props: TodayViewProps) {
           <TodayEmptyState />
         </div>
       )}
-      {items.length > 0 && (
-        <section className="bj-today-section" aria-labelledby="bj-today-activity">
-          <h2 className="bj-today-heading" id="bj-today-activity">
+      {items.length > 0 && !holding && (
+        <section className="bj-today-section" aria-labelledby={ACTIVITY_HEADING_ID}>
+          <h2 className="bj-today-heading" id={ACTIVITY_HEADING_ID} tabIndex={-1}>
             Recent activity
           </h2>
           <ul className="bj-today-list">
@@ -143,8 +174,11 @@ export function TodayView(props: TodayViewProps) {
 
   return (
     <div className="bj-today">
+      <div className="bj-visually-hidden" role="status" aria-live="polite">
+        {props.announcement}
+      </div>
       <PageHeader title="Today" subtitle="What happened on your jobs and saved searches, and the one thing to do next." />
-      <NextStepBand outcome={outcome} onAction={props.onBandAction} eyebrow={eyebrowFor(litRow, litItem)}>
+      <NextStepBand outcome={outcome} onAction={props.onBandAction} eyebrow={eyebrowFor(litRow, litItem)} pending={pendingFor(litItem, busy)}>
         {litItem !== null && (
           <LitItem
             item={litItem}

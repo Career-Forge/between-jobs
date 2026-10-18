@@ -111,6 +111,8 @@ async function draw(width = 1000) {
 
 const words = (element: Element | null) => (element?.textContent ?? "").replace(/\s+/g, " ").trim();
 const band = (container: HTMLElement) => query(container, 'section[aria-label="Next step"]');
+// What a screen reader is told about the request just made: the page's polite status.
+const status = (container: HTMLElement) => words(query(container, ".bj-today > .bj-visually-hidden[role='status']"));
 const rows = (container: HTMLElement) => [...container.querySelectorAll("li.bj-today-row")].map((row) => row.getAttribute("data-kind"));
 
 beforeEach(() => {
@@ -195,6 +197,30 @@ describe("the band as the answers arrive", () => {
     expect(words(query(step, ".bj-setup-state"))).toBe("◆To do");
     expect(query(step, "a").getAttribute("href")).toBe("/profile");
     expect(container.querySelector(".bj-state--setup")).toBeNull();
+  });
+
+  it("sends a person with an active profile and no OpenRouter key to add one, ahead of any item or saved search", async () => {
+    answer({ "/credentials": [], "/saved-searches": [] });
+    const empty = await draw();
+    expect(words(query(band(empty.container), ".bj-band-sentence"))).toBe("Add an OpenRouter key so Between Jobs can draft and score.");
+    expect(words(query(band(empty.container), ".bj-band-why"))).toBe("why: profile active · OpenRouter not set");
+    expect(query(band(empty.container), "a.bj-button-link-primary").getAttribute("href")).toBe("/profile/integrations#openrouter");
+    empty.unmount();
+
+    // Nothing is lifted into the band, so an item waiting keeps its own controls in the list.
+    answer({ "/credentials": [], "/today": [matchItem] });
+    const waiting = await draw();
+    expect(words(query(band(waiting.container), ".bj-band-sentence"))).toBe("Add an OpenRouter key so Between Jobs can draft and score.");
+    expect(rows(waiting.container)).toEqual(["high_fit_job"]);
+  });
+
+  it("does not ask for a key when the credentials list has one, or when it could not be read", async () => {
+    const present = await draw();
+    expect(words(query(band(present.container), ".bj-band-sentence"))).not.toContain("OpenRouter");
+    present.unmount();
+    answer({ "/credentials": new FakeApiError(500, "boom") });
+    const failed = await draw();
+    expect(words(query(band(failed.container), ".bj-band-sentence"))).toContain("Couldn't check your setup");
   });
 
   it("names a key that is not set in the checklist, with a link, when the profile is there", async () => {
@@ -296,15 +322,63 @@ describe("dismissing, accepting and tracking", () => {
     expect(band(container).className).toContain("bj-band--unlit");
   });
 
-  it("ignores a second press while the first request is out", async () => {
+  it("ignores a second press while the first request is out, and the band shows the request while it is", async () => {
     let release: (value: unknown) => void = () => {};
     answer({ "/today": [proposalItem], "POST /today/p1/accept-proposal": () => new Promise((resolve) => (release = resolve)) });
     const { container } = await draw();
-    click(buttonNamed(band(container), "Accept: move to Interviewing"));
-    click(buttonNamed(band(container), "Accept: move to Interviewing"));
+    const accept = buttonNamed(band(container), "Accept: move to Interviewing");
+    click(accept);
+    click(accept);
     await flush();
     expect(calls().filter((call) => call.includes("accept-proposal"))).toHaveLength(1);
+    // The pressed button changes its words and waits; so does the quiet Dismiss beside it.
+    expect(words(accept)).toBe("Moving...");
+    expect(accept.getAttribute("aria-disabled")).toBe("true");
+    expect(buttonNamed(band(container), "Dismiss").getAttribute("aria-disabled")).toBe("true");
     await act(async () => release({}));
+    expect(container.contains(accept)).toBe(false);
+  });
+
+  it("shows a forced generation in the band for as long as the request takes", async () => {
+    let release: (value: unknown) => void = () => {};
+    answer({
+      "/today": [heldItem],
+      "/applications/app-1/prepare-result": { result: { resume: null, gate_outcome: "REJECT_MISMATCH" } },
+      "POST /applications/app-1/prepare": () => new Promise((resolve) => (release = resolve)),
+      "POST /today/f1/dismiss": {},
+    });
+    const { container } = await draw();
+    const generate = buttonNamed(band(container), "Generate anyway");
+    click(generate);
+    await flush();
+    expect(words(generate)).toBe("Generating...");
+    expect(generate.getAttribute("aria-disabled")).toBe("true");
+    // The link beside it is not a handler and stays a link.
+    expect(query(band(container), "a.bj-button-link-primary").getAttribute("aria-disabled")).toBeNull();
+    expect(status(container)).toBe("Generating your resume.");
+    await act(async () => release({ run_id: "r", resume: { artifact_id: "a" } }));
+  });
+
+  it("shows a track, and a dismiss, in the band while they are out", async () => {
+    let release: (value: unknown) => void = () => {};
+    answer({ "/today": [matchItem], "POST /discover/track": () => new Promise((resolve) => (release = resolve)), "POST /today/m1/dismiss": () => new Promise(() => {}) });
+    const tracking = await draw();
+    const track = buttonNamed(band(tracking.container), "Track");
+    click(track);
+    await flush();
+    expect(words(track)).toBe("Tracking...");
+    expect(track.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => release({ id: "app-9" }));
+    tracking.unmount();
+
+    const dismissing = await draw();
+    const dismiss = buttonNamed(band(dismissing.container), "Dismiss");
+    click(dismiss);
+    await flush();
+    expect(words(dismiss)).toBe("Dismissing...");
+    // The band's own button waits too, though it was not the one pressed.
+    expect(buttonNamed(band(dismissing.container), "Track").getAttribute("aria-disabled")).toBe("true");
+    expect(words(buttonNamed(band(dismissing.container), "Track"))).toBe("Track");
   });
 
   it("tracks a high fit job with the request Discover makes, then turns Track into Open workspace", async () => {
@@ -530,16 +604,33 @@ describe("the setup checklist", () => {
     expect(calls().filter((call) => call === "GET /applications")).toHaveLength(1);
   });
 
-  it("is one 'Setup ready' line for a finished account, and remembers that for the next visit", async () => {
+  it("is one 'Setup ready' line for a finished account, and on the next visit only says it is checking until the reads confirm it", async () => {
     answer({ "/today": [], "/saved-searches": SEARCHES, "/applications": APPLICATIONS });
     const first = await draw();
     expect(words(query(first.container, "button.bj-setup-line"))).toBe("✓Setup ready›");
     expect(storage.getItem("between-jobs:first-run:completed:user-1")).toBe("1");
     first.unmount();
-    // The next visit shows it before the reads have come back.
-    answer({ "/applications": () => new Promise(() => {}) });
+    // The next visit keeps a place for the line, and claims nothing until the reads have answered.
+    let release: (value: unknown) => void = () => {};
+    answer({ "/applications": () => new Promise((resolve) => (release = resolve)) });
     const second = await draw();
+    expect(words(query(second.container, "p.bj-setup-line"))).toBe("Setup · checking");
+    expect(second.container.textContent).not.toContain("Setup ready");
+    await act(async () => release(APPLICATIONS));
     expect(words(query(second.container, "button.bj-setup-line"))).toBe("✓Setup ready›");
+  });
+
+  it("does not call an account ready that no longer is: the remembered flag is not a claim, and it is dropped", async () => {
+    storage.setItem("between-jobs:first-run:completed:user-1", "1");
+    let release: (value: unknown) => void = () => {};
+    answer({ "/applications": () => new Promise((resolve) => (release = resolve)) });
+    const { container } = await draw();
+    expect(container.textContent).not.toContain("Setup ready");
+    // The one tracked application was deleted since.
+    await act(async () => release([]));
+    expect(container.textContent).not.toContain("Setup ready");
+    expect(words(query(container, ".bj-setup-count"))).toMatch(/of 5 done$/);
+    expect(storage.getItem("between-jobs:first-run:completed:user-1")).toBe("0");
   });
 
   it("keeps a hidden checklist hidden, as one counting line", async () => {
@@ -587,5 +678,234 @@ describe("the page as a whole", () => {
     answer({ "/today": [trackedItem] });
     const unlit = await draw();
     expect(unlit.container.querySelectorAll(".bj-primary, .bj-button-link-primary")).toHaveLength(0);
+  });
+});
+
+describe("telling a screen reader what happened", () => {
+  it("says what was done once it is done, in the page's polite status", async () => {
+    answer({ "/today": [proposalItem, trackedItem], "POST /today/p1/accept-proposal": {}, "POST /today/t1/dismiss": {} });
+    const { container } = await draw();
+    expect(status(container)).toBe("");
+    click(buttonNamed(band(container), "Accept: move to Interviewing"));
+    await flush();
+    expect(status(container)).toBe("Moved to Interviewing.");
+    click(buttonNamed(container, "Dismiss"));
+    await flush();
+    expect(status(container)).toBe("Dismissed.");
+  });
+
+  it("says a track was done even though the control only changed into a link", async () => {
+    answer({ "/today": [matchItem], "POST /discover/track": { id: "app-9" } });
+    const { container } = await draw();
+    click(buttonNamed(band(container), "Track"));
+    await flush();
+    expect(status(container)).toBe("Tracked.");
+  });
+
+  it("leaves a failure to its own alert and says nothing stale", async () => {
+    answer({ "/today": [trackedItem], "POST /today/t1/dismiss": new FakeApiError(500, "Request failed (500)") });
+    const { container } = await draw();
+    click(buttonNamed(container, "Dismiss"));
+    await flush();
+    expect(status(container)).toBe("");
+    expect(container.querySelector(".bj-state--failure")?.getAttribute("role")).toBe("alert");
+  });
+});
+
+describe("where keyboard focus goes when its control is gone", () => {
+  const focusTarget = () => document.getElementById("next-step-focus");
+
+  it("goes to the band's next step after Accept replaces its own button", async () => {
+    answer({ "/today": [proposalItem, readyItem], "POST /today/p1/accept-proposal": {} });
+    const { container } = await draw();
+    const accept = buttonNamed(band(container), "Accept: move to Interviewing");
+    accept.focus();
+    click(accept);
+    await flush();
+    // The next lit item is a link, a new element: focus is on it and not dropped to the page.
+    expect(document.activeElement).toBe(focusTarget());
+    expect(document.activeElement?.tagName).toBe("A");
+    expect(words(document.activeElement)).toBe("Open workspace");
+  });
+
+  it("goes to the new Open workspace link after Track turns its button into one", async () => {
+    answer({ "/today": [matchItem], "POST /discover/track": { id: "app-9" } });
+    const { container } = await draw();
+    const track = buttonNamed(band(container), "Track");
+    track.focus();
+    click(track);
+    await flush();
+    expect(document.activeElement).toBe(focusTarget());
+    expect(words(document.activeElement)).toBe("Open workspace");
+  });
+
+  it("goes to the band's sentence when nothing is lit any more", async () => {
+    answer({ "/today": [heldItem, trackedItem], "/applications/app-1/prepare-result": { result: { resume: null, gate_outcome: "REJECT_MISMATCH" } }, "POST /today/f1/dismiss": {} });
+    const { container } = await draw();
+    const dismiss = buttonNamed(band(container), "Dismiss");
+    dismiss.focus();
+    click(dismiss);
+    await flush();
+    expect(band(container).className).toContain("bj-band--unlit");
+    expect(document.activeElement).toBe(query(band(container), ".bj-band-sentence"));
+  });
+
+  it("goes to the list's heading when a row it was on is removed", async () => {
+    answer({ "/today": [readyItem, trackedItem, { ...trackedItem, id: "t2" }], "POST /today/t1/dismiss": {} });
+    const { container } = await draw();
+    const row = container.querySelector("li.bj-today-row") as HTMLElement;
+    const dismiss = buttonNamed(row, "Dismiss");
+    dismiss.focus();
+    click(dismiss);
+    await flush();
+    expect(rows(container)).toEqual(["job_tracked"]);
+    expect(document.activeElement).toBe(query(container, "#bj-today-activity"));
+  });
+
+  it("goes back to the band after Try again, once the page has read again", async () => {
+    answer({ "/today": new FakeApiError(500, "Request failed (500)") });
+    const { container } = await draw();
+    const retry = buttonNamed(band(container), "Try again");
+    retry.focus();
+    answer({ "/today": [trackedItem] });
+    click(retry);
+    await flush();
+    expect(document.activeElement).toBe(focusTarget());
+    expect(band(container).contains(document.activeElement)).toBe(true);
+  });
+
+  it("does not take focus from where the person has put it", async () => {
+    answer({ "/today": [matchItem], "POST /discover/track": { id: "app-9" } });
+    const { container } = await draw();
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    click(buttonNamed(band(container), "Track"));
+    outside.focus();
+    await flush();
+    expect(document.activeElement).toBe(outside);
+  });
+});
+
+describe("a forced generation", () => {
+  const prepareResult = { result: { resume: null, gate_outcome: "REJECT_MISMATCH", fit: { overall_score: 3.64 } } };
+
+  it("says the resume was made and links to its workspace, instead of the card just vanishing", async () => {
+    answer({
+      "/today": [heldItem, trackedItem],
+      "/applications/app-1/prepare-result": prepareResult,
+      "POST /applications/app-1/prepare": { run_id: "r", resume: { artifact_id: "a" } },
+      "POST /today/f1/dismiss": {},
+    });
+    const { container } = await draw();
+    click(buttonNamed(band(container), "Generate anyway"));
+    await flush();
+    const confirmation = query(container, ".bj-today-confirmation");
+    expect(words(confirmation)).toBe("Your resume for Data Engineer at Acme was generated. Open workspace");
+    expect(query(confirmation, "a").getAttribute("href")).toBe("/applications/app-1");
+    expect(status(container)).toBe("Your resume for Data Engineer at Acme was generated.");
+  });
+
+  it("still takes the card out and confirms when retiring it fails, so the page never goes on saying it is held back", async () => {
+    answer({
+      "/today": [heldItem, trackedItem],
+      "/applications/app-1/prepare-result": prepareResult,
+      "POST /applications/app-1/prepare": { run_id: "r", resume: { artifact_id: "a" } },
+      "POST /today/f1/dismiss": new FakeApiError(500, "boom"),
+    });
+    const { container } = await draw();
+    click(buttonNamed(band(container), "Generate anyway"));
+    await flush();
+    expect(container.querySelector("[data-kind='resume_failed']")).toBeNull();
+    expect(container.textContent).not.toContain("held back your draft");
+    expect(container.querySelector(".bj-state--failure")).toBeNull();
+    expect(container.querySelector(".bj-today-confirmation")).not.toBeNull();
+  });
+
+  it("clears the confirmation when the next action starts", async () => {
+    answer({
+      "/today": [heldItem, trackedItem],
+      "/applications/app-1/prepare-result": prepareResult,
+      "POST /applications/app-1/prepare": { run_id: "r", resume: { artifact_id: "a" } },
+      "POST /today/f1/dismiss": {},
+      "POST /today/t1/dismiss": {},
+    });
+    const { container } = await draw();
+    click(buttonNamed(band(container), "Generate anyway"));
+    await flush();
+    expect(container.querySelector(".bj-today-confirmation")).not.toBeNull();
+    click(buttonNamed(container, "Dismiss"));
+    await flush();
+    expect(container.querySelector(".bj-today-confirmation")).toBeNull();
+  });
+
+  it("announces a setup failure that needs a key, so the person who pressed the button hears it", async () => {
+    answer({
+      "/today": [heldItem],
+      "POST /applications/app-1/prepare": new FakeApiError(409, "Add a model key first.", { code: "SETUP_REQUIRED", settingsPath: "/profile/integrations", capability: "prepare_application" }),
+    });
+    const { container } = await draw();
+    click(buttonNamed(band(container), "Generate anyway"));
+    await flush();
+    expect(query(container, ".bj-today-problem").getAttribute("role")).toBe("alert");
+  });
+});
+
+describe("when every read fails", () => {
+  it("reads the account and the feed again with the one Try again the band holds", async () => {
+    const down = new FakeApiError(500, "boom");
+    answer({ "/today": down, "/profile/current": down, "/credentials": down, "/saved-searches": down, "/applications": down });
+    const { container } = await draw();
+    expect(words(query(band(container), ".bj-band-sentence"))).toContain("Couldn't check your setup");
+    const failures = [...container.querySelectorAll(".bj-today-main .bj-state--failure")].map(words);
+    expect(failures.some((text) => text.includes("Today's items couldn't be read"))).toBe(true);
+
+    answer({ "/today": [trackedItem] });
+    api.apiFetch.mockClear();
+    click(buttonNamed(band(container), "Try again"));
+    await flush();
+    expect(calls().sort()).toEqual(["GET /applications", "GET /credentials", "GET /profile/current", "GET /saved-searches", "GET /today"].sort());
+    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Nothing needs a decision right now. 1 update below.");
+    expect(container.querySelector(".bj-today-main .bj-state--failure")).toBeNull();
+    expect(rows(container)).toEqual(["job_tracked"]);
+  });
+
+  it("reads only the account when the feed is fine", async () => {
+    answer({ "/profile/current": new FakeApiError(500, "boom"), "/today": [trackedItem] });
+    const { container } = await draw();
+    answer({ "/today": [trackedItem] });
+    api.apiFetch.mockClear();
+    click(buttonNamed(band(container), "Try again"));
+    await flush();
+    expect(calls()).not.toContain("GET /today");
+  });
+});
+
+describe("the list while the band is still working it out", () => {
+  it("holds the list back, so an item is never drawn with live buttons and then moved into the band", async () => {
+    let release: (value: unknown) => void = () => {};
+    answer({ "/today": [proposalItem, trackedItem], "/applications": () => new Promise((resolve) => (release = resolve)) });
+    const { container } = await draw();
+    expect(band(container).getAttribute("aria-busy")).toBe("true");
+    expect(rows(container)).toEqual([]);
+    expect(container.textContent).not.toContain("Accept: move to Interviewing");
+    expect(container.querySelector(".bj-today-main .bj-state--loading")).not.toBeNull();
+
+    await act(async () => release(APPLICATIONS));
+    expect(container.querySelector(".bj-today-main .bj-state--loading")).toBeNull();
+    expect(rows(container)).toEqual(["job_tracked"]);
+    expect(buttonNamed(band(container), "Accept: move to Interviewing")).toBeTruthy();
+  });
+
+  it("holds it again when Try again reads the account again, and settles the same way", async () => {
+    answer({ "/profile/current": new FakeApiError(500, "boom"), "/today": [proposalItem, trackedItem] });
+    const { container } = await draw();
+    expect(rows(container)).toEqual(["status_proposal", "job_tracked"]);
+    let release: (value: unknown) => void = () => {};
+    answer({ "/today": [proposalItem, trackedItem], "/applications": () => new Promise((resolve) => (release = resolve)) });
+    click(buttonNamed(band(container), "Try again"));
+    await flush();
+    expect(rows(container)).toEqual([]);
+    await act(async () => release(APPLICATIONS));
+    expect(rows(container)).toEqual(["job_tracked"]);
   });
 });

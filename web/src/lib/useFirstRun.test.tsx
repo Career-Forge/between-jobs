@@ -99,9 +99,9 @@ describe("useFirstRun: before the reads come back", () => {
     expect([...storage.data.keys()]).toEqual([]);
   });
 
-  it("shows the one-line ready state for an account this browser saw finished, for that person only", () => {
+  it("keeps a place for the line for an account this browser saw finished, for that person only, without saying ready", () => {
     storage.setItem(completedKey("user-1"), "1");
-    expect(mount(STILL_LOADING, "user-1").view).toMatchObject({ presentation: "collapsed", finished: true });
+    expect(mount(STILL_LOADING, "user-1").view).toMatchObject({ presentation: "collapsed", loading: true, finished: false });
     recorded.effects.length = 0;
     expect(mount(STILL_LOADING, "user-2").view.presentation).toBe("hidden");
   });

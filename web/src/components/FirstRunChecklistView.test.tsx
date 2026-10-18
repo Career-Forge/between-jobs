@@ -170,18 +170,75 @@ describe("the one-line forms", () => {
     expect(words(query(again.container, "button.bj-setup-line"))).toBe("Setup · 5 to do›");
   });
 
-  it("shows the ready line before the reads come back for an account this browser saw finished", () => {
+  it("says only that it is checking, and is not a button, while the reads are out for an account this browser saw finished", () => {
     const loading = { kind: "loading" } as const;
     const view = deriveFirstRun(
       { profile: loading, modelKey: loading, savedSearches: loading, applications: loading },
       { dismissed: false, searched: null, seenFinished: true },
     );
     const { container } = draw(view);
-    expect(words(query(container, "button.bj-setup-line"))).toBe("✓Setup ready›");
+    expect(words(query(container, "p.bj-setup-line"))).toBe("Setup · checking");
+    expect(container.querySelector("button")).toBeNull();
+    expect(container.textContent).not.toContain("ready");
   });
 
   it("is a 44px line by its class, and has no serious accessibility violation", async () => {
     const { container } = draw(deriveFirstRun(FINISHED, FLAGS));
     await expectNoSeriousA11yViolations(container);
+  });
+});
+
+describe("keeping a keyboard user's place", () => {
+  it("moves focus to the list's heading when the one-line form opens it", () => {
+    const { container } = draw(deriveFirstRun(FINISHED, FLAGS));
+    const line = query<HTMLButtonElement>(container, "button.bj-setup-line");
+    expect(line.getAttribute("aria-expanded")).toBe("false");
+    line.focus();
+    expect(document.activeElement).toBe(line);
+    click(line);
+    const heading = query(container, "#bj-setup-title");
+    expect(document.activeElement).toBe(heading);
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("moves focus back to the line when Hide folds a finished account's list away", () => {
+    const { container } = draw(deriveFirstRun(FINISHED, FLAGS));
+    click(query(container, "button.bj-setup-line"));
+    const hide = buttonNamed(container, "Hide the setup checklist");
+    hide.focus();
+    click(hide);
+    const line = query<HTMLButtonElement>(container, "button.bj-setup-line");
+    expect(document.activeElement).toBe(line);
+    expect(line.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("moves focus to the line when Hide dismisses an unfinished list too", () => {
+    const onDismiss = vi.fn();
+    const { container, rerender } = draw(deriveFirstRun(BRAND_NEW, FLAGS), { onDismiss });
+    const hide = buttonNamed(container, "Hide the setup checklist");
+    hide.focus();
+    click(hide);
+    expect(onDismiss).toHaveBeenCalledOnce();
+    // The hook then reports the list as dismissed; the line takes the list's place.
+    rerender(
+      <MemoryRouter>
+        <FirstRunChecklistView view={deriveFirstRun(BRAND_NEW, { ...FLAGS, dismissed: true })} onDismiss={onDismiss} now={NOW} />
+      </MemoryRouter>,
+    );
+    expect(document.activeElement).toBe(query(container, "button.bj-setup-line"));
+  });
+
+  it("does not take focus when the view changes by itself", () => {
+    const { container, rerender } = draw(deriveFirstRun(FINISHED, FLAGS));
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    outside.focus();
+    rerender(
+      <MemoryRouter>
+        <FirstRunChecklistView view={deriveFirstRun(BRAND_NEW, FLAGS)} onDismiss={() => {}} now={NOW} />
+      </MemoryRouter>,
+    );
+    expect(container.querySelector("section")).not.toBeNull();
+    expect(document.activeElement).toBe(outside);
   });
 });

@@ -6,6 +6,7 @@ import {
   firstRunFactsOf,
   readAccount,
   browserStorage,
+  clearCompleted,
   completedKey,
   deriveFirstRun,
   dismissedKey,
@@ -646,6 +647,15 @@ describe("the dismissed flag", () => {
     expect(writeDismissed(throwingStorage, "user-1")).toBe(false);
   });
 
+  it("can be cleared, and clearing never throws when storage is missing or throws", () => {
+    const storage = memoryStorage();
+    writeCompleted(storage, "user-1");
+    clearCompleted(storage, "user-1");
+    expect(readCompleted(storage, "user-1")).toBe(false);
+    expect(() => clearCompleted(null, "user-1")).not.toThrow();
+    expect(() => clearCompleted(throwingStorage, "user-1")).not.toThrow();
+  });
+
   it("is not set by anything but its own value", () => {
     const storage = memoryStorage();
     storage.setItem(dismissedKey("user-1"), "0");
@@ -771,12 +781,14 @@ describe("the checklist's state, over a storage", () => {
       expect(view.finished).toBe(false);
     });
 
-    it("shows the one-line ready state at once for an account this browser saw finished, for that person only", () => {
+    it("keeps a place for the one line for an account this browser saw finished, for that person only, and claims nothing in it", () => {
       const storage = memoryStorage();
       writeCompleted(storage, USER);
       const view = viewOfFirstRun(start(storage));
       expect(view.presentation).toBe("collapsed");
-      expect(view.finished).toBe(true);
+      expect(view.loading).toBe(true);
+      // "Ready" is a fact about the account, so it is drawn from the reads and never from memory.
+      expect(view.finished).toBe(false);
       expect(view.visible).toBe(false);
       expect(viewOfFirstRun(start(storage, "user-2")).presentation).toBe("hidden");
     });
@@ -822,6 +834,15 @@ describe("the checklist's state, over a storage", () => {
       expect(readCompleted(storage, USER)).toBe(false);
     });
 
+    it("forgets a remembered account when the reads say a step is to do again, and keeps it when one merely failed", () => {
+      const storage = memoryStorage();
+      writeCompleted(storage, USER);
+      onFirstRunFactsLoaded({ ...EVERYTHING_DONE, applications: failed }, storage, USER);
+      expect(readCompleted(storage, USER)).toBe(true);
+      onFirstRunFactsLoaded(BRAND_NEW, storage, USER);
+      expect(readCompleted(storage, USER)).toBe(false);
+    });
+
     it("does not mark an account as completed on the strength of a failed request", () => {
       const storage = memoryStorage();
       // Four of five steps done, the fifth unknown: not seen finished.
@@ -837,8 +858,8 @@ describe("the checklist's state, over a storage", () => {
       expect(result.completed).toBe(true);
       expect(storage.data.get(completedKey(USER))).toBe("1");
       expect(readCompleted(storage, "user-2")).toBe(false);
-      // And the next start shows the ready line before anything has been read.
-      expect(viewOfFirstRun(start(storage)).finished).toBe(true);
+      // And the next start keeps a place for the line before anything has been read, without saying ready.
+      expect(viewOfFirstRun(start(storage))).toMatchObject({ presentation: "collapsed", loading: true, finished: false });
     });
 
     it("does not open the card for an account that is finished, and does not bring it back after one request fails", () => {
@@ -1027,7 +1048,7 @@ describe("how the checklist is presented", () => {
   it("is hidden while the reads are loading, unless this browser saw it finished", () => {
     const allLoading: FirstRunFacts = { profile: loading, modelKey: loading, savedSearches: loading, applications: loading };
     expect(view(allLoading).presentation).toBe("hidden");
-    expect(view(allLoading, { dismissed: false, searched: null, seenFinished: true })).toMatchObject({ presentation: "collapsed", finished: true });
+    expect(view(allLoading, { dismissed: false, searched: null, seenFinished: true })).toMatchObject({ presentation: "collapsed", loading: true, finished: false });
     // A person who hid it is not shown it while it loads either way, but the counts need the reads.
     expect(view(allLoading, { dismissed: true, searched: null }).presentation).toBe("hidden");
   });
