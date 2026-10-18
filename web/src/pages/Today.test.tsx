@@ -263,6 +263,24 @@ describe("dismissing, accepting and tracking", () => {
     expect(container.querySelector(".bj-state--empty")).not.toBeNull();
   });
 
+  it("does not light a proposal that was already decided, and dismisses it through the plain route", async () => {
+    // The server resolves a sibling proposal on its own and leaves its item in the feed, where
+    // Accept and the proposal Dismiss would both be refused with a 409.
+    const decided = { ...proposalItem, status_proposal: { ...proposalItem.status_proposal, status: "dismissed" } };
+    answer({ "/today": [decided, readyItem], "POST /today/p1/dismiss": {} });
+    const { container } = await draw();
+    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Your resume for ML Engineer at Orbit is ready for review.");
+    expect(container.textContent).not.toContain("Accept: move to");
+    expect(container.textContent).not.toContain("Needs your decision");
+    const row = container.querySelector("li.bj-today-row") as HTMLElement;
+    expect(row.getAttribute("data-kind")).toBe("status_proposal");
+    click(buttonNamed(row, "Dismiss"));
+    await flush();
+    expect(calls()).toContain("POST /today/p1/dismiss");
+    expect(calls()).not.toContain("POST /today/p1/dismiss-proposal");
+    expect(rows(container)).toEqual([]);
+  });
+
   it("accepts a proposal from the band's one cyan button, and removes it", async () => {
     answer({ "/today": [proposalItem], "POST /today/p1/accept-proposal": {} });
     const { container } = await draw();

@@ -19,6 +19,7 @@ import { CROSS_NAV_HASH } from "./applicationsBoard";
 import {
   AUTO_MOVE_PERCENT,
   REVIEW_HASH,
+  confidencePercent,
   TODAY_KINDS,
   isMappableProposal,
   PROPOSAL_STEPS,
@@ -225,7 +226,11 @@ export function todayFacts(input: FactsInput): TodayFacts {
             proposal:
               item.status_proposal === null
                 ? null
-                : { proposedType: item.status_proposal.proposed_type, confidence: item.status_proposal.confidence },
+                : {
+                    proposedType: item.status_proposal.proposed_type,
+                    confidence: item.status_proposal.confidence,
+                    status: item.status_proposal.status,
+                  },
             match:
               match === null
                 ? null
@@ -299,8 +304,10 @@ export interface RowView {
   receipt: ReceiptRowInput[];
 }
 
-function percentOf(confidence: number): number | null {
-  return Number.isFinite(confidence) && confidence >= 0 && confidence <= 1 ? Math.trunc(confidence * 100) : null;
+// Whether a proposal can still be accepted or dismissed through the proposal routes: only a
+// pending one. The server refuses both for any other status (409).
+export function isPending(proposal: StatusProposal | null): proposal is StatusProposal {
+  return proposal !== null && proposal.status === "pending";
 }
 
 export function rowView(item: TodayItem, context: RowContext): RowView {
@@ -374,11 +381,12 @@ export function rowView(item: TodayItem, context: RowContext): RowView {
     }
     case "status_proposal": {
       const proposal = item.status_proposal;
-      const percent = proposal === null ? null : percentOf(proposal.confidence);
+      const percent = proposal === null ? null : confidencePercent(proposal.confidence);
       const mappable = proposal !== null && isMappableProposal(proposal.proposed_type);
       return {
         ...base,
-        chip: mappable ? { tone: "gold", text: "Needs your decision" } : null,
+        // Waiting on the person only while it is still pending; a decided one is just a record.
+        chip: mappable && isPending(proposal) ? { tone: "gold", text: "Needs your decision" } : null,
         quotes: proposal === null ? [] : proposal.evidence_spans.filter((span) => span.trim() !== ""),
         trail: {
           glyph: "model",
@@ -388,7 +396,7 @@ export function rowView(item: TodayItem, context: RowContext): RowView {
           extra:
             percent === null
               ? null
-              : percent < AUTO_MOVE_PERCENT
+              : proposal !== null && proposal.confidence < AUTO_MOVE_PERCENT / 100
                 ? `${percent}% · under the ${AUTO_MOVE_PERCENT}% auto-move line`
                 : `${percent}%`,
         },
@@ -427,7 +435,7 @@ export function rowActions(item: TodayItem, trackedApplicationId: string | null)
   switch (item.kind) {
     case "status_proposal": {
       const type = item.status_proposal?.proposed_type;
-      if (type !== undefined && isMappableProposal(type)) actions.push({ id: "accept", label: `Accept: move to ${PROPOSAL_STEPS[type].stage}` });
+      if (type !== undefined && isMappableProposal(type) && isPending(item.status_proposal)) actions.push({ id: "accept", label: `Accept: move to ${PROPOSAL_STEPS[type].stage}` });
       break;
     }
     case "high_fit_job":
