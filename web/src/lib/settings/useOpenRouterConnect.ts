@@ -3,7 +3,7 @@ import { apiFetch } from "../api";
 import { SETTINGS_PATH } from "../settingsPaths";
 import { parseCredentialRows, type CredentialSummary } from "./credentials";
 import { clearPending, connectStore, startConnect, tabStorage, type ConnectState, type CryptoLike } from "./openrouterOAuth";
-import { isRetryable, settingsFailureMessage } from "./settingsErrors";
+import { isExchangeRetryable, settingsFailureMessage } from "./settingsErrors";
 
 // The Settings page's hold on the OpenRouter sign-in: starting it, and what became of a return from
 // OpenRouter (the exchange runs when the page mounts with one waiting; see openrouterOAuth.ts).
@@ -54,7 +54,7 @@ export function useOpenRouterConnect(deps: OpenRouterDeps = {}): OpenRouterConne
 
   // A return from OpenRouter that is waiting is exchanged once, however many times this runs.
   useEffect(() => {
-    connectStore.begin(exchange, isRetryable);
+    connectStore.begin(exchange, isExchangeRetryable);
   }, []);
 
   // Back from openrouter.ai with the button still pressed: a page the browser kept whole (the

@@ -191,6 +191,19 @@ def test_save_credential_provider_rejected() -> None:
     assert response.json()["error"]["code"] == "PROVIDER_REJECTED"
 
 
+def test_save_credential_provider_rejected_names_its_reason() -> None:
+    """The web app words a refused key from `details.reason`; without one it could only show the
+    bare sentence, unlike every other model provider's refusal."""
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(status_code=401)
+
+    with _client(supabase, http) as client:
+        response = client.post("/credentials", json=_save_body())
+
+    details = response.json()["error"]["details"]
+    assert details == {"reason": "key_rejected", "provider": "openrouter"}
+
+
 def test_save_credential_provider_unreachable() -> None:
     supabase = _FakeSupabaseClient()
     http = _FakeHttpClient(raise_error=True)

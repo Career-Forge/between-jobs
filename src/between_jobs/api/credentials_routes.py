@@ -132,7 +132,11 @@ async def _validate_openrouter_key(http: httpx.AsyncClient, secret: str) -> None
         ) from e
 
     if response.status_code in (401, 403):
-        raise ApiError("PROVIDER_REJECTED", "OpenRouter rejected that key.")
+        raise ApiError(
+            "PROVIDER_REJECTED",
+            "OpenRouter rejected that key.",
+            details={"reason": "key_rejected", "provider": OPENROUTER},
+        )
     if response.status_code >= 400:
         raise ApiError(
             "PROVIDER_UNAVAILABLE",

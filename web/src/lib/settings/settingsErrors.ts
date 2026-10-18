@@ -62,22 +62,45 @@ function withNote(sentence: string, context: FailureContext): string {
   return note === "" ? sentence : `${sentence} ${note}`;
 }
 
-type Wording = (provider: string, context: FailureContext) => string;
+// `serverMessage` is the API's own sentence for the failure, for the one wording that needs a part of it.
+type Wording = (provider: string, context: FailureContext, serverMessage: string) => string;
+
+// The way out some providers add after "<name> rejected that key." (Anthropic: create the key inside
+// one workspace; Qwen: a key only works on the platform and region it was made on). It is the API's
+// own fixed sentence, so it is safe to show; this page's generic advice cannot replace it.
+function rejectedHint(serverMessage: string): string {
+  const match = /rejected that key\.\s+(\S[\s\S]{0,400})$/.exec(serverMessage);
+  return match === null ? "" : ` ${match[1].trim()}`;
+}
+
+// A sign-in has no key yet, so it is not "this key" that is being limited.
+function rateLimitSentence(provider: string, context: FailureContext): string {
+  return `${provider} is rate limiting this ${context.action === "exchange" ? "sign-in" : "key"}. Wait a minute, then try again.`;
+}
 
 const BY_REASON: Readonly<Record<string, Wording>> = {
-  key_rejected: (provider, context) =>
-    context.action === "save_key"
-      ? `${provider} didn't accept that key. Check that you copied all of it, with no spaces or quotes, and that it is a ${provider} key. Nothing was saved.`
-      : `${provider} no longer accepts the key you saved. Replace it with a new one.`,
+  key_rejected: (provider, context, serverMessage) => {
+    // The sign-in hands over a key OpenRouter has just issued: if it is refused, the person has
+    // nothing to re-copy.
+    if (context.action === "exchange") return `${provider} didn't accept the key it issued. No key was saved. Connect again, or paste a key instead.`;
+    return context.action === "save_key"
+      ? `${provider} didn't accept that key. Check that you copied all of it, with no spaces or quotes, and that it came from ${provider}.${rejectedHint(serverMessage)} Nothing was saved.`
+      : `${provider} no longer accepts the key you saved. Replace it with a new one.`;
+  },
   out_of_credit: (provider, context) =>
     withNote(`${provider} says that account has no credit left. Add credit with ${provider}, then try again.`, context),
+  // Choosing a model sends a real request with that model, and a provider that does not say "no such
+  // model" (OpenRouter) answers a mistyped id the same way as an account problem: the model comes
+  // first. A key check has no model in it, so there the refusal does point at the account.
   request_rejected: (provider, context) =>
     withNote(
-      `${provider} turned the request down. That usually points at the account rather than the key: billing that isn't switched on, or a region the service isn't offered in. Check the account with ${provider}, then try again.`,
+      context.action === "choose_model"
+        ? `${provider} turned the request down, often because of the model chosen. Pick one from the list, or check how you spelled it. If the model is right, check the account with ${provider}.`
+        : `${provider} turned the request down. That usually points at the account rather than the key: billing that isn't switched on, or a region the service isn't offered in. Check the account with ${provider}, then try again.`,
       context,
     ),
-  rate_limited: (provider, context) => withNote(`${provider} is rate limiting this key. Wait a minute, then try again.`, context),
-  in_flight_budget: (provider, context) => withNote(`${provider} is rate limiting this key. Wait a minute, then try again.`, context),
+  rate_limited: (provider, context) => withNote(rateLimitSentence(provider, context), context),
+  in_flight_budget: (provider, context) => withNote(rateLimitSentence(provider, context), context),
   timeout: (provider, context) => withNote(`${provider} took too long to answer. Try again in a moment.`, context),
   unreachable: (provider, context) => withNote(`Couldn't reach ${provider}. Try again in a moment.`, context),
   provider_error: (provider, context) => withNote(`${provider} couldn't answer that right now. Try again in a moment.`, context),
@@ -99,10 +122,15 @@ const SERVER_SENTENCE = new Set(["key_malformed", "base_url_refused"]);
 
 export function settingsFailureMessage(error: unknown, context: FailureContext, fallback: string): string {
   if (isNetworkError(error)) return NETWORK_MESSAGE;
-  const { reason } = fieldsOf(error);
-  if (typeof reason === "string" && Object.hasOwn(BY_REASON, reason)) return BY_REASON[reason](context.provider, context);
-  if (typeof reason === "string" && SERVER_SENTENCE.has(reason) && error instanceof Error && error.message.trim() !== "") {
-    return error.message;
+  const { reason, code, status } = fieldsOf(error);
+  const serverMessage = error instanceof Error ? error.message : "";
+  if (typeof reason === "string" && Object.hasOwn(BY_REASON, reason)) return BY_REASON[reason](context.provider, context, serverMessage);
+  if (typeof reason === "string" && SERVER_SENTENCE.has(reason) && serverMessage.trim() !== "") return serverMessage;
+  // A gateway or a cold start answers with no envelope at all, and the client's own sentence for
+  // that is "Request failed (503)". A failure with a code keeps the server's sentence.
+  if (code === undefined && typeof status === "number" && status >= 500) {
+    const note = nothingChanged(context);
+    return `Between Jobs had a problem on its side (${status}). ${note === "" ? "" : `${note} `}Try again in a moment.`;
   }
   return friendlyApiMessage(error, fallback);
 }
@@ -117,6 +145,16 @@ export function isRetryable(error: unknown): boolean {
   return typeof status === "number" && status >= 500;
 }
 
+// Whether a failed OpenRouter exchange can be repeated with the same code. Only a failure of the
+// exchange itself can: those carry a reason (a throttle, an outage, a slow answer) and the code was
+// not spent. A failure with no reason comes from the check of the key OpenRouter had already issued
+// (llm_credentials_routes.exchange_openrouter_code), after the code was used up, so repeating it can
+// only be refused: that sign-in has to be started again.
+export function isExchangeRetryable(error: unknown): boolean {
+  if (isNetworkError(error)) return true;
+  return isRetryable(error) && typeof fieldsOf(error).reason === "string";
+}
+
 // ── a return from OpenRouter that did not complete ───────────────────────
 
 export interface ConnectFailureView {
@@ -126,6 +164,12 @@ export interface ConnectFailureView {
 }
 
 const OPENROUTER = "OpenRouter";
+
+// A sentence that is joined to another one ends in a full stop (a bare "Request failed (503)" did not).
+function endSentence(sentence: string): string {
+  const trimmed = sentence.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
 
 export function connectFailureView(failure: ConnectFailure): ConnectFailureView {
   switch (failure.kind) {
@@ -154,7 +198,11 @@ export function connectFailureView(failure: ConnectFailure): ConnectFailureView 
       };
     case "retryable":
       return {
-        message: `${settingsFailureMessage(failure.error, { action: "exchange", provider: OPENROUTER }, "Couldn't finish connecting OpenRouter.")} Try finishing it again; if it keeps failing, connect again.`,
+        message: `${endSentence(
+          isNetworkError(failure.error)
+            ? "Couldn't reach Between Jobs. Check your connection."
+            : settingsFailureMessage(failure.error, { action: "exchange", provider: OPENROUTER }, "Couldn't finish connecting OpenRouter."),
+        )} Try finishing it again; if it keeps failing, connect again.`,
         next: "retry",
       };
   }
