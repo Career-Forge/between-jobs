@@ -16,7 +16,7 @@ import "../../styles/paper.css";
 
 // The trail line under a block: who acted, on what basis, and when (lib/trail.ts is the grammar).
 //
-//   <TrailLine trail={{ glyph: "model", actor: "Drafted by your model", basis: "on your OpenRouter key" }}
+//   <TrailLine trail={{ glyph: "model", actor: "Drafted by your model", basis: "on your key" }}
 //              receipt={[{ label: "run", value: runId }, ...]} />
 //
 // With a receipt it is a real <button> (44px tall around 12px text) that opens the receipt: inline

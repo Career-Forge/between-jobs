@@ -57,12 +57,18 @@ what it has read, and they draw only that.
   (`components/paper/BottomSheet.tsx`) under 960px; `StaticTrailLine` is the same line with nothing to open.
 - `src/lib/nextStep/` is the rule table behind the band, as a pure function:
   `nextStep(input)` answers `loading`, `none` or a step `{ sentence, action, why }`. Global rows
-  (`global.ts`: signed out, setup check failed, no profile, no OpenRouter key, the page's own read failed)
+  (`global.ts`: signed out, setup check failed, no profile, no usable model key, the page's own read failed)
   run before a page's own rows, and the first row that applies wins. To add a page, write its
   rows in a new file `src/lib/nextStep/pages/<name>.ts` that exports `rules = definePage(...)`. The registry is
   built from the files in that folder, so there is no list to edit, and a duplicate page name or row id fails
   when the module loads.
-  `components/paper/NextStepBand.tsx` draws the answer and holds the page's only cyan fill.
+  `components/paper/NextStepBand.tsx` draws the answer and holds the page's only cyan fill. While the page
+  has a request out for the step it passes `pending={{ intent, label }}`: every handler button and the form
+  submit button (named `SUBMIT_INTENT`) turn `aria-disabled` and ignore presses, and the one named by
+  `intent` reads `label` ("Generating...", "Signing in..."). A route link is left alone.
+  "No usable model key" is one row, G3, read by every page that supplies `credentials.modelKey`
+  (`lib/modelKey.ts`: a key counts only when it is checked and has a model chosen). Settings does not supply
+  it; its own rows (S1, S2, S2k) say the same thing with buttons that act in place.
 - `components/paper/PageHeader.tsx` (breadcrumb, the page's one `<h1>`, subtitle, actions) and
   `components/paper/StateViews.tsx` (loading, empty, partial, stale, setup-required, failure).
 - Their styles are in `src/styles/paper.css`, which defines no color of its own.
