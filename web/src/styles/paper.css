@@ -1,0 +1,513 @@
+/* The paper-trail primitives: the trail line and its receipt, the bottom sheet, the next-step band,
+ * the page header and the state views (components/paper/, lib/trail.ts). Tokens only -- no color is
+ * defined here. A page that uses a primitive gets this file through the component's own import. */
+
+@keyframes bj-paper-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Trail line                                                           */
+/* ------------------------------------------------------------------ */
+
+/* 12px body text, muted, never serif, never italic, never ivory (ivory is for the work, not its trail). */
+.bj-trail {
+  margin: 0;
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-trail);
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Dates, times, run ids and hashes. Inline-block keeps "Sep 22" on one line; a long id still wraps inside it. */
+.bj-trail-mono {
+  display: inline-block;
+  max-width: 100%;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-trail-mono);
+}
+
+.bj-trail-glyph {
+  font-size: 13px;
+}
+
+.bj-trail-glyph--violet {
+  color: var(--bj-violet);
+}
+
+.bj-trail-glyph--muted {
+  color: var(--bj-text-muted);
+}
+
+.bj-trail-glyph--ivory {
+  color: var(--bj-text);
+}
+
+.bj-trail-glyph--gold {
+  color: var(--bj-gold);
+}
+
+.bj-trail-glyph--danger {
+  color: var(--bj-danger);
+}
+
+.bj-trail-glyph--emerald {
+  color: var(--bj-emerald);
+}
+
+/* The 12px words sit inside a 44px hit area. */
+button.bj-trail-trigger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bj-text-muted);
+  text-align: left;
+}
+
+button.bj-trail-trigger:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--bj-text-muted);
+}
+
+button.bj-trail-trigger:hover .bj-trail-words {
+  text-decoration: underline;
+}
+
+.bj-trail-words {
+  min-width: 0;
+}
+
+/* The receipt: inline under the line as a disclosure. */
+.bj-trail-receipt {
+  max-width: 640px;
+  margin: 0 0 var(--bj-space-2);
+  animation: bj-paper-fade 200ms ease-out;
+}
+
+/* A bounded well on the canvas color. The mono face is for ids, hashes and times. */
+.bj-receipt {
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-bg);
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bj-receipt dl {
+  margin: 0;
+}
+
+.bj-receipt-row {
+  display: flex;
+  gap: var(--bj-space-3);
+}
+
+.bj-receipt-row dt {
+  flex: 0 0 96px;
+}
+
+.bj-receipt-row dd {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.bj-receipt-note {
+  margin-top: var(--bj-space-1);
+}
+
+/* ------------------------------------------------------------------ */
+/* Bottom sheet (phones: receipts)                                      */
+/* ------------------------------------------------------------------ */
+
+/* Above the tab bar (z-index 40): the scrim covers it and the page makes it inert. */
+.bj-sheet-root {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.bj-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--bj-bg) 72%, transparent);
+  animation: bj-paper-fade 200ms ease-out;
+}
+
+.bj-sheet {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: var(--bj-space-3) var(--bj-space-4) calc(var(--bj-space-4) + env(safe-area-inset-bottom));
+  border: 1px solid var(--bj-border);
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+  background: var(--bj-surface);
+  color: var(--bj-text);
+  animation: bj-paper-fade 200ms ease-out;
+}
+
+.bj-sheet:focus {
+  outline: none;
+}
+
+.bj-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bj-space-3);
+  margin-bottom: var(--bj-space-2);
+}
+
+.bj-sheet-title {
+  margin: 0;
+  font-size: var(--bj-text-title);
+  font-weight: 500;
+}
+
+button.bj-sheet-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Next-step band                                                       */
+/* ------------------------------------------------------------------ */
+
+/* A row between two 1px rules, on the page itself: no card, no fill, no shadow. Loading, unlit and
+   lit keep one minimum height so a step arriving does not push the page down. */
+.bj-band {
+  min-height: 112px;
+  margin: var(--bj-space-5) 0;
+  padding: 20px 0;
+  border-top: 1px solid var(--bj-border);
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-band-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bj-space-4) var(--bj-space-6);
+}
+
+.bj-band-body--fade {
+  animation: bj-paper-fade 200ms ease-out;
+}
+
+.bj-band-text {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 680px;
+}
+
+.bj-band-eyebrow {
+  margin: 0 0 6px;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+.bj-band-sentence,
+.bj-band-loading {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 22.5px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+.bj-band-loading {
+  color: var(--bj-text-muted);
+}
+
+.bj-band-sentence:focus {
+  outline: none;
+}
+
+.bj-band-glyph {
+  margin-right: 0.45em;
+  font-family: var(--bj-font-body);
+  font-size: 0.8em;
+  color: var(--bj-danger);
+}
+
+.bj-band-why {
+  margin: 8px 0 0;
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-band-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--bj-space-3);
+}
+
+/* The cyan button's size; its fill comes from .bj-primary or .bj-button-link-primary. */
+button.bj-band-action,
+a.bj-band-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--bj-space-2);
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 8px;
+  font-size: var(--bj-text-body);
+  white-space: nowrap;
+}
+
+/* The one disabled-primary case: a dashed cyan outline, not a fill, and it stays focusable. */
+button.bj-band-locked,
+button.bj-band-locked:hover {
+  background: transparent;
+  border: 1px dashed var(--bj-cyan);
+  color: var(--bj-cyan);
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.bj-band-hint {
+  flex-basis: 100%;
+  max-width: 30ch;
+  margin: 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  text-align: right;
+}
+
+/* Announced, not drawn. */
+.bj-band-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 959px) {
+  .bj-band {
+    margin: var(--bj-space-4) 0;
+  }
+
+  .bj-band-body {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bj-band-sentence,
+  .bj-band-loading {
+    font-size: 19.5px;
+  }
+
+  .bj-band-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  button.bj-band-action,
+  a.bj-band-action {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .bj-band-hint {
+    max-width: none;
+    text-align: left;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Page header                                                          */
+/* ------------------------------------------------------------------ */
+
+.bj-page-header {
+  margin-bottom: var(--bj-space-4);
+}
+
+.bj-breadcrumb {
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-breadcrumb li + li::before {
+  content: "/";
+  margin: 0 var(--bj-space-2);
+}
+
+.bj-page-header-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--bj-space-4);
+  margin-top: var(--bj-space-1);
+}
+
+.bj-page-header-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+h1.bj-page-title {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: var(--bj-text-h1);
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+.bj-page-subtitle {
+  max-width: 680px;
+  margin: var(--bj-space-2) 0 0;
+  color: var(--bj-text-muted);
+}
+
+.bj-page-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: var(--bj-space-2);
+}
+
+@media (max-width: 959px) {
+  .bj-page-header-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* State views                                                          */
+/* ------------------------------------------------------------------ */
+
+.bj-state {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Static placeholder rows in the block's own shape: no shimmer. */
+.bj-skeleton-row {
+  margin-bottom: var(--bj-space-2);
+  border-radius: 8px;
+  background: var(--bj-surface-raised);
+}
+
+.bj-state-heading {
+  margin: 0 0 var(--bj-space-2);
+  font-size: var(--bj-text-title);
+  font-weight: 500;
+}
+
+.bj-state--empty .bj-state-body {
+  max-width: 680px;
+  color: var(--bj-text-muted);
+}
+
+.bj-state-link {
+  margin: var(--bj-space-3) 0 0;
+}
+
+/* Callouts: neutral outline for what is partial and what is missing, danger outline for a failure. */
+.bj-state--partial,
+.bj-state--setup,
+.bj-state--failure {
+  padding: 10px 14px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 8px;
+  color: var(--bj-text-muted);
+}
+
+.bj-state--failure {
+  border-color: var(--bj-danger);
+}
+
+.bj-state p {
+  margin: 0;
+}
+
+.bj-state--partial ul {
+  margin: var(--bj-space-1) 0 0;
+  padding-left: var(--bj-space-5);
+}
+
+.bj-state-missing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-1) var(--bj-space-3);
+  margin-top: var(--bj-space-2);
+}
+
+.bj-state--failure button {
+  margin-top: var(--bj-space-3);
+}
+
+.bj-state-glyph {
+  margin-right: 0.5em;
+  color: var(--bj-danger);
+}
+
+.bj-state--stale {
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bj-trail-receipt,
+  .bj-sheet-scrim,
+  .bj-sheet,
+  .bj-band-body--fade {
+    animation: none;
+  }
+}
