@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import appCss from "./app.css?raw";
 import tokensCss from "./tokens.css?raw";
-import { blockOf, declarationsFor, rulesOf, tokenResolver } from "./testing/css";
+import { blockOf, declarationsFor, rulesOf, tokenResolver, withoutMedia } from "./testing/css";
 
 // The design tokens, read as text (no DOM here, so no computed style): the palette contract stays as
 // it was, what was added is what the design calls for, and every text and non-text pair this work
@@ -132,7 +132,8 @@ describe("what was added", () => {
 
 describe("selection and buttons", () => {
   it("turns a chosen control into a maroon fill with ivory text and weight 600, and nothing else", () => {
-    const selected = declarationsFor(tokensCss, '.bj-selectable[aria-current="page"]');
+    // The unconditional rules only: the forced-colors block (tested below) restates the fill.
+    const selected = declarationsFor(withoutMedia(tokensCss), '.bj-selectable[aria-current="page"]');
     expect(selected).toEqual({
       background: "var(--bj-selected-bg)",
       color: "var(--bj-selected-text)",
@@ -194,6 +195,37 @@ describe("selection and buttons", () => {
     const rule = rulesOf(tokensCss).find((r) => r.selectors.includes('button[aria-disabled="true"]'));
     expect(rule?.selectors).toContain("button:disabled");
     expect(rule?.declarations.opacity).toBe("0.45");
+  });
+});
+
+describe("forced colors", () => {
+  // Windows High Contrast replaces author colors, and a maroon fill with no other cue (the design
+  // forbids underlines and edge bars) would vanish: every tab would look the same as the chosen one.
+  const selectedStates = ["page", "location"].map((v) => `[aria-current="${v}"]`).concat(["pressed", "selected", "checked"].map((v) => `[aria-${v}="true"]`));
+
+  it("redraws a chosen item in the system selection colors, for every state the primitive reads", () => {
+    const block = blockOf(tokensCss, "@media (forced-colors: active)") ?? "";
+    for (const state of selectedStates) {
+      for (const suffix of ["", ":hover"]) {
+        expect(declarationsFor(block, `.bj-selectable${state}${suffix}`), state + suffix).toMatchObject({
+          "forced-color-adjust": "none",
+          background: "Highlight",
+          color: "HighlightText",
+        });
+      }
+    }
+  });
+
+  it("does the same for the chosen segment of a view toggle, and uses no author color for it", () => {
+    const block = blockOf(appCss, "@media (forced-colors: active)") ?? "";
+    for (const suffix of ["", ":hover"]) {
+      expect(declarationsFor(block, `.bj-view-toggle button[aria-pressed="true"]${suffix}`)).toMatchObject({
+        "forced-color-adjust": "none",
+        background: "Highlight",
+        color: "HighlightText",
+      });
+    }
+    expect(block).not.toMatch(/#[0-9a-f]{3,6}|var\(/i);
   });
 });
 

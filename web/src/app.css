@@ -827,6 +827,16 @@ a.bj-contact-chip {
   background: var(--bj-selected-bg-hover);
 }
 
+/* The same forced-colors treatment as .bj-selectable (tokens.css): the chosen segment stays a fill. */
+@media (forced-colors: active) {
+  .bj-view-toggle button[aria-pressed="true"],
+  .bj-view-toggle button[aria-pressed="true"]:hover {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
 .bj-json-view {
   border: 1px solid var(--bj-border);
   border-radius: 10px;
