@@ -1,0 +1,135 @@
+/* The Privacy Policy and the Terms of Service (components/LegalDocumentView.tsx), signed out inside the
+ * public frame and signed in inside the app shell. The text is content/legal.ts and is not styled
+ * into anything else: this file is type and measure only. Reading prose is held to 680px, headings
+ * are the display serif, and the body is 16px at 1.65. There is no next-step band on these pages (a
+ * legal page has no "now"). Tokens only. */
+
+.bj-legal {
+  max-width: 680px;
+  min-width: 0;
+  padding-top: 32px;
+  overflow-wrap: anywhere;
+}
+
+.bj-legal h1 {
+  margin: 0 0 12px;
+  font-size: clamp(34px, 5vw, 48px);
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+}
+
+.bj-legal h2 {
+  margin: 48px 0 12px;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  scroll-margin-top: 24px;
+}
+
+.bj-legal h3 {
+  margin: 28px 0 8px;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.bj-legal p,
+.bj-legal li,
+.bj-legal dd {
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.bj-legal p {
+  margin: 0 0 14px;
+}
+
+/* The version and what-changed lines under the title stay small. */
+.bj-legal p.bj-small {
+  font-size: var(--bj-text-small);
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.bj-legal ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+
+.bj-legal-toc {
+  margin: 28px 0 8px;
+  padding: 16px 20px;
+  border: 1px solid var(--bj-border);
+  border-radius: 12px;
+  background: var(--bj-surface);
+}
+
+/* Fifteen entries read better in two columns than in one long list. */
+.bj-legal-toc ol {
+  columns: 2;
+  column-gap: 28px;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.bj-legal-toc li {
+  break-inside: avoid;
+}
+
+.bj-legal-toc a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  font-size: var(--bj-text-control);
+}
+
+.bj-legal-defs {
+  margin: 0 0 14px;
+}
+
+.bj-legal-defs dt {
+  margin-top: 14px;
+  font-weight: 600;
+}
+
+.bj-legal-defs dd {
+  margin: 2px 0 0;
+}
+
+/* A link inside a sentence is told apart by an underline, not by colour alone: cyan beside ivory or
+   muted text is about 1.5:1, under the 3:1 WCAG 1.4.1 asks for when colour is the only cue. Link lists
+   (the table of contents) keep the plain style. `ul`, not `li`, so the table of contents (an `ol`)
+   stays plain. */
+.bj-legal p a,
+.bj-legal ul a,
+.bj-legal dd a {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.bj-legal p a:hover,
+.bj-legal ul a:hover,
+.bj-legal dd a:hover {
+  color: var(--bj-cyan-hover);
+  text-decoration-thickness: 2px;
+}
+
+@media (max-width: 719px) {
+  .bj-legal {
+    padding-top: 20px;
+  }
+
+  .bj-legal-toc ol {
+    columns: 1;
+  }
+
+  .bj-legal h2 {
+    margin-top: 36px;
+    font-size: 24px;
+  }
+}

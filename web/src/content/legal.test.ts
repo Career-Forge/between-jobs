@@ -1550,13 +1550,8 @@ describe("the landing page's claims", () => {
     expect(apiModule("application_status_classifier")).toContain("Reply text:");
   });
 
-  it("describe the four things the product does, and nothing it does not", () => {
-    expect(LANDING.features.map((feature) => feature.title)).toEqual([
-      "Find roles",
-      "Track applications",
-      "Prepare documents",
-      "Practice interviews",
-    ]);
+  it("describe the three chapters of what the product does, and nothing it does not", () => {
+    expect(LANDING.chapters.map((chapter) => chapter.title)).toEqual(["Discover", "Prepare", "Keep moving"]);
   });
 });
 

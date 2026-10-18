@@ -1,0 +1,148 @@
+/* The sign-in, register and password-reset screen (pages/Login.tsx). Tokens only. One column that
+ * fits a 375px phone: the wordmark, the next-step band (whose button submits the form), then the card
+ * with the fields. Inputs are 16px so a phone does not zoom the page when one takes focus, and every
+ * control is at least 44px tall. The band holds this screen's one cyan fill; the Google button is
+ * outlined. The reset form, which has no band, keeps its own cyan button. */
+
+.bj-login {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100vh;
+  padding: 32px 16px 48px;
+}
+
+.bj-login-column {
+  width: 100%;
+  max-width: 440px;
+  min-width: 0;
+}
+
+.bj-login-brand {
+  margin: 0 0 4px;
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.bj-login-column .bj-band {
+  min-height: 0;
+  margin: 16px 0 20px;
+}
+
+.bj-login-card {
+  width: 100%;
+  min-width: 0;
+  padding: 28px;
+  border: 1px solid var(--bj-border);
+  border-radius: 12px;
+  background: var(--bj-surface);
+}
+
+.bj-login-card h2 {
+  margin: 0 0 20px;
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.bj-login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.bj-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bj-field label {
+  font-size: var(--bj-text-small);
+  font-weight: 500;
+  color: var(--bj-text-muted);
+}
+
+.bj-field-hint {
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+/* 16px stops iOS from zooming in when a field takes focus. */
+.bj-login-card input {
+  width: 100%;
+  min-height: 44px;
+  font-size: 16px;
+  border-color: var(--bj-outline);
+}
+
+.bj-login-busy:empty {
+  display: none;
+}
+
+.bj-login-card .bj-link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 0;
+  font-size: var(--bj-text-control);
+}
+
+.bj-google-button {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  font-size: var(--bj-text-body);
+}
+
+.bj-login-card .bj-reset-request button.bj-primary {
+  min-height: 46px;
+  font-size: var(--bj-text-body);
+}
+
+.bj-login-legal {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-login-legal .bj-legal-links {
+  justify-content: center;
+}
+
+.bj-login-legal .bj-legal-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.bj-consent-notice {
+  margin: 0;
+}
+
+/* Outside the form, between its buttons and the Google one. */
+.bj-login-card .bj-consent-notice {
+  margin: 12px 0 0;
+}
+
+/* A link inside a sentence is told apart by an underline, not by colour alone. */
+.bj-consent-notice a {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.bj-consent-notice a:hover {
+  color: var(--bj-cyan-hover);
+  text-decoration-thickness: 2px;
+}
+
+@media (max-width: 719px) {
+  .bj-login {
+    padding-top: 20px;
+  }
+
+  .bj-login-card {
+    padding: 22px 18px;
+  }
+}

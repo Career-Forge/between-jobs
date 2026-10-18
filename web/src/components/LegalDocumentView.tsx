@@ -8,6 +8,7 @@ import {
   type Inline,
   type LegalDocument,
 } from "../content/legal";
+import "../styles/legal.css";
 
 // Draws one legal document (content/legal.ts): a title, which version it is and when it took
 // effect, a short table of contents, and the sections. A pure function of its props, with no

@@ -62,7 +62,7 @@ export default function App() {
   }
   if (view === "landing") {
     return (
-      <PublicLayout>
+      <PublicLayout variant="landing">
         <Landing />
       </PublicLayout>
     );
