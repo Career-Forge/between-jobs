@@ -6,7 +6,7 @@ import { GLOBAL_ROWS } from "./global";
 import { PAGES, nextStep, nextStepWithRow } from "./index";
 import { definePage, type NextStep, type NextStepInput, type NextStepRow, type ProfileFacts, type SetupCheck } from "./types";
 
-// One row of the rule table per case: the input a page can read, the row that decides, and what it says.
+// One row per case: the input a page can read, the row that decides, and what it says.
 
 const ready = <T>(value: T): SetupCheck<T> => ({ state: "ready", value });
 const profile = (facts: Partial<ProfileFacts> = {}): SetupCheck<ProfileFacts> =>
@@ -165,7 +165,7 @@ const ROWS: Row[] = [
   },
 ];
 
-describe("the rule table", () => {
+describe("the global and landing rows", () => {
   it.each(ROWS.map((row) => [row.name, row] as const))("%s", (_name, row) => {
     const evaluation = nextStepWithRow(row.input);
     expect(evaluation.rowId).toBe(row.id);
@@ -262,7 +262,7 @@ describe("evaluation order", () => {
     expect(evaluation.rowId).toBe("G");
   });
 
-  it("with the real table, a signed-in page without a profile gets G2 and never its own row", () => {
+  it("with the real global rows, a signed-in page without a profile gets G2 and never its own row", () => {
     const pageRow = row("T1", step("the page's own"));
     const input = inApp({ profile: ready({ active: false, importWaiting: false }) });
     expect(evaluateWithRow(input, GLOBAL_ROWS, [definePage("today", [pageRow])]).rowId).toBe("G2");

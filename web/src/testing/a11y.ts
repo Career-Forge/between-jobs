@@ -3,7 +3,7 @@
 //
 // WHAT THIS CANNOT SEE. jsdom does no layout and paints nothing, so axe's `color-contrast` rule
 // cannot run here and is switched off. Contrast is pinned a different way: tokens.test.ts computes
-// the ratio of every color pair the design introduces, and the components only use those pairs. The
+// the ratio of every color pair the paper stylesheet draws, and the components only use those pairs. The
 // same goes for target size and anything that depends on a stylesheet: this checks the markup's
 // roles, names, ARIA attributes and structure, not how it looks.
 //

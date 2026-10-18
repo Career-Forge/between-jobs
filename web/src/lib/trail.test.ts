@@ -29,7 +29,7 @@ function mulberry32(seed: number): () => number {
 }
 
 describe("the glyph set", () => {
-  it("has the seven glyphs, each with the color and meaning the design gives it", () => {
+  it("has the seven glyphs, each with the color and meaning TRAIL_GLYPHS gives it", () => {
     expect([...GLYPHS].sort()).toEqual(["code", "engine", "evidence", "failed", "model", "passed", "you"]);
     expect(TRAIL_GLYPHS.model).toMatchObject({ char: "✦", tone: "violet" });
     expect(TRAIL_GLYPHS.engine).toMatchObject({ char: "✦", tone: "violet", word: "engine" });
