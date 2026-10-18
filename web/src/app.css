@@ -28,19 +28,15 @@
   text-decoration: none;
 }
 
+/* ------------------------------------------------------------------ */
+/* The signed-in shell (components/AppShell.tsx)                        */
+/*   960px and wider: a 220px rail on the left, the page beside it.     */
+/*   Under 960px: a slim top bar, the page, a bottom tab bar.           */
+/* ------------------------------------------------------------------ */
+
 .bj-shell {
   display: flex;
   min-height: 100vh;
-}
-
-.bj-nav {
-  width: 220px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--bj-border);
-  padding: 24px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
 }
 
 /* The brand lockup (components/Wordmark.tsx): the serif name with a small red dot after "Jobs". The
@@ -68,41 +64,340 @@
   background: var(--bj-brand-dot);
 }
 
-.bj-nav nav {
+.bj-rail {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  flex: none;
+  width: 220px;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-4);
+  padding: 22px 14px 20px;
+  background: var(--bj-bg);
+  border-right: 1px solid var(--bj-border);
+}
+
+.bj-rail-brand {
+  align-self: flex-start;
+  padding: 0 var(--bj-space-3);
+  font-size: 21px;
+  color: var(--bj-text);
+}
+
+.bj-rail-brand:hover {
+  text-decoration: none;
+}
+
+/* Reserved for the command palette; drawn so the space is honest, and nothing in it can be used. */
+.bj-palette-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border: 1px dashed var(--bj-border);
+  border-radius: 7px;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-badge);
+  text-align: center;
+}
+
+.bj-rail-nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
+/* A row of the rail. Selection is the shared primitive (.bj-selectable, tokens.css), so a row
+   marked aria-current gets the maroon fill from there, not from anything here. */
 .bj-nav-item {
-  display: block;
-  padding: 9px 12px;
-  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-3);
+  min-height: 40px;
+  padding: 0 var(--bj-space-3);
+  border-radius: 7px;
   color: var(--bj-text-muted);
-  font-size: 14px;
+  font-size: var(--bj-text-control);
 }
 
 .bj-nav-item:hover {
-  color: var(--bj-text);
   text-decoration: none;
-  background: var(--bj-surface);
 }
 
-/* Maroon = navigation/selected context -- the one place it appears. */
-.bj-nav-item.active {
-  background: var(--bj-maroon);
+.bj-nav-item:not([aria-current]):hover {
   color: var(--bj-text);
+  background: var(--bj-hover-bg);
+}
+
+.bj-icon {
+  flex: none;
 }
 
 .bj-nav-footer {
   margin-top: auto;
-  padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bj-rail-email {
+  margin: 0 0 var(--bj-space-2);
+  padding: 0 var(--bj-space-3);
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-badge);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.bj-rail-signout {
+  width: 100%;
+  min-height: 36px;
+  margin-top: var(--bj-space-2);
+  font-size: var(--bj-text-small);
 }
 
 .bj-main {
   flex: 1;
+  min-width: 0;
   padding: 40px 48px;
   max-width: 960px;
+}
+
+@media (max-width: 1279px) {
+  .bj-main {
+    padding: 40px 32px;
+  }
+}
+
+@media (pointer: coarse) {
+  .bj-nav-item {
+    min-height: 44px;
+  }
+
+  .bj-rail-signout {
+    min-height: 44px;
+  }
+}
+
+/* Phone chrome: absent on a wide screen, and the rail is absent here. */
+.bj-topbar,
+.bj-tabbar {
+  display: none;
+}
+
+.bj-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  align-items: center;
+  height: calc(56px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) var(--bj-space-4) 0;
+  background: var(--bj-bg);
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-topbar-brand {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 21px;
+  color: var(--bj-text);
+}
+
+.bj-topbar-brand:hover {
+  text-decoration: none;
+}
+
+.bj-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 2px;
+  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  background: var(--bj-bg);
+  border-top: 1px solid var(--bj-border);
+}
+
+/* Five labels share 375px, so the label is 12px and weight 600 -- the one place text on the maroon
+   selection is under 13px. The tab is the whole 56px cell: well over the 44px minimum target. */
+.bj-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 56px;
+  padding: 4px 0;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-badge);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.bj-tab:hover {
+  text-decoration: none;
+}
+
+.bj-tab:not([aria-current]):hover {
+  color: var(--bj-text);
+  background: var(--bj-hover-bg);
+}
+
+.bj-tab .bj-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.bj-tab span {
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+/* The More sheet: a modal <dialog> pinned to the bottom edge. */
+.bj-more-sheet {
+  position: fixed;
+  inset: auto 0 0 0;
+  width: 100%;
+  max-width: none;
+  max-height: 85vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--bj-border);
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+  background: var(--bj-surface);
+  color: var(--bj-text);
+}
+
+.bj-more-sheet::backdrop {
+  background: rgba(7, 6, 7, 0.72);
+}
+
+.bj-more-sheet[open],
+.bj-more-sheet[open]::backdrop {
+  animation: bj-fade-in 200ms ease-out;
+}
+
+.bj-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-2);
+  padding: var(--bj-space-4) var(--bj-space-4) calc(var(--bj-space-4) + env(safe-area-inset-bottom));
+}
+
+.bj-more-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bj-more-head h2 {
+  margin: 0;
+  font-size: var(--bj-text-title);
+}
+
+.bj-more-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.bj-more-sheet nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bj-more-row {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-3);
+  min-height: 52px;
+  padding: 0 var(--bj-space-3);
+  border-radius: 10px;
+  color: var(--bj-text);
+  font-size: var(--bj-text-body);
+  text-align: left;
+}
+
+.bj-more-row:hover {
+  text-decoration: none;
+}
+
+.bj-more-row:not([aria-current]):hover {
+  background: var(--bj-hover-bg-raised);
+}
+
+.bj-more-signout {
+  width: 100%;
+  border: 1px solid var(--bj-outline);
+  background: transparent;
+}
+
+.bj-more-sheet .bj-legal-links {
+  padding: var(--bj-space-2) var(--bj-space-3) 0;
+}
+
+/* The page behind an open sheet does not scroll. */
+body:has(.bj-more-sheet[open]) {
+  overflow: hidden;
+}
+
+@keyframes bj-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Reserved for the assistant drawer: 360px on the right edge, above the page. Hidden (and
+   display: none) until something real replaces it. */
+.bj-assistant-slot {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  width: 360px;
+  max-width: 100%;
+}
+
+@media (max-width: 959px) {
+  .bj-shell {
+    flex-direction: column;
+  }
+
+  .bj-rail {
+    display: none;
+  }
+
+  .bj-topbar {
+    display: flex;
+  }
+
+  .bj-tabbar {
+    display: grid;
+  }
+
+  .bj-main {
+    width: 100%;
+    max-width: none;
+    padding: var(--bj-space-4) var(--bj-space-4) calc(72px + var(--bj-space-4) + env(safe-area-inset-bottom));
+  }
 }
 
 .bj-empty {

@@ -1,8 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
+import { AppShell } from "./components/AppShell";
 import { EnrollmentGate } from "./components/EnrollmentGate";
-import { LegalLinks } from "./components/LegalLinks";
-import { PrimaryNav } from "./components/PrimaryNav";
 import { PublicLayout } from "./components/PublicLayout";
 import { UPDATE_PASSWORD_PATH, recoveryRedirect } from "./lib/passwordReset";
 import {
@@ -96,35 +95,25 @@ export default function App() {
   }
 
   return (
-    <div className="bj-shell">
-      <aside className="bj-nav">
-        <div className="bj-wordmark">Between Jobs</div>
-        <PrimaryNav />
-        <div className="bj-nav-footer">
-          <button onClick={() => void signOut()}>Sign out</button>
-          <LegalLinks />
-        </div>
-      </aside>
-      <main className="bj-main">
-        {/* When the server requires the tester programme, a person who has not joined sees the
-            enrollment page here instead of any page but the exempt ones (lib/enrollment.ts). */}
-        <EnrollmentGate>
-          <Routes>
-            <Route path="/" element={<Today />} />
-            <Route path="/discover" element={<Discover />} />
-            <Route path="/hiring-signals" element={<HiringSignals />} />
-            <Route path="/applications" element={<Applications />} />
-            <Route path="/applications/:id" element={<ApplicationWorkspace />} />
-            <Route path="/practice" element={<Practice />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/profile/integrations" element={<Integrations />} />
-            <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
-            <Route path={PRIVACY_PATH} element={<Privacy />} />
-            <Route path={TERMS_PATH} element={<Terms />} />
-            <Route path={ENROLL_PATH} element={<Enroll />} />
-          </Routes>
-        </EnrollmentGate>
-      </main>
-    </div>
+    <AppShell email={session?.user.email ?? null} onSignOut={() => void signOut()}>
+      {/* When the server requires the tester programme, a person who has not joined sees the
+          enrollment page here instead of any page but the exempt ones (lib/enrollment.ts). */}
+      <EnrollmentGate>
+        <Routes>
+          <Route path="/" element={<Today />} />
+          <Route path="/discover" element={<Discover />} />
+          <Route path="/hiring-signals" element={<HiringSignals />} />
+          <Route path="/applications" element={<Applications />} />
+          <Route path="/applications/:id" element={<ApplicationWorkspace />} />
+          <Route path="/practice" element={<Practice />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/profile/integrations" element={<Integrations />} />
+          <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
+          <Route path={PRIVACY_PATH} element={<Privacy />} />
+          <Route path={TERMS_PATH} element={<Terms />} />
+          <Route path={ENROLL_PATH} element={<Enroll />} />
+        </Routes>
+      </EnrollmentGate>
+    </AppShell>
   );
 }

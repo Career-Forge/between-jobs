@@ -40,9 +40,11 @@ function menu(enabled: boolean): string {
   );
 }
 
+// Each link as "label href". The nav links carry an icon (a hidden SVG), so the label is the
+// text left once the tags are dropped.
 function links(markup: string): string[] {
-  return [...markup.matchAll(/<a [^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/g)].map(
-    (m) => `${m[2]} ${m[1]}`,
+  return [...markup.matchAll(/<a [^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map(
+    (m) => `${m[2].replace(/<[^>]+>/g, "")} ${m[1]}`,
   );
 }
 
