@@ -25,6 +25,7 @@ from between_jobs.api.provider_registry import (
     QWEN,
     BaseUrlRejected,
     allowlisted_endpoint,
+    clean_secret,
     dialect_for_base_url,
     effective_base_url,
     public_catalog,
@@ -461,3 +462,18 @@ def test_every_provider_names_the_page_to_recheck_when_its_behaviour_changes() -
     for spec in PROVIDERS.values():
         if spec.id != CUSTOM:
             assert spec.docs_url.startswith("https://"), spec.id
+
+
+def test_a_key_is_trimmed_and_must_be_printable_ascii_without_spaces() -> None:
+    assert clean_secret("  sk-abcdefgh01234567 \n") == "sk-abcdefgh01234567"
+    for bad in (
+        "",
+        "short",
+        "has space inside-0123",
+        "tab\tinside-0123",
+        "caf\u00e9-0123456789",
+        "k" * 513,
+    ):
+        with pytest.raises(ValueError) as caught:
+            clean_secret(bad)
+        assert bad.strip() == "" or bad.strip() not in str(caught.value)

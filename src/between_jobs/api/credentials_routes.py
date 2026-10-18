@@ -80,6 +80,7 @@ from .provider_registry import (
     OPENROUTER,
     PROVIDERS,
     BaseUrlRejected,
+    clean_secret,
     effective_base_url,
     invalid_input,
     storable_base_url,
@@ -499,6 +500,12 @@ async def _save_registry_llm_credential(
     if spec is None or spec.id == OPENROUTER:
         raise ApiError("INVALID_INPUT", f"llm/{body.provider} isn't a supported credential yet.")
     try:
+        secret = clean_secret(body.secret)
+    except ValueError as e:
+        raise ApiError(
+            "INVALID_INPUT", str(e), details={"reason": "key_malformed", "provider": spec.id}
+        ) from None
+    try:
         stored_url = storable_base_url(
             spec, region=body.region, workspace_id=body.workspace_id, base_url=body.base_url
         )
@@ -507,7 +514,7 @@ async def _save_registry_llm_credential(
         raise invalid_input(e) from e
 
     try:
-        await check_key(http, spec, call_url, body.secret)
+        await check_key(http, spec, call_url, secret)
     except Inconclusive:
         # This provider has no route that can say whether a key is good: one real completion
         # with a model the person names is the check (below).
@@ -519,14 +526,14 @@ async def _save_registry_llm_credential(
                 details={"reason": "model_required_to_check_key", "provider": spec.id},
             ) from None
     if body.model:
-        await probe_model(api_key=body.secret, model=body.model, base_url=call_url)
+        await probe_model(api_key=secret, model=body.model, base_url=call_url)
 
     saved = await save_credential(
         supabase,
         user_id,
         service="llm",
         provider=spec.id,
-        secret=body.secret,
+        secret=secret,
         model=await _model_already_chosen(supabase, user_id, spec.id, body.model),
         base_url=stored_url,
         is_validated=True,

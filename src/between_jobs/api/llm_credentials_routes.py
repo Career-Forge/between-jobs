@@ -48,6 +48,7 @@ from .provider_registry import (
     PROVIDERS,
     BaseUrlRejected,
     ProviderSpec,
+    clean_secret,
     effective_base_url,
     invalid_input,
     public_catalog,
@@ -121,7 +122,12 @@ async def list_provider_models(
             base_url = effective_base_url(spec.id, stored)
         except BaseUrlRejected as e:
             raise invalid_input(e) from e
-        secret = body.secret.get_secret_value()
+        try:
+            secret = clean_secret(body.secret.get_secret_value())
+        except ValueError as e:
+            raise ApiError(
+                "INVALID_INPUT", str(e), details={"reason": "key_malformed", "provider": spec.id}
+            ) from None
     else:
         secret, base_url = await _saved_key(supabase, user_id, spec)
 

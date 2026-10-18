@@ -277,6 +277,41 @@ def test_a_provider_with_one_address_takes_no_other_and_sends_nothing(
     assert server.requests == [] and server.db.credentials_of(ALICE) == []
 
 
+@pytest.mark.parametrize(
+    "secret",
+    [
+        "short",
+        "two words in one key",
+        "new\nline-0123456789",
+        "caf\u00e9-key-0123456789",
+        "k" * 513,
+    ],
+)
+def test_something_that_cannot_be_a_key_is_refused_before_any_request(
+    client: TestClient, server: Server, secret: str
+) -> None:
+    saved = client.post("/credentials", json=_save("openai", secret=secret))
+    listed = client.post("/credentials/llm/models", json={"provider": "openai", "secret": secret})
+
+    assert saved.status_code == 422 and listed.status_code == 422
+    assert server.requests == [] and server.db.credentials_of(ALICE) == []
+    if len(secret) < 500:
+        assert secret not in saved.text and secret not in listed.text
+    assert _error(saved)["details"]["reason"] == "key_malformed"
+
+
+def test_the_whitespace_a_paste_leaves_around_a_key_is_trimmed(
+    client: TestClient, server: Server
+) -> None:
+    server.upstream = lambda r: json_response(200, {"data": []})
+
+    response = client.post("/credentials", json=_save("openai", secret=f"  {KEY}\n"))
+
+    assert response.status_code == 201
+    assert server.requests[0].headers["authorization"] == f"Bearer {KEY}"
+    assert server.db.credentials_of(ALICE)[0]["secret_encrypted"] == f"enc[{KEY}]"
+
+
 # -- the custom provider and its allowlist --------------------------------------------------------
 
 

@@ -617,6 +617,21 @@ def effective_base_url(provider_id: str, stored: str | None) -> str | None:
     return spec.base_url
 
 
+_KEY_SHAPE = re.compile(r"[\x21-\x7e]{8,512}")
+"""What a key may look like to be sent in a header: printable ASCII with no space, 8 to 512
+characters. Every provider's keys fit; a pasted newline, a non-ASCII character or a quoted
+sentence does not, and would otherwise surface as a protocol error mid-request."""
+
+
+def clean_secret(raw: str) -> str:
+    """`raw` without the whitespace a paste leaves around a key, or ValueError if what is left
+    cannot be a key. The message is safe to show and never repeats the value."""
+    text = raw.strip()
+    if not _KEY_SHAPE.fullmatch(text):
+        raise ValueError("That doesn't look like an API key: paste only the key itself.")
+    return text
+
+
 # -- what the web app is told ----------------------------------------------------------------
 
 
