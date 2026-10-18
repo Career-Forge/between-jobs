@@ -224,7 +224,8 @@ export function extractReturn(search: string): ExtractedReturn | null {
 }
 
 export type ReturnFailure =
-  // OpenRouter sent the person back without a code: they pressed Deny, or the page errored.
+  // OpenRouter sent the person back with an error and no code: they pressed Deny, or its page
+  // errored. Whether a state came back with it is not looked at (it does not on a denial).
   | "denied"
   // A code came back that this tab did not ask for, or for a different start.
   | "state_mismatch"
@@ -232,21 +233,24 @@ export type ReturnFailure =
   | "expired"
   // Nothing was waiting: another tab, a cleared session, or a link not made by this flow.
   | "no_pending"
-  // The state matched but there was no code.
+  // The state matched but there was no code and no error.
   | "no_code";
 
 export type ReturnOutcome =
-  | { kind: "ready"; code: string; verifier: string }
+  | { kind: "ready"; code: string; verifier: string; /** Epoch ms: when the sign-in this return belongs to runs out. */ expiresAt: number }
   | { kind: "failed"; reason: ReturnFailure };
 
 // Compares what came back with what was kept. The stored values are removed whatever the answer.
 export function resolveReturn(params: ReturnParams, storage: SessionStorageLike | null, now: number): ReturnOutcome {
   const taken = takePending(storage, now);
+  // A person who pressed Deny comes back with an error and no code, and OpenRouter sends no state
+  // with it, so there is nothing to compare and nothing to accept: it is a denial, said as one.
+  if (params.code === null && params.error !== null) return { kind: "failed", reason: "denied" };
   if (taken.kind === "expired") return { kind: "failed", reason: "expired" };
-  if (taken.kind === "missing") return { kind: "failed", reason: params.code === null && params.error !== null ? "denied" : "no_pending" };
+  if (taken.kind === "missing") return { kind: "failed", reason: "no_pending" };
   if (params.state === null || params.state !== taken.pending.state) return { kind: "failed", reason: "state_mismatch" };
-  if (params.code === null) return { kind: "failed", reason: params.error !== null ? "denied" : "no_code" };
-  return { kind: "ready", code: params.code, verifier: taken.pending.verifier };
+  if (params.code === null) return { kind: "failed", reason: "no_code" };
+  return { kind: "ready", code: params.code, verifier: taken.pending.verifier, expiresAt: taken.pending.expiresAt };
 }
 
 export interface BrowserLike {
@@ -293,16 +297,17 @@ export interface ConnectStore<T> {
   begin(exchange: Exchange<T>, isRetryable: (error: unknown) => boolean): void;
   /** Runs it again after a retryable failure, from memory. */
   retry(): void;
-  /** The person has seen the result. */
+  /** The person has seen the result, or signed out: whatever was waiting is dropped. */
   acknowledge(): void;
   getSnapshot(): ConnectState<T>;
   subscribe(listener: () => void): () => void;
 }
 
-export function createConnectStore<T>(): ConnectStore<T> {
+// `clock` is the time the ten minutes are measured against; a test supplies its own.
+export function createConnectStore<T>(clock: () => number = Date.now): ConnectStore<T> {
   let state: ConnectState<T> = { phase: "idle" };
   // Held in memory only, and dropped as soon as the exchange is over.
-  let waiting: { code: string; verifier: string } | null = null;
+  let waiting: { code: string; verifier: string; expiresAt: number } | null = null;
   let lastExchange: Exchange<T> | null = null;
   let lastRetryable: ((error: unknown) => boolean) | null = null;
   const listeners = new Set<() => void>();
@@ -314,6 +319,13 @@ export function createConnectStore<T>(): ConnectStore<T> {
 
   function run(exchange: Exchange<T>, isRetryable: (error: unknown) => boolean): void {
     if (waiting === null) return;
+    // A code that waited past the sign-in's ten minutes (a page left open on a login screen, say)
+    // is never sent: it would only be refused, or be used by whoever happens to be signed in now.
+    if (clock() >= waiting.expiresAt) {
+      waiting = null;
+      set({ phase: "failed", failure: { kind: "expired" } });
+      return;
+    }
     const { code, verifier } = waiting;
     lastExchange = exchange;
     lastRetryable = isRetryable;
@@ -342,7 +354,7 @@ export function createConnectStore<T>(): ConnectStore<T> {
         set({ phase: "failed", failure: { kind: outcome.reason } });
         return;
       }
-      waiting = { code: outcome.code, verifier: outcome.verifier };
+      waiting = { code: outcome.code, verifier: outcome.verifier, expiresAt: outcome.expiresAt };
       set({ phase: "idle" });
     },
     begin(exchange, isRetryable) {

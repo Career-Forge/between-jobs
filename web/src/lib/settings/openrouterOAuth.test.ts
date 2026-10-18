@@ -227,6 +227,7 @@ describe("matching a return to the start", () => {
       kind: "ready",
       code: "the-code",
       verifier: "verifier-".padEnd(50, "x"),
+      expiresAt: NOW + 1000,
     });
   });
 
@@ -249,10 +250,21 @@ describe("matching a return to the start", () => {
     expect(resolveReturn({ code: "the-code", state: "state-1", error: null }, null, NOW)).toEqual({ kind: "failed", reason: "no_pending" });
   });
 
-  it("reads Deny as denied, with or without the state", () => {
+  it("reads Deny as denied, with or without the state (OpenRouter sends none with a denial)", () => {
     expect(resolveReturn({ code: null, state: "state-1", error: "access_denied" }, waiting(), NOW)).toEqual({ kind: "failed", reason: "denied" });
-    expect(resolveReturn({ code: null, state: null, error: "access_denied" }, waiting(), NOW)).toEqual({ kind: "failed", reason: "state_mismatch" });
+    expect(resolveReturn({ code: null, state: null, error: "access_denied" }, waiting(), NOW)).toEqual({ kind: "failed", reason: "denied" });
     expect(resolveReturn({ code: null, state: null, error: "access_denied" }, new MemoryStorage(), NOW)).toEqual({ kind: "failed", reason: "denied" });
+    expect(resolveReturn({ code: null, state: null, error: "access_denied" }, waiting(NOW - 1), NOW)).toEqual({ kind: "failed", reason: "denied" });
+  });
+
+  it("still removes what it kept when the return was a denial", () => {
+    const storage = waiting();
+    resolveReturn({ code: null, state: null, error: "access_denied" }, storage, NOW);
+    expect(storage.items.has(OAUTH_STORAGE_KEY)).toBe(false);
+  });
+
+  it("keeps state_mismatch for a code that came back with the wrong state, even with an error beside it", () => {
+    expect(resolveReturn({ code: "the-code", state: "state-2", error: "x" }, waiting(), NOW)).toEqual({ kind: "failed", reason: "state_mismatch" });
   });
 
   it("says a matching state with no code is incomplete", () => {
@@ -293,6 +305,15 @@ describe("the return, in order", () => {
     expect(outcome).toMatchObject({ kind: "ready", code: "abcdefgh" });
   });
 
+  it("reads a Deny that comes back with no state as a denial, with the address cleaned either way", () => {
+    const storage = new MemoryStorage();
+    savePending(storage, { verifier: "v".repeat(50), state: "state-1", expiresAt: NOW + 5000 });
+    const { b, calls } = browser("?error=access_denied&error_description=The+user+denied.", storage);
+    expect(captureReturn(b, NOW, storage)).toEqual({ kind: "failed", reason: "denied" });
+    expect(calls[0]).toBe("replaceState /settings");
+    expect(storage.items.has(OAUTH_STORAGE_KEY)).toBe(false);
+  });
+
   it("keeps the other query parameters and the fragment when it rewrites the address", () => {
     const { b, calls } = browser("?capability=job_scoring&code=abcdefgh&state=s", new MemoryStorage(), "/settings", "#ai-provider");
     captureReturn(b, NOW, new MemoryStorage());
@@ -323,13 +344,56 @@ describe("the return, in order", () => {
   });
 });
 
+describe("the exchange store, and how long a code may wait", () => {
+  it("never sends a code that waited past the sign-in's ten minutes, and says it ran out", () => {
+    let now = NOW;
+    const store = createConnectStore<string>(() => now);
+    const exchange = vi.fn(async () => "row");
+    store.receive({ kind: "ready", code: "the-code", verifier: "the-verifier", expiresAt: NOW + 5000 });
+    now = NOW + 5000;
+    store.begin(exchange, () => false);
+    expect(exchange).not.toHaveBeenCalled();
+    expect(store.getSnapshot()).toEqual({ phase: "failed", failure: { kind: "expired" } });
+    // and it is gone: nothing can start it later
+    store.acknowledge();
+    store.begin(exchange, () => false);
+    expect(exchange).not.toHaveBeenCalled();
+  });
+
+  it("drops a waiting code when the person signs out, so whoever signs in next cannot spend it", () => {
+    const store = createConnectStore<string>(() => NOW);
+    const exchange = vi.fn(async () => "row");
+    store.receive({ kind: "ready", code: "the-code", verifier: "the-verifier", expiresAt: NOW + 5000 });
+    store.acknowledge();
+    store.begin(exchange, () => false);
+    expect(exchange).not.toHaveBeenCalled();
+    expect(store.getSnapshot()).toEqual({ phase: "idle" });
+  });
+
+  it("does not repeat an exchange after the ten minutes either", async () => {
+    let now = NOW;
+    const store = createConnectStore<string>(() => now);
+    const exchange = vi.fn(async () => {
+      throw new Error("busy");
+    });
+    store.receive({ kind: "ready", code: "the-code", verifier: "the-verifier", expiresAt: NOW + 5000 });
+    store.begin(exchange, () => true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.getSnapshot()).toMatchObject({ phase: "failed", failure: { kind: "retryable" } });
+    now = NOW + 6000;
+    store.retry();
+    expect(exchange).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot()).toEqual({ phase: "failed", failure: { kind: "expired" } });
+  });
+});
+
 describe("the exchange store", () => {
-  const ready: ReturnOutcome = { kind: "ready", code: "the-code", verifier: "the-verifier" };
+  const ready: ReturnOutcome = { kind: "ready", code: "the-code", verifier: "the-verifier", expiresAt: NOW + 5000 };
   const never = () => false;
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
   it("runs nothing when nothing came back", async () => {
-    const store = createConnectStore<string>();
+    const store = createConnectStore<string>(() => NOW);
     const exchange = vi.fn();
     store.receive(null);
     store.begin(exchange, never);
@@ -338,7 +402,7 @@ describe("the exchange store", () => {
   });
 
   it("sends the code and the verifier to the exchange, once, however many times the page asks", async () => {
-    const store = createConnectStore<string>();
+    const store = createConnectStore<string>(() => NOW);
     const exchange = vi.fn(async () => "row");
     store.receive(ready);
     store.begin(exchange, never);
@@ -350,7 +414,7 @@ describe("the exchange store", () => {
   });
 
   it("tells subscribers as it goes", async () => {
-    const store = createConnectStore<string>();
+    const store = createConnectStore<string>(() => NOW);
     const phases: string[] = [];
     store.subscribe(() => phases.push(store.getSnapshot().phase));
     store.receive(ready);
@@ -360,7 +424,7 @@ describe("the exchange store", () => {
   });
 
   it("reports a refused code as final, and forgets the code and verifier", async () => {
-    const store = createConnectStore<string>();
+    const store = createConnectStore<string>(() => NOW);
     const exchange = vi.fn(async () => {
       throw new Error("refused");
     });
@@ -373,7 +437,7 @@ describe("the exchange store", () => {
   });
 
   it("keeps the code for a failure that may pass, and retries from memory", async () => {
-    const store = createConnectStore<string>();
+    const store = createConnectStore<string>(() => NOW);
     let attempts = 0;
     const exchange = vi.fn(async () => {
       attempts += 1;
@@ -391,7 +455,7 @@ describe("the exchange store", () => {
   });
 
   it.each(["denied", "state_mismatch", "expired", "no_pending", "no_code"] as const)("carries a %s return as a failure with nothing to retry", (reason) => {
-    const store = createConnectStore<string>();
+    const store = createConnectStore<string>(() => NOW);
     store.receive({ kind: "failed", reason });
     const exchange = vi.fn();
     store.begin(exchange, never);
@@ -401,7 +465,7 @@ describe("the exchange store", () => {
   });
 
   it("goes back to idle once the person has seen the result, but not in the middle of an exchange", async () => {
-    const store = createConnectStore<string>();
+    const store = createConnectStore<string>(() => NOW);
     let finish: (value: string) => void = () => undefined;
     store.receive(ready);
     store.begin(() => new Promise<string>((resolve) => (finish = resolve)), never);

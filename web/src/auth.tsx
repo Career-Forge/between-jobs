@@ -8,6 +8,7 @@ import {
   type ChangeOutcome,
   type ResetOutcome,
 } from "./lib/passwordReset";
+import { connectStore } from "./lib/settings/openrouterOAuth";
 import { supabase } from "./lib/supabase";
 
 // Session state via supabase-js's own listener -- the same pattern the
@@ -52,6 +53,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
     const { data: subscription } = supabase.auth.onAuthStateChange((event, next) => {
+      // A code from OpenRouter that was waiting to be exchanged belongs to whoever was signed in
+      // when it was asked for: signing out ends that, so the next person cannot spend it.
+      if (event === "SIGNED_OUT") connectStore.acknowledge();
       setSession(next);
       setRecovery((current) => recoveryAfterEvent(current, event));
     });

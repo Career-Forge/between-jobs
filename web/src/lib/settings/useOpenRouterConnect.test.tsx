@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // @vitest-environment-options {"url": "https://app.example/settings"}
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { callsTo, on, reset } from "../../testing/fakeApi";
 import { settle } from "../../testing/forms";
@@ -47,6 +48,29 @@ describe("starting", () => {
     expect(navigate).toHaveBeenCalledTimes(1);
   });
 
+  it("frees the button, and drops the unused verifier, when the page is restored from the back/forward cache", async () => {
+    const navigate = vi.fn();
+    const hook = mount({ navigate, crypto: webCrypto });
+    hook().start();
+    await settle();
+    expect(hook().busy).toBe(true);
+    expect(window.sessionStorage.getItem("between-jobs:openrouter-oauth")).not.toBeNull();
+    // an ordinary pageshow (the first load) changes nothing
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: false }));
+    });
+    expect(hook().busy).toBe(true);
+    act(() => {
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+    });
+    expect(hook().busy).toBe(false);
+    expect(window.sessionStorage.getItem("between-jobs:openrouter-oauth")).toBeNull();
+    // and the person can start again
+    hook().start();
+    await settle();
+    expect(navigate).toHaveBeenCalledTimes(2);
+  });
+
   it("does nothing but say so where the browser cannot do the secure part", async () => {
     const navigate = vi.fn();
     const hook = mount({ navigate, crypto: { getRandomValues: webCrypto.getRandomValues.bind(webCrypto) } });
@@ -72,7 +96,7 @@ describe("starting", () => {
 describe("the exchange", () => {
   it("runs once for a return that is waiting, with the code and verifier in the body only", async () => {
     on("POST /credentials/openrouter/exchange", { id: "c", service: "llm", provider: "openrouter", model: null, is_validated: true, updated_at: "", scope: null });
-    connectStore.receive({ kind: "ready", code: "the-code-123", verifier: "the-verifier" });
+    connectStore.receive({ kind: "ready", code: "the-code-123", verifier: "the-verifier", expiresAt: Date.now() + 600_000 });
     const hook = mount({ navigate: vi.fn(), crypto: webCrypto });
     mount({ navigate: vi.fn(), crypto: webCrypto }); // a second mount (React's own double run) asks again
     await settle();

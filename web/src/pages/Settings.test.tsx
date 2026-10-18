@@ -295,7 +295,7 @@ describe("coming back from OpenRouter", () => {
     describeAccount([]);
     on("POST /credentials/openrouter/exchange", key("openrouter", { setup_state: "needs_model" }));
     on("POST /credentials/llm/models", MODELS);
-    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER });
+    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER, expiresAt: Date.now() + 600_000 });
     const { container } = page();
     await settle();
     // After the exchange the next GET /credentials shows the key.
@@ -314,7 +314,7 @@ describe("coming back from OpenRouter", () => {
     on("GET /credentials/llm/providers", CATALOG);
     on("POST /credentials/openrouter/exchange", key("openrouter", { setup_state: "needs_model" }));
     on("POST /credentials/llm/models", MODELS);
-    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER });
+    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER, expiresAt: Date.now() + 600_000 });
     const { container } = page();
     await settle(5);
     expect(text(query(container, "#openrouter"))).toContain("Needs a model");
@@ -331,7 +331,7 @@ describe("coming back from OpenRouter", () => {
     on("GET /profile/current", {});
     on("GET /credentials/llm/providers", CATALOG);
     on("POST /credentials/openrouter/exchange", ready);
-    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER });
+    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER, expiresAt: Date.now() + 600_000 });
     const { container } = page();
     await settle(5);
     expect(container.querySelector('p[role="status"]')?.textContent).toContain("OpenRouter is connected again. Your model is unchanged.");
@@ -372,7 +372,7 @@ describe("coming back from OpenRouter", () => {
   it("says OpenRouter refused the code, and that nothing was saved", async () => {
     describeAccount([]);
     on("POST /credentials/openrouter/exchange", new FakeApiError("OpenRouter did not accept that sign-in.", "PROVIDER_REJECTED", "oauth_code_rejected"));
-    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER });
+    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER, expiresAt: Date.now() + 600_000 });
     const { container } = page();
     await settle();
     const alert = [...container.querySelectorAll('[role="alert"]')].find((a) => text(a).includes("didn't accept that sign-in")) as Element;
@@ -389,7 +389,7 @@ describe("coming back from OpenRouter", () => {
       if (attempts === 1) throw new TypeError("Failed to fetch");
       return key("openrouter", { setup_state: "needs_model" });
     });
-    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER });
+    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER, expiresAt: Date.now() + 600_000 });
     const { container } = page();
     await settle();
     const alert = [...container.querySelectorAll('[role="alert"]')].find((a) => text(a).includes("Try finishing it again")) as Element;
@@ -405,7 +405,7 @@ describe("coming back from OpenRouter", () => {
     describeAccount([]);
     on("POST /credentials/openrouter/exchange", key("openrouter", { setup_state: "needs_model" }));
     on("POST /credentials/llm/models", MODELS);
-    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER });
+    connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER, expiresAt: Date.now() + 600_000 });
     page();
     await settle(4);
     for (const store of [globalThis.localStorage, window.sessionStorage]) {

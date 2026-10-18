@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { apiFetch } from "../api";
 import { SETTINGS_PATH } from "../settingsPaths";
 import { parseCredentialRows, type CredentialSummary } from "./credentials";
-import { connectStore, startConnect, tabStorage, type ConnectState, type CryptoLike } from "./openrouterOAuth";
+import { clearPending, connectStore, startConnect, tabStorage, type ConnectState, type CryptoLike } from "./openrouterOAuth";
 import { isRetryable, settingsFailureMessage } from "./settingsErrors";
 
 // The Settings page's hold on the OpenRouter sign-in: starting it, and what became of a return from
@@ -55,6 +55,19 @@ export function useOpenRouterConnect(deps: OpenRouterDeps = {}): OpenRouterConne
   // A return from OpenRouter that is waiting is exchanged once, however many times this runs.
   useEffect(() => {
     connectStore.begin(exchange, isRetryable);
+  }, []);
+
+  // Back from openrouter.ai with the button still pressed: a page the browser kept whole (the
+  // back/forward cache) comes back with its state, `busy` included, though the person is no longer
+  // on the way anywhere. They are here again, so the button is free and the unused verifier goes.
+  useEffect(() => {
+    const onShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      setBusy(false);
+      clearPending(tabStorage());
+    };
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
   }, []);
 
   const start = useCallback(() => {
