@@ -305,9 +305,13 @@ button.bj-sheet-close {
   gap: var(--bj-space-3);
 }
 
-/* The cyan button's size; its fill comes from .bj-primary or .bj-button-link-primary. */
+/* The cyan button's size; its fill comes from .bj-primary or .bj-button-link-primary. The link form is
+   named with .bj-band in front on purpose: app.css's plain link-button rule (a.bj-button-link: display
+   inline-block, its own padding, radius and size) ties a bare a.bj-band-action on specificity, so
+   which one won depended on the order the stylesheets were bundled in, and on a phone the label sat at
+   the left of the full-width button. One class more settles it for every page. */
 button.bj-band-action,
-a.bj-band-action {
+.bj-band a.bj-band-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -316,6 +320,7 @@ a.bj-band-action {
   padding: 0 22px;
   border-radius: 8px;
   font-size: var(--bj-text-body);
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -372,7 +377,7 @@ button.bj-band-locked:hover {
   }
 
   button.bj-band-action,
-  a.bj-band-action {
+  .bj-band a.bj-band-action {
     width: 100%;
     min-height: 48px;
   }

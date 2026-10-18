@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { PHONE_QUERY } from "../lib/useMediaQuery";
 import tokensCss from "../tokens.css?raw";
 import { blockOf, declarationsFor, rulesOf, tokenResolver, withoutMedia } from "../testing/css";
-import paperCss from "./paper.css?raw";
 import todayCss from "./today.css?raw";
 import pageSource from "../pages/Today.tsx?raw";
 
@@ -172,11 +171,8 @@ describe("links in a sentence", () => {
     expect(link.display).toBe("inline-flex");
   });
 
-  it("centers the words of a link drawn as the band's button here, not in the shared primitives", () => {
-    expect(declarationsFor(base, ".bj-band a.bj-band-action")["text-align"]).toBe("center");
-    for (const rule of rulesOf(paperCss).filter((candidate) => candidate.selectors.includes("a.bj-band-action"))) {
-      expect(rule.declarations["text-align"]).toBeUndefined();
-    }
+  it("leaves the centering of a link drawn as the band's button to the shared primitives", () => {
+    expect(rulesOf(base).filter((rule) => rule.selectors.some((selector) => selector.endsWith("a.bj-band-action")))).toEqual([]);
   });
 });
 

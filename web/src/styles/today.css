@@ -70,13 +70,6 @@
   color: var(--bj-danger);
 }
 
-/* A link drawn as the band's button is made inline-block by app.css (a.bj-button-link, later in the
-   cascade), which leaves flex out of it; where it is full width, on a phone, its words are centered
-   here instead. */
-.bj-band a.bj-band-action {
-  text-align: center;
-}
-
 .bj-band-item {
   display: flex;
   flex-direction: column;

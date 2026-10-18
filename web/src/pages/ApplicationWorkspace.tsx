@@ -191,7 +191,7 @@ function WorkspaceFrame({
 }) {
   return (
     <div>
-      <div className="bj-breadcrumb">
+      <div className="bj-workspace-breadcrumb">
         <Link to="/applications">Applications</Link>
         <span aria-hidden="true"> / </span>
         <span>{title ?? "Loading..."}</span>
