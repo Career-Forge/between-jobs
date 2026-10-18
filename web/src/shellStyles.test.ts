@@ -129,9 +129,12 @@ describe("under 960px", () => {
     expect(withoutMedia(appCss)).toContain("body:has(.bj-more-sheet[open])");
   });
 
-  it("holds the sign-in card to the screen, so 375px (and less) never scrolls sideways", () => {
-    expect(base(".bj-login-card")).toMatchObject({ width: "100%", "max-width": "360px" });
-    expect(size(base(".bj-login").padding)).toBe(16);
+  // The sign-in screen's own stylesheet is styles/auth.css (pinned in lib/publicPagesStyles.test.ts: its
+  // column is 100% wide up to 440px and its page keeps a 16px inset). The shell's stylesheet no longer
+  // has any rule for it.
+  it("leaves the sign-in screen to its own stylesheet", () => {
+    expect(base(".bj-login-card")).toEqual({});
+    expect(base(".bj-login")).toEqual({});
   });
 });
 

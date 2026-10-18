@@ -1,10 +1,13 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { ConsentNotice } from "../components/ConsentNotice";
 import { LegalLinks } from "../components/LegalLinks";
+import { NextStepSkipLink } from "../components/NextStepSkipLink";
+import { NextStepBand } from "../components/paper/NextStepBand";
 import { ResetRequestForm } from "../components/ResetRequestForm";
 import { Wordmark } from "../components/Wordmark";
+import { AUTH_FORM_ID, nextStep } from "../lib/nextStep";
 import {
   MIN_PASSWORD_LENGTH,
   initialLoginMode,
@@ -15,6 +18,7 @@ import {
 } from "../lib/passwordReset";
 import { LOGIN_PATH, loginPageTitle } from "../lib/publicRoutes";
 import { useDocumentTitle } from "../lib/useDocumentTitle";
+import "../styles/auth.css";
 
 export default function Login() {
   const { signIn, signUp, signInWithGoogle } = useAuth();
@@ -40,6 +44,9 @@ export default function Login() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
+  const emailId = useId();
+  const passwordId = useId();
+  const passwordHintId = useId();
 
   // The tab says which form this is: Sign in, Create account or the password reset.
   useDocumentTitle(loginPageTitle(mode));
@@ -54,6 +61,9 @@ export default function Login() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    // The page's button is the next-step band's, which cannot show a busy state of its own, so a
+    // second press while a request is out is ignored here.
+    if (busy) return;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -90,104 +100,135 @@ export default function Login() {
     }
   }
 
+  // The reset form has its own button (the one cyan fill on this screen), so this form carries no
+  // band: the band's sign-in action would point at a form that is not here.
   if (mode === "reset") {
     return (
       <main className="bj-login">
-        <div className="bj-login-card">
-          <h1>
+        <div className="bj-login-column">
+          <h1 className="bj-login-brand">
             <Wordmark />
           </h1>
-          <div className="bj-sub">Reset your password.</div>
-          <ResetRequestForm
-            problem={linkProblem}
-            onBack={() => {
-              setMode((current) => loginModeAfter(current, "back"));
-              setLinkProblem(null);
-              setError(null);
-              setNotice(null);
-            }}
-          />
+          <div className="bj-login-card">
+            <h2>Reset your password</h2>
+            <ResetRequestForm
+              problem={linkProblem}
+              onBack={() => {
+                setMode((current) => loginModeAfter(current, "back"));
+                setLinkProblem(null);
+                setError(null);
+                setNotice(null);
+              }}
+            />
+          </div>
         </div>
       </main>
     );
   }
 
+  // The signed-out band: the same sentence for both forms, and its button is the form's submit
+  // button (it sits outside the form and names it), so pressing Enter in a field submits too.
+  const outcome = nextStep({ page: "login", signedIn: false, authMode: mode === "register" ? "register" : "sign-in" });
+
   return (
-    <main className="bj-login">
-      <div className="bj-login-card">
-        <h1>
-          <Wordmark />
-        </h1>
-        <div className="bj-sub">
-          {mode === "sign_in" ? "Sign in to your career workspace." : "Create your account."}
+    <>
+      <NextStepSkipLink />
+      <main className="bj-login">
+        <div className="bj-login-column">
+          <h1 className="bj-login-brand">
+            <Wordmark />
+          </h1>
+          <NextStepBand outcome={outcome} />
+          <div className="bj-login-card">
+            <h2>{mode === "sign_in" ? "Sign in" : "Create your account"}</h2>
+            <form id={AUTH_FORM_ID} onSubmit={(e) => void onSubmit(e)}>
+              <div className="bj-field">
+                <label htmlFor={emailId}>Email</label>
+                <input
+                  id={emailId}
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  required
+                />
+              </div>
+              <div className="bj-field">
+                <label htmlFor={passwordId}>Password</label>
+                <input
+                  id={passwordId}
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete={mode === "sign_in" ? "current-password" : "new-password"}
+                  minLength={mode === "register" ? MIN_PASSWORD_LENGTH : undefined}
+                  aria-describedby={mode === "register" ? passwordHintId : undefined}
+                  required
+                />
+                {mode === "register" && (
+                  <span id={passwordHintId} className="bj-field-hint">
+                    At least {MIN_PASSWORD_LENGTH} characters.
+                  </span>
+                )}
+              </div>
+              {notice && (
+                <div className="bj-muted bj-small" role="status">
+                  {notice}
+                </div>
+              )}
+              {error && (
+                <div className="bj-error" role="alert">
+                  {error}
+                </div>
+              )}
+              <div className="bj-muted bj-small bj-login-busy" role="status">
+                {busy ? (mode === "sign_in" ? "Signing in..." : "Creating account...") : ""}
+              </div>
+            </form>
+            {mode === "sign_in" && (
+              <button
+                type="button"
+                className="bj-link-button"
+                onClick={() => {
+                  setMode((current) => loginModeAfter(current, "forgot"));
+                  setError(null);
+                  setNotice(null);
+                }}
+              >
+                Forgot password?
+              </button>
+            )}
+            {/* Both buttons below the form create an account for a new person (Google sign-in does
+                too), so the one line that says what that means sits above Google, in either mode. */}
+            <ConsentNotice />
+            <button
+              type="button"
+              className="bj-google-button"
+              onClick={() => void onGoogleClick()}
+              disabled={googleBusy}
+            >
+              {googleBusy ? "Redirecting..." : "Continue with Google"}
+            </button>
+            <button
+              type="button"
+              className="bj-link-button"
+              onClick={() => {
+                setMode((current) => loginModeAfter(current, "toggle"));
+                setError(null);
+                setNotice(null);
+              }}
+            >
+              {mode === "sign_in" ? "Need an account? Register" : "Already have an account? Sign in"}
+            </button>
+            <div className="bj-login-legal">
+              <LegalLinks newTab />
+            </div>
+          </div>
         </div>
-        <form onSubmit={(e) => void onSubmit(e)}>
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete={mode === "sign_in" ? "current-password" : "new-password"}
-            minLength={mode === "register" ? MIN_PASSWORD_LENGTH : undefined}
-            required
-          />
-          {notice && <div className="bj-muted bj-small">{notice}</div>}
-          {error && <div className="bj-error">{error}</div>}
-          <button className="bj-primary" type="submit" disabled={busy}>
-            {busy
-              ? mode === "sign_in"
-                ? "Signing in..."
-                : "Creating account..."
-              : mode === "sign_in"
-                ? "Sign in"
-                : "Create account"}
-          </button>
-        </form>
-        {mode === "sign_in" && (
-          <button
-            type="button"
-            className="bj-link-button"
-            onClick={() => {
-              setMode((current) => loginModeAfter(current, "forgot"));
-              setError(null);
-              setNotice(null);
-            }}
-          >
-            Forgot password?
-          </button>
-        )}
-        {/* Both buttons below the form create an account for a new person (Google sign-in does
-            too), so the one line that says what that means sits above Google, in either mode. */}
-        <ConsentNotice />
-        <button
-          className="bj-google-button"
-          onClick={() => void onGoogleClick()}
-          disabled={googleBusy}
-        >
-          {googleBusy ? "Redirecting..." : "Continue with Google"}
-        </button>
-        <button
-          className="bj-link-button"
-          onClick={() => {
-            setMode((current) => loginModeAfter(current, "toggle"));
-            setError(null);
-            setNotice(null);
-          }}
-        >
-          {mode === "sign_in" ? "Need an account? Register" : "Already have an account? Sign in"}
-        </button>
-        <div className="bj-login-legal">
-          <LegalLinks newTab />
-        </div>
-      </div>
-    </main>
+      </main>
+    </>
   );
 }
