@@ -8,6 +8,7 @@ import { SectionedProfile } from "../components/SectionedProfile";
 import { SectionOrderEditor } from "../components/SectionOrderEditor";
 import { ShapeSettingsPanel } from "../components/ShapeSettingsPanel";
 import { TesterProgrammeLine } from "../components/TesterProgrammeLine";
+import { ViewToggle } from "../components/ViewToggle";
 import { ApiError, apiFetch } from "../lib/api";
 import type { CanonicalProfile } from "../lib/profileTypes";
 import { CONVERSION_PROMPT, RESUME_TEMPLATE } from "../lib/template";
@@ -240,17 +241,15 @@ export function ActiveProfile({
           </div>
         )}
         <div className="bj-profile-toolbar">
-          <div className="bj-view-toggle">
-            <button
-              className={view === "sections" ? "bj-toggle-active" : ""}
-              onClick={() => setView("sections")}
-            >
-              Sections
-            </button>
-            <button className={view === "json" ? "bj-toggle-active" : ""} onClick={() => setView("json")}>
-              Raw JSON
-            </button>
-          </div>
+          <ViewToggle
+            label="View"
+            options={[
+              { value: "sections", label: "Sections" },
+              { value: "json", label: "Raw JSON" },
+            ]}
+            value={view}
+            onChange={setView}
+          />
           <div className="bj-actions">
             <button onClick={exportJson}>Export JSON</button>
             {view === "json" && (

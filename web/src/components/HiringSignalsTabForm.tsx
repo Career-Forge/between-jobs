@@ -153,7 +153,6 @@ export function SearchForm({ state, actions }: { state: TabState; actions: FormA
             <button
               key={option.value}
               type="button"
-              className={form.freshness === option.value ? "bj-toggle-active" : undefined}
               aria-pressed={form.freshness === option.value}
               onClick={() => actions.setFreshness(option.value)}
             >
