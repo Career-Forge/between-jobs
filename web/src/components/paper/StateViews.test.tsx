@@ -104,18 +104,18 @@ describe("SetupRequiredState", () => {
         message="Discover scores jobs against your profile with your model."
         missing={[
           { label: "Add your profile", to: "/profile" },
-          { label: "Add a model key", to: "/profile/integrations" },
+          { label: "Add a model key", to: "/settings" },
         ]}
       />,
     );
     expect(text(query(container, "p"))).toBe("Discover scores jobs against your profile with your model.");
     expect(text(query(container, ".bj-state-missing span"))).toBe("Missing:");
     expect([...container.querySelectorAll("a")].map(text)).toEqual(["Add your profile", "Add a model key"]);
-    expect([...container.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual(["/profile", "/profile/integrations"]);
+    expect([...container.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual(["/profile", "/settings"]);
   });
 
   it("is a plain callout, not an alarm: setup is a to-do, not a failure", () => {
-    const { container } = view(<SetupRequiredState message="Needs a key." missing={[{ label: "Add", to: "/profile/integrations" }]} />);
+    const { container } = view(<SetupRequiredState message="Needs a key." missing={[{ label: "Add", to: "/settings" }]} />);
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -126,7 +126,7 @@ describe("SetupRequiredState", () => {
   });
 
   it("has no serious accessibility violation", async () => {
-    const { container } = view(<SetupRequiredState message="Needs a key." missing={[{ label: "Add", to: "/profile/integrations" }]} />);
+    const { container } = view(<SetupRequiredState message="Needs a key." missing={[{ label: "Add", to: "/settings" }]} />);
     await expectNoSeriousA11yViolations(container);
   });
 });

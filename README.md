@@ -30,7 +30,7 @@ engine" before you start.
 ## What works today
 
 Running the API against a Supabase project, with a model key saved in the web app
-(Integrations page; [OpenRouter](https://openrouter.ai) by default, others listed under
+(Settings page; [OpenRouter](https://openrouter.ai) by default, others listed under
 "Model providers"), these work. Where a feature also needs a
 search or scraping key, it says so:
 
@@ -56,14 +56,14 @@ search or scraping key, it says so:
   classify the newest reply, moves that application to the matching stage when it is
   confident (0.85 or above), and queues anything else it proposes for your review on the
   Today feed. If Google stops accepting the connection (it expires, you revoke it, you change
-  your password), the Integrations page says "Needs reconnect", the app stops using it until
+  your password), the Settings page says "Needs reconnect", the app stops using it until
   you reconnect, and your stored connection is kept. While the server's Google OAuth client is
   in Google's Testing status that happens every 7 days (`GMAIL_TESTING_MODE`), and only the
   people the server lists can connect (`GMAIL_ALLOWED_USER_IDS`). Anyone who cannot use Gmail,
   or whose connection needs a reconnect, can still copy a draft or open it in their mail app
   from the contact panel.
 - **Hiring signals.** Hiring-intent posts found through search-index results; needs a
-  Brave, Serper, Firecrawl or You.com key saved on the Integrations page. The code never
+  Brave, Serper, Firecrawl or You.com key saved on the Settings page. The code never
   fetches linkedin.com itself.
 - **Telegram bridge (optional).** Import a resume, paste a posting, list applications,
   and receive a message when a saved search finds a strong match. A resume generation is one
@@ -206,7 +206,7 @@ research, Gmail drafts, hiring signals, the Telegram and Discord bridges apart f
 without it.
 
 What a stranger needs to run this: a Supabase project (or the local stack), the API with
-`FORGE_ENGINES_BASE_URL` left unset, a model key saved on the Integrations page, and the
+`FORGE_ENGINES_BASE_URL` left unset, a model key saved on the Settings page, and the
 `latex-service/` container for PDFs (see its README), since every PDF is compiled there.
 
 ## Model providers
@@ -403,7 +403,7 @@ run without `VITE_API_BASE_URL` and `VITE_SUPABASE_URL` set to public `https://`
 `web/.env.example` explains why. The build also writes `dist/_headers`, a Content-Security-Policy
 and other security headers generated from those two origins (Cloudflare Pages applies the file
 as it is; `web/README.md` covers other hosts and what to do when something is blocked).
-Create an account on the sign-in page, open Integrations and save a model key (OpenRouter is
+Create an account on the sign-in page, open Settings and save a model key (OpenRouter is
 the default; see "Model providers"), then import your resume JSON on the Profile page.
 
 ### 4. The browser extension
@@ -456,7 +456,7 @@ answer; they run `/list`.
 
 | Command | What it does |
 | --- | --- |
-| `/link code` | Links this Discord account to a web account with the one-time code from the Integrations page |
+| `/link code` | Links this Discord account to a web account with the one-time code from the Settings page |
 | `/unlink` | Detaches it again |
 | `/list`, `/apply number` | Numbers the tracked applications; generates a resume for one of them |
 | `/job title company description [location] [url]` | Tracks a job (the description is up to 6,000 characters, Discord's limit for a command option) |
@@ -482,7 +482,7 @@ that arrives from a server channel or a group chat is refused.
    user in a server. Which people can reach the direct message through which install is
    Discord's rule, and its documentation does not say whether an app that was only installed
    to a person's account can message them unprompted, so what a push does for such a person
-   is decided by Discord when it is tried (see step 3). The web app's Integrations page points
+   is decided by Discord when it is tried (see step 3). The web app's Settings page points
    people at the app's install link. With `DISCORD_INSTALL_URL` empty that is built from
    `DISCORD_APPLICATION_ID` as Discord's own link
    (`https://discord.com/oauth2/authorize?client_id=<application id>`), which works once
@@ -654,7 +654,7 @@ reads, plus every posting it has seen; Discover searches it alongside the live-s
 providers. **The hosted service's registry data is not part of this repository.** The
 migrations create the tables empty, so a self-hosted install starts with an empty
 registry and relies on the live-search providers (RemoteOK and Arbeitnow need no key;
-the others use the keys you save on the Integrations page) until you load your own.
+the others use the keys you save on the Settings page) until you load your own.
 
 To load your own, add rows to `job_registry_companies`: a `name`, an `ats_type` (one of
 greenhouse, lever, ashby, workday, smartrecruiters, workable, recruitee, amazon, apple,

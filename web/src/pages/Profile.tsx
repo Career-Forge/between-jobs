@@ -13,6 +13,7 @@ import { ApiError, apiFetch } from "../lib/api";
 import type { CanonicalProfile } from "../lib/profileTypes";
 import { CONVERSION_PROMPT, RESUME_TEMPLATE } from "../lib/template";
 import { useProfileEditor } from "../lib/useProfileEditor";
+import { SETTINGS_PATH } from "../lib/settingsPaths";
 
 // Profile onboarding (Sprint 3.1c) -- the web twin of the Telegram
 // setup-resume flow, wired to the same /profile endpoints and the same
@@ -180,7 +181,7 @@ function PageFrame({ children }: { children?: React.ReactNode }) {
     <div>
       <div className="bj-card-header">
         <h1>Profile</h1>
-        <button onClick={() => navigate("/settings")}>Settings</button>
+        <button onClick={() => navigate(SETTINGS_PATH)}>Settings</button>
       </div>
       {children}
     </div>

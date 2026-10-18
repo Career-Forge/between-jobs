@@ -47,10 +47,10 @@ describe("a lit band", () => {
 
   it("makes a route action a link to that route, hash included", () => {
     const { container } = render(
-      band(ready(step({ action: { kind: "link", label: "Review the import", to: "/profile#import-review" } }))),
+      band(ready(step({ action: { kind: "link", label: "Add a model key", to: "/settings#ai-provider" } }))),
     );
     const link = query<HTMLAnchorElement>(container, "a.bj-button-link-primary");
-    expect(link.getAttribute("href")).toBe("/profile#import-review");
+    expect(link.getAttribute("href")).toBe("/settings#ai-provider");
     expect(link.classList.contains("bj-button-link")).toBe(true);
     expect(container.querySelector("button")).toBeNull();
   });
@@ -294,10 +294,10 @@ describe("a request out for the primary action", () => {
   });
 
   it("leaves a link action alone: a route link is not work that can be pending", () => {
-    const outcome = ready(step({ action: { kind: "link", label: "Review the import", to: "/profile" } }));
+    const outcome = ready(step({ action: { kind: "link", label: "Add a model key", to: "/settings#ai-provider" } }));
     const { container } = render(waiting(outcome, { intent: SUBMIT_INTENT, label: "Working..." }));
     const link = query<HTMLAnchorElement>(container, "a.bj-button-link-primary");
-    expect(text(link)).toBe("Review the import");
+    expect(text(link)).toBe("Add a model key");
     expect(link.hasAttribute("aria-disabled")).toBe(false);
   });
 });

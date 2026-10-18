@@ -1,7 +1,7 @@
 // P2.4 -- what the server was started with, asked of it once.
 //
 // A server can run without a Telegram bot (no TELEGRAM_BOT_TOKEN /
-// TELEGRAM_WEBHOOK_SECRET). GET /capabilities reports that, so the Integrations
+// TELEGRAM_WEBHOOK_SECRET). GET /capabilities reports that, so the Settings
 // page leaves its Telegram card out instead of offering a link code that no bot
 // could ever redeem. Same shape of answer as GET /hiring-signals/status, the
 // other route that reports a server-side switch.

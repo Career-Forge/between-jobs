@@ -112,13 +112,16 @@ const SETUP_LOADING: NextStepRow = {
   },
 };
 
+// The link is the profile page, not a section of it: the review of an import has an element id, but
+// only while the review is open, and the page does not scroll to an address fragment, so a fragment
+// would promise a jump that does not happen.
 const G2B: NextStepRow = {
   id: "G2b",
   match: (input) => {
     if (!inApp(input) || input.profile?.state !== "ready" || input.profile.value.active || !input.profile.value.importWaiting) return null;
     return {
       sentence: "Your import is waiting. Check every field, then activate.",
-      action: { kind: "link", label: "Review the import", to: "/profile#import-review" },
+      action: { kind: "link", label: "Review the import", to: "/profile" },
       why: ["import waiting for review", "not active until you confirm"],
     };
   },

@@ -318,7 +318,7 @@ describe("searching", () => {
     expect(model.getState().search.kind).toBe("ready");
   });
 
-  it("carries a setup-required failure through, for the panel to link to Integrations", async () => {
+  it("carries a setup-required failure through, for the panel to link to Settings", async () => {
     const { wire, model } = await loaded();
     const search = model.runSearch();
     wire.fail(

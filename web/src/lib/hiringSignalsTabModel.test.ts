@@ -556,7 +556,7 @@ describe("failures and retry", () => {
     });
   });
 
-  it("carries a setup-needed failure, so the view can link to Integrations", async () => {
+  it("carries a setup-needed failure, so the view can link to Settings", async () => {
     const { wire, model } = setup();
     fill(model, { query: "designer" });
     const searching = model.search();

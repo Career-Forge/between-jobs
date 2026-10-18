@@ -27,6 +27,7 @@ import type { TabSearchOutcome, TabSignal } from "../lib/hiringSignalsTabTypes";
 import type { Freshness, SavedPost } from "../lib/hiringSignalsTypes";
 import { SignalCard } from "./HiringPostCard";
 import { FailureView } from "./HiringSignalsViews";
+import { SETTINGS_PATH } from "../lib/settingsPaths";
 
 // What the "Hiring signals" tab says about a search (Hiring Signals P4): the
 // failure branch and the result list, including the honest empty one. Pure
@@ -145,7 +146,7 @@ export function TabResults({
           {emptyNote !== null && <div className="bj-small">{emptyNote}</div>}
           {emptyNote === TAB_YOU_COM_NO_LINKEDIN_NOTE && (
             <div className="bj-small">
-              <Link to="/settings">Open Settings</Link>
+              <Link to={SETTINGS_PATH}>Open Settings</Link>
             </div>
           )}
           {hints.map((hint) => (

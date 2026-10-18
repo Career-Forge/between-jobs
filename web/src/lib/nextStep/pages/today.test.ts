@@ -3,7 +3,6 @@ import { findForbiddenWord } from "../../trail";
 import { nextStep, nextStepWithRow } from "../index";
 import type { NextStep, NextStepInput, SetupCheck } from "../types";
 import {
-  REVIEW_HASH,
   AUTO_MOVE_PERCENT,
   confidencePercent,
   PROPOSAL_STEPS,
@@ -176,7 +175,7 @@ const ROWS: Row[] = [
     id: "T3",
     facts: facts([held({ fit: "moved_on" }), ready_()]),
     sentence: "Your resume for ML Engineer at Orbit is ready for review.",
-    action: { kind: "link", label: "Open workspace", to: "/applications/app-3#ch-check" },
+    action: { kind: "link", label: "Open workspace", to: "/applications/app-3" },
     why: ["resume ready", "ATS score 72 / 100"],
   },
   {
@@ -201,7 +200,7 @@ const ROWS: Row[] = [
     id: "T3",
     facts: facts([ready_()]),
     sentence: "Your resume for ML Engineer at Orbit is ready for review.",
-    action: { kind: "link", label: "Open workspace", to: "/applications/app-3#ch-check" },
+    action: { kind: "link", label: "Open workspace", to: "/applications/app-3" },
     why: ["resume ready", "ATS score 72 / 100"],
   },
   {
@@ -209,7 +208,7 @@ const ROWS: Row[] = [
     id: "T3",
     facts: facts([ready_({ atsScore: null })]),
     sentence: "Your resume for ML Engineer at Orbit is ready for review.",
-    action: { kind: "link", label: "Open workspace", to: "/applications/app-3#ch-check" },
+    action: { kind: "link", label: "Open workspace", to: "/applications/app-3" },
     why: ["resume ready"],
   },
   {
@@ -217,7 +216,7 @@ const ROWS: Row[] = [
     id: "T3",
     facts: facts([ready_({ job: null })]),
     sentence: "Your resume is ready for review.",
-    action: { kind: "link", label: "Open workspace", to: "/applications/app-3#ch-check" },
+    action: { kind: "link", label: "Open workspace", to: "/applications/app-3" },
     why: ["resume ready", "ATS score 72 / 100"],
   },
   {
@@ -225,7 +224,7 @@ const ROWS: Row[] = [
     id: "T3",
     facts: facts([match(), ready_()]),
     sentence: "Your resume for ML Engineer at Orbit is ready for review.",
-    action: { kind: "link", label: "Open workspace", to: "/applications/app-3#ch-check" },
+    action: { kind: "link", label: "Open workspace", to: "/applications/app-3" },
     why: ["resume ready", "ATS score 72 / 100"],
   },
   {
@@ -329,7 +328,7 @@ const ROWS: Row[] = [
     id: "T3",
     facts: facts([proposal({ proposal: { proposedType: "interview.requested", confidence: 0.72, status: "dismissed" } }), ready_()]),
     sentence: "Your resume for ML Engineer at Orbit is ready for review.",
-    action: { kind: "link", label: "Open workspace", to: "/applications/app-3#ch-check" },
+    action: { kind: "link", label: "Open workspace", to: "/applications/app-3" },
     why: ["resume ready", "ATS score 72 / 100"],
   },
   {
@@ -493,11 +492,10 @@ describe("facts the page cannot read", () => {
   });
 });
 
-describe("the review anchor", () => {
-  it("is the anchor of the workspace's Review section, which the ready step links to", () => {
-    expect(REVIEW_HASH).toBe("ch-check");
+describe("the link of a resume that is ready", () => {
+  it("opens the workspace itself: the workspace has no section of its own for the review to aim at", () => {
     const step = stepOf(facts([ready_()]));
-    expect(step.action).toEqual({ kind: "link", label: "Open workspace", to: `/applications/app-3#${REVIEW_HASH}` });
+    expect(step.action).toEqual({ kind: "link", label: "Open workspace", to: "/applications/app-3" });
   });
 });
 

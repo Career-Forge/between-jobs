@@ -165,11 +165,6 @@ export function parseTodayIntent(intent: string): { name: TodayIntentName; itemI
 
 // ── the choice ─────────────────────────────────────────────────────────────
 
-// The anchor for the workspace's Review section. The workspace does not give any section this id
-// yet, so until it does the link opens the workspace at its top. It is fixed here so that the link
-// does not have to change when the section arrives.
-export const REVIEW_HASH = "ch-check";
-
 export type TodayRowId = "T1" | "T2" | "T3" | "T4";
 
 export interface Lit {
@@ -300,7 +295,7 @@ function readyStep(item: TodayItemFact): NextStep | null {
   if (item.atsScore !== null) why.push(`ATS score ${item.atsScore} / 100`);
   return {
     sentence: item.job === null ? "Your resume is ready for review." : `Your resume for ${item.job} is ready for review.`,
-    action: { kind: "link", label: "Open workspace", to: workspacePath(item.applicationId, REVIEW_HASH) },
+    action: { kind: "link", label: "Open workspace", to: workspacePath(item.applicationId) },
     why,
   };
 }
