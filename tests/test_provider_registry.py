@@ -455,3 +455,9 @@ def test_the_catalogue_is_public_json_with_the_pages_a_person_needs() -> None:
     assert [e["id"] for e in by_id[CUSTOM]["endpoints"]] == list(CUSTOM_ENDPOINTS)
     text = json.dumps(catalogue).lower()
     assert "secret" not in text and "authorization" not in text
+
+
+def test_every_provider_names_the_page_to_recheck_when_its_behaviour_changes() -> None:
+    for spec in PROVIDERS.values():
+        if spec.id != CUSTOM:
+            assert spec.docs_url.startswith("https://"), spec.id

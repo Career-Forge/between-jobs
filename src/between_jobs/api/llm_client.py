@@ -301,12 +301,6 @@ def _error(reason: ProviderReason) -> ApiError:
     )
 
 
-def error_for_reason(reason: ProviderReason) -> ApiError:
-    """The `ApiError` a failure with this reason is answered with, for the code outside this
-    module that classifies a failure itself (the key and model-list checks)."""
-    return _error(reason)
-
-
 def outcome_for(reason: ProviderReason) -> tuple[ErrorCode, bool]:
     """(code, retryable) of a reason, so a check can word its own message and keep the code."""
     outcome = _OUTCOMES[reason]
