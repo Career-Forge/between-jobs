@@ -60,8 +60,8 @@ export interface ProfileFacts {
   importWaiting: boolean;
 }
 
-// Nothing is read from the credentials list yet: the setup check can only be loading, failed or
-// ready. The model-key rows will widen this when they are registered.
+// Nothing is read from the credentials list yet: the check can only be loading, failed or ready.
+// A row that needs a value from it will widen this when it is registered.
 export type CredentialsFacts = Record<string, never>;
 
 export interface PageFailure {
@@ -75,13 +75,15 @@ export interface PageFailure {
   intent?: string;
 }
 
-// Everything a page can read, handed to the engine. A check the page did not supply counts as
-// still loading: the engine never fills in a state it was not told.
+// Everything a page can read, handed to the engine. The engine never fills in a state it was not
+// told: a profile check the page did not supply counts as still loading, and a credentials check
+// it did not supply means the page did not read the credentials at all (nothing waits for it).
 export interface NextStepInput<F = unknown> {
   /** Which page is asking: "landing", "login", "today", "settings". */
   page: string;
   signedIn: boolean;
   profile?: SetupCheck<ProfileFacts>;
+  /** Supply it only if the page called GET /credentials; leave it out otherwise. */
   credentials?: SetupCheck<CredentialsFacts>;
   /** The page's own data request failed (network or 5xx): the F1 row. */
   pageFailure?: PageFailure | null;

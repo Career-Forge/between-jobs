@@ -94,6 +94,18 @@ const ROWS: Row[] = [
     }),
     sentence: "Couldn't check your setup. You didn't do anything wrong, and nothing was lost.",
     action: { kind: "button", label: "Try again", intent: "retry-setup" },
+    why: ["GET /profile/current failed 09:14", "GET /credentials failed 09:15"],
+    tone: "failure",
+  },
+  {
+    name: "G1 both reads failed at the same time, which is then said once",
+    id: "G1",
+    input: inApp({
+      profile: { state: "failed", call: "GET /profile/current", at: "09:14" },
+      credentials: { state: "failed", call: "GET /credentials", at: "09:14" },
+    }),
+    sentence: "Couldn't check your setup. You didn't do anything wrong, and nothing was lost.",
+    action: { kind: "button", label: "Try again", intent: "retry-setup" },
     why: ["GET /profile/current failed", "GET /credentials failed", "09:14"],
     tone: "failure",
   },
@@ -126,11 +138,11 @@ const ROWS: Row[] = [
     why: ["no active profile"],
   },
   {
-    name: "G2 on the profile page itself goes to the import card",
+    name: "G2 on the profile page itself still goes to /profile (no anchor exists to aim at)",
     id: "G2",
     input: inApp({ page: "profile", profile: ready({ active: false, importWaiting: false }) }),
     sentence: "Everything here starts from your profile. Import it first.",
-    action: { kind: "link", label: "Set up your profile", to: "/profile#set-up" },
+    action: { kind: "link", label: "Set up your profile", to: "/profile" },
     why: ["no active profile"],
   },
   {
@@ -192,12 +204,11 @@ describe("the rule table", () => {
 });
 
 describe("loading", () => {
-  it("holds a signed-in page until both setup reads have answered, and lights nothing meanwhile", () => {
+  it("holds a signed-in page until the profile read has answered, and the credentials read if the page made it", () => {
     const cases: Partial<NextStepInput>[] = [
       { profile: { state: "loading" } },
       { credentials: { state: "loading" } },
       { profile: undefined },
-      { credentials: undefined },
       { profile: { state: "loading" }, credentials: { state: "loading" } },
     ];
     for (const overrides of cases) {
@@ -205,6 +216,19 @@ describe("loading", () => {
       expect(evaluation.outcome).toEqual({ status: "loading" });
       expect(evaluation.rowId).toBe("SETUP");
     }
+  });
+
+  it("does not hold a page for a credentials read it never made", () => {
+    // Nothing reads the credentials yet, so a page that did not call GET /credentials leaves the
+    // field out and is neither held on "Loading..." nor made to pass a result it does not have.
+    const pageRow: NextStepRow = { id: "T1", match: () => ({ sentence: "The page's own.", action: null, why: ["w"] }) };
+    const pages = [definePage("today", [pageRow])];
+    expect(evaluateWithRow(inApp({ credentials: undefined }), GLOBAL_ROWS, pages).rowId).toBe("T1");
+    const noProfile = inApp({ profile: ready({ active: false, importWaiting: false }), credentials: undefined });
+    expect(nextStepWithRow(noProfile).rowId).toBe("G2");
+    // ... but its own failure is not lost when it did read them.
+    const failed = inApp({ credentials: { state: "failed", call: "GET /credentials", at: "09:14" } });
+    expect(nextStepWithRow(failed).rowId).toBe("G1");
   });
 
   it("does not light G2 while the credentials read could still fail (G1 outranks it)", () => {
@@ -329,6 +353,30 @@ describe("what a step is allowed to say", () => {
   it("when the failing call and time are supplied they are used as given", () => {
     const step = stepOf(inApp({ pageFailure: { what: "Couldn't load Today", call: "GET /today", at: "09:14" } }));
     expect(step.why).toEqual(["GET /today failed", "09:14"]);
+  });
+
+  it("draws no dangling separator or doubled full stop from a blank or untidy string", () => {
+    const failure = (overrides: Partial<NonNullable<NextStepInput["pageFailure"]>>) =>
+      stepOf(inApp({ pageFailure: { what: "Couldn't load Today", call: "GET /today", at: "09:14", ...overrides } }));
+    expect(failure({ at: "" }).why).toEqual(["GET /today failed"]);
+    expect(failure({ at: "   " }).why).toEqual(["GET /today failed"]);
+    expect(failure({ call: " " }).why).toEqual(["09:14"]);
+    expect(failure({ call: "", at: "" }).why).toEqual([]);
+    expect(failure({ call: "  GET /today ", at: " 09:14 " }).why).toEqual(["GET /today failed", "09:14"]);
+    expect(failure({ what: "Couldn't load Today." }).sentence).toBe("Couldn't load Today. You didn't do anything wrong, and nothing was lost.");
+    expect(failure({ what: "Couldn't load Today. " }).sentence).toBe("Couldn't load Today. You didn't do anything wrong, and nothing was lost.");
+    expect(failure({ what: "  " }).sentence).toBe("Couldn't load this page. You didn't do anything wrong, and nothing was lost.");
+    expect(failure({ what: "..." }).sentence).toBe("Couldn't load this page. You didn't do anything wrong, and nothing was lost.");
+  });
+
+  it("never pairs a time with a request it does not belong to", () => {
+    const read = (call: string, at: string) => ({ state: "failed" as const, call, at });
+    const why = (profileAt: string, credentialsAt: string) =>
+      stepOf(inApp({ profile: read("GET /profile/current", profileAt), credentials: read("GET /credentials", credentialsAt) })).why;
+    expect(why("09:14", "09:14")).toEqual(["GET /profile/current failed", "GET /credentials failed", "09:14"]);
+    expect(why("09:14", "09:15")).toEqual(["GET /profile/current failed 09:14", "GET /credentials failed 09:15"]);
+    expect(why("09:14", "")).toEqual(["GET /profile/current failed 09:14", "GET /credentials failed"]);
+    expect(why("", "")).toEqual(["GET /profile/current failed", "GET /credentials failed"]);
   });
 });
 
