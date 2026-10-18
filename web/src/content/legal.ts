@@ -27,6 +27,13 @@ import { PRIVACY_EMAIL, REPO_URL, SOURCE_LICENSE, SUPPORT_EMAIL } from "./site";
 // served. Before the pages go live, set LEGAL_VERSION and the date (iso and label) to that day,
 // and update the two literals pinned in legal.test.ts. Once the text has been served, a change
 // to it gets a new version and date as described above.
+//
+// STILL TO SETTLE BEFORE THAT DAY, FOR THE MAINTAINER (the wording is theirs, so it is not guessed
+// at here): the processor list gained the model providers beyond OpenRouter and the custom-provider
+// hosts when the Settings page did, after the date below was set, and nothing in the tests checks
+// the version against that list. And the Alibaba Cloud (Qwen) entry says nothing of where the
+// region a person picks processes their text, though the choice includes China (Beijing) and
+// China (Hong Kong). Both are settled in the same pass that sets the version and the date.
 export const LEGAL_VERSION = "2026-10-05";
 export const LEGAL_EFFECTIVE_DATE = { iso: "2026-10-05", label: "October 5, 2026" } as const;
 export const LEGAL_WHAT_CHANGED = "First version.";

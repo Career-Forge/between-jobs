@@ -6,7 +6,7 @@ import { tagsOf, textOfMarkup } from "../testing/markup";
 import { buttonsLabelled, expand, findAll, press, prop, textOf } from "../testing/reactTree";
 import { SavedSearchesCardView, type SavedSearchesActions } from "./SavedSearchesCardView";
 
-// The saved-searches card on the Integrations page: what it draws for each state of the lookup, and
+// The saved-searches card on the Settings page: what it draws for each state of the lookup, and
 // that each button is wired to the action it is named for. No DOM: the markup is read as text and
 // the buttons are pressed through a plain-element tree (testing/reactTree.ts).
 

@@ -11,7 +11,7 @@ import { savedSearchLabel } from "../lib/discover";
 // function of its props, with no hooks, so a test can render it and press its buttons.
 //
 // It draws nothing while the list is loading, and nothing for a person who has no saved searches
-// (an Integrations page has no use for an empty card). A failed lookup is NOT nothing: it says so,
+// (the Settings page has no use for an empty card). A failed lookup is NOT nothing: it says so,
 // with a retry, because a search that still runs must not look as though it were not there.
 
 export interface SavedSearchesActions {
