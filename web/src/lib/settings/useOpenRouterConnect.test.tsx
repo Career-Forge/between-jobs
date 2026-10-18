@@ -2,7 +2,7 @@
 // @vitest-environment-options {"url": "https://app.example/settings"}
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { callsTo, on, reset } from "../../testing/fakeApi";
+import { FakeApiError, callsTo, on, reset } from "../../testing/fakeApi";
 import { settle } from "../../testing/forms";
 import { render } from "../../testing/render";
 import { connectStore, type CryptoLike } from "./openrouterOAuth";
@@ -107,6 +107,27 @@ describe("the exchange", () => {
       body: { code: "the-code-123", code_verifier: "the-verifier" },
     });
     expect(hook().result.phase).toBe("connected");
+  });
+
+  it("offers to finish again when the exchange itself was throttled, because the code was not spent", async () => {
+    on("POST /credentials/openrouter/exchange", new FakeApiError("x", "PROVIDER_RATE_LIMITED", "rate_limited", 429, true));
+    connectStore.receive({ kind: "ready", code: "the-code-123", verifier: "the-verifier", expiresAt: Date.now() + 600_000 });
+    const hook = mount({ navigate: vi.fn(), crypto: webCrypto });
+    await settle();
+    expect(hook().result).toMatchObject({ phase: "failed", failure: { kind: "retryable" } });
+  });
+
+  it("does not offer to repeat a code that is already spent: the check of the key OpenRouter issued failed, so start over", async () => {
+    // llm_credentials_routes.exchange_openrouter_code: after the code is traded, the key check
+    // can fail as "unavailable" with no reason of its own
+    on("POST /credentials/openrouter/exchange", new FakeApiError("OpenRouter couldn't validate that key right now. Try again in a moment.", "PROVIDER_UNAVAILABLE", undefined, 502, true));
+    connectStore.receive({ kind: "ready", code: "the-code-123", verifier: "the-verifier", expiresAt: Date.now() + 600_000 });
+    const hook = mount({ navigate: vi.fn(), crypto: webCrypto });
+    await settle();
+    expect(hook().result).toMatchObject({ phase: "failed", failure: { kind: "rejected" } });
+    hook().retry();
+    await settle();
+    expect(callsTo("POST /credentials/openrouter/exchange")).toHaveLength(1);
   });
 
   it("does nothing when nothing came back", async () => {

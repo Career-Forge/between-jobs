@@ -6,6 +6,7 @@ import credentialsRoutes from "../../../../src/between_jobs/api/credentials_rout
 import {
   NETWORK_MESSAGE,
   connectFailureView,
+  isExchangeRetryable,
   isRetryable,
   settingsFailureMessage,
   type FailureContext,
@@ -124,6 +125,88 @@ describe("a failure that is not a provider's refusal", () => {
   });
 });
 
+describe("a refused key keeps the way out the server names", () => {
+  const hint =
+    " A key that works on more than one workspace is refused too, because this server cannot say which workspace to use -- create the key inside a single workspace.";
+
+  it("adds the server's hint (Anthropic's workspace, Qwen's region) to the page's advice", () => {
+    const anthropic = new FakeApiError(`Anthropic rejected that key.${hint}`, "PROVIDER_REJECTED", "key_rejected");
+    const message = settingsFailureMessage(anthropic, { action: "save_key", provider: "Anthropic" }, "fallback");
+    expect(message).toContain("Anthropic didn't accept that key. Check that you copied all of it");
+    expect(message).toContain("create the key inside a single workspace.");
+    expect(message.endsWith(" Nothing was saved.")).toBe(true);
+  });
+
+  it("adds nothing when the server's sentence is the bare one", () => {
+    const bare = new FakeApiError("OpenAI rejected that key.", "PROVIDER_REJECTED", "key_rejected");
+    expect(settingsFailureMessage(bare, save, "fallback")).toBe(
+      "OpenAI didn't accept that key. Check that you copied all of it, with no spaces or quotes, and that it came from OpenAI. Nothing was saved.",
+    );
+  });
+
+  it("does not write 'a Anthropic key' or 'a OpenAI key'", () => {
+    for (const provider of ["Anthropic", "OpenAI", "xAI"]) {
+      const message = settingsFailureMessage(new FakeApiError("x", "PROVIDER_REJECTED", "key_rejected"), { action: "save_key", provider }, "fallback");
+      expect(message).not.toMatch(/\ba (Anthropic|OpenAI|xAI) key/);
+    }
+  });
+
+  it("words a pasted OpenRouter key the API refused with the reason it now names, the same as any other", () => {
+    const refused = new FakeApiError("OpenRouter rejected that key.", "PROVIDER_REJECTED", "key_rejected");
+    expect(settingsFailureMessage(refused, { action: "save_key", provider: "OpenRouter" }, "fallback")).toMatch(
+      /OpenRouter didn't accept that key\. Check that you copied all of it.*Nothing was saved\./,
+    );
+  });
+
+  it("does not tell a person to re-copy a key the sign-in just issued", () => {
+    const refused = new FakeApiError("OpenRouter rejected that key.", "PROVIDER_REJECTED", "key_rejected");
+    expect(settingsFailureMessage(refused, { action: "exchange", provider: "OpenRouter" }, "fallback")).toBe(
+      "OpenRouter didn't accept the key it issued. No key was saved. Connect again, or paste a key instead.",
+    );
+  });
+});
+
+describe("a model the provider turned down", () => {
+  it("points at the model first when one was being chosen (OpenRouter answers a mistyped id this way)", () => {
+    const message = say("request_rejected", choose);
+    expect(message).toMatch(/often because of the model chosen\. Pick one from the list, or check how you spelled it/);
+    expect(message).not.toMatch(/billing|region/);
+    expect(message.endsWith("Your default model was not changed.")).toBe(true);
+  });
+
+  it("still points at the account for a key check, where no model is involved", () => {
+    expect(say("request_rejected", save)).toMatch(/billing that isn't switched on/);
+  });
+});
+
+describe("a gateway failure with no envelope", () => {
+  it("says it was Between Jobs, with the status, instead of 'Request failed (503)'", () => {
+    const gateway = new FakeApiError("Request failed (503)", undefined, undefined, undefined, 503);
+    expect(settingsFailureMessage(gateway, save, "fallback")).toBe("Between Jobs had a problem on its side (503). Nothing was saved. Try again in a moment.");
+    expect(settingsFailureMessage(gateway, choose, "fallback")).toBe("Between Jobs had a problem on its side (503). Your default model was not changed. Try again in a moment.");
+    expect(settingsFailureMessage(gateway, list, "fallback")).toBe("Between Jobs had a problem on its side (503). Try again in a moment.");
+  });
+
+  it("keeps the server's own sentence when the failure has a code", () => {
+    const coded = new FakeApiError("Something specific the server said.", "INTERNAL_ERROR", undefined, undefined, 500);
+    expect(settingsFailureMessage(coded, save, "fallback")).toBe("Something specific the server said.");
+  });
+});
+
+describe("whether a failed OpenRouter exchange can repeat the same code", () => {
+  it.each([
+    [new TypeError("Failed to fetch"), true],
+    // the exchange itself was throttled or slow: the code was not spent
+    [new FakeApiError("x", "PROVIDER_RATE_LIMITED", "rate_limited", true, 429), true],
+    [new FakeApiError("x", "PROVIDER_UNAVAILABLE", "timeout", true, 502), true],
+    // the key OpenRouter issued could not be checked (no reason): the code is already spent
+    [new FakeApiError("OpenRouter couldn't validate that key right now. Try again in a moment.", "PROVIDER_UNAVAILABLE", undefined, true, 502), false],
+    [new FakeApiError("x", "PROVIDER_REJECTED", "oauth_code_rejected", false, 400), false],
+  ])("%j -> %s", (error, expected) => {
+    expect(isExchangeRetryable(error)).toBe(expected);
+  });
+});
+
 describe("whether asking again could change the outcome", () => {
   it.each([
     [new TypeError("Failed to fetch"), true],
@@ -162,8 +245,21 @@ describe("a sign-in that did not finish", () => {
 
   it("offers to finish again, without starting over, when the exchange itself failed to complete", () => {
     const view = connectFailureView({ kind: "retryable", error: new TypeError("Failed to fetch") });
-    expect(view.message).toContain(NETWORK_MESSAGE);
-    expect(view.message).toMatch(/Try finishing it again/);
+    // one request to try again, not two
+    expect(view.message).toBe("Couldn't reach Between Jobs. Check your connection. Try finishing it again; if it keeps failing, connect again.");
     expect(view.next).toBe("retry");
+  });
+
+  it("joins a sentence that has no full stop (a bare 'Request failed (503)') to the next one properly", () => {
+    const view = connectFailureView({ kind: "retryable", error: new FakeApiError("Request failed (503)", undefined, undefined, undefined, 503) });
+    expect(view.message).toBe(
+      "Between Jobs had a problem on its side (503). No key was saved. Try again in a moment. Try finishing it again; if it keeps failing, connect again.",
+    );
+  });
+
+  it("does not say a sign-in is limiting 'this key', when there is no key yet", () => {
+    const view = connectFailureView({ kind: "retryable", error: new FakeApiError("x", "PROVIDER_RATE_LIMITED", "rate_limited", true, 429) });
+    expect(view.message).toContain("OpenRouter is rate limiting this sign-in.");
+    expect(view.message).not.toContain("this key");
   });
 });

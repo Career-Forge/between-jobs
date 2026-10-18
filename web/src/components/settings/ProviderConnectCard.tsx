@@ -146,7 +146,8 @@ export function ProviderConnectCard({ provider, mode, autoFocus, savedBaseUrl, o
           </a>
         )}
       </div>
-      <ProviderFacts providerId={provider.id} providerName={provider.name} />
+      {/* The row being replaced already says who bills and whether this has been seen working. */}
+      {mode === "add" && <ProviderFacts providerId={provider.id} providerName={provider.name} />}
 
       {oneClick && (
         <>

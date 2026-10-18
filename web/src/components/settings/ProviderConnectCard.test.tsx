@@ -166,6 +166,15 @@ describe("a plain key provider", () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
+  it("does not repeat who bills and the not-verified notice when replacing: the row above it already says so", () => {
+    const adding = mount({ provider: provider("openai") });
+    expect(text(adding.container)).toContain("Not yet verified live");
+    adding.unmount();
+    const replacing = mount({ provider: provider("openai"), mode: "replace" });
+    expect(text(replacing.container)).not.toContain("Not yet verified live");
+    expect(text(replacing.container)).not.toContain("Billed by OpenAI");
+  });
+
   it("has no cyan button: the page's one primary action is the next-step band's", () => {
     const { container } = mount({ provider: provider("openai") });
     expect(container.querySelector(".bj-primary")).toBeNull();
