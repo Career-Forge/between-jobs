@@ -4,8 +4,42 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Between Jobs</title>
-    <!-- Dark is the canonical design (Proposal §39); painting the body
-         before any JS loads avoids a white flash. -->
+    <meta
+      name="description"
+      content="Between Jobs helps you find roles, track applications, prepare tailored resumes and practice interviews; it drafts and prepares, and you always submit."
+    />
+    <meta name="theme-color" content="#070607" />
+    <meta name="color-scheme" content="dark" />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Between Jobs" />
+    <meta property="og:title" content="Between Jobs" />
+    <meta
+      property="og:description"
+      content="Between Jobs helps you find roles, track applications, prepare tailored resumes and practice interviews; it drafts and prepares, and you always submit."
+    />
+    <meta property="og:url" content="https://between-jobs.tech/" />
+    <meta property="og:image" content="https://between-jobs.tech/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Between Jobs. Draft, don't send. Fill, don't submit." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Between Jobs" />
+    <meta
+      name="twitter:description"
+      content="Between Jobs helps you find roles, track applications, prepare tailored resumes and practice interviews; it drafts and prepares, and you always submit."
+    />
+    <meta name="twitter:image" content="https://between-jobs.tech/og-image.png" />
+
+    <!-- Dark is the canonical design, so the page is painted before any script loads, which avoids a
+         white flash. The build hashes this block into the Content-Security-Policy. -->
     <style>
       html {
         background: #070607;

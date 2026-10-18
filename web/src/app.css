@@ -5,6 +5,29 @@
   background: var(--bj-bg);
 }
 
+/* The first tab stop of a page: out of sight until it has focus. */
+.bj-skip-link {
+  position: absolute;
+  top: var(--bj-space-2);
+  left: var(--bj-space-2);
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--bj-space-4);
+  border: 1px solid var(--bj-outline);
+  border-radius: 6px;
+  background: var(--bj-surface-raised);
+  color: var(--bj-text);
+  font-size: var(--bj-text-control);
+  transform: translateY(-200%);
+}
+
+.bj-skip-link:focus {
+  transform: none;
+  text-decoration: none;
+}
+
 .bj-shell {
   display: flex;
   min-height: 100vh;
@@ -20,11 +43,29 @@
   gap: 24px;
 }
 
+/* The brand lockup (components/Wordmark.tsx): the serif name with a small red dot after "Jobs". The
+   size is set by the font size of the place it sits in, and the dot is in em so it keeps its
+   proportion. The dot is the documented exception to "red means failure" (tokens.css). */
 .bj-wordmark {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.12em;
   font-family: var(--bj-font-display);
-  font-size: 20px;
-  font-weight: 600;
-  padding: 0 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--bj-text);
+}
+
+.bj-wordmark-dot {
+  flex: none;
+  width: 0.24em;
+  height: 0.24em;
+  min-width: 5px;
+  min-height: 5px;
+  margin-top: 0.04em;
+  border-radius: 50%;
+  background: var(--bj-brand-dot);
 }
 
 .bj-nav nav {
@@ -87,10 +128,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 16px;
 }
 
 .bj-login-card {
-  width: 360px;
+  width: 100%;
+  max-width: 360px;
   border: 1px solid var(--bj-border);
   border-radius: 10px;
   background: var(--bj-surface);
@@ -99,7 +142,7 @@
 
 .bj-login-card h1 {
   margin: 0 0 4px;
-  font-size: 24px;
+  font-size: 26px;
 }
 
 .bj-login-card .bj-sub {
@@ -2252,9 +2295,7 @@ button.bj-danger {
 }
 
 .bj-public-wordmark {
-  font-family: var(--bj-font-display);
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 22px;
   color: var(--bj-text);
 }
 
@@ -2292,6 +2333,11 @@ button.bj-danger {
   margin-right: auto;
   padding-left: 16px;
   padding-right: 16px;
+}
+
+.bj-public-footer-brand {
+  font-size: 20px;
+  margin-bottom: 12px;
 }
 
 .bj-public-footer p {

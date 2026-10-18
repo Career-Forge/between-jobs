@@ -17,6 +17,24 @@ are not local addresses, and refuses to run without them (`scripts/apiBaseGuard.
 `scripts/securityHeaders.ts`). Pass them in the shell rather than in `.env.local`, so a leftover
 local file cannot leak into a bundle you meant to deploy. A change to either needs a new build.
 
+## Fonts and brand files
+
+The typefaces are Newsreader (display), IBM Plex Sans (body) and IBM Plex Mono (provenance), served from
+the app's own origin and never from a font CDN. `src/fonts.css` is the only place that names the files,
+which live in `src/fonts/` with their license texts; `THIRD_PARTY_FONTS.md` says where each came from and
+records a SHA-256 for every file, which `npm test` checks.
+
+The favicon, touch icons, web app manifest and the link-preview image are in `public/` and are linked from
+`index.html`. The PNG and ICO files are generated, not drawn by hand; to change the mark or the preview
+image, edit `scripts/generateBrandAssets.mjs` and run:
+
+```bash
+node scripts/generateBrandAssets.mjs     # needs Chrome; set CHROME_BIN if it is not in the usual place
+```
+
+It uses Node's own modules only and draws through headless Chrome, so the preview image carries the real
+typefaces. `src/brandAssets.test.ts` checks the sizes of the files it writes.
+
 ## Security headers
 
 `npm run build` also writes `dist/_headers`: a Content-Security-Policy and a few other response
@@ -50,7 +68,8 @@ needs them.
 | `default-src` | `'none'` | Anything not listed below is refused. |
 | `script-src` | `'self'` | One same-origin bundle. No inline script, no `eval`, no `'unsafe-inline'`. |
 | `style-src` | `'self'` and the SHA-256 of the inline `<style>` in `index.html` | Hashes are computed from the HTML the build emitted, so editing that block keeps working. React's `style={...}` props are applied through the CSSOM, which this directive does not govern, so no `'unsafe-inline'` and no `style-src-attr`. |
-| `img-src`, `font-src` | `'self'` | The app loads no image or webfont today. `build.assetsInlineLimit` is 0, so an image you add arrives as a file under `/assets/`, never as a `data:` URL. |
+| `img-src`, `font-src` | `'self'` | The favicon and touch icons, and the three self-hosted typefaces (see "Fonts and brand files"). `build.assetsInlineLimit` is 0, so an image or font arrives as a file under `/assets/`, never as a `data:` URL. |
+| `manifest-src` | `'self'` | The web app manifest, `site.webmanifest`. With `default-src 'none'` the browser would refuse to read it. |
 | `connect-src` | the API origin and the Supabase origin | From `VITE_API_BASE_URL` and `VITE_SUPABASE_URL`: scheme, host and a non-default port, no path, no wildcard. Supabase is used for sign-in only, so no websocket origin is listed. The site's own origin is not listed either; nothing fetches it from script. |
 | `frame-src` | `https://www.linkedin.com` | The click-to-load post embed in Hiring posts, the only frame the app ever creates. |
 | `worker-src`, `object-src` | `'none'` | No workers, no plugins. |

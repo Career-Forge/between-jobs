@@ -79,6 +79,33 @@ describe("the production build's security headers", () => {
     expect(text(files.find((f) => f.fileName === "_headers"))).toMatch(/script-src 'self';/);
   });
 
+  it("serves the fonts, icons and manifest from the site's own origin, with no data: URL anywhere", async () => {
+    const files = await runBuild({ VITE_API_BASE_URL: API, VITE_SUPABASE_URL: SUPABASE });
+    const policy = text(files.find((f) => f.fileName === "_headers"));
+
+    // The policy allows img-src, font-src and manifest-src from 'self' only, and never a data: URL.
+    expect(policy).toContain("img-src 'self';");
+    expect(policy).toContain("font-src 'self';");
+    expect(policy).toContain("manifest-src 'self';");
+    expect(policy).not.toMatch(/data:|blob:|unsafe-inline|unsafe-eval/);
+
+    // So the build has to honour that: every font is its own hashed file under assets/, and no
+    // stylesheet carries one inline (assetsInlineLimit is 0).
+    const fonts = files.filter((f) => f.fileName.endsWith(".woff2"));
+    expect(fonts.length).toBeGreaterThanOrEqual(14);
+    for (const font of fonts) expect(font.fileName).toMatch(/^assets\/[A-Za-z0-9_-]+-[A-Za-z0-9_-]{8}\.woff2$/);
+    const css = files.filter((f) => f.fileName.endsWith(".css")).map(text).join("\n");
+    expect(css).not.toMatch(/data:/);
+    expect(css).toContain("font-display:swap");
+    for (const font of fonts) expect(css).toContain(font.fileName.slice("assets/".length));
+
+    // The files in public/ are copied after the bundle is generated (so not listed here, and
+    // src/brandAssets.test.ts checks they exist); the page must link them at the site root.
+    const html = text(files.find((f) => f.fileName === "index.html"));
+    expect(html).toContain('href="/site.webmanifest"');
+    expect(html).toContain('content="https://between-jobs.tech/og-image.png"');
+  });
+
   it("names the host the bundle calls, not a path under it", async () => {
     const files = await runBuild({ VITE_API_BASE_URL: `${API}/v1/`, VITE_SUPABASE_URL: `${SUPABASE}/` });
     const file = text(files.find((f) => f.fileName === "_headers"));
