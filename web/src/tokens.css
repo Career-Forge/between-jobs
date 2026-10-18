@@ -249,6 +249,27 @@ button[aria-disabled="true"] {
   background: var(--bj-selected-bg-hover);
 }
 
+/* Windows High Contrast and other forced-colors modes replace every author color with the person's
+ * own palette, which erases the maroon fill that is this design's only selection cue (no underline,
+ * no edge bar). So a chosen item is drawn again in the system's own selection colors -- a fill
+ * still, nothing red -- and opts out of the replacement so that fill is the one that shows. */
+@media (forced-colors: active) {
+  .bj-selectable[aria-current="page"],
+  .bj-selectable[aria-current="location"],
+  .bj-selectable[aria-pressed="true"],
+  .bj-selectable[aria-selected="true"],
+  .bj-selectable[aria-checked="true"],
+  .bj-selectable[aria-current="page"]:hover,
+  .bj-selectable[aria-current="location"]:hover,
+  .bj-selectable[aria-pressed="true"]:hover,
+  .bj-selectable[aria-selected="true"]:hover,
+  .bj-selectable[aria-checked="true"]:hover {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
 .bj-segmented {
   display: inline-flex;
   flex-wrap: wrap;
