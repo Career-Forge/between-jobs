@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { CircuitDemo } from "../components/landing/CircuitDemo";
 import { DossierArt } from "../components/landing/DossierArt";
 import { TrailExample } from "../components/landing/TrailExample";
@@ -7,7 +7,7 @@ import { LANDING, LANDING_PROVIDERS, LANDING_SECTION_IDS } from "../content/land
 import { REPO_URL, SUPPORT_EMAIL } from "../content/site";
 import { nextStep } from "../lib/nextStep";
 import { LOGIN_PATH, PRIVACY_PATH, REGISTER_PATH } from "../lib/publicRoutes";
-import { useHashTarget } from "../lib/useHashTarget";
+import { useScrollToHash } from "../lib/useScrollToHash";
 import "../styles/landing.css";
 
 // "/" for a signed-out visitor. The words are content/landing.ts; the circuit is drawn from
@@ -24,7 +24,10 @@ const REPO_LABEL = REPO_URL.replace(/^https?:\/\//, "");
 const OUTCOME = nextStep({ page: "landing", signedIn: false });
 
 export default function Landing() {
-  useHashTarget();
+  // A header link such as /#circuit scrolls to the section and focuses its heading. The location key
+  // runs it again when the same link is followed twice.
+  const { hash, key } = useLocation();
+  useScrollToHash(true, hash, key);
   return (
     <div className="bj-landing">
       <section className="bj-landing-hero" aria-labelledby="bj-landing-title">

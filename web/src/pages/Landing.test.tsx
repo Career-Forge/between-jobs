@@ -145,8 +145,8 @@ describe("what the page has to disclose", () => {
 describe("the page works before any script has run", () => {
   it("has a hero that is plain React content: no lazy loading, no fetch, no state of its own", () => {
     expect(landingSource).not.toMatch(/\blazy\(|Suspense|\bfetch\(|useState|useReducer/);
-    // The one hook it calls only moves focus to a section named in the address; it draws nothing.
-    expect((landingSource.match(/\buse[A-Z]\w*\(/g) ?? []).sort()).toEqual(["useHashTarget("]);
+    // The two hooks it calls only read the address and move focus to a section named in it; they draw nothing.
+    expect((landingSource.match(/\buse[A-Z]\w*\(/g) ?? []).sort()).toEqual(["useLocation(", "useScrollToHash("]);
     // The static markup the server-side renderer produced has the headline, the lead and the band's link.
     const markup = page();
     expect(markup).toContain('<h1 id="bj-landing-title">');
