@@ -32,8 +32,8 @@
   text-decoration: none;
 }
 
-/* The in-page links of the landing page. They fold away under 960px, where the hero's own
-   "See how it works" link is the way to the circuit. */
+/* The in-page links of the landing page. Under 960px they drop to a row of their own under the
+   wordmark and the way in, so a phone or a tablet can still jump to a section. */
 .bj-public-sections {
   display: flex;
   flex: 1 1 auto;
@@ -145,7 +145,14 @@
 
 @media (max-width: 959px) {
   .bj-public-sections {
-    display: none;
+    order: 3;
+    flex: 1 0 100%;
+    margin-left: 0;
+    gap: 0 20px;
+  }
+
+  .bj-public-sections a {
+    font-size: var(--bj-text-control);
   }
 }
 
@@ -172,6 +179,20 @@
 
   .bj-public-actions a.bj-button-link {
     padding: 0 10px;
+  }
+
+  /* Targets are 44px by 44px on a phone. Sign in is 42px wide as text, so it is given the width. */
+  .bj-public-signin {
+    justify-content: center;
+    min-width: 44px;
+  }
+
+  /* The footer's link rows and the two mailto links each get a 44px row of their own to tap. */
+  .bj-public-footer .bj-legal-links a,
+  .bj-public-footer p a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
   }
 
   .bj-public-main {

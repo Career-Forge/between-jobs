@@ -17,6 +17,13 @@ import "../../styles/circuit.css";
 
 const DEFAULT_STAGE: StageId = "prepare";
 
+// The width at which circuit.css lays the five stages out in a row. Where the browser cannot say
+// (no matchMedia), the row is assumed, since it is the layout the keys were written for.
+const ROW_LAYOUT_QUERY = "(min-width: 960px)";
+function isRowLayout(): boolean {
+  return typeof window.matchMedia !== "function" || window.matchMedia(ROW_LAYOUT_QUERY).matches;
+}
+
 function Mock({ children }: { children: string }) {
   return (
     <span className="bj-circuit-mock" aria-hidden="true">
@@ -131,18 +138,22 @@ export function CircuitDemo() {
   const current = STAGES.find((stage) => stage.id === active) ?? STAGES[0];
   const position = STAGES.indexOf(current) + 1;
 
-  // Arrow keys, Home and End move focus between the stage buttons. They only move focus: a stage is
-  // picked with Enter or Space, so reading along the row never rewrites the page.
+  // In the row layout (960px and up) Left and Right, Home and End move focus between the stage
+  // buttons, without wrapping. They only move focus: a stage is picked with Enter or Space, so
+  // reading along the row never rewrites the page. Under 960px the stages are a vertical list a
+  // screen apart, and the keys are left alone: Up and Down scroll the page, Home and End go to its
+  // ends, and Tab already reaches each button.
   function onKeyDown(event: KeyboardEvent<HTMLOListElement>) {
-    const keys: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    if (!isRowLayout()) return;
     const buttons = Array.from(list.current?.querySelectorAll<HTMLButtonElement>("button.bj-circuit-stage-button") ?? []);
     const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (at === -1) return;
     let next: number | null = null;
-    if (event.key in keys) next = (at + keys[event.key] + buttons.length) % buttons.length;
+    if (event.key === "ArrowRight") next = Math.min(at + 1, buttons.length - 1);
+    if (event.key === "ArrowLeft") next = Math.max(at - 1, 0);
     if (event.key === "Home") next = 0;
     if (event.key === "End") next = buttons.length - 1;
-    if (next === null) return;
+    if (next === null || next === at) return;
     event.preventDefault();
     buttons[next].focus();
   }

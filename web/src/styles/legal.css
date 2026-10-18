@@ -130,6 +130,11 @@
     columns: 1;
   }
 
+  /* The table of contents stays one column on a phone, so each entry is a 44px row to tap. */
+  .bj-legal-toc a {
+    min-height: 44px;
+  }
+
   .bj-legal h2 {
     margin-top: 36px;
     font-size: 24px;

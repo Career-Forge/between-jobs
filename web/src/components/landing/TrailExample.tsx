@@ -9,10 +9,10 @@ import "../../styles/landing.css";
 // sentence is invented for this page and the card says so; no date is shown because none was read.
 
 const LEGEND: readonly { glyph: TrailGlyphName; words: string }[] = [
-  { glyph: "model", words: "a model" },
-  { glyph: "code", words: "plain code" },
-  { glyph: "you", words: "you" },
-  { glyph: "evidence", words: "for your review" },
+  { glyph: "model", words: "written by a model" },
+  { glyph: "code", words: "plain code, no model" },
+  { glyph: "you", words: "done by you" },
+  { glyph: "evidence", words: "waiting for your review" },
 ];
 
 export function TrailExample() {
@@ -38,16 +38,19 @@ export function TrailExample() {
           trail={{ glyph: "evidence", actor: "Flagged by the claim check", basis: "compared with the achievements picked for this draft" }}
         />
       </div>
-      <p className="bj-trail-example-legend" aria-label="What each mark means">
+      {/* A labelled list, not a labelled paragraph (aria-label is not allowed on a paragraph). The marks are
+          decoration, so each item's words say what the mark stands for. role="list" keeps the list a list in
+          Safari, which drops the semantics of a list styled with list-style: none. */}
+      <ul className="bj-trail-example-legend" role="list" aria-label="What each mark means">
         {LEGEND.map((item) => (
-          <span key={item.glyph}>
+          <li key={item.glyph}>
             <span className={`bj-trail-glyph bj-trail-glyph--${TRAIL_GLYPHS[item.glyph].tone}`} aria-hidden="true">
               {TRAIL_GLYPHS[item.glyph].char}
             </span>{" "}
             {item.words}
-          </span>
+          </li>
         ))}
-      </p>
+      </ul>
       <p className="bj-trail-example-note">{example.sampleNote}</p>
     </div>
   );
