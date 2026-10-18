@@ -196,7 +196,8 @@ function decide(facts: TodayFacts): Decision {
 
 // ── the steps ──────────────────────────────────────────────────────────────
 
-function workspace(applicationId: string, hash?: string): string {
+// The workspace of an application, optionally at one of its sections.
+export function workspacePath(applicationId: string, hash?: string): string {
   const path = `/applications/${encodeURIComponent(applicationId)}`;
   return hash === undefined ? path : `${path}#${hash}`;
 }
@@ -228,7 +229,7 @@ function heldBackStep(item: TodayItemFact): NextStep | null {
   if (item.applicationId === null) return null;
   return {
     sentence: `The fit check held back your draft${item.job === null ? "" : ` for ${item.job}`}. Read why, then decide.`,
-    action: { kind: "link", label: "See why", to: workspace(item.applicationId, CROSS_NAV_HASH.generate) },
+    action: { kind: "link", label: "See why", to: workspacePath(item.applicationId, CROSS_NAV_HASH.generate) },
     secondary: { kind: "button", label: "Generate anyway", intent: todayIntent("generate-anyway", item.id) },
     why: ["held back by the fit check", "no resume generated"],
   };
@@ -240,7 +241,7 @@ function readyStep(item: TodayItemFact): NextStep | null {
   if (item.atsScore !== null) why.push(`ATS score ${item.atsScore} / 100`);
   return {
     sentence: item.job === null ? "Your resume is ready for review." : `Your resume for ${item.job} is ready for review.`,
-    action: { kind: "link", label: "Open workspace", to: workspace(item.applicationId, REVIEW_HASH) },
+    action: { kind: "link", label: "Open workspace", to: workspacePath(item.applicationId, REVIEW_HASH) },
     why,
   };
 }
@@ -253,7 +254,7 @@ function matchStep(item: TodayItemFact): NextStep | null {
   const action: NextStepAction =
     item.trackedApplicationId === null
       ? { kind: "button", label: "Track", intent: todayIntent("track", item.id) }
-      : { kind: "link", label: "Open workspace", to: workspace(item.trackedApplicationId) };
+      : { kind: "link", label: "Open workspace", to: workspacePath(item.trackedApplicationId) };
   const what = KNOWN_BINS.includes(match.bin) ? `A ${match.bin} match` : "A match";
   const why = ["high fit job", `${match.score100} / 100`];
   if (match.searchLabel !== null) why.push(`saved search ${match.searchLabel}`);

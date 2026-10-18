@@ -1,69 +1,133 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { FirstRunStep, FirstRunView } from "../lib/firstRun";
+import { formatTrailDate } from "../lib/trail";
+import "../styles/today.css";
 
-// The first-run checklist card, as a function of its props (the same split as
-// AccountCardView): what it shows for a derived view, and what its Dismiss button does.
-// Deciding what is done, and whether the card shows at all, is lib/firstRun.ts.
+// The setup checklist, as a function of its props (the same split as AccountCardView): what it
+// shows for a derived view, and what its Hide button does. Deciding what is done, and how it is
+// presented, is lib/firstRun.ts.
 //
-// Accessible by construction: a labelled region, an ordered list, and every step says
-// its state in words -- "Done" is text, not just a tick -- so a screen reader announces
-// it. An unknown step says so rather than looking unticked.
+// Five steps, each one a link to where it is done, in three states and never a guessed tick:
+//   ◆ To do            gold, with a short hint
+//   ✓ Done             emerald, with the real fact when one came back ("Active since Sep 12")
+//   ○ Can't tell yet   muted: every read worked and none holds the answer
+//   ○ Couldn't check   muted, with a secondary Try again: a read it depends on failed
+// The words carry every state; the glyphs are decoration. It holds no cyan fill: the next-step band
+// holds the page's only one.
+//
+// Open it is the list. Closed it is one 44px line that opens it again: "✓ Setup ready" when all five
+// are done, otherwise the counts ("Setup · 2 to do"). Hiding it never hides it for good.
 
-const TITLE_ID = "bj-first-run-title";
+const TITLE_ID = "bj-setup-title";
 
-function StepState({ step, isNext }: { step: FirstRunStep; isNext: boolean }) {
-  if (step.status === "done") return <span className="bj-badge-emerald">Done</span>;
-  if (step.status === "unknown") {
-    return <span className="bj-badge-muted">Can&apos;t check right now</span>;
-  }
-  return isNext ? (
-    <span className="bj-badge-gold">Next</span>
-  ) : (
-    <span className="bj-visually-hidden">To do</span>
-  );
+function stateOf(step: FirstRunStep): { words: string; tone: "todo" | "done" | "unknown"; glyph: string } {
+  if (step.status === "done") return { words: "Done", tone: "done", glyph: "✓" };
+  if (step.status === "todo") return { words: "To do", tone: "todo", glyph: "◆" };
+  return { words: step.cause === "errored" ? "Couldn't check" : "Can't tell yet", tone: "unknown", glyph: "○" };
 }
 
-function mark(step: FirstRunStep): string {
-  if (step.status === "done") return "✓";
-  return step.status === "unknown" ? "?" : "○";
+function noteOf(step: FirstRunStep, now: Date): string | null {
+  if (step.status === "todo") return step.hint;
+  if (step.status !== "done" || step.fact === null) return null;
+  if (step.fact.kind === "text") return step.fact.text;
+  const since = formatTrailDate(step.fact.at, { now });
+  return since === null ? null : `Active since ${since}`;
+}
+
+function countsLine(view: FirstRunView): string {
+  const parts = ["Setup"];
+  if (view.todoCount > 0) parts.push(`${view.todoCount} to do`);
+  if (view.unknownCount > 0) parts.push(`${view.unknownCount} can't tell`);
+  return parts.join(" · ");
 }
 
 export function FirstRunChecklistView({
   view,
   onDismiss,
+  onRetry,
+  now = new Date(),
 }: {
   view: FirstRunView;
   onDismiss: () => void;
+  /** Reads the account again; without it a step that errored has no Try again. */
+  onRetry?: () => void;
+  now?: Date;
 }) {
-  if (!view.visible) return null;
+  // null: follow the view (open while a step is to do, closed otherwise); a click decides.
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  if (view.presentation === "hidden") return null;
+  const open = chosen ?? view.presentation === "expanded";
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="bj-setup-line"
+        aria-expanded={false}
+        onClick={() => setChosen(true)}
+      >
+        {view.finished ? (
+          <>
+            <span className="bj-setup-line-glyph--done" aria-hidden="true">
+              {"✓"}
+            </span>
+            Setup ready
+          </>
+        ) : (
+          countsLine(view)
+        )}
+        <span aria-hidden="true">{"›"}</span>
+      </button>
+    );
+  }
 
   return (
-    <section className="bj-card bj-first-run" aria-labelledby={TITLE_ID}>
-      <div className="bj-card-header">
-        <h2 id={TITLE_ID}>Getting started</h2>
-        <button type="button" onClick={onDismiss} aria-label="Dismiss the getting started checklist">
-          Dismiss
+    <section className="bj-setup" aria-labelledby={TITLE_ID}>
+      <div className="bj-setup-head">
+        <h2 id={TITLE_ID} className="bj-setup-title">
+          Setup
+        </h2>
+        <span className="bj-setup-count">
+          {view.doneCount} of {view.steps.length} done
+        </span>
+        <button
+          type="button"
+          className="bj-quiet"
+          aria-label="Hide the setup checklist"
+          onClick={() => {
+            // A finished account only folds the list away; hiding an unfinished one is remembered.
+            if (!view.finished) onDismiss();
+            setChosen(false);
+          }}
+        >
+          Hide
         </button>
       </div>
-      <p className="bj-muted bj-small">
-        {view.doneCount} of {view.steps.length} done.
-        {view.nextStep !== null && ` Next: ${view.nextStep.label}.`}
-      </p>
-      <ol className="bj-first-run-steps">
-        {view.steps.map((step) => (
-          <li key={step.id} className="bj-first-run-step" data-status={step.status}>
-            <span className="bj-first-run-mark" aria-hidden="true">
-              {mark(step)}
-            </span>
-            <div className="bj-first-run-body">
-              <div className="bj-first-run-title">
-                <Link to={step.to}>{step.label}</Link>
-                <StepState step={step} isNext={view.nextStep?.id === step.id} />
-              </div>
-              <div className="bj-muted bj-small">{step.hint}</div>
-            </div>
-          </li>
-        ))}
+      <ol className="bj-setup-steps">
+        {view.steps.map((step) => {
+          const state = stateOf(step);
+          const note = noteOf(step, now);
+          return (
+            <li key={step.id} className="bj-setup-step" data-status={step.status}>
+              <span className={`bj-setup-state bj-setup-state--${state.tone}`}>
+                <span className="bj-setup-glyph" aria-hidden="true">
+                  {state.glyph}
+                </span>
+                {state.words}
+              </span>
+              <Link className="bj-setup-link" to={step.to}>
+                {step.label}
+              </Link>
+              {note !== null && <p className="bj-setup-note">{note}</p>}
+              {step.status === "unknown" && step.cause === "errored" && onRetry !== undefined && (
+                <button type="button" className="bj-setup-retry" aria-label={`Try again: ${step.label}`} onClick={onRetry}>
+                  Try again
+                </button>
+              )}
+            </li>
+          );
+        })}
       </ol>
     </section>
   );

@@ -11,6 +11,7 @@ import {
   formatTenScale,
   jobLabel,
   kindLabel,
+  rowActions,
   rowView,
   searchStatusWords,
   searchesRead,
@@ -251,7 +252,7 @@ describe("a row's words", () => {
       expect(view.serifTitle).toBe(true);
       expect(view.chip).toEqual({ tone: "gold", text: "Fit check held it back · 3.6 / 10" });
       expect(view.details).toEqual(["Fit too low"]);
-      expect(trailText(view)).toBe("engine Held back by the fit check · code-weighted from your model's sub-scores · Sep 22");
+      expect(trailText(view)).toBe("engine · Held back by the fit check · code-weighted from your model's sub-scores · Sep 22");
     });
 
     it("says only that it was held back when the score could not be read", () => {
@@ -283,20 +284,20 @@ describe("a row's words", () => {
       );
       expect(view.chip).toEqual({ tone: "gold", text: "Strong -- 74 / 100" });
       expect(view.details).toEqual(["Initech -- Remote", "Strong on SQL"]);
-      expect(trailText(view)).toBe('engine Found by saved search "analytics engineer" · via registry · Sep 22');
+      expect(trailText(view)).toBe('engine · Found by saved search "analytics engineer" · via registry · Sep 22');
       expect(buildTrail(view.trail)?.glyphs).toEqual(["engine"]);
     });
 
     it("says 'a saved search' when the list has no search by that id, and 'Unknown company' for no company", () => {
       const view = rowView(item({ id: "m", kind: "high_fit_job", job_match: { ...MATCH, company: null, location: null } }), context());
       expect(view.details).toEqual(["Unknown company"]);
-      expect(trailText(view)).toBe("engine Found by a saved search · via registry · Sep 22");
+      expect(trailText(view)).toBe("engine · Found by a saved search · via registry · Sep 22");
     });
 
     it("has no chip or provider when the companion row is missing", () => {
       const view = rowView(item({ id: "m", kind: "high_fit_job" }), context());
       expect(view.chip).toBeNull();
-      expect(trailText(view)).toBe("engine Found by a saved search · Sep 22");
+      expect(trailText(view)).toBe("engine · Found by a saved search · Sep 22");
     });
   });
 
@@ -460,5 +461,41 @@ describe("the background trail", () => {
 
   it("writes the client time as the band's failure line does", () => {
     expect(clockTime(new Date("2026-09-22T09:14:00"))).toBe("09:14");
+  });
+});
+
+describe("what a row can do", () => {
+  const ids = (actions: ReturnType<typeof rowActions>) => actions.map((action) => (action.id === "link" ? `link:${action.label}:${action.to}` : action.id));
+
+  it("lets a proposal with a stage be accepted, and one without only be dismissed", () => {
+    const mappable = item({ id: "p", kind: "status_proposal", status_proposal: { id: "s", proposed_type: "offer.received", confidence: 0.6, evidence_spans: [], status: "pending" } });
+    const unmappable = item({ id: "p", kind: "status_proposal", status_proposal: { id: "s", proposed_type: "recruiter.replied", confidence: 0.6, evidence_spans: [], status: "pending" } });
+    expect(rowActions(mappable, null)).toEqual([{ id: "accept", label: "Accept: move to Offer" }, { id: "dismiss", label: "Dismiss" }]);
+    expect(ids(rowActions(unmappable, null))).toEqual(["dismiss"]);
+    expect(ids(rowActions(item({ id: "p", kind: "status_proposal" }), null))).toEqual(["dismiss"]);
+  });
+
+  it("offers Track for a match, and Open workspace once it is tracked", () => {
+    const match = item({ id: "m", kind: "high_fit_job", job_match: MATCH });
+    expect(ids(rowActions(match, null))).toEqual(["track", "dismiss"]);
+    expect(ids(rowActions(match, "app 9"))).toEqual(["link:Open workspace:/applications/app%209", "dismiss"]);
+    expect(ids(rowActions(item({ id: "m", kind: "high_fit_job" }), null))).toEqual(["dismiss"]);
+  });
+
+  it("links a ready resume to the workspace's review section, and a held-back one to the fit check", () => {
+    expect(ids(rowActions(item({ id: "r", kind: "resume_ready", application_id: "a1" }), null))).toEqual(["link:Open workspace:/applications/a1#ch-check", "dismiss"]);
+    expect(ids(rowActions(item({ id: "f", kind: "resume_failed", application_id: "a1" }), null))).toEqual(["link:See why:/applications/a1#generate", "generate-anyway", "dismiss"]);
+  });
+
+  it("keeps Dismiss only for an item with no application to open", () => {
+    for (const kind of ["resume_ready", "resume_failed", "job_tracked", "stage_changed"] as const) {
+      expect(ids(rowActions(item({ id: "x", kind }), null))).toEqual(["dismiss"]);
+    }
+  });
+
+  it("links a tracked job or a stage change to its workspace", () => {
+    for (const kind of ["job_tracked", "stage_changed"] as const) {
+      expect(ids(rowActions(item({ id: "x", kind, application_id: "a1" }), null))).toEqual(["link:Open workspace:/applications/a1", "dismiss"]);
+    }
   });
 });

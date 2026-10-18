@@ -30,6 +30,11 @@ const sources: Record<string, string> = Object.fromEntries(
   ]),
 );
 
+// The components allowed to read a notice's message: the one that draws the notice with its link, and
+// Today's item problems, which hand the message to SetupRequiredState together with the link (the
+// notice's own, or the settings page when the server sent none, so there is always one).
+const DRAWS_THE_LINK_ITSELF = new Set(["../components/SetupRequiredNotice.tsx", "../components/today/ItemParts.tsx"]);
+
 // Where the raw code string is allowed to appear: the module that owns the decision, the
 // list of codes, the client that carries the fields, and prose in comments.
 const ALLOWED_TO_NAME_THE_CODE = new Set([
@@ -177,7 +182,7 @@ describe("every place a SETUP_REQUIRED error is shown", () => {
   it("only draws a notice through the two components that draw its link", () => {
     // A notice drawn by hand (`{state.notice.message}`) is the sentence without the link.
     for (const [file, source] of Object.entries(sources)) {
-      if (file === "../components/SetupRequiredNotice.tsx") continue;
+      if (DRAWS_THE_LINK_ITSELF.has(file)) continue;
       expect(codeOnly(source), file).not.toMatch(/\bnotice\.message\b/);
     }
   });

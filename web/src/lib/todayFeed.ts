@@ -15,11 +15,14 @@ import type { TrackDiscoveredJobBody } from "./discoverTypes";
 import { savedSearchLabel } from "./discover";
 import { parseSavedSearch } from "./savedSearches";
 import { gmailConnection, type GmailConnection, type GmailCredentialRow } from "./gmailAccess";
+import { CROSS_NAV_HASH } from "./applicationsBoard";
 import {
   AUTO_MOVE_PERCENT,
+  REVIEW_HASH,
   TODAY_KINDS,
   isMappableProposal,
   PROPOSAL_STEPS,
+  workspacePath,
   type SavedSearchesFact,
   type TodayFacts,
   type TodayItemFact,
@@ -407,6 +410,49 @@ export function rowView(item: TodayItem, context: RowContext): RowView {
         receipt: [{ label: "kind", value: item.kind }, logged],
       };
   }
+}
+
+// ── what a row can do ──────────────────────────────────────────────────────
+
+// The controls of an item, in the order they are drawn. A link goes to the application's workspace;
+// the others are handlers the page owns. "dismiss" is last and is the only one the band repeats for
+// the item it holds (the band carries the item's other actions itself).
+export type RowAction =
+  | { id: "link"; label: string; to: string }
+  | { id: "accept" | "track" | "generate-anyway" | "dismiss"; label: string };
+
+export function rowActions(item: TodayItem, trackedApplicationId: string | null): RowAction[] {
+  const applicationId = text(item.application_id);
+  const actions: RowAction[] = [];
+  switch (item.kind) {
+    case "status_proposal": {
+      const type = item.status_proposal?.proposed_type;
+      if (type !== undefined && isMappableProposal(type)) actions.push({ id: "accept", label: `Accept: move to ${PROPOSAL_STEPS[type].stage}` });
+      break;
+    }
+    case "high_fit_job":
+      if (item.job_match !== null) {
+        actions.push(
+          trackedApplicationId === null
+            ? { id: "track", label: "Track" }
+            : { id: "link", label: "Open workspace", to: workspacePath(trackedApplicationId) },
+        );
+      }
+      break;
+    case "resume_ready":
+      if (applicationId !== null) actions.push({ id: "link", label: "Open workspace", to: workspacePath(applicationId, REVIEW_HASH) });
+      break;
+    case "resume_failed":
+      if (applicationId !== null) {
+        actions.push({ id: "link", label: "See why", to: workspacePath(applicationId, CROSS_NAV_HASH.generate) });
+        actions.push({ id: "generate-anyway", label: "Generate anyway" });
+      }
+      break;
+    default:
+      if (applicationId !== null) actions.push({ id: "link", label: "Open workspace", to: workspacePath(applicationId) });
+  }
+  actions.push({ id: "dismiss", label: "Dismiss" });
+  return actions;
 }
 
 // ── the background trail ───────────────────────────────────────────────────
