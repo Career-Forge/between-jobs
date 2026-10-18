@@ -1362,7 +1362,7 @@ _PRIVACY_CLAIMS_LINKED = [
 # Only the version for a chat the bot made an account for: no Profile page to delete from.
 _PRIVACY_CLAIMS_BOT_ONLY = [
     ("link this chat to a website account with a code", "link it to a web account with a code"),
-    ("Integrations page", "Integrations page"),
+    ("Settings page", "Settings page"),
     ("email the privacy address", "delete your account by email at"),
     ("within 7 days", "We will do it within 7 days"),
     ("what the policy lists as not removed", "What is not removed when you delete your account"),
@@ -1588,7 +1588,7 @@ _PROFILE_TAIL = (
 )
 _KEY_TAIL = (
     "Paste your own model key on the website. This app never runs on a shared key.\n"
-    "On the website: the Integrations page (under Profile)."
+    "On the website: the Settings page."
 )
 _TRACK_TAIL = (
     'Send me a job here ("track a job" shows the format), or paste one on the website.\n'
@@ -1667,6 +1667,27 @@ def test_the_first_search_step_has_its_own_hint_and_page_even_though_a_chat_neve
         .plain_text()
         .endswith(f"On the website: {_WEB}/discover")
     )
+
+
+def test_a_key_waiting_for_its_model_is_told_to_choose_one_not_to_add_a_key() -> None:
+    """The model-key step while a key is saved and checked with no model: not "add a key" (it is
+    there), and the link goes to the section where the model is chosen."""
+    facts = FirstRunFacts(
+        profile=True,
+        model_key=False,
+        model_key_needs_model=True,
+        saved_searches=0,
+        applications=ApplicationFacts(count=0, from_discover=0, with_resume=0),
+    )
+    view = derive_first_run(facts, None)
+    assert view.next_step is not None and view.next_step.label == "Choose a model"
+
+    shown = messages.learn_text(view, facts, _WEB).plain_text()
+
+    assert "Next: Choose a model\n" in shown
+    assert "Your key is saved and checked, but no model is chosen for it yet." in shown
+    assert shown.endswith(f"On the website: {_WEB}/settings#ai-provider")
+    assert "Paste your own model key" not in shown
 
 
 async def test_an_application_tracked_in_the_chat_does_not_show_a_first_search_was_run(

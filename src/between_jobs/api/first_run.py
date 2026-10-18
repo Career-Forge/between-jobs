@@ -8,7 +8,9 @@ test_first_run.py` and `web/src/lib/firstRunShared.test.ts`). Change a rule in o
 other side's test fails until it follows.
 
 THE FIVE STEPS tick from real data and never from a click: an active profile exists; a model key
-that is validated and has a model chosen exists; a first search happened; an application is
+that is validated and has a model chosen exists (a key that is checked and has no model is saved
+and unusable, so it does not tick the step, and the step then says what is left: "Choose a model",
+with its own link); a first search happened; an application is
 tracked; an application has a resume.
 
 THREE STATES, NEVER TWO. A step is done, todo, or UNKNOWN. A fact that could not be read (a
@@ -64,6 +66,12 @@ STEP_LABELS: dict[StepId, str] = {
 }
 """The step names, as the web checklist words them."""
 
+MODEL_CHOICE_LABEL = "Choose a model"
+MODEL_CHOICE_PAGE = "/settings#ai-provider"
+"""What the model-key step becomes while a key is saved and checked and no model is chosen for it
+(the API's `needs_model` state): the key is not what is missing, so it must not say "Add a model
+key", and the link goes to the AI provider section where the model is chosen."""
+
 STEP_PAGES: dict[StepId, str] = {
     "profile": "/profile",
     "model_key": "/settings",
@@ -92,6 +100,9 @@ class FirstRunFacts:
     model_key: bool | None
     saved_searches: int | None
     applications: ApplicationFacts | None
+    model_key_needs_model: bool | None = False
+    """A key is checked and saved with no model chosen, and no key is ready. Only meaningful when
+    `model_key` is False. None means it could not be read, like the other facts."""
 
 
 @dataclass(frozen=True)
@@ -137,6 +148,7 @@ def derive_first_run(facts: FirstRunFacts, searched: bool | None = None) -> Firs
     """The five steps for an account. `searched` is the web app's browser-side memory of a first
     search (True, False, or None when it cannot be read); a chat, which has none, passes None."""
     applications = facts.applications
+    awaiting_model = facts.model_key is False and facts.model_key_needs_model is True
     statuses: dict[StepId, StepStatus] = {
         "profile": _from_flag(facts.profile),
         "model_key": _from_flag(facts.model_key),
@@ -151,7 +163,14 @@ def derive_first_run(facts: FirstRunFacts, searched: bool | None = None) -> Firs
         ),
     }
     steps = tuple(
-        FirstRunStep(step_id, STEP_LABELS[step_id], STEP_PAGES[step_id], statuses[step_id])
+        FirstRunStep(
+            step_id,
+            MODEL_CHOICE_LABEL
+            if step_id == "model_key" and awaiting_model
+            else STEP_LABELS[step_id],
+            MODEL_CHOICE_PAGE if step_id == "model_key" and awaiting_model else STEP_PAGES[step_id],
+            statuses[step_id],
+        )
         for step_id in STEP_IDS
     )
     return FirstRunView(
@@ -182,12 +201,15 @@ async def _has_profile(supabase: AsyncClient, user_id: str) -> bool:
     return await get_active_version(supabase, user_id) is not None
 
 
-async def _has_validated_model_key(supabase: AsyncClient, user_id: str) -> bool:
-    """A key for a model that can be used: checked, and with a model chosen (`ready`, see
-    `llm_setup_state`). A checked key with no model is saved and still fails every generation
-    with "no model is chosen", so it does not tick the step."""
+async def _model_key_state(supabase: AsyncClient, user_id: str) -> tuple[bool, bool]:
+    """(a key for a model that can be used exists, a checked key waits for a model). The first is
+    a key that is checked and has a model chosen (`ready`, see `llm_setup_state`): a checked key
+    with no model is saved and still fails every generation with "no model is chosen", so it does
+    not tick the step, but it is not "no key" either, and the second says so."""
     rows = await list_credentials(supabase, user_id, service="llm")
-    return any(llm_setup_state(row) == "ready" for row in rows)
+    states = [llm_setup_state(row) for row in rows]
+    ready = "ready" in states
+    return ready, (not ready) and "needs_model" in states
 
 
 async def _count_saved_searches(supabase: AsyncClient, user_id: str) -> int:
@@ -210,15 +232,16 @@ async def _application_facts(supabase: AsyncClient, user_id: str) -> Application
 async def load_first_run_facts(supabase: AsyncClient, user_id: str) -> FirstRunFacts:
     """The account's facts, read concurrently through the stores. Only reads: nothing is
     written, and nothing here can spend a person's rate-limited budget."""
-    profile, model_key, saved_searches, applications = await asyncio.gather(
+    profile, model_state, saved_searches, applications = await asyncio.gather(
         _settle("profile", _has_profile(supabase, user_id)),
-        _settle("model_key", _has_validated_model_key(supabase, user_id)),
+        _settle("model_key", _model_key_state(supabase, user_id)),
         _settle("saved_searches", _count_saved_searches(supabase, user_id)),
         _settle("applications", _application_facts(supabase, user_id)),
     )
     return FirstRunFacts(
         profile=profile,
-        model_key=model_key,
+        model_key=None if model_state is None else model_state[0],
         saved_searches=saved_searches,
         applications=applications,
+        model_key_needs_model=None if model_state is None else model_state[1],
     )

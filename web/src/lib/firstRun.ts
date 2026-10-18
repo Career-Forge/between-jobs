@@ -2,7 +2,9 @@
 // up" to "has generated a resume", ticked from what the account actually has.
 //
 // WHAT TICKS A STEP. Only real data, never a click: an active profile exists; a validated
-// model key exists; a first search happened; an application is tracked; an application has
+// model key with a model chosen exists (a key that is checked and has no model is saved and
+// unusable, so it does not tick the step, and the step then says what is left: "Choose a model",
+// with a link of its own); a first search happened; an application is tracked; an application has
 // a resume. Each comes from a list the app already reads (the profile, the credentials,
 // the applications with their `resume_exists`, the saved searches) -- no route was added
 // for this, and nothing here calls a rate-limited endpoint: the checklist runs on every
@@ -67,8 +69,11 @@ export interface ApplicationFacts {
 export interface FirstRunFacts {
   // An active profile exists.
   profile: Fetched<boolean>;
-  // A validated key for the model exists.
+  // A validated key with a model chosen exists.
   modelKey: Fetched<boolean>;
+  // A key is checked and saved with no model chosen, and no key is ready. Only read when modelKey is
+  // false. Absent means no key is waiting for a model.
+  modelKeyNeedsModel?: Fetched<boolean>;
   savedSearches: Fetched<number>;
   applications: Fetched<ApplicationFacts>;
 }
@@ -120,11 +125,18 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 
+// What the credentials list says about the model keys: one is ready, or one is checked and waits for
+// its model.
+interface ModelKeyState {
+  ready: boolean;
+  needsModel: boolean;
+}
+
 // The four requests, all plain GETs the app already makes elsewhere (Profile, Integrations,
 // Applications, Discover's saved searches). Each fails on its own: one fact failing leaves
 // the other three.
 export async function loadFirstRunFacts(fetcher: Fetcher): Promise<FirstRunFacts> {
-  const [profile, modelKey, savedSearches, applications] = await Promise.all([
+  const [profile, modelKeyState, savedSearches, applications] = await Promise.all([
     settle<boolean>(async () => {
       try {
         return isRecord(await fetcher<unknown>("/profile/current")) ? ok(true) : FAILED;
@@ -133,16 +145,14 @@ export async function loadFirstRunFacts(fetcher: Fetcher): Promise<FirstRunFacts
         return statusOf(e) === 404 ? ok(false) : FAILED;
       }
     }),
-    settle<boolean>(async () => {
+    settle<ModelKeyState>(async () => {
       const rows = await readRows(fetcher, "/credentials");
       if (rows === null) return FAILED;
       // Validated AND with a model chosen: a checked key with no model is saved and still fails
       // every generation (the server's `needs_model`), so it does not tick the step.
-      return ok(
-        rows.some(
-          (row) => row.service === "llm" && row.is_validated === true && nonEmptyString(row.model) !== null,
-        ),
-      );
+      const checked = rows.filter((row) => row.service === "llm" && row.is_validated === true);
+      const ready = checked.some((row) => nonEmptyString(row.model) !== null);
+      return ok({ ready, needsModel: !ready && checked.length > 0 });
     }),
     settle<number>(async () => {
       const rows = await readRows(fetcher, "/saved-searches");
@@ -161,7 +171,9 @@ export async function loadFirstRunFacts(fetcher: Fetcher): Promise<FirstRunFacts
       });
     }),
   ]);
-  return { profile, modelKey, savedSearches, applications };
+  const modelKey: Fetched<boolean> = modelKeyState.kind === "ok" ? ok(modelKeyState.value.ready) : modelKeyState;
+  const modelKeyNeedsModel: Fetched<boolean> = modelKeyState.kind === "ok" ? ok(modelKeyState.value.needsModel) : modelKeyState;
+  return { profile, modelKey, modelKeyNeedsModel, savedSearches, applications };
 }
 
 // ── deriving the steps ─────────────────────────────────────────────────────
@@ -212,8 +224,17 @@ function resumeLink(facts: FirstRunFacts): string {
   return "/applications";
 }
 
+export const MODEL_CHOICE_LABEL = "Choose a model";
+export const MODEL_CHOICE_PAGE = "/settings#ai-provider";
+
 export function deriveFirstRun(facts: FirstRunFacts, flags: FirstRunFlags): FirstRunView {
   const applications = facts.applications;
+  // The key is there; the model is what is missing. Only claimed when both facts were read.
+  const awaitingModel =
+    facts.modelKey.kind === "ok" &&
+    !facts.modelKey.value &&
+    facts.modelKeyNeedsModel?.kind === "ok" &&
+    facts.modelKeyNeedsModel.value;
   const steps: FirstRunStep[] = [
     {
       id: "profile",
@@ -224,9 +245,11 @@ export function deriveFirstRun(facts: FirstRunFacts, flags: FirstRunFlags): Firs
     },
     {
       id: "model_key",
-      label: "Add a model key",
-      hint: "Paste your own model key. This app never runs on a shared key.",
-      to: "/settings",
+      label: awaitingModel ? MODEL_CHOICE_LABEL : "Add a model key",
+      hint: awaitingModel
+        ? "Your key is saved and checked, but no model is chosen for it yet. Choose one to use it."
+        : "Paste your own model key. This app never runs on a shared key.",
+      to: awaitingModel ? MODEL_CHOICE_PAGE : "/settings",
       status: fromFlag(facts.modelKey),
     },
     {

@@ -292,6 +292,39 @@ describe("deriveFirstRun", () => {
     });
   });
 
+  describe("a key waiting for its model", () => {
+    const WAITING: FirstRunFacts = { ...EVERYTHING_DONE, modelKey: ok(false), modelKeyNeedsModel: ok(true) };
+
+    it("is still todo, but names what is left: choosing the model, with a link to the provider section", () => {
+      const step = deriveFirstRun(WAITING, FRESH).steps[1];
+      expect(step).toMatchObject({ id: "model_key", status: "todo", label: "Choose a model", to: "/settings#ai-provider" });
+      expect(step.hint).toContain("no model is chosen");
+      expect(step.hint).not.toContain("Paste your own model key");
+    });
+
+    it("keeps the ordinary wording and link for no key, and for a key that is ready", () => {
+      for (const facts of [{ ...EVERYTHING_DONE, modelKey: ok(false) }, { ...EVERYTHING_DONE, modelKey: ok(false), modelKeyNeedsModel: ok(false) }, EVERYTHING_DONE]) {
+        expect(deriveFirstRun(facts, FRESH).steps[1]).toMatchObject({ label: "Add a model key", to: "/settings" });
+      }
+    });
+
+    it("never claims it when the credentials could not be read, or when the claim itself could not", () => {
+      for (const facts of [
+        { ...EVERYTHING_DONE, modelKey: failed, modelKeyNeedsModel: failed },
+        { ...EVERYTHING_DONE, modelKey: ok(false), modelKeyNeedsModel: failed },
+        { ...EVERYTHING_DONE, modelKey: ok(false), modelKeyNeedsModel: loading },
+      ] as FirstRunFacts[]) {
+        expect(deriveFirstRun(facts, FRESH).steps[1].label).toBe("Add a model key");
+      }
+    });
+
+    it("does not count as done, and is the next step to take", () => {
+      const view = deriveFirstRun(WAITING, FRESH);
+      expect(view.doneCount).toBe(4);
+      expect(view.nextStep?.id).toBe("model_key");
+    });
+  });
+
   describe("visibility", () => {
     it("is hidden while any input is still loading", () => {
       for (const key of ["profile", "modelKey", "savedSearches", "applications"] as const) {
@@ -377,6 +410,7 @@ describe("loadFirstRunFacts", () => {
     expect(await loadFirstRunFacts(fetcher)).toEqual({
       profile: ok(true),
       modelKey: ok(true),
+      modelKeyNeedsModel: ok(false),
       savedSearches: ok(1),
       applications: ok({ count: 2, fromDiscover: 0, withResume: 1, resumeTargetId: "app-1" }),
     });
@@ -417,6 +451,32 @@ describe("loadFirstRunFacts", () => {
       const { fetcher } = fakeFetcher({ ...GOOD, "/credentials": rows });
       expect((await loadFirstRunFacts(fetcher)).modelKey).toEqual(expected);
     }
+  });
+
+  it("tells a key that is waiting for its model from no key at all, and lets a ready key win", async () => {
+    const waiting = { service: "llm", is_validated: true, model: null };
+    const ready = { service: "llm", is_validated: true, model: "vendor/model" };
+    const unchecked = { service: "llm", is_validated: false, model: "vendor/model" };
+    const cases: Array<[unknown[], boolean, boolean]> = [
+      [[], false, false],
+      [[unchecked], false, false],
+      [[waiting], false, true],
+      [[unchecked, waiting], false, true],
+      [[ready], true, false],
+      [[waiting, ready], true, false],
+      [[{ service: "search", is_validated: true, model: null }], false, false],
+    ];
+    for (const [rows, isReady, needsModel] of cases) {
+      const { fetcher } = fakeFetcher({ ...GOOD, "/credentials": rows });
+      const facts = await loadFirstRunFacts(fetcher);
+      expect([facts.modelKey, facts.modelKeyNeedsModel]).toEqual([ok(isReady), ok(needsModel)]);
+    }
+  });
+
+  it("leaves both model-key facts unread when the credentials could not be read", async () => {
+    const { fetcher } = fakeFetcher({ ...GOOD, "/credentials": new FakeApiError(500) });
+    const facts = await loadFirstRunFacts(fetcher);
+    expect([facts.modelKey, facts.modelKeyNeedsModel]).toEqual([failed, failed]);
   });
 
   it("counts applications and finds one without a resume to open", async () => {
@@ -505,6 +565,7 @@ describe("loadFirstRunFacts", () => {
     expect(await loadFirstRunFacts(fetcher)).toEqual({
       profile: ok(true),
       modelKey: failed,
+      modelKeyNeedsModel: failed,
       savedSearches: failed,
       applications: failed,
     });
@@ -515,6 +576,7 @@ describe("loadFirstRunFacts", () => {
     expect(await loadFirstRunFacts(fetcher)).toEqual({
       profile: ok(true),
       modelKey: ok(true),
+      modelKeyNeedsModel: ok(false),
       savedSearches: ok(1),
       applications: failed,
     });
@@ -528,7 +590,7 @@ describe("loadFirstRunFacts", () => {
       "/applications": down,
       "/saved-searches": down,
     });
-    expect(await loadFirstRunFacts(fetcher)).toEqual(ALL_FAILED);
+    expect(await loadFirstRunFacts(fetcher)).toEqual({ ...ALL_FAILED, modelKeyNeedsModel: failed });
   });
 });
 
