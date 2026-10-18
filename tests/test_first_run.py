@@ -37,6 +37,7 @@ def _facts_of(case: dict[str, Any]) -> FirstRunFacts:
     return FirstRunFacts(
         profile=facts["profile"],
         model_key=facts["model_key"],
+        model_key_needs_model=facts.get("model_key_needs_model", False),
         saved_searches=facts["saved_searches"],
         applications=(
             None
@@ -67,6 +68,11 @@ def test_every_account_in_the_shared_table_comes_out_as_the_table_says(
 
     assert [step.id for step in view.steps] == _TABLE["step_order"]
     assert {step.id: step.status for step in view.steps} == case["steps"]
+    # A step shows the table's own name and page unless the case says what it shows instead.
+    details = case.get("step_details", {})
+    for step in view.steps:
+        assert step.label == details.get(step.id, {}).get("label", _TABLE["labels"][step.id])
+        assert step.page == details.get(step.id, {}).get("page", _TABLE["pages"][step.id])
     assert view.done_count == case["done_count"]
     assert (view.next_step.id if view.next_step else None) == case["next_step"]
 
@@ -340,6 +346,74 @@ async def test_a_checked_key_with_no_model_chosen_is_not_a_model_key_yet(
     facts = await load_first_run_facts(supabase, _USER)  # type: ignore[arg-type]
 
     assert facts.model_key is False
+
+
+def _keys(*states: str) -> _Table:
+    """Model key rows in the named states: ready, needs_model or needs_key."""
+    rows: dict[str, dict[str, Any]] = {
+        "ready": {"is_validated": True, "model": "some-model"},
+        "needs_model": {"is_validated": True, "model": None},
+        "needs_key": {"is_validated": False, "model": "some-model"},
+    }
+    return _Table(
+        [{"service": "llm", "provider": f"p{i}", **rows[state]} for i, state in enumerate(states)]
+    )
+
+
+@pytest.mark.parametrize(
+    ("states", "ready", "needs_model"),
+    [
+        ((), False, False),
+        (("needs_key",), False, False),
+        (("needs_model",), False, True),
+        (("needs_key", "needs_model"), False, True),
+        (("ready",), True, False),
+        (("needs_model", "ready"), True, False),
+    ],
+)
+async def test_a_key_waiting_for_its_model_is_its_own_fact_and_never_a_model_key(
+    states: tuple[str, ...], ready: bool, needs_model: bool
+) -> None:
+    """The step stays todo for a key with no model, but it is not the same todo as no key: it says
+    so. A ready key wins over one that is waiting, because the step is then done."""
+    facts = await load_first_run_facts(
+        _Supabase(provider_credentials=_keys(*states)),  # type: ignore[arg-type]
+        _USER,
+    )
+
+    assert (facts.model_key, facts.model_key_needs_model) == (ready, needs_model)
+
+
+async def test_when_the_keys_cannot_be_read_neither_fact_is_guessed() -> None:
+    supabase = _Supabase(provider_credentials=_Table([], error=RuntimeError("down")))
+
+    facts = await load_first_run_facts(supabase, _USER)  # type: ignore[arg-type]
+
+    assert facts.model_key is None and facts.model_key_needs_model is None
+    step = next(s for s in derive_first_run(facts, None).steps if s.id == "model_key")
+    assert (step.status, step.label, step.page) == (
+        "unknown",
+        STEP_LABELS["model_key"],
+        STEP_PAGES["model_key"],
+    )
+
+
+def test_a_waiting_key_renames_the_step_and_links_to_the_provider_section() -> None:
+    facts = FirstRunFacts(
+        profile=True,
+        model_key=False,
+        saved_searches=0,
+        applications=None,
+        model_key_needs_model=True,
+    )
+
+    step = next(s for s in derive_first_run(facts, None).steps if s.id == "model_key")
+
+    assert (step.status, step.label, step.page) == (
+        "todo",
+        "Choose a model",
+        "/settings#ai-provider",
+    )
 
 
 async def test_every_read_is_for_the_verified_user_and_the_keys_are_only_the_models() -> None:

@@ -18,7 +18,7 @@ from typing import Any
 
 from .body_limit import describe_bytes
 from .channel_envelope import Button, ButtonRows, RichText, Segment, bold, code, pre, rich
-from .first_run import STEP_IDS, FirstRunFacts, FirstRunView, StepId
+from .first_run import MODEL_CHOICE_LABEL, STEP_IDS, FirstRunFacts, FirstRunView, StepId
 
 # -- callback data: the buttons below carry it, `channel_core` reads it --------------------
 
@@ -95,7 +95,7 @@ ALREADY_GENERATING_TEXT = "⏳ Your resume is still generating -- it'll arrive h
 PREPARE_FAILED_TEXT = "❌ Something went wrong while generating your resume. Try again in a minute."
 ENROLLMENT_REQUIRED_TEXT = (
     "❌ Joining the tester programme comes first. On the website, accept the tester agreement, "
-    "and link this chat from the Integrations page (it gives you a code to send me with /link). "
+    "and link this chat from the Settings page (it gives you a code to send me with /link). "
     "Then ask again."
 )
 PREPARE_DECLINED_TEXT = "The resume engine didn't produce a resume for this job.\n\n{warnings}"
@@ -175,7 +175,7 @@ def not_a_real_stage_text(status: str) -> str:
 
 LINK_FIRST_TEXT = (
     "To use this, link this chat to your Between Jobs account first. On the website, open "
-    "Integrations, generate a code, and send it to me here as /link CODE."
+    "Settings, generate a code, and send it to me here as /link CODE."
 )
 """What `/learn` tells a chat that is not linked to a web account, instead of the answer: the
 checklist is about the website account's data, which such a chat has none of to show."""
@@ -189,7 +189,7 @@ _PRIVACY_CONTROL_LINKED = (
     "full policy lists.\n\n"
 )
 _PRIVACY_CONTROL_BOT_ONLY = (
-    "• Yours to control: link this chat to a website account with a code from its Integrations "
+    "• Yours to control: link this chat to a website account with a code from its Settings "
     "page (send it as /link CODE). To have your account deleted, email the privacy address on "
     "the policy page: it is done within 7 days, apart from what the policy lists as not "
     "removed.\n\n"
@@ -200,7 +200,7 @@ def provider_rejected_text(message: str, settings_path: str | None, web_url: str
     """The chat text for a generation that ended because the person's model provider refused the
     call (their key was rejected, their account is out of credit, the model was turned down).
     The error's own message already says what to do; when it names the web page that fixes it
-    (`settings_path`, the Integrations page) and this server has a web address, the link follows,
+    (`settings_path`, the Settings page) and this server has a web address, the link follows,
     so the person does not have to find the page. Without either, just the message."""
     if settings_path is None or web_url is None:
         return f"❌ {message}"
@@ -284,11 +284,16 @@ _STEP_HINTS: dict[StepId, str] = {
 }
 _STEP_WEB_PAGES: dict[StepId, str] = {
     "profile": "the Profile page",
-    "model_key": "the Integrations page (under Profile)",
+    "model_key": "the Settings page",
     "first_search": "the Discover page",
     "track_job": "the Applications page",
     "generate_resume": "the Applications page",
 }
+
+
+_MODEL_CHOICE_HINT = (
+    "Your key is saved and checked, but no model is chosen for it yet. Choose one on the website."
+)
 
 
 def _unknown_note(step_id: StepId, facts: FirstRunFacts) -> str:
@@ -328,7 +333,12 @@ def learn_text(view: FirstRunView, facts: FirstRunFacts, web_url: str | None) ->
             if web_url is not None
             else f"On the website: {_STEP_WEB_PAGES[next_step.id]}."
         )
-        parts += [bold("Next: "), next_step.label, "\n", _STEP_HINTS[next_step.id], "\n", where]
+        hint = (
+            _MODEL_CHOICE_HINT
+            if next_step.label == MODEL_CHOICE_LABEL
+            else _STEP_HINTS[next_step.id]
+        )
+        parts += [bold("Next: "), next_step.label, "\n", hint, "\n", where]
     elif view.done_count == len(STEP_IDS):
         parts.append("All five are done -- you're set up.")
     else:

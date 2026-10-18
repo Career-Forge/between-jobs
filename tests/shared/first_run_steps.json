@@ -1,5 +1,5 @@
 {
-  "about": "One table of accounts and the five first-run steps each must come out with, read by a test in Python (tests/test_first_run.py, against src/between_jobs/api/first_run.py) and one in TypeScript (web/src/lib/firstRunShared.test.ts, against web/src/lib/firstRun.ts). Written by hand from the rules, never computed from either implementation. A null fact is one that could not be read; 'searched' is the web app's browser-side memory of a first search (true, false, or null when it cannot be read: always null in a chat).",
+  "about": "One table of accounts and the five first-run steps each must come out with, read by a test in Python (tests/test_first_run.py, against src/between_jobs/api/first_run.py) and one in TypeScript (web/src/lib/firstRunShared.test.ts, against web/src/lib/firstRun.ts). Written by hand from the rules, never computed from either implementation. A null fact is one that could not be read; 'searched' is the web app's browser-side memory of a first search (true, false, or null when it cannot be read: always null in a chat). A case may set facts.model_key_needs_model (a key is checked and saved with no model chosen and none is ready; absent means false), and may carry step_details: the label and page a step then shows in place of the table's own.",
   "step_order": [
     "profile",
     "model_key",
@@ -494,6 +494,89 @@
       },
       "done_count": 5,
       "next_step": null
+    },
+    {
+      "name": "profile done, a checked key waiting for its model",
+      "why": "A key that is saved and checked but has no model is not a usable model key, so the step is still to do -- but what is left is choosing the model, not adding a key, so it names that and links to the AI provider section.",
+      "facts": {
+        "profile": true,
+        "model_key": false,
+        "model_key_needs_model": true,
+        "saved_searches": 0,
+        "applications": {
+          "count": 0,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": false,
+      "steps": {
+        "profile": "done",
+        "model_key": "todo",
+        "first_search": "todo",
+        "track_job": "todo",
+        "generate_resume": "todo"
+      },
+      "step_details": {
+        "model_key": {
+          "label": "Choose a model",
+          "page": "/settings#ai-provider"
+        }
+      },
+      "done_count": 1,
+      "next_step": "model_key"
+    },
+    {
+      "name": "a key waiting for its model, the other facts could not be read",
+      "why": "The model-key step is still known to be todo (the credentials were read), so it still names the model choice; everything that could not be read stays unknown.",
+      "facts": {
+        "profile": null,
+        "model_key": false,
+        "model_key_needs_model": true,
+        "saved_searches": null,
+        "applications": null
+      },
+      "searched": null,
+      "steps": {
+        "profile": "unknown",
+        "model_key": "todo",
+        "first_search": "unknown",
+        "track_job": "unknown",
+        "generate_resume": "unknown"
+      },
+      "step_details": {
+        "model_key": {
+          "label": "Choose a model",
+          "page": "/settings#ai-provider"
+        }
+      },
+      "done_count": 0,
+      "next_step": "model_key"
+    },
+    {
+      "name": "the credentials could not be read",
+      "why": "Nothing is known about the key, so the step is unknown and keeps the table's own name: it never claims a key waits for a model.",
+      "facts": {
+        "profile": true,
+        "model_key": null,
+        "model_key_needs_model": null,
+        "saved_searches": 0,
+        "applications": {
+          "count": 0,
+          "from_discover": 0,
+          "with_resume": 0
+        }
+      },
+      "searched": false,
+      "steps": {
+        "profile": "done",
+        "model_key": "unknown",
+        "first_search": "todo",
+        "track_job": "todo",
+        "generate_resume": "todo"
+      },
+      "done_count": 1,
+      "next_step": "first_search"
     }
   ]
 }

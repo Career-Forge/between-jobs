@@ -18,11 +18,15 @@ interface SharedCase {
   facts: {
     profile: boolean | null;
     model_key: boolean | null;
+    // Absent means false: no key is waiting for its model.
+    model_key_needs_model?: boolean | null;
     saved_searches: number | null;
     applications: { count: number; from_discover: number; with_resume: number } | null;
   };
   searched: boolean | null;
   steps: Record<string, string>;
+  // The label and page a step shows in place of the table's own, when the account calls for it.
+  step_details?: Record<string, { label?: string; page?: string }>;
   done_count: number;
   next_step: string | null;
 }
@@ -48,6 +52,7 @@ function factsOf(c: SharedCase): FirstRunFacts {
   return {
     profile: fetched(c.facts.profile),
     modelKey: fetched(c.facts.model_key),
+    modelKeyNeedsModel: fetched(c.facts.model_key_needs_model === undefined ? false : c.facts.model_key_needs_model),
     savedSearches: fetched(c.facts.saved_searches),
     applications: fetched(
       applications === null
@@ -74,6 +79,11 @@ describe("the first-run checklist agrees with the shared table", () => {
 
     expect(view.steps.map((s) => s.id)).toEqual(TABLE.step_order);
     expect(Object.fromEntries(view.steps.map((s) => [s.id, s.status]))).toEqual(c.steps);
+    // A step shows the table's own name and page unless the case says what it shows instead.
+    for (const step of view.steps) {
+      expect(step.label, `${c.name}: ${step.id} label`).toBe(c.step_details?.[step.id]?.label ?? TABLE.labels[step.id]);
+      expect(step.to, `${c.name}: ${step.id} page`).toBe(c.step_details?.[step.id]?.page ?? TABLE.pages[step.id]);
+    }
     expect(view.doneCount).toBe(c.done_count);
     expect(view.nextStep?.id ?? null).toBe(c.next_step);
   });
