@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 
 from .product_events import AtsType
 
@@ -136,6 +136,48 @@ class SaveCredentialRequest(BaseModel):
     model: str | None = None
     base_url: str | None = None
     secret_2: str | None = None
+    region: str | None = Field(default=None, max_length=32)
+    workspace_id: str | None = Field(default=None, max_length=64)
+    """`region` and `workspace_id` are for Qwen only: the server builds its address from them
+    (api/provider_registry.py). `base_url` is accepted only for the `custom` provider, and only
+    when it is one of the addresses the server allows."""
+
+
+MODEL_ID_PATTERN = r"^(?!.*(?:\.\.|//))[A-Za-z0-9][A-Za-z0-9._:/@+~-]{0,199}$"
+"""What a model id may look like: the characters OpenRouter, Fireworks, Google and the others
+use in theirs (`vendor/model:free`, `accounts/x/models/y`), and nothing that could be a URL
+(`//`), a path escape (`..`) or markup. It needs the Python regex engine for the look-ahead."""
+
+
+class ListModelsRequest(BaseModel):
+    """Which provider's models to list. With `secret` the list is fetched with that key (before
+    anything is saved, so a person can choose a model on the way in); without it, with the key
+    already saved for the caller. The key is never stored, logged or sent back by this route.
+    `region`, `workspace_id` and `base_url` mean what they mean in `SaveCredentialRequest` and
+    are read only when a `secret` is sent; a saved key brings its own address."""
+
+    provider: str = Field(min_length=1, max_length=32)
+    secret: SecretStr | None = Field(default=None, min_length=1, max_length=512)
+    region: str | None = Field(default=None, max_length=32)
+    workspace_id: str | None = Field(default=None, max_length=64)
+    base_url: str | None = Field(default=None, max_length=200)
+
+
+class ChooseModelRequest(BaseModel):
+    """The model to use with a key that is already saved. Proved with one real, tiny completion
+    before it is stored."""
+
+    model_config = ConfigDict(regex_engine="python-re")
+
+    model: str = Field(min_length=1, max_length=200, pattern=MODEL_ID_PATTERN)
+
+
+class OpenRouterExchangeRequest(BaseModel):
+    """What the browser got back from OpenRouter's sign-in and the verifier it made before
+    starting it. Both are secrets for as long as they live; see api/openrouter_oauth.py."""
+
+    code: SecretStr = Field(min_length=8, max_length=512)
+    code_verifier: SecretStr = Field(min_length=43, max_length=128)
 
 
 class PrepareApplicationRequest(BaseModel):

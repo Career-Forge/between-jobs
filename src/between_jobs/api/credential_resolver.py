@@ -15,7 +15,12 @@ from supabase import AsyncClient
 
 from .capability_preferences_store import DEFAULT_CAPABILITY, get_preference
 from .errors import ApiError
-from .provider_credentials_store import CredentialNotFound, get_decrypted_credential
+from .provider_credentials_store import (
+    CredentialNotFound,
+    get_decrypted_credential,
+    list_credentials,
+)
+from .provider_registry import PROVIDERS, BaseUrlRejected, effective_base_url
 
 _DEFAULT_SERVICE = "llm"
 """`resolve()`'s original -- and still overwhelmingly common -- shape:
@@ -36,6 +41,41 @@ class ResolvedCredential:
     """Always "byok" today -- see resolve()'s docstring for why the other
     two values from Proposal §11 ("hosted_credit", "self_host") aren't
     reachable yet."""
+
+
+def llm_setup_state(row: dict[str, object]) -> str:
+    """Where a saved model key stands: `ready` (checked, and a model is chosen), `needs_model`
+    (checked, no model chosen yet: it cannot be used until one is) or `needs_key` (not checked,
+    so not usable). The Integrations page and the setup-required errors say the same thing."""
+    if row.get("is_validated") is not True:
+        return "needs_key"
+    return "ready" if row.get("model") else "needs_model"
+
+
+def _needs_model_error(capability: str, provider_id: str) -> ApiError:
+    spec = PROVIDERS.get(provider_id)
+    name = spec.name if spec else provider_id
+    return ApiError(
+        "SETUP_REQUIRED",
+        f"Your {name} key is saved, but no model is chosen for it yet. Choose one in Integrations.",
+        capability=capability,
+        missing=["model"],
+        settings_path=_settings_path(capability),
+        details={"provider": provider_id, "state": "needs_model"},
+    )
+
+
+async def _provider_awaiting_a_model(
+    supabase: AsyncClient, user_id: str, service: str
+) -> str | None:
+    """The provider of a checked key that has no model, if the person has one: the usual reason
+    a person with a key still has no preference (the key is saved first, the model is chosen
+    second)."""
+    rows = await list_credentials(supabase, user_id, service=service)
+    for row in rows:
+        if llm_setup_state(row) == "needs_model":
+            return str(row["provider"])
+    return None
 
 
 def _settings_path(capability: str) -> str:
@@ -93,6 +133,10 @@ async def resolve(
     if pref is None:
         pref = await get_preference(supabase, user_id, DEFAULT_CAPABILITY)
     if pref is None:
+        if service == _DEFAULT_SERVICE:
+            awaiting = await _provider_awaiting_a_model(supabase, user_id, service)
+            if awaiting is not None:
+                raise _needs_model_error(capability, awaiting)
         raise _setup_required(
             capability,
             missing=["execution_mode"],
@@ -120,6 +164,8 @@ async def resolve(
         *([] if chosen_model else ["model"]),
     ]
     if missing or chosen_provider is None or chosen_model is None:
+        if chosen_provider is not None and service == _DEFAULT_SERVICE:
+            raise _needs_model_error(capability, chosen_provider)
         raise _setup_required(
             capability, missing=missing, message=f"{capability!r} needs a provider and a model."
         )
@@ -135,11 +181,26 @@ async def resolve(
             message=f"No {chosen_provider} key configured for {capability!r}.",
         ) from e
 
+    base_url = credential["base_url"]
+    if service == _DEFAULT_SERVICE:
+        # The address comes from the registry, or from the stored one only if it still passes
+        # the provider's rule: a row saved before the rule existed cannot send a key anywhere
+        # the rule would not.
+        try:
+            base_url = effective_base_url(chosen_provider, base_url)
+        except BaseUrlRejected as e:
+            raise _setup_required(
+                capability,
+                missing=["credential"],
+                message=f"The saved {chosen_provider} key can't be used: {e} Save it again in "
+                "Integrations.",
+            ) from e
+
     return ResolvedCredential(
         provider=chosen_provider,
         model=chosen_model,
         secret=credential["secret"],
-        base_url=credential["base_url"],
+        base_url=base_url,
         source="byok",
     )
 

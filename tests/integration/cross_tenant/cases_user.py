@@ -41,6 +41,24 @@ async def seed_credential(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
     return {"id": row["id"], "model": model, "secret": secret}
 
 
+@seeder("u_llm_credential", tables=("provider_credentials",))
+async def seed_llm_credential(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
+    """A model key the way the first step of connecting one leaves it: saved and checked, with
+    a model. Only A is given one, so B's request has no key of its own to fall back to."""
+    model = ctx.mark(tenant, ctx.tag("llm-model"))
+    secret = ctx.mark(tenant, ctx.tag("llm-throwaway-secret"))
+    row = await save_credential(
+        ctx.sb,
+        tenant.user_id,
+        service="llm",
+        provider="openrouter",
+        secret=secret,
+        model=model,
+        is_validated=True,
+    )
+    return {"id": row["id"], "model": model, "secret": secret}
+
+
 @seeder("u_saved_search", tables=("saved_searches",))
 async def seed_saved_search(ctx: Ctx, tenant: Tenant) -> dict[str, Any]:
     query = ctx.mark(tenant, ctx.tag("query"))
@@ -253,6 +271,31 @@ async def _credentials_delete_unchanged(ctx: Ctx) -> None:
         assert len(rows) == expected, who
 
 
+async def _choose_model(ctx: Ctx) -> Req:
+    await ctx.need("u_llm_credential", ctx.a)
+    return Req("PUT", "/credentials/llm/openrouter/model", json={"model": "vendor/some-model"})
+
+
+async def _choose_model_unchanged(ctx: Ctx) -> None:
+    seeded = await ctx.need("u_llm_credential", ctx.a)
+    rows = (
+        await ctx.sb.table("provider_credentials")
+        .select("user_id,model,secret_encrypted")
+        .eq("service", "llm")
+        .eq("provider", "openrouter")
+        .execute()
+    ).data
+    assert [r["user_id"] for r in rows] == [ctx.a.user_id], "B got an OpenRouter key row"
+    assert rows[0]["model"] == seeded["model"], "B changed A's model"
+    prefs = (
+        await ctx.sb.table("capability_preferences")
+        .select("user_id")
+        .eq("model", "vendor/some-model")
+        .execute()
+    ).data
+    assert prefs == [], "a model nobody proved was made a default"
+
+
 # -- saved searches (job finder) ---------------------------------------------------------------
 
 
@@ -425,6 +468,23 @@ CASES = [
         ),
     ),
     Case(
+        "PUT /credentials/llm/{provider}/model",
+        _choose_model,
+        foreign_status=409,
+        owner_status=frozenset({500, 503}),
+        unchanged=_choose_model_unchanged,
+        note=(
+            "The saved key is looked up by the caller's own user id, before anything is sent to "
+            "a provider: B has none, so B stops at 409 SETUP_REQUIRED and nothing is read of A's "
+            "(asserted: A's row, model and the preferences are untouched). A's identical request "
+            "has a key, so it reaches the one real completion that proves the model -- which "
+            "the suite forbids twice over: `loopback_only` refuses the socket (503 "
+            "PROVIDER_UNAVAILABLE, unreachable) and the unit-test guard refuses to build a model "
+            "client at all (500). Either way the control is not the 409 B gets, which is what "
+            "shows the request itself was valid."
+        ),
+    ),
+    Case(
         "GET /saved-searches",
         _saved_searches_list,
         kind="list",
@@ -524,6 +584,26 @@ NOT_USER_SCOPED: dict[str, NotUserScoped] = {
         "verified token's user id) and merges them with the shared job registry and live job "
         "boards. Returns no user rows; the control would call an LLM and job boards, which the "
         "suite forbids",
+    ),
+    "GET /credentials/llm/providers": NotUserScoped(
+        "public",
+        "signed-in only, but returns the provider registry (names, key-page links, regions, the "
+        "allowed custom addresses): static data, no user row is read",
+    ),
+    "POST /credentials/llm/models": NotUserScoped(
+        "own-identity",
+        "no id of anyone else's: lists models with a key the caller sends in the body, or with "
+        "the caller's own saved key, found by the verified token's user id (a stranger's request "
+        "for a provider they have no key for stops at 409). Either way it calls the provider, "
+        "which the suite forbids, so the owner's control cannot run here; "
+        "tests/test_llm_credentials_routes.py proves the lookup is by the caller's id with two "
+        "users, and the key-lookup store functions have their own store cases",
+    ),
+    "POST /credentials/openrouter/exchange": NotUserScoped(
+        "own-identity",
+        "no id: exchanges the caller's own one-time sign-in code (useless without the caller's "
+        "own verifier) and upserts the key under the verified token's user id. It calls "
+        "OpenRouter, which the suite forbids; the list and delete cases cover the per-user keying",
     ),
     "POST /credentials": NotUserScoped(
         "own-identity",

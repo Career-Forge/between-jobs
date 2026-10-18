@@ -251,6 +251,49 @@ async def mark_credential_unvalidated(ctx: Ctx) -> None:
     await _clear_b_credential(ctx)
 
 
+async def set_credential_model(ctx: Ctx) -> None:
+    seeded = await ctx.need("u_credential", ctx.a)
+    await _clear_b_credential(ctx)
+    [before] = await _creds_rows(ctx, ctx.a.user_id)
+    assert before["id"] == seeded["id"]
+
+    # B has no such credential: nothing is created, and A's row is exactly as it was.
+    changed = await creds.set_credential_model(
+        ctx.sb,
+        ctx.b.user_id,
+        service=_SERVICE,
+        provider=_PROVIDER,
+        model=ctx.mark(ctx.b, ctx.tag("b-model")),
+    )
+    assert changed is None
+    assert await _creds_rows(ctx, ctx.b.user_id) == []
+    assert await _creds_rows(ctx, ctx.a.user_id) == [before]
+
+    # With a key of their own, B changes exactly that one; A's model is still A's.
+    await creds.save_credential(
+        ctx.sb,
+        ctx.b.user_id,
+        service=_SERVICE,
+        provider=_PROVIDER,
+        secret=ctx.mark(ctx.b, ctx.tag("b-secret")),
+    )
+    b_model = ctx.mark(ctx.b, ctx.tag("b-new-model"))
+    own = await creds.set_credential_model(
+        ctx.sb, ctx.b.user_id, service=_SERVICE, provider=_PROVIDER, model=b_model
+    )
+    assert own is not None and own["model"] == b_model and own["user_id"] == ctx.b.user_id
+    assert await _creds_rows(ctx, ctx.a.user_id) == [before]
+
+    # and as A it changes A's row and keeps the encrypted secret.
+    a_model = ctx.mark(ctx.a, ctx.tag("a-new-model"))
+    mine = await creds.set_credential_model(
+        ctx.sb, ctx.a.user_id, service=_SERVICE, provider=_PROVIDER, model=a_model
+    )
+    assert mine is not None and mine["model"] == a_model
+    assert mine["secret_encrypted"] == before["secret_encrypted"]
+    await _clear_b_credential(ctx)
+
+
 async def delete_credential(ctx: Ctx) -> None:
     seeded = await ctx.need("u_credential", ctx.a)
     before = await _creds_rows(ctx, ctx.a.user_id)
@@ -477,6 +520,7 @@ STORE_CASES = [
     StoreCase("provider_credentials_store.delete_credential", delete_credential),
     StoreCase("provider_credentials_store.get_decrypted_credential", get_decrypted_credential),
     StoreCase("provider_credentials_store.list_credentials", list_credentials),
+    StoreCase("provider_credentials_store.set_credential_model", set_credential_model),
     StoreCase(
         "provider_credentials_store.mark_credential_unvalidated", mark_credential_unvalidated
     ),
