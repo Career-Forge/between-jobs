@@ -258,7 +258,7 @@ export const UNREADABLE_ANSWER_MESSAGE =
   "The server's answer could not be read. If a draft was saved it is not in use. Try uploading the file again.";
 export const DRAFT_GONE_MESSAGE = "That draft no longer exists. Upload the file again.";
 export const IMPORT_SETUP_MESSAGE =
-  "Reading a resume file needs your own AI model. Add a model key in Integrations, then upload the file again.";
+  "Reading a resume file needs your own AI model. Add a model key in Settings, then upload the file again.";
 // The server's `details.reason` for its 429 when every file reader is busy (profile_routes.py,
 // `_READERS_BUSY`; a test compares the two). That is the server's own capacity, not a count of the
 // person's requests, so it is not worded as "you are doing that too often".
@@ -286,7 +286,7 @@ export interface ImportFailure {
 }
 
 // Why a request of the import failed, in words for a person, and whether to offer a retry.
-//   - SETUP_REQUIRED: the shared notice with its link to Integrations (a model key). No retry:
+//   - SETUP_REQUIRED: the shared notice with its link to Settings (a model key). No retry:
 //     asking again cannot work until the key is saved.
 //   - 413 (too large) and 415 (not a PDF or DOCX): the file is the problem; no retry.
 //   - 422: the server's own sentence, which is written for the person (a scan with no text, an

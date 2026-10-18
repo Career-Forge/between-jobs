@@ -53,7 +53,7 @@ describe("FirstRunChecklistView", () => {
     const html = render(deriveFirstRun(BRAND_NEW, FLAGS));
     for (const [href, label] of [
       ["/profile", "Add your profile"],
-      ["/profile/integrations", "Add a model key"],
+      ["/settings", "Add a model key"],
       ["/discover", "Run a first search"],
       ["/applications", "Track a job"],
       ["/applications", "Generate a resume"],

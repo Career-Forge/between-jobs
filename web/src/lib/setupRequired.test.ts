@@ -49,23 +49,29 @@ class FakeProviderError extends Error {
 describe("safeSettingsLink", () => {
   it("accepts the routes the server sends, unchanged", () => {
     expect(safeSettingsLink("/profile")).toBe("/profile");
-    expect(safeSettingsLink("/profile/integrations")).toBe("/profile/integrations");
+    expect(safeSettingsLink("/settings")).toBe("/settings");
+  });
+
+  // The API still names the page by its old address (credential_resolver.py and others); the link
+  // is written with the new one so the person is not sent through a redirect.
+  it("writes the old Integrations address as the Settings page", () => {
+    expect(safeSettingsLink("/profile/integrations")).toBe("/settings");
+    expect(safeSettingsLink("/profile/integrations?capability=job_scoring")).toBe("/settings?capability=job_scoring");
   });
 
   it("accepts the one query the resolver adds (the capability that needs the key)", () => {
-    expect(safeSettingsLink("/profile/integrations?capability=job_scoring")).toBe(
-      "/profile/integrations?capability=job_scoring",
-    );
+    expect(safeSettingsLink("/settings?capability=job_scoring")).toBe("/settings?capability=job_scoring");
   });
 
   it("accepts a capability as long as the server writes one (a letter, then 63 more)", () => {
-    const longest = `/profile/integrations?capability=a${"b".repeat(63)}`;
+    const longest = `/settings?capability=a${"b".repeat(63)}`;
     expect(safeSettingsLink(longest)).toBe(longest);
   });
 
   it("accepts every routed page, and every one of those really is a route in App.tsx", () => {
     for (const path of ROUTED_SETTINGS_PATHS) {
-      expect(safeSettingsLink(path)).toBe(path);
+      // The old Integrations address is a route too (it redirects), and is written as the new one.
+      expect(safeSettingsLink(path)).toBe(path === "/profile/integrations" ? "/settings" : path);
       expect(appSource).toContain(`path="${path}"`);
     }
   });
@@ -183,8 +189,8 @@ describe("setupRequiredNotice", () => {
     );
     expect(notice).toEqual({
       message: "Add a key.",
-      linkTo: "/profile/integrations?capability=job_scoring",
-      linkLabel: "Add a model key in Integrations",
+      linkTo: "/settings?capability=job_scoring",
+      linkLabel: "Add a model key in Settings",
     });
   });
 
@@ -193,12 +199,13 @@ describe("setupRequiredNotice", () => {
   // or only the capability.
   it("labels the resume file import's missing model as adding a model key", () => {
     const path = "/profile/integrations?capability=profile_import";
+    const linkTo = "/settings?capability=profile_import";
     expect(
       setupRequiredNotice(setupError({ path, capability: "profile_import", missing: ["execution_mode"] })),
-    ).toMatchObject({ linkTo: path, linkLabel: "Add a model key in Integrations" });
+    ).toMatchObject({ linkTo, linkLabel: "Add a model key in Settings" });
     expect(setupRequiredNotice(setupError({ path, capability: "profile_import" }))).toMatchObject({
-      linkTo: path,
-      linkLabel: "Add a model key in Integrations",
+      linkTo,
+      linkLabel: "Add a model key in Settings",
     });
   });
 
@@ -209,16 +216,16 @@ describe("setupRequiredNotice", () => {
   });
 
   it.each([
-    ["apollo_credential", "Add an Apollo or Hunter key in Integrations"],
-    ["exa_credential", "Add an Exa key in Integrations"],
-    ["gmail_oauth", "Connect Gmail in Integrations"],
-    ["firecrawl_credential", "Add a Firecrawl key in Integrations"],
-    ["you_com_or_firecrawl_credential", "Add a You.com or Firecrawl key in Integrations"],
-    ["search_credential", "Add a search key in Integrations"],
+    ["apollo_credential", "Add an Apollo or Hunter key in Settings"],
+    ["exa_credential", "Add an Exa key in Settings"],
+    ["gmail_oauth", "Connect Gmail in Settings"],
+    ["firecrawl_credential", "Add a Firecrawl key in Settings"],
+    ["you_com_or_firecrawl_credential", "Add a You.com or Firecrawl key in Settings"],
+    ["search_credential", "Add a search key in Settings"],
   ])("labels what is missing (%s) by name", (token, label) => {
     expect(
       setupRequiredNotice(setupError({ path: "/profile/integrations", capability: "anything", missing: [token] })),
-    ).toMatchObject({ linkTo: "/profile/integrations", linkLabel: label });
+    ).toMatchObject({ linkTo: "/settings", linkLabel: label });
   });
 
   it("tells a search-key failure from a model-key failure of the same capability by what is missing", () => {
@@ -236,8 +243,8 @@ describe("setupRequiredNotice", () => {
         missing: ["credential"],
       }),
     );
-    expect(search?.linkLabel).toBe("Add a You.com or Firecrawl key in Integrations");
-    expect(model?.linkLabel).toBe("Add a model key in Integrations");
+    expect(search?.linkLabel).toBe("Add a You.com or Firecrawl key in Settings");
+    expect(model?.linkLabel).toBe("Add a model key in Settings");
   });
 
   it("falls back to the capability when the server named nothing missing", () => {
@@ -245,7 +252,7 @@ describe("setupRequiredNotice", () => {
       setupRequiredNotice(
         setupError({ path: "/profile/integrations?capability=prepare_application", capability: "prepare_application" }),
       ),
-    ).toMatchObject({ linkLabel: "Add a model key in Integrations" });
+    ).toMatchObject({ linkLabel: "Add a model key in Settings" });
     expect(setupRequiredNotice(setupError({ path: "/profile", capability: "profile", missing: [] }))).toMatchObject({
       linkLabel: "Finish your profile",
     });
@@ -254,7 +261,7 @@ describe("setupRequiredNotice", () => {
   it("uses a generic label, by destination, for a capability it does not know", () => {
     expect(
       setupRequiredNotice(setupError({ path: "/profile/integrations", capability: "something_new" })),
-    ).toEqual({ message: "Add a key.", linkTo: "/profile/integrations", linkLabel: "Open Integrations" });
+    ).toEqual({ message: "Add a key.", linkTo: "/settings", linkLabel: "Open Settings" });
     expect(setupRequiredNotice(setupError({ path: "/profile", capability: "something_new" }))).toMatchObject({
       linkTo: "/profile",
       linkLabel: "Open your profile",
@@ -265,10 +272,10 @@ describe("setupRequiredNotice", () => {
     });
   });
 
-  it("does not put a label on a link it does not describe (a profile label on the Integrations page)", () => {
+  it("does not put a label on a link it does not describe (a profile label on the Settings page)", () => {
     expect(
       setupRequiredNotice(setupError({ path: "/profile/integrations", capability: "profile", missing: ["profile_version"] })),
-    ).toMatchObject({ linkTo: "/profile/integrations", linkLabel: "Open Integrations" });
+    ).toMatchObject({ linkTo: "/settings", linkLabel: "Open Settings" });
     expect(
       setupRequiredNotice(setupError({ path: "/profile", capability: "job_scoring", missing: ["credential"] })),
     ).toMatchObject({ linkTo: "/profile", linkLabel: "Open your profile" });
@@ -299,7 +306,7 @@ describe("setupRequiredNotice", () => {
         missing: ["constructor", "toString", { evil: true }],
       }),
     );
-    expect(notice).toEqual({ message: "Add a key.", linkTo: "/profile/integrations", linkLabel: "Open Integrations" });
+    expect(notice).toEqual({ message: "Add a key.", linkTo: "/settings", linkLabel: "Open Settings" });
   });
 
   it("gives a plain sentence when the server sent no message at all", () => {
@@ -327,7 +334,7 @@ describe("setupRequiredNotice: what labels the link", () => {
       setupRequiredNotice(
         setupError({ path: `/profile/integrations?capability=${capability}`, capability, missing: [] }),
       ),
-    ).toMatchObject({ linkLabel: "Add a model key in Integrations" });
+    ).toMatchObject({ linkLabel: "Add a model key in Settings" });
   });
 
   // `hiring_signals` and `gmail_reply_check` are not in the capability table at all: they
@@ -339,7 +346,7 @@ describe("setupRequiredNotice: what labels the link", () => {
         setupRequiredNotice(
           setupError({ path: "/profile/integrations", capability: "gmail_reply_check", missing: [token] }),
         ),
-      ).toMatchObject({ linkLabel: "Add a model key in Integrations" });
+      ).toMatchObject({ linkLabel: "Add a model key in Settings" });
     },
   );
 
@@ -352,8 +359,8 @@ describe("setupRequiredNotice: what labels the link", () => {
         ),
       ),
     ).toMatchObject({
-      linkTo: "/profile/integrations?capability=job_scoring",
-      linkLabel: "Choose a model in Integrations",
+      linkTo: "/settings?capability=job_scoring",
+      linkLabel: "Choose a model in Settings",
     });
   });
 
@@ -371,13 +378,13 @@ describe("setupRequiredNotice: what labels the link", () => {
         ?.linkLabel;
 
     it("goes by the first one that is known", () => {
-      expect(labelOf(["model", "apollo_credential"])).toBe("Choose a model in Integrations");
-      expect(labelOf(["credential", "model"])).toBe("Add a model key in Integrations");
-      expect(labelOf(["apollo_credential", "model"])).toBe("Add an Apollo or Hunter key in Integrations");
+      expect(labelOf(["model", "apollo_credential"])).toBe("Choose a model in Settings");
+      expect(labelOf(["credential", "model"])).toBe("Add a model key in Settings");
+      expect(labelOf(["apollo_credential", "model"])).toBe("Add an Apollo or Hunter key in Settings");
     });
 
     it("skips one that is not known rather than stopping at it", () => {
-      expect(labelOf(["something_new", "credential"])).toBe("Add a model key in Integrations");
+      expect(labelOf(["something_new", "credential"])).toBe("Add a model key in Settings");
     });
   });
 
@@ -440,8 +447,8 @@ describe("problemOf", () => {
     );
     expect(problem).toEqual({
       message: "Add a key.",
-      linkTo: "/profile/integrations",
-      linkLabel: "Connect Gmail in Integrations",
+      linkTo: "/settings",
+      linkLabel: "Connect Gmail in Settings",
     });
   });
 
@@ -456,27 +463,27 @@ describe("problemOf", () => {
 describe("setupRequiredNotice for a model call the provider rejected", () => {
   const KEY = "Your AI provider rejected the key. Check it in Integrations.";
 
-  it("is the message plus a link to Integrations when the key was rejected", () => {
+  it("is the message plus a link to Settings when the key was rejected", () => {
     const notice = setupRequiredNotice(
       new FakeProviderError(KEY, "PROVIDER_REJECTED", "/profile/integrations", "key_rejected"),
     );
     expect(notice).toEqual({
       message: KEY,
-      linkTo: "/profile/integrations",
-      linkLabel: "Check your model key in Integrations",
+      linkTo: "/settings",
+      linkLabel: "Check your model key in Settings",
     });
   });
 
   it.each([
-    ["out_of_credit", "Switch or update your model key in Integrations"],
-    ["request_rejected", "Check your model in Integrations"],
-    ["model_not_found", "Choose another model in Integrations"],
-    ["model_retired", "Choose another model in Integrations"],
+    ["out_of_credit", "Switch or update your model key in Settings"],
+    ["request_rejected", "Check your model in Settings"],
+    ["model_not_found", "Choose another model in Settings"],
+    ["model_retired", "Choose another model in Settings"],
   ])("labels the link for %s", (reason, label) => {
     const notice = setupRequiredNotice(
       new FakeProviderError("A sentence.", "PROVIDER_REJECTED", "/profile/integrations", reason),
     );
-    expect(notice).toEqual({ message: "A sentence.", linkTo: "/profile/integrations", linkLabel: label });
+    expect(notice).toEqual({ message: "A sentence.", linkTo: "/settings", linkLabel: label });
   });
 
   it.each([
@@ -503,7 +510,7 @@ describe("setupRequiredNotice for a model call the provider rejected", () => {
     ).toBeNull();
   });
 
-  it("keeps the capability query the resolver adds on the link to Integrations", () => {
+  it("keeps the capability query the resolver adds on the link to Settings", () => {
     const notice = setupRequiredNotice(
       new FakeProviderError(
         "Nope.",
@@ -512,7 +519,7 @@ describe("setupRequiredNotice for a model call the provider rejected", () => {
         "key_rejected",
       ),
     );
-    expect(notice?.linkTo).toBe("/profile/integrations?capability=job_scoring");
+    expect(notice?.linkTo).toBe("/settings?capability=job_scoring");
   });
 
   it("leaves the other provider failures alone, whatever reason they carry", () => {
@@ -529,11 +536,11 @@ describe("setupRequiredNotice for a model call the provider rejected", () => {
       kind: "setup",
       notice: {
         message: KEY,
-        linkTo: "/profile/integrations",
-        linkLabel: "Check your model key in Integrations",
+        linkTo: "/settings",
+        linkLabel: "Check your model key in Settings",
       },
     });
-    expect(problemOf(error, "Failed")).toMatchObject({ linkTo: "/profile/integrations" });
+    expect(problemOf(error, "Failed")).toMatchObject({ linkTo: "/settings" });
   });
 
   it("turns the server's Gmail reconnect answer into a link that reconnects", () => {
@@ -541,14 +548,14 @@ describe("setupRequiredNotice for a model call the provider rejected", () => {
     const error = new FakeProviderError(sentence, "PROVIDER_REJECTED", "/profile/integrations", "gmail_reconnect_required");
     expect(setupRequiredNotice(error)).toEqual({
       message: sentence,
-      linkTo: "/profile/integrations",
-      linkLabel: "Reconnect Gmail in Integrations",
+      linkTo: "/settings",
+      linkLabel: "Reconnect Gmail in Settings",
     });
     // and it is the same label wherever the failure is shown
-    expect(problemOf(error, "Failed")).toMatchObject({ linkLabel: "Reconnect Gmail in Integrations" });
+    expect(problemOf(error, "Failed")).toMatchObject({ linkLabel: "Reconnect Gmail in Settings" });
   });
 
-  it("does not link a Gmail reconnect answer anywhere but Integrations", () => {
+  it("does not link a Gmail reconnect answer anywhere but Settings", () => {
     for (const path of [undefined, "/profile", "https://example.com/profile/integrations"]) {
       expect(
         setupRequiredNotice(new FakeProviderError("x", "PROVIDER_REJECTED", path, "gmail_reconnect_required")),

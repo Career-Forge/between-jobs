@@ -328,7 +328,7 @@ describe("what the agreement says", () => {
     expect(leaving).toContain("It does not stop what already runs in the background");
     expect(leaving).toContain("saved searches, which use your AI key");
     expect(leaving).toContain("Gmail reply checking");
-    expect(leaving).toContain("Pause or delete a saved search, or disconnect Gmail, on the Integrations page to stop them");
+    expect(leaving).toContain("Pause or delete a saved search, or disconnect Gmail, on the Settings page to stop them");
   });
 
   it("labels the AI key paragraph as applying only if one is given", () => {

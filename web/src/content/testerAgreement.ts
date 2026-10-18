@@ -113,7 +113,7 @@ export const TESTER_AGREEMENT: LegalDocument = {
           [
             "If you do connect it, the ",
             policy,
-            " says what Between Jobs does with it, under 'Gmail (optional)'. You can disconnect it at any time with 'Disconnect Gmail' on the Integrations page.",
+            " says what Between Jobs does with it, under 'Gmail (optional)'. You can disconnect it at any time with 'Disconnect Gmail' on the Settings page.",
           ],
         ),
       ],
@@ -145,7 +145,7 @@ export const TESTER_AGREEMENT: LegalDocument = {
           "You can withdraw at any time with 'Withdraw from the programme' on the programme page, which the Profile page links to.",
           "Withdrawing marks your enrollment as withdrawn and records when. It does not delete your account or your data. Deleting is a separate step, above.",
           "From then on we leave your usage out of the programme's counts, apart from a count of how many people withdrew, by role. The product keeps recording the same usage records it keeps for every account, until you delete your account.",
-          "Where joining is required to use the costly features (the ones that call an AI, a search or a document service), withdrawing also stops you starting them until you join again. It does not stop what already runs in the background: saved searches, which use your AI key, and Gmail reply checking. Pause or delete a saved search, or disconnect Gmail, on the Integrations page to stop them.",
+          "Where joining is required to use the costly features (the ones that call an AI, a search or a document service), withdrawing also stops you starting them until you join again. It does not stop what already runs in the background: saved searches, which use your AI key, and Gmail reply checking. Pause or delete a saved search, or disconnect Gmail, on the Settings page to stop them.",
         ),
       ],
     },
@@ -159,7 +159,7 @@ export const TESTER_AGREEMENT: LegalDocument = {
         ul(
           "The key has a spending cap, and we can revoke it at any time. When it is revoked, the features that need it stop working until you save a key of your own.",
           [
-            "You save it on the Integrations page like a key of your own, and it is stored encrypted in the same way. Your AI provider receives what the ",
+            "You save it on the Settings page like a key of your own, and it is stored encrypted in the same way. Your AI provider receives what the ",
             policy,
             " says it receives for any key.",
           ],

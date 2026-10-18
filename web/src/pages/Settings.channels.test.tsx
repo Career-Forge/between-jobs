@@ -2,9 +2,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CapabilitiesState } from "../lib/capabilities";
-import Integrations from "./Integrations";
+import Settings from "./Settings";
 
-// Which chat-channel cards the Integrations page draws, from what /capabilities says. A static
+// Which chat-channel cards the Settings page draws, from what /capabilities says. A static
 // render does not run effects, so nothing is fetched: this is only the gating of the two cards
 // that link a chat account (Telegram, Discord) and what the Discord card tells people.
 
@@ -21,7 +21,7 @@ function page(caps: CapabilitiesState): string {
   recorded.caps = caps;
   return renderToStaticMarkup(
     <MemoryRouter>
-      <Integrations />
+      <Settings />
     </MemoryRouter>,
   );
 }
@@ -76,7 +76,7 @@ describe("the Discord card", () => {
 
 describe("what the page asks the server for", () => {
   it("mints a code for the channel the card is about: the Discord card asks for discord", async () => {
-    const source = (await import("./Integrations.tsx?raw")).default as string;
+    const source = (await import("./Settings.tsx?raw")).default as string;
     const discordCard = source.slice(source.indexOf("function DiscordLinkCard"), source.indexOf("function GmailConnectCard"));
     expect(discordCard).toContain('channel: "discord"');
     expect(discordCard).not.toContain('"telegram"');

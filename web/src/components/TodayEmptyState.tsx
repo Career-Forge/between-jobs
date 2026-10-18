@@ -11,7 +11,7 @@ export function TodayEmptyState() {
       <p>
         Start with your <Link to="/profile">profile</Link>: every resume, score and practice
         session is built from it. Then add a model key in{" "}
-        <Link to="/profile/integrations">Integrations</Link>, find a job on{" "}
+        <Link to="/settings">Settings</Link>, find a job on{" "}
         <Link to="/discover">Discover</Link>, and track it.
       </p>
       <p>

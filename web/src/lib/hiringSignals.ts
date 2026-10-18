@@ -394,7 +394,7 @@ export function postsSeen(
 // These are the three honest things an empty list can be, in order of how much
 // is known.
 export const YOU_COM_NO_LINKEDIN_NOTE =
-  "You.com's search index does not appear to include LinkedIn posts, so an empty result from it says nothing about this company. Another provider, such as Firecrawl, may cover them -- connect one in Integrations settings.";
+  "You.com's search index does not appear to include LinkedIn posts, so an empty result from it says nothing about this company. Another provider, such as Firecrawl, may cover them -- connect one in Settings.";
 export const NO_POSTS_SEEN_NOTE =
   "The search returned no LinkedIn posts at all, which says little about whether this company is hiring -- coverage depends on your search provider.";
 export const NOTHING_SHOWN_NOTE =
@@ -561,13 +561,13 @@ export function classifyFailure(error: unknown, unreachableMessage: string): Pan
 }
 
 // What a hiring-signals search needs is always a search key, and those are saved on
-// the Integrations page, so a setup failure whose reply named no usable link still
+// the Settings page, so a setup failure whose reply named no usable link still
 // goes there rather than leaving the person with a sentence and nowhere to go.
-export const SETUP_FALLBACK_PATH = "/profile/integrations";
-export const SETUP_FALLBACK_LABEL = "Open Integrations settings";
+export const SETUP_FALLBACK_PATH = "/settings";
+export const SETUP_FALLBACK_LABEL = "Open Settings";
 
 // Where a setup_required failure's link goes: the server's own (already checked), else
-// the Integrations page.
+// the Settings page.
 export function setupFailureLink(failure: Extract<Failure, { kind: "setup_required" }>): {
   to: string;
   label: string;

@@ -32,7 +32,7 @@ import webViteConfig from "../../vite.config.ts?raw";
 // list is the one the store listing is written from.
 import extensionReadme from "../../../extension/README.md?raw";
 import accountCard from "../components/AccountCardView.tsx?raw";
-import integrations from "../pages/Integrations.tsx?raw";
+import integrations from "../pages/Settings.tsx?raw";
 import profile from "../pages/Profile.tsx?raw";
 import authSource from "../auth.tsx?raw";
 import hiringSignalsLib from "../lib/hiringSignals.ts?raw";
@@ -653,7 +653,7 @@ describe("what the text says matches the code", () => {
     // access module deletes a credential.
     expect(gmailAccess).not.toMatch(/delete_credential|\.delete\(\)/);
     // The reconnect state: recorded on the stored connection (kept, not deleted), shown by the
-    // Integrations card under the name the text uses, and the checker leaves a flagged one alone.
+    // Settings card under the name the text uses, and the checker leaves a flagged one alone.
     expect(gmailAccess).toContain("mark_credential_unvalidated");
     expect(gmailReplyChecker).toContain("list_unvalidated_user_ids");
     expect(integrations).toContain("Needs reconnect");
@@ -1557,7 +1557,7 @@ describe("the web app connects no model provider but OpenRouter, which is all th
 
   it("reads the web source it is guarding", () => {
     expect(appFiles.length).toBeGreaterThan(20);
-    expect(appFiles.some(([path]) => path === "../pages/Integrations.tsx")).toBe(true);
+    expect(appFiles.some(([path]) => path === "../pages/Settings.tsx")).toBe(true);
   });
 
   it("saves a model key for no provider of the API's registry other than OpenRouter", () => {

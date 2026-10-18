@@ -53,7 +53,7 @@ function renderInRouter(node: React.ReactNode): string {
 describe("FailureView", () => {
   const noop = () => {};
 
-  it("sends setup-required to the Integrations page, and offers no pointless retry", () => {
+  it("sends setup-required to the Settings page, and offers no pointless retry", () => {
     const html = renderInRouter(
       <FailureView
         failure={{ kind: "setup_required", message: "Hiring signals need a search provider." }}
@@ -61,8 +61,8 @@ describe("FailureView", () => {
       />,
     );
     expect(visibleText(html)).toContain("Hiring signals need a search provider.");
-    expect(html).toContain('href="/profile/integrations"');
-    expect(visibleText(html)).toContain("Open Integrations settings");
+    expect(html).toContain('href="/settings"');
+    expect(visibleText(html)).toContain("Open Settings");
     expect(html).toContain('role="alert"');
     expect(visibleText(html)).not.toContain("Try again");
   });
@@ -73,15 +73,15 @@ describe("FailureView", () => {
         failure={{
           kind: "setup_required",
           message: "Add a search key.",
-          linkTo: "/profile/integrations?capability=hiring_signals",
-          linkLabel: "Add a search key in Integrations",
+          linkTo: "/settings?capability=hiring_signals",
+          linkLabel: "Add a search key in Settings",
         }}
         onRetry={noop}
       />,
     );
-    expect(html).toContain('href="/profile/integrations?capability=hiring_signals"');
-    expect(visibleText(html)).toContain("Add a search key in Integrations");
-    expect(visibleText(html)).not.toContain("Open Integrations settings");
+    expect(html).toContain('href="/settings?capability=hiring_signals"');
+    expect(visibleText(html)).toContain("Add a search key in Settings");
+    expect(visibleText(html)).not.toContain("Open Settings");
   });
 
   it("does not present setup-required as a failure (red) -- it is a to-do", () => {

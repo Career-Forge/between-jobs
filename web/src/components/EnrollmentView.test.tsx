@@ -540,12 +540,12 @@ describe("for a tester on an older agreement", () => {
 });
 
 describe("where the programme is required", () => {
-  it("says so above the form, and which pages stay open: Profile (deleting the account) and Integrations (removing a key, disconnecting Gmail, pausing or deleting a saved search)", () => {
+  it("says so above the form, and which pages stay open: Profile (deleting the account) and Settings (removing a key, disconnecting Gmail, pausing or deleting a saved search)", () => {
     const text = textOfMarkup(html({ programmeRequired: true }));
     expect(text).toContain("Joining the tester programme is required on this server.");
     expect(text).toContain("the rest of the app opens when you join");
     expect(text).toContain(
-      "These pages stay open: your Profile page, where you can delete your account, and your Integrations page, where you can remove a key, disconnect Gmail, and pause or delete a saved search.",
+      "These pages stay open: your Profile page, where you can delete your account, and your Settings page, where you can remove a key, disconnect Gmail, and pause or delete a saved search.",
     );
   });
 

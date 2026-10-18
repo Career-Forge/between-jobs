@@ -1,11 +1,11 @@
 import type { RefObject } from "react";
 import { NavLink } from "react-router-dom";
-import { INTEGRATIONS_ITEM, type NavItem } from "../lib/nav";
+import { SETTINGS_ITEM, type NavItem } from "../lib/nav";
 import { Icon } from "./icons";
 import { LegalLinks } from "./LegalLinks";
 
 // The phone's "More" sheet: what the five tabs have no room for -- Hiring signals (while the
-// server has it on), Practice, Integrations -- plus the signed-in address and Sign out. A native modal
+// server has it on), Practice, Settings -- plus the signed-in address and Sign out. A native modal
 // <dialog>, so the browser traps focus inside it, closes it on Esc and hands focus back to the
 // button that opened it. A press on the dimmed area outside the panel closes it too.
 
@@ -36,7 +36,7 @@ export function MoreSheet({ dialogRef, items, email, onSignOut }: MoreSheetProps
         </div>
         {email !== null && <p className="bj-rail-email">{email}</p>}
         <nav aria-label="More">
-          {[...items, INTEGRATIONS_ITEM].map((item) => (
+          {[...items, SETTINGS_ITEM].map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end} className="bj-more-row bj-selectable" onClick={close}>
               <Icon name={item.icon} />
               {item.label}

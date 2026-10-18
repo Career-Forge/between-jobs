@@ -11,7 +11,7 @@ import {
   ENROLLMENT_PATH,
   ENROLL_FOCUS_IDS,
   GATE_EXEMPT_PATHS,
-  INTEGRATIONS_PATH,
+  SETTINGS_PATH,
   ROLE_COHORTS,
   SENIORITIES,
   SPONSORSHIP_OPTIONS,
@@ -801,16 +801,17 @@ const caps = (testerProgramRequired: boolean): CapabilitiesState => ({
 const READY = (e: Enrollment): EnrollmentLoad => ({ kind: "ready", enrollment: e });
 
 describe("the exempt pages", () => {
-  it("are the enrollment page, the two legal documents, Profile, Integrations and the new-password page, and only those", () => {
+  it("are the enrollment page, the two legal documents, Profile, Settings and the new-password page, and only those", () => {
     expect([...GATE_EXEMPT_PATHS].sort()).toEqual([
       "/enroll",
       "/privacy",
       "/profile",
       "/profile/integrations",
+      "/settings",
       "/terms",
       "/update-password",
     ]);
-    expect(INTEGRATIONS_PATH).toBe("/profile/integrations");
+    expect(SETTINGS_PATH).toBe("/settings");
     expect(UPDATE_PASSWORD_PATH).toBe("/update-password");
   });
 
@@ -820,8 +821,8 @@ describe("the exempt pages", () => {
     "/terms",
     "/profile",
     "/profile/",
-    "/profile/integrations",
-    "/profile/integrations/",
+    "/settings",
+    "/settings/",
     "/update-password",
     "/enroll?next=1",
     "/privacy#gmail",
@@ -829,7 +830,7 @@ describe("the exempt pages", () => {
     expect(isGateExempt(path)).toBe(true);
   });
 
-  it.each(["/", "/discover", "/applications", "/applications/123", "/practice", "/hiring-signals", "/Profile", "/profile/Integrations", "/profile/integrations/extra", "/ENROLL", "/privacy/extra", "/enrolled", "/update-password/extra"])(
+  it.each(["/", "/discover", "/applications", "/applications/123", "/practice", "/hiring-signals", "/Profile", "/profile/Settings", "/settings/extra", "/ENROLL", "/privacy/extra", "/enrolled", "/update-password/extra"])(
     "%s is not (an unrecognised spelling is gated, the safe direction)",
     (path) => {
       expect(isGateExempt(path)).toBe(false);
@@ -850,7 +851,7 @@ describe("enrollmentGate", () => {
       ["someone whose lookup failed", { kind: "failed", message: "x" } as EnrollmentLoad],
       ["someone whose lookup is loading", { kind: "loading" } as EnrollmentLoad],
     ])("%s passes on every page", (_who, state) => {
-      for (const pathname of ["/", "/discover", "/applications/9", "/practice", "/profile/integrations", "/enroll"]) {
+      for (const pathname of ["/", "/discover", "/applications/9", "/practice", "/settings", "/enroll"]) {
         expect(decide(caps(false), state, pathname), pathname).toBe("pass");
       }
     });
@@ -883,21 +884,21 @@ describe("enrollmentGate", () => {
 
     // The pages that switch things off stay open to everyone: the server leaves them open (nothing
     // cheap is gated), and the background work they stop keeps running on a person's key whether
-    // or not they are enrolled. Integrations is where a key is removed and Gmail is disconnected,
+    // or not they are enrolled. Settings is where a key is removed and Gmail is disconnected,
     // and where a saved search is paused or deleted.
     it.each([
       ["a person who never joined", READY(NOT_ENROLLED)],
       ["a person who withdrew", READY(enrollment({ enrolled: false, withdrawnAt: "2026-10-07T00:00:00Z" }))],
       ["a person on an older agreement", READY(enrollment({ enrolled: false, needsReconsent: true }))],
-    ])("lets %s reach Integrations, while Discover and Applications still send them to enroll", (_who, state) => {
-      expect(decide(caps(true), state, INTEGRATIONS_PATH)).toBe("pass");
+    ])("lets %s reach Settings, while Discover and Applications still send them to enroll", (_who, state) => {
+      expect(decide(caps(true), state, SETTINGS_PATH)).toBe("pass");
       expect(decide(caps(true), state, "/discover")).toBe("enroll");
       expect(decide(caps(true), state, "/applications")).toBe("enroll");
     });
 
-    it("lets Integrations through while the lookup is still out or has failed too (it never waits on the person's enrollment)", () => {
+    it("lets Settings through while the lookup is still out or has failed too (it never waits on the person's enrollment)", () => {
       for (const state of [{ kind: "idle" }, { kind: "loading" }, { kind: "failed", message: "x" }] as EnrollmentLoad[]) {
-        expect(decide(caps(true), state, INTEGRATIONS_PATH), state.kind).toBe("pass");
+        expect(decide(caps(true), state, SETTINGS_PATH), state.kind).toBe("pass");
       }
     });
 
@@ -905,7 +906,7 @@ describe("enrollmentGate", () => {
     // address. Consent to a research programme must not be a condition of recovering an account,
     // and Profile (account deletion) is unreachable from there, so the page must not be gated.
     it("never stands between a person in password recovery and the new-password form, from any address they land on", () => {
-      for (const landedOn of ["/", "/profile", "/profile/integrations", "/applications/1", "/discover", "/enroll", "/privacy"]) {
+      for (const landedOn of ["/", "/profile", "/settings", "/applications/1", "/discover", "/enroll", "/privacy"]) {
         const target = recoveryRedirect(true, landedOn);
         const page = target === null ? landedOn : target;
         expect(page, landedOn).toBe(UPDATE_PASSWORD_PATH);
@@ -935,7 +936,7 @@ describe("enrollmentGate", () => {
         READY(enrollment()),
       ];
       for (const state of states) {
-        for (const pathname of ["/enroll", "/privacy", "/terms", "/profile", "/profile/integrations", "/update-password"]) {
+        for (const pathname of ["/enroll", "/privacy", "/terms", "/profile", "/settings", "/update-password"]) {
           expect(decide(caps(true), state, pathname), `${state.kind} ${pathname}`).toBe("pass");
         }
       }
@@ -980,7 +981,7 @@ describe("enrollmentTitleFor", () => {
   });
 
   it("agrees with the shell's own rule for every address, whenever the gate lets the page through", () => {
-    for (const pathname of ["/", "/discover", "/privacy", "/terms", "/enroll", "/profile", "/profile/integrations"]) {
+    for (const pathname of ["/", "/discover", "/privacy", "/terms", "/enroll", "/profile", "/settings"]) {
       expect(enrollmentTitleFor("pass", pathname)).toBe(documentTitleFor("app", pathname));
     }
   });

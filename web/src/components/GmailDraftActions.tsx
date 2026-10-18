@@ -14,7 +14,7 @@ import { type GmailState, mayOfferGmailDraft } from "../lib/gmailAccess";
 //     find one;
 //   - Gmail not connected, a connection that needs reconnecting, or Gmail not available for this
 //     person or server: the mail-app link and the copy button, with a line saying why and, where
-//     it helps, the link to Integrations. Nobody is sent to connect a Gmail they cannot have;
+//     it helps, the link to Settings. Nobody is sent to connect a Gmail they cannot have;
 //   - it is not known whether Gmail is open to this person (the server's settings could not be
 //     read): the same two ways out and a line saying so, and no button or link towards Gmail at
 //     all. An offer waits for a definite yes.
@@ -41,7 +41,7 @@ export interface GmailDraftActionsProps {
   onCopyAll: () => void;
 }
 
-const INTEGRATIONS = "/profile/integrations";
+const SETTINGS = "/settings";
 
 function fallbackExplanation(state: GmailState, unavailableMessage: string | null): string {
   switch (state) {
@@ -99,13 +99,13 @@ export function GmailDraftActions({
       <p className="bj-muted bj-small">{fallbackExplanation(state, unavailableMessage)}</p>
       <div className="bj-actions">
         {state === "not_connected" && (
-          <Link className="bj-button-link bj-button-link-primary" to={INTEGRATIONS}>
-            Connect Gmail in Integrations
+          <Link className="bj-button-link bj-button-link-primary" to={SETTINGS}>
+            Connect Gmail in Settings
           </Link>
         )}
         {state === "reconnect_needed" && (
-          <Link className="bj-button-link bj-button-link-primary" to={INTEGRATIONS}>
-            Reconnect Gmail in Integrations
+          <Link className="bj-button-link bj-button-link-primary" to={SETTINGS}>
+            Reconnect Gmail in Settings
           </Link>
         )}
         {mail.href !== null ? (

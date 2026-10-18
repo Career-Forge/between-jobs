@@ -30,8 +30,10 @@ describe("the rail", () => {
     expect(size(declarationsFor(coarse, ".bj-rail-signout")["min-height"])).toBe(44);
   });
 
-  it("holds the reserved palette row at 40px, dashed in the border color", () => {
-    expect(base(".bj-palette-slot")).toMatchObject({ height: "40px", border: "1px dashed var(--bj-border)" });
+  it("keeps the reserved palette slot's geometry but never displays it by a rule, so `hidden` holds", () => {
+    expect(base(".bj-palette-slot")).toMatchObject({ height: "40px" });
+    expect(base(".bj-palette-slot")).not.toHaveProperty("display");
+    expect(base(".bj-palette-slot")).not.toHaveProperty("border");
   });
 
   it("leaves selection to the shared primitive: no rule of its own colors an active rail row", () => {

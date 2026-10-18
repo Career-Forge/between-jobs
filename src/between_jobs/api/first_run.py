@@ -66,7 +66,7 @@ STEP_LABELS: dict[StepId, str] = {
 
 STEP_PAGES: dict[StepId, str] = {
     "profile": "/profile",
-    "model_key": "/profile/integrations",
+    "model_key": "/settings",
     "first_search": "/discover",
     "track_job": "/applications",
     "generate_resume": "/applications",

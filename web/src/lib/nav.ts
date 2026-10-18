@@ -10,10 +10,10 @@
 // The same list feeds both layouts: the left rail on a wide screen shows every entry, and on a
 // phone the bottom tab bar shows the four marked `tab` while the rest sit in its "More" sheet
 // (`phone`), so nothing in the rail is out of reach on a phone. Profile matches its own address
-// exactly (`end`), so that Integrations, at /profile/integrations, is the only entry marked there.
+// exactly (`end`), so that Settings, at /settings, is the only entry marked on its own page.
 
 import type { IconName } from "../components/icons";
-import { INTEGRATIONS_PATH } from "./enrollment";
+import { SETTINGS_PATH } from "./settingsPaths";
 
 export interface NavItem {
   to: string;
@@ -41,12 +41,12 @@ export const NAV: readonly NavItem[] = [
   { to: "/profile", label: "Profile", end: true, icon: "profile", phone: "tab" },
 ];
 
-// Integrations is the page for the keys and the Gmail and Telegram connections. It keeps its own name
-// until a real Settings page exists, so the label matches the page heading and the copy that sends people
-// here. It sits in the rail's footer and in the More sheet rather than in the main list.
-export const INTEGRATIONS_ITEM: Omit<NavItem, "phone"> = {
-  to: INTEGRATIONS_PATH,
-  label: "Integrations",
+// Settings is the page for the model provider, the search keys and the Gmail, Telegram and Discord
+// connections. The label matches the page heading and the copy that sends people here. It sits in
+// the rail's footer and in the More sheet rather than in the main list.
+export const SETTINGS_ITEM: Omit<NavItem, "phone"> = {
+  to: SETTINGS_PATH,
+  label: "Settings",
   end: true,
   icon: "settings",
 };

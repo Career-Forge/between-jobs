@@ -151,7 +151,7 @@ function StatusBanners({
           <span>
             It comes before the features that call an AI, a search or a document service, and the
             rest of the app opens when you join. These pages stay open: your Profile page, where
-            you can delete your account, and your Integrations page, where you can remove a key,
+            you can delete your account, and your Settings page, where you can remove a key,
             disconnect Gmail, and pause or delete a saved search.
           </span>
         </Banner>

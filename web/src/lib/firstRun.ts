@@ -226,7 +226,7 @@ export function deriveFirstRun(facts: FirstRunFacts, flags: FirstRunFlags): Firs
       id: "model_key",
       label: "Add a model key",
       hint: "Paste your own model key. This app never runs on a shared key.",
-      to: "/profile/integrations",
+      to: "/settings",
       status: fromFlag(facts.modelKey),
     },
     {

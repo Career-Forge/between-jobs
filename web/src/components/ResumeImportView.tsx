@@ -35,7 +35,7 @@ export const IMPORT_TITLE = "Import from a resume file (PDF or DOCX)";
 
 // What is sent and what is kept, in the words of the privacy policy's "Importing a resume file".
 export const IMPORT_PRIVACY_STATEMENT =
-  "The text of your file is sent to your own AI provider, using the model key you saved in Integrations, so a model can fill in a draft profile for you to review. We do not keep the file itself.";
+  "The text of your file is sent to your own AI provider, using the model key you saved in Settings, so a model can fill in a draft profile for you to review. We do not keep the file itself.";
 
 export const IMPORT_LIMITS = `PDF or DOCX, up to ${MAX_IMPORT_BYTES / (1024 * 1024)} MiB.`;
 
