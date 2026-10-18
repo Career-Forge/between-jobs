@@ -176,6 +176,19 @@ button:hover {
   border-color: var(--bj-text-muted);
 }
 
+/* The text-style buttons -- links and close marks that happen to be buttons -- sit on the page with
+ * no fill and no border, so a hover does not paint a box behind them (the fill above is for buttons
+ * that have an outline). Their own :hover rules change color or underline. A new flat button class
+ * joins this list; shellStyles.test.ts checks the ones that exist. */
+button.bj-link-button:hover,
+button.bj-modal-close:hover,
+button.bj-score-disclosure-toggle:hover,
+button.bj-workauth-disclosure-toggle:hover,
+button.bj-gap-ghost:hover,
+.bj-chip-removable button:hover {
+  background: transparent;
+}
+
 :where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
   outline: var(--bj-focus-ring-width) solid var(--bj-focus-ring);
   outline-offset: var(--bj-focus-ring-offset);
