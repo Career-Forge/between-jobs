@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCOUNT_STILL_LOADING,
   STILL_LOADING,
+  factsArrived,
+  firstRunFactsOf,
+  readAccount,
   browserStorage,
   completedKey,
   deriveFirstRun,
@@ -14,7 +18,6 @@ import {
   readDismissed,
   readSearched,
   searchedKey,
-  shouldLoadFirstRun,
   viewOfFirstRun,
   writeCompleted,
   writeDismissed,
@@ -79,7 +82,7 @@ describe("deriveFirstRun", () => {
     const view = deriveFirstRun(BRAND_NEW, FRESH);
     expect(Object.fromEntries(view.steps.map((s) => [s.id, s.to]))).toEqual({
       profile: "/profile",
-      model_key: "/settings",
+      model_key: "/settings#ai-provider",
       first_search: "/discover",
       track_job: "/applications",
       generate_resume: "/applications",
@@ -304,7 +307,7 @@ describe("deriveFirstRun", () => {
 
     it("keeps the ordinary wording and link for no key, and for a key that is ready", () => {
       for (const facts of [{ ...EVERYTHING_DONE, modelKey: ok(false) }, { ...EVERYTHING_DONE, modelKey: ok(false), modelKeyNeedsModel: ok(false) }, EVERYTHING_DONE]) {
-        expect(deriveFirstRun(facts, FRESH).steps[1]).toMatchObject({ label: "Add a model key", to: "/settings" });
+        expect(deriveFirstRun(facts, FRESH).steps[1]).toMatchObject({ label: "Add a model key", to: "/settings#ai-provider" });
       }
     });
 
@@ -761,30 +764,33 @@ describe("the checklist's state, over a storage", () => {
     });
   });
 
-  describe("whether to ask the API at all", () => {
-    it("asks for a card that is neither dismissed nor completed", () => {
-      expect(shouldLoadFirstRun(start())).toBe(true);
+  describe("before the reads come back", () => {
+    it("shows nothing for a new account, and nothing is known to be ready", () => {
+      const view = viewOfFirstRun(start());
+      expect(view.presentation).toBe("hidden");
+      expect(view.finished).toBe(false);
     });
 
-    it("does not ask for a dismissed card -- no requests are made for one", () => {
-      const storage = memoryStorage();
-      writeDismissed(storage, USER);
-      expect(shouldLoadFirstRun(start(storage))).toBe(false);
-      expect(shouldLoadFirstRun(start(storage, "user-2"))).toBe(true);
-    });
-
-    it("does not ask for an account already seen finished", () => {
+    it("shows the one-line ready state at once for an account this browser saw finished, for that person only", () => {
       const storage = memoryStorage();
       writeCompleted(storage, USER);
-      expect(shouldLoadFirstRun(start(storage))).toBe(false);
-      expect(viewOfFirstRun(start(storage)).visible).toBe(false);
+      const view = viewOfFirstRun(start(storage));
+      expect(view.presentation).toBe("collapsed");
+      expect(view.finished).toBe(true);
+      expect(view.visible).toBe(false);
+      expect(viewOfFirstRun(start(storage, "user-2")).presentation).toBe("hidden");
     });
 
-    it("keeps a completed account's card hidden whatever a load would say", () => {
+    it("lets what the reads say win over what was remembered", () => {
       const storage = memoryStorage();
       writeCompleted(storage, USER);
-      const state = { ...start(storage), facts: BRAND_NEW, searched: false };
-      expect(viewOfFirstRun(state).visible).toBe(false);
+      // An application was deleted since: a step is to do again, so the checklist opens and says so.
+      const state = { ...start(storage), ...onFirstRunFactsLoaded(BRAND_NEW, storage, USER) };
+      const view = viewOfFirstRun(state);
+      expect(state.completed).toBe(false);
+      expect(view.finished).toBe(false);
+      expect(view.visible).toBe(true);
+      expect(view.presentation).toBe("expanded");
     });
   });
 
@@ -831,18 +837,19 @@ describe("the checklist's state, over a storage", () => {
       expect(result.completed).toBe(true);
       expect(storage.data.get(completedKey(USER))).toBe("1");
       expect(readCompleted(storage, "user-2")).toBe(false);
-      // And the next start asks for nothing.
-      expect(shouldLoadFirstRun(start(storage))).toBe(false);
+      // And the next start shows the ready line before anything has been read.
+      expect(viewOfFirstRun(start(storage)).finished).toBe(true);
     });
 
-    it("hides the card for an account that is finished, and does not bring it back after one request fails", () => {
+    it("does not open the card for an account that is finished, and does not bring it back after one request fails", () => {
       const storage = memoryStorage();
       const state = { ...start(storage), ...onFirstRunFactsLoaded(EVERYTHING_DONE, storage, USER) };
       expect(viewOfFirstRun(state).visible).toBe(false);
-      // A later visit: remembered, so nothing is loaded and nothing is shown.
-      const later = start(storage);
-      expect(shouldLoadFirstRun(later)).toBe(false);
+      expect(viewOfFirstRun(state).presentation).toBe("collapsed");
+      // A later visit with one read failing: four steps done and one unknown, never opened, never "to do".
+      const later = { ...start(storage), ...onFirstRunFactsLoaded({ ...EVERYTHING_DONE, applications: failed }, storage, USER) };
       expect(viewOfFirstRun(later).visible).toBe(false);
+      expect(viewOfFirstRun(later).presentation).toBe("collapsed");
     });
 
     it("still finishes the visit when storage cannot take the completed flag", () => {
@@ -870,5 +877,162 @@ describe("browserStorage", () => {
 
   it("is null where there is no window at all", () => {
     expect(browserStorage()).toBeNull();
+  });
+});
+
+// ── what the reads hold, and how the checklist is drawn from them ───────────
+
+describe("readAccount", () => {
+  it("keeps what the four lists returned, for the consumers beyond the checklist", async () => {
+    const { fetcher } = fakeFetcher({
+      ...GOOD,
+      "/profile/current": { id: "pv-1", activated_at: "2026-09-12T10:00:00Z" },
+    });
+    const reads = await readAccount(fetcher);
+    expect(reads.profile).toEqual(ok({ active: true, activatedAt: "2026-09-12T10:00:00Z" }));
+    expect(reads.credentials).toEqual(ok(GOOD["/credentials"]));
+    expect(reads.savedSearches).toEqual(ok([{ id: "s-1" }]));
+    expect(reads.applications).toEqual(ok(GOOD["/applications"]));
+  });
+
+  it("reads a profile with no activation time as active, with no date", async () => {
+    const { fetcher } = fakeFetcher(GOOD);
+    expect((await readAccount(fetcher)).profile).toEqual(ok({ active: true, activatedAt: null }));
+  });
+
+  it("reads a 404 as no profile, and keeps a failed list failed, each on its own", async () => {
+    const { fetcher } = fakeFetcher({
+      ...GOOD,
+      "/profile/current": new FakeApiError(404),
+      "/credentials": new FakeApiError(500),
+      "/saved-searches": { not: "a list" },
+    });
+    const reads = await readAccount(fetcher);
+    expect(reads.profile).toEqual(ok({ active: false, activatedAt: null }));
+    expect(reads.credentials).toEqual(failed);
+    expect(reads.savedSearches).toEqual(failed);
+    expect(reads.applications.kind).toBe("ok");
+  });
+
+  it("makes the same four plain GETs as the checklist's loader", async () => {
+    const { fetcher, calls } = fakeFetcher(GOOD);
+    await readAccount(fetcher);
+    expect(calls.map((c) => c.path).sort()).toEqual(["/applications", "/credentials", "/profile/current", "/saved-searches"].sort());
+  });
+});
+
+describe("firstRunFactsOf", () => {
+  it("carries a key that is saved with no model from the credentials list to the step that says so", async () => {
+    const waiting = { ...GOOD, "/credentials": [{ service: "llm", provider: "openai", is_validated: true, model: null }] };
+    const facts = firstRunFactsOf(await readAccount(fakeFetcher(waiting).fetcher));
+    expect(facts.modelKey).toEqual(ok(false));
+    expect(facts.modelKeyNeedsModel).toEqual(ok(true));
+    expect(deriveFirstRun(facts, FRESH).steps[1]).toMatchObject({
+      status: "todo",
+      label: "Choose a model",
+      to: "/settings#ai-provider",
+    });
+  });
+
+  it("does not call a key that was never checked a key waiting for its model", async () => {
+    const unchecked = { ...GOOD, "/credentials": [{ service: "llm", provider: "openai", is_validated: false, model: null }] };
+    const facts = firstRunFactsOf(await readAccount(fakeFetcher(unchecked).fetcher));
+    expect(facts.modelKeyNeedsModel).toEqual(ok(false));
+    expect(deriveFirstRun(facts, FRESH).steps[1].label).toBe("Add a model key");
+  });
+
+  it("is what loadFirstRunFacts answers, and carries the profile's activation time", async () => {
+    const replies = { ...GOOD, "/profile/current": { id: "pv-1", activated_at: "2026-09-12T10:00:00Z" } };
+    const facts = firstRunFactsOf(await readAccount(fakeFetcher(replies).fetcher));
+    expect(facts).toEqual({ ...(await loadFirstRunFacts(fakeFetcher(replies).fetcher)) });
+    expect(facts.profileActiveSince).toBe("2026-09-12T10:00:00Z");
+  });
+
+  it("is still loading while the reads are", () => {
+    expect(firstRunFactsOf(ACCOUNT_STILL_LOADING)).toEqual({ ...STILL_LOADING, profileActiveSince: undefined });
+    expect(factsArrived(firstRunFactsOf(ACCOUNT_STILL_LOADING))).toBe(false);
+    expect(factsArrived(BRAND_NEW)).toBe(true);
+    expect(factsArrived(ALL_FAILED)).toBe(true);
+    expect(factsArrived({ ...BRAND_NEW, applications: loading })).toBe(false);
+  });
+});
+
+describe("what each step says about itself", () => {
+  const steps = (facts: FirstRunFacts, flags: FirstRunFlags = FRESH) => deriveFirstRun(facts, flags).steps;
+
+  it("gives a done step the real fact when one came back, and none when it did not", () => {
+    const done = steps({ ...EVERYTHING_DONE, profileActiveSince: "2026-09-12T10:00:00Z" });
+    expect(done.map((step) => step.fact)).toEqual([
+      { kind: "since", at: "2026-09-12T10:00:00Z" },
+      { kind: "text", text: "Key saved and checked" },
+      { kind: "text", text: "1 saved search" },
+      { kind: "text", text: "2 tracked" },
+      { kind: "text", text: "1 with a resume" },
+    ]);
+    // No activation time returned: the profile step says "done" and no date.
+    expect(steps(EVERYTHING_DONE)[0].fact).toBeNull();
+  });
+
+  it("names the first search by what shows it, in order of how much it says", () => {
+    const fromDiscover = { ...EVERYTHING_DONE, savedSearches: ok(0), applications: ok({ count: 3, fromDiscover: 2, withResume: 1, resumeTargetId: "a" }) };
+    expect(steps(fromDiscover)[2].fact).toEqual({ kind: "text", text: "2 tracked from Discover" });
+    const fromBrowser = { ...EVERYTHING_DONE, savedSearches: ok(0) };
+    expect(steps(fromBrowser, { dismissed: false, searched: true })[2].fact).toEqual({ kind: "text", text: "A search finished in this browser" });
+    expect(steps({ ...EVERYTHING_DONE, savedSearches: ok(3) })[2].fact).toEqual({ kind: "text", text: "3 saved searches" });
+  });
+
+  it("has no fact on a step that is not done", () => {
+    for (const step of steps(BRAND_NEW)) expect(step.fact).toBeNull();
+    for (const step of steps(ALL_FAILED)) expect(step.fact).toBeNull();
+  });
+
+  it("tells a read that failed from one that holds no answer", () => {
+    const failedProfile = steps({ ...BRAND_NEW, profile: failed });
+    expect(failedProfile[0]).toMatchObject({ status: "unknown", cause: "errored" });
+    // Every read worked and none shows a search, and this browser cannot say: nothing to retry.
+    const noRow = steps(BRAND_NEW, { dismissed: false, searched: null });
+    expect(noRow[2]).toMatchObject({ status: "unknown", cause: "cant_tell" });
+    // One of the two lists the search could show up in failed: that one can be tried again.
+    expect(steps({ ...BRAND_NEW, savedSearches: failed }, { dismissed: false, searched: null })[2]).toMatchObject({ status: "unknown", cause: "errored" });
+    expect(steps({ ...EVERYTHING_DONE, applications: failed }).slice(3)).toMatchObject([{ cause: "errored" }, { cause: "errored" }]);
+  });
+
+  it("gives a step that is not unknown no cause", () => {
+    for (const step of [...steps(BRAND_NEW), ...steps(EVERYTHING_DONE)]) {
+      if (step.status !== "unknown") expect(step.cause).toBeNull();
+    }
+  });
+});
+
+describe("how the checklist is presented", () => {
+  const view = (facts: FirstRunFacts, flags: FirstRunFlags = FRESH) => deriveFirstRun(facts, flags);
+
+  it("opens while a step is known to be to do", () => {
+    expect(view(BRAND_NEW)).toMatchObject({ presentation: "expanded", visible: true, finished: false, todoCount: 5, unknownCount: 0 });
+  });
+
+  it("is one 'ready' line when all five are done", () => {
+    expect(view(EVERYTHING_DONE)).toMatchObject({ presentation: "collapsed", visible: false, finished: true, todoCount: 0, unknownCount: 0 });
+  });
+
+  it("is one counting line, never 'ready', once hidden with steps left", () => {
+    expect(view(BRAND_NEW, { dismissed: true, searched: false })).toMatchObject({ presentation: "collapsed", finished: false, todoCount: 5 });
+  });
+
+  it("is one counting line, never 'ready', when only unknowns stand between it and done", () => {
+    const only = view({ ...EVERYTHING_DONE, applications: failed });
+    expect(only).toMatchObject({ presentation: "collapsed", finished: false, todoCount: 0, unknownCount: 2 });
+  });
+
+  it("is hidden while the reads are loading, unless this browser saw it finished", () => {
+    const allLoading: FirstRunFacts = { profile: loading, modelKey: loading, savedSearches: loading, applications: loading };
+    expect(view(allLoading).presentation).toBe("hidden");
+    expect(view(allLoading, { dismissed: false, searched: null, seenFinished: true })).toMatchObject({ presentation: "collapsed", finished: true });
+    // A person who hid it is not shown it while it loads either way, but the counts need the reads.
+    expect(view(allLoading, { dismissed: true, searched: null }).presentation).toBe("hidden");
+  });
+
+  it("never calls an account finished against the reads", () => {
+    expect(view(BRAND_NEW, { dismissed: false, searched: false, seenFinished: true }).finished).toBe(false);
   });
 });
