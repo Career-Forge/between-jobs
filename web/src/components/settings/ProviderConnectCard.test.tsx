@@ -265,6 +265,10 @@ describe("the custom provider", () => {
     expect(text(container)).toContain("Your key is sent to the one you pick and nowhere else.");
     expect(container.querySelector('input[type="url"]')).toBeNull();
     expect(query<HTMLAnchorElement>(container, "a").href).toBe("https://console.groq.com/keys");
+    expect(text(query<HTMLAnchorElement>(container, "a"))).toContain("Get your key at Groq");
+    choose(select, "mistral");
+    expect(query<HTMLAnchorElement>(container, "a").href).toBe("https://console.mistral.ai/api-keys");
+    expect(text(query<HTMLAnchorElement>(container, "a"))).toContain("Get your key at Mistral");
   });
 
   it("sends the address of the host that was picked", async () => {

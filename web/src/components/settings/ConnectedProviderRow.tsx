@@ -86,13 +86,13 @@ export function ConnectedProviderRow({ credential, provider, hostName, now, pane
           <button type="button" aria-expanded={panel === "replace"} onClick={() => onPanel(panel === "replace" ? null : "replace")}>
             Replace key
           </button>
+          <RemoveKey what={`${name} key`} holder={name} busy={removing} onRemove={() => void remove()} />
           {provider?.manageUrl != null && (
             <a href={provider.manageUrl} target="_blank" rel="noopener noreferrer">
               Manage on {name}
               <span className="bj-visually-hidden"> (opens in a new tab)</span>
             </a>
           )}
-          <RemoveKey what={`${name} key`} holder={name} busy={removing} onRemove={() => void remove()} />
         </div>
       </div>
       {error !== null && (
