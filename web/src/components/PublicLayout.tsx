@@ -9,6 +9,9 @@ import { Wordmark } from "./Wordmark";
 // What a signed-out visitor sees around the landing page and the two legal pages: a header with
 // the way in, the page itself as the one <main> (the skip link's target), and a footer with the
 // wordmark, the legal links, the source and the two contact addresses. No hooks, so a test can render it directly.
+//
+// The header's Create account is an outlined link, not the filled one: the landing page's hero
+// holds the page's one cyan fill, and the legal pages, which have no hero, need none.
 
 export function PublicLayout({ children }: { children: ReactNode }) {
   return (
@@ -20,7 +23,7 @@ export function PublicLayout({ children }: { children: ReactNode }) {
         </Link>
         <nav className="bj-public-actions" aria-label="Account">
           <Link to={LOGIN_PATH}>Sign in</Link>
-          <Link to={REGISTER_PATH} className="bj-button-link bj-button-link-primary">
+          <Link to={REGISTER_PATH} className="bj-button-link">
             Create account
           </Link>
         </nav>

@@ -158,8 +158,10 @@ a:hover {
  *   secondary  outlined         a plain <button>, or .bj-secondary
  *   quiet      text only        .bj-quiet
  *   text link  cyan text        a plain <a>, or .bj-link-button for a button that acts like one
- * Anything that is not primary stays outlined or plain, so a second filled cyan
- * button cannot appear by accident. */
+ * Anything that is not primary stays outlined or plain, so a plain or .bj-quiet button
+ * never turns into a second filled cyan one by itself. Which controls carry .bj-primary
+ * (or its link twin, a.bj-button-link-primary) is each page's decision: the rule is one
+ * per page, and the page tests pin it for the signed-out pages. */
 button {
   font-family: var(--bj-font-body);
   font-size: var(--bj-text-control);
