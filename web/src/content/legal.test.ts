@@ -919,6 +919,16 @@ const MODEL_CALLERS: Record<string, string> = {
   warm_path_events_routes: "event research",
 };
 
+// Modules that import the model client and send it nothing of the person's, with the reason. This is
+// not a way round the guard below: each entry says what the module sends, and a test reads the
+// module to hold it to that.
+const MODEL_CLIENT_USERS_WITHOUT_USER_DATA: Record<string, string> = {
+  // Checks a model key and lists a provider's models (a request that carries only the key), and
+  // proves a chosen model with one fixed test message (`probe_model`). Nothing from a profile, a
+  // posting or a resume goes through it.
+  provider_checks: 'system_prompt="Reply with the single word: ok"',
+};
+
 describe("every place the API calls the model is covered by 'What your AI provider receives'", () => {
   const callers = [
     ...Object.entries(apiSources)
@@ -961,7 +971,9 @@ describe("every place the API calls the model is covered by 'What your AI provid
   });
 
   it("knows every module that sends text to the user's AI provider, and no module that does not", () => {
-    const unlisted = callers.filter((name) => !(name in MODEL_CALLERS));
+    const unlisted = callers.filter(
+      (name) => !(name in MODEL_CALLERS) && !(name in MODEL_CLIENT_USERS_WITHOUT_USER_DATA),
+    );
     expect(
       unlisted,
       unlisted
@@ -971,13 +983,28 @@ describe("every place the API calls the model is covered by 'What your AI provid
         )
         .join("\n"),
     ).toEqual([]);
-    const stale = Object.keys(MODEL_CALLERS).filter((name) => !callers.includes(name));
+    const stale = [...Object.keys(MODEL_CALLERS), ...Object.keys(MODEL_CLIENT_USERS_WITHOUT_USER_DATA)].filter(
+      (name) => !callers.includes(name),
+    );
     expect(
       stale,
       `${stale.join(", ")} no longer calls the model: take it out of this map, and out of the list in legal.ts if nothing else sends the same text`,
     ).toEqual([]);
-    expect(callers.length).toBe(Object.keys(MODEL_CALLERS).length);
+    expect(callers.length).toBe(
+      Object.keys(MODEL_CALLERS).length + Object.keys(MODEL_CLIENT_USERS_WITHOUT_USER_DATA).length,
+    );
   });
+
+  it.each(Object.entries(MODEL_CLIENT_USERS_WITHOUT_USER_DATA))(
+    "%s sends the model only the fixed test message (%s)",
+    (name, fixedPrompt) => {
+      const source = apiSources[`${API_DIR}${name}.py`];
+      // one call to the model client in the module, with prompts that are literals
+      expect(source.match(/\bgenerate\(/g)?.length).toBe(1);
+      expect(source).toContain(fixedPrompt);
+      expect(source).toContain('user_prompt="ok"');
+    },
+  );
 
   it.each(Object.entries(MODEL_CALLERS))("%s is described by a list entry that says %j", (_file, phrase) => {
     expect(aiProviderListText()).toContain(phrase);
