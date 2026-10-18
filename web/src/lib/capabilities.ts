@@ -56,7 +56,7 @@ export interface Capabilities {
   // allowing, and still refuses (404 FEATURE_DISABLED) anyone it does not allow.
   gmailAllowed?: boolean;
   // The operator says Google's OAuth client is still in Testing mode, where Google expires a
-  // connection after 7 days, so the Integrations page tells connected people that.
+  // connection after 7 days, so the Settings page tells connected people that.
   gmailTestingMode?: boolean;
 }
 

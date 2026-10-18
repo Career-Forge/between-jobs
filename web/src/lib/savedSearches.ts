@@ -1,6 +1,6 @@
 // Pausing and deleting a person's saved searches, as pure logic: what the API's list is read as, the
 // requests, and the state of the card that shows them (components/SavedSearchesCard.tsx draws it, on
-// the Integrations page).
+// the Settings page).
 //
 // WHY THIS EXISTS BESIDE DISCOVER, WHICH ALREADY HAS THESE BUTTONS. A saved search runs in the
 // background on a schedule, matching and scoring on the person's own AI key, whether or not they

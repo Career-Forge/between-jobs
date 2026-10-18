@@ -12,7 +12,7 @@
 // PROVIDER_REJECTED, PROVIDER_RATE_LIMITED and PROVIDER_UNAVAILABLE say an upstream provider refused
 // or failed a call. For the person's model provider the envelope's `details.reason` names the kind
 // (key_rejected, out_of_credit, request_rejected, rate_limited, timeout, ...; ApiError.reason), and
-// a rejection the person can fix carries `settings_path` (the Integrations page): lib/setupRequired.ts
+// a rejection the person can fix carries `settings_path` (the Settings page, which the API still names by its old address): lib/setupRequired.ts
 // turns the pair into the link under the message.
 // UNSUPPORTED_MEDIA_TYPE is an uploaded file the route does not read (415): a resume that
 // is not a PDF or a DOCX.

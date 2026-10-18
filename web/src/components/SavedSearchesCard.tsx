@@ -9,7 +9,7 @@ import {
 } from "../lib/savedSearches";
 import { SavedSearchesCardView } from "./SavedSearchesCardView";
 
-// The person's saved searches, with Pause / Resume and Delete, on the Integrations page. Thin glue
+// The person's saved searches, with Pause / Resume and Delete, on the Settings page. Thin glue
 // over the tested pieces (lib/savedSearches.ts, components/SavedSearchesCardView.tsx). It is here,
 // and not only on Discover, because the tester-programme gate leaves Integrations open to someone
 // who has not joined or has withdrawn, and a saved search keeps running in the background for them

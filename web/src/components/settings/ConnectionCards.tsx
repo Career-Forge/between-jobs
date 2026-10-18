@@ -24,7 +24,7 @@ import "../../styles/settings.css";
 // cyan fill: that belongs to the next-step band, so "Generate a code" and "Connect Gmail" are
 // ordinary outlined buttons.
 //
-// The Telegram-link card shows only on a server that has a bot (P2.4): GET /capabilities says so, and
+// The Telegram-link card shows only on a server that has a bot: GET /capabilities says so, and
 // until that answer is known the card stays out. The Discord card is the same idea, shown only when
 // /capabilities says the server has the Discord app configured (a link code could not be redeemed
 // otherwise).
