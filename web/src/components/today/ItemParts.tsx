@@ -13,7 +13,7 @@ import "../../styles/today.css";
 export type BusyKind = "accept" | "track" | "generate-anyway" | "dismiss";
 
 // The words on a control while its own request is out.
-const BUSY_LABELS: Record<BusyKind, string> = {
+export const BUSY_LABELS: Record<BusyKind, string> = {
   accept: "Moving...",
   track: "Tracking...",
   "generate-anyway": "Generating...",
@@ -55,12 +55,14 @@ export function ItemBody({ view }: { view: RowView }) {
 
 // An item's own failed action, under the item. A setup failure names what is missing and links to
 // where it is fixed (always: when the server sent no usable link, the settings page); anything else
-// is a callout with Retry, which sends the same request again.
+// is a callout with Retry, which sends the same request again. Both are announced when they appear:
+// the person pressed a button and is waiting to hear how it went (the failure callout is an alert of
+// its own, so the setup notice is one too).
 export function ItemProblem({ problem, onRetry }: { problem: Failure; onRetry: () => void }) {
   if (problem.kind === "setup") {
     const { notice } = problem;
     return (
-      <div className="bj-today-problem">
+      <div className="bj-today-problem" role="alert">
         <SetupRequiredState
           message={notice.message}
           missing={[{ label: notice.linkLabel ?? "Open Settings", to: notice.linkTo ?? SETTINGS_PATH }]}

@@ -31,8 +31,10 @@
 // account that finished everything must not be told to redo steps because one of the four requests
 // failed. Otherwise it is one line that opens on a click -- "Setup ready" when all five are done,
 // the counts when it was hidden or only unknowns remain -- so the person can always get back to it.
-// Once an account is seen with all five done, this browser remembers it (per user) and shows the
-// "ready" line on the next visit before the reads have come back; what the reads say then wins.
+// Once an account is seen with all five done, this browser remembers it (per user) so the next visit
+// keeps a place for the one line while the reads are out. That line says only "Setup" and that it is
+// checking: it claims nothing the reads have not confirmed, and the reads then decide what it says
+// ("Setup ready", the counts, or the open list).
 //
 // The reads are Today's (readAccount): it needs profile, credentials, saved searches and
 // applications for the band, the background trail and the sentences' job names as well, so the
@@ -91,7 +93,8 @@ export interface FirstRunFacts {
 export interface FirstRunFlags {
   dismissed: boolean;
   // This browser has seen the account with all five done (written when the facts last said so). It
-  // lets the one-line "Setup ready" show before the reads come back; it never counts a step.
+  // keeps a place for the one setup line while the reads are out; it never counts a step and it
+  // never lets the line say the account is ready.
   seenFinished?: boolean;
   // This browser remembers a first successful search: true; remembers none: false;
   // storage could not be read: null (unknown).
@@ -269,6 +272,9 @@ export interface FirstRunView {
   presentation: SetupPresentation;
   // All five are done: known from the reads, or remembered by this browser while they are loading.
   finished: boolean;
+  // The reads have not all answered, so nothing about the account is said yet: the collapsed line
+  // (kept for an account this browser has seen finished) reads only that it is checking.
+  loading: boolean;
   // Counts for the collapsed line; the steps below are what they come from.
   todoCount: number;
   unknownCount: number;
@@ -407,13 +413,14 @@ export function deriveFirstRun(facts: FirstRunFacts, flags: FirstRunFlags): Firs
   const stillLoading = !factsArrived(facts);
   const nextStep = steps.find((step) => step.status === "todo") ?? null;
   const visible = !flags.dismissed && !stillLoading && nextStep !== null;
-  const finished = stillLoading ? flags.seenFinished === true : doneCount === steps.length;
+  // Finished is a fact about the account, so it is only ever drawn from the reads.
+  const finished = !stillLoading && doneCount === steps.length;
   const presentation: SetupPresentation = visible
     ? "expanded"
-    : stillLoading && !finished
+    : stillLoading && flags.seenFinished !== true
       ? "hidden"
       : "collapsed";
-  return { visible, presentation, finished, todoCount, unknownCount, steps, doneCount, nextStep };
+  return { visible, presentation, finished, loading: stillLoading, todoCount, unknownCount, steps, doneCount, nextStep };
 }
 
 // ── what this browser remembers ────────────────────────────────────────────
@@ -491,10 +498,10 @@ export function markSearched(storage: StorageLike | null, userId: string): void 
   }
 }
 
-// An account seen with all five steps done. Remembered per user, per browser, so the one-line
-// "Setup ready" shows at once on a later visit, before the four reads come back. It is a first
-// paint only: once they have, the line says what they say, never what was remembered. A browser
-// that has lost it (site data cleared, a new browser) loses nothing but that head start.
+// An account seen with all five steps done. Remembered per user, per browser, so a later visit keeps
+// a place for the one setup line while the four reads are out (a layout hint: it claims nothing).
+// Once they have come back the line says what they say, never what was remembered. A browser that
+// has lost it (site data cleared, a new browser) loses nothing but that reserved place.
 export function completedKey(userId: string): string {
   return `between-jobs:first-run:completed:${userId}`;
 }
@@ -515,6 +522,17 @@ export function writeCompleted(storage: StorageLike | null, userId: string): boo
     return true;
   } catch {
     return false;
+  }
+}
+
+// An account the reads now say has a step to do is no longer one that finished. (`StorageLike` has
+// no remove, so the flag is overwritten with anything but the set value.)
+export function clearCompleted(storage: StorageLike | null, userId: string): void {
+  try {
+    // Only a flag that is set is overwritten: an account that never finished stores nothing.
+    if (storage?.getItem(completedKey(userId)) === FLAG_SET) storage.setItem(completedKey(userId), "0");
+  } catch {
+    // Nothing useful to do: the line only keeps a place for itself while the reads are out.
   }
 }
 
@@ -569,6 +587,9 @@ export function onFirstRunFactsLoaded(
   const view = deriveFirstRun(facts, { dismissed: false, searched });
   const finished = view.doneCount === view.steps.length;
   if (finished) writeCompleted(storage, userId);
+  // A step that is definitely to do again ends the memory; one that merely could not be read does
+  // not (a network blip says nothing about whether the account finished).
+  else if (view.todoCount > 0) clearCompleted(storage, userId);
   return { facts, searched, completed: finished };
 }
 

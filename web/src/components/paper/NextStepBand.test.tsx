@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { NextStep, NextStepOutcome } from "../../lib/nextStep";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
 import { click, query, render } from "../../testing/render";
-import { NEXT_STEP_FOCUS_ID, NextStepBand } from "./NextStepBand";
+import { NEXT_STEP_FOCUS_ID, NextStepBand, type NextStepPending } from "./NextStepBand";
 
 const step = (overrides: Partial<NextStep> = {}): NextStep => ({
   sentence: "Generate a tailored resume for this posting.",
@@ -369,6 +369,71 @@ describe("a band that holds an item", () => {
 
   it("has no serious accessibility violation", async () => {
     const { container } = render(held("Next step · Resume ready", <p>The item</p>));
+    await expectNoSeriousA11yViolations(container);
+  });
+});
+
+describe("a band with a request out for its step", () => {
+  const waiting = (pending: NextStepPending | null, onAction = vi.fn()) => (
+    <MemoryRouter>
+      <NextStepBand
+        outcome={ready(step({ secondary: { kind: "button", label: "Generate anyway", intent: "anyway" } }))}
+        onAction={onAction}
+        pending={pending}
+      >
+        <p>item</p>
+      </NextStepBand>
+    </MemoryRouter>
+  );
+
+  it("changes the words of the button the request was for, and marks both aria-disabled so focus can stay", () => {
+    const { container } = render(waiting({ intent: "anyway", label: "Generating..." }));
+    const primary = query<HTMLButtonElement>(container, "button.bj-primary");
+    const secondary = query<HTMLButtonElement>(container, "button.bj-band-secondary");
+    expect(text(secondary)).toBe("Generating...");
+    expect(text(primary)).toBe("Generate resume");
+    expect(primary.getAttribute("aria-disabled")).toBe("true");
+    expect(secondary.getAttribute("aria-disabled")).toBe("true");
+    // Not `disabled`: a focused button would lose focus.
+    expect(primary.disabled).toBe(false);
+    expect(secondary.disabled).toBe(false);
+  });
+
+  it("ignores a press while the request is out", () => {
+    const onAction = vi.fn();
+    const { container } = render(waiting({ intent: "generate", label: "Working..." }, onAction));
+    click(query(container, "button.bj-primary"));
+    click(query(container, "button.bj-band-secondary"));
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("marks the buttons aria-disabled without renaming any when the request was for something else", () => {
+    const { container } = render(waiting({ intent: null }));
+    expect(text(query(container, "button.bj-primary"))).toBe("Generate resume");
+    expect(text(query(container, "button.bj-band-secondary"))).toBe("Generate anyway");
+    expect(query(container, "button.bj-primary").getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("is a plain band with nothing pending: no aria-disabled at all, and a press goes through", () => {
+    const onAction = vi.fn();
+    const { container } = render(waiting(null, onAction));
+    expect(container.querySelector("[aria-disabled]")).toBeNull();
+    click(query(container, "button.bj-primary"));
+    expect(onAction).toHaveBeenCalledExactlyOnceWith("generate");
+  });
+
+  it("leaves a link alone: only handler buttons wait", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <NextStepBand outcome={ready(step({ action: { kind: "link", label: "See why", to: "/x" }, secondary: { kind: "button", label: "Generate anyway", intent: "anyway" } }))} pending={{ intent: "anyway", label: "Generating..." }} />
+      </MemoryRouter>,
+    );
+    expect(query(container, "a.bj-button-link-primary").getAttribute("aria-disabled")).toBeNull();
+    expect(text(query(container, "button.bj-band-secondary"))).toBe("Generating...");
+  });
+
+  it("has no serious accessibility violation", async () => {
+    const { container } = render(waiting({ intent: "anyway", label: "Generating..." }));
     await expectNoSeriousA11yViolations(container);
   });
 });

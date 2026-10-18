@@ -33,6 +33,11 @@ import "../../styles/paper.css";
 // and may replace the eyebrow's words with the item's kind (`eyebrow`). Neither changes what the band
 // is: the sentence, the why line and the one cyan button still come from the rule table.
 //
+// While the page has a request out for the step (`pending`), the band's handler buttons stay where
+// they are but are aria-disabled -- not disabled, so a focused one keeps focus -- and ignore presses,
+// and the one the request was for reads the words the page gives it ("Generating..."). A route link is
+// not a handler and stays as it is.
+//
 // Not built: the phone's docked sticky 56px bar (optional, and not part of this component).
 
 // The id of the element a "Skip to next step" link should focus: the button when the band is lit,
@@ -47,6 +52,16 @@ export interface NextStepBandProps {
   eyebrow?: ReactNode;
   /** The item a step is about, drawn inside the band under its text and buttons. */
   children?: ReactNode;
+  /**
+   * A request the page has out for this step. `intent` names the button it was for (null when it was
+   * for something the band has no button for), and `label` replaces that button's words meanwhile.
+   */
+  pending?: NextStepPending | null;
+}
+
+export interface NextStepPending {
+  intent: string | null;
+  label?: string;
 }
 
 // A route the band links to, or an address it opens, is data from a rule. An external address
@@ -76,11 +91,13 @@ function ActionControl({
   primary,
   onAction,
   focusId,
+  pending,
 }: {
   action: NextStepAction;
   primary: boolean;
   onAction?: (intent: string) => void;
   focusId?: string;
+  pending?: NextStepPending | null;
 }) {
   const button = primary ? "bj-primary bj-band-action" : "bj-band-action bj-band-secondary";
   const link = primary ? "bj-button-link bj-button-link-primary bj-band-action" : "bj-button-link bj-band-action bj-band-secondary";
@@ -107,16 +124,27 @@ function ActionControl({
           {action.label}
         </button>
       );
-    case "button":
+    case "button": {
+      const waiting = pending !== undefined && pending !== null;
+      const words = waiting && pending.intent === action.intent && pending.label !== undefined ? pending.label : action.label;
       return (
-        <button id={focusId} type="button" className={button} onClick={() => onAction?.(action.intent)}>
-          {action.label}
+        <button
+          id={focusId}
+          type="button"
+          className={button}
+          aria-disabled={waiting ? true : undefined}
+          onClick={() => {
+            if (!waiting) onAction?.(action.intent);
+          }}
+        >
+          {words}
         </button>
       );
+    }
   }
 }
 
-export function NextStepBand({ outcome, onAction, eyebrow, children }: NextStepBandProps) {
+export function NextStepBand({ outcome, onAction, eyebrow, children, pending }: NextStepBandProps) {
   const step = outcome.status === "ready" ? outcome.step : null;
   const sentence = step?.sentence ?? null;
   const lastSentence = useRef<string | null>(null);
@@ -193,9 +221,9 @@ export function NextStepBand({ outcome, onAction, eyebrow, children }: NextStepB
                 </p>
               </>
             ) : (
-              <ActionControl action={action} primary onAction={onAction} focusId={NEXT_STEP_FOCUS_ID} />
+              <ActionControl action={action} primary onAction={onAction} focusId={NEXT_STEP_FOCUS_ID} pending={pending} />
             )}
-            {secondary !== null && <ActionControl action={secondary} primary={false} onAction={onAction} />}
+            {secondary !== null && <ActionControl action={secondary} primary={false} onAction={onAction} pending={pending} />}
           </div>
         )}
       </div>

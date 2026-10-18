@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FirstRunChecklist } from "../components/FirstRunChecklist";
+import { NEXT_STEP_FOCUS_ID } from "../components/paper/NextStepBand";
 import type { BusyKind } from "../components/today/ItemParts";
-import { TodayView, type AccountNotes, type FeedState } from "../components/today/TodayView";
+import { ACTIVITY_HEADING_ID, TodayView, type AccountNotes, type FeedState, type TodayConfirmation } from "../components/today/TodayView";
 import { apiFetch } from "../lib/api";
 import { ACCOUNT_STILL_LOADING, firstRunFactsOf, hasOpenRouterKey, readAccount, type AccountReads } from "../lib/firstRun";
 import { nextStepWithRow, type NextStepInput, type SetupCheck } from "../lib/nextStep";
-import { parseTodayIntent, todayLit, type TodayRowId } from "../lib/nextStep/pages/today";
+import { PROPOSAL_STEPS, parseTodayIntent, todayLit, workspacePath, type TodayRowId } from "../lib/nextStep/pages/today";
 import { gmailAccess } from "../lib/gmailAccess";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { failureOf, type Failure } from "../lib/setupRequired";
@@ -16,6 +17,7 @@ import {
   fitReadOf,
   fitReadTargets,
   isPending,
+  jobLabel,
   searchesRead,
   todayFacts,
   trackRequestBody,
@@ -51,7 +53,22 @@ interface Account {
   reads: AccountReads;
   /** The client time the reads came back, for the failure line of a read that failed. */
   at: string;
+  /** Which request of the account these reads answer; behind the current one, they are about to be replaced. */
+  attempt: number;
 }
+
+// Words for a screen reader as a request starts and as it ends well. A failure is announced by its
+// own alert under the item, so it needs none here.
+const STARTED: Record<ItemAction, string> = {
+  dismiss: "Dismissing",
+  accept: "Moving the application",
+  track: "Tracking the job",
+  "generate-anyway": "Generating your resume",
+};
+
+// Where keyboard focus goes when the control that had it is gone: the band's step (its button, or
+// its sentence when nothing is lit), or the list's heading for a row.
+type FocusTarget = "band" | "list";
 
 function checkOf<T, V>(
   read: AccountReads["profile"] | AccountReads["credentials"],
@@ -68,11 +85,14 @@ const LIT_ROWS: readonly string[] = ["T1", "T2", "T3", "T4"];
 
 export default function Today() {
   const [feed, setFeed] = useState<FeedLoad>({ kind: "loading" });
-  const [account, setAccount] = useState<Account>({ reads: ACCOUNT_STILL_LOADING, at: "" });
+  const [account, setAccount] = useState<Account>({ reads: ACCOUNT_STILL_LOADING, at: "", attempt: 0 });
   const [accountAttempt, setAccountAttempt] = useState(0);
   const [busy, setBusy] = useState<Record<string, BusyKind | undefined>>({});
   const [problems, setProblems] = useState<Record<string, Failure | undefined>>({});
   const [tracked, setTracked] = useState<Record<string, string>>({});
+  const [announcement, setAnnouncement] = useState("");
+  const [confirmation, setConfirmation] = useState<TodayConfirmation | null>(null);
+  const [refocus, setRefocus] = useState<FocusTarget | null>(null);
   const [fits, setFits] = useState<Record<string, FitRead | undefined>>({});
   // The applications whose stored fit result this feed's held-back cards ask for: chosen once per
   // load of the feed (a capped few, newest first), so what is waited for never changes while it is.
@@ -100,9 +120,9 @@ export default function Today() {
 
   useEffect(() => {
     let cancelled = false;
-    setAccount((current) => (current.reads === ACCOUNT_STILL_LOADING ? current : { reads: ACCOUNT_STILL_LOADING, at: "" }));
+    setAccount((current) => (current.reads === ACCOUNT_STILL_LOADING ? current : { ...current, reads: ACCOUNT_STILL_LOADING, at: "" }));
     void readAccount(apiFetch).then((reads) => {
-      if (!cancelled) setAccount({ reads, at: clockTime(new Date()) });
+      if (!cancelled) setAccount({ reads, at: clockTime(new Date()), attempt: accountAttempt });
     });
     return () => {
       cancelled = true;
@@ -209,6 +229,12 @@ export default function Today() {
     setProblems((current) => ({ ...current, [itemId]: problem }));
   }
 
+  // What was done, in the words a screen reader hears, once the change is on screen.
+  function finished(words: string, from: FocusTarget) {
+    setAnnouncement(words);
+    setRefocus(from);
+  }
+
   // Each action is the request Today has always made for it. Both proposal decisions retire the
   // item on the server too, so removing it here on success mirrors a plain dismiss. A failure is
   // kept under the item it was for.
@@ -216,8 +242,13 @@ export default function Today() {
     if (inFlight.current.has(item.id)) return;
     inFlight.current.add(item.id);
     lastAction.current.set(item.id, { action, item });
+    // Where focus returns to if the control that had it goes: the band when the item was its own,
+    // the list's heading when it was a row.
+    const from: FocusTarget = lit?.item.id === item.id ? "band" : "list";
     setBusy((current) => ({ ...current, [item.id]: action }));
     setProblem(item.id, undefined);
+    setConfirmation(null);
+    setAnnouncement(`${STARTED[action]}.`);
     try {
       switch (action) {
         case "dismiss":
@@ -225,10 +256,12 @@ export default function Today() {
           // route (409) for one that was already decided, so that item is retired like any other.
           await apiFetch(isPending(item.status_proposal) ? `/today/${item.id}/dismiss-proposal` : `/today/${item.id}/dismiss`, { method: "POST" });
           removeItem(item.id);
+          finished("Dismissed.", from);
           break;
         case "accept":
           await apiFetch(`/today/${item.id}/accept-proposal`, { method: "POST" });
           removeItem(item.id);
+          finished(`Moved to ${PROPOSAL_STEPS[item.status_proposal?.proposed_type ?? ""]?.stage ?? "the new stage"}.`, from);
           break;
         case "track": {
           const match = item.job_match;
@@ -240,6 +273,7 @@ export default function Today() {
             body: JSON.stringify(trackRequestBody(match)),
           });
           setTracked((current) => ({ ...current, [match.apply_url]: application.id }));
+          finished("Tracked.", from);
           break;
         }
         case "generate-anyway": {
@@ -251,17 +285,28 @@ export default function Today() {
           });
           if (result.resume === null || result.resume === undefined) {
             setProblem(item.id, { kind: "error", message: "No resume was produced. Open the workspace to see why." });
+            setAnnouncement("");
             break;
           }
-          // The draft exists now, so the "not generated" card is out of date: retire it. A failure
-          // to do that is not worth reporting -- the resume is made, and the next load shows what is left.
+          // The draft exists now, so the "not generated" card is out of date: retire it. If that
+          // request fails the card may come back on a later load, but by then the application's own
+          // stored result has a resume, which is what the card is read against ("moved on"), so it is
+          // not shown as held back. Either way the person is told what happened and where to see it.
+          setFits((current) => ({ ...current, [applicationId]: { state: "moved_on" } }));
           await apiFetch(`/today/${item.id}/dismiss`, { method: "POST" }).catch(() => undefined);
           removeItem(item.id);
+          const job = jobLabel(context.names.get(applicationId));
+          setConfirmation({
+            text: job === null ? "Your resume was generated." : `Your resume for ${job} was generated.`,
+            link: { label: "Open workspace", to: workspacePath(applicationId) },
+          });
+          finished(job === null ? "Your resume was generated." : `Your resume for ${job} was generated.`, from);
           break;
         }
       }
     } catch (e) {
       setProblem(item.id, problemOf(action, e));
+      setAnnouncement("");
     } finally {
       inFlight.current.delete(item.id);
       setBusy((current) => ({ ...current, [item.id]: undefined }));
@@ -269,12 +314,19 @@ export default function Today() {
   }
 
   function onBandAction(intent: string) {
+    // A retry replaces the band with its loading state, so the button that was pressed goes: focus
+    // comes back to the band once the answer is in.
     if (intent === "retry") {
+      setRefocus("band");
       void load();
       return;
     }
     if (intent === "retry-setup") {
+      setRefocus("band");
       retryAccount();
+      // When the whole API was down the feed failed too, and the body has no Retry of its own (the
+      // band holds the only one), so a single press reads both.
+      if (feed.kind === "failed") void load();
       return;
     }
     const parsed = parseTodayIntent(intent);
@@ -287,6 +339,22 @@ export default function Today() {
     const last = lastAction.current.get(itemId);
     if (last !== undefined) void perform(last.action, last.item);
   }
+
+  // Moves focus to where the person's place went. It waits until the band and the reads have
+  // settled (a retry passes through "Loading..."), and leaves focus alone when it is anywhere real.
+  const settled =
+    outcome.status !== "loading" &&
+    feed.kind !== "loading" &&
+    account.attempt === accountAttempt &&
+    Object.values(account.reads).every((read) => read.kind !== "loading");
+  useEffect(() => {
+    if (refocus === null || !settled) return;
+    setRefocus(null);
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    const target = (refocus === "list" ? document.getElementById(ACTIVITY_HEADING_ID) : null) ?? document.getElementById(NEXT_STEP_FOCUS_ID);
+    target?.focus();
+  });
 
   const feedState: FeedState =
     feed.kind === "loading" ? { state: "loading" } : feed.kind === "failed" ? { state: "failed", message: feed.message } : { state: "ready", items: feed.items };
@@ -305,6 +373,8 @@ export default function Today() {
       problems={problems}
       background={background}
       account={notes}
+      announcement={announcement}
+      confirmation={confirmation}
       checklist={<FirstRunChecklist facts={firstRunFacts} onRetry={retryAccount} />}
       onBandAction={onBandAction}
       onItemAction={(action, item) => void perform(action, item)}

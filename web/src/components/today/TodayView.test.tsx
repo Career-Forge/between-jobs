@@ -127,6 +127,8 @@ function props(scenario: Scenario = {}, handlers: Partial<TodayViewProps> = {}):
     background: backgroundView(searches, credentials, scenario.gmail ?? "available"),
     account: { ...NO_NOTES, ...scenario.notes },
     checklist: null,
+    announcement: "",
+    confirmation: null,
     onBandAction: vi.fn(),
     onItemAction: vi.fn(),
     onRetryProblem: vi.fn(),
@@ -706,5 +708,73 @@ describe("keyboard and accessibility", () => {
     expect(levels[0]).toBe("H1");
     expect(levels.filter((level) => level === "H1")).toHaveLength(1);
     expect(levels.every((level) => level === "H1" || level === "H2")).toBe(true);
+  });
+});
+
+describe("a request out for the item the band holds", () => {
+  it("renames the pressed band button and marks the band's buttons aria-disabled, for each of the three actions", () => {
+    const cases: [string, TodayItem, "accept" | "track" | "generate-anyway", string, string][] = [
+      ["a proposal", proposal, "accept", "button.bj-primary", "Moving..."],
+      ["a high fit job", match, "track", "button.bj-primary", "Tracking..."],
+      ["a held-back resume", held, "generate-anyway", "button.bj-band-secondary", "Generating..."],
+    ];
+    for (const [, lit, kind, selector, busyWords] of cases) {
+      const { container, unmount } = draw({ items: [lit], busy: { [lit.id]: kind }, fits: { "app-1": { state: "held", score: null } } });
+      const pressed = query<HTMLButtonElement>(band(container), selector);
+      expect(words(pressed)).toBe(busyWords);
+      expect(pressed.getAttribute("aria-disabled")).toBe("true");
+      expect(buttonNamed(band(container), "Dismiss").getAttribute("aria-disabled")).toBe("true");
+      unmount();
+    }
+  });
+
+  it("renames nothing in the band for a dismiss, but every handler button waits", () => {
+    const { container } = draw({ items: [held], busy: { f1: "dismiss" }, fits: { "app-1": { state: "held", score: null } } });
+    expect(words(buttonNamed(band(container), "Generate anyway"))).toBe("Generate anyway");
+    expect(buttonNamed(band(container), "Generate anyway").getAttribute("aria-disabled")).toBe("true");
+    expect(words(buttonNamed(band(container), "Dismissing..."))).toBe("Dismissing...");
+  });
+
+  it("leaves the band as it is when the request is for an item in the list", () => {
+    const { container } = draw({ items: [proposal, tracked], busy: { t1: "dismiss" } });
+    expect(buttonNamed(band(container), "Accept: move to Interviewing").getAttribute("aria-disabled")).toBeNull();
+  });
+});
+
+describe("what the view says besides the feed", () => {
+  it("speaks the announcement through one polite status, present even when empty", () => {
+    const quiet = draw({ items: [tracked] });
+    const region = query(quiet.container, ".bj-today > .bj-visually-hidden");
+    expect(region.getAttribute("role")).toBe("status");
+    expect(region.getAttribute("aria-live")).toBe("polite");
+    expect(words(region)).toBe("");
+    quiet.unmount();
+    const spoken = draw({ items: [tracked] }, { announcement: "Dismissed." });
+    expect(words(query(spoken.container, ".bj-today > .bj-visually-hidden"))).toBe("Dismissed.");
+  });
+
+  it("draws a confirmation with its link, and none by default", () => {
+    expect(draw({ items: [tracked] }).container.querySelector(".bj-today-confirmation")).toBeNull();
+    const { container } = draw({ items: [tracked] }, { confirmation: { text: "Your resume was generated.", link: { label: "Open workspace", to: "/applications/app-1" } } });
+    const confirmation = query(container, ".bj-today-confirmation");
+    expect(words(confirmation)).toBe("Your resume was generated. Open workspace");
+    expect(query(confirmation, "a").getAttribute("href")).toBe("/applications/app-1");
+  });
+
+  it("holds a feed with items back while the band is loading, and draws an empty feed's explanation at once", () => {
+    const withItems = draw({ items: [proposal, tracked], applications: loading });
+    expect(band(withItems.container).getAttribute("aria-busy")).toBe("true");
+    expect(rows(withItems.container)).toHaveLength(0);
+    expect(withItems.container.querySelector(".bj-today-main .bj-state--loading")).not.toBeNull();
+    withItems.unmount();
+    const empty = draw({ items: [], applications: loading });
+    expect(empty.container.querySelector(".bj-state--empty")).not.toBeNull();
+  });
+
+  it("gives the list's heading a place to take focus", () => {
+    const { container } = draw({ items: [ready, tracked] });
+    const heading = query(container, "#bj-today-activity");
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+    expect(query(container, "section.bj-today-section").getAttribute("aria-labelledby")).toBe("bj-today-activity");
   });
 });
