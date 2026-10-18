@@ -138,6 +138,16 @@
   color: var(--bj-text-muted);
 }
 
+/* A link inside a sentence is underlined: against the muted text around it, color alone is about
+   1.5:1, under the 3:1 WCAG 1.4.1 asks for when color is the only cue. */
+.bj-set-cost a,
+.bj-set-hint a,
+.bj-set-notice a,
+.bj-set-lede a {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
 .bj-set-mono {
   font-family: var(--bj-font-mono);
   font-size: 12.5px;
@@ -479,6 +489,8 @@ button.bj-set-action {
 
   .bj-set-actions > button,
   .bj-set-row-actions > button,
+  .bj-set-chips > button,
+  .bj-set-card-head > button,
   button.bj-set-reveal {
     min-height: 44px;
   }

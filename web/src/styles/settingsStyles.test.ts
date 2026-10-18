@@ -81,8 +81,22 @@ describe("settings.css", () => {
 
   it("stacks a row's actions under its text on a phone, and gives touch targets 44px", () => {
     expect(declarationsFor(phone, ".bj-set-row")["flex-direction"]).toBe("column");
-    for (const selector of [".bj-set-field input", ".bj-set-field select", ".bj-set-actions > button", ".bj-set-row-actions > button", "button.bj-set-reveal"]) {
+    for (const selector of [
+      ".bj-set-field input",
+      ".bj-set-field select",
+      ".bj-set-actions > button",
+      ".bj-set-row-actions > button",
+      ".bj-set-chips > button",
+      ".bj-set-card-head > button",
+      "button.bj-set-reveal",
+    ]) {
       expect(declarationsFor(phone, selector)["min-height"], selector).toBe("44px");
+    }
+  });
+
+  it("underlines a link inside a sentence, because its color alone is under 3:1 against the text around it", () => {
+    for (const selector of [".bj-set-cost a", ".bj-set-hint a", ".bj-set-notice a", ".bj-set-lede a"]) {
+      expect(declarationsFor(base, selector)["text-decoration"], selector).toBe("underline");
     }
   });
 

@@ -313,7 +313,9 @@ export interface ConnectionsSectionProps {
 export function ConnectionsSection({ capabilities, gmail, credentialsReady, onChanged }: ConnectionsSectionProps) {
   return (
     <section id="connections" className="bj-set-section" aria-labelledby="connections-h">
-      <h2 id="connections-h">Connections</h2>
+      <h2 id="connections-h" tabIndex={-1}>
+        Connections
+      </h2>
       <p className="bj-set-lede">Accounts you link to this one. Each is optional, and none of them can send anything for you.</p>
       {isTelegramAvailable(capabilities) && <TelegramLinkCard botUsername={telegramBotUsername(capabilities)} />}
       {isDiscordAvailable(capabilities) && <DiscordLinkCard installUrl={discordInstallUrl(capabilities)} />}

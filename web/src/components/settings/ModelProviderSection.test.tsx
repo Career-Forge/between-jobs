@@ -279,6 +279,14 @@ describe("removing a key", () => {
     expect(callsTo("DELETE /credentials/llm/openai")).toHaveLength(0);
   });
 
+  it("draws the confirming button like any other outlined button: red is for failures", () => {
+    const { container } = mount({ credentials: [row("openai", { model: "m" })] });
+    click(button(container, "Remove key"));
+    const confirm = button(query(container, ".bj-set-confirm"), "Remove key");
+    expect(confirm.className).toBe("");
+    expect(container.querySelector(".bj-danger")).toBeNull();
+  });
+
   it("deletes the key by its provider, then re-reads and says so", async () => {
     on("DELETE /credentials/llm/openai", undefined);
     const reload = vi.fn(async () => undefined);
