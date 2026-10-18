@@ -218,6 +218,8 @@
   flex-wrap: wrap;
   gap: 4px 16px;
   margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
   font-size: var(--bj-text-trail);
   color: var(--bj-text-muted);
 }
@@ -256,8 +258,15 @@
 }
 
 .bj-dossier-art {
+  /* The card is in flow and sets the picture's height, so a taller card (larger text, wider letter or
+     line spacing, a narrow window) pushes the caption down instead of sliding over it. The resume
+     page is the only absolutely placed piece, behind the card, and the minimum height keeps the
+     page inside the picture when the card is short. */
   position: relative;
-  height: 600px;
+  min-height: 600px;
+  padding-top: 56px;
+  /* The card is tilted, so its corner dips a few pixels below its box. */
+  padding-bottom: 12px;
 }
 
 .bj-dossier-caption {
@@ -267,9 +276,7 @@
 }
 
 .bj-dossier-card {
-  position: absolute;
-  left: 0;
-  top: 56px;
+  position: relative;
   width: min(400px, 76%);
   padding: 22px 22px 20px;
   border: 1px solid var(--bj-outline);
@@ -317,12 +324,17 @@
 
 .bj-dossier-tabs {
   display: flex;
-  gap: 18px;
+  flex-wrap: wrap;
+  gap: 4px 18px;
   margin: 20px 0 0;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--bj-border);
   font-size: var(--bj-text-control);
   color: var(--bj-text-muted);
+}
+
+.bj-dossier-tabs span {
+  white-space: nowrap;
 }
 
 .bj-dossier-tabs span:first-child {
@@ -510,6 +522,7 @@
 .bj-landing-chapter h3 {
   margin: 0;
   font-size: 26px;
+  line-height: 1.2;
 }
 
 .bj-landing-chapter p {
@@ -543,6 +556,7 @@
 .bj-landing-card h3 {
   margin: 0;
   font-size: 26px;
+  line-height: 1.2;
 }
 
 .bj-landing-card p {
@@ -706,15 +720,15 @@
     font-size: 16.5px;
   }
 
-  /* The card is about 565px tall at 335px of room, so the picture is taller than the card by the
-     resume page's offset and the caption below it never ends up behind it. */
+  /* The card is in flow, so the picture is as tall as the card; the minimum only has to cover the
+     resume page behind it. */
   .bj-dossier-art {
-    height: 610px;
+    min-height: 540px;
+    padding-top: 0;
   }
 
   .bj-dossier-card {
-    top: 0;
-    width: min(330px, 78%);
+    width: min(330px, 86%);
   }
 
   .bj-dossier-role {

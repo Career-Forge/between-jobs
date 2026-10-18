@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LANDING } from "../../content/landing";
 import { BOARD_STATUSES, STAGES } from "../../content/landingCircuit";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
@@ -68,23 +68,53 @@ describe("the stage buttons", () => {
 });
 
 describe("the keyboard", () => {
-  it("moves focus between the stage buttons with the arrow keys, wrapping at the ends, and with Home and End", () => {
+  it("moves focus along the row with Left and Right and with Home and End, without wrapping at the ends", () => {
     const root = circuit();
     const buttons = stageButtons(root);
     buttons[0].focus();
-    keydown("ArrowRight");
+    expect(keydown("ArrowLeft")).toBe(true);
+    expect(document.activeElement).toBe(buttons[0]);
+    expect(keydown("ArrowRight")).toBe(false);
     expect(document.activeElement).toBe(buttons[1]);
-    keydown("ArrowDown");
+    keydown("ArrowRight");
     expect(document.activeElement).toBe(buttons[2]);
     keydown("ArrowLeft");
     expect(document.activeElement).toBe(buttons[1]);
-    keydown("ArrowUp");
-    keydown("ArrowUp");
+    keydown("End");
+    expect(document.activeElement).toBe(buttons[4]);
+    expect(keydown("ArrowRight")).toBe(true);
     expect(document.activeElement).toBe(buttons[4]);
     keydown("Home");
     expect(document.activeElement).toBe(buttons[0]);
-    keydown("End");
-    expect(document.activeElement).toBe(buttons[4]);
+  });
+
+  it("leaves Up and Down to the page: in a row they have nothing to move along, and they scroll", () => {
+    const root = circuit();
+    const buttons = stageButtons(root);
+    buttons[2].focus();
+    expect(keydown("ArrowDown")).toBe(true);
+    expect(keydown("ArrowUp")).toBe(true);
+    expect(document.activeElement).toBe(buttons[2]);
+  });
+
+  describe("under 960px, where the stages are a vertical list", () => {
+    const original = window.matchMedia;
+    beforeEach(() => {
+      window.matchMedia = ((query: string) => ({ matches: false, media: query })) as unknown as typeof window.matchMedia;
+    });
+    afterEach(() => {
+      window.matchMedia = original;
+    });
+
+    it("takes no key at all, so arrows and Home and End scroll the page and Tab walks the buttons", () => {
+      const root = circuit();
+      const buttons = stageButtons(root);
+      buttons[4].focus();
+      for (const key of ["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"]) {
+        expect(keydown(key), key).toBe(true);
+        expect(document.activeElement).toBe(buttons[4]);
+      }
+    });
   });
 
   it("only moves focus: moving along the row never picks a stage or rewrites the sample step", () => {

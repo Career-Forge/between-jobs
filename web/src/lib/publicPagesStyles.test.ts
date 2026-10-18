@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import appCss from "../app.css?raw";
 import authCss from "../styles/auth.css?raw";
 import circuitCss from "../styles/circuit.css?raw";
 import landingCss from "../styles/landing.css?raw";
@@ -92,9 +93,29 @@ describe("the public frame's column", () => {
     expect(footerInner["margin-right"]).toBe("auto");
   });
 
-  it("folds the header's section links away under 960px, where the circuit becomes a list too", () => {
-    const phone = blockOf(publicCss, "@media (max-width: 959px)") ?? "";
-    expect(declarationsFor(phone, ".bj-public-sections").display).toBe("none");
+  it("keeps the header's section links reachable under 960px: a row of their own below the wordmark and the way in, never hidden", () => {
+    const narrow = blockOf(publicCss, "@media (max-width: 959px)") ?? "";
+    const sections = declarationsFor(narrow, ".bj-public-sections");
+    expect(sections.display).toBeUndefined();
+    expect(sections.flex).toBe("1 0 100%");
+    expect(sections.order).toBe("3");
+    expect(sections["margin-left"]).toBe("0");
+    // Every media block of the frame, any width: nothing takes the links out of the page.
+    expect(rulesOf(publicCss).filter((rule) => rule.selectors.some((selector) => selector.startsWith(".bj-public-sections")) && rule.declarations.display === "none")).toEqual([]);
+    // Each link stays a 44px target (the base rule's minimum height applies at every width).
+    expect(Number.parseFloat(declarationsFor(withoutMedia(publicCss), ".bj-public-sections a")["min-height"])).toBeGreaterThanOrEqual(44);
+  });
+
+  it("gives a phone 44px targets in the frame: Sign in, the footer's link rows and its mailto links", () => {
+    const phone = blockOf(publicCss, "@media (max-width: 719px)") ?? "";
+    expect(Number.parseFloat(declarationsFor(phone, ".bj-public-signin")["min-width"])).toBeGreaterThanOrEqual(44);
+    for (const selector of [".bj-public-footer .bj-legal-links a", ".bj-public-footer p a"]) {
+      expect(Number.parseFloat(declarationsFor(phone, selector)["min-height"]), selector).toBeGreaterThanOrEqual(44);
+    }
+    // The base height of the sign-in link is already 44, and the table of contents gets its own under 720px.
+    expect(Number.parseFloat(declarationsFor(withoutMedia(publicCss), ".bj-public-signin")["min-height"])).toBeGreaterThanOrEqual(44);
+    const legalPhone = blockOf(legalCss, "@media (max-width: 719px)") ?? "";
+    expect(Number.parseFloat(declarationsFor(legalPhone, ".bj-legal-toc a")["min-height"])).toBeGreaterThanOrEqual(44);
   });
 });
 
@@ -147,6 +168,54 @@ describe("nothing can push a 375px phone sideways", () => {
     expect(declarationsFor(authCss, ".bj-login-column")).toMatchObject({ width: "100%", "max-width": "440px" });
     expect(declarationsFor(authCss, ".bj-login-card").width).toBe("100%");
     expect(horizontalPaddingPx(declarationsFor(authCss, ".bj-login"))).toEqual([16, 16]);
+  });
+});
+
+describe("the dossier picture sizes itself", () => {
+  // The picture used to have a fixed height with the card positioned inside it, so a taller card (text
+  // spacing raised under WCAG 1.4.12, a 320px window) slid down over the caption that says the picture
+  // is a sample. The card is in flow now and sets the height; only a minimum is left, for the resume page.
+  const all = rulesOf(landingCss);
+  const onArt = (property: string) => all.filter((rule) => rule.selectors.includes(".bj-dossier-art") && rule.declarations[property] !== undefined);
+
+  it("gives the picture no fixed height at any width, only a minimum", () => {
+    expect(onArt("height")).toEqual([]);
+    expect(onArt("min-height").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the card in the flow, so it pushes the caption down instead of covering it", () => {
+    const card = declarationsFor(landingCss, ".bj-dossier-card");
+    expect(card.position).toBe("relative");
+    for (const rule of all.filter((r) => r.selectors.includes(".bj-dossier-card"))) {
+      expect(rule.declarations.position === undefined || rule.declarations.position === "relative").toBe(true);
+      expect(rule.declarations.top).toBeUndefined();
+    }
+    // The resume page is the one thing placed absolutely, and it sits behind the card.
+    expect(declarationsFor(landingCss, ".bj-resume-sheet").position).toBe("absolute");
+  });
+
+  it("lets the card's tab labels wrap between words and never inside one", () => {
+    expect(declarationsFor(landingCss, ".bj-dossier-tabs")["flex-wrap"]).toBe("wrap");
+    expect(declarationsFor(landingCss, ".bj-dossier-tabs span")["white-space"]).toBe("nowrap");
+  });
+});
+
+describe("the tester agreement keeps its compact type next to the legal pages' sheet", () => {
+  const h3 = declarationsFor(appCss, ".bj-legal.bj-agreement h3");
+  it("sets its headings at 16px and its text at the page's own size and line, with the 720px measure it had", () => {
+    expect(h3["font-size"]).toBe("16px");
+    for (const selector of [".bj-legal.bj-agreement p", ".bj-legal.bj-agreement li", ".bj-legal.bj-agreement dd"]) {
+      expect(declarationsFor(appCss, selector)).toMatchObject({ "font-size": "inherit", "line-height": "inherit" });
+    }
+    expect(declarationsFor(appCss, ".bj-legal.bj-agreement")["max-width"]).toBe("720px");
+  });
+});
+
+describe("the landing page's titles sit tight", () => {
+  it("sets the 26px chapter and promise titles on a 1.2 line, not the page's 1.55", () => {
+    for (const selector of [".bj-landing-chapter h3", ".bj-landing-card h3"]) {
+      expect(declarationsFor(landingCss, selector)["line-height"], selector).toBe("1.2");
+    }
   });
 });
 

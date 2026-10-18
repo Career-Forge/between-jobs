@@ -2581,6 +2581,39 @@ a.bj-button-link-primary:hover {
   margin-top: 12px;
 }
 
+/* The agreement borrows the legal document's class (styles/legal.css) for its link and wrapping rules,
+   but it is a short scrolling box inside a card, so it keeps the compact type it always had: the
+   legal pages' 16px headings-over-20px and 1.65 body would make it long. The doubled class wins
+   whichever sheet loads last. */
+.bj-legal.bj-agreement {
+  max-width: 720px;
+  padding: 4px 12px 4px 0;
+}
+
+.bj-legal.bj-agreement h3 {
+  margin: 20px 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: inherit;
+}
+
+.bj-legal.bj-agreement p,
+.bj-legal.bj-agreement li,
+.bj-legal.bj-agreement dd {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.bj-legal.bj-agreement p {
+  margin: 0 0 12px;
+}
+
+.bj-legal.bj-agreement ul {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  gap: 6px;
+}
+
 /* A link inside a sentence carries an underline, as in the legal pages (WCAG 1.4.1). */
 .bj-agreement p a,
 .bj-agreement ul a,
