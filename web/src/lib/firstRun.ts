@@ -136,7 +136,13 @@ export async function loadFirstRunFacts(fetcher: Fetcher): Promise<FirstRunFacts
     settle<boolean>(async () => {
       const rows = await readRows(fetcher, "/credentials");
       if (rows === null) return FAILED;
-      return ok(rows.some((row) => row.service === "llm" && row.is_validated === true));
+      // Validated AND with a model chosen: a checked key with no model is saved and still fails
+      // every generation (the server's `needs_model`), so it does not tick the step.
+      return ok(
+        rows.some(
+          (row) => row.service === "llm" && row.is_validated === true && nonEmptyString(row.model) !== null,
+        ),
+      );
     }),
     settle<number>(async () => {
       const rows = await readRows(fetcher, "/saved-searches");

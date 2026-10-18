@@ -1493,7 +1493,14 @@ def _learn_supabase(
     supabase._extra["provider_credentials"] = prepare_fakes._FakeTable(
         select_rows=[]
         if key_validated is None
-        else [{"service": "llm", "provider": "openrouter", "is_validated": key_validated}]
+        else [
+            {
+                "service": "llm",
+                "provider": "openrouter",
+                "is_validated": key_validated,
+                "model": "vendor/model",
+            }
+        ]
     )
     supabase._extra["saved_searches"] = prepare_fakes._FakeTable(
         select_rows=[{"id": f"s{i}"} for i in range(saved_searches)]

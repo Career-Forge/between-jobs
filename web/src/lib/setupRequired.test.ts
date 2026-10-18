@@ -332,7 +332,7 @@ describe("setupRequiredNotice: what labels the link", () => {
 
   // `hiring_signals` and `gmail_reply_check` are not in the capability table at all: they
   // rely on what the resolver says is missing.
-  it.each(["execution_mode", "provider", "model", "credential"])(
+  it.each(["execution_mode", "provider", "credential"])(
     "labels a missing %s as the model key, for a capability the table does not know",
     (token) => {
       expect(
@@ -342,6 +342,20 @@ describe("setupRequiredNotice: what labels the link", () => {
       ).toMatchObject({ linkLabel: "Add a model key in Integrations" });
     },
   );
+
+  it("labels a missing model as choosing one -- the key is saved, so adding a key is the wrong advice", () => {
+    expect(
+      setupRequiredNotice(
+        setupError(
+          { path: "/profile/integrations?capability=job_scoring", capability: "job_scoring", missing: ["model"] },
+          "Your OpenAI key is saved, but no model is chosen for it yet. Choose one in Integrations.",
+        ),
+      ),
+    ).toMatchObject({
+      linkTo: "/profile/integrations?capability=job_scoring",
+      linkLabel: "Choose a model in Integrations",
+    });
+  });
 
   it("labels a missing profile version as the profile, for a capability the table does not know", () => {
     expect(
@@ -357,7 +371,8 @@ describe("setupRequiredNotice: what labels the link", () => {
         ?.linkLabel;
 
     it("goes by the first one that is known", () => {
-      expect(labelOf(["model", "apollo_credential"])).toBe("Add a model key in Integrations");
+      expect(labelOf(["model", "apollo_credential"])).toBe("Choose a model in Integrations");
+      expect(labelOf(["credential", "model"])).toBe("Add a model key in Integrations");
       expect(labelOf(["apollo_credential", "model"])).toBe("Add an Apollo or Hunter key in Integrations");
     });
 
@@ -455,6 +470,8 @@ describe("setupRequiredNotice for a model call the provider rejected", () => {
   it.each([
     ["out_of_credit", "Switch or update your model key in Integrations"],
     ["request_rejected", "Check your model in Integrations"],
+    ["model_not_found", "Choose another model in Integrations"],
+    ["model_retired", "Choose another model in Integrations"],
   ])("labels the link for %s", (reason, label) => {
     const notice = setupRequiredNotice(
       new FakeProviderError("A sentence.", "PROVIDER_REJECTED", "/profile/integrations", reason),
