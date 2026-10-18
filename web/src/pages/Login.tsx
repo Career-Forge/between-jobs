@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import { ConsentNotice } from "../components/ConsentNotice";
 import { LegalLinks } from "../components/LegalLinks";
 import { ResetRequestForm } from "../components/ResetRequestForm";
+import { Wordmark } from "../components/Wordmark";
 import {
   MIN_PASSWORD_LENGTH,
   initialLoginMode,
@@ -91,9 +92,11 @@ export default function Login() {
 
   if (mode === "reset") {
     return (
-      <div className="bj-login">
+      <main className="bj-login">
         <div className="bj-login-card">
-          <h1>Between Jobs</h1>
+          <h1>
+            <Wordmark />
+          </h1>
           <div className="bj-sub">Reset your password.</div>
           <ResetRequestForm
             problem={linkProblem}
@@ -105,14 +108,16 @@ export default function Login() {
             }}
           />
         </div>
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="bj-login">
+    <main className="bj-login">
       <div className="bj-login-card">
-        <h1>Between Jobs</h1>
+        <h1>
+          <Wordmark />
+        </h1>
         <div className="bj-sub">
           {mode === "sign_in" ? "Sign in to your career workspace." : "Create your account."}
         </div>
@@ -183,6 +188,6 @@ export default function Login() {
           <LegalLinks newTab />
         </div>
       </div>
-    </div>
+    </main>
   );
 }

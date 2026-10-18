@@ -20,8 +20,11 @@
 //   - fetches: the API (api.ts) and Supabase auth (supabase.ts). Supabase's REST, storage and
 //     realtime clients are never used, so no websocket is opened and no wss: origin is listed.
 //   - frames: the click-to-load LinkedIn post embed (components/HiringPostCard.tsx), nothing else.
-//   - images and fonts: none are loaded today (system font stacks, no <img>, no url() in the CSS).
-//     vite.config.ts turns off asset inlining so a future image can never arrive as a data: URL.
+//   - images and fonts: the self-hosted typefaces (src/fonts.css) and the favicon and touch icons named
+//     in index.html, all files from the site's own origin. There is no <img> yet. vite.config.ts turns
+//     off asset inlining so an image or font can never arrive as a data: URL.
+//   - the web app manifest (public/site.webmanifest), fetched by the browser from the site's own
+//     origin. default-src 'none' would refuse it, so it has a directive of its own.
 //   - PDF and JSON downloads: fetched as blobs from the API and saved through an <a download>, which
 //     no CSP directive governs. Nothing is previewed in a frame.
 //   - Google sign-in: a top-level navigation through Supabase, which no CSP directive governs.
@@ -172,6 +175,7 @@ export function buildPolicy(input: PolicyInput): string {
     ["style-src", ["'self'", ...input.styleHashes]],
     ["img-src", ["'self'"]],
     ["font-src", ["'self'"]],
+    ["manifest-src", ["'self'"]],
     // The API carries the session token and Supabase handles sign-in; the same-origin site itself
     // is never fetched from script, so 'self' is not listed. Both can be one host: listed once.
     ["connect-src", [...new Set([input.apiOrigin, input.supabaseOrigin])]],

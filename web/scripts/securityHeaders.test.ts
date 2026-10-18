@@ -454,6 +454,7 @@ const GOLDEN_POLICY =
   `style-src 'self' ${HASH_BODY_MARGIN}; ` +
   "img-src 'self'; " +
   "font-src 'self'; " +
+  "manifest-src 'self'; " +
   "connect-src https://api.example.com https://project.supabase.example; " +
   "frame-src https://www.linkedin.com; " +
   "worker-src 'none'; " +
@@ -505,6 +506,7 @@ describe("buildPolicy", () => {
       "style-src",
       "img-src",
       "font-src",
+      "manifest-src",
       "connect-src",
       "frame-src",
       "worker-src",
@@ -522,6 +524,7 @@ describe("buildPolicy", () => {
     expect(directives.get("form-action")).toEqual(["'self'"]);
     expect(directives.get("img-src")).toEqual(["'self'"]);
     expect(directives.get("font-src")).toEqual(["'self'"]);
+    expect(directives.get("manifest-src")).toEqual(["'self'"]);
     expect(directives.get("upgrade-insecure-requests")).toEqual([]);
   });
 
