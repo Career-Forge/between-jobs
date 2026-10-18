@@ -448,46 +448,6 @@ body:has(.bj-more-sheet[open]) {
   margin-bottom: 0;
 }
 
-/* Login */
-.bj-login {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-
-.bj-login-card {
-  width: 100%;
-  max-width: 360px;
-  border: 1px solid var(--bj-border);
-  border-radius: 10px;
-  background: var(--bj-surface);
-  padding: 32px;
-}
-
-.bj-login-card h1 {
-  margin: 0 0 4px;
-  font-size: 26px;
-}
-
-.bj-login-card .bj-sub {
-  color: var(--bj-text-muted);
-  font-size: 13px;
-  margin-bottom: 24px;
-}
-
-.bj-login-card form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.bj-google-button {
-  width: 100%;
-  margin-top: 12px;
-}
-
 .bj-error {
   color: var(--bj-danger);
   font-size: 13px;
@@ -2574,25 +2534,6 @@ a.bj-button-link-primary:hover {
 
 .bj-nav-footer .bj-legal-links a:hover {
   color: var(--bj-text);
-}
-
-.bj-login-legal {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--bj-border);
-}
-
-.bj-login-legal .bj-legal-links {
-  justify-content: center;
-}
-
-.bj-consent-notice {
-  margin: 0;
-}
-
-/* Outside the form, between its buttons and the Google one. */
-.bj-login-card .bj-consent-notice {
-  margin: 12px 0 0;
 }
 
 /* ------------------------------------------------------------------ */

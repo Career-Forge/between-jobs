@@ -1,0 +1,275 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { MemoryRouter } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AUTH_FORM_ID } from "../lib/nextStep";
+import { MIN_PASSWORD_LENGTH } from "../lib/passwordReset";
+import { expectNoSeriousA11yViolations } from "../testing/a11y";
+import { buttonNamed, click, query, render } from "../testing/render";
+import Login from "./Login";
+
+// The sign-in and register screen as a person meets it, run in a DOM: its labels and field attributes,
+// the one cyan fill (the next-step band's button, which submits the form from outside it), the secondary
+// Google button, and every behavior the screen had before it was restyled -- the error line, the double
+// submit guard, the confirmation notice, the password reset. Which mode opens, and what a dead reset link
+// leads to, is lib/passwordReset.ts's own test.
+
+const auth = vi.hoisted(() => ({
+  signIn: vi.fn(),
+  signUp: vi.fn(),
+  signInWithGoogle: vi.fn(),
+  resetPassword: vi.fn(),
+}));
+
+// The real auth module pulls in the Supabase client, which throws at import without env vars.
+vi.mock("../auth", () => ({ useAuth: () => auth }));
+
+function open(search = "") {
+  window.history.replaceState({}, "", `/login${search}`);
+  return render(
+    <MemoryRouter>
+      <Login />
+    </MemoryRouter>,
+  ).container;
+}
+
+function typeInto(input: HTMLInputElement, value: string) {
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function submit(form: HTMLFormElement) {
+  await act(async () => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+}
+
+const text = (element: Element) => (element.textContent ?? "").replace(/\s+/g, " ").trim();
+const CYAN = ".bj-primary, .bj-button-link-primary";
+
+beforeEach(() => {
+  auth.signIn.mockReset().mockResolvedValue(null);
+  auth.signUp.mockReset().mockResolvedValue({ kind: "signed_in" });
+  auth.signInWithGoogle.mockReset().mockResolvedValue(null);
+  auth.resetPassword.mockReset();
+});
+
+describe.each([
+  ["sign-in", "", "Sign in", "current-password"],
+  ["register", "?mode=register", "Create account", "new-password"],
+])("the %s form", (_name, search, buttonLabel, passwordAutocomplete) => {
+  it("labels its two fields, so a screen reader and a tap on the label both reach them, and asks the phone for the right keyboard", () => {
+    const root = open(search);
+    const email = query<HTMLInputElement>(root, 'input[type="email"]');
+    const password = query<HTMLInputElement>(root, 'input[type="password"]');
+    for (const [input, name] of [
+      [email, "Email"],
+      [password, "Password"],
+    ] as const) {
+      const label = query(root, `label[for="${input.id}"]`);
+      expect(text(label)).toBe(name);
+      expect(input.required).toBe(true);
+    }
+    expect(email.getAttribute("autocomplete")).toBe("email");
+    expect(email.getAttribute("autocapitalize")).toBe("none");
+    expect(email.getAttribute("spellcheck")).toBe("false");
+    expect(password.getAttribute("autocomplete")).toBe(passwordAutocomplete);
+  });
+
+  it("holds exactly one cyan fill, and it is the page's submit button, which sits in the band and names the form", () => {
+    const root = open(search);
+    const fills = root.querySelectorAll(CYAN);
+    expect(fills).toHaveLength(1);
+    const button = fills[0] as HTMLButtonElement;
+    expect(button.tagName).toBe("BUTTON");
+    expect(button.type).toBe("submit");
+    expect(text(button)).toBe(buttonLabel);
+    expect(button.getAttribute("form")).toBe(AUTH_FORM_ID);
+    expect(button.closest("section")?.getAttribute("aria-label")).toBe("Next step");
+    const form = query<HTMLFormElement>(root, `form#${AUTH_FORM_ID}`);
+    expect(form.contains(button)).toBe(false);
+    // The browser's own association: the form's submit button is the one that names it.
+    expect(form.elements.length).toBeGreaterThan(1);
+    expect(button.form).toBe(form);
+  });
+
+  it("puts the band, in the signed-out words, above the card", () => {
+    const root = open(search);
+    const band = query(root, 'section[aria-label="Next step"]');
+    expect(text(query(band, ".bj-band-sentence"))).toBe("Sign in to your job search workspace.");
+    expect(text(query(band, ".bj-band-why"))).toBe("why: you're signed out");
+    expect(band.compareDocumentPosition(query(root, ".bj-login-card")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("offers Continue with Google as an outlined button, never a second fill", () => {
+    const root = open(search);
+    const google = buttonNamed(root, "Continue with Google");
+    expect(google.classList.contains("bj-google-button")).toBe(true);
+    expect(google.type).toBe("button");
+    expect(google.matches(CYAN)).toBe(false);
+    click(google);
+    expect(auth.signInWithGoogle).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the consent line above the Google button, and the legal links on the card, opening in a new tab", () => {
+    const root = open(search);
+    const notice = query(root, ".bj-consent-notice");
+    const google = buttonNamed(root, "Continue with Google");
+    expect(notice.compareDocumentPosition(google) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const legal = [...query(root, ".bj-login-legal").querySelectorAll("a")];
+    expect(legal.map((link) => link.getAttribute("href"))).toEqual(["/privacy", "/terms"]);
+    for (const link of legal) {
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("aria-label")).toContain("(opens in a new tab)");
+    }
+  });
+
+  it("starts with Skip to next step, which points at the band's button, and has one <main> and one h1", () => {
+    const root = open(search);
+    const skip = query<HTMLAnchorElement>(root, "a.bj-skip-link");
+    expect(text(skip)).toBe("Skip to next step");
+    expect(root.firstElementChild).toBe(skip);
+    expect(root.querySelector(skip.getAttribute("href") ?? "")).toBe(query(root, CYAN));
+    expect(root.querySelectorAll("main")).toHaveLength(1);
+    expect(root.querySelectorAll("h1")).toHaveLength(1);
+    expect(text(query(root, "h1"))).toBe("Between Jobs");
+  });
+
+  it("has no serious or critical axe violation", async () => {
+    await expectNoSeriousA11yViolations(open(search));
+  });
+});
+
+describe("the register form", () => {
+  it("opens on the card's own heading, names the password's minimum, and ties that line to the field", () => {
+    const root = open("?mode=register");
+    expect(text(query(root, ".bj-login-card h2"))).toBe("Create your account");
+    const password = query<HTMLInputElement>(root, 'input[type="password"]');
+    expect(password.minLength).toBe(MIN_PASSWORD_LENGTH);
+    const hint = query(root, `#${CSS.escape(password.getAttribute("aria-describedby") ?? "")}`);
+    expect(text(hint)).toBe(`At least ${MIN_PASSWORD_LENGTH} characters.`);
+  });
+
+  it("says to check email when the server wants the address confirmed, and goes back to the sign-in form", async () => {
+    auth.signUp.mockResolvedValue({ kind: "confirmation_required" });
+    const root = open("?mode=register");
+    typeInto(query(root, 'input[type="email"]'), "someone@example.test");
+    typeInto(query(root, 'input[type="password"]'), "a-long-enough-one");
+    await submit(query(root, "form"));
+    expect(auth.signUp).toHaveBeenCalledWith("someone@example.test", "a-long-enough-one");
+    expect(text(query(root, '.bj-login-card [role="status"]:not(.bj-login-busy)'))).toBe("Check your email to confirm your account, then sign in.");
+    expect(text(query(root, ".bj-login-card h2"))).toBe("Sign in");
+  });
+
+  it("shows the server's refusal in an alert", async () => {
+    auth.signUp.mockResolvedValue({ kind: "error", message: "User already registered" });
+    const root = open("?mode=register");
+    typeInto(query(root, 'input[type="email"]'), "someone@example.test");
+    typeInto(query(root, 'input[type="password"]'), "a-long-enough-one");
+    await submit(query(root, "form"));
+    expect(text(query(root, '[role="alert"]'))).toBe("User already registered");
+  });
+});
+
+describe("signing in", () => {
+  it("sends the address and the password, and shows nothing when it works", async () => {
+    const root = open();
+    typeInto(query(root, 'input[type="email"]'), "someone@example.test");
+    typeInto(query(root, 'input[type="password"]'), "hunter22");
+    await submit(query(root, "form"));
+    expect(auth.signIn).toHaveBeenCalledWith("someone@example.test", "hunter22");
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("shows the server's message in an alert, in the server's own words", async () => {
+    auth.signIn.mockResolvedValue("Invalid login credentials");
+    const root = open();
+    typeInto(query(root, 'input[type="email"]'), "someone@example.test");
+    typeInto(query(root, 'input[type="password"]'), "wrong");
+    await submit(query(root, "form"));
+    const alert = query(root, '[role="alert"]');
+    expect(text(alert)).toBe("Invalid login credentials");
+    expect(alert.classList.contains("bj-error")).toBe(true);
+  });
+
+  it("ignores a second press while the first request is out, since the band's button cannot show it is busy", async () => {
+    let resolve: (value: null) => void = () => undefined;
+    auth.signIn.mockReturnValue(new Promise<null>((done) => (resolve = done)));
+    const root = open();
+    typeInto(query(root, 'input[type="email"]'), "someone@example.test");
+    typeInto(query(root, 'input[type="password"]'), "hunter22");
+    const form = query<HTMLFormElement>(root, "form");
+    await submit(form);
+    await submit(form);
+    expect(auth.signIn).toHaveBeenCalledTimes(1);
+    expect(text(query(root, ".bj-login-busy"))).toBe("Signing in...");
+    await act(async () => resolve(null));
+    expect(text(query(root, ".bj-login-busy"))).toBe("");
+  });
+
+  it("shows an error from Google's redirect and lets the person try again", async () => {
+    auth.signInWithGoogle.mockResolvedValue("Google is not configured");
+    const root = open();
+    click(buttonNamed(root, "Continue with Google"));
+    await act(async () => undefined);
+    expect(text(query(root, '[role="alert"]'))).toBe("Google is not configured");
+    expect(buttonNamed(root, "Continue with Google").disabled).toBe(false);
+  });
+
+  it("switches between the two forms and back, and clears what the last one said", async () => {
+    auth.signIn.mockResolvedValue("Invalid login credentials");
+    const root = open();
+    typeInto(query(root, 'input[type="email"]'), "someone@example.test");
+    typeInto(query(root, 'input[type="password"]'), "wrong");
+    await submit(query(root, "form"));
+    expect(root.querySelector('[role="alert"]')).not.toBeNull();
+    click(buttonNamed(root, "Need an account? Register"));
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    expect(text(query(root, ".bj-login-card h2"))).toBe("Create your account");
+    expect(text(query(root, CYAN))).toBe("Create account");
+    click(buttonNamed(root, "Already have an account? Sign in"));
+    expect(text(query(root, CYAN))).toBe("Sign in");
+  });
+});
+
+describe("the password reset form", () => {
+  function reset() {
+    const root = open();
+    click(buttonNamed(root, "Forgot password?"));
+    return root;
+  }
+
+  it("keeps its own cyan button and draws no band, since the band's action would name a form that is not there", () => {
+    const root = reset();
+    expect(text(query(root, ".bj-login-card h2"))).toBe("Reset your password");
+    expect(root.querySelector('section[aria-label="Next step"]')).toBeNull();
+    expect(root.querySelector("a.bj-skip-link")).toBeNull();
+    const fills = root.querySelectorAll(CYAN);
+    expect(fills).toHaveLength(1);
+    expect(text(fills[0])).toBe("Send reset link");
+    expect(root.querySelectorAll("main")).toHaveLength(1);
+    expect(text(query(root, "h1"))).toBe("Between Jobs");
+  });
+
+  it("sends a link for the address typed, and says the same thing whatever the answer", async () => {
+    auth.resetPassword.mockResolvedValue({ ok: true });
+    const root = reset();
+    typeInto(query(root, 'input[type="email"]'), "someone@example.test");
+    await submit(query(root, "form"));
+    expect(auth.resetPassword).toHaveBeenCalledTimes(1);
+    expect(auth.resetPassword.mock.calls[0][0]).toBe("someone@example.test");
+  });
+
+  it("goes back to sign-in", () => {
+    const root = reset();
+    click(buttonNamed(root, "Back to sign in"));
+    expect(text(query(root, ".bj-login-card h2"))).toBe("Sign in");
+    expect(root.querySelector('section[aria-label="Next step"]')).not.toBeNull();
+  });
+
+  it("has no serious or critical axe violation", async () => {
+    await expectNoSeriousA11yViolations(reset());
+  });
+});
