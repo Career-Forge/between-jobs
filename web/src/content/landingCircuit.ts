@@ -2,7 +2,7 @@
 // sample role and is labeled as one on the page. What each stage says was checked against the
 // product: Discover rates a result from the model's sub-scores with code; the resume checklist has
 // checks that code ran and checks left to you (api/export_checklist.py); outreach is drafted by
-// your model and, with the optional and currently invite-only Gmail connection, lands in your
+// your model and, with the optional Gmail connection (a server may limit it to invited people), lands in your
 // drafts; practice feedback is the model's; the extension fills by plain code and never clicks Next
 // or Submit. A sample never carries a date, a number or a count, because none was read from anywhere.
 
@@ -121,7 +121,7 @@ export const STAGES: readonly Stage[] = [
       to: "To: a recruiter at Northstar Labs (sample)",
       subject: "Applied AI Engineer: a short introduction",
       note: "Waiting in your Gmail drafts. You press Send.",
-      badge: "Gmail is optional, and invite-only for now",
+      badge: "Gmail is optional, and may be invite-only for now",
     },
     trail: { glyph: "model", actor: "Drafted by your model", basis: "on your key", extra: "never sent by Between Jobs" },
   },

@@ -3,7 +3,7 @@ import { CircuitDemo } from "../components/landing/CircuitDemo";
 import { DossierArt } from "../components/landing/DossierArt";
 import { TrailExample } from "../components/landing/TrailExample";
 import { NextStepBand } from "../components/paper/NextStepBand";
-import { LANDING, LANDING_PROVIDERS, LANDING_SECTION_IDS } from "../content/landing";
+import { LANDING, LANDING_PROVIDERS, LANDING_PROVIDER_CAVEAT, LANDING_SECTION_IDS } from "../content/landing";
 import { REPO_URL, SUPPORT_EMAIL } from "../content/site";
 import { nextStep } from "../lib/nextStep";
 import { LOGIN_PATH, PRIVACY_PATH, REGISTER_PATH } from "../lib/publicRoutes";
@@ -118,6 +118,7 @@ export default function Landing() {
                 <li key={provider}>{provider}</li>
               ))}
             </ul>
+            {LANDING_PROVIDER_CAVEAT !== null && <p className="bj-landing-availability">{LANDING_PROVIDER_CAVEAT}</p>}
           </article>
         </div>
       </section>

@@ -3,12 +3,39 @@
 // number or statistic. Every sentence was checked against the code; change one only after
 // checking it again.
 
+import { providerNotice } from "../lib/providerStatus";
 import { SOURCE_LICENSE } from "./site";
 
 // The model providers a key can be connected for: the API's provider registry, the same list the
 // Settings page draws its chips from, without its "other OpenAI-compatible" slot. The Privacy Policy
 // names every one (content/legal.ts); content/legal.test.ts checks that the three agree.
-export const LANDING_PROVIDERS = ["OpenRouter", "OpenAI", "Anthropic", "Google Gemini", "xAI", "DeepSeek", "Qwen Cloud"] as const;
+const LANDING_PROVIDER_LIST = [
+  { id: "openrouter", name: "OpenRouter" },
+  { id: "openai", name: "OpenAI" },
+  { id: "anthropic", name: "Anthropic" },
+  { id: "gemini", name: "Google Gemini" },
+  { id: "xai", name: "xAI" },
+  { id: "deepseek", name: "DeepSeek" },
+  { id: "qwen", name: "Qwen Cloud" },
+] as const;
+
+export const LANDING_PROVIDER_IDS: readonly string[] = LANDING_PROVIDER_LIST.map((provider) => provider.id);
+export const LANDING_PROVIDERS: readonly string[] = LANDING_PROVIDER_LIST.map((provider) => provider.name);
+
+function joinNames(names: readonly string[]): string {
+  return names.length < 3 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+// What the Settings page says about these providers, said here too. The page marks a provider "Not
+// yet verified live" (lib/providerStatus.ts) until a successful run against the real service is on
+// record, and the landing page may not promise more than the page the visitor lands on next. It
+// words this as "not yet checked live" because this page never says "verified" (Landing.test.tsx).
+// Built from that table, so the two cannot drift: a provider that is verified there drops out here.
+const NOT_VERIFIED = LANDING_PROVIDER_LIST.filter((provider) => providerNotice(provider.id) !== null).map((provider) => provider.name);
+export const LANDING_PROVIDER_CAVEAT: string | null =
+  NOT_VERIFIED.length === 0
+    ? null
+    : `In Settings, ${joinNames(NOT_VERIFIED)} ${NOT_VERIFIED.length === 1 ? "is" : "are"} flagged as not yet checked live: ${NOT_VERIFIED.length === 1 ? "it has" : "they have"} not had a successful run against the real service yet, so ${NOT_VERIFIED.length === 1 ? "it" : "they"} may fail or return nothing.`;
 
 // The in-page sections the header links to, in page order.
 export const LANDING_SECTION_IDS = {
@@ -25,6 +52,11 @@ export const LANDING_SECTION_LINKS = [
   { id: LANDING_SECTION_IDS.submit, label: "You always submit" },
   { id: LANDING_SECTION_IDS.source, label: "Open source" },
 ] as const;
+
+// The two availability lines below (Gmail, the Chrome Web Store) describe where the launch stands
+// today and are not derived from code. Re-read them, and landingCircuit.ts and legal.ts, when Google
+// finishes its review or the extension is listed. The Gmail one is worded as a possibility on
+// purpose: the invite list is an optional server setting (GMAIL_ALLOWED_USER_IDS), unset means open.
 
 export const LANDING = {
   headlineLines: ["One career.", "Every surface.", "Nothing forgotten."],
@@ -91,12 +123,12 @@ export const LANDING = {
     policyLead: "The ",
     policyLinkText: "Privacy Policy",
     policyTail: " has the details.",
-    availability: "Gmail drafting is currently invite-only while Google reviews the app.",
+    availability: "Gmail drafting may be limited to invited people while Google reviews the app.",
   },
   extension: {
     title: "Fills, never submits",
-    text: "The browser extension fills a form page from your own profile when you press Fill, then stops. It never clicks Next and never clicks Submit. It works on Greenhouse, Lever and Ashby application pages.",
-    availability: "The extension is for early testers and is not in the Chrome Web Store yet.",
+    text: "The browser extension fills a form page from your own profile when you press Fill, then stops. It never clicks Next and never clicks Submit. It is built for Greenhouse, Lever and Ashby application pages.",
+    availability: "The extension is for early testers and is not in the Chrome Web Store yet. It has not been checked in a real browser against live application pages yet.",
   },
   keys: {
     title: "Bring your own keys",
@@ -118,7 +150,7 @@ export const LANDING = {
     facts: [
       "Discover, the application board and interview practice are live.",
       "You bring your own AI key. Nothing is included.",
-      "Gmail drafting is optional, and invite-only for now.",
+      "Gmail drafting is optional, and may be limited to invited people for now.",
       "The browser extension is for early testers and is not in the Chrome Web Store yet.",
     ],
     createAccount: "Create account",

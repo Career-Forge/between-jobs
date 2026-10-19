@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { PublicLayout } from "../components/PublicLayout";
-import { LANDING } from "../content/landing";
+import { LANDING, LANDING_PROVIDER_CAVEAT } from "../content/landing";
 import { STAGES } from "../content/landingCircuit";
 import { REPO_URL } from "../content/site";
 import indexHtml from "../../index.html?raw";
@@ -112,10 +112,12 @@ describe("what the page has to disclose", () => {
     expect(page()).toMatch(/<a [^>]*href="\/privacy"[^>]*>Privacy Policy<\/a>/);
   });
 
-  it("says Gmail drafting is optional and invite-only for now", () => {
+  it("says Gmail drafting is optional and may be limited to invited people, because a server decides that", () => {
     expect(rendered).toContain("optional Gmail connection");
-    expect(rendered).toContain("Gmail drafting is currently invite-only while Google reviews the app.");
-    expect(rendered).toContain("Gmail drafting is optional, and invite-only for now.");
+    expect(rendered).toContain("Gmail drafting may be limited to invited people while Google reviews the app.");
+    expect(rendered).toContain("Gmail drafting is optional, and may be limited to invited people for now.");
+    // The invite list is optional on the server: unset, every signed-in person may connect Gmail.
+    expect(rendered).not.toContain("currently invite-only");
   });
 
   it("says the browser extension is for early testers and not in the Chrome Web Store, and that it never submits", () => {
@@ -135,6 +137,11 @@ describe("what the page has to disclose", () => {
     expect(page()).toContain(`href="${REPO_URL}"`);
     // The private engine is not in the repository, and the page says so.
     expect(rendered).toContain("is separate, and it is not in the repository yet");
+  });
+
+  it("says what Settings says about the model providers, on the page itself", () => {
+    expect(LANDING_PROVIDER_CAVEAT).not.toBeNull();
+    expect(rendered).toContain(LANDING_PROVIDER_CAVEAT);
   });
 
   it("has a TODO-free, placeholder-free page", () => {

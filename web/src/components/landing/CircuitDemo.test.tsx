@@ -243,10 +243,10 @@ describe("the cards", () => {
     }
   });
 
-  it("say the Gmail draft is optional and invite-only, and that the extension fills and leaves Submit to you", () => {
+  it("say the Gmail draft is optional and may be invite-only, and that the extension fills and leaves Submit to you", () => {
     const root = circuit();
     const cards = [...root.querySelectorAll(".bj-circuit-card")].map(text);
-    expect(cards[2]).toContain("Gmail is optional, and invite-only for now");
+    expect(cards[2]).toContain("Gmail is optional, and may be invite-only for now");
     expect(cards[2]).toContain("You press Send.");
     expect(cards[4]).toContain("Left for you");
     expect(cards[4]).toContain("and Submit");
