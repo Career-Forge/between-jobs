@@ -89,18 +89,18 @@ export function ResumeSections({ applicationId, descriptionText, profile, modelS
         ) : (
           <>
             <Titled title="Header">
-              <div className="bj-card">
+              <div className="bj-ws-studio">
                 <HeaderComposer applicationId={applicationId} />
               </div>
             </Titled>
             <Titled title="Resume structure">
-              <div className="bj-card">
+              <div className="bj-ws-studio">
                 <p className="bj-muted bj-small">Drag to reorder, or hide a section.</p>
                 <SectionOrderEditor profile={profile} applicationId={applicationId} />
               </div>
             </Titled>
             <Titled title="Resume settings">
-              <div className="bj-card">
+              <div className="bj-ws-studio">
                 <p className="bj-muted bj-small">Overrides for this application only -- unset fields fall back to your profile's defaults.</p>
                 <ShapeSettingsPanel applicationId={applicationId} />
               </div>

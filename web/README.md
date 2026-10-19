@@ -366,7 +366,7 @@ components under `src/components/workspace/` and the older panels.
 | Group | Section | Anchor | Where it is built |
 | --- | --- | --- | --- |
 | Resume | Tailor | `#ch-sources` | `workspace/ResumeSections.tsx`: the posting (`PostingBlock`) and `TailorPanel` |
-| Resume | Draft | `#ch-draft` | `ResumeSections.tsx`: the Studio's header, structure and settings cards, embedded as they are |
+| Resume | Draft | `#ch-draft` | `ResumeSections.tsx`: the Studio's header, structure and settings controls, the same components the Profile page draws, each under its own heading and with no card frame |
 | Resume | Generate | `#generate` | `ResumeSections.tsx` + `GeneratePanel.tsx` (the honest read is `HonestFloor.tsx`) |
 | Resume | Review | `#ch-check` | `workspace/ReviewSection.tsx`: ATS score, gap interview, claim check, export checks, the "You submit" block |
 | Research | Company intel, Contacts, Events, Hiring posts | `#company-intel`, `#contacts`, `#warm-path-events`, `#hiring-posts` | `workspace/PanelSections.tsx` |
@@ -418,9 +418,8 @@ failure of one panel never changes the band. Its states and wording are under "R
 - **Decisions and known gaps.** The band has one practice row (A6, "Go to Practice") rather than "Start practice" and
   "Continue practice: question n of m", because the practice sessions are read by the Practice section and not by this
   page; the band claims nothing about them. Reading the sessions here to light the three practice rows (and an unlit row
-  when that read fails) is not built. The three Studio cards embedded under Draft
-  (header, structure, settings) are unchanged and fail axe's select-name and color-contrast checks (unlabeled selects, muted
-  text on the hidden-section rows); they get fixed when they are restyled, not here.
+  when that read fails) is not built. The three Studio controls under Draft (header, structure, settings) are the
+  Profile page's components, so one restyle serves both places.
 - Not built: an in-browser PDF preview (it would reuse the blob a download fetches, once per generation result) and the
   band's "Answer the gap questions" (the gap interview renders only beside a drafted result).
 

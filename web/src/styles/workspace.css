@@ -191,8 +191,10 @@ h4.bj-ws-label {
   overflow-wrap: anywhere;
 }
 
-/* Cards the resume part embeds (the Studio's three, the research panels) fill the document column
-   instead of the 640px the old page gave them. */
+/* What the resume part embeds (the Studio's three controls, which the Profile page draws the same way, and
+   the one legacy card left in the research panels) fills the document column instead of the 640px the old
+   page gave it. */
+.bj-ws-studio,
 .bj-ws-section .bj-card {
   max-width: none;
   min-width: 0;
@@ -200,6 +202,8 @@ h4.bj-ws-label {
 
 /* A control inside an embedded card never makes the page wider than the phone (the Region select's
    longest option otherwise does at 375px). */
+.bj-ws-studio select,
+.bj-ws-studio input:not([type="checkbox"]):not([type="radio"]),
 .bj-ws-section .bj-card select,
 .bj-ws-section .bj-card input:not([type="checkbox"]):not([type="radio"]) {
   min-width: 0;

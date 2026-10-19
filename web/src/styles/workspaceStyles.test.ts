@@ -69,6 +69,7 @@ describe("workspace.css", () => {
 
   it("keeps embedded controls inside the phone's width and a job description in a well that scrolls inside itself", () => {
     expect(decl(".bj-ws-section .bj-card select")["max-width"]).toBe("100%");
+    expect(decl(".bj-ws-studio select")["max-width"]).toBe("100%");
     expect(decl(".bj-ws-well")["overflow"]).toBe("auto");
     expect(decl(".bj-ws-well")["max-height"]).toBe("280px");
   });

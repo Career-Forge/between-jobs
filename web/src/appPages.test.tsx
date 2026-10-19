@@ -6,6 +6,7 @@ import App from "./App";
 import { CROSS_NAV_ITEMS } from "./lib/applicationsBoard";
 import { response as discoverResponse } from "./testing/discoverFixtures";
 import { FakeApiError, on, reset } from "./testing/fakeApi";
+import { expectNoSeriousA11yViolations } from "./testing/a11y";
 import { settle, text, typeInto } from "./testing/forms";
 import { buttonNamed, click, installViewport, query, render } from "./testing/render";
 
@@ -335,6 +336,11 @@ describe("the application workspace", () => {
       });
     }
   }
+
+  it("has no serious accessibility violation with the Studio controls, the review and the research sections all on the page", async () => {
+    describeWorkspace("empty", { resume_exists: true }, drafted([CLAIM]));
+    await expectNoSeriousA11yViolations(await open(`/applications/${ID}`, 1400));
+  });
 
   it("while a resume is being generated, and when generating failed", async () => {
     describeWorkspace("empty", {}, null);
