@@ -1,14 +1,24 @@
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useModalDialog } from "../lib/useModalDialog";
 import type { FieldConfig, SectionFieldConfig } from "../lib/sectionFieldConfigs";
+import "../styles/profile-studio.css";
 
-// Generic entry editor -- one modal, driven by a per-section field
-// config, used for every "array of typed objects" section (Experience,
-// Projects, Education, Publications, Certifications, Languages,
-// Volunteering). Built to design-references/profile-edit-versioned-modal
-// with two deliberate deviations from that render: no "Location type"
-// field (invented in the mockup -- doesn't exist in the schema, so it
-// doesn't exist here), and bullet reordering is up/down buttons instead
-// of drag-and-drop (no new dependency for this checkpoint).
+// Generic entry editor -- one modal, driven by a per-section field config, used for every "array of
+// typed objects" section (Experience, Projects, Education, Publications, Certifications, Languages,
+// Volunteering). Built to design-references/profile-edit-versioned-modal with two deliberate
+// deviations from that render: no "Location type" field (invented in the mockup -- it doesn't exist in
+// the schema, so it doesn't exist here), and bullet reordering is up/down buttons instead of
+// drag-and-drop (a button works from the keyboard and on a phone).
+//
+// IT IS A REAL DIALOG. It is drawn into <body> so the rest of the page can be made inert while it is
+// open; focus moves to its first field and is kept inside it (Tab and Shift+Tab wrap); Esc cancels --
+// not while a save is out -- and focus goes back to the control that opened it (lib/useModalDialog.ts).
+// Nothing in it is cyan: the page's one cyan fill is the next-step band's button, so Save is an
+// outlined button like every other.
+//
+// The footer says what saving does -- `versionLabel`, "Saving creates version 4" -- because an edit is
+// a new immutable version of the profile, never a change in place (lib/useProfileEditor.ts).
 
 type EntryValues = Record<string, unknown>;
 type PinValue = { mandatory: boolean; min_bullets?: number | null } | null | undefined;
@@ -29,9 +39,8 @@ export function EntryEditModal({
   config: SectionFieldConfig;
   initialValues: EntryValues;
   isNew: boolean;
-  // R5 (resumeforge-shape-and-fit.md): only experience/projects/education
-  // reach forge-engines' allocator as pinnable -- the parent decides which
-  // sections qualify, this modal just renders (or doesn't) the toggle.
+  // Only experience/projects/education reach the engine's allocator as pinnable -- the parent
+  // decides which sections qualify, this modal just renders (or doesn't) the toggle.
   canPin?: boolean;
   pinnedCountExcludingThis?: number;
   maxPinned?: number;
@@ -42,14 +51,22 @@ export function EntryEditModal({
   onCancel: () => void;
 }) {
   const [values, setValues] = useState<EntryValues>(initialValues);
+  const dialog = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
+  useModalDialog(dialog, {
+    onClose: onCancel,
+    canClose: !saving,
+    // The first thing to type in, not the close mark that comes first in the markup.
+    initialFocus: () => body.current?.querySelector<HTMLElement>("input:not([type='checkbox']), textarea, select") ?? null,
+  });
 
   function setField(key: string, value: unknown) {
     setValues((prev) => ({ ...prev, [key]: value }));
   }
 
-  const missingRequired = config.fields.some(
-    (f) => f.required && !String(values[f.key] ?? "").trim(),
-  );
+  const missingRequired = config.fields.some((f) => f.required && !String(values[f.key] ?? "").trim());
   const pin = values.pin as PinValue;
   const isPinned = Boolean(pin?.mandatory);
   const atPinLimit = !isPinned && pinnedCountExcludingThis >= maxPinned;
@@ -62,39 +79,29 @@ export function EntryEditModal({
     setField("pin", { mandatory: true, min_bullets: n });
   }
 
-  return (
-    <div className="bj-modal-backdrop" role="dialog" aria-modal="true">
-      <div className="bj-modal">
+  const title = `${isNew ? "Add" : "Edit"} ${config.entryLabel.toLowerCase()}`;
+
+  return createPortal(
+    <div className="bj-modal-backdrop">
+      <div ref={dialog} className="bj-modal bj-entry-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
         <div className="bj-modal-header">
-          <h2>
-            {isNew ? "Add" : "Edit"} {config.entryLabel.toLowerCase()}
-          </h2>
-          <button className="bj-modal-close" onClick={onCancel} aria-label="Close">
-            ×
+          <h2 id={titleId}>{title}</h2>
+          <button type="button" className="bj-modal-close" onClick={onCancel} disabled={saving} aria-label="Close">
+            <span aria-hidden="true">{"×"}</span>
           </button>
         </div>
-        <div className="bj-modal-body">
+        <div ref={body} className="bj-modal-body">
           {config.fields.map((field) => (
-            <FieldRenderer
-              key={field.key}
-              field={field}
-              values={values}
-              onChange={setField}
-            />
+            <FieldRenderer key={field.key} field={field} values={values} onChange={setField} />
           ))}
           {canPin && (
             <div className="bj-field bj-pin-field">
               <label className="bj-current-checkbox">
-                <input
-                  type="checkbox"
-                  checked={isPinned}
-                  disabled={atPinLimit}
-                  onChange={(e) => setMandatory(e.target.checked)}
-                />
-                📌 Mandatory -- always include this in generated resumes
+                <input type="checkbox" checked={isPinned} disabled={atPinLimit} onChange={(e) => setMandatory(e.target.checked)} />
+                Mandatory -- always include this in generated resumes
               </label>
               {isPinned && (
-                <label className="bj-field" style={{ marginTop: "0.5rem" }}>
+                <label className="bj-field bj-pin-min">
                   <span>Minimum bullets (optional, 1-6)</span>
                   <input
                     type="number"
@@ -107,31 +114,30 @@ export function EntryEditModal({
                 </label>
               )}
               {atPinLimit && (
-                <div className="bj-muted bj-small">
-                  You've used all {maxPinned} mandatory slots -- unmark another entry first.
-                </div>
+                <div className="bj-muted bj-small">You've used all {maxPinned} mandatory slots -- unmark another entry first.</div>
               )}
             </div>
           )}
-          {error && <div className="bj-error">{error}</div>}
+          {error && (
+            <div className="bj-error" role="alert">
+              {error}
+            </div>
+          )}
         </div>
         <div className="bj-modal-footer">
           <span className="bj-muted bj-small">{versionLabel}</span>
           <div className="bj-actions">
-            <button onClick={onCancel} disabled={saving}>
+            <button type="button" onClick={onCancel} disabled={saving}>
               Cancel
             </button>
-            <button
-              className="bj-primary"
-              onClick={() => onSave(values)}
-              disabled={saving || missingRequired}
-            >
+            <button type="button" className="bj-dialog-confirm" onClick={() => onSave(values)} disabled={saving || missingRequired}>
               {saving ? "Saving..." : "Save"}
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -156,6 +162,7 @@ function FieldRenderer({
             type="text"
             value={String(values[field.key] ?? "")}
             placeholder={field.placeholder}
+            required={field.required}
             onChange={(e) => onChange(field.key, e.target.value)}
           />
         </label>
@@ -178,27 +185,14 @@ function FieldRenderer({
         />
       );
     case "daterange":
-      return (
-        <DateRangeField
-          field={field}
-          values={values}
-          onChange={onChange}
-        />
-      );
+      return <DateRangeField field={field} values={values} onChange={onChange} />;
     default:
       return null;
   }
 }
 
-function BulletsField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string[];
-  onChange: (v: string[]) => void;
-}) {
+function BulletsField({ label, value, onChange }: { label: string; value: string[]; onChange: (v: string[]) => void }) {
+  const groupId = useId();
   function update(i: number, text: string) {
     const next = [...value];
     next[i] = text;
@@ -216,30 +210,28 @@ function BulletsField({
   }
 
   return (
-    <div className="bj-field">
-      <span>{label}</span>
+    <div className="bj-field" role="group" aria-labelledby={groupId}>
+      <span id={groupId}>{label}</span>
       <div className="bj-bullets-editor">
         {value.map((bullet, i) => (
           <div key={i} className="bj-bullet-row">
-            <textarea
-              rows={2}
-              value={bullet}
-              onChange={(e) => update(i, e.target.value)}
-            />
+            <textarea rows={2} aria-label={`${label} ${i + 1}`} value={bullet} onChange={(e) => update(i, e.target.value)} />
             <div className="bj-bullet-row-actions">
-              <button onClick={() => move(i, -1)} disabled={i === 0} title="Move up">
-                ↑
+              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${label.toLowerCase()} ${i + 1} up`}>
+                <span aria-hidden="true">{"↑"}</span>
               </button>
-              <button onClick={() => move(i, 1)} disabled={i === value.length - 1} title="Move down">
-                ↓
+              <button type="button" onClick={() => move(i, 1)} disabled={i === value.length - 1} aria-label={`Move ${label.toLowerCase()} ${i + 1} down`}>
+                <span aria-hidden="true">{"↓"}</span>
               </button>
-              <button onClick={() => remove(i)} title="Remove">
-                ✕
+              <button type="button" onClick={() => remove(i)} aria-label={`Remove ${label.toLowerCase()} ${i + 1}`}>
+                <span aria-hidden="true">{"✕"}</span>
               </button>
             </div>
           </div>
         ))}
-        <button onClick={() => onChange([...value, ""])}>+ Add bullet</button>
+        <button type="button" onClick={() => onChange([...value, ""])}>
+          + Add bullet
+        </button>
       </div>
     </div>
   );
@@ -273,12 +265,15 @@ function ChipsField({
         {value.map((chip) => (
           <span key={chip} className="bj-chip bj-chip-removable">
             {chip}
-            <button onClick={() => onChange(value.filter((c) => c !== chip))}>×</button>
+            <button type="button" aria-label={`Remove ${chip}`} onClick={() => onChange(value.filter((c) => c !== chip))}>
+              <span aria-hidden="true">{"×"}</span>
+            </button>
           </span>
         ))}
       </div>
       <input
         type="text"
+        aria-label={`Add to ${label.toLowerCase()}`}
         value={draft}
         placeholder={placeholder ?? "Type and press Enter"}
         onChange={(e) => setDraft(e.target.value)}
@@ -294,34 +289,8 @@ function ChipsField({
   );
 }
 
-const MONTHS = [
-  "01",
-  "02",
-  "03",
-  "04",
-  "05",
-  "06",
-  "07",
-  "08",
-  "09",
-  "10",
-  "11",
-  "12",
-];
-const MONTH_LABELS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
+const MONTHS = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function parseMonthYear(value: string | undefined): { month: string; year: string } {
   const match = /^(\d{4})-(\d{2})$/.exec(value ?? "");
@@ -337,6 +306,7 @@ function DateRangeField({
   values: EntryValues;
   onChange: (key: string, value: unknown) => void;
 }) {
+  const groupId = useId();
   const startKey = field.startKey!;
   const endKey = field.endKey!;
   const currentKey = field.currentKey;
@@ -357,11 +327,15 @@ function DateRangeField({
   }
 
   return (
-    <div className="bj-field">
-      <span>{field.label}</span>
+    <div className="bj-field" role="group" aria-labelledby={groupId}>
+      <span id={groupId}>{field.label}</span>
       <div className="bj-daterange">
         <div className="bj-daterange-group">
-          <select value={start.month} onChange={(e) => setStart(e.target.value, start.year || String(new Date().getFullYear()))}>
+          <select
+            aria-label="Start month"
+            value={start.month}
+            onChange={(e) => setStart(e.target.value, start.year || String(new Date().getFullYear()))}
+          >
             <option value="">Month</option>
             {MONTHS.map((m, i) => (
               <option key={m} value={m}>
@@ -369,16 +343,14 @@ function DateRangeField({
               </option>
             ))}
           </select>
-          <input
-            type="number"
-            placeholder="Year"
-            value={start.year}
-            onChange={(e) => setStart(start.month, e.target.value)}
-          />
+          <input type="number" aria-label="Start year" placeholder="Year" value={start.year} onChange={(e) => setStart(start.month, e.target.value)} />
         </div>
-        <span className="bj-muted">–</span>
+        <span className="bj-muted" aria-hidden="true">
+          {"–"}
+        </span>
         <div className="bj-daterange-group">
           <select
+            aria-label="End month"
             value={end.month}
             disabled={isCurrent}
             onChange={(e) => setEnd(e.target.value, end.year || String(new Date().getFullYear()))}
@@ -392,6 +364,7 @@ function DateRangeField({
           </select>
           <input
             type="number"
+            aria-label="End year"
             placeholder="Year"
             value={end.year}
             disabled={isCurrent}
@@ -400,11 +373,7 @@ function DateRangeField({
         </div>
         {currentKey && (
           <label className="bj-current-checkbox">
-            <input
-              type="checkbox"
-              checked={isCurrent}
-              onChange={(e) => setCurrent(e.target.checked)}
-            />
+            <input type="checkbox" checked={isCurrent} onChange={(e) => setCurrent(e.target.checked)} />
             Current
           </label>
         )}

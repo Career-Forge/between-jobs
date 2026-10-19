@@ -1,0 +1,289 @@
+/* The resume layout controls and the entry editor: the header composer, the section order editor, the
+ * resume settings (components/HeaderComposer, SectionOrderEditor, ShapeSettingsPanel, RadioSegments) and the
+ * dialog that edits one entry (components/EntryEditModal). The Profile page draws them under "Resume
+ * layout" and the application workspace embeds the same components, so these rules depend on no parent
+ * class: each component imports this file.
+ *
+ * Tokens only -- no color is defined here -- and no rule fills anything cyan: the page's one cyan fill is
+ * the next-step band's button. Selection is the shared primitive (.bj-selectable, tokens.css): a maroon
+ * fill with the ARIA state. Under 960px (the shell's phone breakpoint) every control is at least 44px
+ * tall and the entry dialog is a full-width sheet. */
+
+/* ------------------------------------------------------------------ */
+/* Header composer and section order: rows that reorder                 */
+/* ------------------------------------------------------------------ */
+
+.bj-header-composer,
+.bj-section-editor,
+.bj-shape-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-header-composer-list,
+.bj-section-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-header-composer-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--bj-space-3);
+  min-width: 0;
+  padding: var(--bj-space-2) var(--bj-space-3);
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  background: var(--bj-surface-raised);
+  cursor: grab;
+}
+
+.bj-header-composer-row:active {
+  cursor: grabbing;
+}
+
+.bj-drag-handle {
+  color: var(--bj-text-muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.bj-header-composer-field {
+  flex: 1 1 8em;
+  min-width: 0;
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+/* A section that is hidden says "Hidden" in words; the dimming is only a second cue. */
+.bj-section-hidden {
+  opacity: 0.7;
+}
+
+.bj-row-moves {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-1);
+}
+
+.bj-row-moves button {
+  padding: 4px 10px;
+  font-size: var(--bj-text-small);
+}
+
+.bj-contact-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-2);
+}
+
+.bj-contact-chip {
+  max-width: 100%;
+  padding: 6px 12px;
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  background: var(--bj-surface-raised);
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+a.bj-contact-chip {
+  color: var(--bj-cyan);
+}
+
+.bj-studio-note {
+  margin: 0;
+  max-width: 680px;
+}
+
+/* A live region that is empty takes no room, so "Saving..." appears without moving what is below it. */
+.bj-studio-saving {
+  margin: 0;
+}
+
+.bj-studio-saving:empty {
+  display: none;
+}
+
+/* Native selects and checkboxes, drawn from the tokens: a select the browser draws by default is a pale
+   box on a dark page. The checkbox's own mark stays the browser's (it is the control a keyboard and a
+   screen reader already know), in a neutral color. */
+.bj-header-composer-row select,
+.bj-shape-settings-row select,
+.bj-entry-modal select {
+  padding: 6px 10px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 6px;
+  background: var(--bj-surface);
+  color: var(--bj-text);
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-control);
+}
+
+.bj-header-composer-row input[type="checkbox"],
+.bj-shape-settings-row input[type="checkbox"],
+.bj-entry-modal input[type="checkbox"] {
+  accent-color: var(--bj-text-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Resume settings                                                      */
+/* ------------------------------------------------------------------ */
+
+.bj-shape-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--bj-space-2);
+}
+
+/* A preset is a starting point, not a mode: pressing one sends its overrides, and every setting can be
+   changed afterwards. It is an ordinary outlined button with its own words under its name. */
+.bj-shape-preset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+
+.bj-shape-preset-label {
+  font-weight: 600;
+}
+
+.bj-shape-preset-note {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-badge);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.bj-shape-settings-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--bj-space-3);
+  min-width: 0;
+  padding: var(--bj-space-2) var(--bj-space-3);
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  background: var(--bj-surface-raised);
+}
+
+.bj-shape-settings-row > .bj-header-composer-field {
+  flex: 0 0 8em;
+}
+
+.bj-shape-settings-row select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* A toggle that cannot be gated by locale in the browser has a caption saying why, stacked under it. */
+.bj-shape-settings-row-stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--bj-space-1);
+}
+
+/* The radio segments are the shared outlined group (tokens.css .bj-segmented); only the wrap and the
+   shrink guard are this component's. */
+.bj-radio-segments {
+  max-width: 100%;
+}
+
+.bj-radio-segments > button {
+  min-width: 0;
+  text-align: left;
+}
+
+/* ------------------------------------------------------------------ */
+/* The entry dialog                                                     */
+/* ------------------------------------------------------------------ */
+
+.bj-entry-modal:focus {
+  outline: none;
+}
+
+/* Save in a dialog is an outlined button like every other: the page's one cyan fill is the band's. It
+   is told apart from Cancel by weight and a firmer outline, not by a fill. */
+button.bj-dialog-confirm {
+  border-color: var(--bj-text);
+  font-weight: 600;
+}
+
+.bj-pin-min {
+  margin-top: var(--bj-space-2);
+}
+
+.bj-bullet-row-actions button {
+  padding: 4px 10px;
+}
+
+@media (max-width: 959px) {
+  .bj-header-composer-row,
+  .bj-shape-settings-row {
+    padding: var(--bj-space-2);
+  }
+
+  .bj-row-moves button,
+  .bj-shape-preset,
+  .bj-radio-segments > button,
+  .bj-bullet-row-actions button,
+  .bj-header-composer .bj-actions button,
+  .bj-modal-footer button,
+  .bj-entry-modal select,
+  .bj-entry-modal input[type="text"],
+  .bj-entry-modal input[type="number"],
+  .bj-header-composer-row select,
+  .bj-shape-settings-row select {
+    min-height: 44px;
+  }
+
+  .bj-section-editor-toggle,
+  .bj-current-checkbox {
+    min-height: 44px;
+  }
+
+  .bj-section-editor-toggle input,
+  .bj-current-checkbox input {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* The dialog is a full-width sheet on a phone, so a long form has the whole screen to scroll in. */
+  .bj-modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .bj-entry-modal {
+    max-width: none;
+    max-height: 92vh;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .bj-entry-modal .bj-modal-footer {
+    flex-wrap: wrap;
+  }
+
+  .bj-bullet-row {
+    flex-direction: column;
+  }
+
+  .bj-bullet-row-actions {
+    flex-direction: row;
+  }
+
+  .bj-shape-settings-row > .bj-header-composer-field {
+    flex-basis: 100%;
+  }
+}
