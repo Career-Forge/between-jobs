@@ -285,6 +285,22 @@ describe("Practice: answering", () => {
     expect(text(query(container, ".bj-rs-review .bj-trail"))).toBe("✦ Scored by your model · on your model key");
   });
 
+  it("does not call the session complete after an answer that leaves questions to come, and offers no Practice again", async () => {
+    resume(five(0));
+    on(`POST ${ANSWERS}`, { feedback: answerFeedback(7), next_question: question(2), session_report: null });
+    const { container } = panel();
+    await settle();
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), "I led the migration.");
+    click(buttonNamed(container, "Submit answer"));
+    await settle();
+    expect(container.querySelector(".bj-rs-feedback")).not.toBeNull();
+    expect(container.querySelector(".bj-rs-report")).toBeNull();
+    expect(text(container)).not.toContain("Session complete");
+    expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Practice again")).toBe(false);
+    expect(buttonNamed(container, "Next question")).toBeTruthy();
+    expect(callsTo(`POST ${BASE}`)).toHaveLength(0);
+  });
+
   it("keeps the draft when scoring fails, says so, and Send again sends the same answer", async () => {
     resume(five(0));
     on(`POST ${ANSWERS}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));

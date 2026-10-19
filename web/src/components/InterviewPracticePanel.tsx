@@ -191,7 +191,9 @@ export function InterviewPracticePanel({ applicationId, now }: { applicationId: 
   const pending = active === null || pendingId === null ? null : (questions.find((q) => q.id === pendingId) ?? null);
   const current = active === null || pending !== null ? null : currentQuestion(questions);
   const earlier = questions.filter((q) => q.answered_at !== null && q.id !== pendingId);
-  const finished = active !== null && current === null;
+  // Finished means no question is left to answer. It is read from the questions, not from `current`,
+  // which is also null while an answer's feedback is on screen with questions still to come.
+  const finished = active !== null && currentQuestion(questions) === null;
   const report = active === null ? null : (lastSessionReport ?? (finished ? buildSessionReport(questions) : null));
 
   const trail =
