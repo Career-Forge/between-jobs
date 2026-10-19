@@ -523,6 +523,8 @@ describe("the band, from the first step to the last", () => {
     await settle();
     expect(text(band(container))).toContain("No resume yet: the fit check held this draft back. Read why, then decide -- your call.");
     expect(text(band(container))).toContain("why: latest attempt held back · ceiling 3.6 / 10");
+    // A held-back draft is not a failure: the band carries no red cross, as the honest read below has no red.
+    expect(band(container).querySelector(".bj-band-glyph")).toBeNull();
     expect(text(cyan(container)[0])).toBe("Read the fit check");
     expect(cyan(container)).toHaveLength(1);
     const secondary = buttonNamed(band(container), "Generate anyway");

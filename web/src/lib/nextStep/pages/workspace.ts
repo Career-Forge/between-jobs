@@ -162,7 +162,8 @@ const A1B: NextStepRow<WorkspaceFacts> = {
       action: { kind: "button", label: "Read the fit check", intent: WORKSPACE_INTENTS.readFit },
       secondary: { kind: "button", label: "Generate anyway", intent: WORKSPACE_INTENTS.generateAnyway },
       why,
-      tone: "failure",
+      // No failure tone: a held-back draft is the engine's judgement, not a failed request, and the
+      // honest read below (components/HonestFloor.tsx) is calm on purpose. The red cross is A1c's.
     };
   }),
 };

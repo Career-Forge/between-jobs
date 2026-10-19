@@ -90,7 +90,6 @@ describe("the table", () => {
       action: "button:Read the fit check:read-fit",
       secondary: "button:Generate anyway:generate-anyway",
       why: ["latest attempt held back", "ceiling 3.6 / 10"],
-      tone: "failure",
     },
     {
       name: "held back while an earlier resume still exists",
@@ -100,7 +99,6 @@ describe("the table", () => {
       action: "button:Read the fit check:read-fit",
       secondary: "button:Generate anyway:generate-anyway",
       why: ["latest attempt held back", "ceiling 4.3 / 10", "earlier resume kept"],
-      tone: "failure",
     },
     {
       name: "held back and the fit read has no score",
@@ -110,7 +108,6 @@ describe("the table", () => {
       action: "button:Read the fit check:read-fit",
       secondary: "button:Generate anyway:generate-anyway",
       why: ["latest attempt held back"],
-      tone: "failure",
     },
     {
       name: "a resume with one flagged claim",
