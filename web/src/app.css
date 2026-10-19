@@ -1719,12 +1719,11 @@ button.bj-danger {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  /* Same nested-flex-column shrink guard as .bj-discover-card below --
-     a flex item's default min-width:auto refuses to shrink below its
-     content's natural width. Today's example sentences are ordinary
-     wrappable prose, but this is cheap insurance against a future long
-     unbroken token (a URL, a permit reference code) blowing out the
-     card the same way a real Discover posting once did. */
+  /* A nested-flex-column shrink guard: a flex item's default
+     min-width:auto refuses to shrink below its content's natural width.
+     Today's example sentences are ordinary wrappable prose, but this is
+     cheap insurance against a future long unbroken token (a URL, a permit
+     reference code) blowing out the card. */
   min-width: 0;
 }
 
@@ -2034,57 +2033,6 @@ button.bj-danger {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-/* ------------------------------------------------------------------ */
-/* Discover                                                           */
-/* ------------------------------------------------------------------ */
-
-.bj-discover-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.bj-discover-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  /* A flex item's default min-width:auto refuses to shrink below its
-     content's natural width -- real job-posting text sometimes carries
-     a long unbroken string (a bare URL with no spaces), which otherwise
-     forces this whole card, and the page, wider instead of wrapping.
-     Confirmed live: a real EverAI posting's own referral-form URL did
-     exactly this before min-width:0 was added. */
-  min-width: 0;
-}
-
-.bj-discover-card p {
-  overflow-wrap: anywhere;
-}
-
-.bj-discover-more-heading {
-  margin-top: 8px;
-  margin-bottom: 0;
-}
-
-.bj-discover-saved-search-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.bj-discover-saved-search-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-}
-
-.bj-discover-saved-search-row > span {
-  overflow-wrap: anywhere;
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,0 +1,289 @@
+/* Discover: the filter form, the result rows and their fit blocks, and the notes around them
+ * (pages/Discover.tsx, components/discover/). Tokens only -- no color is defined here -- and no rule
+ * fills anything cyan: the page's one cyan fill is the next-step band's button.
+ *
+ * Widths. Lists and rows are at most 880px (the shell's column is 960px with its padding). From 960px a
+ * row has its identity and posting text on the left and its fit block on the right; under 960px (the
+ * shell's phone breakpoint) the row is one column, every control is at least 44px tall and the form's
+ * fields stack. Long unbroken strings from a posting (a company, a snippet with a bare URL) wrap inside
+ * the row and never widen the page. */
+
+.bj-discover {
+  min-width: 0;
+  max-width: 880px;
+}
+
+/* ------------------------------------------------------------------ */
+/* The filter form                                                      */
+/* ------------------------------------------------------------------ */
+
+.bj-disc-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+  margin: var(--bj-space-5) 0 var(--bj-space-5);
+  padding: var(--bj-space-4) 0;
+  border-top: 1px solid var(--bj-border);
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-disc-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--bj-space-3);
+}
+
+@media (min-width: 600px) {
+  .bj-disc-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .bj-disc-field-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.bj-disc-remote {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bj-space-2);
+  align-self: flex-start;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  cursor: pointer;
+}
+
+.bj-disc-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-2);
+}
+
+/* ------------------------------------------------------------------ */
+/* Notes, headings and the running counter                              */
+/* ------------------------------------------------------------------ */
+
+.bj-disc-note {
+  margin: 0;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+/* The elapsed counter of a running search, beside the band's sentence: the one cyan text that is
+   live, in the mono face. Text only -- never a fill. */
+.bj-disc-timer {
+  margin: 0;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-body);
+  color: var(--bj-cyan);
+}
+
+.bj-disc-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-disc-heading {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--bj-text);
+}
+
+.bj-disc-heading--more {
+  margin-top: var(--bj-space-4);
+}
+
+/* One gold notice above every row when the scoring fell back: evidence that the numbers are not real. */
+.bj-disc-fallback {
+  margin: 0;
+  padding: var(--bj-space-3) var(--bj-space-4);
+  border: 1px solid var(--bj-gold);
+  border-radius: 8px;
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+.bj-disc-warnings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-disc-warnings .bj-trail {
+  padding: var(--bj-space-1) 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Result rows                                                          */
+/* ------------------------------------------------------------------ */
+
+.bj-disc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-disc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--bj-space-3);
+  min-width: 0;
+  padding: var(--bj-space-4) 0;
+  border-bottom: 1px solid var(--bj-border);
+}
+
+@media (min-width: 960px) {
+  .bj-disc-row {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    column-gap: var(--bj-space-5);
+  }
+
+  .bj-disc-actions,
+  .bj-disc-problem,
+  .bj-disc-trail {
+    grid-column: 1 / -1;
+  }
+}
+
+.bj-disc-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-1);
+  min-width: 0;
+}
+
+.bj-disc-title {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+.bj-disc-meta,
+.bj-disc-snippet,
+.bj-disc-signal {
+  margin: 0;
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+.bj-disc-meta {
+  color: var(--bj-text-muted);
+}
+
+.bj-disc-snippet {
+  margin-top: var(--bj-space-1);
+  color: var(--bj-text);
+}
+
+.bj-disc-signal {
+  color: var(--bj-text-muted);
+}
+
+.bj-disc-signal-tag {
+  font-size: var(--bj-text-trail);
+  white-space: nowrap;
+}
+
+.bj-disc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-3);
+}
+
+.bj-disc-problem {
+  min-width: 0;
+}
+
+.bj-disc-trail {
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* The fit block                                                        */
+/* ------------------------------------------------------------------ */
+
+.bj-fit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-fit-oneliner {
+  margin: 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-fit-bars {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--bj-space-3);
+}
+
+@media (min-width: 600px) and (max-width: 959px) {
+  .bj-fit-bars {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.bj-fit-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-1);
+}
+
+.bj-fit-notes p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* A row past the scoring batch has no score block at all, only these words. */
+.bj-fit-unscored {
+  margin: 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Phones and tablets: under the shell's 960px breakpoint                */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 959px) {
+  .bj-disc-form-actions > button,
+  .bj-disc-actions > a,
+  .bj-disc-actions > button,
+  .bj-disc-problem button {
+    min-height: 44px;
+  }
+
+  .bj-disc-actions > a {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .bj-disc-remote {
+    min-height: 44px;
+  }
+
+  .bj-disc-form input[type="text"] {
+    min-height: 44px;
+  }
+}

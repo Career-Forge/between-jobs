@@ -130,11 +130,20 @@ const SITES: Record<string, Site> = {
     keeps: [/setState\(failureOf\(e, "Failed to load"\)\)/, SETUP_BRANCH],
     forbids: [BY_HAND],
   },
+  // Discover keeps a setup answer in state whole and hands its sentence and its link to
+  // SetupRequiredState together: the link is the notice's own, or the one for what the reads say is
+  // missing, or Settings when the server sent none, so there is always one (see DiscoverView below).
   "../pages/Discover.tsx": {
     calls: 1,
-    draws: 1,
-    keeps: [/setState\(failureOf\(e, "Failed to search"\)\)/, /state\.kind === "setup" && \(/, NOTICE_FROM_STATE],
-    forbids: [/setState\(\{ kind: "error", message: friendlyApiMessage\(e, "Failed to search"\)/],
+    draws: 0,
+    keeps: [/failureOf\(e, "Failed to search"\)/, /\{ kind: "setup", notice: failure\.notice, request \}/, /missing\.push\(notice\.linkTo !== null/],
+    forbids: [/setState\(\{ kind: "error", message: friendlyApiMessage\(e, "Failed to search"\)/, BY_HAND],
+  },
+  "../components/discover/DiscoverView.tsx": {
+    calls: 0,
+    draws: 0,
+    keeps: [/<SetupRequiredState message=\{setup\.message\} missing=\{setup\.missing\} \/>/],
+    forbids: [/notice\.message/],
   },
   "../components/settings/ConnectionCards.tsx": {
     calls: 1, // connect Gmail

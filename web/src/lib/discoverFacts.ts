@@ -82,3 +82,31 @@ export function resultsFactOf(result: DiscoverResponse, request: DiscoverRequest
     companiesSet: held(request.companies),
   };
 }
+
+// The body of POST /saved-searches for the filters on the page: the search words as typed, a blank
+// location as none, the companies split on commas. (The same shape Discover has always sent.)
+export function savedSearchBody(request: DiscoverRequest): {
+  query: string;
+  location: string | null;
+  companies: string[];
+  remote_only: boolean;
+} {
+  return {
+    query: request.q,
+    location: request.location || null,
+    companies: request.companies
+      ? request.companies
+          .split(",")
+          .map((company) => company.trim())
+          .filter(Boolean)
+      : [],
+    remote_only: request.remoteOnly,
+  };
+}
+
+// What a screen reader is told once a search has answered, from the same counts the band reads.
+export function resultsAnnouncement(fact: DiscoverResultsFact): string {
+  if (fact.scored + fact.more === 0) return "The search finished with no results.";
+  const parts = [`${fact.scored} scored`, ...(fact.more > 0 ? [`${fact.more} more, unscored`] : []), ...(fact.deadRemoved > 0 ? [`${fact.deadRemoved} dropped as no longer live`] : [])];
+  return `The search finished: ${parts.join(", ")}.`;
+}

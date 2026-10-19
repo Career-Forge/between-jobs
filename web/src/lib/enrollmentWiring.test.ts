@@ -6,6 +6,7 @@ import viewSource from "../components/EnrollmentView.tsx?raw";
 import accountCardSource from "../components/AccountCardView.tsx?raw";
 import gateSource from "../components/EnrollmentGate.tsx?raw";
 import savedSearchesCardSource from "../components/SavedSearchesCard.tsx?raw";
+import savedSearchesHookSource from "./useSavedSearches.ts?raw";
 import savedSearchesCardViewSource from "../components/SavedSearchesCardView.tsx?raw";
 import connectionCardsSource from "../components/settings/ConnectionCards.tsx?raw";
 import connectedRowSource from "../components/settings/ConnectedProviderRow.tsx?raw";
@@ -116,8 +117,10 @@ describe("the gate's exempt pages are real routes of the app", () => {
     expect(settingsPageSource).toContain("<SavedSearchesCard />");
     expect(savedSearchesCardViewSource).toContain('"Pause" : "Resume"');
     expect(savedSearchesCardViewSource).toContain("Delete");
-    expect(savedSearchesCardSource).toContain("setSavedSearchActive(apiFetch, id, isActive)");
-    expect(savedSearchesCardSource).toContain("deleteSavedSearch(apiFetch, id)");
+    // the card's requests are the shared hook's, which Settings and Discover both use
+    expect(savedSearchesCardSource).toContain("useSavedSearches()");
+    expect(savedSearchesHookSource).toContain("setSavedSearchActive(apiFetch, id, isActive)");
+    expect(savedSearchesHookSource).toContain("deleteSavedSearch(apiFetch, id)");
   });
 
   it("the server calls those controls make are the open ones, never behind the enrollment gate (the inventory is tests/test_rate_limit_inventory.py)", () => {
@@ -129,6 +132,8 @@ describe("the gate's exempt pages are real routes of the app", () => {
     expect(connectedRowSource).toContain("`/credentials/llm/${encodeURIComponent(credential.provider)}`");
     expect(providerConnectCardSource).toContain('"/credentials"');
     expect(savedSearchesCardSource).not.toMatch(/\/discover|\/prepare|\/generate/);
+    // the hook imports from "./discoverTypes", so it is the quoted request paths that are checked
+    expect(savedSearchesHookSource).not.toMatch(/["`]\/(discover|prepare|generate)/);
   });
 
   it("the shell's gate wraps them: they are exempt by the list, not by being outside the gate", () => {

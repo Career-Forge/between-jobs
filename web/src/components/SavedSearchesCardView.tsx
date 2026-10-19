@@ -2,17 +2,27 @@ import {
   SAVED_SEARCHES_HEADING,
   SAVED_SEARCHES_NOTE,
   savedSearchActionLabel,
+  savedSearchTrail,
   type SavedSearchesState,
 } from "../lib/savedSearches";
 import { savedSearchLabel } from "../lib/discover";
+import { StaticTrailLine } from "./paper/TrailLine";
+import "../styles/saved-searches.css";
 
-// The card that lists a person's saved searches with Pause / Resume and Delete (lib/savedSearches.ts
-// holds the logic; components/SavedSearchesCard.tsx holds the state and the requests). A pure
-// function of its props, with no hooks, so a test can render it and press its buttons.
+// The card that lists a person's saved searches, with Pause / Resume and Delete (lib/savedSearches.ts
+// holds the logic; components/SavedSearchesCard.tsx holds the state and the requests on Settings, and
+// pages/Discover.tsx drives the same view with its own filters). A pure function of its props, with no
+// hooks, so a test can render it and press its buttons.
+//
+// Each search is a list row: its label, then its trail as the last line -- "Checked 06:00" when the
+// background matcher has really run over it, "Not checked yet" when no run is on record, and "Paused"
+// after either. Pause and Delete are outlined buttons; none is cyan.
 //
 // It draws nothing while the list is loading, and nothing for a person who has no saved searches
-// (the Settings page has no use for an empty card). A failed lookup is NOT nothing: it says so,
-// with a retry, because a search that still runs must not look as though it were not there.
+// (a page has no use for an empty card). A failed lookup is NOT nothing: it says so, with a retry,
+// because a search that still runs must not look as though it were not there. A search that could
+// not be saved (`createError`, from Discover's "Save this search") is shown inside the card too, so
+// the failure sits with the list it would have joined.
 
 export interface SavedSearchesActions {
   toggle: (id: string, isActive: boolean) => void;
@@ -23,18 +33,26 @@ export interface SavedSearchesActions {
 export function SavedSearchesCardView({
   state,
   actions,
+  now = new Date(),
+  createError = null,
+  timeZone,
 }: {
   state: SavedSearchesState;
   actions: SavedSearchesActions;
+  /** The moment "today" is read from, so a check earlier today reads as a time and an older one as a date. */
+  now?: Date;
+  /** A "Save this search" that failed, in the server's words. */
+  createError?: string | null;
+  timeZone?: string;
 }) {
   if (state.kind === "loading") return null;
 
   if (state.kind === "failed") {
     return (
-      <div className="bj-card" role="alert">
-        <h2>{SAVED_SEARCHES_HEADING}</h2>
+      <div className="bj-ss" role="alert">
+        <h2 className="bj-ss-heading">{SAVED_SEARCHES_HEADING}</h2>
         <p>{state.message}</p>
-        <div className="bj-actions">
+        <div className="bj-ss-actions">
           <button type="button" onClick={() => actions.retry()}>
             Try again
           </button>
@@ -43,48 +61,53 @@ export function SavedSearchesCardView({
     );
   }
 
-  if (state.searches.length === 0) return null;
+  if (state.searches.length === 0 && createError === null) return null;
 
   return (
-    <div className="bj-card">
-      <h2>{SAVED_SEARCHES_HEADING}</h2>
-      <p className="bj-muted bj-small">{SAVED_SEARCHES_NOTE}</p>
+    <div className="bj-ss">
+      <h2 className="bj-ss-heading">{SAVED_SEARCHES_HEADING}</h2>
+      <p className="bj-ss-note">{SAVED_SEARCHES_NOTE}</p>
+      {createError !== null && (
+        <div className="bj-ss-error" role="alert">
+          {createError}
+        </div>
+      )}
       {state.error !== null && (
-        <div className="bj-error" role="alert">
+        <div className="bj-ss-error" role="alert">
           {state.error}
         </div>
       )}
-      <div className="bj-discover-saved-search-list">
+      <ul className="bj-ss-list">
         {state.searches.map((search) => {
           const waiting = state.busyId === search.id;
           return (
-            <div key={search.id} className="bj-discover-saved-search-row">
-              <span className={search.is_active ? undefined : "bj-muted"}>
-                {savedSearchLabel(search)}
-                {search.is_active ? "" : " (paused)"}
-              </span>
-              <div className="bj-actions">
+            <li key={search.id} className="bj-ss-row">
+              <div className="bj-ss-text">
+                <p className={search.is_active ? "bj-ss-label" : "bj-ss-label bj-ss-label--paused"}>{savedSearchLabel(search)}</p>
+                <StaticTrailLine trail={savedSearchTrail(search, now, timeZone)} />
+              </div>
+              <div className="bj-ss-actions">
                 <button
                   type="button"
-                  disabled={waiting}
+                  aria-disabled={waiting ? true : undefined}
                   aria-label={savedSearchActionLabel(search.is_active ? "pause" : "resume", search)}
-                  onClick={() => actions.toggle(search.id, !search.is_active)}
+                  onClick={() => !waiting && actions.toggle(search.id, !search.is_active)}
                 >
                   {search.is_active ? "Pause" : "Resume"}
                 </button>
                 <button
                   type="button"
-                  disabled={waiting}
+                  aria-disabled={waiting ? true : undefined}
                   aria-label={savedSearchActionLabel("delete", search)}
-                  onClick={() => actions.remove(search.id)}
+                  onClick={() => !waiting && actions.remove(search.id)}
                 >
                   Delete
                 </button>
               </div>
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </div>
   );
 }
