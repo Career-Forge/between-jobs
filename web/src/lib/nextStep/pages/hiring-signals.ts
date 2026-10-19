@@ -16,9 +16,10 @@
 // afterwards the page passes `results: null`, and the band is back at HS2 rather than describing
 // posts that belong to another search.
 //
-// Hiring signals needs neither a profile nor a model key, but the global rows come first on every
-// page, so a person with no active profile is sent to set one up here too. The page does not hand
-// the global model-key row a `modelKey`, so a missing model key never lights it.
+// Hiring signals needs neither a profile nor a model key. The page tells the engine so
+// (`profileNeeded: false`) and hands the global model-key row no `modelKey`, so a missing profile or a
+// missing model key never takes the page's own step. The credentials are still read, for the search
+// keys, and a failed read of them is the global G1.
 //
 // Every number in a why line is a count the page holds: posts shown, posts hidden (only when the
 // server's counts could be read and add up), search keys connected, saved searches (only when that

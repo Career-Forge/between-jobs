@@ -15,8 +15,11 @@ import { modelKeyOf } from "./modelKey";
 export type Read<T> = { kind: "loading" } | { kind: "ok"; value: T } | { kind: "failed" };
 
 export interface SetupReads {
-  /** `active` false is the 404 ("no active profile yet"), which is an answer, not a failure. */
-  profile: Read<{ active: boolean }>;
+  /**
+   * `active` false is the 404 ("no active profile yet"), which is an answer, not a failure. "skipped"
+   * is a page that does not need a profile (Hiring signals) and so never asks for one.
+   */
+  profile: Read<{ active: boolean }> | { kind: "skipped" };
   credentials: Read<readonly Record<string, unknown>[]>;
 }
 
@@ -33,9 +36,10 @@ function statusOf(error: unknown): number | null {
   return typeof status === "number" ? status : null;
 }
 
-export async function readSetup(fetcher: Fetcher): Promise<SetupReads> {
+export async function readSetup(fetcher: Fetcher, options: { profile: boolean } = { profile: true }): Promise<SetupReads> {
   const [profile, credentials] = await Promise.all([
     (async (): Promise<SetupReads["profile"]> => {
+      if (!options.profile) return { kind: "skipped" };
       try {
         const body = await fetcher<unknown>("/profile/current");
         return isRecord(body) ? { kind: "ok", value: { active: true } } : { kind: "failed" };
@@ -78,9 +82,11 @@ export function setupChecks(
   reads: SetupReads,
   at: string,
   options: { modelKey: boolean } = { modelKey: false },
-): { profile: SetupCheck<ProfileFacts>; credentials: SetupCheck<CredentialsFacts> } {
-  const profile: SetupCheck<ProfileFacts> =
-    reads.profile.kind === "loading"
+): { profile: SetupCheck<ProfileFacts> | undefined; credentials: SetupCheck<CredentialsFacts> } {
+  const profile: SetupCheck<ProfileFacts> | undefined =
+    reads.profile.kind === "skipped"
+      ? undefined
+      : reads.profile.kind === "loading"
       ? { state: "loading" }
       : reads.profile.kind === "failed"
         ? { state: "failed", call: "GET /profile/current", at }

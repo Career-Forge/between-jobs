@@ -30,6 +30,20 @@ describe("readSetup", () => {
     expect(reads.credentials).toEqual({ kind: "ok", value: [{ service: "llm", provider: "openrouter" }] });
   });
 
+  it("does not ask for a profile when the page needs none, and gives no profile check", async () => {
+    const asked: string[] = [];
+    const reads = await readSetup(
+      (async (path: string) => {
+        asked.push(path);
+        return [];
+      }) as Fetcher,
+      { profile: false },
+    );
+    expect(asked).toEqual(["/credentials"]);
+    expect(reads.profile).toEqual({ kind: "skipped" });
+    expect(setupChecks(reads, "09:14").profile).toBeUndefined();
+  });
+
   it("reads a 404 on the profile as 'no active profile yet': an answer, not a failure", async () => {
     const reads = await readSetup(fetcher({ "/profile/current": new StatusError("none", 404), "/credentials": [] }));
     expect(reads.profile).toEqual({ kind: "ok", value: { active: false } });

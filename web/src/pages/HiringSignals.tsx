@@ -27,9 +27,9 @@ import { useSetupReads } from "../lib/useSetupReads";
 // Making it asks for nothing; the tab, mounted only once the status is "enabled", loads the two saved
 // lists, so a server with the feature off never gets a hiring-signals request from this page.
 //
-// Requests besides the feature's own: GET /profile/current and GET /credentials, once, so the band
-// knows what is missing before a search is made (the credentials say whether any of the four search
-// keys is saved). The search itself is never gated on them: the server stays the authority, and a
+// Requests besides the feature's own: GET /credentials, once, so the band knows what is missing before
+// a search is made (the credentials say whether any of the four search keys is saved). No profile is
+// read: nothing here needs one. The search itself is never gated on them: the server stays the authority, and a
 // search that answers SETUP_REQUIRED is shown as it always was, with its link to the search keys.
 //
 // THE PAGE'S ONE CYAN BUTTON is the band's (lib/nextStep/pages/hiring-signals.ts): Search when ready,
@@ -38,7 +38,8 @@ import { useSetupReads } from "../lib/useSetupReads";
 
 export default function HiringSignals() {
   const status = useHiringSignalsStatus();
-  const setup = useSetupReads();
+  // This page needs no profile (see the header), so it never reads one and the band never sends a person to make one.
+  const setup = useSetupReads({ profile: false });
   const [model] = useState(() => new HiringTabModel(apiFetch));
   const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
 
@@ -56,7 +57,7 @@ export default function HiringSignals() {
     const input: NextStepInput = {
       page: "hiring-signals",
       signedIn: true,
-      profile: checks.profile,
+      profileNeeded: false,
       credentials: checks.credentials,
       pageFailure: pageFailureOf({ status, state, statusFailedAt, searchFailedAt }),
       facts,
@@ -64,7 +65,10 @@ export default function HiringSignals() {
     return nextStep(input);
   }, [setup.reads, setup.at, status, state, statusFailedAt, searchFailedAt, facts]);
 
-  const bandFocus = useBandFocus(state.search.kind !== "loading" && !state.savingSearch && status.kind !== "checking");
+  // Focus is held on the band until every request a band button started has answered, the setup reads
+  // included (Try again on a failed setup check re-asks them).
+  const checkingSetup = credentials.kind === "loading";
+  const bandFocus = useBandFocus(state.search.kind !== "loading" && !state.savingSearch && status.kind !== "checking" && !checkingSetup);
 
   function onBandAction(intent: string) {
     // Every button of the band starts a request and is replaced while it runs: focus stays on the band.
@@ -81,6 +85,9 @@ export default function HiringSignals() {
         return;
       case "retry-setup":
         setup.retry();
+        // The band holds one Try again at a time, and a failed setup check comes before a failed status
+        // read: when both failed, this press asks for both, so neither is left without a way back.
+        if (status.kind === "unavailable") refreshHiringSignalsStatus();
         return;
     }
   }

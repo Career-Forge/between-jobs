@@ -338,6 +338,19 @@ describe("evaluation order", () => {
     expect(evaluateWithRow(inApp(), GLOBAL_ROWS, [definePage("today", [pageRow])]).rowId).toBe("T1");
   });
 
+  it("a page that does not need a profile is neither held for one nor sent to make one, with a missing profile or none supplied", () => {
+    const pageRow = row("T1", step("the page's own"));
+    const pages = [definePage("today", [pageRow])];
+    const free = (overrides: Partial<NextStepInput>) => evaluateWithRow({ ...inApp({ profile: undefined }), profileNeeded: false, ...overrides }, GLOBAL_ROWS, pages).rowId;
+    expect(free({})).toBe("T1");
+    expect(free({ profile: ready({ active: false, importWaiting: false }) })).toBe("T1");
+    // A failed credentials read is still the setup check failing, and still outranks the page.
+    expect(free({ credentials: { state: "failed", call: "GET /credentials", at: "09:14" } })).toBe("G1");
+    expect(free({ credentials: { state: "loading" } })).toBe("SETUP");
+    // Without the flag, a profile that was not supplied is still waited for.
+    expect(evaluateWithRow(inApp({ profile: undefined }), GLOBAL_ROWS, pages).rowId).toBe("SETUP");
+  });
+
   it("only the asking page's rows are consulted", () => {
     const asked: string[] = [];
     const spy = (id: string): NextStepRow => ({ id, match: () => (asked.push(id), null) });

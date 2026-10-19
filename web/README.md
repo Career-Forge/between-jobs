@@ -290,7 +290,7 @@ their trail line, inline at every width. Neither makes a search when it opens.
   read "Checked 06:00" only when `last_matched_at` is later than `created_at`, otherwise "Not checked yet", and
   "Paused" after either.
 - **Hiring signals** reads `GET /hiring-signals/status` once for the app, then (only when it is on) the two saved
-  lists. The page also reads `GET /profile/current` and `GET /credentials` for the band. The model lives in the page
+  lists. The page also reads `GET /credentials` for the band (no profile: it needs none, so `profileNeeded: false` keeps the global profile rows off it). The model lives in the page
   (the band reads it) and the tab is mounted only when the feature is on. A failed status read, and a search that
   failed in a way trying again can change, are the band's F1; the results block carries no Try again of its own.
   Result and saved-post cards take an optional `trail` prop (`components/HiringPostCard.tsx`).

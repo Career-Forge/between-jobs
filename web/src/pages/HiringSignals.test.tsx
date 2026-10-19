@@ -278,11 +278,14 @@ describe("a missing search key", () => {
 });
 
 describe("what the global rows decide here", () => {
-  it("sends a person with no active profile to set one up first (flagged: this page needs none)", async () => {
+  it("never reads a profile and never sends anyone to set one up: this page needs none", async () => {
     answer({ "/profile/current": new FakeApiError(404, "no profile", { code: "NOT_FOUND" }) });
     const { container } = await draw();
-    expect(words(band(container))).toContain("Everything here starts from your profile. Import it first.");
+    expect(callsTo("GET /profile/current")).toEqual([]);
+    expect(words(band(container))).toContain("Search recent public hiring posts for a role.");
+    expect(words(band(container))).not.toContain("profile");
     expect(container.querySelector("form")).not.toBeNull();
+    expect(cyan(container)).toHaveLength(1);
   });
 
   it("never asks for a model key: a person with no model key is not sent to add one", async () => {
@@ -304,6 +307,31 @@ describe("what the global rows decide here", () => {
     click(buttonNamed(band(container), "Try again"));
     await flush();
     expect(words(band(container))).toContain("Search recent public hiring posts for a role.");
+  });
+});
+
+describe("a failed status read together with a failed setup check", () => {
+  it("lets one Try again re-ask both, so neither is left without a way back", async () => {
+    let statusAttempts = 0;
+    let keyAttempts = 0;
+    answer({
+      "/hiring-signals/status": () => {
+        if (++statusAttempts === 1) throw new FakeApiError(503, "down");
+        return { enabled: true };
+      },
+      "/credentials": () => {
+        if (++keyAttempts === 1) throw new FakeApiError(500, "boom");
+        return KEYS;
+      },
+    });
+    const { container } = await draw();
+    expect(words(band(container))).toContain("Couldn't check your setup.");
+    click(buttonNamed(band(container), "Try again"));
+    await flush();
+    expect(callsTo("GET /hiring-signals/status")).toHaveLength(2);
+    expect(callsTo("GET /credentials")).toHaveLength(2);
+    expect(words(band(container))).toContain("Search recent public hiring posts for a role.");
+    expect(container.querySelector("form")).not.toBeNull();
   });
 });
 
@@ -555,6 +583,23 @@ describe("focus and accessibility", () => {
     expect(document.activeElement?.id).toBe("next-step-focus");
     expect(document.activeElement?.tagName).toBe("BUTTON");
     expect(words(document.activeElement)).toBe("Save this search");
+  });
+
+  it("holds focus on the band across Try again on a failed setup check, and lands on the next step's button", async () => {
+    let attempt = 0;
+    answer({
+      "/credentials": () => {
+        if (++attempt === 1) throw new FakeApiError(500, "boom");
+        return KEYS;
+      },
+    });
+    const { container } = await draw();
+    const retry = query<HTMLButtonElement>(band(container), "button.bj-primary");
+    act(() => retry.focus());
+    click(retry);
+    await flush();
+    expect(document.activeElement?.id).toBe("next-step-focus");
+    expect(words(document.activeElement)).toBe("Search");
   });
 
   it("leaves focus where it was when the search was started from a field", async () => {

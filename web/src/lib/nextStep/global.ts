@@ -103,13 +103,14 @@ const G1: NextStepRow = {
 // A signed-in page is held until the profile read has answered: G2 and the page's rows depend on
 // it, and a failure would replace whatever was lit. The credentials read is waited for only when
 // the page made it (it supplied the field and it is still loading): no row reads its value yet, so
-// a page that never calls it must not be held, or be made to invent a result, just to pass here.
+// a page that never calls it must not be held, or be made to invent a result, just to pass here. A
+// page that does not need a profile (`profileNeeded: false`) is not held for it either.
 const SETUP_LOADING: NextStepRow = {
   id: "SETUP",
   match: (input) => {
     if (!inApp(input)) return null;
     const unread = (check: SetupCheck<unknown> | undefined) => check === undefined || check.state === "loading";
-    return unread(input.profile) || input.credentials?.state === "loading" ? "wait" : null;
+    return (input.profileNeeded !== false && unread(input.profile)) || input.credentials?.state === "loading" ? "wait" : null;
   },
 };
 
@@ -119,7 +120,7 @@ const SETUP_LOADING: NextStepRow = {
 const G2B: NextStepRow = {
   id: "G2b",
   match: (input) => {
-    if (!inApp(input) || input.profile?.state !== "ready" || input.profile.value.active || !input.profile.value.importWaiting) return null;
+    if (!inApp(input) || input.profileNeeded === false || input.profile?.state !== "ready" || input.profile.value.active || !input.profile.value.importWaiting) return null;
     return {
       sentence: "Your import is waiting. Check every field, then activate.",
       action: { kind: "link", label: "Review the import", to: "/profile" },
@@ -131,7 +132,7 @@ const G2B: NextStepRow = {
 const G2: NextStepRow = {
   id: "G2",
   match: (input) => {
-    if (!inApp(input) || input.profile?.state !== "ready" || input.profile.value.active) return null;
+    if (!inApp(input) || input.profileNeeded === false || input.profile?.state !== "ready" || input.profile.value.active) return null;
     return {
       sentence: "Everything here starts from your profile. Import it first.",
       action: { kind: "link", label: "Set up your profile", to: "/profile" },
@@ -166,7 +167,7 @@ const NO_USABLE_KEY = {
 const G3: NextStepRow = {
   id: "G3",
   match: (input) => {
-    if (!inApp(input) || input.profile?.state !== "ready" || !input.profile.value.active) return null;
+    if (!inApp(input) || input.profileNeeded === false || input.profile?.state !== "ready" || !input.profile.value.active) return null;
     if (input.credentials?.state !== "ready") return null;
     const reading = input.credentials.value.modelKey;
     if (reading === undefined || reading === "ready") return null;

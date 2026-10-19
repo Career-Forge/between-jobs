@@ -92,7 +92,10 @@ export default function Discover() {
   const [announcement, setAnnouncement] = useState("");
   const searchInFlight = useRef(false);
   const trackInFlight = useRef(new Set<string>());
-  const bandFocus = useBandFocus(state.kind !== "loading");
+  // The setup reads are still out (on opening, and again after Try again on a failed check).
+  const checkingSetup = setup.reads.profile.kind === "loading" || setup.reads.credentials.kind === "loading";
+  // Focus is held on the band until the search and the setup reads have answered.
+  const bandFocus = useBandFocus(state.kind !== "loading" && !checkingSetup);
 
   // ── what setup says ──────────────────────────────────────────────────────
 
@@ -119,7 +122,6 @@ export default function Discover() {
   // Only what the reads show stops a search. When just the server said setup is missing, a second
   // press asks it again: the person may have fixed it in another tab, and the server is the authority.
   const searchBlocked = setupView !== null && setupView.blocksSearch === true;
-  const checkingSetup = profileRead.kind === "loading" || credentials.kind === "loading";
 
   // ── what the band is given ───────────────────────────────────────────────
 
@@ -135,7 +137,7 @@ export default function Discover() {
 
   const outcome = useMemo(() => {
     const checks = setupChecks(setup.reads, setup.at);
-    const profile = serverSaysNoProfile && checks.profile.state === "ready" ? { state: "ready" as const, value: { active: false, importWaiting: false } } : checks.profile;
+    const profile = serverSaysNoProfile && checks.profile?.state === "ready" ? { state: "ready" as const, value: { active: false, importWaiting: false } } : checks.profile;
     const input: NextStepInput = {
       page: "discover",
       signedIn: true,
@@ -236,6 +238,7 @@ export default function Discover() {
       return;
     }
     if (intent === "retry-setup") {
+      bandFocus.arm();
       setup.retry();
       return;
     }

@@ -275,6 +275,23 @@ describe("a search", () => {
     expect(document.activeElement?.id).toBe("next-step-focus");
   });
 
+  it("holds focus on the band across Try again on a failed setup check, and lands on the next step's button", async () => {
+    let attempt = 0;
+    answer({
+      "/credentials": () => {
+        if (++attempt === 1) throw new FakeApiError(500, "boom");
+        return [GOOD_KEY, ...SEARCH_KEYS];
+      },
+    });
+    const { container } = await draw();
+    const retry = query<HTMLButtonElement>(band(container), "button.bj-primary");
+    act(() => retry.focus());
+    click(retry);
+    await flush();
+    expect(document.activeElement?.id).toBe("next-step-focus");
+    expect(words(document.activeElement)).toBe("Search");
+  });
+
   it("leaves focus alone when it was somewhere else", async () => {
     answer({ "/discover?": response() });
     const { container } = await draw();
