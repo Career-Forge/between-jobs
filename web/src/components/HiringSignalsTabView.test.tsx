@@ -64,11 +64,15 @@ import {
 } from "../testing/reactTree";
 import { SignalCard } from "./HiringPostCard";
 import {
-  HiringSignalsPageShell,
   HiringSignalsTabView,
   SwitchedOffNote,
   type TabActions,
 } from "./HiringSignalsTabView";
+import { HiringSignalsPageView, STATUS_UNAVAILABLE_MESSAGE } from "./HiringSignalsPageView";
+import { nextStep, type NextStepInput } from "../lib/nextStep";
+import { TAB_INTRO } from "../lib/hiringSignalsTab";
+import { HIRING_FORM_ID, type HiringFacts } from "../lib/nextStep/pages/hiring-signals";
+import { SEARCH_KEYS_PATH } from "../lib/nextStep/pages/hiring-signals";
 
 // What each state of the "Hiring signals" tab renders, and what pressing each
 // control calls -- without a browser. The view is a pure function of its props, so
@@ -275,12 +279,12 @@ function liveRegion(nodes: ReturnType<typeof tree>): HostElement {
 describe("the idle tab", () => {
   const idle = html(ready());
 
-  it("explains itself in one line, naming the user's own provider, and does not call every result a hiring post", () => {
-    const text = visibleText(idle);
-    expect(text).toContain(
+  it("leaves the one-line explanation to the page header, where the source of the page's content is named", () => {
+    expect(visibleText(idle)).not.toContain(TAB_INTRO);
+    expect(TAB_INTRO).toBe(
       "Recent public posts that mention a role, found through the search provider you connected. Some are hiring calls and others are not.",
     );
-    expect(text).not.toContain("hiring posts for a role");
+    expect(TAB_INTRO).not.toContain("hiring posts for a role");
   });
 
   it("says the location is a search word: only its first comma-separated part, and never checked in a post", () => {
@@ -320,10 +324,11 @@ describe("the idle tab", () => {
     expect(idle).toMatch(/<option value="auto" selected/);
   });
 
-  it("has exactly one primary action, Search, and it is enabled in both senses", () => {
-    expect((idle.match(/class="bj-primary"/g) ?? []).length).toBe(1);
-    expect(idle).toMatch(/<button[^>]*type="submit"[^>]*class="bj-primary"[^>]*>Search<\/button>/);
-    expect(idle).not.toMatch(/<button[^>]*bj-primary[^>]*(disabled|aria-disabled)/);
+  it("holds no cyan fill of its own: the page's one primary is the band's, which submits this very form", () => {
+    expect(idle).not.toContain("bj-primary");
+    expect(idle).toMatch(new RegExp(`<form[^>]*id="${HIRING_FORM_ID}"`));
+    expect(idle).toMatch(/<button[^>]*type="submit"[^>]*>Search<\/button>/);
+    expect(idle).not.toMatch(/<button[^>]*type="submit"[^>]*(disabled|aria-disabled)/);
   });
 
   it("has an always-mounted polite live region, so later results are announced", () => {
@@ -562,16 +567,24 @@ describe("Save this search", () => {
     expect(maybeById(nodes, TAB_SAVE_SEARCH_REASON_ID)).toBeUndefined();
   });
 
-  it("shows the server's refusal (the 25-search cap) verbatim, as an alert, next to the button", () => {
-    const { actions } = recorder();
+  it("leaves the server's refusal (the 25-search cap) to the page, which shows it verbatim under the band", () => {
     const cap = "You can keep at most 25 saved searches. Delete one to save another.";
     const state = withForm({ query: "designer" }, { saveSearchError: cap });
-    const markup = html(state);
-    expect(visibleText(markup)).toContain(cap);
-    const alerts = findAll(tree(state, actions), (el) => prop(el, "role") === "alert");
-    expect(alerts.map((el) => textOf(el))).toContain(cap);
+    // The tab itself no longer draws it: one place, the same words, an alert, under the band.
+    expect(visibleText(html(state))).not.toContain(cap);
+    const page = renderToStaticMarkup(
+      <MemoryRouter>
+        <HiringSignalsPageView status={{ kind: "enabled" }} outcome={{ status: "loading" }} onBandAction={() => {}} saveSearchError={cap}>
+          <div />
+        </HiringSignalsPageView>
+      </MemoryRouter>,
+    );
+    expect(visibleText(page)).toContain(cap);
+    expect(page).toContain('role="alert"');
     // A refusal is not something Try again would fix.
-    expect(visibleText(markup)).not.toContain("Try again");
+    expect(visibleText(page)).not.toContain("Try again");
+    // ... and it sits directly under the band, before the tab.
+    expect(page.indexOf("Next step")).toBeLessThan(page.indexOf(cap));
   });
 });
 
@@ -600,10 +613,9 @@ describe("the saved searches list", () => {
     });
     const nodes = tree(state, actions);
     const rows = findAll(nodes, (el) => el.type === "li");
-    expect(rows.map((row) => textOf(row).replace(/(Run|Delete)/g, "").trim())).toEqual([
-      "software engineer -- Pune",
-      "data scientist",
-    ]);
+    expect(
+      rows.map((row) => textOf(findAll(row.children, (el) => String(prop(el, "className")) === "bj-hs-tab-search-label")[0])),
+    ).toEqual(["software engineer -- Pune", "data scientist"]);
     // Only the buttons inside the list's rows (the form has its own).
     const rowButtons = rows.flatMap((row) => findAll(row.children, (el) => el.type === "button"));
     const labels = rowButtons.map((el) => prop(el, "aria-label"));
@@ -666,7 +678,7 @@ describe("the saved searches list", () => {
     const { actions } = recorder();
     const state = ready({ searches: [makeSearch()], deleteSearchError: "Could not delete that search." });
     const alerts = findAll(tree(state, actions), (el) => prop(el, "role") === "alert");
-    expect(alerts.map((el) => textOf(el))).toContain("Could not delete that search.");
+    expect(alerts.map((el) => textOf(el))).toContain("✕Could not delete that search.");
   });
 
   it("wraps long saved text inside the row instead of widening the page (class hooks the stylesheet targets)", () => {
@@ -693,10 +705,12 @@ describe("the live region", () => {
     expect(textOf(liveRegion(tree(ready(), actions))).trim()).toBe("");
   });
 
-  it("says a search is running, and announces the result headline afterwards", () => {
+  it("shows a running search without announcing it twice, and announces the result headline afterwards", () => {
     const { actions } = recorder();
-    const loading = liveRegion(tree(ready({ search: { kind: "loading", request: REQUEST } }), actions));
-    expect(textOf(loading)).toBe("Searching for recent hiring posts...");
+    const running = ready({ search: { kind: "loading", request: REQUEST } });
+    // Shown, but not in the live region: the page's band already announces it.
+    expect(textOf(liveRegion(tree(running, actions))).trim()).toBe("");
+    expect(html(running)).toContain("Searching for recent hiring posts...");
     const one = liveRegion(tree(results(makeOutcome([makeSignal()])), actions));
     expect(textOf(one)).toBe("1 post found");
     const many = liveRegion(tree(results(makeOutcome([makeSignal(), makeSignal({ activity_id: ID_2 })])), actions));
@@ -720,7 +734,8 @@ describe("the results", () => {
 
   it("says what was searched, through which provider, in which wording, and how the search went", () => {
     const text = visibleText(html(results(twoPosts())));
-    expect(text).toContain("software engineer -- Pune -- last 3 days -- via Firecrawl -- Global wording");
+    // The source line is the search's own trail: via which provider, for what, in which wording.
+    expect(text).toContain("via Firecrawl · software engineer -- Pune -- last 3 days · Global wording");
     expect(text).toContain(
       "The search returned 5 results; 2 shown. Not shown: 2 that did not contain all the words of your role and 1 duplicate.",
     );
@@ -967,7 +982,7 @@ describe("an empty result", () => {
   it("blames the index, not the role, for a provider known to hold no such posts, and links to Settings", () => {
     const text = visibleText(html(emptyState({ provider: "you_com" })));
     expect(text).toContain(TAB_YOU_COM_NO_LINKEDIN_NOTE);
-    expect(html(emptyState({ provider: "you_com" }))).toContain('href="/settings"');
+    expect(html(emptyState({ provider: "you_com" }))).toContain(`href="${SEARCH_KEYS_PATH}"`);
     // ... and only then.
     expect(html(emptyState({ provider: "firecrawl" }))).not.toContain("/settings");
   });
@@ -1039,21 +1054,22 @@ describe("a failed search", () => {
     return ready({ search: { kind: "failed", failure, request: REQUEST } });
   }
 
-  it("sends setup-required to Settings as a to-do (gold, not red), with no pointless retry", () => {
+  it("sends setup-required to the search keys as a to-do (a setup state, not red), with no pointless retry", () => {
     const markup = html(failed({ kind: "setup_required", message: "Connect a search provider first." }));
     expect(visibleText(markup)).toContain("Connect a search provider first.");
-    expect(markup).toContain('href="/settings"');
-    expect(markup).toContain("bj-hs-callout");
+    expect(markup).toContain(`href="${SEARCH_KEYS_PATH}"`);
+    expect(visibleText(markup)).toContain("Add a search key");
+    expect(markup).toContain("bj-state--setup");
     expect(markup).not.toContain("bj-error");
     expect(visibleText(markup)).not.toContain("Try again");
   });
 
-  it("offers Try again when the server says trying again can help, and pressing it retries", () => {
-    const { actions, calls } = recorder();
+  it("shows the server's words for a retryable failure and carries no Try again of its own: the band holds it", () => {
+    const { actions } = recorder();
     const state = failed({ kind: "error", message: "The provider is busy.", retryable: true });
     expect(visibleText(html(state))).toContain("The provider is busy.");
-    press(onlyButton(tree(state, actions), "Try again"));
-    expect(calls).toEqual([["retry"]]);
+    expect(html(state)).toContain('role="alert"');
+    expect(findAll(tree(state, actions), (el) => textOf(el) === "Try again")).toEqual([]);
   });
 
   it("offers no Try again when it cannot help, but still shows the server's message", () => {
@@ -1159,60 +1175,90 @@ describe("the switched-off feature", () => {
   });
 });
 
-describe("the page shell", () => {
+describe("the page around the tab", () => {
   const CHILD = <div id="the-connected-tab">connected tab</div>;
   const noop = () => {};
-  const shell = (status: Parameters<typeof HiringSignalsPageShell>[0]["status"], onRetryStatus = noop) =>
+  const BAND_LOADING = { status: "loading" } as const;
+  const page = (status: Parameters<typeof HiringSignalsPageView>[0]["status"], extra: Partial<Parameters<typeof HiringSignalsPageView>[0]> = {}) =>
     renderToStaticMarkup(
-      <HiringSignalsPageShell status={status} onRetryStatus={onRetryStatus}>
-        {CHILD}
-      </HiringSignalsPageShell>,
+      <MemoryRouter>
+        <HiringSignalsPageView status={status} outcome={BAND_LOADING} onBandAction={noop} {...extra}>
+          {CHILD}
+        </HiringSignalsPageView>
+      </MemoryRouter>,
     );
 
-  it("titles the page 'Hiring signals' in every state", () => {
+  it("titles the page 'Hiring signals' in every state, with the one line that names where its content comes from", () => {
     for (const kind of ["checking", "enabled", "disabled", "unavailable"] as const) {
-      expect(shell({ kind })).toContain("<h1>Hiring signals</h1>");
+      const markup = page({ kind });
+      expect(markup).toMatch(/<h1[^>]*>Hiring signals<\/h1>/);
+      expect(visibleText(markup)).toContain(TAB_INTRO);
+      expect(markup.match(/<h1/g)).toHaveLength(1);
     }
   });
 
   it("mounts the tab only once the server has said the feature is on", () => {
-    expect(shell({ kind: "enabled" })).toContain("connected tab");
+    expect(page({ kind: "enabled" })).toContain("connected tab");
     for (const kind of ["checking", "disabled", "unavailable"] as const) {
-      expect(shell({ kind })).not.toContain("connected tab");
+      expect(page({ kind })).not.toContain("connected tab");
     }
   });
 
-  it("shows only the heading while it is still finding out -- no placeholder, no flash of a form", () => {
-    const markup = shell({ kind: "checking" });
-    expect(markup).toBe("<div><h1>Hiring signals</h1></div>");
+  it("shows only the header and the band's Loading... while it is still finding out -- no placeholder, no flash of a form", () => {
+    const markup = page({ kind: "checking" });
+    expect(visibleText(markup)).toContain("Loading...");
+    expect(markup).not.toMatch(/<form|<input|bj-skeleton|bj-state/);
   });
 
   it("shows the calm note when the server has the feature off", () => {
-    const markup = shell({ kind: "disabled" });
+    const markup = page({ kind: "disabled" });
     expect(visibleText(markup)).toContain("Hiring signals is switched off");
     expect(markup).not.toContain("bj-error");
+    expect(markup).not.toContain('role="alert"');
   });
 
-  it("offers a retry when the status request itself failed, and pressing it calls onRetryStatus", () => {
-    const calls: string[] = [];
-    const nodes = expand(
-      HiringSignalsPageShell({
-        status: { kind: "unavailable" },
-        onRetryStatus: () => calls.push("retry"),
-        children: CHILD,
-      }),
-    );
-    const markup = shell({ kind: "unavailable" });
-    expect(visibleText(markup)).toContain("Could not check whether hiring signals are available on this server.");
+  it("names what could not be read when the status request itself failed, with no Retry of its own: the band holds it", () => {
+    const markup = page({ kind: "unavailable" });
+    expect(visibleText(markup)).toContain(STATUS_UNAVAILABLE_MESSAGE);
+    expect(STATUS_UNAVAILABLE_MESSAGE).toBe("Could not check whether hiring signals are available on this server.");
     expect(markup).toContain('role="alert"');
-    press(onlyButton(nodes, "Try again"));
-    expect(calls).toEqual(["retry"]);
+    expect(markup).not.toContain("<button");
   });
 
-  it("never mentions the source site anywhere on the shell", () => {
-    for (const kind of ["checking", "disabled", "unavailable"] as const) {
-      expect(shell({ kind })).not.toMatch(/linkedin/i);
+  it("never mentions the source site anywhere on the page", () => {
+    for (const kind of ["checking", "disabled", "unavailable", "enabled"] as const) {
+      expect(page({ kind })).not.toMatch(/linkedin/i);
     }
+  });
+
+  it("draws the band's own action: the step's button, and nothing else turns cyan", () => {
+    const input = {
+      page: "hiring-signals",
+      signedIn: true,
+      profile: { state: "ready", value: { active: true, importWaiting: false } },
+      credentials: { state: "ready", value: {} },
+      facts: {
+        status: "enabled",
+        switchedOff: false,
+        searchKeys: 1,
+        needsKey: false,
+        searching: false,
+        savedSearches: { state: "ready", count: 0 },
+        results: null,
+        resultsSaved: false,
+      } satisfies HiringFacts,
+    } as NextStepInput;
+    const markup = page({ kind: "enabled" }, { outcome: nextStep(input) });
+    expect((markup.match(/bj-primary/g) ?? []).length).toBe(1);
+    expect(markup).toMatch(new RegExp(`<button[^>]*type="submit"[^>]*form="${HIRING_FORM_ID}"[^>]*>Search</button>`));
+  });
+
+  it("hands a submitted form to the page, so focus can be held on the band", () => {
+    const nodes = expand(
+      HiringSignalsPageView({ status: { kind: "enabled" }, outcome: BAND_LOADING, onBandAction: noop, onFormSubmit: () => {}, children: CHILD }),
+    );
+    const root = findAll(nodes, (el) => el.type === "div" && typeof el.props.onSubmitCapture === "function");
+    expect(root).toHaveLength(1);
   });
 });
 
@@ -1275,5 +1321,123 @@ describe("form defaults", () => {
     expect(initialTabState().form).toEqual(INITIAL_FORM);
     const nodes = tree(initialTabState({ savesStatus: "ready" }), NO_ACTIONS);
     expect(pills(nodes).map((el) => prop(el, "aria-pressed"))).toEqual([false, true, false]);
+  });
+});
+
+describe("the trail line of every row", () => {
+  const twoPosts = (): TabSearchOutcome => makeOutcome([makeSignal(), makeSignal({ activity_id: ID_2, posted_at: null })]);
+  const trails = (markup: string): string[] =>
+    [...markup.matchAll(/<p class="bj-trail bj-trail--static[^"]*">([\s\S]*?)<\/p>/g)].map((m) => visibleText(m[1]).trim());
+
+  it("ends each result card with what tagged it and the post's own date, and the date is left out when none was returned", () => {
+    const markup = html(results(twoPosts()));
+    const lines = trails(markup).filter((line) => line.startsWith("○ Tagged by code"));
+    expect(lines).toEqual(["○ Tagged by code · no model involved · Posted Sep 18", "○ Tagged by code · no model involved"]);
+  });
+
+  it("puts the card's trail last inside the card, after its buttons and any embed or error", () => {
+    const markup = html(results(twoPosts(), { openKeys: new Set([searchCardKey(ID)]), cardErrors: { [searchCardKey(ID)]: "Could not save." } }));
+    const card = markup.slice(markup.indexOf('<li class="bj-hs-card">'), markup.indexOf("</li>"));
+    expect(card.lastIndexOf("bj-trail")).toBeGreaterThan(card.indexOf("Could not save."));
+    expect(card.lastIndexOf("bj-trail")).toBeGreaterThan(card.indexOf("<iframe"));
+  });
+
+  it("opens the list with the search's own trail: via which provider, for what, in which wording", () => {
+    const markup = html(results(twoPosts()));
+    expect(trails(markup)[0]).toBe("○ via Firecrawl · software engineer -- Pune -- last 3 days · Global wording");
+  });
+
+  it("ends each saved search with who saved it and when, and each saved post the same", () => {
+    const state = ready({ searches: [makeSearch()], saves: [makeSave()] });
+    const lines = trails(html(state));
+    expect(lines).toEqual(["● You saved this · Sep 18", "● You saved this · Sep 18"]);
+  });
+
+  it("never says 'verified', and never names the source site, in any trail", () => {
+    const markup = html(ready({ searches: [makeSearch()], saves: [makeSave()], search: { kind: "ready", outcome: twoPosts(), request: REQUEST } }));
+    for (const line of trails(markup)) {
+      expect(line.toLowerCase()).not.toContain("verified");
+      expect(line).not.toMatch(/linkedin/i);
+    }
+  });
+
+  it("draws no trail on blocks with nothing to say: the form, an empty list, a failure", () => {
+    expect(trails(html(ready()))).toEqual([]);
+    expect(trails(html(ready({ search: { kind: "failed", failure: { kind: "error", message: "x", retryable: true }, request: REQUEST } })))).toEqual([]);
+  });
+});
+
+describe("the window pills use the one selection style", () => {
+  it("draws the window as a segmented group of selectable buttons, the chosen one by aria-pressed", () => {
+    const markup = html(ready());
+    expect(markup).toMatch(/<div class="bj-segmented bj-hs-window" role="group" aria-label="How recent">/);
+    const buttons = [...markup.matchAll(/<button type="button" class="bj-selectable" aria-pressed="(true|false)">([^<]*)<\/button>/g)];
+    expect(buttons.map((m) => [m[2], m[1]])).toEqual([
+      ["24 hours", "false"],
+      ["3 days", "true"],
+      ["7 days", "false"],
+    ]);
+  });
+});
+
+describe("a missing search key", () => {
+  it("is said in the results slot with a link to the search keys, before any search has been made", () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <HiringSignalsTabView state={ready()} now={NOW} actions={NO_ACTIONS} keysMissing />
+      </MemoryRouter>,
+    );
+    expect(visibleText(markup)).toContain("Hiring signals searches with your own search provider.");
+    expect(markup).toContain(`href="${SEARCH_KEYS_PATH}"`);
+    expect(markup).toContain("bj-state--setup");
+  });
+
+  it("says nothing about it when keys are there, once results are shown, or when the server already said it", () => {
+    expect(html(ready())).not.toContain("bj-state--setup");
+    const withResultsMarkup = renderToStaticMarkup(
+      <MemoryRouter>
+        <HiringSignalsTabView state={results(makeOutcome([makeSignal()]))} now={NOW} actions={NO_ACTIONS} keysMissing />
+      </MemoryRouter>,
+    );
+    expect(withResultsMarkup).not.toContain("bj-state--setup");
+    const serverSaid = renderToStaticMarkup(
+      <MemoryRouter>
+        <HiringSignalsTabView
+          state={ready({ search: { kind: "failed", failure: { kind: "setup_required", message: "Connect a search provider first." }, request: REQUEST } })}
+          now={NOW}
+          actions={NO_ACTIONS}
+          keysMissing
+        />
+      </MemoryRouter>,
+    );
+    expect((serverSaid.match(/bj-state--setup/g) ?? []).length).toBe(1);
+    expect(visibleText(serverSaid)).toContain("Connect a search provider first.");
+  });
+
+  it("keeps the form usable: Search is not disabled", () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <HiringSignalsTabView state={ready()} now={NOW} actions={NO_ACTIONS} keysMissing />
+      </MemoryRouter>,
+    );
+    expect(markup).not.toMatch(/<button[^>]*type="submit"[^>]*(disabled|aria-disabled)/);
+  });
+});
+
+describe("block-level failures are callouts with their own Retry, and the lists' failures name what could not be read", () => {
+  it("shows a failed saved-searches read as a failure callout with Try again inside that block", () => {
+    const { actions, calls } = recorder();
+    const state = ready({ searchesStatus: "error", searchesError: "Could not load your saved searches." });
+    expect(html(state)).toContain("bj-state--failure");
+    press(onlyButton(tree(state, actions), "Try again"));
+    expect(calls).toEqual([["reloadSearches"]]);
+  });
+
+  it("shows a failed saved-posts read the same way", () => {
+    const { actions, calls } = recorder();
+    const state = ready({ savesStatus: "error", savesError: "Could not load your saved posts." });
+    expect(html(state)).toContain("bj-state--failure");
+    press(onlyButton(tree(state, actions), "Try again"));
+    expect(calls).toEqual([["reloadSaves"]]);
   });
 });

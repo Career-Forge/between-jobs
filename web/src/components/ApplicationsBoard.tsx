@@ -1,46 +1,49 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import {
-  formatAppliedDate,
-  groupByStatus,
-  otherStatuses,
-  STATUS_LABELS,
-} from "../lib/applicationsBoard";
+import { groupByStatus, STATUS_LABELS } from "../lib/applicationsBoard";
 import { ALL_STATUSES, type Application, type ApplicationStatus } from "../lib/applicationsTypes";
-import { ApplicationActionsSelect } from "./ApplicationActionsSelect";
+import {
+  CardActions,
+  CardIdentity,
+  CardMeta,
+  CardProblem,
+  CardTrail,
+  MoveSelect,
+  OpenLink,
+  type MoveProblem,
+} from "./applications/ApplicationParts";
+import "../styles/applications.css";
 
-// Applications Kanban board (K2) -- native HTML5 drag-and-drop between the
-// 7 K1-enforced columns, same underlying technique as
-// HeaderComposer.tsx/SectionOrderEditor.tsx's own row reordering:
-// `draggable` on the card, "what's being dragged" held in React state
-// (not `dataTransfer`), and `onDragOver`'s `preventDefault()` making a
-// drop target valid. Unlike those two single-array reorders, a drop here
-// can land in a DIFFERENT column, so what's tracked is the dragged
-// application's id (not a bare index) and the drop target is a column's
-// status, not a position -- and the drop handler lives on the column
-// container, not just on other cards, so an empty column is a valid
-// target too.
+// Applications Kanban board -- native HTML5 drag-and-drop between the 7 enforced columns, the same
+// technique as HeaderComposer.tsx/SectionOrderEditor.tsx's own row reordering: `draggable` on the
+// card, "what's being dragged" held in React state (not `dataTransfer`), and `onDragOver`'s
+// `preventDefault()` making a drop target valid. A drop can land in a DIFFERENT column, so what is
+// tracked is the dragged application's id and the drop target is a column's status, and the drop
+// handler lives on the column container, so an empty column is a valid target too.
 //
-// Dropping calls the exact same stage-change endpoint (via the
-// `onChangeStatus` prop, owned by Applications.tsx) that the List view's
-// status `<select>` already used, then relies on the caller reloading the
-// whole list -- no optimistic merge of a fake snapshot/resume_exists onto
-// the partial stage-change response.
+// Dropping calls the exact same stage-change endpoint (via `onChangeStatus`, owned by
+// pages/Applications.tsx) that the List view's status select uses, then relies on the caller
+// reloading the whole list -- no optimistic merge of a fake snapshot/resume_exists onto the partial
+// stage-change response.
 //
-// The per-card "Move to..." select is a REQUIRED accessible/keyboard/
-// touch fallback, not optional polish: native HTML5 DnD has no keyboard
-// or touch story of its own, so without it a keyboard-only or touch-only
-// user could never move a card between columns at all.
+// The per-card "Move to..." select is a REQUIRED accessible/keyboard/touch fallback, not optional
+// polish: native HTML5 DnD has no keyboard or touch story of its own, so without it a keyboard-only
+// or touch-only user could never move a card between columns at all. On a phone this card is also
+// the whole story: the board is replaced by one status at a time (StatusPicker.tsx).
+//
+// A column is a section named by its heading; its cards are list items, each ending in its trail line.
+// The columns sit in one row that scrolls inside itself (a region the keyboard can reach), so the page
+// never scrolls sideways.
 
-export default function ApplicationsBoard({
-  applications,
-  busyIds,
-  onChangeStatus,
-}: {
-  applications: Application[];
+export interface ApplicationsBoardProps {
+  applications: readonly Application[];
+  now: Date;
   busyIds: ReadonlySet<string>;
+  problems: Readonly<Record<string, MoveProblem | undefined>>;
   onChangeStatus: (applicationId: string, status: ApplicationStatus) => void;
-}) {
+  onRetry: (applicationId: string) => void;
+}
+
+export default function ApplicationsBoard({ applications, now, busyIds, problems, onChangeStatus, onRetry }: ApplicationsBoardProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<ApplicationStatus | null>(null);
   const groups = groupByStatus(applications);
@@ -49,20 +52,18 @@ export default function ApplicationsBoard({
     setDragOverStatus(null);
     const dragged = applications.find((a) => a.id === draggedId);
     setDraggedId(null);
-    if (!dragged || dragged.status === status) return;
+    if (!dragged || dragged.status === status || busyIds.has(dragged.id)) return;
     onChangeStatus(dragged.id, status);
   }
 
   return (
-    <div className="bj-kanban-board">
+    <div className="bj-app-board" role="region" aria-label="Applications board" tabIndex={0}>
       {ALL_STATUSES.map((status) => (
-        <div
+        <section
           key={status}
-          className={
-            dragOverStatus === status
-              ? "bj-kanban-column bj-kanban-column-dragover"
-              : "bj-kanban-column"
-          }
+          className={dragOverStatus === status ? "bj-app-column bj-app-column--dragover" : "bj-app-column"}
+          aria-labelledby={`bj-app-column-${status}`}
+          data-status={status}
           onDragOver={(e) => e.preventDefault()}
           onDragEnter={() => setDragOverStatus(status)}
           onDragLeave={() => setDragOverStatus((current) => (current === status ? null : current))}
@@ -71,93 +72,73 @@ export default function ApplicationsBoard({
             handleDrop(status);
           }}
         >
-          <div className="bj-kanban-column-header">
-            <span className="bj-kanban-column-title">{STATUS_LABELS[status]}</span>
-            <span className="bj-muted bj-small">{groups[status].length}</span>
+          <div className="bj-app-column-head">
+            <h2 className="bj-app-column-title" id={`bj-app-column-${status}`}>
+              {STATUS_LABELS[status]}
+            </h2>
+            <span className="bj-app-count">{groups[status].length}</span>
           </div>
-          <div className="bj-kanban-column-cards">
-            {groups[status].length === 0 && (
-              <div className="bj-muted bj-small">No applications</div>
-            )}
-            {groups[status].map((application) => (
-              <KanbanCard
-                key={application.id}
-                application={application}
-                busy={busyIds.has(application.id)}
-                dragging={draggedId === application.id}
-                onDragStart={() => setDraggedId(application.id)}
-                onDragEnd={() => setDraggedId(null)}
-                onChangeStatus={(status2) => onChangeStatus(application.id, status2)}
-              />
-            ))}
-          </div>
-        </div>
+          {groups[status].length === 0 ? (
+            <p className="bj-app-column-empty">No applications</p>
+          ) : (
+            <ul className="bj-app-column-cards">
+              {groups[status].map((application) => (
+                <BoardCard
+                  key={application.id}
+                  application={application}
+                  now={now}
+                  busy={busyIds.has(application.id)}
+                  problem={problems[application.id]}
+                  dragging={draggedId === application.id}
+                  onDragStart={() => setDraggedId(application.id)}
+                  onDragEnd={() => setDraggedId(null)}
+                  onChangeStatus={(next) => onChangeStatus(application.id, next)}
+                  onRetry={() => onRetry(application.id)}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
       ))}
     </div>
   );
 }
 
-function KanbanCard({
-  application,
-  busy,
-  dragging,
-  onDragStart,
-  onDragEnd,
-  onChangeStatus,
-}: {
+export interface BoardCardProps {
   application: Application;
+  now: Date;
   busy: boolean;
-  dragging: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
+  problem: MoveProblem | undefined;
   onChangeStatus: (status: ApplicationStatus) => void;
-}) {
-  const snapshot = application.snapshot;
-  const appliedLabel = formatAppliedDate(application.date_applied);
+  onRetry: () => void;
+  /** The drag handlers; left out where a card cannot be dragged (the phone's per-status list). */
+  dragging?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+}
+
+export function BoardCard({ application, now, busy, problem, dragging = false, onDragStart, onDragEnd, onChangeStatus, onRetry }: BoardCardProps) {
+  const draggable = onDragStart !== undefined && !busy;
   return (
-    <div
-      className={dragging ? "bj-kanban-card bj-kanban-card-dragging" : "bj-kanban-card"}
-      draggable={!busy}
+    <li
+      className={dragging ? "bj-app-card bj-app-card--board bj-app-card--dragging" : "bj-app-card bj-app-card--board"}
+      data-app-id={application.id}
+      aria-busy={busy ? true : undefined}
+      draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
-      <div className="bj-kanban-card-title">{snapshot?.title ?? "Untitled"}</div>
-      <div className="bj-muted bj-small">
-        {snapshot?.company_name ?? "Unknown company"}
-        {snapshot?.location_text ? ` -- ${snapshot.location_text}` : ""}
+      <CardIdentity application={application} />
+      <CardMeta application={application} now={now} />
+      {problem !== undefined && <CardProblem problem={problem} onRetry={onRetry} />}
+      <div className="bj-app-controls">
+        <MoveSelect application={application} busy={busy} onChange={onChangeStatus} />
+        {busy ? <span className="bj-app-moving">Moving...</span> : <OpenLink application={application} label="Open" />}
       </div>
-      {(application.resume_exists || appliedLabel) && (
-        <div className="bj-actions">
-          {application.resume_exists && <span className="bj-badge-emerald">Resume ✓</span>}
-          {appliedLabel && <span className="bj-muted bj-small">{appliedLabel}</span>}
-        </div>
-      )}
-      <div className="bj-actions bj-kanban-card-move">
-        <select
-          aria-label={`Move "${snapshot?.title ?? "Untitled"}" to a different stage`}
-          value=""
-          disabled={busy}
-          onChange={(e) => {
-            const value = e.target.value;
-            if (value) onChangeStatus(value as ApplicationStatus);
-          }}
-        >
-          <option value="">Move to...</option>
-          {otherStatuses(application.status).map((status) => (
-            <option key={status} value={status}>
-              {STATUS_LABELS[status]}
-            </option>
-          ))}
-        </select>
-        {busy ? (
-          <span className="bj-muted bj-small">Moving...</span>
-        ) : (
-          <Link to={`/applications/${application.id}`}>Open</Link>
-        )}
+      <div className="bj-app-controls">
+        <CardActions application={application} />
       </div>
-      <div className="bj-actions bj-kanban-card-actions">
-        <ApplicationActionsSelect applicationId={application.id} title={snapshot?.title} />
-      </div>
-    </div>
+      <CardTrail application={application} now={now} />
+    </li>
   );
 }

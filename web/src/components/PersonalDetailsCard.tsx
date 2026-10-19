@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { ApiError } from "../lib/api";
 import type { CanonicalProfile, Personal } from "../lib/profileTypes";
+import { saveFailureMessage } from "../lib/useProfileEditor";
 import { applyWorkAuthorization } from "../lib/workAuthorization";
 import { PersonalDetailsCardView } from "./PersonalDetailsCardView";
 
-// Connected wrapper for the "Personal details" card (work-authorization-
-// status.md) -- wiring only, matching HiringSignalsPanel.tsx's own split
+// Connected wrapper for the "Personal details" card (work authorization)
+// -- wiring only, matching HiringSignalsPanel.tsx's own split
 // from its view. Owns the draft text, whether Examples is open, AND its
 // own save-error message -- deliberately NOT the shared `useProfileEditor`
 // error (see below). `onSave` still threads through to the exact same
@@ -63,7 +63,7 @@ export function PersonalDetailsCard({
       // Same message-shaping useProfileEditor.save itself uses -- this
       // card just keeps its own copy instead of reading the shared one
       // back off the editor (see the file comment above for why).
-      setError(e instanceof ApiError ? e.message : "Save failed -- please try again.");
+      setError(saveFailureMessage(e));
     }
   }
 

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { CanonicalProfile } from "../lib/profileTypes";
-import { ActiveProfile } from "./Profile";
+import type { CanonicalProfile } from "../../lib/profileTypes";
+import { ActiveProfile } from "./ActiveProfile";
 
 // Regression coverage for the cross-card error-bleed finding: ActiveProfile
 // used to pass the SAME `useProfileEditor.error` instance into both
@@ -23,15 +23,15 @@ const captured = vi.hoisted(() => ({
   personalDetailsCard: [] as unknown[],
 }));
 
-vi.mock("../lib/api", () => ({
+vi.mock("../../lib/api", () => ({
   apiFetch: vi.fn(),
   ApiError: class ApiError extends Error {},
 }));
-vi.mock("../components/HeaderComposer", () => ({ HeaderComposer: () => null }));
-vi.mock("../components/SectionOrderEditor", () => ({ SectionOrderEditor: () => null }));
-vi.mock("../components/ShapeSettingsPanel", () => ({ ShapeSettingsPanel: () => null }));
-vi.mock("../components/SectionedProfile", () => ({ SectionedProfile: () => null }));
-vi.mock("../components/PersonalDetailsCard", () => ({
+vi.mock("../HeaderComposer", () => ({ HeaderComposer: () => null }));
+vi.mock("../SectionOrderEditor", () => ({ SectionOrderEditor: () => null }));
+vi.mock("../ShapeSettingsPanel", () => ({ ShapeSettingsPanel: () => null }));
+vi.mock("../SectionedProfile", () => ({ SectionedProfile: () => null }));
+vi.mock("../PersonalDetailsCard", () => ({
   PersonalDetailsCard: (props: unknown) => {
     captured.personalDetailsCard.push(props);
     return null;
@@ -58,6 +58,7 @@ function render() {
         version_count: 3,
       }}
       onEdited={() => Promise.resolve()}
+      now={new Date("2026-10-19T12:00:00Z")}
     />,
   );
   if (captured.personalDetailsCard.length !== 1) {

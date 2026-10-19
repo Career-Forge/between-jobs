@@ -394,7 +394,7 @@ describe("the shell's document title", () => {
   it("is the address's own title when it lets the page through, so joining puts it back", () => {
     setup(caps(true), { kind: "ready", enrollment: enrollment() });
     render("/discover");
-    expect(recorded.titles.at(-1)).toBe("Between Jobs");
+    expect(recorded.titles.at(-1)).toBe("Discover -- Between Jobs");
     render("/privacy");
     expect(recorded.titles.at(-1)).toBe("Privacy Policy -- Between Jobs");
     setup(caps(false), { kind: "idle" });

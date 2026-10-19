@@ -26,7 +26,7 @@ export function ResetRequestFormView({
   if (state.outcome?.kind === "sent") {
     return (
       <div className="bj-reset-request">
-        <div className="bj-muted bj-small" role="status">
+        <div className="bj-muted bj-small" role="status" tabIndex={-1}>
           {state.outcome.message}
         </div>
         <button type="button" className="bj-link-button" onClick={actions.back}>
@@ -38,7 +38,7 @@ export function ResetRequestFormView({
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    actions.submit();
+    if (!state.busy) actions.submit();
   }
 
   return (
@@ -56,7 +56,7 @@ export function ResetRequestFormView({
           value={state.email}
           onChange={(e) => actions.setEmail(e.target.value)}
           autoComplete="email"
-          disabled={state.busy}
+          readOnly={state.busy}
           required
         />
         {state.outcome?.kind === "error" && (
@@ -64,7 +64,9 @@ export function ResetRequestFormView({
             {state.outcome.message}
           </div>
         )}
-        <button className="bj-primary" type="submit" disabled={state.busy}>
+        {/* While the request is out the field is read-only and the button aria-disabled, never disabled:
+            a disabled control drops keyboard focus to the top of the page. */}
+        <button className="bj-primary" type="submit" aria-disabled={state.busy ? true : undefined}>
           {state.busy ? "Sending..." : "Send reset link"}
         </button>
       </form>

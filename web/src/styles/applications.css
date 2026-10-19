@@ -1,0 +1,446 @@
+/* Applications and Practice: the cards of the list and the board, the phone's one-status-at-a-time
+ * list, the two tracking forms and the Practice pointer (pages/Applications.tsx, pages/Practice.tsx,
+ * components/applications/, components/ApplicationsBoard.tsx). Tokens only -- no color is defined
+ * here -- and no rule fills anything cyan: the page's one cyan fill is the next-step band's button.
+ *
+ * Widths. The list is a column of at most 880px. The board takes the whole content column (from 1280px
+ * the shell's 960px cap is lifted for this page) and its seven columns scroll inside their own row,
+ * which the keyboard can reach, so the page itself never scrolls sideways. Under 960px (the shell's
+ * phone breakpoint) there is no board at all: one status at a time, and every control is at least
+ * 44px tall. */
+
+@media (min-width: 1280px) {
+  .bj-main:has(.bj-apps) {
+    max-width: none;
+    padding: 40px 32px;
+  }
+}
+
+.bj-apps,
+.bj-practice {
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* The list's frame                                                     */
+/* ------------------------------------------------------------------ */
+
+.bj-app-section {
+  min-width: 0;
+}
+
+.bj-app-section > .bj-state {
+  max-width: 880px;
+  margin-bottom: var(--bj-space-4);
+}
+
+.bj-app-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bj-space-3);
+  margin-bottom: var(--bj-space-4);
+}
+
+.bj-app-heading {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--bj-text);
+}
+
+.bj-app-count {
+  margin-left: var(--bj-space-1);
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-small);
+  font-weight: 400;
+  color: var(--bj-text-muted);
+}
+
+.bj-app-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  max-width: 880px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* One application                                                      */
+/* ------------------------------------------------------------------ */
+
+.bj-app-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--bj-space-2);
+  min-width: 0;
+  padding: var(--bj-space-4) 18px;
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+}
+
+.bj-app-card > * {
+  max-width: 100%;
+}
+
+.bj-app-card > .bj-trail,
+.bj-app-card > .bj-app-problem {
+  align-self: stretch;
+}
+
+/* On a board the card sits on the column's surface, one step up, and can be picked up. */
+.bj-app-card--board {
+  padding: var(--bj-space-3);
+  background: var(--bj-surface-raised);
+  cursor: grab;
+}
+
+.bj-app-card--board:active {
+  cursor: grabbing;
+}
+
+.bj-app-card--dragging {
+  opacity: 0.5;
+}
+
+.bj-app-identity {
+  min-width: 0;
+}
+
+.bj-app-title {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+.bj-app-card--board .bj-app-title {
+  font-size: 16px;
+}
+
+.bj-app-company {
+  margin: 2px 0 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* A status is a neutral outline chip with a shape: the word carries it, the glyph repeats it. Offer is
+   the only emerald one; rejected and withdrawn are muted; nothing is red, because a rejection is not
+   a failure. */
+.bj-app-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.4em;
+  padding: 2px 10px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 999px;
+  font-size: var(--bj-text-badge);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--bj-text);
+  white-space: nowrap;
+}
+
+.bj-app-chip--muted {
+  color: var(--bj-text-muted);
+}
+
+.bj-app-chip--emerald .bj-app-chip-glyph {
+  color: var(--bj-emerald);
+}
+
+.bj-app-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-2) var(--bj-space-3);
+  margin: 0;
+}
+
+/* "Resume drafted": a thin outline, ivory words, the violet star because a model wrote the draft. */
+.bj-app-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 1px 8px;
+  border: 1px solid var(--bj-border);
+  border-radius: 5px;
+  font-size: var(--bj-text-badge);
+  line-height: 1.5;
+  color: var(--bj-text);
+}
+
+.bj-app-badge-glyph {
+  color: var(--bj-violet);
+}
+
+.bj-app-applied {
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-app-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-2) var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-app-card--board .bj-app-controls {
+  align-self: stretch;
+}
+
+.bj-app-select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 6px;
+  background: var(--bj-surface);
+  color: var(--bj-text);
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-control);
+}
+
+.bj-app-card--board .bj-app-select {
+  flex: 1 1 0;
+  font-size: var(--bj-text-small);
+}
+
+/* A control waiting on its request keeps its place and focus (it is aria-disabled, not disabled). */
+.bj-app-select[aria-disabled="true"] {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.bj-app-moving {
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-app-link {
+  font-size: var(--bj-text-control);
+}
+
+/* A move that did not go through, under its own card. */
+.bj-app-problem {
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* The board                                                            */
+/* ------------------------------------------------------------------ */
+
+.bj-app-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(232px, 1fr);
+  gap: var(--bj-space-4);
+  max-width: 100%;
+  padding-bottom: var(--bj-space-2);
+  overflow-x: auto;
+}
+
+.bj-app-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: var(--bj-space-3);
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+}
+
+/* Where a dropped card will land: a dashed outline and one step up, never a color of its own. */
+.bj-app-column--dragover {
+  border-color: var(--bj-outline);
+  border-style: dashed;
+  background: var(--bj-surface-raised);
+}
+
+.bj-app-column-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--bj-space-2);
+}
+
+.bj-app-column-title {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--bj-text);
+}
+
+.bj-app-column-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-2);
+  min-height: 48px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-app-column-empty {
+  margin: 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* A phone: one status at a time                                        */
+/* ------------------------------------------------------------------ */
+
+.bj-app-phone {
+  min-width: 0;
+}
+
+.bj-app-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: var(--bj-space-4);
+}
+
+.bj-app-picker label {
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-app-picker-select {
+  width: 100%;
+  min-height: 44px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tracking a job                                                       */
+/* ------------------------------------------------------------------ */
+
+.bj-app-track {
+  max-width: 880px;
+  margin-top: var(--bj-space-7);
+}
+
+.bj-app-track-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--bj-space-4);
+  margin-top: var(--bj-space-3);
+}
+
+.bj-app-track-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+  padding: var(--bj-space-4) 20px;
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+  scroll-margin-top: var(--bj-space-5);
+}
+
+.bj-app-track-title {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--bj-text);
+}
+
+.bj-app-track-note {
+  margin: 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+/* A field's edge is a boundary a low-vision reader has to see (3:1), which the card's own hairline
+   is not: the fields take the same outline as the page's buttons and selects. */
+.bj-app-track-card .bj-field input,
+.bj-app-track-card .bj-field textarea {
+  min-width: 0;
+  border-color: var(--bj-outline);
+}
+
+/* The header's "Track a job": a text link that happens to be a button. The shared flat button leaves
+   room above it for use under a paragraph, which the header's row does not want. */
+.bj-app-track-link {
+  margin-top: 0;
+}
+
+@media (min-width: 960px) {
+  .bj-app-track-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Practice                                                             */
+/* ------------------------------------------------------------------ */
+
+.bj-practice .bj-state--empty {
+  max-width: 680px;
+}
+
+@media (max-width: 959px) {
+  .bj-app-select,
+  .bj-app-track-card button,
+  .bj-app-track-card .bj-field input,
+  .bj-app-track-link {
+    min-height: 44px;
+  }
+
+  .bj-app-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Retry is the only way back from a failed move on a touch screen. */
+  .bj-app-problem button {
+    min-height: 44px;
+  }
+
+  /* The state callouts' own links and the setup link under a failed fetch are targets too. */
+  .bj-app-track-card .bj-state-missing a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .bj-app-controls .bj-app-select {
+    flex: 1 1 160px;
+  }
+
+  .bj-app-card {
+    padding: var(--bj-space-3) var(--bj-space-4);
+  }
+
+  .bj-app-track {
+    margin-top: var(--bj-space-6);
+  }
+
+  .bj-app-track-card {
+    scroll-margin-top: 72px;
+  }
+}

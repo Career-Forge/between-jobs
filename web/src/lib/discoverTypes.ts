@@ -74,6 +74,10 @@ export interface SavedSearch {
   remote_only: boolean;
   is_active: boolean;
   created_at: string;
+  // When the background matcher last started a run over this search. `GET /saved-searches` returns
+  // it (null or absent until a run has happened); a row counts as checked only when this is later
+  // than `created_at` (lib/savedSearches.ts), because the matcher may set it at creation.
+  last_matched_at?: string | null;
 }
 
 export interface CreateSavedSearchBody {

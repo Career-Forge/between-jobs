@@ -11,8 +11,8 @@ import { describe, expect, it } from "vitest";
 // vite's `?raw` import, not `node:fs`: @types/node is not installed here.
 const sources = import.meta.glob(
   [
-    "../components/GeneratePanel.tsx",
-    "../components/CompanyIntelPanel.tsx",
+    "./useGeneration.ts",
+    "./useResearchRun.ts",
     "../components/InterviewPracticePanel.tsx",
     "../pages/Discover.tsx",
     "../components/settings/ProviderConnectCard.tsx",
@@ -29,8 +29,9 @@ const sources = import.meta.glob(
 // Call sites of `friendlyApiMessage(` (or `failureOf(`), per file. A new call site is
 // fine; one fewer is a revert.
 const MINIMUM_CALL_SITES: Record<string, number> = {
-  "../components/GeneratePanel.tsx": 4, // generate, two downloads, the export checklist
-  "../components/CompanyIntelPanel.tsx": 1,
+  "./useGeneration.ts": 3, // generate, the two downloads (one function for both), the export checks
+  // Company intel, Contacts and Events share it: the stored run's read and the run itself.
+  "./useResearchRun.ts": 2,
   "../components/InterviewPracticePanel.tsx": 2, // start a session, submit an answer
   "../pages/Discover.tsx": 2, // search, track
   // Settings: saving a key (credential_save is behind the enrollment gate), choosing a model, removing
@@ -57,7 +58,7 @@ describe("components whose actions are rate limited", () => {
       expect(source).toBeTypeOf("string");
       const calls = source.match(/\b(friendlyApiMessage|failureOf|problemOf|settingsFailureMessage)\(/g) ?? [];
       expect(calls.length).toBeGreaterThanOrEqual(minimum);
-      expect(source).toMatch(/from "(\.\.\/)+lib\/(rateLimitMessage|setupRequired|settings\/settingsErrors)"/);
+      expect(source).toMatch(/from "(?:(?:\.\.\/)+lib\/|\.\/)(rateLimitMessage|setupRequired|settings\/settingsErrors)"/);
     },
   );
 });

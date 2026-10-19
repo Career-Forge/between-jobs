@@ -1,9 +1,11 @@
+import { lazy } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
 import { AppShell } from "./components/AppShell";
 import { EnrollmentGate } from "./components/EnrollmentGate";
 import { LegacyIntegrationsRedirect } from "./components/LegacyIntegrationsRedirect";
 import { PublicLayout } from "./components/PublicLayout";
+import { RouteBoundary } from "./components/RouteBoundary";
 import { UPDATE_PASSWORD_PATH, recoveryRedirect } from "./lib/passwordReset";
 import {
   ENROLL_PATH,
@@ -14,20 +16,25 @@ import {
 } from "./lib/publicRoutes";
 import { useDocumentTitle } from "./lib/useDocumentTitle";
 import { useScrollToTopOnNavigate } from "./lib/useScrollToTopOnNavigate";
-import Applications from "./pages/Applications";
-import ApplicationWorkspace from "./pages/ApplicationWorkspace";
-import Discover from "./pages/Discover";
 import Enroll from "./pages/Enroll";
-import HiringSignals from "./pages/HiringSignals";
-import Settings from "./pages/Settings";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
-import Practice from "./pages/Practice";
+import NotFound from "./pages/NotFound";
 import Privacy from "./pages/Privacy";
-import Profile from "./pages/Profile";
 import Terms from "./pages/Terms";
-import Today from "./pages/Today";
 import UpdatePassword from "./pages/UpdatePassword";
+
+// The signed-in pages are fetched the first time they are opened, so a stranger who only reads the landing
+// page, signs in or reads the legal pages downloads none of them. The sign-in page, the legal pages, the
+// landing page, the password form and the enrollment page (the gate draws it) stay in the first download.
+const Today = lazy(() => import("./pages/Today"));
+const Discover = lazy(() => import("./pages/Discover"));
+const HiringSignals = lazy(() => import("./pages/HiringSignals"));
+const Applications = lazy(() => import("./pages/Applications"));
+const ApplicationWorkspace = lazy(() => import("./pages/ApplicationWorkspace"));
+const Practice = lazy(() => import("./pages/Practice"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Settings = lazy(() => import("./pages/Settings"));
 
 export default function App() {
   const { session, loading, signOut, recovery } = useAuth();
@@ -100,21 +107,24 @@ export default function App() {
       {/* When the server requires the tester programme, a person who has not joined sees the
           enrollment page here instead of any page but the exempt ones (lib/enrollment.ts). */}
       <EnrollmentGate>
-        <Routes>
-          <Route path="/" element={<Today />} />
-          <Route path="/discover" element={<Discover />} />
-          <Route path="/hiring-signals" element={<HiringSignals />} />
-          <Route path="/applications" element={<Applications />} />
-          <Route path="/applications/:id" element={<ApplicationWorkspace />} />
-          <Route path="/practice" element={<Practice />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/profile/integrations" element={<LegacyIntegrationsRedirect />} />
-          <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
-          <Route path={PRIVACY_PATH} element={<Privacy />} />
-          <Route path={TERMS_PATH} element={<Terms />} />
-          <Route path={ENROLL_PATH} element={<Enroll />} />
-        </Routes>
+        <RouteBoundary>
+          <Routes>
+            <Route path="/" element={<Today />} />
+            <Route path="/discover" element={<Discover />} />
+            <Route path="/hiring-signals" element={<HiringSignals />} />
+            <Route path="/applications" element={<Applications />} />
+            <Route path="/applications/:id" element={<ApplicationWorkspace />} />
+            <Route path="/practice" element={<Practice />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/profile/integrations" element={<LegacyIntegrationsRedirect />} />
+            <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
+            <Route path={PRIVACY_PATH} element={<Privacy />} />
+            <Route path={TERMS_PATH} element={<Terms />} />
+            <Route path={ENROLL_PATH} element={<Enroll />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </RouteBoundary>
       </EnrollmentGate>
     </AppShell>
   );

@@ -492,6 +492,7 @@ export function EnrollmentRetryView({
 }) {
   return (
     <article className="bj-enroll">
+      <h1>Tester programme</h1>
       <div className="bj-card" role="alert">
         <h2>We could not check your tester enrollment</h2>
         <p>{message}</p>

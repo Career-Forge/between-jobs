@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import "../../styles/paper.css";
 
@@ -23,11 +23,16 @@ export interface LoadingStateProps {
   rowHeight?: number;
   /** What a screen reader hears. */
   label?: string;
+  /**
+   * False when the page already says the same thing elsewhere in a live region (the next-step band's
+   * "Searching..."), so the placeholders are not announced a second time. The block stays aria-busy.
+   */
+  announce?: boolean;
 }
 
-export function LoadingState({ rows = 3, rowHeight = 56, label = "Loading..." }: LoadingStateProps) {
+export function LoadingState({ rows = 3, rowHeight = 56, label = "Loading...", announce = true }: LoadingStateProps) {
   return (
-    <div className="bj-state bj-state--loading" role="status" aria-busy="true">
+    <div className="bj-state bj-state--loading" role={announce ? "status" : undefined} aria-busy="true">
       <span className="bj-visually-hidden">{label}</span>
       <div aria-hidden="true">
         {Array.from({ length: rows }, (_, index) => (
@@ -136,9 +141,37 @@ export interface FailureStateProps {
   /** Present for a block's own failure; leave it out where the band already holds "Try again". */
   onRetry?: () => void;
   retryLabel?: string;
+  /**
+   * Where keyboard focus goes if this callout is removed while focus is inside it. Retry normally removes the
+   * callout it sits in (the retry clears the failure), which would drop focus to the page body; this names a
+   * control that stays, evaluated when the callout goes. Nothing moves when focus was somewhere else.
+   */
+  restoreFocusTo?: () => HTMLElement | null;
 }
 
-export function FailureState({ message, onRetry, retryLabel = "Retry" }: FailureStateProps) {
+// The focus handoff, kept apart from FailureState so that the callout itself stays a plain function of its props (the
+// DOM-free tests in src/testing/reactTree.ts call it and read what it returns). It draws a hidden marker inside the
+// callout and uses its parent as "the callout".
+function FocusHandoff({ restoreFocusTo }: { restoreFocusTo: () => HTMLElement | null }) {
+  const marker = useRef<HTMLSpanElement>(null);
+  const restore = useRef(restoreFocusTo);
+  restore.current = restoreFocusTo;
+  useLayoutEffect(() => {
+    const element = marker.current?.parentElement ?? null;
+    return () => {
+      // The cleanup of a removed callout runs before its markup is taken out, so focus is still where it was.
+      if (element === null || !element.contains(document.activeElement)) return;
+      const target = restore.current();
+      // Once the removal has finished: a target that went with the page (the whole section unmounting) is not focused.
+      queueMicrotask(() => {
+        if (target !== null && target.isConnected && (document.activeElement === null || document.activeElement === document.body)) target.focus();
+      });
+    };
+  }, []);
+  return <span ref={marker} hidden />;
+}
+
+export function FailureState({ message, onRetry, retryLabel = "Retry", restoreFocusTo }: FailureStateProps) {
   return (
     <div className="bj-state bj-state--failure" role="alert">
       <p>
@@ -152,6 +185,7 @@ export function FailureState({ message, onRetry, retryLabel = "Retry" }: Failure
           {retryLabel}
         </button>
       )}
+      {restoreFocusTo !== undefined && <FocusHandoff restoreFocusTo={restoreFocusTo} />}
     </div>
   );
 }

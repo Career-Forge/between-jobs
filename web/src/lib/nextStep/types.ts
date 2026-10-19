@@ -89,6 +89,12 @@ export interface NextStepInput<F = unknown> {
   page: string;
   signedIn: boolean;
   profile?: SetupCheck<ProfileFacts>;
+  /**
+   * False for a page that works without a profile (Hiring signals): the profile check is not waited
+   * for and none of the profile rows apply, so a missing profile never takes the page's own step.
+   * Absent means the page needs one and a check it did not supply counts as still loading.
+   */
+  profileNeeded?: boolean;
   /** Supply it only if the page called GET /credentials; leave it out otherwise. */
   credentials?: SetupCheck<CredentialsFacts>;
   /** The page's own data request failed (network or 5xx): row F1 in global.ts. */

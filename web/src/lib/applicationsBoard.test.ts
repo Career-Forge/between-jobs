@@ -7,6 +7,7 @@ import {
   groupByStatus,
   otherStatuses,
   STATUS_LABELS,
+  statusCounts,
 } from "./applicationsBoard";
 
 function makeApplication(overrides: Partial<Application> = {}): Application {
@@ -52,7 +53,7 @@ describe("groupByStatus", () => {
     }
   });
 
-  it("falls back a row with an unrecognized status (pre-K1 data) into Saved rather than dropping it off the board", () => {
+  it("falls back a row with an unrecognized status (a row older than the enforced vocabulary) into Saved rather than dropping it off the board", () => {
     const applications = [
       makeApplication({ id: "x", status: "ghosted" as unknown as ApplicationStatus }),
     ];
@@ -101,14 +102,45 @@ describe("otherStatuses", () => {
 });
 
 describe("formatAppliedDate", () => {
+  const now = new Date("2026-10-05T12:00:00Z");
+
   it("returns null when date_applied is unset, the common case for a 'saved' application", () => {
-    expect(formatAppliedDate(null)).toBeNull();
+    expect(formatAppliedDate(null, now)).toBeNull();
   });
 
-  it("formats a real date_applied into an 'Applied <date>' caption", () => {
-    expect(formatAppliedDate("2026-08-01T00:00:00Z")).toBe(
-      `Applied ${new Date("2026-08-01T00:00:00Z").toLocaleDateString()}`,
-    );
+  it("writes a real date_applied the way every trail writes a day", () => {
+    expect(formatAppliedDate("2026-09-30T12:00:00Z", now, "UTC")).toBe("Applied Sep 30");
+    expect(formatAppliedDate("2026-09-30", now)).toBe("Applied Sep 30");
+  });
+
+  it("reads First applied for a Saved application, which keeps the day it was first applied", () => {
+    expect(formatAppliedDate("2026-09-30", now, undefined, "saved")).toBe("First applied Sep 30");
+    expect(formatAppliedDate("2026-09-30", now, undefined, "interviewing")).toBe("Applied Sep 30");
+    expect(formatAppliedDate(null, now, undefined, "saved")).toBeNull();
+  });
+
+  it("adds the year when the day is not in the current year", () => {
+    expect(formatAppliedDate("2025-12-01", now)).toBe("Applied Dec 1, 2025");
+  });
+
+  it("leaves out a value that is not a date rather than drawing 'Invalid Date'", () => {
+    expect(formatAppliedDate("not a date", now)).toBeNull();
+    expect(formatAppliedDate("2026-02-31", now)).toBeNull();
+  });
+});
+
+describe("statusCounts", () => {
+  it("counts every one of the 7 statuses, zero for the empty ones", () => {
+    const counts = statusCounts([
+      makeApplication({ id: "a", status: "saved" }),
+      makeApplication({ id: "b", status: "saved" }),
+      makeApplication({ id: "c", status: "offer" }),
+    ]);
+    expect(counts).toEqual({ saved: 2, applied: 0, screening: 0, interviewing: 0, offer: 1, rejected: 0, withdrawn: 0 });
+  });
+
+  it("counts a row with an unrecognized status under Saved, the column the board puts it in", () => {
+    expect(statusCounts([makeApplication({ status: "ghosted" as unknown as ApplicationStatus })]).saved).toBe(1);
   });
 });
 
@@ -136,6 +168,35 @@ describe("CROSS_NAV_ITEMS", () => {
     expect(new Set(CROSS_NAV_ITEMS.map((item) => item.hash)).size).toBe(CROSS_NAV_ITEMS.length);
     expect(CROSS_NAV_HASH.hiringPosts).toBe("hiring-posts");
   });
+});
+
+// Every section id in CROSS_NAV_HASH (the menu's destinations and the sections the jump bar and the
+// next-step band link to) must be an element the workspace renders: a missing target fails silently (the link still navigates, the scroll just never finds anything).
+// Read from the workspace's source, not rendered, because the panels behind them need a whole
+// application to mount.
+const sources = import.meta.glob<string>(["../pages/*.tsx", "../components/**/*.tsx", "./workspaceSections.ts", "!../**/*.test.tsx"], {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
+
+// The workspace gives its sections their ids through SECTION_IDS (lib/workspaceSections.ts), whose values are
+// CROSS_NAV_HASH's: `id={SECTION_IDS.review}` is a use of CROSS_NAV_HASH.review.
+const sectionAliases = (name: string): string[] => {
+  const list = Object.entries(sources).find(([path]) => path.endsWith("workspaceSections.ts"))?.[1] ?? "";
+  return [...list.matchAll(new RegExp(`\\b(\\w+): CROSS_NAV_HASH\\.${name}\\b`, "g"))].map((match) => match[1]);
+};
+
+describe("CROSS_NAV_HASH sections", () => {
+  for (const [name, hash] of Object.entries(CROSS_NAV_HASH)) {
+    it(`gives ${hash} (CROSS_NAV_HASH.${name}) to an element a page or component renders`, () => {
+      const direct = `id=\\{CROSS_NAV_HASH\\.${name}\\}`;
+      const viaSections = sectionAliases(name).map((key) => `id=\\{SECTION_IDS\\.${key}\\}`);
+      const pattern = new RegExp(`\\b(?:${[direct, ...viaSections].join("|")})`);
+      const users = Object.entries(sources).filter(([, source]) => pattern.test(source));
+      expect(users.map(([path]) => path)).not.toEqual([]);
+    });
+  }
 });
 
 describe("STATUS_LABELS", () => {

@@ -1,4 +1,9 @@
 import { FRESHNESS_OPTIONS } from "../lib/hiringSignals";
+import { savedTrail } from "../lib/hiringSignalsTrail";
+import { HIRING_FORM_ID } from "../lib/nextStep/pages/hiring-signals";
+import { FailureState } from "./paper/StateViews";
+import { StaticTrailLine } from "./paper/TrailLine";
+import "../styles/hiring-signals.css";
 import {
   LOCALE_OPTIONS,
   TAB_FORM_LABEL,
@@ -34,9 +39,11 @@ import type { LocaleChoice } from "../lib/hiringSignalsTabTypes";
 // them, walk what they return and press their buttons (testing/reactTree.ts).
 //
 // THE FORM IS A REAL <form>. Enter in either box submits it, IME composition is
-// handled by the browser instead of a hand-rolled keydown check, and the primary
-// action is the form's submit button. There is exactly one primary (cyan) action
-// on the page: Search.
+// handled by the browser instead of a hand-rolled keydown check. The page's one
+// primary (cyan) action is the next-step band's, and for Search it is the same
+// request: the band's button names this form (HIRING_FORM_ID) and submits it from
+// outside. So the form's own Search is an outlined button, never cyan, and so is
+// Save this search.
 //
 // BUSY CONTROLS ARE aria-disabled, NOT disabled (a disabled button drops
 // keyboard focus, so a person who pressed Enter would land back at the top of a
@@ -53,7 +60,7 @@ import type { LocaleChoice } from "../lib/hiringSignalsTabTypes";
 // Pressing it anyway is still answered (the model shows the field error or
 // announces the duplicate) -- an unavailable control must not be silent. The
 // 25-search cap is NOT pre-checked: the server owns it, and its own message is
-// shown under the button when it refuses.
+// shown under the next-step band (pages/HiringSignals.tsx) when it refuses.
 //
 // LABELS LEAD THE ACCESSIBLE NAME. A saved search's buttons read "Run" and
 // "Delete" and are named "Run saved search: <its label>" / "Delete saved search:
@@ -95,6 +102,7 @@ export function SearchForm({ state, actions }: { state: TabState; actions: FormA
 
   return (
     <form
+      id={HIRING_FORM_ID}
       className="bj-hs-tab-form"
       aria-label={TAB_FORM_LABEL}
       noValidate
@@ -148,11 +156,12 @@ export function SearchForm({ state, actions }: { state: TabState; actions: FormA
       )}
 
       <div className="bj-hs-controls">
-        <div className="bj-view-toggle bj-hs-window" role="group" aria-label="How recent">
+        <div className="bj-segmented bj-hs-window" role="group" aria-label="How recent">
           {FRESHNESS_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
+              className="bj-selectable"
               aria-pressed={form.freshness === option.value}
               onClick={() => actions.setFreshness(option.value)}
             >
@@ -176,12 +185,7 @@ export function SearchForm({ state, actions }: { state: TabState; actions: FormA
       </div>
 
       <div className="bj-actions">
-        <button
-          type="submit"
-          id={TAB_SEARCH_BUTTON_ID}
-          className="bj-primary"
-          aria-disabled={searchingThis ? true : undefined}
-        >
+        <button type="submit" id={TAB_SEARCH_BUTTON_ID} aria-disabled={searchingThis ? true : undefined}>
           {searchingThis ? "Searching..." : "Search"}
         </button>
         <button
@@ -199,11 +203,6 @@ export function SearchForm({ state, actions }: { state: TabState; actions: FormA
           {saveReason}
         </div>
       )}
-      {state.saveSearchError !== null && (
-        <div className="bj-error" role="alert">
-          {state.saveSearchError}
-        </div>
-      )}
 
       <p className="bj-muted bj-small">
         Searches run only when you ask. A saved search keeps just the role and location -- it does
@@ -216,31 +215,27 @@ export function SearchForm({ state, actions }: { state: TabState; actions: FormA
 export function SavedSearchesSection({
   state,
   actions,
+  now = new Date(),
+  timeZone,
 }: {
   state: TabState;
   actions: SavedSearchesActions;
+  /** The moment "this year" is read from, for the date in each row's trail. */
+  now?: Date;
+  timeZone?: string;
 }) {
   const { searches, searchesStatus } = state;
   if (searches.length === 0 && searchesStatus !== "error") return null;
 
   return (
-    <section className="bj-card bj-hs-panel" aria-labelledby={TAB_SAVED_SEARCHES_HEADING_ID}>
-      <h2 id={TAB_SAVED_SEARCHES_HEADING_ID} tabIndex={-1}>
+    <section className="bj-hs-panel bj-hs-block" aria-labelledby={TAB_SAVED_SEARCHES_HEADING_ID}>
+      <h2 id={TAB_SAVED_SEARCHES_HEADING_ID} className="bj-hs-heading" tabIndex={-1}>
         Saved searches
       </h2>
       {searchesStatus === "error" && state.searchesError !== null && (
-        <div className="bj-error" role="alert">
-          {state.searchesError}{" "}
-          <button type="button" onClick={() => actions.reloadSearches()}>
-            Try again
-          </button>
-        </div>
+        <FailureState message={state.searchesError} onRetry={() => actions.reloadSearches()} retryLabel="Try again" />
       )}
-      {state.deleteSearchError !== null && (
-        <div className="bj-error" role="alert">
-          {state.deleteSearchError}
-        </div>
-      )}
+      {state.deleteSearchError !== null && <FailureState message={state.deleteSearchError} />}
       {searches.length > 0 && (
         <>
           <p className="bj-muted bj-small">Run one to search it again with the window above.</p>
@@ -250,7 +245,10 @@ export function SavedSearchesSection({
               const deleting = state.deletingSearchIds.has(search.id);
               return (
                 <li key={search.id} className="bj-hs-tab-search-row">
-                  <span className="bj-hs-tab-search-label">{label}</span>
+                  <div className="bj-hs-tab-search-text">
+                    <span className="bj-hs-tab-search-label">{label}</span>
+                    <StaticTrailLine trail={savedTrail(search, now, timeZone)} />
+                  </div>
                   <div className="bj-hs-actions">
                     <button
                       type="button"

@@ -1,23 +1,25 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type { ResumeDocument } from "../lib/headerComposerTypes";
+import { failedBlockTrail } from "../lib/profileTrails";
+import { useFocusAfterRender } from "../lib/useFocusAfterRender";
 import type { CanonicalProfile } from "../lib/profileTypes";
-import {
-  RENDERABLE_SECTIONS,
-  SECTION_LABELS,
-  type SectionName,
-  sectionHasContent,
-} from "../lib/sectionEditorTypes";
+import { RENDERABLE_SECTIONS, SECTION_LABELS, type SectionName, sectionHasContent } from "../lib/sectionEditorTypes";
+import { BlockTrail } from "./paper/DocumentLayout";
+import { FailureState, LoadingState } from "./paper/StateViews";
+import "../styles/profile-studio.css";
 
-// Section drag/hide (Sprint 3.2d) -- Proposal §24.5.2's Structure mode.
-// Deterministic, zero-LLM: unlike the Header Composer, no forge-engines
-// round trip is needed at all -- "does this section have content" is
-// computable from the profile data the page already has, and there's no
-// per-field display-mode/hyperlink logic to keep in sync with the LaTeX
-// renderer, just a name, an order, and a boolean.
+// Section order and visibility -- which sections the generated resume has, and in what order.
+// Deterministic, zero-LLM: unlike the Header Composer, no engine round trip is needed at all -- "does
+// this section have content" is computable from the profile data the page already has, and there's no
+// per-field display-mode/hyperlink logic to keep in sync with the LaTeX renderer, just a name, an
+// order, and a boolean. Rows reorder by dragging AND with Move up / Move down buttons, which is how a
+// keyboard or a touch screen reorders them.
 //
-// `applicationId` (Sprint 3.3d): same convention as HeaderComposer --
-// omitted -> the master/default document, provided -> that application's.
+// `applicationId`: same convention as HeaderComposer -- omitted -> the master/default document,
+// provided -> that application's. `showTrail` draws the red-cross trail line when the read or the save
+// failed (off by default, so an embedder that draws its own is unchanged); this block has nothing to
+// attribute otherwise, since it is a setting and not a fetched or computed result.
 
 type State =
   | { kind: "loading" }
@@ -53,19 +55,23 @@ function normalizeOrder(stored: string[]): SectionName[] {
 export function SectionOrderEditor({
   profile,
   applicationId,
+  showTrail = false,
 }: {
   profile: CanonicalProfile;
   applicationId?: string;
+  showTrail?: boolean;
 }) {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  // A moved row can lose the focus its button had, and a button at the end of the list is not disabled (a
+  // disabled button cannot keep focus), so a press that can do nothing there leaves the keyboard where it was.
+  const root = useRef<HTMLDivElement>(null);
+  const focusAfter = useFocusAfterRender(root);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const path = applicationId
-        ? `/resume-documents/mine?application_id=${applicationId}`
-        : "/resume-documents/mine";
+      const path = applicationId ? `/resume-documents/mine?application_id=${applicationId}` : "/resume-documents/mine";
       const document = await apiFetch<ResumeDocument>(path);
       const order = normalizeOrder(document.section_order ?? []);
       const hasSaved = Object.keys(document.section_visibility ?? {}).length > 0;
@@ -82,11 +88,7 @@ export function SectionOrderEditor({
     void load();
   }, [load]);
 
-  async function persist(
-    documentId: string,
-    order: SectionName[],
-    visibility: Record<string, boolean>,
-  ) {
+  async function persist(documentId: string, order: SectionName[], visibility: Record<string, boolean>) {
     setState({ kind: "ready", documentId, order, visibility, saving: true });
     try {
       await apiFetch(`/resume-documents/${documentId}/sections`, {
@@ -100,13 +102,14 @@ export function SectionOrderEditor({
   }
 
   if (state.kind === "loading") {
-    return <div className="bj-muted bj-small">Loading sections...</div>;
+    return <LoadingState rows={4} rowHeight={44} label="Loading sections..." />;
   }
   if (state.kind === "error") {
+    const failed = failedBlockTrail(state.message);
     return (
       <div>
-        <div className="bj-error">{state.message}</div>
-        <button onClick={() => void load()}>Retry</button>
+        <FailureState message={state.message} onRetry={() => void load()} />
+        {showTrail && <BlockTrail trail={failed.trail} />}
       </div>
     );
   }
@@ -114,7 +117,7 @@ export function SectionOrderEditor({
   const { documentId, order, visibility, saving } = state;
 
   function reorder(from: number, to: number) {
-    if (from === to) return;
+    if (from === to || to < 0 || to >= order.length) return;
     const next = [...order];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
@@ -126,17 +129,16 @@ export function SectionOrderEditor({
   }
 
   return (
-    <div className="bj-section-editor">
-      <div className="bj-section-editor-list">
+    <div className="bj-section-editor" ref={root}>
+      <ul className="bj-section-editor-list" aria-label="Resume sections, in order">
         {order.map((section, i) => {
           const hasContent = sectionHasContent(section, profile);
           const visible = visibility[section] ?? false;
+          const label = SECTION_LABELS[section];
           return (
-            <div
+            <li
               key={section}
-              className={
-                visible ? "bj-header-composer-row" : "bj-header-composer-row bj-section-hidden"
-              }
+              className={visible ? "bj-header-composer-row" : "bj-header-composer-row bj-section-hidden"}
               draggable
               onDragStart={() => setDragIndex(i)}
               onDragOver={(e) => e.preventDefault()}
@@ -146,24 +148,50 @@ export function SectionOrderEditor({
               }}
             >
               <span className="bj-drag-handle" aria-hidden="true">
-                ≡
+                {"≡"}
               </span>
-              <span className="bj-header-composer-field">{SECTION_LABELS[section]}</span>
+              <span className="bj-header-composer-field">{label}</span>
               {!hasContent && <span className="bj-muted bj-small">No content yet</span>}
+              {hasContent && !visible && <span className="bj-muted bj-small">Hidden</span>}
               <label className="bj-section-editor-toggle">
-                <input
-                  type="checkbox"
-                  checked={visible}
-                  disabled={!hasContent}
-                  onChange={() => toggleVisible(section)}
-                />
+                <input type="checkbox" checked={visible} disabled={!hasContent} aria-label={`Show ${label}`} onChange={() => toggleVisible(section)} />
                 Show
               </label>
-            </div>
+              <span className="bj-row-moves">
+                <button
+                  type="button"
+                  data-focus-key={`up:${section}`}
+                  onClick={() => {
+                    if (i === 0) return;
+                    focusAfter(`up:${section}`);
+                    reorder(i, i - 1);
+                  }}
+                  aria-disabled={i === 0 ? true : undefined}
+                  aria-label={`Move ${label} up`}
+                >
+                  <span aria-hidden="true">{"↑"}</span>
+                </button>
+                <button
+                  type="button"
+                  data-focus-key={`down:${section}`}
+                  onClick={() => {
+                    if (i === order.length - 1) return;
+                    focusAfter(`down:${section}`);
+                    reorder(i, i + 1);
+                  }}
+                  aria-disabled={i === order.length - 1 ? true : undefined}
+                  aria-label={`Move ${label} down`}
+                >
+                  <span aria-hidden="true">{"↓"}</span>
+                </button>
+              </span>
+            </li>
           );
         })}
-      </div>
-      {saving && <div className="bj-muted bj-small">Saving...</div>}
+      </ul>
+      <p className="bj-muted bj-small bj-studio-saving" role="status">
+        {saving ? "Saving..." : ""}
+      </p>
     </div>
   );
 }

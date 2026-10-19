@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import appCss from "../app.css?raw";
 import cardSource from "../components/ResumeImportCard.tsx?raw";
 import viewSource from "../components/ResumeImportView.tsx?raw";
+import jsonImportSource from "../components/profile/JsonImport.tsx?raw";
+import jsonReviewSource from "../components/profile/JsonReview.tsx?raw";
 import profileSource from "../pages/Profile.tsx?raw";
+import profileCss from "../styles/profile.css?raw";
 import apiSource from "./api.ts?raw";
 import importSource from "./resumeImport.ts?raw";
 import { rulesOf } from "../testing/css";
@@ -101,23 +104,32 @@ describe("a draft is used only by the confirm button", () => {
     expect(activate.indexOf("if (draft === null) return false;")).toBeLessThan(activate.indexOf("io.activate("));
   });
 
-  it("the card names activation once, in a function that is called only from the confirm handler", () => {
+  it("the card names activation once, in a function that is called only from the confirm handler and the band's one-step button", () => {
     expect((cardSource.match(/\/activate/g) ?? []).length).toBe(1);
     expect(cardSource).toContain('activate: (versionId) => apiFetch(`/profile/versions/${versionId}/activate`, { method: "POST" })');
     // and the other binding, which must stay a DELETE of the version itself
     expect(cardSource).toContain('discard: (versionId) => apiFetch(`/profile/versions/${versionId}`, { method: "DELETE" })');
     expect((cardSource.match(/activateDraft\(/g) ?? []).length).toBe(1);
-    // read without its comments: the guard must be code, not a mention of it
+    // read without its comments: the guard must be code, not a mention of it. `asked` is the state the
+    // activation is allowed from: the card's own once the question is on screen, or the same state with
+    // the question asked, for the band's one-step button.
     const confirm = withoutComments(bodyOf(cardSource, "confirmUse"));
-    expect(confirm).toContain("activateDraft(state, replacesCurrent, io, dispatch)");
-    expect(confirm).toContain("const draft = draftToActivate(state);");
+    expect(confirm).toContain("activateDraft(asked, replacesCurrent, io, dispatch)");
+    expect(confirm).toContain("const draft = draftToActivate(asked);");
     expect(confirm).toContain("if (inFlight.current || draft === null) return;");
     // the page is told only when the server said yes
     expect((cardSource.match(/onActivated\(\)/g) ?? []).length).toBe(1);
     expect(confirm).toContain("if (done) onActivated();");
-    // nothing else of the card calls it
-    expect((cardSource.match(/confirmUse\(/g) ?? []).length).toBe(2); // its own declaration and the action
-    expect(cardSource).toContain("confirmUse: () => void confirmUse(),");
+    // nothing else of the card calls it: the confirm button's action, and the band's one-step handle
+    expect((cardSource.match(/confirmUse\(/g) ?? []).length).toBe(3); // its own declaration and the two callers
+    expect(cardSource).toContain("confirmUse: () => void confirmUse(state),");
+    const handle = withoutComments(cardSource.slice(cardSource.indexOf("useImperativeHandle(ref")));
+    // the one-step button is for a draft that is waiting, is not the profile in use, and has every value
+    // checked; the question is asked through the reducer, and the activation is handed the asked state
+    expect(handle).toContain('if (state.kind !== "review" || state.draft.alreadyActive || remaining > 0) return;');
+    expect(handle).toContain('dispatch({ type: "confirm_asked" });');
+    expect(handle).toContain('void confirmUse(importReducer(state, { type: "confirm_asked" }));');
+    expect(handle.indexOf("remaining > 0) return;")).toBeLessThan(handle.indexOf("confirmUse("));
     for (const other of ["start", "discard"]) {
       expect(bodyOf(cardSource, other)).not.toMatch(/activat/i);
     }
@@ -131,8 +143,9 @@ describe("a draft is used only by the confirm button", () => {
     expect(open).toBeGreaterThan(-1);
     expect(wired).toBeGreaterThan(open);
     expect(wired).toBeLessThan(close);
-    // and "Use this profile" is wired to the question, not to the request
-    expect(viewSource).toContain("onClick={actions.askUse}");
+    // and "Use this profile" is wired to the question, not to the request -- and not at all while values
+    // are left to check
+    expect(viewSource).toContain("onClick={locked ? undefined : actions.askUse}");
   });
 
   it("the upload handlers of the card start an upload and do nothing else", () => {
@@ -169,7 +182,8 @@ describe("the Profile page", () => {
     expect(active).toBeLessThan(card);
     expect(card).toBeLessThan(json);
     expect(profileSource).toContain('replacesCurrent={state.kind === "active"}');
-    expect(profileSource).toContain("onActivated={() => void loadCurrent()}");
+    // a file draft that was made the profile reads the profile again
+    expect(profileSource).toMatch(/onActivated=\{\(\) => \{[^}]*void loadCurrent\(\);/);
     expect((profileSource.match(/<ResumeImportCard/g) ?? []).length).toBe(1);
   });
 
@@ -197,13 +211,17 @@ describe("the Profile page", () => {
     expect(page).toContain("onOpenChange={setFileImportOpen}");
     expect(page).toContain("disabled={fileImportOpen}");
     // the section's own controls: the upload button, the text box and the Import button
-    expect(page).toContain("disabled={busy || disabled}");
-    expect(page).toContain("disabled={disabled}");
-    expect(page).toContain('disabled={busy || disabled || pasted.trim() === ""}');
+    const section = withoutComments(jsonImportSource);
+    // the two buttons that start an import are aria-disabled (a disabled button drops keyboard focus), the text box is disabled
+    expect(section).toContain("aria-disabled={busy || disabled ? true : undefined}");
+    expect(section).toContain("!(busy || disabled) && fileInput.current?.click()");
+    expect(section).toContain("disabled={disabled}");
+    expect(section).toContain('aria-disabled={busy || disabled || pasted.trim() === "" ? true : undefined}');
+    expect(section).toContain('!(busy || disabled || pasted.trim() === "") && onImport(pasted)');
     // refused in the function itself, so a way round the disabled controls is no way round
     const importJson = withoutComments(bodyOf(profileSource, "importJson"));
     expect(importJson).toContain("if (fileImportOpen) return;");
-    expect(importJson.indexOf("if (fileImportOpen) return;")).toBeLessThan(importJson.indexOf("setBusy(true)"));
+    expect(importJson.indexOf("if (fileImportOpen) return;")).toBeLessThan(importJson.indexOf('setWorking("import")'));
     expect(importJson.indexOf("if (fileImportOpen) return;")).toBeLessThan(importJson.indexOf("apiFetch"));
   });
 
@@ -213,9 +231,10 @@ describe("the Profile page", () => {
     expect((profileSource.match(/kind: "pending"/g) ?? []).length).toBe(2); // the type, and the one setState
     expect((profileSource.match(/setState\(\{ kind: "pending"/g) ?? []).length).toBe(1);
     expect(bodyOf(profileSource, "importJson")).toContain('setState({ kind: "pending"');
-    const pending = profileSource.indexOf('if (state.kind === "pending") {');
-    const rest = profileSource.indexOf("return (", pending + 40);
+    const pending = profileSource.indexOf('{state.kind === "pending" && (');
+    const rest = profileSource.indexOf('{(state.kind === "none" || state.kind === "active") && (', pending + 20);
     expect(pending).toBeGreaterThan(-1);
+    expect(rest).toBeGreaterThan(pending);
     expect(profileSource.slice(pending, rest)).not.toContain("ResumeImportCard");
   });
 
@@ -233,33 +252,41 @@ describe("the Profile page", () => {
   });
 
   it("still has the JSON import exactly as it was: the template, the prompt, the upload and the preview", () => {
-    for (const piece of [
-      'apiFetch<ProfileVersion>("/profile/versions", {',
-      "body: JSON.stringify({ raw_text: rawText }),",
-      "setState({ kind: \"pending\", version, hadActive });",
-      "Download blank template",
-      "Copy conversion prompt",
-      "Upload .json file",
-      'accept=".json,application/json"',
-      "Looks good -- activate",
-      "Review before saving",
-      'await apiFetch(`/profile/versions/${versionId}/activate`, { method: "POST" });',
-      'await apiFetch(`/profile/versions/${versionId}`, { method: "DELETE" });',
-    ]) {
-      expect(profileSource, piece).toContain(piece);
+    const where: [string, string[]][] = [
+      [
+        profileSource,
+        [
+          'apiFetch<ProfileVersion>("/profile/versions", {',
+          "body: JSON.stringify({ raw_text: rawText }),",
+          "setState({ kind: \"pending\", version, hadActive });",
+          'await apiFetch(`/profile/versions/${versionId}/activate`, { method: "POST" });',
+          'await apiFetch(`/profile/versions/${versionId}`, { method: "DELETE" });',
+        ],
+      ],
+      [jsonImportSource, ["Download blank template", "Copy conversion prompt", "Upload .json file", 'accept=".json,application/json"']],
+      [jsonReviewSource, ["Looks good -- activate", "Review before activating"]],
+    ];
+    for (const [source, pieces] of where) {
+      for (const piece of pieces) expect(source, piece).toContain(piece);
+    }
+  });
+});
+
+describe("the page's one cyan fill", () => {
+  it("is not drawn by the card, the JSON import or its preview, or the Profile page: the band's button is", () => {
+    for (const [name, source] of Object.entries({ viewSource, cardSource, jsonImportSource, jsonReviewSource, profileSource })) {
+      expect(withoutComments(source), name).not.toMatch(/bj-primary|bj-button-link-primary/);
     }
   });
 });
 
 describe("the stylesheet", () => {
   it("has a rule for every class the card's view uses", () => {
-    const defined = new Set(rulesOf(appCss).flatMap((rule) => rule.selectors.flatMap((selector) => selector.match(/\.bj-[a-z0-9-]+/g) ?? [])));
+    const defined = new Set([...rulesOf(appCss), ...rulesOf(profileCss)].flatMap((rule) => rule.selectors.flatMap((selector) => selector.match(/\.bj-[a-z0-9-]+/g) ?? [])));
     const used = [...viewSource.matchAll(/className="([^"]+)"/g)].flatMap((match) => match[1].split(/\s+/));
-    // `bj-primary` is the global primary button of tokens.css (`button.bj-primary`), which vitest's
-    // config does not load as text (only app.css, see vite.config.ts); the other classes are this card's.
-    const missing = [...new Set(used)].filter(
-      (name) => name.startsWith("bj-") && name !== "bj-primary" && !defined.has(`.${name}`),
-    );
+    // The card's own classes are in styles/profile.css and the shared ones in app.css. The card draws no
+    // `bj-primary` any more (the page's one cyan fill is the next-step band's button), which is pinned below.
+    const missing = [...new Set(used)].filter((name) => name.startsWith("bj-") && !defined.has(`.${name}`));
     expect(missing).toEqual([]);
   });
 });

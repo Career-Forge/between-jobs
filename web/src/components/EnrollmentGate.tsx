@@ -7,6 +7,7 @@ import { useDocumentTitle } from "../lib/useDocumentTitle";
 import { EnrollmentContext, useEnrollmentState } from "../lib/useEnrollment";
 import Enroll from "../pages/Enroll";
 import { EnrollmentRetryView } from "./EnrollmentView";
+import { useDrawsNoBand } from "./ShellBandContext";
 
 // The tester-programme gate, around the signed-in shell's routes. When the
 // server requires the programme and the person has not joined, every page that is not exempt is
@@ -61,6 +62,8 @@ export function EnrollmentGate({ children }: { children: ReactNode }) {
 
   const decision = enrollmentGate({ capabilities, enrollment: load, pathname });
   useDocumentTitle(enrollmentTitleFor(decision, pathname));
+  // Anything but the page itself (the enrollment page, the wait, the retry) has no next-step band.
+  useDrawsNoBand(decision !== "pass");
 
   let body: ReactNode;
   switch (decision) {

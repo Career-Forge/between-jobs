@@ -1,4 +1,4 @@
-import { useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef } from "react";
 import { useAuth } from "../auth";
 import {
   initialResetRequestState,
@@ -24,6 +24,18 @@ export function ResetRequestForm({
   const inFlight = useRef(false);
 
   const submit = () => void submitResetRequest({ resetPassword, dispatch, inFlight }, state.email);
+
+  // Pressing "Forgot password?" or "Send reset link" removes the button the keyboard was on. The
+  // form puts the person in its email field when it opens (but not on a page that arrives with it
+  // already open under a dead-link sentence: nothing was pressed), and on the confirmation once the
+  // link has been sent.
+  const sent = state.outcome?.kind === "sent";
+  useEffect(() => {
+    if (problem === null) document.querySelector<HTMLElement>(".bj-reset-request input[type='email']")?.focus();
+  }, [problem]);
+  useEffect(() => {
+    if (sent) document.querySelector<HTMLElement>(".bj-reset-request [role='status']")?.focus();
+  }, [sent]);
 
   return (
     <ResetRequestFormView

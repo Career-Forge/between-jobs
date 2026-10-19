@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   AGGREGATOR_BADGE,
   AGGREGATOR_LEGEND,
@@ -134,6 +135,8 @@ export interface SignalCardProps {
   // names "this company", which a search with no company of its own must not
   // say; the tab passes its own. Defaults to the panel's.
   registryNoteFor?: (match: RegistryMatch | null) => string | null;
+  // The card's trail line, drawn as its last line. Optional: a surface that has none leaves it out.
+  trail?: ReactNode;
 }
 
 export function SignalCard({
@@ -148,6 +151,7 @@ export function SignalCard({
   onUnsave,
   unsaving,
   registryNoteFor = registryMatchNote,
+  trail,
 }: SignalCardProps) {
   const species = speciesInfo(signal.species);
   const comments = commentCountLabel(signal.comment_count);
@@ -233,6 +237,7 @@ export function SignalCard({
           {error}
         </div>
       )}
+      {trail}
     </li>
   );
 }
@@ -245,6 +250,8 @@ export interface SavedPostCardProps {
   error: string | null;
   onToggleEmbed: () => void;
   onRemove: () => void;
+  // The card's trail line, drawn as its last line.
+  trail?: ReactNode;
 }
 
 export function SavedPostCard({
@@ -255,6 +262,7 @@ export function SavedPostCard({
   error,
   onToggleEmbed,
   onRemove,
+  trail,
 }: SavedPostCardProps) {
   // A saved post is a pointer (ids and urls only), so the list endpoint sends
   // no posted_at -- but the time is readable off the id itself, which is why
@@ -311,6 +319,7 @@ export function SavedPostCard({
           {error}
         </div>
       )}
+      {trail}
     </li>
   );
 }

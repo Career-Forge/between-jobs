@@ -17,8 +17,9 @@
 // time without env vars) and there is no React here.
 
 import { savedSearchLabel } from "./discover";
-import type { SavedSearch } from "./discoverTypes";
+import type { CreateSavedSearchBody, SavedSearch } from "./discoverTypes";
 import { friendlyApiMessage } from "./rateLimitMessage";
+import { formatTrailDate, formatTrailTime, mono, type TrailInput } from "./trail";
 
 export const SAVED_SEARCHES_PATH = "/saved-searches";
 
@@ -44,6 +45,8 @@ export function parseSavedSearch(body: unknown): SavedSearch | null {
     remote_only: body.remote_only === true,
     is_active: body.is_active,
     created_at: typeof body.created_at === "string" ? body.created_at : "",
+    // Null until the background matcher has run over this search; a value that is not text is no time.
+    last_matched_at: typeof body.last_matched_at === "string" ? body.last_matched_at : null,
   };
 }
 
@@ -80,6 +83,7 @@ export type SavedSearchesEvent =
   | { type: "load_failed"; message: string }
   | { type: "action_started"; id: string }
   | { type: "updated"; search: SavedSearch }
+  | { type: "created"; search: SavedSearch }
   | { type: "removed"; id: string }
   | { type: "action_failed"; message: string };
 
@@ -109,6 +113,14 @@ export function savedSearchesReducer(
             ),
           }
         : state;
+    case "created":
+      // A search saved from Discover goes on top, newest first; one already listed is replaced, not doubled.
+      return state.kind === "ready"
+        ? {
+            ...state,
+            searches: [event.search, ...state.searches.filter((search) => search.id !== event.search.id)],
+          }
+        : state;
     case "removed":
       return state.kind === "ready"
         ? {
@@ -122,12 +134,28 @@ export function savedSearchesReducer(
   }
 }
 
+// ── keeping the keyboard's place when a row goes ───────────────────────────
+
+/** What a row's Delete button carries as `data-focus-key`, so focus can be handed to it from a neighbour. */
+export function deleteFocusKey(id: string): string {
+  return `saved-search-delete:${id}`;
+}
+
+/** Where focus should go when this row is deleted, best first: the Delete button of the row after it,
+ *  else of the row before it. Empty when it is the only row (the card then draws nothing). */
+export function focusKeysAfterRemoving(searches: readonly SavedSearch[], id: string): string[] {
+  const index = searches.findIndex((search) => search.id === id);
+  if (index === -1) return [];
+  return [searches[index + 1], searches[index - 1]].filter((neighbour): neighbour is SavedSearch => neighbour !== undefined).map((neighbour) => deleteFocusKey(neighbour.id));
+}
+
 // ── the requests ───────────────────────────────────────────────────────────
 
 const LOAD_FAILED = "We could not load your saved searches.";
 const READ_FAILED = "We could not read the server's answer about your saved searches.";
 const UPDATE_FAILED = "We could not update that saved search.";
 const DELETE_FAILED = "We could not delete that saved search.";
+const CREATE_FAILED = "We could not save that search.";
 
 /** Asks for the list. Never throws: a failed ask is an event like any other. */
 export async function loadSavedSearches(fetcher: SavedSearchesFetcher): Promise<SavedSearchesEvent> {
@@ -162,6 +190,19 @@ export async function setSavedSearchActive(
   }
 }
 
+/** Saves the search Discover's filters describe. A failure is a message, kept beside the button that asked. */
+export async function createSavedSearch(
+  fetcher: SavedSearchesFetcher,
+  body: CreateSavedSearchBody,
+): Promise<{ ok: true; search: SavedSearch } | { ok: false; message: string }> {
+  try {
+    const search = parseSavedSearch(await fetcher<unknown>(SAVED_SEARCHES_PATH, { method: "POST", body: JSON.stringify(body) }));
+    return search === null ? { ok: false, message: READ_FAILED } : { ok: true, search };
+  } catch (e) {
+    return { ok: false, message: friendlyApiMessage(e, CREATE_FAILED) };
+  }
+}
+
 /** Deletes one search. */
 export async function deleteSavedSearch(
   fetcher: SavedSearchesFetcher,
@@ -193,4 +234,40 @@ export function savedSearchActionLabel(
 ): string {
   const verb = action === "pause" ? "Pause" : action === "resume" ? "Resume" : "Delete";
   return `${verb} the saved search ${savedSearchLabel(search)}`;
+}
+
+// ── when it was last checked ───────────────────────────────────────────────
+
+function instantOf(value: string | null | undefined): number | null {
+  if (typeof value !== "string") return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Whether the background matcher has really run over this search: `last_matched_at` counts only when
+ * it is later than `created_at`, because the matcher may stamp a search at the moment it is saved.
+ * Either time unreadable is "not checked": a time is never guessed.
+ */
+export function isChecked(search: SavedSearch): boolean {
+  const matched = instantOf(search.last_matched_at);
+  const created = instantOf(search.created_at);
+  return matched !== null && created !== null && matched > created;
+}
+
+/**
+ * The line under a saved search: "Checked 06:00" when the check was today (the viewer's day), the
+ * date when it was another day ("Checked Sep 22"), and "Not checked yet" when no check is on record.
+ * "Paused" follows when the search is paused. A check is the matcher's run -- the same stamp is set
+ * when it skipped scoring, so the line says only that it was checked, never what it found or on
+ * whose key.
+ */
+export function savedSearchTrail(search: SavedSearch, now: Date, timeZone?: string): TrailInput {
+  const paused = search.is_active ? null : "Paused";
+  if (!isChecked(search)) return { glyph: "code", actor: "Not checked yet", extra: paused };
+  const matched = search.last_matched_at as string;
+  const day = formatTrailDate(matched, { now, timeZone });
+  const today = formatTrailDate(now.toISOString(), { now, timeZone });
+  const when = day !== null && day === today ? formatTrailTime(matched, { timeZone }) : day;
+  return { actor: when === null ? "Checked" : ["Checked", mono(when)], extra: paused };
 }

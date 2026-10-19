@@ -10,8 +10,10 @@ import {
   SEARCH_BUTTON_ID,
 } from "../lib/hiringSignalsPanelModel";
 import type { Freshness, HiringSignal, SavedPost } from "../lib/hiringSignalsTypes";
+import { hiringTrail } from "../lib/researchTrails";
 import { SavedPostCard } from "./HiringPostCard";
 import { FailureView, SearchResults } from "./HiringSignalsViews";
+import { BlockTrail } from "./paper/DocumentLayout";
 
 // The "Hiring posts" panel as a pure function of its state (Hiring Signals P3).
 //
@@ -62,10 +64,10 @@ export function HiringSignalsPanelView({
   const { search, freshness, saves, notice } = state;
   const busy = search.kind === "loading";
   const savedByActivity = savesByActivity(saves);
+  const trail = hiringTrail(search.kind === "ready" ? search.outcome.response : null, saves.length);
 
   return (
     <div className="bj-card bj-hs-panel">
-      <h2>Hiring posts</h2>
       <p className="bj-muted bj-small">
         Recent public hiring posts about this company, found through the search provider you
         connected.
@@ -88,7 +90,6 @@ export function HiringSignalsPanelView({
         <button
           type="button"
           id={SEARCH_BUTTON_ID}
-          className="bj-primary"
           aria-disabled={busy ? true : undefined}
           onClick={() => actions.search(freshness)}
         >
@@ -168,6 +169,10 @@ export function HiringSignalsPanelView({
           )}
         </section>
       )}
+
+      {/* One trail line for the block, in the document's margin from 1280px: where the results came from and
+          what the person saved, together. A result is drawn only once a search has come back. */}
+      {trail !== null && <BlockTrail {...trail} />}
     </div>
   );
 }

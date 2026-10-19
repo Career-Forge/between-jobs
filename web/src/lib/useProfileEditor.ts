@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ApiError, apiFetch } from "./api";
 import type { CanonicalProfile } from "./profileTypes";
 
-// The versioned-edit mechanic (Sprint 3.1e): editing never mutates in
+// The versioned-edit mechanic: editing never mutates in
 // place. It clones the current profile, applies the caller's mutation,
 // and pushes the result through the SAME deterministic import+activate
 // pipeline every fresh upload goes through -- the identical validation,
@@ -13,9 +13,16 @@ import type { CanonicalProfile } from "./profileTypes";
 //
 // Known, accepted cost: every save re-derives ALL career_facts with fresh
 // entity_keys, including for sections nothing about this edit touched
-// (Sprint 2.5b deferred stable-id preservation across re-imports until
-// something downstream consumes it -- editing is that consumer's first
-// real candidate, not yet its implementation).
+// (stable ids across re-imports are deferred until something downstream
+// consumes them -- editing is that consumer's first real candidate, not
+// yet its implementation).
+
+// What a failed save says. The API's own sentence for an error it answered (a deterministic
+// rejection reads exactly as it would for a fresh import), a plain one for anything else. Shared by
+// the editor's own `error` and by the cards that keep a message of their own.
+export function saveFailureMessage(e: unknown): string {
+  return e instanceof ApiError ? e.message : "Save failed -- please try again.";
+}
 
 interface UseProfileEditorResult {
   save: (mutate: (draft: CanonicalProfile) => CanonicalProfile) => Promise<void>;
@@ -43,7 +50,7 @@ export function useProfileEditor(
       await apiFetch(`/profile/versions/${version.id}/activate`, { method: "POST" });
       await onSaved();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Save failed -- please try again.");
+      setError(saveFailureMessage(e));
       throw e;
     } finally {
       setSaving(false);

@@ -1,0 +1,832 @@
+/* Profile: the page's own blocks -- identity, personal details, the sections of the profile, importing
+ * (the JSON import and the resume file's review) and deleting the account (pages/Profile.tsx,
+ * components/profile/, SectionedProfile, PersonalDetailsCardView, ResumeImportView, AccountCardView).
+ * The layout controls and the entry dialog are profile-studio.css.
+ *
+ * It is a document, not a set of cards: blocks are separated by space and hairlines, the headings are
+ * the serif, and the trail lines sit in the right margin (paper-doc.css). Tokens only -- no color is
+ * defined here -- and no rule fills anything cyan: the page's one cyan fill is the next-step band's
+ * button. Selection is the shared primitive (tokens.css). Under 960px (the shell's phone breakpoint)
+ * every control is at least 44px tall, and user text wraps inside its column rather than widening the
+ * page. */
+
+.bj-profile {
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Blocks and their headings                                            */
+/* ------------------------------------------------------------------ */
+
+.bj-prof-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.bj-prof-title,
+.bj-prof-block h2 {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.25;
+  color: var(--bj-text);
+}
+
+.bj-prof-subtitle {
+  margin: 0 0 var(--bj-space-2);
+  font-family: var(--bj-font-display);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--bj-text);
+}
+
+.bj-prof-block p {
+  margin: 0;
+}
+
+.bj-prof-block .bj-actions {
+  margin-top: var(--bj-space-1);
+}
+
+.bj-prof-block textarea {
+  width: 100%;
+}
+
+.bj-prof-block input[type="checkbox"] {
+  accent-color: var(--bj-text-muted);
+}
+
+/* The empty state's words and the import section under them are two blocks of the document, with air
+   between. */
+.bj-doc > .bj-state--empty {
+  margin-bottom: var(--bj-space-6);
+}
+
+/* A heading and the mark beside it (Active, Pending, Read by an AI model): the mark drops under a long
+   heading on a narrow screen instead of squeezing it. */
+.bj-prof-block .bj-card-header {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--bj-space-2) var(--bj-space-3);
+}
+
+.bj-import-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-4);
+  min-width: 0;
+}
+
+/* A link inside a sentence is underlined, so color is not the only cue that it is one. */
+.bj-prof-block p a,
+.bj-prof-block li a,
+.bj-prof-block .bj-state-missing a {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------------ */
+/* Identity                                                             */
+/* ------------------------------------------------------------------ */
+
+.bj-profile-identity {
+  gap: var(--bj-space-2);
+}
+
+.bj-profile-identity-text {
+  min-width: 0;
+}
+
+.bj-profile .bj-prof-block .bj-profile-name {
+  font-size: 34px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.bj-profile-headline {
+  margin-top: 2px;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-control);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.bj-profile-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--bj-space-3);
+}
+
+.bj-json-view {
+  max-width: 100%;
+  margin: 0;
+  padding: var(--bj-space-4) var(--bj-space-5);
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* The counts of a JSON import's preview: a number above its word. */
+.bj-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-5);
+  margin: 0;
+  padding: var(--bj-space-1) 0;
+}
+
+.bj-stat {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.bj-stat-value {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.bj-stat-label {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-badge);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.bj-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--bj-gold);
+  font-size: var(--bj-text-small);
+}
+
+/* ------------------------------------------------------------------ */
+/* The sections of the profile                                          */
+/* ------------------------------------------------------------------ */
+
+.bj-profile-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-5);
+  min-width: 0;
+}
+
+.bj-anchor-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-1) var(--bj-space-4);
+  font-size: var(--bj-text-small);
+}
+
+.bj-anchor-nav a {
+  color: var(--bj-text-muted);
+}
+
+.bj-anchor-nav a:hover {
+  color: var(--bj-text);
+  text-decoration: none;
+}
+
+.bj-section-card {
+  min-width: 0;
+  padding-top: var(--bj-space-3);
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-section-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--bj-space-3);
+  margin-bottom: var(--bj-space-3);
+}
+
+.bj-section-heading h3 {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.bj-section-count {
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-small);
+}
+
+.bj-section-add {
+  margin: 0 0 0 auto;
+}
+
+.bj-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.bj-timeline-entry {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--bj-space-3);
+}
+
+.bj-timeline-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.bj-timeline-rail::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: -18px;
+  width: 1px;
+  background: var(--bj-border);
+}
+
+.bj-timeline-entry:last-child .bj-timeline-rail::before {
+  display: none;
+}
+
+/* A marker on the line, nothing more: it carries no meaning, so it carries no color. */
+.bj-timeline-node {
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 50%;
+  background: var(--bj-bg);
+}
+
+.bj-timeline-body {
+  min-width: 0;
+  padding-bottom: var(--bj-space-4);
+}
+
+.bj-timeline-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--bj-space-3);
+}
+
+/* The title and company are the person's own text. As a flex item this box would be as wide as its
+   longest unbroken word (an address, a URL), so it may shrink and the text wraps inside it. */
+.bj-timeline-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bj-timeline-head h4,
+.bj-project-name {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.bj-date-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-badge);
+  white-space: nowrap;
+}
+
+/* The numbers a person wrote about their own work: plain outlined mono, never a color of evidence. */
+.bj-metric-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-2);
+  margin: var(--bj-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-metric-pill {
+  padding: 4px 10px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 6px;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-badge);
+  overflow-wrap: anywhere;
+}
+
+.bj-pin-badge {
+  font-family: var(--bj-font-body);
+  font-weight: 400;
+}
+
+.bj-entry-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--bj-space-3);
+  margin-top: var(--bj-space-2);
+}
+
+.bj-entry-toolbar .bj-link-button,
+.bj-entry-actions .bj-link-button {
+  margin-top: 0;
+}
+
+.bj-entry-actions {
+  display: flex;
+  gap: var(--bj-space-3);
+}
+
+.bj-link-button-danger {
+  color: var(--bj-danger);
+}
+
+/* A button that reads as a link is a 24px target at least (WCAG 2.5.8) on a wide screen; the phone rule
+   below makes it 44. Centered so its words stay where they were. */
+.bj-profile .bj-link-button {
+  display: inline-flex;
+  align-items: center;
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.bj-entry-detail {
+  margin-top: var(--bj-space-2);
+  overflow-wrap: anywhere;
+}
+
+.bj-entry-detail ul {
+  margin: 0 0 var(--bj-space-2);
+  padding-left: 18px;
+  color: var(--bj-text-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.bj-entry-detail .bj-chip-row {
+  padding-left: 0;
+  list-style: none;
+}
+
+.bj-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bj-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-badge);
+  overflow-wrap: anywhere;
+}
+
+.bj-project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--bj-space-4);
+}
+
+.bj-project-card {
+  display: flex;
+  min-width: 0;
+  padding: var(--bj-space-3);
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+}
+
+.bj-project-body {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bj-citation-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+}
+
+.bj-citation-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--bj-space-3);
+  padding-bottom: var(--bj-space-3);
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-citation-row:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.bj-citation-index {
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-badge);
+}
+
+/* Italic serif is for quoted source text (claims, evidence). A title in a citation is a title, not a
+   quotation, so it is the roman serif. */
+.bj-citation-title {
+  font-family: var(--bj-font-display);
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.bj-citation-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A link out is a link: cyan text in an outline, never a fill. */
+.bj-link-chip {
+  padding: 3px 10px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 6px;
+  font-size: var(--bj-text-badge);
+  white-space: nowrap;
+}
+
+.bj-simple-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+}
+
+.bj-simple-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--bj-space-3);
+}
+
+.bj-simple-body {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bj-simple-title {
+  font-family: var(--bj-font-display);
+  font-size: 16px;
+}
+
+.bj-achievement-text {
+  color: var(--bj-text-muted);
+  font-size: 13.5px;
+}
+
+.bj-achievement-edit,
+.bj-achievement-add {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-2);
+  min-width: 0;
+}
+
+.bj-achievement-edit {
+  flex: 1;
+}
+
+.bj-achievement-edit input,
+.bj-achievement-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+.bj-skill-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-4);
+}
+
+.bj-skill-group-label {
+  margin-bottom: 6px;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-eyebrow);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bj-inline-chip-input {
+  width: 90px;
+  padding: 3px 9px;
+  border: 1px dashed var(--bj-outline);
+  border-radius: 6px;
+  background: transparent;
+  font-size: var(--bj-text-badge);
+}
+
+.bj-language-row {
+  gap: var(--bj-space-3);
+}
+
+.bj-language-chip {
+  min-width: 90px;
+  padding: var(--bj-space-2) 14px;
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+.bj-ghost-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-3);
+}
+
+.bj-ghost-add-row button {
+  border-style: dashed;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+}
+
+.bj-ghost-add-row button:hover {
+  color: var(--bj-text);
+  border-color: var(--bj-text-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Importing: the resume file's review                                  */
+/* ------------------------------------------------------------------ */
+
+.bj-import {
+  overflow-wrap: anywhere;
+}
+
+/* Gold is review and uncertainty: this is the "check it yourself" notice, with words, a border and a
+   position of its own, so the color is never the only signal. */
+.bj-import-warning,
+.bj-import-assumptions,
+.bj-import-confirm {
+  margin: var(--bj-space-2) 0;
+  padding: 10px 14px;
+  border: 1px solid var(--bj-gold);
+  border-radius: 8px;
+  font-size: var(--bj-text-small);
+}
+
+.bj-import-assumptions ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.bj-import-notice {
+  margin: var(--bj-space-2) 0;
+  padding: 10px 14px;
+  border: 1px solid var(--bj-emerald);
+  border-radius: 8px;
+  font-size: var(--bj-text-small);
+}
+
+.bj-import-failure {
+  margin: var(--bj-space-2) 0;
+}
+
+.bj-import .bj-actions {
+  margin-top: 14px;
+}
+
+.bj-import-progress {
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-import-section {
+  margin-top: 18px;
+}
+
+.bj-import-section h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.bj-import-block {
+  margin-bottom: var(--bj-space-3);
+}
+
+.bj-import-block h5 {
+  margin: var(--bj-space-2) 0 var(--bj-space-1);
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+}
+
+.bj-import-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.bj-import-field {
+  display: grid;
+  grid-template-columns: minmax(110px, 170px) minmax(0, 1fr);
+  align-items: start;
+  gap: 4px 12px;
+  padding: var(--bj-space-1) 0;
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-import-field dt {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+}
+
+.bj-import-field dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.bj-import-toggle {
+  margin-left: var(--bj-space-2);
+  padding: 2px 8px;
+  font-size: var(--bj-text-badge);
+}
+
+/* The "I have checked this value" box. A checkbox with a word, never a tick that stands for a verdict. */
+.bj-import-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--bj-space-1);
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  cursor: pointer;
+}
+
+.bj-import-assumed {
+  margin-top: var(--bj-space-1);
+  color: var(--bj-gold);
+}
+
+.bj-import-source {
+  margin-top: var(--bj-space-2);
+}
+
+.bj-import-text {
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-surface);
+}
+
+.bj-import-text pre {
+  margin: 0;
+  font-family: var(--bj-font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* The part of the file a value came from: a tint AND an underline, so it shows without color. */
+.bj-import-mark {
+  border-bottom: 2px solid var(--bj-gold);
+  background: color-mix(in srgb, var(--bj-gold) 35%, transparent);
+  color: inherit;
+}
+
+.bj-import-dropped ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.bj-import-dropped li {
+  margin-bottom: 6px;
+}
+
+/* ------------------------------------------------------------------ */
+/* The tester programme line and deleting the account                   */
+/* ------------------------------------------------------------------ */
+
+.bj-profile .bj-tester-line {
+  max-width: 100%;
+  margin-bottom: var(--bj-space-5);
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.bj-profile .bj-tester-line h2 {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.bj-account-delete {
+  padding: var(--bj-space-4) var(--bj-space-5);
+  border: 1px solid var(--bj-danger);
+  border-radius: 10px;
+}
+
+.bj-account-delete ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Phones                                                               */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 959px) {
+  .bj-profile .bj-prof-block .bj-profile-name {
+    font-size: 28px;
+  }
+
+  .bj-profile button,
+  .bj-profile select,
+  .bj-profile input[type="text"],
+  .bj-profile input[type="number"],
+  .bj-profile .bj-button-link {
+    min-height: 44px;
+  }
+
+  .bj-profile .bj-link-button {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding: 0 var(--bj-space-2);
+  }
+
+  .bj-profile .bj-view-toggle button {
+    min-height: 44px;
+  }
+
+  .bj-profile .bj-chip-removable button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .bj-profile .bj-anchor-nav a,
+  .bj-profile .bj-link-chip,
+  .bj-profile .bj-project-body > a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .bj-profile .bj-import-check {
+    min-height: 44px;
+  }
+
+  .bj-profile .bj-import-check input,
+  .bj-profile input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+  }
+
+  .bj-citation-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .bj-citation-index {
+    display: none;
+  }
+
+  .bj-account-delete {
+    padding: var(--bj-space-3);
+  }
+}
+
+@media (max-width: 560px) {
+  .bj-import-field {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bj-simple-row {
+    flex-direction: column;
+  }
+}

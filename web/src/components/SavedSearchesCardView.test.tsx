@@ -66,9 +66,9 @@ describe("what it draws", () => {
     expect(text).toContain("in Remote remote only");
   });
 
-  it("marks a paused search as paused, and offers Resume instead of Pause", () => {
+  it("marks a paused search as paused in its trail line, and offers Resume instead of Pause", () => {
     const text = textOfMarkup(html(ready([search({ is_active: false })])));
-    expect(text).toContain("(paused)");
+    expect(text).toContain("Not checked yet · Paused");
     const nodes = tree(ready([search({ is_active: false })]));
     expect(buttonsLabelled(nodes, "Resume")).toHaveLength(1);
     expect(buttonsLabelled(nodes, "Pause")).toHaveLength(0);
@@ -111,10 +111,76 @@ describe("the buttons", () => {
     ]);
   });
 
-  it("waits only for the search an action is out for, and every button is a plain button (never a submit)", () => {
+  it("waits on every row while one action is out (one request at a time), with aria-disabled so focus stays, and every button is a plain button (never a submit)", () => {
     const nodes = tree(ready([search({ id: "a" }), search({ id: "b" })], { busyId: "a" }));
     const buttons = findAll(nodes, (el) => el.type === "button");
-    expect(buttons.map((button) => prop(button, "disabled"))).toEqual([true, true, false, false]);
+    expect(buttons.map((button) => prop(button, "aria-disabled"))).toEqual([true, true, true, true]);
+    expect(buttons.map((button) => prop(button, "disabled"))).toEqual([undefined, undefined, undefined, undefined]);
     expect(buttons.every((button) => prop(button, "type") === "button")).toBe(true);
+  });
+
+  it("ignores a press while an action is out, on the busy row and on any other", () => {
+    const { actions, calls } = recorder();
+    const nodes = tree(ready([search({ id: "a" }), search({ id: "b" })], { busyId: "a" }), actions);
+    for (const button of findAll(nodes, (el) => el.type === "button")) press(button);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("when each search was last checked (the trail line under its label)", () => {
+  const NOW = new Date("2026-09-22T12:00:00Z");
+  const drawn = (searches: SavedSearch[]) => textOfMarkup(renderToStaticMarkup(<SavedSearchesCardView state={ready(searches)} actions={recorder().actions} now={NOW} timeZone="UTC" />));
+
+  it("says 'Checked 06:00' for a check made today, after the matcher ran since the search was saved", () => {
+    expect(drawn([search({ created_at: "2026-09-01T00:00:00Z", last_matched_at: "2026-09-22T06:00:00Z" })])).toContain("Checked 06:00");
+  });
+
+  it("says the date for a check made on another day", () => {
+    expect(drawn([search({ created_at: "2026-09-01T00:00:00Z", last_matched_at: "2026-09-18T06:00:00Z" })])).toContain("Checked Sep 18");
+  });
+
+  it("says 'Not checked yet' when the matcher has not run, or only stamped the search as it was saved", () => {
+    expect(drawn([search({ last_matched_at: null })])).toContain("Not checked yet");
+    expect(drawn([search({ created_at: "2026-09-22T06:00:00Z", last_matched_at: "2026-09-22T06:00:00Z" })])).toContain("Not checked yet");
+  });
+
+  it("says nothing of a model or a key in the line: the matcher stamps a skipped run the same way", () => {
+    const text = drawn([search({ created_at: "2026-09-01T00:00:00Z", last_matched_at: "2026-09-22T06:00:00Z" })]);
+    const line = text.slice(text.indexOf("Checked"));
+    expect(line.toLowerCase()).not.toContain("model");
+    expect(line.toLowerCase()).not.toContain("your key");
+  });
+
+  it("puts the line last in the row, after the label", () => {
+    const markup = renderToStaticMarkup(<SavedSearchesCardView state={ready([search()])} actions={recorder().actions} now={NOW} />);
+    expect(markup.indexOf("bj-ss-label")).toBeLessThan(markup.indexOf("bj-trail"));
+  });
+});
+
+describe("a search that could not be saved from Discover", () => {
+  it("is shown in the card as an alert, even when the list is empty, so the failure sits with the list it would have joined", () => {
+    const markup = renderToStaticMarkup(<SavedSearchesCardView state={ready([])} actions={recorder().actions} createError="You can keep at most 25 saved searches." />);
+    expect(textOfMarkup(markup)).toContain("You can keep at most 25 saved searches.");
+    expect(tagsOf(markup, "div").some((tag) => tag.role === "alert")).toBe(true);
+  });
+
+  it("is shown while the list is still loading, as its own alert, so a failed save is never silent", () => {
+    const loading = renderToStaticMarkup(<SavedSearchesCardView state={{ kind: "loading" }} actions={recorder().actions} createError="You can keep at most 25 saved searches." />);
+    expect(textOfMarkup(loading)).toContain("You can keep at most 25 saved searches.");
+    expect(tagsOf(loading, "div").some((tag) => tag.role === "alert")).toBe(true);
+  });
+
+  it("is shown beside a failed read of the list, inside the card that is already the alert", () => {
+    const failed = renderToStaticMarkup(
+      <SavedSearchesCardView state={{ kind: "failed", message: "The service is down." }} actions={recorder().actions} createError="You can keep at most 25 saved searches." />,
+    );
+    const text = textOfMarkup(failed);
+    expect(text).toContain("The service is down.");
+    expect(text).toContain("You can keep at most 25 saved searches.");
+    expect(tagsOf(failed, "div").filter((tag) => tag.role === "alert")).toHaveLength(1);
+  });
+
+  it("still draws nothing for a loading list when no save failed", () => {
+    expect(renderToStaticMarkup(<SavedSearchesCardView state={{ kind: "loading" }} actions={recorder().actions} createError={null} />)).toBe("");
   });
 });

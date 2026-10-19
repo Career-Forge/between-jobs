@@ -1,6 +1,5 @@
 // Mirrors resume_documents_routes.py's `POST /{id}/coverage` response
-// (Sprint 3.3b/3.3c) and tailor.py's `ClusterCoverage`/skills.py's
-// `SkillState`.
+// and tailor.py's `ClusterCoverage`/skills.py's `SkillState`.
 
 export interface ClusterCoverage {
   name: string;

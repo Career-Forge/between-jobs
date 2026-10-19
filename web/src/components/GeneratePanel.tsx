@@ -1,373 +1,215 @@
-import { useEffect, useState } from "react";
+import { useRef } from "react";
 import { Link } from "react-router-dom";
-import { apiFetch, apiFetchBlob } from "../lib/api";
-import type { ChecklistItem, PrepareApplicationResult } from "../lib/generateTypes";
-import { friendlyApiMessage } from "../lib/rateLimitMessage";
+import { flaggedCount, isClaimWarning } from "../lib/claimWarnings";
+import type { PrepareApplicationResult } from "../lib/generateTypes";
 import { notScoredNote } from "../lib/scoreBreakdown";
-import { type SetupNotice, failureOf } from "../lib/setupRequired";
-import { ClaimWarningsBanner } from "./ClaimWarningsBanner";
-import { GapInterview } from "./GapInterview";
+import type { GenerationController } from "../lib/useGeneration";
+import { generationTrail } from "../lib/workspaceTrails";
 import { HonestFloor } from "./HonestFloor";
-import { ScoreBreakdown } from "./ScoreBreakdown";
+import { BlockTrail } from "./paper/DocumentLayout";
+import { FailureState, LoadingState, SetupRequiredState, type StateLink } from "./paper/StateViews";
 import { SetupRequiredNotice } from "./SetupRequiredNotice";
+import "../styles/workspace.css";
 
-// R5 (resumeforge-shape-and-fit.md): pin-conflict messages ride the same
-// generic `warnings: string[]` channel as everything else (no new backend
-// field) -- detected here by the exact prefix forge-engines' allocator
-// generates (`pinWarnings` in allocator.py) and broken out into their own,
-// more prominent banner rather than blending into the plain warnings list.
+// Generate: runs the resume engine against this job and says what came of it. The state and the
+// requests are the generation hook's (lib/useGeneration.ts); this draws them, and the page lights the
+// next-step band from the same state.
+//
+// What each outcome looks like:
+//   drafted      "Resume drafted", the generation's trail and receipt, the engine's cautions as neutral
+//                outline callouts (a pinned entry that did not fully fit, anything else it said), and the
+//                downloads. The score, the claim check and the export checks are the Review section's.
+//   held back    the honest read (HonestFloor): the fit check declined to write a resume. A resume made
+//                earlier is still downloadable, and the panel says the latest attempt declined.
+//   nothing      "The engine didn't produce a resume for this job."
+//   failed       a callout naming what could not be done, with a Retry unless the band carries
+//                "Generate again" (`retryInBand`); a missing profile or key keeps its link instead.
+// A result read back from storage (after a reload) says so, with no date: none came back with it, in the
+// drafted view and under the honest read alike.
+//
+// The Generate button and Download PDF are outlined here. When the next-step band carries the same step
+// it is the page's one cyan, and the body's copy stays secondary (one action, one cyan, once).
+//
+// Per-bullet evidence is not shown: `evidence_fact_ids` is always empty today, so a per-bullet display
+// would be decoration with nothing behind it.
+
+// A pin conflict rides the same warnings list as everything else, told by the exact prefix the engine's
+// allocator writes. It is broken out of the plain cautions because a pin is the person's own explicit
+// choice failing to be fully honored.
 function isPinWarning(w: string): boolean {
   return w.startsWith("pinned item");
-}
-
-// Same "shared warnings channel, split out by a plain prefix" pattern as
-// isPinWarning above -- the prefix is the
-// "unsupported claim (...)" format both engines write. The separate engine only
-// flags (it never edits or blocks); the built-in engine has already taken the
-// flagged text out, or put the candidate's own wording back, and says which in
-// the parenthesis. The banner below words itself by that (ClaimWarningsBanner).
-function isClaimWarning(w: string): boolean {
-  return w.startsWith("unsupported claim");
-}
-
-// Generate + export (Sprint 3.3f) -- wires Sprint 3.0e's own
-// `POST /{id}/prepare` endpoint into the workspace for the first time,
-// plus PDF download (compiled on demand via latex-service, Sprint 3.2e's
-// renderer decision) and the export checklist (§24.5.7).
-//
-// The v12 plan's own wording for this sub-sprint also asks for "grounded
-// patch UI (per-bullet evidence display, apply/revert, introduced-facts
-// flags)" -- deliberately NOT built here. `PrepareApplicationResult
-// .evidence_fact_ids` is always empty today: forge-engines' Pass1 selects
-// achievements by ids it generates internally during ingest, which don't
-// map onto this platform's career_fact ids (prepare_application's own
-// docstring in applications_routes.py flags this as an open gap). A
-// per-bullet UI with no real evidence behind it would be decoration, not
-// a feature -- it waits for that gap to close.
-
-type GenerateState =
-  | { kind: "idle" }
-  | { kind: "generating" }
-  | { kind: "ready"; result: PrepareApplicationResult }
-  | { kind: "setup"; notice: SetupNotice }
-  | { kind: "error"; message: string };
-
-type ChecklistState =
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "ready"; items: ChecklistItem[] }
-  | { kind: "error"; message: string };
-
-function checklistBadgeClass(status: ChecklistItem["status"]): string {
-  switch (status) {
-    case "pass":
-      return "bj-badge-emerald";
-    case "fail":
-      return "bj-badge-danger";
-    case "not_checked":
-      return "bj-badge-muted";
-  }
-}
-
-function checklistStatusLabel(status: ChecklistItem["status"]): string {
-  switch (status) {
-    case "pass":
-      return "Pass";
-    case "fail":
-      return "Fail";
-    case "not_checked":
-      return "Not checked";
-  }
 }
 
 // Where the score would be, when the engine that wrote the resume did not score it.
 function NotScoredNote({ result }: { result: PrepareApplicationResult }) {
   const note = notScoredNote(result);
-  return note === null ? null : <div className="bj-muted bj-small">{note}</div>;
+  return note === null ? null : <p className="bj-ws-caption">{note}</p>;
 }
 
-export function GeneratePanel({
-  applicationId,
-  initialHasResume,
-}: {
+export interface GeneratePanelProps {
   applicationId: string;
-  initialHasResume: boolean;
-}) {
-  const [generate, setGenerate] = useState<GenerateState>({ kind: "idle" });
-  const [checklist, setChecklist] = useState<ChecklistState>({ kind: "idle" });
-  const [downloading, setDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-  const [wantCoverLetter, setWantCoverLetter] = useState(false);
-  const [downloadingCoverLetter, setDownloadingCoverLetter] = useState(false);
+  controller: GenerationController;
+  /** What is already known to be missing before a run could work (no profile, no usable model key). */
+  setupMissing?: { message: string; missing: readonly [StateLink, ...StateLink[]] } | null;
+  /** Whether a usable model key is saved is still being asked: the run controls wait for the answer. */
+  setupPending?: boolean;
+  /** The band carries "Generate again" for a failed run, so the failure here has no Retry of its own. */
+  retryInBand?: boolean;
+  /** The band carries the cover-letter choice, so it is not drawn twice. */
+  coverLetterInBand?: boolean;
+  /** An application was parked from the honest read: the page re-reads its status. */
+  onParked?: () => void;
+}
 
-  // outreach-v2-search-first.md Phase I: restores the last real /prepare
-  // outcome (fit, gate_outcome, ats_attempts, ...) after a page reload --
-  // previously only ever available in-memory from the live POST response,
-  // gone the instant the page refreshed even though it was durably stored
-  // in application_events.payload the whole time (S4c's own extra="ignore"
-  // silently dropped it before that gap was closed). A component
-  // unmounting mid-fetch (a fast nav away) is harmless here -- setGenerate
-  // just gets called on an unmounted component's stale closure, same as
-  // every other fire-and-forget fetch in this codebase's panels.
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await apiFetch<{ result: PrepareApplicationResult | null }>(
-          `/applications/${applicationId}/prepare-result`,
-        );
-        const restoredResult = response.result;
-        if (!cancelled && restoredResult) {
-          // Functional update, not a captured `generate` -- guards against
-          // the user clicking "Generate resume" while this restore fetch
-          // was still in flight, which would otherwise clobber a fresh
-          // "generating"/"ready"/"error" state with a stale persisted one.
-          setGenerate((current) =>
-            current.kind === "idle" ? { kind: "ready", result: restoredResult } : current,
-          );
-        }
-      } catch {
-        // Best-effort restore only -- a failed fetch just leaves the
-        // panel at its normal "idle" state, same as a first-ever visit.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [applicationId]);
-
-  async function runGenerate(forceGenerate = false) {
-    setGenerate({ kind: "generating" });
-    setChecklist({ kind: "idle" });
-    setDownloadError(null);
-    try {
-      const result = await apiFetch<PrepareApplicationResult>(
-        `/applications/${applicationId}/prepare`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            idempotency_key: crypto.randomUUID(),
-            force_generate: forceGenerate,
-            generate_cover_letter: wantCoverLetter,
-          }),
-        },
-      );
-      setGenerate({ kind: "ready", result });
-    } catch (e) {
-      // No profile yet, or no model key: the first thing a new account hits here, and
-      // the fix is a page away, so a setup failure keeps its link to it.
-      setGenerate(failureOf(e, "Failed to generate"));
-    }
-  }
-
-  async function downloadPdf() {
-    setDownloading(true);
-    setDownloadError(null);
-    try {
-      const blob = await apiFetchBlob(`/applications/${applicationId}/resume.pdf`);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "resume.pdf";
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setDownloadError(friendlyApiMessage(e, "Failed to download"));
-    } finally {
-      setDownloading(false);
-    }
-  }
-
-  // C1/C2 (coverforge-port.md): opt-in per generation, not a persisted
-  // shape_overrides-style setting -- it's a "do I want one for THIS run"
-  // choice (closer to force_generate's own one-off nature) rather than a
-  // standing rendering preference, and it costs real extra LLM spend, so it
-  // defaults off. The button below only appears after a fresh generation
-  // in THIS session returns one (`generate.result.cover_letter`) -- unlike
-  // `hasResume`, there's no `initialHasCoverLetter` persisted-across-reload
-  // equivalent yet; deliberately out of this sprint's scope.
-  async function downloadCoverLetter() {
-    setDownloadingCoverLetter(true);
-    setDownloadError(null);
-    try {
-      const blob = await apiFetchBlob(`/applications/${applicationId}/cover-letter.pdf`);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "cover-letter.pdf";
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setDownloadError(friendlyApiMessage(e, "Failed to download"));
-    } finally {
-      setDownloadingCoverLetter(false);
-    }
-  }
-
-  async function loadChecklist() {
-    setChecklist({ kind: "loading" });
-    try {
-      const response = await apiFetch<{ items: ChecklistItem[] }>(
-        `/applications/${applicationId}/export-checklist`,
-      );
-      setChecklist({ kind: "ready", items: response.items });
-    } catch (e) {
-      setChecklist({
-        kind: "error",
-        message: friendlyApiMessage(e, "Failed to load checklist"),
-      });
-    }
-  }
-
-  const hasResume =
-    initialHasResume || (generate.kind === "ready" && generate.result.resume !== null);
-  const hasCoverLetter = generate.kind === "ready" && !!generate.result.cover_letter;
-  // The restore-on-mount effect above can land on a DECLINED latest
-  // attempt (HonestFloor shown) while an OLDER successful generation's
-  // resume artifact still genuinely exists and is still downloadable --
-  // both are true at once, so this note exists to stop that from reading
-  // as a contradiction rather than to hide either fact.
-  const showingDeclineWithAnOlderResume =
-    hasResume && generate.kind === "ready" && generate.result.resume === null;
+export function GeneratePanel({ applicationId, controller, setupMissing = null, setupPending = false, retryInBand = false, coverLetterInBand = false, onParked }: GeneratePanelProps) {
+  const { state, read, hasResume, hasCoverLetter, downloading, downloadError } = controller;
+  const generating = state.kind === "generating";
+  // "Generate anyway" is in the held-back read, which a new run replaces. Focus moves to this panel's own
+  // Generate button first (it says "Generating..." while the run is out), so it is not dropped to the page.
+  const generateButton = useRef<HTMLButtonElement>(null);
+  // The restore can land on a DECLINED latest attempt (the honest read) while an OLDER successful
+  // generation's resume still exists and is downloadable: both are true at once, so a note says so
+  // instead of letting it read as a contradiction.
+  const showingDeclineWithAnOlderResume = hasResume && state.kind === "ready" && state.result.resume === null;
 
   return (
-    <div className="bj-card bj-generate-panel">
-      <h2>Generate</h2>
-      <p className="bj-muted bj-small">
-        Runs the resume engine against this job -- a real LLM call, using your configured
-        provider credential.
+    <div className="bj-ws-generate">
+      <p className="bj-ws-intro">
+        Runs the resume engine against this job: a real model call, on the provider key you saved.
+        {!hasResume && state.kind === "idle" && " A run makes a resume PDF with its ATS score and its claim check, and a cover letter if you ask for one."}
       </p>
-      <div className="bj-actions">
-        <button
-          className="bj-primary"
-          onClick={() => void runGenerate()}
-          disabled={generate.kind === "generating"}
-        >
-          {generate.kind === "generating" ? "Generating..." : "Generate resume"}
-        </button>
-      </div>
-      <label className="bj-section-editor-toggle bj-small">
-        <input
-          type="checkbox"
-          checked={wantCoverLetter}
-          onChange={(e) => setWantCoverLetter(e.target.checked)}
-          disabled={generate.kind === "generating"}
-        />
-        Also generate a cover letter (a real, extra LLM call)
-      </label>
 
-      {generate.kind === "error" && <div className="bj-error">{generate.message}</div>}
-      {generate.kind === "setup" && <SetupRequiredNotice notice={generate.notice} />}
-
-      {generate.kind === "ready" && (
-        <div className="bj-generate-result">
-          {generate.result.resume === null ? (
-            generate.result.fit ? (
-              // S4c: the gate's own decline reason is already folded into
-              // `warnings` (prepare_orchestrator.py) purely as plain text --
-              // HonestFloor supersedes that with the full honest read, so
-              // the warnings list below is deliberately skipped in this
-              // branch rather than repeating the same reason twice.
-              <HonestFloor
-                applicationId={applicationId}
-                fit={generate.result.fit}
-                onGenerateAnyway={() => void runGenerate(true)}
-              />
-            ) : (
-              <div className="bj-muted bj-small">
-                The engine didn't produce a resume for this job.
-              </div>
-            )
-          ) : (
-            <>
-              <ScoreBreakdown
-                applicationId={applicationId}
-                attempts={generate.result.ats_attempts}
-              />
-              <NotScoredNote result={generate.result} />
-              <GapInterview
-                applicationId={applicationId}
-                attempts={generate.result.ats_attempts}
-                onRegenerate={() => void runGenerate()}
-              />
-              {(() => {
-                const pinWarnings = generate.result.warnings.filter(isPinWarning);
-                const claimWarnings = generate.result.warnings.filter(isClaimWarning);
-                const otherWarnings = generate.result.warnings.filter(
-                  (w) => !isPinWarning(w) && !isClaimWarning(w),
-                );
-                return (
-                  <>
-                    {pinWarnings.length > 0 && (
-                      <div className="bj-pin-conflict-banner">
-                        <div>📌 Some mandatory entries didn't fully fit:</div>
-                        <ul className="bj-small">
-                          {pinWarnings.map((w) => (
-                            <li key={w}>{w}</li>
-                          ))}
-                        </ul>
-                        <div className="bj-small">
-                          Every pinned entry is still included -- only its bullet count fell
-                          short. <Link to="/profile">Edit profile</Link> to unpin an entry or
-                          lower its minimum. (Page-count and density overrides are coming in
-                          a later update.)
-                        </div>
-                      </div>
-                    )}
-                    {claimWarnings.length > 0 && <ClaimWarningsBanner warnings={claimWarnings} />}
-                    {otherWarnings.length > 0 && (
-                      <ul className="bj-small bj-generate-warnings">
-                        {otherWarnings.map((w) => (
-                          <li key={w}>{w}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </>
-                );
-              })()}
-            </>
+      {setupMissing !== null ? (
+        <SetupRequiredState message={setupMissing.message} missing={setupMissing.missing} />
+      ) : setupPending ? (
+        <LoadingState rows={1} rowHeight={40} label="Checking your model setup..." />
+      ) : (
+        <>
+          <div className="bj-actions">
+            <button ref={generateButton} type="button" aria-disabled={generating ? true : undefined} onClick={() => void controller.generate()}>
+              {generating ? "Generating..." : "Generate resume"}
+            </button>
+          </div>
+          {!coverLetterInBand && (
+            <label className="bj-ws-check bj-small">
+              <input type="checkbox" checked={controller.wantCoverLetter} onChange={(e) => controller.setWantCoverLetter(e.target.checked)} disabled={generating} />
+              Also generate a cover letter (a real, extra model call)
+            </label>
           )}
-        </div>
+        </>
       )}
 
-      {hasResume && showingDeclineWithAnOlderResume && (
-        <div className="bj-muted bj-small">
-          From an earlier successful generation -- the latest attempt above declined.
-        </div>
+      {read === "loading" && state.kind === "idle" && <LoadingState rows={2} rowHeight={48} label="Loading your last generation..." />}
+      {read === "failed" && state.kind === "idle" && (
+        <FailureState message="Couldn't read your last generation. A resume you made earlier is not affected." onRetry={controller.retryRead} />
       )}
+
+      {generating && <LoadingState rows={2} rowHeight={48} label="Generating..." />}
+      {state.kind === "error" && <FailureState message={state.message} onRetry={retryInBand ? undefined : () => void controller.generate()} />}
+      {state.kind === "setup" && <SetupRequiredNotice notice={state.notice} />}
+
+      {state.kind === "ready" && (
+        <ResultView
+          applicationId={applicationId}
+          result={state.result}
+          restored={state.restored}
+          earlierResume={showingDeclineWithAnOlderResume}
+          onGenerateAnyway={() => {
+            generateButton.current?.focus();
+            void controller.generate(true);
+          }}
+          onParked={onParked}
+        />
+      )}
+
+      {showingDeclineWithAnOlderResume && <p className="bj-ws-caption">From an earlier successful generation -- the latest attempt above declined.</p>}
       {hasResume && (
         <div className="bj-actions">
-          <button onClick={() => void downloadPdf()} disabled={downloading}>
-            {downloading ? "Compiling PDF..." : "Download PDF"}
+          <button type="button" aria-disabled={downloading === "resume" ? true : undefined} onClick={() => downloading === null && void controller.downloadResume()}>
+            {downloading === "resume" ? "Compiling PDF..." : "Download PDF"}
           </button>
           {hasCoverLetter && (
-            <button onClick={() => void downloadCoverLetter()} disabled={downloadingCoverLetter}>
-              {downloadingCoverLetter ? "Compiling PDF..." : "Download cover letter"}
+            <button type="button" aria-disabled={downloading === "cover" ? true : undefined} onClick={() => downloading === null && void controller.downloadCoverLetter()}>
+              {downloading === "cover" ? "Compiling PDF..." : "Download cover letter"}
             </button>
           )}
-          <button onClick={() => void loadChecklist()} disabled={checklist.kind === "loading"}>
-            {checklist.kind === "loading" ? "Checking..." : "Export checklist"}
-          </button>
         </div>
       )}
-      {downloadError && <div className="bj-error">{downloadError}</div>}
+      {downloadError && (
+        <p className="bj-error" role="alert">
+          {downloadError}
+        </p>
+      )}
+    </div>
+  );
+}
 
-      {checklist.kind === "error" && <div className="bj-error">{checklist.message}</div>}
-      {checklist.kind === "ready" && (
-        <ul className="bj-checklist">
-          {checklist.items.map((item) => (
-            <li key={item.key} className="bj-checklist-item">
-              <span className={checklistBadgeClass(item.status)}>
-                {checklistStatusLabel(item.status)}
-              </span>
-              <div>
-                <div className="bj-checklist-label">{item.label}</div>
-                <div className="bj-muted bj-small">{item.detail}</div>
-              </div>
+function ResultView({
+  applicationId,
+  result,
+  restored,
+  earlierResume,
+  onGenerateAnyway,
+  onParked,
+}: {
+  applicationId: string;
+  result: PrepareApplicationResult;
+  restored: boolean;
+  earlierResume: boolean;
+  onGenerateAnyway: () => void;
+  onParked?: () => void;
+}) {
+  const flagged = flaggedCount(result.warnings);
+  const trail = generationTrail(result, { restored, flagged, earlierResume });
+
+  if (result.resume === null) {
+    if (!result.fit) {
+      return <p className="bj-muted bj-small">The engine didn't produce a resume for this job.</p>;
+    }
+    // The gate's own decline reason is already folded into `warnings` as plain text; the honest read
+    // supersedes it with the full reading, so the warnings list is deliberately skipped in this branch.
+    return (
+      <div className="bj-ws-result">
+        <HonestFloor applicationId={applicationId} fit={result.fit} onGenerateAnyway={onGenerateAnyway} onParked={onParked} />
+        {restored && <p className="bj-ws-caption">Read back from your last stored generation: no time came back with it.</p>}
+        <BlockTrail trail={trail.trail} receipt={trail.receipt} receiptTitle={trail.receiptTitle} />
+      </div>
+    );
+  }
+
+  const pinWarnings = result.warnings.filter(isPinWarning);
+  const cautions = result.warnings.filter((w) => !isPinWarning(w) && !isClaimWarning(w));
+  return (
+    <div className="bj-ws-result">
+      <h3 className="bj-ws-block-title">Resume drafted</h3>
+      <p className="bj-small">
+        Its score, claim check and export checks are in Review below.
+        {restored && " Read back from your last stored generation: no time came back with it."}
+      </p>
+      <NotScoredNote result={result} />
+      {pinWarnings.length > 0 && (
+        <div className="bj-ws-callout" role="note">
+          <p>Some mandatory entries didn't fully fit:</p>
+          <ul className="bj-small">
+            {pinWarnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+          <p className="bj-small">
+            Every pinned entry is still included -- only its bullet count fell short. <Link to="/profile">Edit profile</Link> to unpin an entry or lower its minimum.
+          </p>
+        </div>
+      )}
+      {cautions.length > 0 && (
+        <ul className="bj-ws-cautions" aria-label="Cautions from the engine">
+          {cautions.map((w) => (
+            <li key={w} className="bj-ws-callout bj-small">
+              {w}
             </li>
           ))}
         </ul>
       )}
+      <BlockTrail trail={trail.trail} receipt={trail.receipt} receiptTitle={trail.receiptTitle} />
     </div>
   );
 }

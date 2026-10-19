@@ -35,6 +35,8 @@
 //
 // Pure module: no React, no network.
 
+import { PROVIDER_NAMES } from "./providerNames";
+
 export interface SearchProviderCardSpec {
   // The card's heading, as the person sees it.
   title: string;
@@ -72,7 +74,7 @@ const SERPER_VALIDATION = "Validating runs one 1-credit search call -- Serper ha
 // missing from the status table below without the test noticing.
 export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
   {
-    title: "You.com",
+    title: PROVIDER_NAMES.you_com,
     provider: "you_com",
     placeholder: "your-you-com-key",
     getKeyUrl: "https://you.com/platform/api-keys",
@@ -80,7 +82,7 @@ export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
     note: "Validating costs a small real charge (~$0.005) -- a live search call, since You.com has no free key-check endpoint.",
   },
   {
-    title: "Firecrawl",
+    title: PROVIDER_NAMES.firecrawl,
     provider: "firecrawl",
     placeholder: "fc-...",
     getKeyUrl: "https://www.firecrawl.dev/app/api-keys",
@@ -88,7 +90,7 @@ export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
     note: "Validated against your account's credit usage -- doesn't spend a search/scrape credit.",
   },
   {
-    title: "Brave Search",
+    title: PROVIDER_NAMES.brave,
     provider: "brave",
     placeholder: "your-brave-key",
     getKeyUrl: "https://api-dashboard.search.brave.com/documentation/guides/authentication",
@@ -97,7 +99,7 @@ export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
     hiringNote: `Used for job search on Discover and to find hiring posts on an application. ${BRAVE_VALIDATION}`,
   },
   {
-    title: "Serper",
+    title: PROVIDER_NAMES.serper,
     provider: "serper",
     placeholder: "your-serper-key",
     getKeyUrl: "https://serper.dev/api-keys",
@@ -106,7 +108,7 @@ export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
     hiringNote: `Used for job search on Discover and, as a last resort, to find hiring posts on an application (it returns Google results). ${SERPER_VALIDATION}`,
   },
   {
-    title: "Apollo",
+    title: PROVIDER_NAMES.apollo,
     provider: "apollo",
     placeholder: "your-apollo-key",
     getKeyUrl: "https://docs.apollo.io/docs/create-api-key",
@@ -114,7 +116,7 @@ export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
     note: "Used only for contact enrichment, one already-selected person at a time -- never a bulk search. Validated against Apollo's free health-check endpoint, at no cost.",
   },
   {
-    title: "Hunter",
+    title: PROVIDER_NAMES.hunter,
     provider: "hunter",
     placeholder: "your-hunter-key",
     getKeyUrl: "https://hunter.io/api-keys",
@@ -122,7 +124,7 @@ export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
     note: "A second contact-enrichment provider, tried automatically alongside Apollo for one already-selected person -- never a bulk search. Validated against Hunter's free account endpoint, at no cost.",
   },
   {
-    title: "Exa",
+    title: PROVIDER_NAMES.exa,
     provider: "exa",
     placeholder: "your-exa-key",
     getKeyUrl: "https://dashboard.exa.ai/api-keys",

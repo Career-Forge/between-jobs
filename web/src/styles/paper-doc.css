@@ -1,0 +1,713 @@
+/* Document-page chrome: the layout with its trail margin, the section chapter and jump bar, and the
+ * score, claim and checklist patterns (components/paper/DocumentLayout, JumpBar, SectionChapter,
+ * SegmentedBar, ScoreBlock, ClaimRow, ChecklistRow). Tokens only -- no color is defined here -- and no
+ * rule fills anything cyan: the page's one cyan fill is the next-step band's button.
+ *
+ * Widths are NOT repeated here. DocumentLayout and JumpBar read the viewport in script
+ * (useDocumentMode: 1280px for the margin, the shell's 959px for a phone) and put the answer on the
+ * markup as a class (.bj-doc--margin / --inline / --sheet, .bj-jump--bar / --select), so the layout and
+ * the placement of a receipt cannot disagree. The one media query that is a width is the claim row's
+ * phone stacking, which is the shell's own phone breakpoint. */
+
+/* ------------------------------------------------------------------ */
+/* Document layout and trail margin                                     */
+/* ------------------------------------------------------------------ */
+
+.bj-doc {
+  --bj-doc-measure: 880px;
+  --bj-doc-margin: 280px;
+  --bj-doc-gap: 32px;
+  position: relative;
+  min-width: 0;
+  max-width: var(--bj-doc-measure);
+}
+
+.bj-doc--prose {
+  --bj-doc-measure: 680px;
+}
+
+.bj-doc--full {
+  max-width: none;
+}
+
+/* From 1280px the shell's 960px cap on the page column leaves no room for the margin, so a page that
+   draws one lifts it (Today does the same for its own margin). */
+.bj-main:has(.bj-doc--margin) {
+  max-width: none;
+  padding: 40px 32px;
+}
+
+.bj-doc--margin {
+  max-width: calc(var(--bj-doc-measure) + var(--bj-doc-margin) + var(--bj-doc-gap));
+}
+
+.bj-doc--margin.bj-doc--full {
+  max-width: none;
+}
+
+/* The margin's 1px maroon rule runs the whole height of the document in one piece, through the
+   chapter headings too, rather than being cut up by whatever each block's margin cell happens to hold.
+   A hairline, never an indicator for selection. */
+.bj-doc--margin::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(100% - var(--bj-doc-margin));
+  width: 1px;
+  background: var(--bj-maroon);
+  pointer-events: none;
+}
+
+/* Anything in the document that is not a block (a chapter heading) stays in the document column.
+   A wrapper that holds blocks (a <section> grouping a chapter with its blocks) is not capped: its
+   blocks keep the full-width two-column row, so their margin cells stay under the layout's rule. What
+   such a wrapper holds that is not a block is capped by the chapter rule below, or goes in a block. */
+.bj-doc--margin > :not(.bj-doc-block):not(:has(.bj-doc-block)),
+.bj-doc--margin .bj-chapter {
+  max-width: calc(100% - var(--bj-doc-margin) - var(--bj-doc-gap));
+}
+
+.bj-doc-block {
+  min-width: 0;
+}
+
+.bj-doc-main {
+  min-width: 0;
+  padding-bottom: var(--bj-space-5);
+}
+
+/* A block is its own two-column row from 1280px, with the same tracks in every block so the margins
+   line up. The block's space below is padding on its column, not a margin, so the margin cell beside
+   it is as tall as the row and a receipt that opens in it pushes the next block down rather than
+   covering it. */
+.bj-doc--margin .bj-doc-block {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--bj-doc-margin);
+  column-gap: var(--bj-doc-gap);
+}
+
+.bj-doc-margin {
+  min-width: 0;
+  padding-left: var(--bj-space-4);
+}
+
+.bj-doc-trail {
+  min-width: 0;
+}
+
+/* Under a block the receipt can be as wide as the block; in the margin it is as wide as the margin. */
+.bj-doc-margin .bj-trail-receipt {
+  max-width: none;
+}
+
+.bj-doc-margin .bj-receipt-row dt {
+  flex-basis: 64px;
+}
+
+/* 960 - 1279px: the margin's contents, collapsed into one compact line or two at the top. */
+.bj-doc-summary {
+  margin: 0 0 var(--bj-space-5);
+  padding: 10px 14px;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bj-doc-summary p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Section chapter                                                      */
+/* ------------------------------------------------------------------ */
+
+.bj-chapter {
+  min-width: 0;
+  margin: var(--bj-space-6) 0 var(--bj-space-3);
+}
+
+.bj-chapter-eyebrow {
+  margin: 0 0 6px;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+/* The heading is the serif; the level only sets its size, so a level chosen for the outline never
+   changes what the page looks like by accident. */
+.bj-chapter-title {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.2;
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+.bj-chapter-title--h2 {
+  font-size: 26px;
+}
+
+.bj-chapter-title--h3 {
+  font-size: 20px;
+}
+
+.bj-chapter-title--h4 {
+  font-size: 17px;
+}
+
+.bj-chapter-title--h5,
+.bj-chapter-title--h6 {
+  font-size: var(--bj-text-body);
+}
+
+.bj-chapter-trail {
+  margin-top: var(--bj-space-1);
+}
+
+.bj-chapter-intro {
+  max-width: 680px;
+  margin-top: var(--bj-space-2);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-chapter-intro > :first-child {
+  margin-top: 0;
+}
+
+.bj-chapter-intro > :last-child {
+  margin-bottom: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Jump bar                                                             */
+/* ------------------------------------------------------------------ */
+
+/* Under a sticky bar a link lands the section clear of it. The offset is put on the page's own
+   scrolling (scroll-padding), which every hash target and scrollIntoView honours, so no target needs
+   a rule of its own. 1280px and up: the bar's height and a little air. Mid widths: the 44px dock that
+   replaces the bar once it has scrolled away. Phone: the top bar (56px), the sticky select row
+   (50px + its padding) and a little air. */
+:root:has(.bj-jump--sticky) {
+  scroll-padding-top: 76px;
+}
+
+:root:has(.bj-jump--bar:not(.bj-jump--sticky)) {
+  scroll-padding-top: 52px;
+}
+
+:root:has(.bj-jump--select) {
+  scroll-padding-top: calc(56px + env(safe-area-inset-top) + 58px + var(--bj-space-2));
+}
+
+.bj-jump {
+  min-width: 0;
+}
+
+/* One row from 1280px; from 960 the groups wrap whole (a group never breaks inside itself). */
+.bj-jump--bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-2) 18px;
+  margin-bottom: var(--bj-space-5);
+  padding: var(--bj-space-2) 0;
+  border-bottom: 1px solid var(--bj-border);
+  background: var(--bj-bg);
+}
+
+.bj-jump--sticky {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+}
+
+/* The label sits at the left of its segment group, on one line: that is what makes the three groups
+   about 960px in one row, and a group never breaks inside itself when the bar wraps. */
+.bj-jump-group {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-2);
+  min-width: 0;
+}
+
+.bj-jump-label {
+  flex: none;
+  font-family: var(--bj-font-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+  white-space: nowrap;
+}
+
+/* The group is the shared outlined segment group (.bj-segmented, tokens.css); only its size is set
+   here. The selection fill is the shared one too (.bj-selectable on aria-current). */
+.bj-jump-segments {
+  flex-wrap: nowrap;
+}
+
+a.bj-jump-link {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 10px;
+  color: var(--bj-text);
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-small);
+  line-height: 1.2;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+a.bj-jump-link:hover {
+  text-decoration: none;
+}
+
+/* The chosen link is heavier (weight 600), which would widen it and shift its neighbours as the
+   reader scrolls. An invisible copy of the label in the heavy weight holds the width. */
+a.bj-jump-link::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: 600;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* The select that stands in for the bar: always on a phone, and docked at mid widths once the bar has
+   scrolled away. */
+.bj-jump--select {
+  position: sticky;
+  top: calc(56px + env(safe-area-inset-top));
+  z-index: 15;
+  margin-bottom: var(--bj-space-3);
+  padding: var(--bj-space-1) 0;
+  background: var(--bj-bg);
+}
+
+/* Takes no room in the flow, so it appearing does not move the page under the reader; it sits over the
+   top of whatever is under it, which is why it has a canvas fill. */
+.bj-jump--dock {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  height: 44px;
+  margin-bottom: -44px;
+  background: var(--bj-bg);
+  box-shadow: 0 1px 0 var(--bj-border);
+  animation: bj-paper-fade 200ms ease-out;
+}
+
+.bj-jump-select {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-jump-select--row {
+  min-height: 50px;
+  padding: 1px 1px 1px var(--bj-space-3);
+  border: 1px solid var(--bj-outline);
+  border-radius: 10px;
+}
+
+.bj-jump-select--dock {
+  height: 44px;
+}
+
+.bj-jump-select-label {
+  flex: none;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+}
+
+select.bj-jump-select-control {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--bj-space-2);
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--bj-text);
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-control);
+}
+
+select.bj-jump-select-control option,
+select.bj-jump-select-control optgroup {
+  background: var(--bj-surface);
+  color: var(--bj-text);
+}
+
+/* ------------------------------------------------------------------ */
+/* Segmented bar                                                        */
+/* ------------------------------------------------------------------ */
+
+.bj-segbar {
+  min-width: 0;
+}
+
+.bj-segbar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 6px var(--bj-space-3);
+}
+
+.bj-segbar-label {
+  color: var(--bj-text);
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+.bj-segbar-value {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.bj-segbar-cells {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+/* A hollow cell is an outline and a filled one is solid, so the bar reads without color. */
+.bj-segbar-cell {
+  flex: none;
+  width: 7px;
+  height: 9px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 1.5px;
+}
+
+.bj-segbar-cell--filled {
+  border-color: var(--bj-gold);
+  background: var(--bj-gold);
+  forced-color-adjust: none;
+}
+
+/* Exact headroom that is not earned: hatched, never solid. */
+.bj-segbar-cell--hatched {
+  border-color: var(--bj-gold);
+  background: repeating-linear-gradient(135deg, var(--bj-gold) 0, var(--bj-gold) 1px, transparent 1px, transparent 3px);
+  forced-color-adjust: none;
+}
+
+.bj-segbar-detail {
+  margin-top: 4px;
+  color: var(--bj-text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
+/* Score block and fit ladder                                           */
+/* ------------------------------------------------------------------ */
+
+.bj-scoreblock {
+  min-width: 0;
+}
+
+.bj-scoreblock-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--bj-space-3);
+}
+
+.bj-scoreblock-label {
+  font-size: var(--bj-text-small);
+  font-weight: 600;
+}
+
+.bj-scoreblock-engine {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-trail);
+}
+
+.bj-scoreblock-numeral-row {
+  margin: var(--bj-space-1) 0 var(--bj-space-3);
+}
+
+.bj-scoreblock-numeral {
+  color: var(--bj-gold);
+  font-family: var(--bj-font-display);
+  font-size: 46px;
+  font-weight: 500;
+  line-height: 1.1;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.bj-scoreblock-from {
+  color: var(--bj-text-muted);
+  font-size: 0.6em;
+}
+
+.bj-scoreblock-of {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+}
+
+.bj-scoreblock-body {
+  display: grid;
+  gap: var(--bj-space-3);
+}
+
+.bj-scoreblock-footer {
+  margin: var(--bj-space-3) 0 0;
+  color: var(--bj-text-muted);
+  font-size: 12.5px;
+}
+
+.bj-ladder {
+  min-width: 0;
+}
+
+.bj-ladder-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-1) var(--bj-space-3);
+}
+
+.bj-ladder-cells {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.bj-ladder-cell {
+  width: 22px;
+  height: 10px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 2px;
+}
+
+.bj-ladder-cell--filled {
+  border-color: var(--bj-gold);
+  background: var(--bj-gold);
+  forced-color-adjust: none;
+}
+
+.bj-ladder-words {
+  color: var(--bj-text);
+  font-size: var(--bj-text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.bj-ladder-caption {
+  margin: 2px 0 0;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-trail);
+}
+
+/* ------------------------------------------------------------------ */
+/* Claim rows                                                           */
+/* ------------------------------------------------------------------ */
+
+.bj-claimlist {
+  display: grid;
+  gap: var(--bj-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-claimrow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+/* The chip is an outline with a mark and a word. Gold for what is only unproven, red for what is
+   contradicted, muted for what was not looked at: and each has its own word, so the border color is
+   never the only difference. */
+.bj-claimrow-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 13px;
+  color: var(--bj-text);
+  font-size: var(--bj-text-badge);
+  white-space: nowrap;
+}
+
+.bj-claimrow-chip--supported,
+.bj-claimrow-chip--unverifiable {
+  border-color: var(--bj-gold);
+}
+
+/* Flagged is drawn differently from backed: a dashed outline says nothing here confirms the claim. */
+.bj-claimrow-chip--unverifiable {
+  border-style: dashed;
+}
+
+.bj-claimrow-chip--contradicted {
+  border-color: var(--bj-danger);
+}
+
+.bj-claimrow-body {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Quoted source text: the one place the italic serif is used. */
+.bj-claimrow-claim {
+  margin: 0;
+  color: var(--bj-text);
+  font-family: var(--bj-font-display);
+  font-size: 16.5px;
+  font-style: italic;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.bj-claimrow-reason {
+  margin: 4px 0 0;
+  color: var(--bj-text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.bj-claimrow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-2) var(--bj-space-4);
+  margin-top: var(--bj-space-2);
+  font-size: var(--bj-text-small);
+}
+
+@media (max-width: 959px) {
+  .bj-claimrow {
+    flex-direction: column;
+    gap: var(--bj-space-2);
+  }
+
+  /* The link beside "Copy claim" is 44px tall by itself, not only while it happens to share a line with
+     the button: when the row wraps (a small phone, 400% zoom) it would otherwise drop to a line of text. */
+  .bj-claimrow-actions a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Checklist rows                                                       */
+/* ------------------------------------------------------------------ */
+
+.bj-checkgroup {
+  min-width: 0;
+  margin-bottom: var(--bj-space-5);
+}
+
+h3.bj-checkgroup-title,
+h4.bj-checkgroup-title,
+h5.bj-checkgroup-title {
+  margin: 0 0 var(--bj-space-2);
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-small);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.bj-checkgroup-count {
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-weight: 400;
+}
+
+.bj-checkgroup-summary {
+  margin: 0 0 var(--bj-space-3);
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+}
+
+.bj-checkgroup-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-checkrow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--bj-space-3);
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-checkrow:last-child {
+  border-bottom: 1px solid var(--bj-border);
+}
+
+/* A fixed column, so every label starts at the same place whatever its state's word. */
+.bj-checkrow-state {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  width: 112px;
+  color: var(--bj-text);
+  font-size: var(--bj-text-badge);
+}
+
+.bj-checkrow-body {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.bj-checkrow-label {
+  margin: 0;
+  color: var(--bj-text);
+  font-size: var(--bj-text-control);
+  overflow-wrap: anywhere;
+}
+
+.bj-checkrow-note {
+  margin: 2px 0 0;
+  color: var(--bj-text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.bj-checkrow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-2) var(--bj-space-4);
+  margin-top: var(--bj-space-2);
+  font-size: var(--bj-text-small);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bj-jump--dock {
+    animation: none;
+  }
+}

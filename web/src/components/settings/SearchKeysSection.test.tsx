@@ -14,7 +14,7 @@ const NOW = new Date("2026-10-20T12:00:00Z");
 const KEY = "bk-" + "q".repeat(30);
 
 function saved(provider: string, extra: Partial<CredentialSummary> = {}): CredentialSummary {
-  return { id: `id-${provider}`, service: "search", provider, model: null, is_validated: true, updated_at: "2026-09-22T09:00:00Z", scope: null, ...extra };
+  return { id: `id-${provider}`, service: "search", provider, model: null, is_validated: true, updated_at: "2026-09-22T11:00:00Z", scope: null, ...extra };
 }
 
 function mount(credentials: CredentialSummary[], hiringSignalsEnabled = false, onChanged = vi.fn(async () => undefined)) {
@@ -115,6 +115,30 @@ describe("saving a key", () => {
     await settle();
     expect(text(query(row(container, "brave"), '[role="alert"]'))).toBe("Brave rejected that key.");
     expect(query<HTMLInputElement>(form, 'input[autocomplete="off"]').value).toBe(KEY);
+  });
+
+  it("keeps focus in the key field and on the save button while the key is checked: read-only and aria-disabled, never disabled", async () => {
+    let calls = 0;
+    on("POST /credentials", () => {
+      calls += 1;
+      return new Promise(() => undefined);
+    });
+    const { container } = mount([]);
+    click(button(row(container, "brave"), "Add key"));
+    const form = query<HTMLFormElement>(row(container, "brave"), "form");
+    const input = query<HTMLInputElement>(form, 'input[autocomplete="off"]');
+    typeInto(input, KEY);
+    input.focus();
+    submit(form);
+    await settle(1);
+    expect(input.readOnly).toBe(true);
+    expect(input.disabled).toBe(false);
+    expect(document.activeElement).toBe(input);
+    const save = button(form, "Validating...");
+    expect(save.disabled).toBe(false);
+    expect(save.getAttribute("aria-disabled")).toBe("true");
+    submit(form);
+    expect(calls).toBe(1);
   });
 
   it("will not send an empty key, and Cancel clears what was typed", async () => {

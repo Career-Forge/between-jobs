@@ -46,3 +46,10 @@ export async function expectNoSeriousA11yViolations(root: Element): Promise<void
   );
   throw new Error(`Accessibility violations:\n${lines.join("\n")}`);
 }
+
+// The nodes where one named axe rule finds a violation, whatever its impact: for a rule the page must keep
+// (such as landmark-unique, which is only "moderate") that the serious-and-critical check above lets pass.
+export async function violationsOfRule(root: Element, ruleId: string): Promise<string[]> {
+  const results = await axe.run(root, { runOnly: [ruleId], resultTypes: ["violations"] });
+  return results.violations.flatMap((violation) => violation.nodes.map((node) => node.target.join(" ")));
+}

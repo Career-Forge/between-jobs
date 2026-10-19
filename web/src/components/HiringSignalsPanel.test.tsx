@@ -44,9 +44,9 @@ function renderIdle(): string {
 }
 
 describe("HiringSignalsPanel, idle", () => {
-  it("is titled plainly and explains itself in one line, naming the user's own provider", () => {
+  it("explains itself in one line, naming the user's own provider (the workspace section's chapter is its heading, so it has none of its own)", () => {
     const html = renderIdle();
-    expect(html).toContain("<h2>Hiring posts</h2>");
+    expect(html).not.toMatch(/<h2/);
     expect(visibleText(html)).toContain(
       "Recent public hiring posts about this company, found through the search provider you connected.",
     );
@@ -58,10 +58,10 @@ describe("HiringSignalsPanel, idle", () => {
     expect(html).not.toMatch(/<img|<svg|<iframe|<a /i);
   });
 
-  it("offers one primary action, 'Find hiring posts', and it is enabled", () => {
+  it("offers one action, 'Find hiring posts', outlined (the page's one cyan fill is the next-step band's), and it is enabled", () => {
     const html = renderIdle();
-    expect(html).toMatch(/<button[^>]*class="bj-primary"[^>]*>Find hiring posts<\/button>/);
-    expect((html.match(/class="bj-primary"/g) ?? []).length).toBe(1);
+    expect(html).toMatch(/<button[^>]*>Find hiring posts<\/button>/);
+    expect(html).not.toContain("bj-primary");
     // enabled in BOTH senses: neither the attribute nor the ARIA state
     expect(html).not.toContain("disabled");
   });

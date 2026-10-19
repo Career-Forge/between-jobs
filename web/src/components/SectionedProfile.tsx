@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { EntryEditModal } from "./EntryEditModal";
+import { useFocusAfterRender } from "../lib/useFocusAfterRender";
+import { saveFailureMessage } from "../lib/useProfileEditor";
 import { SECTION_FIELD_CONFIGS } from "../lib/sectionFieldConfigs";
 import type {
   CanonicalProfile,
@@ -14,29 +16,27 @@ import type {
   VolunteerEntry,
 } from "../lib/profileTypes";
 import { SKILL_CATEGORY_LABELS } from "../lib/profileTypes";
+import "../styles/profile.css";
 
-// The sectioned Profile view (Sprint 3.1d), now with per-section editing
-// (Sprint 3.1e) -- built to design-references/profile-sections-{engineer,
-// academic}.png and profile-edit-versioned-modal.png. Every section
-// renders ONLY when it has content -- a profile with publications and no
-// experience (the PhD shape) looks like a complete, normal profile, not
-// one with gaps. No profile-strength score or percentile anywhere
-// (Proposal §38 -- that's gamification aimed at anxious job seekers, not
-// this product).
+// The sectioned Profile view, with per-section editing. Every section renders ONLY when it has content --
+// a profile with publications and no experience (the PhD shape) looks like a complete, normal profile,
+// not one with gaps. No profile-strength score or percentile anywhere: that is gamification aimed at
+// anxious job seekers, not this product.
 //
-// Editing is the versioned-import mechanic (useProfileEditor): every
-// Save clones the current profile, applies the change, and re-imports +
-// activates through the exact same deterministic validator a fresh
-// upload goes through. Delete-the-last-piece-of-evidence gets the same
-// honest rejection a from-scratch import would.
+// EDITING is the versioned-import mechanic (useProfileEditor): every Save clones the current profile,
+// applies the change, and re-imports + activates through the exact same deterministic validator a fresh
+// upload goes through, so it makes a new immutable version and deleting the last piece of evidence gets
+// the same honest rejection a from-scratch import would. The 8 "array of typed entries" sections
+// (Experience/Projects/Education/Publications/Patents/Certifications/Languages/Volunteering) share one
+// generic edit modal, config-driven (sectionFieldConfigs.ts). Achievements (strings) and Skills
+// (categorized chip lists) are flat lists and get lighter inline editors. Personal details and the
+// resume header have their own cards.
 //
-// The 8 "array of typed entries" sections (Experience/Projects/Education/
-// Publications/Patents/Certifications/Languages/Volunteering) share one
-// generic edit modal, config-driven (sectionFieldConfigs.ts). Achievements
-// (strings) and Skills (categorized chip lists) are flat lists, not
-// structured entries -- they get their own lighter inline editors.
-// Personal/header editing is deliberately out of scope here (the Header
-// Composer is its own, richer checkpoint).
+// A FAILED SAVE IS ALWAYS SHOWN. The entry modal shows its own (the `error` prop, cleared each time it
+// opens). Every other write -- adding or removing a skill, saving an achievement, removing an entry --
+// has no modal to carry a failure, so each is caught here and the words go in an alert above the sections
+// with a way to dismiss it. That message is this component's own, not the shared editor's `error`, which
+// the Personal details card also writes to: a failure there must not appear under the sections.
 
 const SECTION_ORDER = [
   "experience",
@@ -66,8 +66,7 @@ const SECTION_LABELS: Record<SectionKey, string> = {
   volunteering: "Volunteering",
 };
 
-// The 8 sections editable through the generic entry modal -- matches
-// SECTION_FIELD_CONFIGS' keys exactly.
+// The 8 sections editable through the generic entry modal -- matches SECTION_FIELD_CONFIGS' keys exactly.
 const ENTRY_SECTION_KEYS = [
   "experience",
   "projects",
@@ -79,14 +78,11 @@ const ENTRY_SECTION_KEYS = [
   "volunteering",
 ] as const;
 
-// R5 (resumeforge-shape-and-fit.md): only these 3 sections' entries actually
-// reach forge-engines' allocator as RANKED, PINNABLE items -- pins float on
-// a min_bullets floor, which a citation-style entry doesn't have. This is
-// independent of whether a section RENDERS at all: publications/patents
-// (R7, 2026-08-23) do reach a generated resume now, just via the simpler
-// achievements-style "required, presence-gated" path, not bubbles/the
-// allocator's ranking -- certifications/languages/volunteering are the
-// ones still genuinely unwired end to end.
+// Only these 3 sections' entries actually reach the engine's allocator as RANKED, PINNABLE items -- pins
+// float on a min_bullets floor, which a citation-style entry doesn't have. This is independent of
+// whether a section RENDERS at all: publications/patents do reach a generated resume, just via the
+// simpler achievements-style "required, presence-gated" path, not the allocator's ranking --
+// certifications/languages/volunteering are the ones still genuinely unwired end to end.
 const PINNABLE_SECTION_KEYS = ["experience", "projects", "education"] as const;
 const MAX_PINNED_ENTRIES = 6;
 
@@ -100,8 +96,8 @@ function countPinned(profile: CanonicalProfile): number {
 function PinnedBadge({ pin }: { pin?: { mandatory: boolean; min_bullets?: number | null } | null }) {
   if (!pin?.mandatory) return null;
   return (
-    <span className="bj-badge-pin" title="Always included in generated resumes">
-      📌 Mandatory{pin.min_bullets ? ` · min ${pin.min_bullets}` : ""}
+    <span className="bj-badge-muted bj-pin-badge" title="Always included in generated resumes">
+      Mandatory{pin.min_bullets ? ` · min ${pin.min_bullets}` : ""}
     </span>
   );
 }
@@ -115,7 +111,54 @@ function isNonEmpty(profile: CanonicalProfile, key: SectionKey): boolean {
   return Array.isArray(value) && value.length > 0;
 }
 
-type EditTarget = { sectionKey: (typeof ENTRY_SECTION_KEYS)[number]; index: number | null };
+type EditTarget = {
+  sectionKey: (typeof ENTRY_SECTION_KEYS)[number];
+  index: number | null;
+  // The button that opened the dialog, so focus can go back to it.
+  opener: HTMLElement | null;
+};
+
+type Save = (mutate: (draft: CanonicalProfile) => CanonicalProfile) => Promise<void>;
+
+// Removing an entry removes the Delete (or Remove) button the keyboard was on, and focus would fall to the top of
+// the page. Where it goes instead: the removal button now at the same place in the same section (the entry that
+// moved up), else the last one, else the section's own heading, else a neighbouring section's.
+const REMOVAL_LABEL = /^(Delete|Remove) /;
+
+export interface RemovalSite {
+  button: HTMLElement;
+  sectionId: string;
+  index: number;
+  neighbours: string[];
+}
+
+const sectionOf = (element: Element) => element.closest<HTMLElement>("section[id^='section-']");
+const removalButtonsIn = (section: Element) => [...section.querySelectorAll<HTMLElement>("button[aria-label]")].filter((button) => REMOVAL_LABEL.test(button.getAttribute("aria-label") ?? ""));
+
+function removalSiteOf(button: HTMLElement | null): RemovalSite | null {
+  if (button === null || !REMOVAL_LABEL.test(button.getAttribute("aria-label") ?? "")) return null;
+  const section = sectionOf(button);
+  if (section === null) return null;
+  const neighbours = [section.nextElementSibling, section.previousElementSibling].flatMap((sibling) => (sibling instanceof HTMLElement && sibling.id.startsWith("section-") ? [sibling.id] : []));
+  return { button, sectionId: section.id, index: removalButtonsIn(section).indexOf(button), neighbours };
+}
+
+/** Exported for its test: the DOM-only rules of where focus goes. */
+export function focusTargetAfterRemoval(site: RemovalSite, root: HTMLElement | null): HTMLElement | null {
+  const section = document.getElementById(site.sectionId);
+  if (section !== null) {
+    const buttons = removalButtonsIn(section);
+    const same = buttons[site.index] ?? buttons[buttons.length - 1];
+    if (same !== undefined) return same;
+    const heading = section.querySelector<HTMLElement>("h3");
+    if (heading !== null) return heading;
+  }
+  for (const id of site.neighbours) {
+    const heading = document.getElementById(id)?.querySelector<HTMLElement>("h3");
+    if (heading != null) return heading;
+  }
+  return root?.querySelector<HTMLElement>("section[id^='section-'] h3") ?? null;
+}
 
 export function SectionedProfile({
   profile,
@@ -127,23 +170,64 @@ export function SectionedProfile({
 }: {
   profile: CanonicalProfile;
   versionCount: number;
-  onSave: (mutate: (draft: CanonicalProfile) => CanonicalProfile) => Promise<void>;
+  onSave: Save;
   saving: boolean;
   error: string | null;
   clearError: () => void;
 }) {
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  // The button pressed last inside the sections: where focus goes back to when a dialog it opened closes.
+  // Safari and Firefox on a Mac do not focus a button on click, so "what had focus" cannot be relied on.
+  const lastButton = useRef<HTMLElement | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  // Where the last removal was pressed, until its button is gone and focus has been handed on.
+  const removal = useRef<RemovalSite | null>(null);
+  useEffect(() => {
+    const site = removal.current;
+    if (site === null || site.button.isConnected) return;
+    removal.current = null;
+    if (document.activeElement === document.body) focusTargetAfterRemoval(site, root.current)?.focus();
+  });
+  // The words for a failed write that has no modal (this component's own; see the file comment).
+  const [actionError, setActionError] = useState<string | null>(null);
+  // The alert for it sits at the top of the sections while the control that failed can be far below, so a
+  // new failure takes focus (the browser scrolls to what is focused), and Dismiss gives focus back to the
+  // button that was pressed, which `lastButton` no longer is by then (it is the Dismiss button).
+  const actionAlert = useRef<HTMLDivElement>(null);
+  const failedFrom = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (actionError !== null) actionAlert.current?.focus();
+  }, [actionError]);
 
   const visibleSections = SECTION_ORDER.filter((key) => isNonEmpty(profile, key));
   const emptyEntrySections = ENTRY_SECTION_KEYS.filter((key) => !isNonEmpty(profile, key));
 
+  // Runs a write that has no modal. A rejection is shown, not swallowed (and never left unhandled).
+  const guarded: Save = async (mutate) => {
+    setActionError(null);
+    try {
+      await onSave(mutate);
+    } catch (e) {
+      // Where the person acted: what has focus (a skill's text box, a button), or the last button pressed
+      // when the browser did not focus it.
+      const active = document.activeElement;
+      failedFrom.current = active instanceof HTMLElement && active !== document.body ? active : lastButton.current;
+      setActionError(saveFailureMessage(e));
+      throw e;
+    }
+  };
+  // For callers that cannot do anything with the rejection: it has been shown already.
+  const quietly = (run: Promise<void>) => run.catch(() => undefined);
+
   function openEdit(sectionKey: EditTarget["sectionKey"], index: number) {
     clearError();
-    setEditTarget({ sectionKey, index });
+    setActionError(null);
+    setEditTarget({ sectionKey, index, opener: lastButton.current });
   }
   function openAdd(sectionKey: EditTarget["sectionKey"]) {
     clearError();
-    setEditTarget({ sectionKey, index: null });
+    setActionError(null);
+    setEditTarget({ sectionKey, index: null, opener: lastButton.current });
   }
   function closeModal() {
     setEditTarget(null);
@@ -153,15 +237,13 @@ export function SectionedProfile({
     if (!window.confirm(`Remove this ${SECTION_FIELD_CONFIGS[sectionKey].entryLabel.toLowerCase()}? This creates a new profile version.`)) {
       return;
     }
-    try {
-      await onSave((draft) => {
+    await quietly(
+      guarded((draft) => {
         const list = [...((draft[sectionKey] as unknown[] | undefined) ?? [])];
         list.splice(index, 1);
         return { ...draft, [sectionKey]: list };
-      });
-    } catch {
-      // onSave already recorded the error; nothing else to do here.
-    }
+      }),
+    );
   }
 
   async function handleModalSave(values: Record<string, unknown>) {
@@ -187,66 +269,17 @@ export function SectionedProfile({
   const pinnedCount = countPinned(profile);
 
   return (
-    <div className="bj-profile-layout">
-      <div className="bj-profile-sections">
-        {pinnedCount > 0 && (
-          <div className="bj-muted bj-small">
-            📌 {pinnedCount} of {MAX_PINNED_ENTRIES} mandatory slots used
-          </div>
-        )}
-        {visibleSections.includes("experience") && (
-          <ExperienceSection entries={profile.experience!} {...entryProps} onAdd={() => openAdd("experience")} />
-        )}
-        {visibleSections.includes("projects") && (
-          <ProjectsSection entries={profile.projects!} {...entryProps} onAdd={() => openAdd("projects")} />
-        )}
-        {visibleSections.includes("publications") && (
-          <PublicationsSection
-            entries={profile.publications!}
-            {...entryProps}
-            onAdd={() => openAdd("publications")}
-          />
-        )}
-        {visibleSections.includes("patents") && (
-          <PatentsSection entries={profile.patents!} {...entryProps} onAdd={() => openAdd("patents")} />
-        )}
-        {visibleSections.includes("education") && (
-          <EducationSection entries={profile.education!} {...entryProps} onAdd={() => openAdd("education")} />
-        )}
-        {visibleSections.includes("skills") && <SkillsSection skills={profile.skills!} onSave={onSave} />}
-        {visibleSections.includes("certifications") && (
-          <CertificationsSection
-            entries={profile.certifications!}
-            {...entryProps}
-            onAdd={() => openAdd("certifications")}
-          />
-        )}
-        {visibleSections.includes("achievements") && (
-          <AchievementsSection entries={profile.achievements!} onSave={onSave} />
-        )}
-        {visibleSections.includes("languages") && (
-          <LanguagesSection entries={profile.languages!} {...entryProps} onAdd={() => openAdd("languages")} />
-        )}
-        {visibleSections.includes("volunteering") && (
-          <VolunteeringSection
-            entries={profile.volunteering!}
-            {...entryProps}
-            onAdd={() => openAdd("volunteering")}
-          />
-        )}
-
-        {emptyEntrySections.length > 0 && (
-          <div className="bj-ghost-add-row">
-            {emptyEntrySections.map((key) => (
-              <button key={key} onClick={() => openAdd(key)}>
-                + Add {SECTION_FIELD_CONFIGS[key].entryLabel.toLowerCase()}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+    <div
+      ref={root}
+      className="bj-profile-sections"
+      onClickCapture={(event) => {
+        if (!(event.target instanceof Element)) return;
+        lastButton.current = event.target.closest("button");
+        removal.current = removalSiteOf(lastButton.current);
+      }}
+    >
       {visibleSections.length > 1 && (
-        <nav className="bj-anchor-nav">
+        <nav className="bj-anchor-nav" aria-label="Profile sections">
           {visibleSections.map((key) => (
             <a key={key} href={`#section-${key}`}>
               {SECTION_LABELS[key]}
@@ -255,24 +288,87 @@ export function SectionedProfile({
         </nav>
       )}
 
+      {actionError !== null && (
+        <div ref={actionAlert} className="bj-state bj-state--failure" role="alert" tabIndex={-1}>
+          <p>
+            <span className="bj-state-glyph" aria-hidden="true">
+              {"✕"}
+            </span>
+            That change was not saved: {actionError}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setActionError(null);
+              const from = failedFrom.current;
+              failedFrom.current = null;
+              if (from !== null && from.isConnected) from.focus();
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+      <p className="bj-muted bj-small bj-studio-saving" role="status">
+        {saving && editTarget === null ? "Saving a new version..." : ""}
+      </p>
+
+      {pinnedCount > 0 && (
+        <p className="bj-muted bj-small">
+          {pinnedCount} of {MAX_PINNED_ENTRIES} mandatory slots used
+        </p>
+      )}
+      {visibleSections.includes("experience") && (
+        <ExperienceSection entries={profile.experience!} {...entryProps} onAdd={() => openAdd("experience")} />
+      )}
+      {visibleSections.includes("projects") && (
+        <ProjectsSection entries={profile.projects!} {...entryProps} onAdd={() => openAdd("projects")} />
+      )}
+      {visibleSections.includes("publications") && (
+        <PublicationsSection entries={profile.publications!} {...entryProps} onAdd={() => openAdd("publications")} />
+      )}
+      {visibleSections.includes("patents") && (
+        <PatentsSection entries={profile.patents!} {...entryProps} onAdd={() => openAdd("patents")} />
+      )}
+      {visibleSections.includes("education") && (
+        <EducationSection entries={profile.education!} {...entryProps} onAdd={() => openAdd("education")} />
+      )}
+      {visibleSections.includes("skills") && <SkillsSection skills={profile.skills!} onSave={guarded} />}
+      {visibleSections.includes("certifications") && (
+        <CertificationsSection entries={profile.certifications!} {...entryProps} onAdd={() => openAdd("certifications")} />
+      )}
+      {visibleSections.includes("achievements") && <AchievementsSection entries={profile.achievements!} onSave={guarded} />}
+      {visibleSections.includes("languages") && (
+        <LanguagesSection entries={profile.languages!} {...entryProps} onAdd={() => openAdd("languages")} />
+      )}
+      {visibleSections.includes("volunteering") && (
+        <VolunteeringSection entries={profile.volunteering!} {...entryProps} onAdd={() => openAdd("volunteering")} />
+      )}
+
+      {emptyEntrySections.length > 0 && (
+        <div className="bj-ghost-add-row" role="group" aria-label="Add a section">
+          {emptyEntrySections.map((key) => (
+            <button type="button" key={key} onClick={() => openAdd(key)}>
+              + Add {SECTION_FIELD_CONFIGS[key].entryLabel.toLowerCase()}
+            </button>
+          ))}
+        </div>
+      )}
+
       {editTarget && (
         <EntryEditModal
           config={SECTION_FIELD_CONFIGS[editTarget.sectionKey]}
           initialValues={
             editTarget.index === null
               ? {}
-              : ((profile[editTarget.sectionKey] as unknown as Record<string, unknown>[])[
-                  editTarget.index
-                ] ?? {})
+              : ((profile[editTarget.sectionKey] as unknown as Record<string, unknown>[])[editTarget.index] ?? {})
           }
           isNew={editTarget.index === null}
           canPin={(PINNABLE_SECTION_KEYS as readonly string[]).includes(editTarget.sectionKey)}
           pinnedCountExcludingThis={
             pinnedCount -
             (editTarget.index !== null &&
-            (profile[editTarget.sectionKey] as unknown as { pin?: { mandatory: boolean } | null }[])[
-              editTarget.index
-            ]?.pin?.mandatory
+            (profile[editTarget.sectionKey] as unknown as { pin?: { mandatory: boolean } | null }[])[editTarget.index]?.pin?.mandatory
               ? 1
               : 0)
           }
@@ -282,6 +378,9 @@ export function SectionedProfile({
           error={error}
           onSave={(values) => void handleModalSave(values)}
           onCancel={closeModal}
+          // The button that opened it, if it is still there (a saved edit can rename its entry and so
+          // replace the button); otherwise the heading of the section, which takes focus.
+          returnFocus={() => (editTarget.opener?.isConnected ? editTarget.opener : document.getElementById(`section-${editTarget.sectionKey}-title`))}
         />
       )}
     </div>
@@ -301,15 +400,17 @@ function SectionCard({
   count: number;
   onAdd?: () => void;
   addLabel?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <section id={`section-${id}`} className="bj-section-card">
+    <section id={`section-${id}`} className="bj-section-card" aria-labelledby={`section-${id}-title`}>
       <div className="bj-section-heading">
-        <h2>{title}</h2>
+        <h3 id={`section-${id}-title`} tabIndex={-1}>
+          {title}
+        </h3>
         <span className="bj-section-count">{count}</span>
         {onAdd && (
-          <button className="bj-link-button bj-section-add" onClick={onAdd}>
+          <button type="button" className="bj-link-button bj-section-add" onClick={onAdd}>
             + Add {addLabel}
           </button>
         )}
@@ -319,13 +420,15 @@ function SectionCard({
   );
 }
 
-function EntryActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+// Edit and Delete for one entry. The visible words stay "Edit" and "Delete"; the accessible name says
+// which entry, since a list of them is otherwise a row of identical buttons.
+function EntryActions({ name, onEdit, onDelete, editFocusKey }: { name: string; onEdit: () => void; onDelete: () => void; editFocusKey?: string }) {
   return (
     <div className="bj-entry-actions">
-      <button className="bj-link-button" onClick={onEdit}>
+      <button type="button" className="bj-link-button" aria-label={`Edit ${name}`} data-focus-key={editFocusKey} onClick={onEdit}>
         Edit
       </button>
-      <button className="bj-link-button bj-link-button-danger" onClick={onDelete}>
+      <button type="button" className="bj-link-button bj-link-button-danger" aria-label={`Delete ${name}`} onClick={onDelete}>
         Delete
       </button>
     </div>
@@ -343,20 +446,7 @@ function formatMonth(value: string | undefined): string {
   if (!match) {
     return value;
   }
-  const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const monthIndex = Number(match[2]) - 1;
   return `${months[monthIndex] ?? match[2]} ${match[1]}`;
 }
@@ -381,13 +471,13 @@ function MetricPills({ metrics }: { metrics?: string[] }) {
     return null;
   }
   return (
-    <div className="bj-metric-pills">
+    <ul className="bj-metric-pills" aria-label="Metrics">
       {metrics.slice(0, 4).map((m) => (
-        <span key={m} className="bj-metric-pill">
+        <li key={m} className="bj-metric-pill">
           {m}
-        </span>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
@@ -415,29 +505,21 @@ function ExperienceSection({ entries, onEdit, onDelete, onAdd }: EntrySectionPro
   );
 }
 
-function ExperienceEntry({
-  entry,
-  onEdit,
-  onDelete,
-}: {
-  entry: Experience;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
+function ExperienceEntry({ entry, onEdit, onDelete }: { entry: Experience; onEdit: () => void; onDelete: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const hasDetail = (entry.bullets?.length ?? 0) > 0 || (entry.skills?.length ?? 0) > 0;
 
   return (
     <div className="bj-timeline-entry">
-      <div className="bj-timeline-rail">
+      <div className="bj-timeline-rail" aria-hidden="true">
         <span className="bj-timeline-node" />
       </div>
       <div className="bj-timeline-body">
         <div className="bj-timeline-head">
-          <div>
-            <h3>
+          <div className="bj-timeline-title">
+            <h4>
               {entry.title} <PinnedBadge pin={entry.pin} />
-            </h3>
+            </h4>
             <div className="bj-muted">
               {entry.company}
               {entry.location ? ` · ${entry.location}` : ""}
@@ -448,11 +530,11 @@ function ExperienceEntry({
         <MetricPills metrics={entry.metrics} />
         <div className="bj-entry-toolbar">
           {hasDetail && (
-            <button className="bj-link-button" onClick={() => setExpanded((v) => !v)}>
+            <button type="button" className="bj-link-button" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
               {expanded ? "Hide details" : `Show details${entry.bullets?.length ? ` (${entry.bullets.length})` : ""}`}
             </button>
           )}
-          <EntryActions onEdit={onEdit} onDelete={onDelete} />
+          <EntryActions name={`${entry.title} at ${entry.company}`} onEdit={onEdit} onDelete={onDelete} />
         </div>
         {expanded && (
           <div className="bj-entry-detail">
@@ -464,13 +546,13 @@ function ExperienceEntry({
               </ul>
             )}
             {entry.skills && entry.skills.length > 0 && (
-              <div className="bj-chip-row">
+              <ul className="bj-chip-row" aria-label="Skills used">
                 {entry.skills.map((s) => (
-                  <span key={s} className="bj-chip">
+                  <li key={s} className="bj-chip">
                     {s}
-                  </span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </div>
         )}
@@ -496,38 +578,25 @@ function ProjectsSection({ entries, onEdit, onDelete, onAdd }: EntrySectionProps
   );
 }
 
-function ProjectEntry({
-  entry,
-  onEdit,
-  onDelete,
-}: {
-  entry: Project;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
+function ProjectEntry({ entry, onEdit, onDelete }: { entry: Project; onEdit: () => void; onDelete: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const hasDetail = (entry.bullets?.length ?? 0) > 0;
 
   return (
     <div className="bj-project-card">
-      <div className="bj-project-icon" aria-hidden="true">
-        ◆
-      </div>
       <div className="bj-project-body">
-        <div className="bj-project-name">
+        <h4 className="bj-project-name">
           {entry.name} <PinnedBadge pin={entry.pin} />
-        </div>
-        {entry.tech && entry.tech.length > 0 && (
-          <div className="bj-muted bj-small">{entry.tech.slice(0, 4).join(" · ")}</div>
-        )}
+        </h4>
+        {entry.tech && entry.tech.length > 0 && <div className="bj-muted bj-small">{entry.tech.slice(0, 4).join(" · ")}</div>}
         <MetricPills metrics={entry.metrics} />
         <div className="bj-entry-toolbar">
           {hasDetail && (
-            <button className="bj-link-button" onClick={() => setExpanded((v) => !v)}>
+            <button type="button" className="bj-link-button" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
               {expanded ? "Hide details" : "Show details"}
             </button>
           )}
-          <EntryActions onEdit={onEdit} onDelete={onDelete} />
+          <EntryActions name={entry.name} onEdit={onEdit} onDelete={onDelete} />
         </div>
         {expanded && entry.bullets && (
           <ul>
@@ -548,32 +617,21 @@ function ProjectEntry({
 
 function PublicationsSection({ entries, onEdit, onDelete, onAdd }: EntrySectionProps<Publication>) {
   return (
-    <SectionCard
-      id="publications"
-      title="Publications"
-      count={entries.length}
-      onAdd={onAdd}
-      addLabel="publication"
-    >
+    <SectionCard id="publications" title="Publications" count={entries.length} onAdd={onAdd} addLabel="publication">
       <div className="bj-citation-list">
         {entries.map((entry, i) => (
           <div key={`${entry.title}-${i}`} className="bj-citation-row">
-            <span className="bj-citation-index">{i + 1}</span>
+            <span className="bj-citation-index" aria-hidden="true">
+              {i + 1}
+            </span>
             <div className="bj-citation-body">
               {entry.authors && <div className="bj-muted bj-small">{entry.authors}</div>}
               <div className="bj-citation-title">{entry.title}</div>
-              <div className="bj-muted bj-small">
-                {[entry.venue, entry.date].filter(Boolean).join(" · ")}
-              </div>
-              <EntryActions onEdit={() => onEdit("publications", i)} onDelete={() => void onDelete("publications", i)} />
+              <div className="bj-muted bj-small">{[entry.venue, entry.date].filter(Boolean).join(" · ")}</div>
+              <EntryActions name={entry.title} onEdit={() => onEdit("publications", i)} onDelete={() => void onDelete("publications", i)} />
             </div>
             {entry.url && (
-              <a
-                className="bj-link-chip"
-                href={normalizeUrl(entry.url)}
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a className="bj-link-chip" href={normalizeUrl(entry.url)} target="_blank" rel="noreferrer" aria-label={`Link for ${entry.title}`}>
                 Link
               </a>
             )}
@@ -590,24 +648,17 @@ function PatentsSection({ entries, onEdit, onDelete, onAdd }: EntrySectionProps<
       <div className="bj-citation-list">
         {entries.map((entry, i) => (
           <div key={`${entry.title}-${i}`} className="bj-citation-row">
-            <span className="bj-citation-index">{i + 1}</span>
+            <span className="bj-citation-index" aria-hidden="true">
+              {i + 1}
+            </span>
             <div className="bj-citation-body">
-              {entry.patent_number && (
-                <div className="bj-muted bj-small">{entry.patent_number}</div>
-              )}
+              {entry.patent_number && <div className="bj-muted bj-small">{entry.patent_number}</div>}
               <div className="bj-citation-title">{entry.title}</div>
-              <div className="bj-muted bj-small">
-                {[entry.status, entry.date].filter(Boolean).join(" · ")}
-              </div>
-              <EntryActions onEdit={() => onEdit("patents", i)} onDelete={() => void onDelete("patents", i)} />
+              <div className="bj-muted bj-small">{[entry.status, entry.date].filter(Boolean).join(" · ")}</div>
+              <EntryActions name={entry.title} onEdit={() => onEdit("patents", i)} onDelete={() => void onDelete("patents", i)} />
             </div>
             {entry.url && (
-              <a
-                className="bj-link-chip"
-                href={normalizeUrl(entry.url)}
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a className="bj-link-chip" href={normalizeUrl(entry.url)} target="_blank" rel="noreferrer" aria-label={`Link for ${entry.title}`}>
                 Link
               </a>
             )}
@@ -622,22 +673,21 @@ function EducationSection({ entries, onEdit, onDelete, onAdd }: EntrySectionProp
   return (
     <SectionCard id="education" title="Education" count={entries.length} onAdd={onAdd} addLabel="education">
       <div className="bj-simple-list">
-        {entries.map((entry, i) => (
-          <div key={`${entry.institution}-${i}`} className="bj-simple-row">
-            <span className="bj-simple-icon" aria-hidden="true">
-              🎓
-            </span>
-            <div className="bj-simple-body">
-              <div className="bj-simple-title">
-                {entry.degree}
-                {entry.field ? `, ${entry.field}` : ""} <PinnedBadge pin={entry.pin} />
+        {entries.map((entry, i) => {
+          const title = `${entry.degree}${entry.field ? `, ${entry.field}` : ""}`;
+          return (
+            <div key={`${entry.institution}-${i}`} className="bj-simple-row">
+              <div className="bj-simple-body">
+                <div className="bj-simple-title">
+                  {title} <PinnedBadge pin={entry.pin} />
+                </div>
+                <div className="bj-muted bj-small">{entry.institution}</div>
+                <EntryActions name={`${title}, ${entry.institution}`} onEdit={() => onEdit("education", i)} onDelete={() => void onDelete("education", i)} />
               </div>
-              <div className="bj-muted bj-small">{entry.institution}</div>
-              <EntryActions onEdit={() => onEdit("education", i)} onDelete={() => void onDelete("education", i)} />
+              <DateChip start={entry.start_date} end={entry.end_date} />
             </div>
-            <DateChip start={entry.start_date} end={entry.end_date} />
-          </div>
-        ))}
+          );
+        })}
       </div>
     </SectionCard>
   );
@@ -645,26 +695,14 @@ function EducationSection({ entries, onEdit, onDelete, onAdd }: EntrySectionProp
 
 function CertificationsSection({ entries, onEdit, onDelete, onAdd }: EntrySectionProps<Certification>) {
   return (
-    <SectionCard
-      id="certifications"
-      title="Certifications"
-      count={entries.length}
-      onAdd={onAdd}
-      addLabel="certification"
-    >
+    <SectionCard id="certifications" title="Certifications" count={entries.length} onAdd={onAdd} addLabel="certification">
       <div className="bj-simple-list">
         {entries.map((entry, i) => (
           <div key={`${entry.name}-${i}`} className="bj-simple-row">
-            <span className="bj-simple-icon" aria-hidden="true">
-              ✓
-            </span>
             <div className="bj-simple-body">
               <div className="bj-simple-title">{entry.name}</div>
               {entry.issuer && <div className="bj-muted bj-small">{entry.issuer}</div>}
-              <EntryActions
-                onEdit={() => onEdit("certifications", i)}
-                onDelete={() => void onDelete("certifications", i)}
-              />
+              <EntryActions name={entry.name} onEdit={() => onEdit("certifications", i)} onDelete={() => void onDelete("certifications", i)} />
             </div>
             {entry.date && <span className="bj-date-chip">{entry.date}</span>}
           </div>
@@ -677,12 +715,12 @@ function CertificationsSection({ entries, onEdit, onDelete, onAdd }: EntrySectio
 function LanguagesSection({ entries, onEdit, onDelete, onAdd }: EntrySectionProps<LanguageEntry>) {
   return (
     <SectionCard id="languages" title="Languages" count={entries.length} onAdd={onAdd} addLabel="language">
-      <div className="bj-chip-row">
+      <div className="bj-chip-row bj-language-row">
         {entries.map((entry, i) => (
           <div key={`${entry.language}-${i}`} className="bj-language-chip">
             <div>{entry.language}</div>
             {entry.fluency && <div className="bj-muted bj-small">{entry.fluency}</div>}
-            <EntryActions onEdit={() => onEdit("languages", i)} onDelete={() => void onDelete("languages", i)} />
+            <EntryActions name={entry.language} onEdit={() => onEdit("languages", i)} onDelete={() => void onDelete("languages", i)} />
           </div>
         ))}
       </div>
@@ -692,26 +730,14 @@ function LanguagesSection({ entries, onEdit, onDelete, onAdd }: EntrySectionProp
 
 function VolunteeringSection({ entries, onEdit, onDelete, onAdd }: EntrySectionProps<VolunteerEntry>) {
   return (
-    <SectionCard
-      id="volunteering"
-      title="Volunteering"
-      count={entries.length}
-      onAdd={onAdd}
-      addLabel="volunteering entry"
-    >
+    <SectionCard id="volunteering" title="Volunteering" count={entries.length} onAdd={onAdd} addLabel="volunteering entry">
       <div className="bj-simple-list">
         {entries.map((entry, i) => (
           <div key={`${entry.organization}-${i}`} className="bj-simple-row">
-            <span className="bj-simple-icon" aria-hidden="true">
-              ♥
-            </span>
             <div className="bj-simple-body">
               <div className="bj-simple-title">{entry.organization}</div>
               {entry.role && <div className="bj-muted bj-small">{entry.role}</div>}
-              <EntryActions
-                onEdit={() => onEdit("volunteering", i)}
-                onDelete={() => void onDelete("volunteering", i)}
-              />
+              <EntryActions name={entry.organization} onEdit={() => onEdit("volunteering", i)} onDelete={() => void onDelete("volunteering", i)} />
             </div>
             <DateChip start={entry.start_date} end={entry.end_date} />
           </div>
@@ -721,39 +747,42 @@ function VolunteeringSection({ entries, onEdit, onDelete, onAdd }: EntrySectionP
   );
 }
 
-function SkillsSection({
-  skills,
-  onSave,
-}: {
-  skills: Skills;
-  onSave: (mutate: (draft: CanonicalProfile) => CanonicalProfile) => Promise<void>;
-}) {
+// A write that was refused is shown by the parent (`guarded`), and rethrown so the code that was waiting
+// for it (clearing a box after a save) does not carry on as if it had worked.
+function SkillsSection({ skills, onSave }: { skills: Skills; onSave: Save }) {
   const [draftByCategory, setDraftByCategory] = useState<Record<string, string>>({});
-  const categories = (Object.keys(SKILL_CATEGORY_LABELS) as (keyof Skills)[]).filter(
-    (key) => (skills[key]?.length ?? 0) > 0,
-  );
+  const categories = (Object.keys(SKILL_CATEGORY_LABELS) as (keyof Skills)[]).filter((key) => (skills[key]?.length ?? 0) > 0);
   const allCategories = Object.keys(SKILL_CATEGORY_LABELS) as (keyof Skills)[];
 
   async function addSkill(category: keyof Skills) {
     const value = (draftByCategory[category] ?? "").trim();
     if (!value) return;
-    await onSave((draft) => {
-      const nextSkills = { ...(draft.skills ?? {}) };
-      const list = nextSkills[category] ?? [];
-      if (!list.includes(value)) {
-        nextSkills[category] = [...list, value];
-      }
-      return { ...draft, skills: nextSkills };
-    });
+    try {
+      await onSave((draft) => {
+        const nextSkills = { ...(draft.skills ?? {}) };
+        const list = nextSkills[category] ?? [];
+        if (!list.includes(value)) {
+          nextSkills[category] = [...list, value];
+        }
+        return { ...draft, skills: nextSkills };
+      });
+    } catch {
+      // Shown by the parent; the typed text stays so it can be sent again.
+      return;
+    }
     setDraftByCategory((prev) => ({ ...prev, [category]: "" }));
   }
 
   async function removeSkill(category: keyof Skills, skill: string) {
-    await onSave((draft) => {
-      const nextSkills = { ...(draft.skills ?? {}) };
-      nextSkills[category] = (nextSkills[category] ?? []).filter((s) => s !== skill);
-      return { ...draft, skills: nextSkills };
-    });
+    try {
+      await onSave((draft) => {
+        const nextSkills = { ...(draft.skills ?? {}) };
+        nextSkills[category] = (nextSkills[category] ?? []).filter((s) => s !== skill);
+        return { ...draft, skills: nextSkills };
+      });
+    } catch {
+      // Shown by the parent.
+    }
   }
 
   return (
@@ -766,18 +795,23 @@ function SkillsSection({
         {allCategories.map((key) => {
           const list = skills[key] ?? [];
           return (
-            <div key={key}>
-              <div className="bj-skill-group-label">{SKILL_CATEGORY_LABELS[key]}</div>
+            <div key={key} role="group" aria-label={SKILL_CATEGORY_LABELS[key]}>
+              <div className="bj-skill-group-label" aria-hidden="true">
+                {SKILL_CATEGORY_LABELS[key]}
+              </div>
               <div className="bj-chip-row">
                 {list.map((s) => (
                   <span key={s} className="bj-chip bj-chip-removable">
                     {s}
-                    <button onClick={() => void removeSkill(key, s)}>×</button>
+                    <button type="button" aria-label={`Remove ${s} from ${SKILL_CATEGORY_LABELS[key]}`} onClick={() => void removeSkill(key, s)}>
+                      <span aria-hidden="true">{"×"}</span>
+                    </button>
                   </span>
                 ))}
                 <input
                   className="bj-inline-chip-input"
                   type="text"
+                  aria-label={`Add to ${SKILL_CATEGORY_LABELS[key]}`}
                   placeholder="+ add"
                   value={draftByCategory[key] ?? ""}
                   onChange={(e) => setDraftByCategory((prev) => ({ ...prev, [key]: e.target.value }))}
@@ -798,61 +832,82 @@ function SkillsSection({
   );
 }
 
-function AchievementsSection({
-  entries,
-  onSave,
-}: {
-  entries: string[];
-  onSave: (mutate: (draft: CanonicalProfile) => CanonicalProfile) => Promise<void>;
-}) {
+function AchievementsSection({ entries, onSave }: { entries: string[]; onSave: Save }) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [newEntry, setNewEntry] = useState("");
+  const addField = useRef<HTMLInputElement>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
+  // Edit swaps a row for a field, and Save or Cancel swaps it back: focus follows the control it replaced.
+  const list = useRef<HTMLDivElement>(null);
+  const focusLater = useFocusAfterRender(list);
 
   async function commitEdit(index: number) {
     const value = draft.trim();
     if (!value) return;
-    await onSave((profile) => {
-      const list = [...(profile.achievements ?? [])];
-      list[index] = value;
-      return { ...profile, achievements: list };
-    });
+    try {
+      await onSave((profile) => {
+        const list = [...(profile.achievements ?? [])];
+        list[index] = value;
+        return { ...profile, achievements: list };
+      });
+    } catch {
+      // Shown by the parent; the edit stays open with its text.
+      return;
+    }
+    focusLater(`edit:${index}`);
     setEditingIndex(null);
   }
 
   async function removeAt(index: number) {
-    await onSave((profile) => {
-      const list = [...(profile.achievements ?? [])];
-      list.splice(index, 1);
-      return { ...profile, achievements: list };
-    });
+    try {
+      await onSave((profile) => {
+        const list = [...(profile.achievements ?? [])];
+        list.splice(index, 1);
+        return { ...profile, achievements: list };
+      });
+    } catch {
+      // Shown by the parent.
+    }
   }
 
   async function addNew() {
     const value = newEntry.trim();
     if (!value) return;
-    await onSave((profile) => ({
-      ...profile,
-      achievements: [...(profile.achievements ?? []), value],
-    }));
+    try {
+      await onSave((profile) => ({
+        ...profile,
+        achievements: [...(profile.achievements ?? []), value],
+      }));
+    } catch {
+      // Shown by the parent; the typed text stays.
+      return;
+    }
     setNewEntry("");
+    // Add has nothing to add now, and a person who pressed it with the keyboard is most likely adding
+    // another: the field takes focus back from the button.
+    if (document.activeElement === addButton.current) addField.current?.focus();
   }
 
   return (
     <SectionCard id="achievements" title="Achievements" count={entries.length}>
-      <div className="bj-simple-list">
+      <div className="bj-simple-list" ref={list}>
         {entries.map((entry, i) => (
           <div key={i} className="bj-simple-row">
-            <span className="bj-simple-icon" aria-hidden="true">
-              🏆
-            </span>
             {editingIndex === i ? (
               <div className="bj-achievement-edit">
-                <input type="text" value={draft} onChange={(e) => setDraft(e.target.value)} />
-                <button className="bj-link-button" onClick={() => void commitEdit(i)}>
+                <input type="text" data-focus-key={`field:${i}`} aria-label={`Achievement ${i + 1}`} value={draft} onChange={(e) => setDraft(e.target.value)} />
+                <button type="button" className="bj-link-button" onClick={() => void commitEdit(i)}>
                   Save
                 </button>
-                <button className="bj-link-button" onClick={() => setEditingIndex(null)}>
+                <button
+                  type="button"
+                  className="bj-link-button"
+                  onClick={() => {
+                    focusLater(`edit:${i}`);
+                    setEditingIndex(null);
+                  }}
+                >
                   Cancel
                 </button>
               </div>
@@ -860,8 +915,11 @@ function AchievementsSection({
               <>
                 <div className="bj-simple-body bj-achievement-text">{entry}</div>
                 <EntryActions
+                  name={`achievement ${i + 1}`}
+                  editFocusKey={`edit:${i}`}
                   onEdit={() => {
                     setDraft(entry);
+                    focusLater(`field:${i}`);
                     setEditingIndex(i);
                   }}
                   onDelete={() => void removeAt(i)}
@@ -872,7 +930,9 @@ function AchievementsSection({
         ))}
         <div className="bj-achievement-add">
           <input
+            ref={addField}
             type="text"
+            aria-label="Add an achievement"
             placeholder="Add an achievement..."
             value={newEntry}
             onChange={(e) => setNewEntry(e.target.value)}
@@ -883,7 +943,9 @@ function AchievementsSection({
               }
             }}
           />
-          <button onClick={() => void addNew()} disabled={!newEntry.trim()}>
+          {/* aria-disabled, not disabled: the press itself empties the field, and a button that disables
+              itself drops keyboard focus to the top of the page. */}
+          <button ref={addButton} type="button" aria-disabled={newEntry.trim() ? undefined : true} onClick={() => void addNew()}>
             Add
           </button>
         </div>

@@ -1,8 +1,9 @@
-// Pure, testable column logic for the Applications Kanban board (K2) --
-// split out from the render component per this repo's own "new behavior
-// needs tests" rule, same pattern as honestFloor.ts/scoreBreakdown.ts.
+// Pure, testable column logic for the Applications board -- split out from
+// the render component per this repo's own "new behavior needs tests" rule,
+// same pattern as honestFloor.ts/scoreBreakdown.ts.
 
 import { ALL_STATUSES, type Application, type ApplicationStatus } from "./applicationsTypes";
+import { formatTrailDate } from "./trail";
 
 export const STATUS_LABELS: Record<ApplicationStatus, string> = {
   saved: "Saved",
@@ -18,12 +19,12 @@ export const STATUS_LABELS: Record<ApplicationStatus, string> = {
 // (even when empty) so the board never drops a column just because
 // nothing is in it yet.
 //
-// A status outside the known 7 can't happen for a row written after K1's
-// CHECK constraint landed, but a defensive fallback into "saved" -- rather
-// than silently dropping the card off the board entirely -- costs nothing
-// and matches this project's "unknown labeled as unknown, never guessed"
-// spirit for anything that could pre-date that migration.
-export function groupByStatus(applications: Application[]): Record<ApplicationStatus, Application[]> {
+// A status outside the known 7 can't happen for a row written once the
+// database enforced the vocabulary (a CHECK constraint), but a defensive
+// fallback into "saved" -- rather than silently dropping the card off the
+// board entirely -- costs nothing and matches this project's "unknown
+// labeled as unknown, never guessed" spirit for anything older than that.
+export function groupByStatus(applications: readonly Application[]): Record<ApplicationStatus, Application[]> {
   const groups = {} as Record<ApplicationStatus, Application[]>;
   for (const status of ALL_STATUSES) {
     groups[status] = [];
@@ -42,19 +43,22 @@ export function otherStatuses(current: ApplicationStatus): ApplicationStatus[] {
   return ALL_STATUSES.filter((status) => status !== current);
 }
 
-// Applications Kanban K3 -- the per-card/per-row cross-nav menu into the
-// ApplicationWorkspace.tsx panels each item can jump straight to. Shared by
-// both views (KanbanCard and ApplicationRow) so the label/hash pairing only
-// lives in one place. TailorPanel is a workspace panel but not one of the
-// capability map's own named cross-nav destinations, so it has no entry here.
+// The per-card cross-nav menu into the workspace's sections: each item jumps straight to one. Shared
+// by the list card and the board card so the label/hash pairing only lives in one place. The menu
+// lists the destinations a person goes to; the resume part's own sections (Tailor, Draft, Review) are
+// reached from the workspace's jump bar and the next-step band, so they have no menu item.
 //
-// CROSS_NAV_HASH is the single source of truth for the hash strings --
-// ApplicationWorkspace.tsx imports these same constants for its panel
-// wrapper `id`s rather than repeating the literal strings, so renaming or
-// typoing one can't silently desync a menu item from the panel it's
-// supposed to scroll to (a mismatch would otherwise fail silently: the
-// menu still navigates, `scrollIntoView` just never finds its target).
+// CROSS_NAV_HASH is the single source of truth for the hash strings of every workspace section, menu
+// destination or not. The workspace takes its section ids from it through SECTION_IDS
+// (lib/workspaceSections.ts) rather than repeating the literal strings, so renaming or typoing one
+// can't silently desync a link from the section it's supposed to scroll to (a mismatch would
+// otherwise fail silently: the link still navigates, `scrollIntoView` just never finds its target).
 export const CROSS_NAV_HASH = {
+  // The sections of the workspace's resume part that have no panel of their own: the posting and
+  // tailoring, the draft's header, structure and settings, and the review of a generated resume.
+  tailor: "ch-sources",
+  draft: "ch-draft",
+  review: "ch-check",
   generate: "generate",
   companyIntel: "company-intel",
   contacts: "contacts",
@@ -79,14 +83,26 @@ export const CROSS_NAV_ITEMS: readonly CrossNavItem[] = [
   { hash: CROSS_NAV_HASH.positioningBrief, label: "Your Play" },
 ];
 
-// The card's "Applied <date>" badge caption, or null when date_applied is
-// unset. Pulled out as its own pure function -- rather than an inline
-// `application.date_applied && ...` guard in the component's JSX -- so the
-// common case (a "saved" application, where date_applied is always null
-// per K1) has real test coverage: an accidentally-dropped null guard would
-// otherwise render `new Date(null).toLocaleDateString()` ("Invalid Date")
-// for most real applications with nothing catching it.
-export function formatAppliedDate(dateApplied: string | null): string | null {
+// The "Applied Sep 30" caption, or null when date_applied is unset or cannot be read as a date. It is
+// the one place that words this fact, for the Applications cards and the workspace header alike. The
+// server stamps date_applied when an application first becomes Applied and keeps it when the
+// application is moved back to Saved, so a Saved application with a date reads "First applied Sep 30":
+// "Applied Sep 30" beside a Saved status would read as a contradiction. Pulled out as its own pure
+// function -- rather than an inline `application.date_applied && ...` guard in the component's JSX --
+// so the common case (a "saved" application that never was applied, where date_applied is null) has
+// real test coverage. The day is written the way every trail line writes one (a year only when it is
+// not this year), and a value that is not a date is left out rather than drawn as "Invalid Date".
+export function formatAppliedDate(dateApplied: string | null, now: Date, timeZone?: string, status?: string): string | null {
   if (!dateApplied) return null;
-  return `Applied ${new Date(dateApplied).toLocaleDateString()}`;
+  const day = formatTrailDate(dateApplied, { now, timeZone });
+  if (day === null) return null;
+  return `${status === "saved" ? "First applied" : "Applied"} ${day}`;
+}
+
+// How many applications sit under each status, all 7 keys always present.
+export function statusCounts(applications: readonly Application[]): Record<ApplicationStatus, number> {
+  const groups = groupByStatus(applications);
+  const counts = {} as Record<ApplicationStatus, number>;
+  for (const status of ALL_STATUSES) counts[status] = groups[status].length;
+  return counts;
 }

@@ -122,7 +122,7 @@ export function SearchKeyRow({ card, hiringSignalsEnabled, credential, now, onCh
             value={secret}
             onChange={setSecret}
             placeholder={placeholder}
-            disabled={saving}
+            readOnly={saving}
             describedBy={error === null ? undefined : errorId}
           />
           <div className="bj-set-actions">

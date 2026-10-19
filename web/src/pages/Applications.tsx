@@ -1,53 +1,99 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { ApplicationActionsSelect } from "../components/ApplicationActionsSelect";
-import ApplicationsBoard from "../components/ApplicationsBoard";
-import { ViewToggle } from "../components/ViewToggle";
-import { ProblemView } from "../components/SetupRequiredNotice";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { ApplicationsView, type ApplicationsLayout, type ApplicationsListState } from "../components/applications/ApplicationsView";
+import { nameOf, type MoveProblem } from "../components/applications/ApplicationParts";
+import { START_TRACKING_HEADING_ID, START_TRACKING_ID } from "../components/applications/TrackForms";
+import { NEXT_STEP_FOCUS_ID } from "../components/paper/NextStepBand";
 import { apiFetch } from "../lib/api";
-import { ALL_STATUSES, type Application, type ApplicationStatus } from "../lib/applicationsTypes";
-import { type Problem, problemOf } from "../lib/setupRequired";
+import { STATUS_LABELS, statusCounts } from "../lib/applicationsBoard";
+import type { Application, ApplicationStatus } from "../lib/applicationsTypes";
+import { phoneStatus, readStoredStatus, storeStatus } from "../lib/applicationsView";
+import { browserStorage } from "../lib/firstRun";
+import { nextStepWithRow, type NextStepInput } from "../lib/nextStep";
+import { START_TRACKING_INTENT, type ApplicationsFacts } from "../lib/nextStep/pages/applications";
+import { setupChecks } from "../lib/setupReads";
+import { formatTrailTime } from "../lib/trail";
+import { useIsPhone } from "../lib/useMediaQuery";
+import { useScrollToHash } from "../lib/useScrollToHash";
+import { useSetupReads } from "../lib/useSetupReads";
 
-// Applications (Sprint 2.6f) -- the first real surface over Sprint 2.6's
-// schema (jobs/job_snapshots/applications/application_events/event_outbox/
-// working_sets). Job creation here is the manual-paste lane only
-// (Proposal §18): a client submits title/company/description[/url]
-// directly. Real URL scraping (Firecrawl) is Sprint 3.0's job, layered on
-// top of the same jobs_store later -- manual paste stays the permanent
-// fallback for postings a scraper can't reach, not a placeholder.
+// Applications: every job the person tracks, with its status, as a list, a board, or -- on a phone --
+// one status at a time. This file is the reading and the requests; what is drawn for each state is
+// components/applications/ApplicationsView.tsx, and what the next-step band says is
+// lib/nextStep/pages/applications.ts.
 //
-// `Application`/`ApplicationStatus`/`ALL_STATUSES` now live in
-// applicationsTypes.ts (Applications Kanban K2) so ApplicationsBoard.tsx
-// and applicationsBoard.ts share the exact same shapes rather than
-// reaching into this page. `status` is the real, server-enforced 7-value
-// vocabulary as of K1 (a Postgres CHECK constraint plus
-// change_application_stage's own copy of the same check) -- this page's
-// own list already matched it exactly before K1 shipped, so the List view
-// below is otherwise unchanged.
+// Requests. GET /applications is the page's own data: when it fails the band says so (row F1) and
+// offers Try again. GET /profile/current and GET /credentials are read once (lib/useSetupReads.ts)
+// because the band's setup rows need them. A status change is POST /applications/{id}/stage, followed
+// by a re-read of the whole list (no optimistic merge of a half-known row). Creating one is
+// POST /applications (a pasted posting) or POST /applications/from-url, each followed by the same
+// re-read. A failed move is kept on its own card with a Retry that sends it again under the same
+// idempotency key; it is dropped as soon as a read shows the card on a different status than it had
+// when the move failed, because a request that failed on the wire may have gone through.
 //
-// Board vs. List defaults to List: a user who has never seen this toggle
-// should see the exact page they saw before K2 shipped, not be dropped
-// into a new view they didn't ask for.
+// A Set of busy ids, not a single id: the board can have several cards in flight at once (a drag on
+// one card while another card's select is still awaiting its response), and one shared busy id would
+// let the earlier request's card read as no longer busy the moment a second one starts, re-enabling
+// it for a concurrent, racing stage change.
+
+// Where focus returns to when the control that had it is gone: the band, a card's status control
+// (after a move), or a card's Retry (after a Retry that failed again).
+type FocusRequest = { kind: "band" } | { kind: "card"; id: string } | { kind: "problem"; id: string };
+
+interface LoadFailure {
+  message: string;
+  /** The client time it failed, as the band's why line writes it: "09:14". */
+  at: string;
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// Takes the person to the paste form: the one way in that needs no key.
+function revealTracking(): void {
+  const target = document.getElementById(START_TRACKING_ID);
+  if (target === null) return;
+  target.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
+  document.getElementById(START_TRACKING_HEADING_ID)?.focus({ preventScroll: true });
+}
 
 export default function Applications() {
   const [applications, setApplications] = useState<Application[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // A Set, not a single id: the Board can have several cards in flight at
-  // once (a drag on one card while another card's "Move to..." select is
-  // still awaiting its response), and a single shared busy id would let
-  // the earlier request's card render as no-longer-busy the moment a
-  // second card's move starts -- re-enabling it for a concurrent, racing
-  // stage change. See applications-kanban.md K2 for the concrete scenario.
+  const [loadFailure, setLoadFailure] = useState<LoadFailure | null>(null);
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
-  const [view, setView] = useState<"list" | "board">("list");
+  const [problems, setProblems] = useState<Record<string, MoveProblem | undefined>>({});
+  const [layout, setLayout] = useState<ApplicationsLayout>("list");
+  const [remembered, setRemembered] = useState<ApplicationStatus | null>(() => readStoredStatus(browserStorage()));
+  // `count` changes with every announcement, so the same words said twice in a row (moving a card
+  // out and back) still change what the live region holds and are read again.
+  const [announcement, setAnnouncement] = useState({ text: "", count: 0 });
+  const [refocus, setRefocus] = useState<FocusRequest | null>(null);
+  const [now] = useState(() => new Date());
+  const phone = useIsPhone();
+  const location = useLocation();
+  const setup = useSetupReads();
+  const checks = useMemo(() => setupChecks(setup.reads, setup.at, { modelKey: true }), [setup.reads, setup.at]);
+  const retrySetup = setup.retry;
+  const inFlight = useRef(new Set<string>());
+  // The setup reads as they were when "Try again" was pressed on them: their answer is the first
+  // different one that is not still loading, and focus returns to the band then.
+  const setupRetry = useRef<typeof setup.reads | null>(null);
+  const latest = useRef<Application[] | null>(null);
+  latest.current = applications;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<boolean> => {
     try {
       const rows = await apiFetch<Application[]>("/applications");
       setApplications(rows);
-      setLoadError(null);
+      setLoadFailure(null);
+      return true;
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load applications");
+      setLoadFailure({
+        message: e instanceof Error ? e.message : "Failed to load applications",
+        at: formatTrailTime(new Date().toISOString()) ?? "",
+      });
+      return false;
     }
   }, []);
 
@@ -55,20 +101,48 @@ export default function Applications() {
     void load();
   }, [load]);
 
-  async function changeStatus(applicationId: string, newStatus: ApplicationStatus) {
+  // A hash in the address scrolls to what it names; the forms are always on the page, so
+  // /applications#start-tracking would land on the paste form from the first render. Nothing in the app
+  // links there today: the band's button reaches the form through revealTracking.
+  useScrollToHash(true, location.hash);
+
+  // `idempotencyKey` is only passed by a Retry, which sends the failed move again under its own key.
+  async function changeStatus(applicationId: string, newStatus: ApplicationStatus, idempotencyKey: string = crypto.randomUUID()) {
+    if (inFlight.current.has(applicationId)) return;
+    inFlight.current.add(applicationId);
+    const application = latest.current?.find((candidate) => candidate.id === applicationId);
     setBusyIds((current) => new Set(current).add(applicationId));
+    setProblems((current) => ({ ...current, [applicationId]: undefined }));
     try {
-      await apiFetch(`/applications/${applicationId}/stage`, {
-        method: "POST",
-        body: JSON.stringify({
-          new_status: newStatus,
-          idempotency_key: crypto.randomUUID(),
-        }),
-      });
-      await load();
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to change status");
+      try {
+        await apiFetch(`/applications/${applicationId}/stage`, {
+          method: "POST",
+          body: JSON.stringify({
+            new_status: newStatus,
+            idempotency_key: idempotencyKey,
+          }),
+        });
+      } catch (e) {
+        // The card stays on its old status with the reason under it; the rest of the page is as it was.
+        setProblems((current) => ({
+          ...current,
+          [applicationId]: {
+            to: newStatus,
+            from: application?.status ?? null,
+            idempotencyKey,
+            message: e instanceof Error ? e.message : "Failed to change status",
+          },
+        }));
+        // A Retry that failed again replaced the button that was pressed with a new one.
+        setRefocus({ kind: "problem", id: applicationId });
+        return;
+      }
+      const read = await load();
+      const text = read ? `Moved ${application === undefined ? "the application" : nameOf(application)} to ${STATUS_LABELS[newStatus]}.` : "";
+      setAnnouncement((previous) => ({ text, count: previous.count + 1 }));
+      setRefocus({ kind: "card", id: applicationId });
     } finally {
+      inFlight.current.delete(applicationId);
       setBusyIds((current) => {
         const next = new Set(current);
         next.delete(applicationId);
@@ -77,259 +151,127 @@ export default function Applications() {
     }
   }
 
-  return (
-    <div>
-      <h1>Applications</h1>
-      <UrlIngestForm onCreated={load} />
-      <PasteJobForm onCreated={load} />
-      {loadError && <div className="bj-error">{loadError}</div>}
-      {applications !== null && applications.length === 0 && (
-        <div className="bj-empty">
-          <h2>Nothing tracked yet</h2>
-          <p>Paste a job posting above to start tracking it.</p>
-        </div>
-      )}
-      {applications !== null && applications.length > 0 && (
-        <>
-          <div className="bj-profile-toolbar">
-            <ViewToggle
-              label="View"
-              options={[
-                { value: "list", label: "List" },
-                { value: "board", label: "Board" },
-              ]}
-              value={view}
-              onChange={setView}
-            />
-          </div>
-          {view === "list" ? (
-            <div className="bj-application-list">
-              {applications.map((a) => (
-                <ApplicationRow
-                  key={a.id}
-                  application={a}
-                  busy={busyIds.has(a.id)}
-                  onChangeStatus={(status) => void changeStatus(a.id, status)}
-                />
-              ))}
-            </div>
-          ) : (
-            <ApplicationsBoard
-              applications={applications}
-              busyIds={busyIds}
-              onChangeStatus={(applicationId, status) => void changeStatus(applicationId, status)}
-            />
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function ApplicationRow({
-  application,
-  busy,
-  onChangeStatus,
-}: {
-  application: Application;
-  busy: boolean;
-  onChangeStatus: (status: ApplicationStatus) => void;
-}) {
-  const snapshot = application.snapshot;
-  return (
-    <div className="bj-card bj-application-row">
-      <div className="bj-card-header">
-        <div>
-          <div className="bj-application-title">{snapshot?.title ?? "Untitled"}</div>
-          <div className="bj-muted bj-small">
-            {snapshot?.company_name}
-            {snapshot?.location_text ? ` -- ${snapshot.location_text}` : ""}
-          </div>
-        </div>
-        <span className={statusBadgeClass(application.status)}>{application.status}</span>
-      </div>
-      <div className="bj-actions">
-        <select
-          value={application.status}
-          disabled={busy}
-          onChange={(e) => onChangeStatus(e.target.value as ApplicationStatus)}
-        >
-          {ALL_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        {snapshot?.source_url && (
-          <a href={snapshot.source_url} target="_blank" rel="noreferrer">
-            View posting
-          </a>
-        )}
-        <Link to={`/applications/${application.id}`}>Open workspace</Link>
-        <ApplicationActionsSelect applicationId={application.id} title={snapshot?.title} />
-      </div>
-    </div>
-  );
-}
-
-function statusBadgeClass(status: ApplicationStatus): string {
-  switch (status) {
-    case "saved":
-      return "bj-badge-gold";
-    case "applied":
-      return "bj-badge-cyan";
-    case "screening":
-    case "interviewing":
-      return "bj-badge-violet";
-    case "offer":
-      return "bj-badge-emerald";
-    case "rejected":
-    case "withdrawn":
-      return "bj-badge-danger";
-    default:
-      return "bj-badge-gold";
+  function retryMove(applicationId: string) {
+    const problem = problems[applicationId];
+    if (problem !== undefined) void changeStatus(applicationId, problem.to, problem.idempotencyKey);
   }
-}
 
-// outreach-v2-search-first.md Phase J -- paste a posting URL and let the
-// server resolve everything else (a registry hit's own real JD text, or
-// a live Firecrawl scrape) rather than trusting/asking the user to type
-// out title/company/description by hand. `PasteJobForm` below stays the
-// permanent fallback for a posting a URL can't reach at all.
-function UrlIngestForm({ onCreated }: { onCreated: () => Promise<void> }) {
-  const [url, setUrl] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<Problem | null>(null);
+  async function retryLoad() {
+    // The first read has nothing to show while it is out, so it goes back to loading; a later read
+    // keeps the cards that were read and the failure until the answer is in.
+    if (latest.current === null) setLoadFailure(null);
+    await load();
+    // The button that was pressed is gone with the failure it answered: focus goes to the band.
+    setRefocus({ kind: "band" });
+  }
 
-  async function submit() {
-    setBusy(true);
-    setError(null);
-    try {
-      await apiFetch("/applications/from-url", {
-        method: "POST",
-        body: JSON.stringify({ url: url.trim() }),
-      });
-      setUrl("");
-      await onCreated();
-    } catch (e) {
-      // A URL that is not in the registry needs the person's own Firecrawl key to fetch.
-      setError(problemOf(e, "Failed to fetch that posting"));
-    } finally {
-      setBusy(false);
+  function onBandAction(intent: string) {
+    switch (intent) {
+      case "retry":
+        void retryLoad();
+        return;
+      case "retry-setup":
+        setupRetry.current = setup.reads;
+        retrySetup();
+        // When the whole API was down the list failed too, and the body has no Retry of its own (the
+        // band holds the only one), so a single press reads both.
+        if (loadFailure !== null) void retryLoad();
+        return;
+      case START_TRACKING_INTENT:
+        revealTracking();
+        return;
     }
   }
 
-  return (
-    <div className="bj-card">
-      <h2>Track a job</h2>
-      <p className="bj-muted">
-        Paste a job posting's own URL -- if it's already in this platform's own job registry,
-        the real description comes straight from there; otherwise a real Firecrawl fetch grabs
-        it live. Never LinkedIn or X/Twitter directly -- paste those manually below instead.
-      </p>
-      <label className="bj-field">
-        <span>Posting URL *</span>
-        <input
-          type="text"
-          value={url}
-          placeholder="https://..."
-          onChange={(e) => setUrl(e.target.value)}
-        />
-      </label>
-      <ProblemView problem={error} />
-      <div className="bj-actions">
-        <button
-          className="bj-primary"
-          onClick={() => void submit()}
-          disabled={busy || url.trim() === ""}
-        >
-          {busy ? "Fetching..." : "Fetch and start tracking"}
-        </button>
-      </div>
-    </div>
+  const facts: ApplicationsFacts = useMemo(
+    () => (applications === null ? { list: { state: "loading" } } : { list: { state: "ready", counts: statusCounts(applications) } }),
+    [applications],
   );
-}
+  const input: NextStepInput = useMemo(
+    () => ({
+      page: "applications",
+      signedIn: true,
+      profile: checks.profile,
+      credentials: checks.credentials,
+      pageFailure:
+        loadFailure === null ? null : { what: "Couldn't load your applications", call: "GET /applications", at: loadFailure.at, intent: "retry" },
+      facts,
+    }),
+    [checks, loadFailure, facts],
+  );
+  const { outcome } = useMemo(() => nextStepWithRow(input), [input]);
 
-function PasteJobForm({ onCreated }: { onCreated: () => Promise<void> }) {
-  const [title, setTitle] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [descriptionText, setDescriptionText] = useState("");
-  const [canonicalUrl, setCanonicalUrl] = useState("");
-  const [locationText, setLocationText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const before = setupRetry.current;
+    if (before === null || setup.reads === before || setup.reads.profile.kind === "loading" || setup.reads.credentials.kind === "loading") return;
+    setupRetry.current = null;
+    setRefocus({ kind: "band" });
+  }, [setup.reads]);
 
-  async function submit() {
-    setBusy(true);
-    setError(null);
-    try {
-      await apiFetch("/applications", {
-        method: "POST",
-        body: JSON.stringify({
-          title,
-          company_name: companyName,
-          description_text: descriptionText,
-          canonical_url: canonicalUrl.trim() || null,
-          location_text: locationText.trim() || null,
-        }),
-      });
-      setTitle("");
-      setCompanyName("");
-      setDescriptionText("");
-      setCanonicalUrl("");
-      setLocationText("");
-      await onCreated();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save");
-    } finally {
-      setBusy(false);
+  // Moves focus to where the person's place went: the band after "Try again" replaced its button, or
+  // the card they just moved (a board card that changes column is a new element). It waits until the
+  // band has settled and leaves focus alone when it is anywhere real.
+  const settled = outcome.status !== "loading";
+  useEffect(() => {
+    if (refocus === null || !settled) return;
+    setRefocus(null);
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    if (refocus.kind === "band") {
+      document.getElementById(NEXT_STEP_FOCUS_ID)?.focus();
+      return;
     }
-  }
+    const card = [...document.querySelectorAll<HTMLElement>("[data-app-id]")].find((element) => element.dataset.appId === refocus.id);
+    const retry = refocus.kind === "problem" ? card?.querySelector<HTMLElement>(".bj-app-problem button") : null;
+    (retry ?? card?.querySelector<HTMLElement>('[data-role="status"]') ?? document.querySelector<HTMLElement>('[data-role="picker"]'))?.focus();
+  });
 
-  const canSubmit = title.trim() !== "" && companyName.trim() !== "" && descriptionText.trim() !== "";
+  const list: ApplicationsListState =
+    applications !== null
+      ? { kind: "ready", applications, refreshFailed: loadFailure?.message ?? null }
+      : loadFailure !== null
+        ? { kind: "failed", message: loadFailure.message }
+        : { kind: "loading" };
+
+  // A problem is about the card as it was when the move failed. Once a read shows the card on any
+  // other status (the move did go through, or it changed elsewhere), or no longer shows it, the
+  // problem is not about this card any more.
+  const shownProblems = useMemo(() => {
+    const kept: Record<string, MoveProblem | undefined> = {};
+    for (const [id, problem] of Object.entries(problems)) {
+      if (problem === undefined) continue;
+      const application = applications?.find((candidate) => candidate.id === id);
+      if (application !== undefined && application.status === problem.from) kept[id] = problem;
+    }
+    return kept;
+  }, [problems, applications]);
+
+  const shownStatus = phoneStatus(remembered, statusCounts(applications ?? []));
 
   return (
-    <div className="bj-card">
-      <h2>Or paste the full posting</h2>
-      <p className="bj-muted">
-        The manual lane -- always available even when there's no URL to fetch (an emailed
-        posting, a screenshot, anything behind a login).
-      </p>
-      <label className="bj-field">
-        <span>Job title *</span>
-        <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
-      </label>
-      <label className="bj-field">
-        <span>Company *</span>
-        <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
-      </label>
-      <label className="bj-field">
-        <span>Location</span>
-        <input type="text" value={locationText} onChange={(e) => setLocationText(e.target.value)} />
-      </label>
-      <label className="bj-field">
-        <span>Posting URL</span>
-        <input
-          type="text"
-          value={canonicalUrl}
-          placeholder="https://..."
-          onChange={(e) => setCanonicalUrl(e.target.value)}
-        />
-      </label>
-      <label className="bj-field">
-        <span>Description *</span>
-        <textarea
-          rows={6}
-          value={descriptionText}
-          onChange={(e) => setDescriptionText(e.target.value)}
-        />
-      </label>
-      {error && <div className="bj-error">{error}</div>}
-      <div className="bj-actions">
-        <button className="bj-primary" onClick={() => void submit()} disabled={busy || !canSubmit}>
-          {busy ? "Saving..." : "Start tracking"}
-        </button>
-      </div>
-    </div>
+    <ApplicationsView
+      now={now}
+      outcome={outcome}
+      onBandAction={onBandAction}
+      list={list}
+      phone={phone}
+      layout={layout}
+      onLayoutChange={setLayout}
+      phoneStatus={shownStatus}
+      onPhoneStatusChange={(status) => {
+        setRemembered(status);
+        storeStatus(browserStorage(), status);
+      }}
+      busyIds={busyIds}
+      problems={shownProblems}
+      onChangeStatus={(applicationId, status) => void changeStatus(applicationId, status)}
+      onRetryMove={retryMove}
+      onCreated={async () => {
+        await load();
+      }}
+      onTrack={revealTracking}
+      announcement={announcement.text + (announcement.count % 2 === 0 ? "" : "\u00a0")}
+      onRetryList={() => void retryLoad()}
+    />
   );
 }

@@ -31,12 +31,12 @@ describe("ContactFinderPanel and Gmail", () => {
     // lesson placed after that return is never learned and the panel keeps offering the button
     // that just failed. Pinned as the first statement of the catch, with nothing around it.
     // (What the helper does with each kind of refusal is run in lib/gmailAccess.test.ts.)
-    const push = sliceBetween(panel, "async function pushToGmail", "return (\n    <div className=\"bj-card");
+    const push = sliceBetween(panel, "async function pushToGmail", "function retry(");
     expect(push).not.toBeNull();
     const call =
       "learnFromGmailRefusal(e, { reconnectNeeded: markReconnectNeeded, unavailable: refreshCapabilities });";
     expect(codeBetweenCatchAndCall(push ?? "", call)).toBe("");
-    expect(push?.indexOf("setupRequiredNotice(e)")).toBeGreaterThan(push?.indexOf(call) ?? Infinity);
+    expect(push?.indexOf("failureOf(e,")).toBeGreaterThan(push?.indexOf(call) ?? Infinity);
     // and the handlers it is given are the panel's own
     expect(panel).toContain("const { connection, markReconnectNeeded } = useGmailConnection(");
     expect(panel).toContain('import { refreshCapabilities, useCapabilities } from "../lib/useCapabilities";');
@@ -56,11 +56,11 @@ describe("ContactFinderPanel and Gmail", () => {
     for (const line of [
       "state={gmail}",
       "unavailableMessage={gmailUnavailableMessage(access)}",
-      "alreadyPushed={Boolean(drafts[candidate.id].gmail_draft_id)}",
+      "alreadyPushed={Boolean(draft.gmail_draft_id)}",
       "recipient={candidate.enriched_email}",
-      "subject={drafts[candidate.id].subject}",
-      "body={drafts[candidate.id].email_body}",
-      "pushing={pushingId === candidate.id}",
+      "subject={draft.subject}",
+      "body={draft.email_body}",
+      'pushing={busy.has(key(candidate, "gmail"))}',
       "copied={copiedField === `${candidate.id}-all`}",
       "copyFailed={copyFailedField === `${candidate.id}-all`}",
       "onPush={() => void pushToGmail(candidate)}",
@@ -68,17 +68,18 @@ describe("ContactFinderPanel and Gmail", () => {
       expect(panel).toContain(line);
     }
     // and copies the subject and the email together, under the key the view reads "copied" from
-    expect(panel).toContain("`${candidate.id}-all`,\n                            subjectAndBody({");
-    expect(panel).toContain("subject: drafts[candidate.id].subject,\n                              body: drafts[candidate.id].email_body,");
+    expect(panel).toContain("copyText(`${candidate.id}-all`, subjectAndBody({ subject: draft.subject, body: draft.email_body }))");
   });
 
   it("still shows the server's notice for the failed push (the link to Reconnect Gmail comes from it)", () => {
-    expect(panel).toContain("setupRequiredNotice(e)");
-    expect(panel).toContain("<ProblemView problem={pushError} />");
+    // The failure goes through the setup helper (a reconnect answer is a notice with its link) and is drawn
+    // with the component that draws the link, on the person's row.
+    expect(panel).toContain('fail(candidate, "gmail", failureOf(e, "Couldn\'t create that Gmail draft."));');
+    expect(panel).toContain("<SetupRequiredNotice notice={issue.problem.notice} />");
   });
 
   it("keeps the per-field Copy buttons", () => {
     expect(panel).toContain("Copy");
-    expect(panel).toContain("Nothing is sent automatically");
+    expect(panel).toContain("Nothing is sent from here.");
   });
 });

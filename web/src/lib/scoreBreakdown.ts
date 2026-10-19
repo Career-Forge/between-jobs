@@ -1,8 +1,6 @@
-// Headroom Ledger (honest-score-surfaces.md, S1) -- pure, testable logic for
-// the ATS score breakdown. Kept separate from the rendering component so the
-// step-function math (the part most likely to have an off-by-one) has real
-// unit test coverage, per this repo's own "new behavior needs tests" rule --
-// not backend-scoped, so the frontend doesn't get a pass.
+// Pure, testable logic for the ATS score breakdown. Kept separate from the rendering
+// component so the step-function math (the part most likely to have an off-by-one)
+// has real unit test coverage.
 
 import type {
   AtsAttempt,
@@ -15,8 +13,7 @@ import type {
 
 // Verbatim from forge-engines' calculate_ats_score -- semantic 35 / experience
 // 30 / hard-req 15 / quant 10 / company 5 / structure 5. Company + structure
-// are shown merged as one row (Reality Check artboard 1's own layout), so
-// their maxes are pre-summed here too.
+// are shown merged as one row, so their maxes are pre-summed here too.
 export const SCORE_COMPONENT_MAX = {
   semantic_coverage: 35,
   experience_quality: 30,
@@ -120,7 +117,7 @@ export function nextDealbreakerGain(missingCount: number): number {
   return hardReqScoreForMissingCount(missingCount - 1) - hardReqScoreForMissingCount(missingCount);
 }
 
-// S2 (honest-score-surfaces.md): the "adjusted" what-if total after a
+// The "adjusted" what-if total after a
 // dealbreaker assertion, recomputed from the OTHER 5 (unchanged) breakdown
 // components plus a new hard_req_score -- not "current overall + delta",
 // because the current overall may already be silently capped at 65
@@ -173,12 +170,11 @@ export function notScoredNote(
   return result.ats_attempts.length === 0 && result.final_score === null ? NOT_SCORED_NOTE : null;
 }
 
-// ForgeScore chart-UI pass -- surfacing sub-signals `calculate_ats_score`
-// already computes (S3's own `AtsScoreDetail`) but that were never actually
-// rendered anywhere: quantification/company-alignment/experience-years.
-// Each returns `undefined` when there's nothing real to say (an older
-// attempt predating S3, or -- for experience -- no years to report at all)
-// rather than a caption built from a guessed default.
+// Captions for sub-signals `calculate_ats_score` computes (`AtsScoreDetail`):
+// quantification, company alignment and experience years. Each returns `undefined`
+// when there's nothing real to say (an attempt from before the details were
+// returned, or -- for experience -- no years to report at all) rather than a
+// caption built from a guessed default.
 
 export function quantificationCaption(detail: QuantificationDetail | undefined): string | undefined {
   if (!detail) return undefined;
@@ -206,7 +202,7 @@ export function whiteTextSpamPenaltyApplied(detail: CompanyAlignmentDetail | und
   return detail?.has_white_text_spam === true;
 }
 
-// S3 (honest-score-surfaces.md): the ONE exact, discrete lever behind
+// The ONE exact, discrete lever behind
 // experience_quality -- calculate_ats_score's `management_bonus` is a flat
 // +5 gated on a boolean, not a continuous signal like relevance_ratio, so
 // it's the only sub-signal here honest enough to draw as a dashed "exactly

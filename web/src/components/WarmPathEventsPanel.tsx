@@ -1,16 +1,31 @@
-import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "../lib/api";
-import { type SetupNotice, setupRequiredNotice } from "../lib/setupRequired";
-import { SetupRequiredNotice } from "./SetupRequiredNotice";
+import { countWords, runDate } from "../lib/research";
+import { eventsTrail, failedTrail } from "../lib/researchTrails";
+import { SETTINGS_PATH } from "../lib/settingsPaths";
+import { useNow } from "../lib/useNow";
+import { useResearchRun } from "../lib/useResearchRun";
+import { BlockTrail } from "./paper/DocumentLayout";
+import { FailureState, LoadingState } from "./paper/StateViews";
+import { EmptyBlock } from "./research/EmptyBlock";
+import { Chip, EvidenceItem, EvidenceList, type ChipTone } from "./research/Evidence";
+import { RunButton, RunProblem, RunWarnings } from "./research/RunParts";
+import type { TrailGlyphName } from "../lib/trail";
+import "../styles/research.css";
 
-// Events warm-path panel (outreach-contactfinder.md Phase D) -- Proposal
-// §27.5 / MASTER_PLAN §5.10b, "the best idea of the session." Three-state
-// honesty is the point: a confirmed speaker is a much stronger signal
-// than a likely-staffed sponsor booth, which is stronger than a merely
-// company-adjacent event -- never collapsed into one undifferentiated
-// list. On-demand for now; the proactive "notify me when a nearby event
-// comes up" trigger is a disclosed, later follow-up (see
-// warm_path_events.py's own module docstring).
+// Events: public conference, meetup and sponsor listings near the person that name this company, each
+// labeled by how certain the tie is. Three-state honesty is the point, and the three are never merged
+// into one list of equals:
+//
+//   Confirmed speaker       the source's own text names a speaker from the company
+//   Likely-staffed sponsor  the company sponsors, so a booth is probably staffed; no one is named
+//   Company-adjacent        the event is connected to the company in some other way
+//
+// A speaker is named only when the source's own text names them (the server drops the name from any row
+// that fails that check and lists the event as company-adjacent), and no one's attendance is ever
+// guessed. The certainty word is a model's reading, so it is a gold outline with a mark and the word,
+// never green. Events are listed firmest first; within a certainty, in the order the server sent them.
+//
+// A run searches with the person's own You.com or Firecrawl key and makes one call to their model. States
+// are the research runs' (see CompanyIntelPanel).
 
 type Certainty = "confirmed_speaker" | "likely_staffed_sponsor" | "company_adjacent";
 
@@ -41,142 +56,120 @@ interface WarmPathEventsResponse {
   events: WarmPathEvent[];
 }
 
-type State =
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "setup"; notice: SetupNotice }
-  | { kind: "ready"; run: Run | null; events: WarmPathEvent[] };
-
-const CERTAINTY_LABELS: Record<Certainty, string> = {
-  confirmed_speaker: "Confirmed speaker",
-  likely_staffed_sponsor: "Likely-staffed sponsor",
-  company_adjacent: "Company-adjacent",
-};
-
-function certaintyBadgeClass(certainty: Certainty): string {
-  switch (certainty) {
-    case "confirmed_speaker":
-      return "bj-badge-emerald";
-    case "likely_staffed_sponsor":
-      return "bj-badge-gold";
-    case "company_adjacent":
-      return "bj-badge-muted";
-  }
+// The gold diamond marks the two firmer readings. The weakest, and a certainty this page does not know, have
+// no mark: the plain-code circle means "no model involved", which none of these is, since all three are a
+// model's reading (or code's downgrade of one).
+interface Reading {
+  label: string;
+  tone: ChipTone;
+  glyph?: TrailGlyphName;
+  rank: number;
 }
 
-export function WarmPathEventsPanel({ applicationId }: { applicationId: string }) {
-  const [state, setState] = useState<State>({ kind: "loading" });
-  const [generating, setGenerating] = useState(false);
+const CERTAINTY: Record<Certainty, Reading> = {
+  confirmed_speaker: { label: "Confirmed speaker", tone: "solid", glyph: "evidence", rank: 0 },
+  likely_staffed_sponsor: { label: "Likely-staffed sponsor", tone: "dashed", glyph: "evidence", rank: 1 },
+  company_adjacent: { label: "Company-adjacent", tone: "muted", rank: 2 },
+};
 
-  const load = useCallback(async () => {
-    setState({ kind: "loading" });
-    try {
-      const result = await apiFetch<WarmPathEventsResponse>(
-        `/applications/${applicationId}/warm-path-events`,
-      );
-      setState({ kind: "ready", run: result.run, events: result.events });
-    } catch (e) {
-      setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to load" });
-    }
-  }, [applicationId]);
+function readingOf(certainty: string): Reading {
+  return Object.prototype.hasOwnProperty.call(CERTAINTY, certainty) ? CERTAINTY[certainty as Certainty] : { label: certainty, tone: "muted", rank: 3 };
+}
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+export function WarmPathEventsPanel({ applicationId, now }: { applicationId: string; now?: Date }) {
+  const clock = useNow(now);
+  const { read, running, problem, load, run, runButton, focusRunButton } = useResearchRun<WarmPathEventsResponse>(`/applications/${applicationId}/warm-path-events`, {
+    read: "Failed to load",
+    run: "Failed to generate",
+  });
 
-  async function generate() {
-    setGenerating(true);
-    try {
-      const result = await apiFetch<WarmPathEventsResponse>(
-        `/applications/${applicationId}/warm-path-events`,
-        { method: "POST" },
-      );
-      setState({ kind: "ready", run: result.run, events: result.events });
-    } catch (e) {
-      const setup = setupRequiredNotice(e);
-      if (setup !== null) {
-        setState({ kind: "setup", notice: setup });
-        return;
-      }
-      setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to generate" });
-    } finally {
-      setGenerating(false);
-    }
-  }
+  const ready = read.kind === "ready" ? read.data : null;
+  const data = ready !== null && ready.run !== null ? { run: ready.run, events: ready.events } : null;
+  const ordered = data === null ? [] : data.events.map((event, index) => ({ event, index })).sort((a, b) => readingOf(a.event.certainty).rank - readingOf(b.event.certainty).rank || a.index - b.index).map((entry) => entry.event);
+  const researched = data === null ? null : runDate(data.run, clock);
+  const meta = data === null ? [] : [researched === null ? null : `Researched ${researched}`, countWords(data.events.length, "event", "events")].filter((part): part is string => part !== null);
+
+  const trail =
+    data !== null
+      ? eventsTrail(data.run, data.events.length, clock)
+      : read.kind === "failed"
+        ? failedTrail("Events couldn't be read")
+        : problem?.kind === "error"
+          ? failedTrail("That event search didn't finish")
+          : null;
 
   return (
-    <div className="bj-card bj-warm-path-events-panel">
-      <h2>Warm-path events</h2>
-      <p className="bj-muted bj-small">
-        Public conference/meetup/sponsor listings near you tied to this company -- labeled
-        honestly by certainty, never overstated. Attendees are never guessed; only a confirmed
-        speaker is named.
+    <div className="bj-rs">
+      <p className="bj-ws-intro">
+        Public conference, meetup and sponsor listings near you that name this company, each labeled by how certain the tie is. A speaker is named only when the source's own text names them, and no one's
+        attendance is guessed. A run searches with your You.com or Firecrawl key and makes one call to your model, so it uses your own keys each time.
       </p>
-      <div className="bj-actions">
-        <button className="bj-primary" onClick={() => void generate()} disabled={generating}>
-          {generating
-            ? "Searching..."
-            : state.kind === "ready" && state.run
-              ? "Refresh"
-              : "Find events"}
-        </button>
+      <RunButton
+        label={data !== null ? "Refresh" : "Find events"}
+        busyLabel="Searching..."
+        busy={running}
+        held={read.kind === "loading"}
+        buttonRef={runButton}
+        onRun={() => {
+          if (read.kind !== "loading") void run();
+        }}
+      />
+
+      <div role="status" className="bj-rs-live">
+        {meta.length > 0 && <p className="bj-rs-meta">{meta.join(" · ")}</p>}
       </div>
 
-      {state.kind === "loading" && <div className="bj-muted bj-small">Loading...</div>}
-      {state.kind === "error" && <div className="bj-error">{state.message}</div>}
-      {state.kind === "setup" && <SetupRequiredNotice notice={state.notice} />}
+      {read.kind === "loading" && <LoadingState rows={3} rowHeight={88} label="Loading events..." />}
+      {read.kind === "failed" && <FailureState message={read.message} onRetry={() => void load()} restoreFocusTo={focusRunButton} />}
+      <RunProblem problem={problem} onRetry={() => void run()} restoreFocusTo={focusRunButton} />
 
-      {state.kind === "ready" && state.run === null && (
-        <div className="bj-muted bj-small">No events found yet -- run a search above.</div>
+      {ready !== null && data === null && (
+        <EmptyBlock heading="No events found yet" link={{ to: SETTINGS_PATH, label: "Keys are added in Settings" }}>
+          <p>
+            A run looks for events near you that involve this company: a talk by one of its people (a confirmed speaker), a sponsor booth that is likely staffed, or an event only connected to the company.
+          </p>
+          <p>It needs a model key and a You.com or Firecrawl key.</p>
+        </EmptyBlock>
       )}
 
-      {state.kind === "ready" && state.run !== null && (
+      {data !== null && (
         <>
-          {state.run.warnings.length > 0 && (
-            <ul className="bj-small bj-generate-warnings">
-              {state.run.warnings.map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
-          )}
-          {state.events.length === 0 ? (
-            <div className="bj-muted bj-small">
-              No nearby events turned up in that search pass -- try refreshing.
-            </div>
+          <RunWarnings run={data.run} />
+          {data.events.length === 0 ? (
+            <p className="bj-muted bj-small">No nearby events turned up in that search pass. Refresh to try again.</p>
           ) : (
-            <div className="bj-coverage-list">
-              {state.events.map((event) => (
-                <div key={event.id} className="bj-coverage-evidence">
-                  <div className="bj-coverage-name">{event.event_name}</div>
-                  <div className="bj-muted bj-small">
-                    {[event.event_date, event.location].filter(Boolean).join(" -- ")}
-                  </div>
-                  <div className="bj-actions">
-                    <span className={certaintyBadgeClass(event.certainty)}>
-                      {CERTAINTY_LABELS[event.certainty]}
-                    </span>
-                  </div>
-                  {event.speaker_name && (
-                    <div className="bj-small">
-                      {event.speaker_name}
-                      {event.speaker_title ? ` -- ${event.speaker_title}` : ""}
-                      {event.talk_topic ? `: "${event.talk_topic}"` : ""}
-                    </div>
-                  )}
-                  <a
-                    href={event.event_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="bj-small"
-                  >
-                    {event.source_title || event.event_url}
-                  </a>
-                </div>
-              ))}
-            </div>
+            <ul className="bj-rs-list" aria-label="Events">
+              {ordered.map((event) => {
+                const reading = readingOf(event.certainty);
+                const where = [event.event_date, event.location].filter((part): part is string => typeof part === "string" && part.trim() !== "");
+                return (
+                  <li key={event.id} className="bj-rs-item">
+                    <h3 className="bj-rs-title">{event.event_name}</h3>
+                    {where.length > 0 && <p className="bj-rs-sub">{where.join(" · ")}</p>}
+                    <p className="bj-rs-chips">
+                      <Chip tone={reading.tone} glyph={reading.glyph}>
+                        {reading.label}
+                      </Chip>
+                    </p>
+                    {event.speaker_name !== null && event.speaker_name !== "" && (
+                      <p className="bj-rs-text">
+                        {event.speaker_name}
+                        {event.speaker_title ? ` -- ${event.speaker_title}` : ""}
+                        {event.talk_topic ? `: "${event.talk_topic}"` : ""}
+                      </p>
+                    )}
+                    <EvidenceList label="Source">
+                      <EvidenceItem url={event.event_url} title={event.source_title} />
+                    </EvidenceList>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </>
       )}
+
+      {trail !== null && <BlockTrail trail={trail.trail} receipt={trail.receipt} receiptTitle={trail.receiptTitle} />}
     </div>
   );
 }

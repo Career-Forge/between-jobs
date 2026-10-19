@@ -60,7 +60,7 @@ describe("with Gmail connected, or not known yet", () => {
   it.each(["connected", "unknown"] as const)("(%s) offers to create the draft once the contact has a work email", (state) => {
     const markup = html({ state });
     expect(textOfMarkup(markup)).toBe("Create Gmail draft");
-    expect(markup).toContain("bj-primary");
+    expect(markup).not.toContain("bj-primary");
     expect(markup).not.toContain("mailto:");
     expect(textOfMarkup(markup)).not.toContain(COPY);
   });
@@ -71,10 +71,18 @@ describe("with Gmail connected, or not known yet", () => {
     expect(markup).not.toContain("<button");
   });
 
-  it("says Creating draft... and disables the button while the request is out", () => {
+  it("says Creating draft... and marks the button aria-disabled (not disabled, so focus stays) while the request is out", () => {
     const markup = html({ pushing: true });
     expect(textOfMarkup(markup)).toBe("Creating draft...");
-    expect(tagsOf(markup, "button")[0]).toHaveProperty("disabled");
+    expect(tagsOf(markup, "button")[0]).toHaveProperty("aria-disabled", "true");
+    expect(tagsOf(markup, "button")[0]).not.toHaveProperty("disabled");
+  });
+
+  it("ignores a press while the request is out", () => {
+    const onPush = vi.fn();
+    const nodes = expand(GmailDraftActions(props({ onPush, pushing: true })));
+    press(findAll(nodes, (el) => el.type === "button")[0]);
+    expect(onPush).not.toHaveBeenCalled();
   });
 
   it("creates the draft when the button is pressed, and only then", () => {

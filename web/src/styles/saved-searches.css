@@ -1,0 +1,78 @@
+/* The saved-searches card (components/SavedSearchesCardView.tsx), on Settings and on Discover. Tokens
+ * only. Each search is a list row: its label, its trail line last, and its Pause / Resume and Delete as
+ * outlined buttons. Under 960px every control is at least 44px tall. */
+
+.bj-ss {
+  min-width: 0;
+  max-width: 880px;
+  margin: 0 0 var(--bj-space-5);
+}
+
+.bj-ss-heading {
+  margin: 0 0 var(--bj-space-2);
+  font-family: var(--bj-font-display);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--bj-text);
+}
+
+.bj-ss-note {
+  margin: 0 0 var(--bj-space-3);
+  max-width: 680px;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-ss-error {
+  margin: 0 0 var(--bj-space-3);
+  font-size: var(--bj-text-small);
+  color: var(--bj-danger);
+  overflow-wrap: anywhere;
+}
+
+.bj-ss-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-ss-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bj-space-2) var(--bj-space-4);
+  min-width: 0;
+  padding: var(--bj-space-3) 0;
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-ss-text {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+/* The person's own words: they can be one long unbroken string, so they wrap inside the row. */
+.bj-ss-label {
+  margin: 0 0 var(--bj-space-1);
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+.bj-ss-label--paused {
+  color: var(--bj-text-muted);
+}
+
+.bj-ss-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-2);
+}
+
+@media (max-width: 959px) {
+  .bj-ss-actions > button {
+    min-height: 44px;
+  }
+}

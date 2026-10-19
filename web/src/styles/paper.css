@@ -395,6 +395,19 @@ button.bj-band-locked:hover {
     max-width: none;
     text-align: left;
   }
+
+  /* Links that stand alone (not inside a sentence) are 44px tall on a phone: the breadcrumb, and the
+     places a missing profile, key or model is fixed in a state callout. */
+  .bj-breadcrumb a,
+  .bj-state-missing a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .bj-breadcrumb ol {
+    align-items: center;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -416,6 +429,13 @@ button.bj-band-locked:hover {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* The last crumb and the subtitle carry text a scraped page chose (a job title, a company). One unbroken
+   token wider than the column would otherwise push the whole page, and the fixed tab bar, sideways. */
+.bj-breadcrumb li {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .bj-breadcrumb li + li::before {
@@ -450,6 +470,7 @@ h1.bj-page-title {
   max-width: 680px;
   margin: var(--bj-space-2) 0 0;
   color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .bj-page-actions {

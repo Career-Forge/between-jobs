@@ -33,7 +33,7 @@ describe("no personal company group is offered by the web app", () => {
   });
 
   it("Discover's Companies field is free text with plain examples, not a list of groups", () => {
-    const discover = files.find(([path]) => path.endsWith("/pages/Discover.tsx"))?.[1] ?? "";
+    const discover = files.find(([path]) => path.endsWith("/components/discover/DiscoverForm.tsx"))?.[1] ?? "";
     expect(discover).toContain('placeholder="e.g. Anthropic, Stripe"');
     expect(discover).not.toMatch(/<select[^>]*>[\s\S]*?cohort/i);
   });

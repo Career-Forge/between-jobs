@@ -33,7 +33,11 @@ const sources: Record<string, string> = Object.fromEntries(
 // The components allowed to read a notice's message: the one that draws the notice with its link, and
 // Today's item problems, which hand the message to SetupRequiredState together with the link (the
 // notice's own, or the settings page when the server sent none, so there is always one).
-const DRAWS_THE_LINK_ITSELF = new Set(["../components/SetupRequiredNotice.tsx", "../components/today/ItemParts.tsx"]);
+const DRAWS_THE_LINK_ITSELF = new Set([
+  "../components/SetupRequiredNotice.tsx",
+  "../components/today/ItemParts.tsx",
+  "../components/applications/TrackForms.tsx",
+]);
 
 // Where the raw code string is allowed to appear: the module that owns the decision, the
 // list of codes, the client that carries the fields, and prose in comments.
@@ -48,7 +52,7 @@ interface Site {
   // Places that turn a failure into a notice or a message through the setup helpers. A new
   // one is fine; one fewer is a revert.
   calls: number;
-  // Places that draw a notice: <SetupRequiredNotice notice=... /> or <ProblemView problem=... />.
+  // Places that draw a notice: <SetupRequiredNotice notice=... />, <ProblemView problem=... /> or the tracking form's <FormProblem problem=... />.
   draws: number;
   // Code that must be there: the notice goes into state whole, and comes out to the screen whole.
   keeps?: readonly RegExp[];
@@ -57,54 +61,73 @@ interface Site {
 }
 
 const BY_HAND = /kind: "error", message: e instanceof Error/;
-const NOTICE_FROM_STATE = /<SetupRequiredNotice notice=\{state\.notice\} \/>/;
 const SETUP_BRANCH = /if \(state\.kind === "setup"\) \{\s*return <SetupRequiredNotice notice=\{state\.notice\} \/>;\s*\}/;
 
 const SITES: Record<string, Site> = {
-  "../components/CompanyIntelPanel.tsx": {
+  // Company intel, Contacts and Events share one hook for their stored run and the run itself: it turns a
+  // failed run into the helper's result and keeps it whole, and RunProblem draws it with its link. Each of
+  // the three panels draws the run's problem through RunProblem.
+  "../lib/useResearchRun.ts": {
     calls: 1,
+    draws: 0,
+    keeps: [/setProblem\(failureOf\(e, fallbacks\.run\)\)/],
+    forbids: [BY_HAND],
+  },
+  "../components/research/RunParts.tsx": {
+    calls: 0,
     draws: 1,
-    keeps: [/setState\(\{ kind: "setup", notice: setup \}\)/, NOTICE_FROM_STATE],
+    keeps: [/problem\.kind === "setup"\) return <SetupRequiredNotice notice=\{problem\.notice\} \/>/],
+  },
+  "../components/CompanyIntelPanel.tsx": {
+    calls: 0,
+    draws: 0,
+    keeps: [/<RunProblem problem=\{problem\} /],
+  },
+  "../components/WarmPathEventsPanel.tsx": {
+    calls: 0,
+    draws: 0,
+    keeps: [/<RunProblem problem=\{problem\} /],
   },
   "../components/ContactFinderPanel.tsx": {
-    calls: 5, // generate, enrich, find LinkedIn, draft, push to Gmail
-    draws: 5,
+    // The run is the hook's. Each person's lookups and drafts keep their failure whole, on that person's
+    // row: find work email, find LinkedIn, draft, create the Gmail draft.
+    calls: 4,
+    draws: 1,
     keeps: [
-      /setState\(\{ kind: "setup", notice: setup \}\)/,
-      /setEnrichError\(setup\)/,
-      /setLinkedInError\(setup\)/,
-      /setDraftError\(setup\)/,
-      /setPushError\(setup\)/,
-      NOTICE_FROM_STATE,
-      /<ProblemView problem=\{enrichError\} \/>/,
-      /<ProblemView problem=\{linkedInError\} \/>/,
-      /<ProblemView problem=\{draftError\} \/>/,
-      /<ProblemView problem=\{pushError\} \/>/,
+      /<RunProblem problem=\{problem\} /,
+      /fail\(candidate, "email", failureOf\(e, /,
+      /fail\(candidate, "linkedin", failureOf\(e, /,
+      /fail\(candidate, "draft", failureOf\(e, /,
+      /fail\(candidate, "gmail", failureOf\(e, /,
+      /<SetupRequiredNotice notice=\{issue\.problem\.notice\} \/>/,
     ],
   },
   "../components/InterviewPracticePanel.tsx": {
-    calls: 1,
-    draws: 1,
-    keeps: [/message: setup\.message,\s*setup,/, /<SetupRequiredNotice notice=\{state\.setup\} \/>/],
+    calls: 2, // start a session, submit an answer
+    draws: 2,
+    keeps: [
+      /setStartProblem\(failureOf\(e, /,
+      /setSubmitProblem\(failureOf\(e, /,
+      /<SetupRequiredNotice notice=\{startProblem\.notice\} \/>/,
+      /<SetupRequiredNotice notice=\{problem\.notice\} \/>/,
+    ],
   },
   "../components/PositioningBriefPanel.tsx": {
     calls: 1,
     draws: 1,
-    keeps: [/setState\(\{ kind: "setup", notice: setup \}\)/, NOTICE_FROM_STATE],
+    keeps: [/setOutcome\(failureOf\(e, "Failed to generate"\)\)/, /<SetupRequiredNotice notice=\{outcome\.notice\} \/>/],
   },
-  "../components/WarmPathEventsPanel.tsx": {
+  // The run's failure is turned into a notice by the generation hook; the panel draws it.
+  "../lib/useGeneration.ts": {
     calls: 1,
-    draws: 1,
-    keeps: [/setState\(\{ kind: "setup", notice: setup \}\)/, NOTICE_FROM_STATE],
+    draws: 0,
+    keeps: [/failureOf\(e, "Failed to generate"\)/],
+    forbids: [BY_HAND],
   },
   "../components/GeneratePanel.tsx": {
-    calls: 1,
+    calls: 0,
     draws: 1,
-    keeps: [
-      /setGenerate\(failureOf\(e, /,
-      /generate\.kind === "setup" && <SetupRequiredNotice notice=\{generate\.notice\} \/>/,
-    ],
-    forbids: [/setGenerate\(\{ kind: "error"/],
+    keeps: [/state\.kind === "setup" && <SetupRequiredNotice notice=\{state\.notice\} \/>/],
   },
   // The three panels that read the resume document: all open with the workspace, and the
   // first thing a new account hits there is "no profile yet" (and then "no model key").
@@ -126,21 +149,30 @@ const SITES: Record<string, Site> = {
     keeps: [/setState\(failureOf\(e, "Failed to load"\)\)/, SETUP_BRANCH],
     forbids: [BY_HAND],
   },
+  // Discover keeps a setup answer in state whole and hands its sentence and its link to
+  // SetupRequiredState together: the link is the notice's own, or the one for what the reads say is
+  // missing, or Settings when the server sent none, so there is always one (see DiscoverView below).
   "../pages/Discover.tsx": {
     calls: 1,
-    draws: 1,
-    keeps: [/setState\(failureOf\(e, "Failed to search"\)\)/, /state\.kind === "setup" && \(/, NOTICE_FROM_STATE],
-    forbids: [/setState\(\{ kind: "error", message: friendlyApiMessage\(e, "Failed to search"\)/],
+    draws: 0,
+    keeps: [/failureOf\(e, "Failed to search"\)/, /\{ kind: "setup", notice: failure\.notice, request \}/, /missing\.push\(notice\.linkTo !== null/],
+    forbids: [/setState\(\{ kind: "error", message: friendlyApiMessage\(e, "Failed to search"\)/, BY_HAND],
+  },
+  "../components/discover/DiscoverView.tsx": {
+    calls: 0,
+    draws: 0,
+    keeps: [/<SetupRequiredState message=\{setup\.message\} missing=\{setup\.missing\} \/>/],
+    forbids: [/notice\.message/],
   },
   "../components/settings/ConnectionCards.tsx": {
     calls: 1, // connect Gmail
     draws: 1,
     keeps: [/setError\(problemOf\(e, /, /<ProblemView problem=\{error\} \/>/],
   },
-  "../pages/Applications.tsx": {
+  "../components/applications/TrackForms.tsx": {
     calls: 1, // track a job from a URL
     draws: 1,
-    keeps: [/setError\(problemOf\(e, /, /<ProblemView problem=\{error\} \/>/],
+    keeps: [/setProblem\(failureOf\(e, /, /<FormProblem problem=\{problem\} \/>/],
   },
   // Its own failure model (a classifier the panels read); the link comes from the notice.
   "../lib/hiringSignals.ts": { calls: 1, draws: 0 },
@@ -155,7 +187,7 @@ function codeOnly(source: string): string {
 }
 
 const CALL = /\b(setupRequiredNotice|failureOf|problemOf)\(/g;
-const DRAW = /<(SetupRequiredNotice notice|ProblemView problem)=/g;
+const DRAW = /<(SetupRequiredNotice notice|ProblemView problem|FormProblem problem)=/g;
 
 describe("every place a SETUP_REQUIRED error is shown", () => {
   it("finds the source of the app (so the checks below are not looking at nothing)", () => {

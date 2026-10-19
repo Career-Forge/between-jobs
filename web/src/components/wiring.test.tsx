@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useFocusRequests } from "../lib/useFocusRequests";
 import { useScrollToHash } from "../lib/useScrollToHash";
+import { HiringTabModel } from "../lib/hiringSignalsTabModel";
 import { HiringSignalsTab } from "./HiringSignalsTab";
 
 // The wiring layer: the hooks and the connected component that bind the tested
@@ -121,7 +122,9 @@ function runEffects(): void {
 
 describe("the connected Hiring signals tab", () => {
   function mount(): Record<string, (...args: unknown[]) => void> {
-    renderToStaticMarkup(<HiringSignalsTab />);
+    // The page makes the model (it reads its state for the band) and hands it to the tab; here the
+    // model is the recording fake above.
+    renderToStaticMarkup(<HiringSignalsTab model={new HiringTabModel(recorded.apiFetch)} />);
     if (recorded.viewProps === null) throw new Error("the view was not rendered");
     return recorded.viewProps.actions;
   }
