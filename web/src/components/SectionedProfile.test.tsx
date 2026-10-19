@@ -318,6 +318,29 @@ describe("achievements", () => {
     expect(saves.results[2].achievements).toEqual([]);
   });
 
+  // The press empties the field, so Add has nothing to add; a button that disabled itself would drop keyboard
+  // focus to the top of the page, and the person is most likely adding another.
+  it("keeps keyboard focus through Add: the button stays focusable and the field takes focus back", async () => {
+    const saves = editor();
+    const { container } = page(saves);
+    const field = query<HTMLInputElement>(container, 'input[aria-label="Add an achievement"]');
+    const add = buttonNamed(container, "Add");
+    expect(add.getAttribute("aria-disabled")).toBe("true");
+    expect(add.disabled).toBe(false);
+    click(add);
+    expect(saves.onSave).not.toHaveBeenCalled();
+
+    typeInto(field, "Open-source maintainer.");
+    expect(add.getAttribute("aria-disabled")).toBeNull();
+    add.focus();
+    click(add);
+    await settle();
+    expect(saves.results[0].achievements).toEqual(["Team award.", "Open-source maintainer."]);
+    expect(field.value).toBe("");
+    expect(add.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(field);
+  });
+
   it("shows a refused achievement as an alert and leaves the edit open with its text", async () => {
     const saves = editor(new Error("nope"));
     const { container } = page(saves);
