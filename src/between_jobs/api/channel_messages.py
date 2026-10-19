@@ -95,7 +95,7 @@ ALREADY_GENERATING_TEXT = "⏳ Your resume is still generating -- it'll arrive h
 PREPARE_FAILED_TEXT = "❌ Something went wrong while generating your resume. Try again in a minute."
 ENROLLMENT_REQUIRED_TEXT = (
     "❌ Joining the tester programme comes first. On the website, accept the tester agreement, "
-    "and link this chat from the Integrations page (it gives you a code to send me with /link). "
+    "and link this chat from the Settings page (it gives you a code to send me with /link). "
     "Then ask again."
 )
 PREPARE_DECLINED_TEXT = "The resume engine didn't produce a resume for this job.\n\n{warnings}"
@@ -175,7 +175,7 @@ def not_a_real_stage_text(status: str) -> str:
 
 LINK_FIRST_TEXT = (
     "To use this, link this chat to your Between Jobs account first. On the website, open "
-    "Integrations, generate a code, and send it to me here as /link CODE."
+    "Settings, generate a code, and send it to me here as /link CODE."
 )
 """What `/learn` tells a chat that is not linked to a web account, instead of the answer: the
 checklist is about the website account's data, which such a chat has none of to show."""
@@ -189,7 +189,7 @@ _PRIVACY_CONTROL_LINKED = (
     "full policy lists.\n\n"
 )
 _PRIVACY_CONTROL_BOT_ONLY = (
-    "• Yours to control: link this chat to a website account with a code from its Integrations "
+    "• Yours to control: link this chat to a website account with a code from its Settings "
     "page (send it as /link CODE). To have your account deleted, email the privacy address on "
     "the policy page: it is done within 7 days, apart from what the policy lists as not "
     "removed.\n\n"
@@ -200,7 +200,7 @@ def provider_rejected_text(message: str, settings_path: str | None, web_url: str
     """The chat text for a generation that ended because the person's model provider refused the
     call (their key was rejected, their account is out of credit, the model was turned down).
     The error's own message already says what to do; when it names the web page that fixes it
-    (`settings_path`, the Integrations page) and this server has a web address, the link follows,
+    (`settings_path`, the Settings page) and this server has a web address, the link follows,
     so the person does not have to find the page. Without either, just the message."""
     if settings_path is None or web_url is None:
         return f"❌ {message}"

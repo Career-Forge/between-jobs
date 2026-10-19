@@ -39,6 +39,11 @@ happens to a task that is still running, is in `tests/test_telegram_deferred_pre
   Render. The four `privacy_*` scenarios changed by exactly one character each (Railway to Render:
   1203 to 1202, 1194 to 1193, 1200 to 1199 characters) and no other scenario changed; the file
   was regenerated with the command above and the diff reviewed digest by digest.
+- The web app's page that holds keys, connections and linked chats was renamed from Integrations
+  to Settings, and the bot's words follow. Two scenarios changed, each by four characters
+  ("Integrations" to "Settings"): `learn_for_a_telegram_only_user` (204 characters, was 208) and
+  `privacy_for_a_telegram_only_user` (1189, was 1193). Regenerated with the command above and
+  reviewed digest by digest; no other scenario changed.
 
 The file was regenerated twice-over for changes that were meant, each reviewed message by message:
 

@@ -394,7 +394,7 @@ async def _tell_the_generation_failed(progress: ProgressMessage) -> None:
 
 def _failure_text(error: ApiError) -> str:
     """What the person is told when a generation ends in `error`. A model provider that
-    refused the call (a rejected key, an empty account) is fixed on the web app's Integrations
+    refused the call (a rejected key, an empty account) is fixed on the web app's Settings
     page, so that message carries the link; every other error is its message as it always was."""
     if error.code == "PROVIDER_REJECTED":
         return messages.provider_rejected_text(error.message, error.settings_path, web_app_url())

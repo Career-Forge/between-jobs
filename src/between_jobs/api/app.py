@@ -201,7 +201,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if discord_config is not None
         else None
     )
-    # Optional and cosmetic: the name the Integrations page tells people to look
+    # Optional and cosmetic: the name the Settings page tells people to look
     # for. A malformed value is dropped, not fatal -- a typo in a display name
     # must not keep the API from starting -- and the page then says "this
     # server's bot" instead. Only meaningful when there is a bot.

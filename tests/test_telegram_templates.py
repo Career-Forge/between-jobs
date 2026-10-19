@@ -113,7 +113,7 @@ def test_privacy_and_learn_are_valid_telegram_html_within_the_size_limit(
     texts.append(
         rich(
             channel_messages.provider_rejected_text(
-                "Your AI provider rejected the key. Check it in Integrations.",
+                "Your AI provider rejected the key. Check it in Settings.",
                 "/profile/integrations",
                 web_url,
             )

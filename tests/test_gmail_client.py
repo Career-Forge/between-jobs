@@ -556,7 +556,7 @@ def _assert_reconnect(error: ApiError) -> None:
     assert error.settings_path == "/profile/integrations"
     assert error.retryable is False
     assert needs_reconnect(error)
-    assert "Reconnect Gmail in Integrations" in error.message
+    assert "Reconnect Gmail in Settings" in error.message
     assert _GOOGLE_TEXT not in error.message and "secret" not in error.message.lower()
 
 

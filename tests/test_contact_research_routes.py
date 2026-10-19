@@ -1198,7 +1198,7 @@ def test_push_outreach_to_gmail_with_no_gmail_connection_returns_setup_required(
 def test_push_outreach_to_gmail_on_a_server_without_gmail_is_feature_disabled(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Not "Connect Gmail first": there is nothing to connect on this server, and the Integrations
+    """Not "Connect Gmail first": there is nothing to connect on this server, and the Settings
     button would only say the same. Answered before the person's connection is looked up."""
     for name in ("CLIENT_ID", "CLIENT_SECRET", "REDIRECT_URI"):
         monkeypatch.delenv(f"GOOGLE_OAUTH_{name}")

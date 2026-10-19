@@ -322,7 +322,7 @@ async def test_a_refusal_from_the_provider_stops_the_run_at_the_first_call_unsof
     stops, and nothing is asked again (the model would only refuse again, on their key)."""
     refusal = ApiError(
         code,
-        "Your AI provider rejected the key. Check it in Integrations.",
+        "Your AI provider rejected the key. Check it in Settings.",
         settings_path="/profile/integrations",
         details={"reason": reason},
     )

@@ -1158,8 +1158,8 @@
     "parse_mode": "HTML",
     "reply_markup": null,
     "text": {
-     "chars": 208,
-     "sha256": "602c37d1dcfafc11"
+     "chars": 204,
+     "sha256": "d01434e6708a1c81"
     }
    }
   ]
@@ -1753,8 +1753,8 @@
     "parse_mode": "HTML",
     "reply_markup": null,
     "text": {
-     "chars": 1193,
-     "sha256": "763ee1d7d410783b"
+     "chars": 1189,
+     "sha256": "ea0c7c68286fbc12"
     }
    }
   ]

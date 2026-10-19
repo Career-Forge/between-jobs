@@ -1362,9 +1362,8 @@ _PRIVACY_CLAIMS_LINKED = [
 # Only the version for a chat the bot made an account for: no Profile page to delete from.
 _PRIVACY_CLAIMS_BOT_ONLY = [
     ("link this chat to a website account with a code", "link it to a web account with a code"),
-    # The bot's words are pinned by the golden fixtures and still name the page by its old name,
-    # Integrations; the policy names the same page by its new one, Settings (it redirects).
-    ("Integrations page", "Settings page"),
+    # The bot and the policy name the same page the same way.
+    ("Settings page", "Settings page"),
     ("email the privacy address", "delete your account by email at"),
     ("within 7 days", "We will do it within 7 days"),
     ("what the policy lists as not removed", "What is not removed when you delete your account"),

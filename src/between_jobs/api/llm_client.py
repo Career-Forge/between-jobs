@@ -7,7 +7,7 @@ WHEN THE PROVIDER FAILS. `generate` turns every failure of the model provider in
 `ApiError` through ONE function, `classify_provider_error`, so a revoked key, an empty account,
 a throttle, an outage and a bad model id each answer differently:
 
-    401, 403            PROVIDER_REJECTED     key_rejected      "check the key in Integrations"
+    401, 403            PROVIDER_REJECTED     key_rejected      "check the key in Settings"
     402                 PROVIDER_REJECTED     out_of_credit     "top it up or switch key"
     other 4xx           PROVIDER_REJECTED     request_rejected  (a bad model id, an unsupported
                                                                  parameter, content refused)
@@ -121,27 +121,26 @@ three times; none would make every blip the person's problem. Whatever the SDK d
 is still bounded by the timeout above."""
 
 _INTEGRATIONS_PATH = "/profile/integrations"
-"""The web app's Integrations page, the same `settings_path` the SETUP_REQUIRED errors use."""
+"""The web app's Settings page, the same `settings_path` the SETUP_REQUIRED errors use."""
 
-KEY_REJECTED_MESSAGE = "Your AI provider rejected the key. Check it in Integrations."
+KEY_REJECTED_MESSAGE = "Your AI provider rejected the key. Check it in Settings."
 OUT_OF_CREDIT_MESSAGE = (
     "Your AI provider account is out of credit. Top it up, or switch to a different key in "
-    "Integrations."
+    "Settings."
 )
 REQUEST_REJECTED_MESSAGE = (
     "The AI provider turned that request down, often because of the model chosen. Check the "
-    "model in Integrations, or try a different one."
+    "model in Settings, or try a different one."
 )
 RATE_LIMITED_MESSAGE = "The AI provider is rate limiting this key. Wait a minute, then try again."
 UNAVAILABLE_MESSAGE = "Couldn't reach the AI provider. Try again in a moment."
 TIMEOUT_MESSAGE = "The AI provider took too long to answer. Try again in a moment."
 EMPTY_RESPONSE_MESSAGE = "The AI provider didn't return an answer. Try again in a moment."
 MODEL_NOT_FOUND_MESSAGE = (
-    "The AI provider doesn't have that model for your account. Pick a different model in "
-    "Integrations."
+    "The AI provider doesn't have that model for your account. Pick a different model in Settings."
 )
 MODEL_RETIRED_MESSAGE = (
-    "The AI provider has retired that model. Pick a different model in Integrations."
+    "The AI provider has retired that model. Pick a different model in Settings."
 )
 RESPONSE_TOO_LARGE_MESSAGE = "The AI provider's answer was larger than this server will read."
 
@@ -360,7 +359,7 @@ def classify_provider_error(
     exc: BaseException, *, named_model_errors: bool = False, dialect: Dialect | None = None
 ) -> ApiError:
     """The `ApiError` a failed model call is answered with: the code, the plain-words message,
-    whether trying again can help, the Integrations link when the person can fix it there, and
+    whether trying again can help, the Settings link when the person can fix it there, and
     the machine-readable reason in `details`. Anything this does not recognise is a retryable
     PROVIDER_UNAVAILABLE with reason `unknown`.
 

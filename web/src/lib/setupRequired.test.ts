@@ -355,7 +355,7 @@ describe("setupRequiredNotice: what labels the link", () => {
       setupRequiredNotice(
         setupError(
           { path: "/profile/integrations?capability=job_scoring", capability: "job_scoring", missing: ["model"] },
-          "Your OpenAI key is saved, but no model is chosen for it yet. Choose one in Integrations.",
+          "Your OpenAI key is saved, but no model is chosen for it yet. Choose one in Settings.",
         ),
       ),
     ).toMatchObject({
@@ -461,7 +461,7 @@ describe("problemOf", () => {
 
 
 describe("setupRequiredNotice for a model call the provider rejected", () => {
-  const KEY = "Your AI provider rejected the key. Check it in Integrations.";
+  const KEY = "Your AI provider rejected the key. Check it in Settings.";
 
   it("is the message plus a link to Settings when the key was rejected", () => {
     const notice = setupRequiredNotice(

@@ -529,7 +529,7 @@ def test_a_known_client_side_failure_ended_in_chat_is_not_reported(sentry: FakeS
 
 # -- a model provider that refuses the call: told in words, with the page that fixes it ------------
 
-_KEY_REJECTED = "Your AI provider rejected the key. Check it in Integrations."
+_KEY_REJECTED = "Your AI provider rejected the key. Check it in Settings."
 _WEB = "https://app.between-jobs.example"
 
 
