@@ -18,8 +18,10 @@ import "../../styles/workspace.css";
 //
 //   a drafted result     the ATS score (engine ✦) with its five bars, the gap interview when the score
 //                        is under 70, and the claim check; each with its own trail and receipt
-//   no result to read    a resume exists but this page has no stored outcome for it (it predates stored
-//                        results, or the latest attempt was held back): the export checks below read the
+//   no result to read    a resume exists but this page has no outcome for it to show: none is stored (it
+//                        predates stored results), the latest attempt was held back, or the stored one
+//                        could not be read (a failed read, or a run that did not finish dropped the one
+//                        on screen). The three are worded apart. The export checks below read the
 //                        resume itself, and the section says so rather than showing a score it has not
 //   no resume            an empty state naming what will appear here
 //
@@ -75,7 +77,9 @@ export function ReviewSection({ applicationId, controller, submit }: ReviewSecti
           <p className="bj-muted bj-small">
             {result !== null
               ? "The score and claim check are for the latest attempt, which was held back, so they are not shown. The export checks below read your earlier resume."
-              : "This page has no stored score or claim check for your resume. The export checks below read the resume itself."}
+              : controller.resultUnreadable
+                ? "This page couldn't show the score or claim check for your resume this time, so it can't say whether any are stored. The export checks below read the resume itself."
+                : "This page has no stored score or claim check for your resume. The export checks below read the resume itself."}
           </p>
         </DocumentBlock>
       )}

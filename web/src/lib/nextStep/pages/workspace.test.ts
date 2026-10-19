@@ -114,7 +114,7 @@ describe("the table", () => {
     },
     {
       name: "a resume with one flagged claim",
-      input: { facts: facts({ state: "drafted", flagged: 1, downloaded: false }) },
+      input: { facts: facts({ state: "drafted", flagged: 1, unreadable: false, downloaded: false }) },
       row: "A2",
       sentence: "Read the 1 flagged claim, then download.",
       action: "button:Download PDF:download-pdf",
@@ -122,7 +122,7 @@ describe("the table", () => {
     },
     {
       name: "a resume with three flagged claims",
-      input: { facts: facts({ state: "drafted", flagged: 3, downloaded: false }) },
+      input: { facts: facts({ state: "drafted", flagged: 3, unreadable: false, downloaded: false }) },
       row: "A2",
       sentence: "Read the 3 flagged claims, then download.",
       action: "button:Download PDF:download-pdf",
@@ -130,7 +130,7 @@ describe("the table", () => {
     },
     {
       name: "a resume with no flagged claims (said as flagged, never as verified)",
-      input: { facts: facts({ state: "drafted", flagged: 0, downloaded: false }) },
+      input: { facts: facts({ state: "drafted", flagged: 0, unreadable: false, downloaded: false }) },
       row: "A3",
       sentence: "No claims flagged. Give it one read, then download.",
       action: "button:Download PDF:download-pdf",
@@ -138,15 +138,23 @@ describe("the table", () => {
     },
     {
       name: "a resume from before results were stored: the claim check cannot be counted",
-      input: { facts: facts({ state: "drafted", flagged: null, downloaded: false }) },
+      input: { facts: facts({ state: "drafted", flagged: null, unreadable: false, downloaded: false }) },
       row: "A2u",
       sentence: "Your resume is ready to review. Read it against your own background, then download.",
       action: "button:Download PDF:download-pdf",
       why: ["status saved", "resume drafted", "claim check result not stored"],
     },
     {
+      name: "a resume whose stored result could not be read: said as couldn't be read, not as not stored",
+      input: { facts: facts({ state: "drafted", flagged: null, unreadable: true, downloaded: false }) },
+      row: "A2u",
+      sentence: "Your resume is ready to review. Read it against your own background, then download.",
+      action: "button:Download PDF:download-pdf",
+      why: ["status saved", "resume drafted", "claim check result couldn't be read"],
+    },
+    {
       name: "the PDF was downloaded in this visit",
-      input: { facts: facts({ state: "drafted", flagged: 2, downloaded: true }) },
+      input: { facts: facts({ state: "drafted", flagged: 2, unreadable: false, downloaded: true }) },
       row: "A4",
       sentence: "Submit on the employer's site, then mark it applied.",
       action: `external:Open the posting:${POSTING}`,
@@ -154,7 +162,7 @@ describe("the table", () => {
     },
     {
       name: "the PDF was downloaded and the posting has no web address",
-      input: { facts: facts({ state: "drafted", flagged: 0, downloaded: true }, { postingUrl: null }) },
+      input: { facts: facts({ state: "drafted", flagged: 0, unreadable: false, downloaded: true }, { postingUrl: null }) },
       row: "A4",
       sentence: "Submit on the employer's site, then mark it applied.",
       action: null,
@@ -337,8 +345,9 @@ describe("facts the rows cannot read", () => {
     ["a date that is not text", { status: "applied", appliedOn: 5, postingUrl: null, generation: { state: "none" }, gmail: "unknown" }],
     ["a generation in a state that does not exist", { status: "saved", appliedOn: null, postingUrl: null, generation: { state: "done" }, gmail: "unknown" }],
     ["a failure with no time", { status: "saved", appliedOn: null, postingUrl: null, generation: { state: "failed" }, gmail: "unknown" }],
-    ["a negative flagged count", { status: "saved", appliedOn: null, postingUrl: null, generation: { state: "drafted", flagged: -1, downloaded: false }, gmail: "unknown" }],
-    ["a flagged count that is not whole", { status: "saved", appliedOn: null, postingUrl: null, generation: { state: "drafted", flagged: 1.5, downloaded: false }, gmail: "unknown" }],
+    ["a negative flagged count", { status: "saved", appliedOn: null, postingUrl: null, generation: { state: "drafted", flagged: -1, unreadable: false, downloaded: false }, gmail: "unknown" }],
+    ["a flagged count that is not whole", { status: "saved", appliedOn: null, postingUrl: null, generation: { state: "drafted", flagged: 1.5, unreadable: false, downloaded: false }, gmail: "unknown" }],
+    ["a drafted resume that does not say whether its result was unreadable", { status: "saved", appliedOn: null, postingUrl: null, generation: { state: "drafted", flagged: null, downloaded: false }, gmail: "unknown" }],
     ["a held-back result with a text ceiling", { status: "saved", appliedOn: null, postingUrl: null, generation: { state: "held_back", ceiling: "3.6", earlierResume: false }, gmail: "unknown" }],
     ["a Gmail state that does not exist", { status: "saved", appliedOn: null, postingUrl: null, generation: { state: "none" }, gmail: "maybe" }],
   ])("are refused (%s), and the band then shows nothing rather than a guess", (_name, value) => {

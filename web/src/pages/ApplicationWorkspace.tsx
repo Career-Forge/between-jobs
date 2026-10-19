@@ -22,6 +22,7 @@ import { formatTrailDate } from "../lib/trail";
 import { useCapabilities } from "../lib/useCapabilities";
 import { useGeneration } from "../lib/useGeneration";
 import { useHiringSignalsStatus } from "../lib/useHiringSignalsStatus";
+import { useHoldHashTarget } from "../lib/useHoldHashTarget";
 import { useScrollToHash } from "../lib/useScrollToHash";
 import { SECTION_IDS, HONEST_READ_HEADING_ID, workspaceJumpGroups } from "../lib/workspaceSections";
 import { generationFact, gmailFactOf } from "../lib/workspaceFacts";
@@ -53,7 +54,13 @@ import "../styles/workspace.css";
 // The frames. Loading: the breadcrumb, a placeholder, and the band's eyebrow only. Not found (a 404 on
 // the application): the band says so and links back to Applications; asking again cannot help. Failed:
 // the page's own data could not be read; the band says what failed and offers Try again, and the body
-// holds a callout with no Retry of its own. Ready: everything above.
+// holds a callout that has a Retry of its own only when the band is showing something else (setup
+// failing, no profile, no usable key all outrank the page's failure), so the read always has one.
+// Ready: everything above.
+//
+// Setup (profile and credentials) is asked again without disturbing the ready page: the band's Try
+// again re-reads only the read that failed, and the sections stay mounted while it is out, so a run, a
+// download, the checks and Tailor's request are not lost or sent again.
 
 type Read<T> = { kind: "loading" } | { kind: "ready"; value: T } | { kind: "failed"; at: string; message: string } | { kind: "not_found" };
 
@@ -92,35 +99,57 @@ function Workspace({ id }: { id: string }) {
     }
   }, [id]);
 
-  const loadSetup = useCallback(async () => {
-    setProfile(LOADING);
-    setCredentials(LOADING);
-    // A missing profile does not block the workspace. Company intel and the other research panels do not
-    // read it, and generation says what is missing and links to the fix. The panels that edit the
-    // resume's own document (header, structure, settings, and Tailor) cannot work without one -- the
-    // server answers them with SETUP_REQUIRED -- so with no profile they give way to a note.
-    const profileRead = apiFetch<ProfileVersion>("/profile/current").then(
-      (version): Read<CanonicalProfile | null> => ({ kind: "ready", value: version.canonical_json }),
-      (e): Read<CanonicalProfile | null> =>
-        e instanceof ApiError && e.status === 404
-          ? { kind: "ready", value: null }
-          : { kind: "failed", at: clockTime(new Date()), message: e instanceof Error ? e.message : "Failed to load" },
-    );
-    const credentialsRead = apiFetch<Record<string, unknown>[]>("/credentials").then(
-      (rows): Read<readonly Record<string, unknown>[]> => ({ kind: "ready", value: rows }),
-      (e): Read<readonly Record<string, unknown>[]> => ({ kind: "failed", at: clockTime(new Date()), message: e instanceof Error ? e.message : "Failed to load" }),
-    );
-    // Each answer is drawn as it arrives; neither waits for the other.
-    void profileRead.then(setProfile);
-    void credentialsRead.then(setCredentials);
-  }, []);
+  // A missing profile does not block the workspace. Company intel and the other research panels do not
+  // read it, and generation says what is missing and links to the fix. The panels that edit the
+  // resume's own document (header, structure, settings, and Tailor) cannot work without one -- the
+  // server answers them with SETUP_REQUIRED -- so with no profile they give way to a note.
+  const readProfile = useCallback(
+    () =>
+      apiFetch<ProfileVersion>("/profile/current").then(
+        (version): Read<CanonicalProfile | null> => ({ kind: "ready", value: version.canonical_json }),
+        (e): Read<CanonicalProfile | null> =>
+          e instanceof ApiError && e.status === 404
+            ? { kind: "ready", value: null }
+            : { kind: "failed", at: clockTime(new Date()), message: e instanceof Error ? e.message : "Failed to load" },
+      ),
+    [],
+  );
+  const readCredentials = useCallback(
+    () =>
+      apiFetch<Record<string, unknown>[]>("/credentials").then(
+        (rows): Read<readonly Record<string, unknown>[]> => ({ kind: "ready", value: rows }),
+        (e): Read<readonly Record<string, unknown>[]> => ({ kind: "failed", at: clockTime(new Date()), message: e instanceof Error ? e.message : "Failed to load" }),
+      ),
+    [],
+  );
+
+  // The first load. Each answer is drawn as it arrives; neither waits for the other.
+  useEffect(() => {
+    void readProfile().then(setProfile);
+    void readCredentials().then(setCredentials);
+  }, [readProfile, readCredentials]);
+
+  // The band's Try again for a failed setup check. It asks again only for the read that failed and
+  // keeps the old answer until the new one comes back: the ready page is never sent back to its
+  // loading frame, so nothing under it (a run in flight, a download, Tailor's coverage call) is
+  // unmounted or asked for twice. A failed profile read has no ready page to protect (the page cannot
+  // render without it), so it does show the loading frame.
+  const [setupRetrying, setSetupRetrying] = useState(false);
+  const retrySetup = useCallback(() => {
+    const reads: Promise<unknown>[] = [];
+    if (profile.kind === "failed") {
+      setProfile(LOADING);
+      reads.push(readProfile().then(setProfile));
+    }
+    if (credentials.kind === "failed") reads.push(readCredentials().then(setCredentials));
+    if (reads.length === 0) return;
+    setSetupRetrying(true);
+    void Promise.all(reads).then(() => setSetupRetrying(false));
+  }, [profile.kind, credentials.kind, readProfile, readCredentials]);
 
   useEffect(() => {
     void loadApplication();
   }, [loadApplication]);
-  useEffect(() => {
-    void loadSetup();
-  }, [loadSetup]);
 
   // One stage change, from the select or from "I submitted this". It is the same request the
   // Applications page makes; the page re-reads the application afterwards, so the band follows.
@@ -164,8 +193,6 @@ function Workspace({ id }: { id: string }) {
         ? { state: "failed", call: "GET /credentials", at: credentials.at }
         : { state: "loading" };
 
-  const retrySetup = () => void loadSetup();
-
   if (application.kind === "ready" && profile.kind === "ready") {
     return (
       <ReadyWorkspace
@@ -175,6 +202,7 @@ function Workspace({ id }: { id: string }) {
         credentials={credentials}
         profileCheck={profileCheck}
         credentialsCheck={credentialsCheck}
+        setupRetrying={setupRetrying}
         statusBusy={statusBusy}
         statusProblem={statusProblem}
         onStatus={(status, source) => void changeStatus(status, source)}
@@ -206,9 +234,19 @@ function Workspace({ id }: { id: string }) {
           ? { what: "Couldn't load this application", call: `GET /applications/${id}`, at: application.at, intent: "retry" }
           : null,
     };
-    outcome = nextStepWithRow(input).outcome;
+    const decided = nextStepWithRow(input);
+    outcome = decided.outcome;
     const message = application.kind === "failed" ? application.message : profile.kind === "failed" ? profile.message : "";
-    body = <FailureState message={`Couldn't read ${application.kind === "failed" ? "this application" : "your profile"}: ${message}`} />;
+    // The band carries Try again for the application read only when its row is F1. Setup failing, no
+    // profile or no usable key all outrank it, and their buttons do not read the application again, so
+    // the body then carries the Retry itself.
+    const bandRetriesApplication = decided.rowId === "F1";
+    body = (
+      <FailureState
+        message={`Couldn't read ${application.kind === "failed" ? "this application" : "your profile"}: ${message}`}
+        onRetry={application.kind === "failed" && !bandRetriesApplication ? () => void loadApplication() : undefined}
+      />
+    );
   }
 
   return (
@@ -216,6 +254,7 @@ function Workspace({ id }: { id: string }) {
       <PageHeader title="Application" breadcrumb={[{ label: "Applications", to: "/applications" }, { label: crumb }]} />
       <NextStepBand
         outcome={outcome}
+        pending={setupRetrying ? { intent: "retry-setup", label: "Trying again..." } : null}
         onAction={(intent) => {
           if (intent === "retry") void loadApplication();
           if (intent === "retry-setup") retrySetup();
@@ -233,6 +272,8 @@ interface ReadyProps {
   credentials: Read<readonly Record<string, unknown>[]>;
   profileCheck: SetupCheck<{ active: boolean; importWaiting: boolean }>;
   credentialsCheck: SetupCheck<{ modelKey: ModelKeyReading }>;
+  /** A setup read is being asked again (the band's Try again); the page stays as it is meanwhile. */
+  setupRetrying: boolean;
   statusBusy: boolean;
   statusProblem: { source: "select" | "submit"; message: string; retry: () => void } | null;
   onStatus: (status: ApplicationStatus, source: "select" | "submit") => void;
@@ -251,7 +292,7 @@ function modelSetupOf(reading: ModelKeyReading | undefined): Missing | null {
   };
 }
 
-function ReadyWorkspace({ id, application, profile, credentials, profileCheck, credentialsCheck, statusBusy, statusProblem, onStatus, onReload, onRetrySetup }: ReadyProps) {
+function ReadyWorkspace({ id, application, profile, credentials, profileCheck, credentialsCheck, setupRetrying, statusBusy, statusProblem, onStatus, onReload, onRetrySetup }: ReadyProps) {
   const location = useLocation();
   const controller = useGeneration(id, application.resume_exists);
   const hiring = useHiringSignalsStatus();
@@ -268,10 +309,10 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
       status: application.status,
       appliedOn: formatTrailDate(application.date_applied ?? undefined, { now }),
       postingUrl,
-      generation: generationFact({ read: controller.read, state: controller.state, hasResume: controller.hasResume, downloaded: controller.downloaded }),
+      generation: generationFact({ read: controller.read, state: controller.state, hasResume: controller.hasResume, downloaded: controller.downloaded, resultUnreadable: controller.resultUnreadable }),
       gmail: gmailFactOf(gmail, credentials.kind === "ready" ? credentials.value : null),
     }),
-    [application.status, application.date_applied, now, postingUrl, controller.read, controller.state, controller.hasResume, controller.downloaded, gmail, credentials],
+    [application.status, application.date_applied, now, postingUrl, controller.read, controller.state, controller.hasResume, controller.downloaded, controller.resultUnreadable, gmail, credentials],
   );
 
   const input: NextStepInput = useMemo(
@@ -316,8 +357,10 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
   }
 
   // The step the person pressed is replaced by the next one; when the control that had focus is gone,
-  // focus goes back to the band. It waits until nothing the band depends on is still out.
-  const busy = controller.state.kind === "generating" || controller.downloading !== null;
+  // focus goes back to the band. It waits until nothing the band depends on is still out. "I submitted
+  // this" is one of them: recording the status removes the block that held the button, and the band
+  // (an unlit sentence from Applied on, which takes focus for that reason) says what is true now.
+  const busy = controller.state.kind === "generating" || controller.downloading !== null || statusBusy;
   useEffect(() => {
     if (!refocus || busy) return;
     setRefocus(false);
@@ -342,6 +385,10 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
     heading.focus();
   }, [location.hash, location.key, heldBack]);
 
+  // The panels load after the page arrives and push a deep link's section down; hold it in place until
+  // the person takes over (lib/useHoldHashTarget.ts).
+  useHoldHashTarget(true, location.hash);
+
   // A link to #hiring-posts that arrives before the server has said whether the feature is on lands on
   // an empty anchor; scroll again once it has answered, when the section (or its note) exists.
   useScrollToHash(location.hash === `#${SECTION_IDS.hiringPosts}` && hiring.kind !== "checking", location.hash, hiring.kind);
@@ -352,7 +399,9 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
       ? { intent: WORKSPACE_INTENTS.generate, label: "Generating..." }
       : controller.downloading === "resume"
         ? { intent: WORKSPACE_INTENTS.downloadPdf, label: "Compiling PDF..." }
-        : null;
+        : setupRetrying
+          ? { intent: "retry-setup", label: "Trying again..." }
+          : null;
 
   const coverLetterInBand = rowId === "A1" || rowId === "A1g";
   const setup = modelSetupOf(modelKey);
@@ -391,6 +440,7 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
           descriptionText={snapshot?.description_text}
           profile={profile}
           modelSetup={setup}
+          modelPending={credentials.kind === "loading"}
           generate={{
             controller,
             retryInBand: rowId === "A1c",
@@ -407,7 +457,10 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
                   postingUrl,
                   busy: statusBusy,
                   problem: statusProblem?.source === "submit" ? statusProblem.message : null,
-                  onMarkApplied: () => onStatus("applied", "submit"),
+                  onMarkApplied: () => {
+                    setRefocus(true);
+                    onStatus("applied", "submit");
+                  },
                 }
               : null
           }

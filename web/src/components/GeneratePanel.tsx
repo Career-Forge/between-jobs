@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { flaggedCount, isClaimWarning } from "../lib/claimWarnings";
 import type { PrepareApplicationResult } from "../lib/generateTypes";
@@ -23,7 +24,8 @@ import "../styles/workspace.css";
 //   nothing      "The engine didn't produce a resume for this job."
 //   failed       a callout naming what could not be done, with a Retry unless the band carries
 //                "Generate again" (`retryInBand`); a missing profile or key keeps its link instead.
-// A result read back from storage (after a reload) says so, with no date: none came back with it.
+// A result read back from storage (after a reload) says so, with no date: none came back with it, in the
+// drafted view and under the honest read alike.
 //
 // The Generate button and Download PDF are outlined here. When the next-step band carries the same step
 // it is the page's one cyan, and the body's copy stays secondary (one action, one cyan, once).
@@ -49,6 +51,8 @@ export interface GeneratePanelProps {
   controller: GenerationController;
   /** What is already known to be missing before a run could work (no profile, no usable model key). */
   setupMissing?: { message: string; missing: readonly [StateLink, ...StateLink[]] } | null;
+  /** Whether a usable model key is saved is still being asked: the run controls wait for the answer. */
+  setupPending?: boolean;
   /** The band carries "Generate again" for a failed run, so the failure here has no Retry of its own. */
   retryInBand?: boolean;
   /** The band carries the cover-letter choice, so it is not drawn twice. */
@@ -57,9 +61,12 @@ export interface GeneratePanelProps {
   onParked?: () => void;
 }
 
-export function GeneratePanel({ applicationId, controller, setupMissing = null, retryInBand = false, coverLetterInBand = false, onParked }: GeneratePanelProps) {
+export function GeneratePanel({ applicationId, controller, setupMissing = null, setupPending = false, retryInBand = false, coverLetterInBand = false, onParked }: GeneratePanelProps) {
   const { state, read, hasResume, hasCoverLetter, downloading, downloadError } = controller;
   const generating = state.kind === "generating";
+  // "Generate anyway" is in the held-back read, which a new run replaces. Focus moves to this panel's own
+  // Generate button first (it says "Generating..." while the run is out), so it is not dropped to the page.
+  const generateButton = useRef<HTMLButtonElement>(null);
   // The restore can land on a DECLINED latest attempt (the honest read) while an OLDER successful
   // generation's resume still exists and is downloadable: both are true at once, so a note says so
   // instead of letting it read as a contradiction.
@@ -67,14 +74,19 @@ export function GeneratePanel({ applicationId, controller, setupMissing = null, 
 
   return (
     <div className="bj-ws-generate">
-      <p className="bj-ws-intro">Runs the resume engine against this job: a real model call, on the provider key you saved.</p>
+      <p className="bj-ws-intro">
+        Runs the resume engine against this job: a real model call, on the provider key you saved.
+        {!hasResume && state.kind === "idle" && " A run makes a resume PDF with its ATS score and its claim check, and a cover letter if you ask for one."}
+      </p>
 
       {setupMissing !== null ? (
         <SetupRequiredState message={setupMissing.message} missing={setupMissing.missing} />
+      ) : setupPending ? (
+        <LoadingState rows={1} rowHeight={40} label="Checking your model setup..." />
       ) : (
         <>
           <div className="bj-actions">
-            <button type="button" aria-disabled={generating ? true : undefined} onClick={() => void controller.generate()}>
+            <button ref={generateButton} type="button" aria-disabled={generating ? true : undefined} onClick={() => void controller.generate()}>
               {generating ? "Generating..." : "Generate resume"}
             </button>
           </div>
@@ -102,7 +114,10 @@ export function GeneratePanel({ applicationId, controller, setupMissing = null, 
           result={state.result}
           restored={state.restored}
           earlierResume={showingDeclineWithAnOlderResume}
-          onGenerateAnyway={() => void controller.generate(true)}
+          onGenerateAnyway={() => {
+            generateButton.current?.focus();
+            void controller.generate(true);
+          }}
           onParked={onParked}
         />
       )}
@@ -156,6 +171,7 @@ function ResultView({
     return (
       <div className="bj-ws-result">
         <HonestFloor applicationId={applicationId} fit={result.fit} onGenerateAnyway={onGenerateAnyway} onParked={onParked} />
+        {restored && <p className="bj-ws-caption">Read back from your last stored generation: no time came back with it.</p>}
         <BlockTrail trail={trail.trail} receipt={trail.receipt} receiptTitle={trail.receiptTitle} />
       </div>
     );

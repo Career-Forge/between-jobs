@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ChecklistItem } from "../lib/generateTypes";
 import type { ChecklistState } from "../lib/useGeneration";
+import { checklistSummary } from "../lib/checklistSummary";
 import { checklistTrail } from "../lib/workspaceTrails";
 import { BlockTrail } from "./paper/DocumentLayout";
 import { ChecklistGroup, ChecklistSummary, type ChecklistRowProps } from "./paper/ChecklistRow";
@@ -23,6 +24,12 @@ import "../styles/workspace.css";
 // and nothing more: it is not saved, it is not counted in the summary, and nothing reads it -- Between
 // Jobs has no record that anything was reviewed, so it does not pretend to have one. It uses the shared
 // selection style (a maroon fill with aria-pressed). Nothing here submits or sends anything.
+//
+// The marks belong to the PDF they were made on: when the checks go back to idle (a new generation) they
+// are cleared, so a mark made on draft 1 never reads as "I checked this" on draft 2's rows. A button
+// keeps one name whatever its state ("I checked this", with the row's own label read after it, since four
+// buttons with one name cannot be told apart in a list of controls); aria-pressed carries the state and the
+// bullet is only a second cue for the eye.
 
 const BETWEEN_JOBS = "Checked by Between Jobs";
 const YOURS = "Yours to check";
@@ -41,6 +48,10 @@ export function ExportChecklist({ checklist, onRun }: { checklist: ChecklistStat
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
   const loading = checklist.kind === "loading";
 
+  useEffect(() => {
+    if (checklist.kind === "idle") setTicked((current) => (current.size === 0 ? current : new Set()));
+  }, [checklist.kind]);
+
   const toggle = (key: string) =>
     setTicked((current) => {
       const next = new Set(current);
@@ -51,50 +62,35 @@ export function ExportChecklist({ checklist, onRun }: { checklist: ChecklistStat
 
   const run = (
     <button type="button" aria-disabled={loading ? true : undefined} onClick={() => !loading && onRun()}>
-      {loading ? "Checking..." : checklist.kind === "ready" ? "Check again" : "Run the export checks"}
+      {loading ? "Checking..." : checklist.kind === "ready" ? "Check again" : checklist.kind === "error" ? "Retry" : "Run the export checks"}
     </button>
   );
+
+  // One button, in one place in the tree whatever the state: Run, Checking..., Check again, Retry. If it were
+  // rebuilt for each state a keyboard user's focus would be dropped to the page when they pressed it.
+  const ready = checklist.kind === "ready" ? checklist.items : null;
 
   return (
     <div className="bj-ws-export">
       <h3 className="bj-ws-block-title">Export checks</h3>
       {checklist.kind === "idle" && (
-        <>
-          <p className="bj-small bj-muted">
-            Checks the compiled PDF for page count, warnings, claim flags and fit to your settings. It recompiles your resume, so it runs only when you ask.
-          </p>
-          <div className="bj-actions">{run}</div>
-        </>
+        <p className="bj-small bj-muted">
+          Checks the compiled PDF for page count, warnings, claim flags and fit to your settings. It recompiles your resume, so it runs only when you ask.
+        </p>
       )}
-      {checklist.kind === "loading" && (
-        <>
-          <LoadingState rows={3} rowHeight={40} label="Checking the PDF..." />
-          <div className="bj-actions">{run}</div>
-        </>
-      )}
-      {checklist.kind === "error" && (
-        <>
-          <FailureState message={checklist.message} onRetry={onRun} />
-        </>
-      )}
-      {checklist.kind === "ready" && (
-        <ReadyChecklist items={checklist.items} ticked={ticked} onToggle={toggle} run={run} />
-      )}
+      {checklist.kind === "loading" && <LoadingState rows={3} rowHeight={40} label="Checking the PDF..." />}
+      {checklist.kind === "error" && <FailureState message={checklist.message} />}
+      {ready !== null && <ReadyChecklist items={ready} ticked={ticked} onToggle={toggle} />}
+      <div className="bj-actions">{run}</div>
+      {ready !== null && <ChecklistTrail />}
+      <div className="bj-visually-hidden" role="status" aria-live="polite">
+        {ready === null ? "" : `Export checks finished: ${checklistSummary(ready.map((item) => item.status))}.`}
+      </div>
     </div>
   );
 }
 
-function ReadyChecklist({
-  items,
-  ticked,
-  onToggle,
-  run,
-}: {
-  items: ChecklistItem[];
-  ticked: ReadonlySet<string>;
-  onToggle: (key: string) => void;
-  run: React.ReactNode;
-}) {
+function ReadyChecklist({ items, ticked, onToggle }: { items: ChecklistItem[]; ticked: ReadonlySet<string>; onToggle: (key: string) => void }) {
   const checked: Row[] = items
     .filter((item) => item.status !== "not_checked")
     .map((item) => ({ id: item.key, state: item.status, label: item.label, hint: item.detail, caveat: caveatFor(item, items) }));
@@ -107,11 +103,11 @@ function ReadyChecklist({
       hint: item.detail,
       actions: (
         <button type="button" className="bj-selectable" aria-pressed={ticked.has(item.key)} onClick={() => onToggle(item.key)}>
-          {ticked.has(item.key) ? "● I checked this" : "I checked this"}
+          {ticked.has(item.key) && <span aria-hidden="true">● </span>}
+          I checked this<span className="bj-visually-hidden">: {item.label}</span>
         </button>
       ),
     }));
-  const trail = checklistTrail();
   return (
     <>
       <ChecklistSummary states={items.map((item) => item.status)} />
@@ -122,8 +118,11 @@ function ReadyChecklist({
           <p className="bj-ws-caption">Your marks are for you while this page is open. They are not saved, and Between Jobs does not count them as checked.</p>
         </>
       )}
-      <div className="bj-actions">{run}</div>
-      <BlockTrail trail={trail.trail} receipt={trail.receipt} receiptTitle={trail.receiptTitle} />
     </>
   );
+}
+
+function ChecklistTrail() {
+  const trail = checklistTrail();
+  return <BlockTrail trail={trail.trail} receipt={trail.receipt} receiptTitle={trail.receiptTitle} />;
 }

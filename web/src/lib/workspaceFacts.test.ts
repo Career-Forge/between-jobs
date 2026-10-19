@@ -17,7 +17,7 @@ function result(overrides: Partial<PrepareApplicationResult> = {}): PrepareAppli
 }
 
 function inputs(overrides: Partial<GenerationInputs>): GenerationInputs {
-  return { read: "done", state: { kind: "idle" }, hasResume: false, downloaded: false, ...overrides };
+  return { read: "done", state: { kind: "idle" }, hasResume: false, downloaded: false, resultUnreadable: false, ...overrides };
 }
 
 const FIT = { overall_score: 3.6, dimensions: {}, gaps: [], strengths: [], recommendation: "Skip", keyword_gaps: [], keyword_hits: [], visa_flag: null };
@@ -27,18 +27,19 @@ describe("what the band is told about the resume", () => {
     ["a request is out", inputs({ state: { kind: "generating" }, hasResume: true }), { state: "generating" }],
     ["the request failed in this visit", inputs({ state: { kind: "error", message: "x", at: "09:14" } }), { state: "failed", at: "09:14" }],
     ["the stored result is still being read", inputs({ read: "loading" }), { state: "reading" }],
-    ["the stored result is being read, but a run in this visit already has an answer", inputs({ read: "loading", state: { kind: "ready", restored: false, result: result() } }), { state: "drafted", flagged: 0, downloaded: false }],
+    ["the stored result is being read, but a run in this visit already has an answer", inputs({ read: "loading", state: { kind: "ready", restored: false, result: result() } }), { state: "drafted", flagged: 0, unreadable: false, downloaded: false }],
     ["nothing is stored and no resume exists", inputs({}), { state: "none" }],
     ["the read failed and no resume exists", inputs({ read: "failed" }), { state: "none" }],
-    ["a resume exists and there is no result to count its claims in", inputs({ hasResume: true }), { state: "drafted", flagged: null, downloaded: false }],
-    ["the read failed and a resume exists", inputs({ read: "failed", hasResume: true }), { state: "drafted", flagged: null, downloaded: false }],
-    ["a drafted result with two flagged claims and a caution", inputs({ state: { kind: "ready", restored: true, result: result({ warnings: ['unsupported claim (unverifiable): "a" -- b', 'unsupported claim: "c" -- d', "engine caution"] }) }, hasResume: true }), { state: "drafted", flagged: 2, downloaded: false }],
-    ["a drafted result that was downloaded in this visit", inputs({ state: { kind: "ready", restored: false, result: result() }, hasResume: true, downloaded: true }), { state: "drafted", flagged: 0, downloaded: true }],
+    ["a resume exists and there is no result to count its claims in", inputs({ hasResume: true }), { state: "drafted", flagged: null, unreadable: false, downloaded: false }],
+    ["the read failed and a resume exists: the claim check could not be read, which is not the same as none stored", inputs({ read: "failed", hasResume: true, resultUnreadable: true }), { state: "drafted", flagged: null, unreadable: true, downloaded: false }],
+    ["a setup-blocked run dropped the result that was on screen, and a resume exists", inputs({ state: { kind: "setup", notice: { message: "m", linkTo: null, linkLabel: null } }, hasResume: true, resultUnreadable: true }), { state: "drafted", flagged: null, unreadable: true, downloaded: false }],
+    ["a drafted result with two flagged claims and a caution", inputs({ state: { kind: "ready", restored: true, result: result({ warnings: ['unsupported claim (unverifiable): "a" -- b', 'unsupported claim: "c" -- d', "engine caution"] }) }, hasResume: true }), { state: "drafted", flagged: 2, unreadable: false, downloaded: false }],
+    ["a drafted result that was downloaded in this visit", inputs({ state: { kind: "ready", restored: false, result: result() }, hasResume: true, downloaded: true }), { state: "drafted", flagged: 0, unreadable: false, downloaded: true }],
     ["held back, no earlier resume", inputs({ state: { kind: "ready", restored: true, result: result({ resume: null, fit: FIT }) } }), { state: "held_back", ceiling: 3.6, earlierResume: false }],
     ["held back, an earlier resume still exists", inputs({ state: { kind: "ready", restored: true, result: result({ resume: null, fit: FIT }) }, hasResume: true }), { state: "held_back", ceiling: 3.6, earlierResume: true }],
     ["held back with a fit read that has no usable score", inputs({ state: { kind: "ready", restored: true, result: result({ resume: null, fit: { ...FIT, overall_score: Number.NaN } }) } }), { state: "held_back", ceiling: null, earlierResume: false }],
     ["a result with no resume and no fit, nothing earlier", inputs({ state: { kind: "ready", restored: true, result: result({ resume: null, fit: null }) } }), { state: "none" }],
-    ["a result with no resume and no fit, an earlier resume exists", inputs({ state: { kind: "ready", restored: true, result: result({ resume: null }) }, hasResume: true }), { state: "drafted", flagged: null, downloaded: false }],
+    ["a result with no resume and no fit, an earlier resume exists", inputs({ state: { kind: "ready", restored: true, result: result({ resume: null }) }, hasResume: true }), { state: "drafted", flagged: null, unreadable: false, downloaded: false }],
     ["a setup failure, which is not a failed run", inputs({ state: { kind: "setup", notice: { message: "m", linkTo: null, linkLabel: null } } }), { state: "none" }],
   ])("%s", (_name, given, expected) => {
     expect(generationFact(given)).toEqual(expected);

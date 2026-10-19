@@ -15,6 +15,8 @@ export interface GenerationInputs {
   hasResume: boolean;
   /** A PDF of the resume was downloaded in this visit. */
   downloaded: boolean;
+  /** A stored result may exist that the page is not showing (the read failed, or a run dropped it). */
+  resultUnreadable: boolean;
 }
 
 // What is known about the resume right now, for the band.
@@ -24,22 +26,24 @@ export interface GenerationInputs {
 //    with the number of claims it flagged;
 //  - no result in view: while the stored one is being read, "reading" (the band waits, it does not
 //    guess); once the read is over (it answered, or failed) a resume that exists is "drafted" with no
-//    count -- nothing is known about its claim check -- and no resume is "none".
+//    count -- nothing is known about its claim check -- and no resume is "none". Why there is no count is
+//    told apart: `unreadable` is a result the page could not show (the read failed, or a failed run
+//    dropped the one on screen), against a read that answered that none is stored.
 export function generationFact(input: GenerationInputs): GenerationFact {
   const { state } = input;
   if (state.kind === "generating") return { state: "generating" };
   if (state.kind === "error") return { state: "failed", at: state.at };
   if (state.kind === "ready") return factOfResult(state.result, input);
   if (input.read === "loading" && state.kind === "idle") return { state: "reading" };
-  return input.hasResume ? { state: "drafted", flagged: null, downloaded: input.downloaded } : { state: "none" };
+  return input.hasResume ? { state: "drafted", flagged: null, unreadable: input.resultUnreadable, downloaded: input.downloaded } : { state: "none" };
 }
 
 function factOfResult(result: PrepareApplicationResult, input: GenerationInputs): GenerationFact {
-  if (result.resume !== null) return { state: "drafted", flagged: flaggedCount(result.warnings), downloaded: input.downloaded };
+  if (result.resume !== null) return { state: "drafted", flagged: flaggedCount(result.warnings), unreadable: false, downloaded: input.downloaded };
   if (result.fit) return { state: "held_back", ceiling: fitCeiling(result.fit), earlierResume: input.hasResume };
   // Nothing was produced and there was no fit to read: not a held-back attempt. An older resume still
   // exists if the page said so, and nothing is known about its claim check.
-  return input.hasResume ? { state: "drafted", flagged: null, downloaded: input.downloaded } : { state: "none" };
+  return input.hasResume ? { state: "drafted", flagged: null, unreadable: false, downloaded: input.downloaded } : { state: "none" };
 }
 
 // The fields of a credential row the Gmail check reads. A row missing one is read as it is: a missing

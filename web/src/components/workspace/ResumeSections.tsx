@@ -6,7 +6,7 @@ import { TailorPanel } from "../TailorPanel";
 import { GeneratePanel, type GeneratePanelProps } from "../GeneratePanel";
 import { DocumentBlock } from "../paper/DocumentLayout";
 import { SectionChapter } from "../paper/SectionChapter";
-import { SetupRequiredState, type StateLink } from "../paper/StateViews";
+import { LoadingState, SetupRequiredState, type StateLink } from "../paper/StateViews";
 import type { CanonicalProfile } from "../../lib/profileTypes";
 import { SECTION_IDS } from "../../lib/workspaceSections";
 import { PostingBlock } from "./PostingBlock";
@@ -22,7 +22,9 @@ import "../../styles/workspace.css";
 //
 // A part that needs something the person has not set up says what is missing, with the link that fixes
 // it, and fires no request while it is known to be missing: Draft and Tailor need an active profile,
-// Tailor (a model call on mount) and Generate also need a usable model key.
+// Tailor (a model call on mount) and Generate also need a usable model key. Until the credentials read
+// has answered, "known to be missing" is not known either way, so Tailor is not mounted and Generate's
+// button is not drawn: a model call must never go out ahead of the answer that could forbid it.
 
 export type Missing = { message: string; missing: readonly [StateLink, ...StateLink[]] };
 
@@ -33,6 +35,9 @@ export interface ResumeSectionsProps {
   profile: CanonicalProfile | null;
   /** What Tailor and Generate are missing, if the page knows; null when they can run. */
   modelSetup: Missing | null;
+  /** The credentials read has not answered: Tailor and the Generate button wait for it (an answer of
+   *  "failed" is an answer; it claims nothing, and they run). */
+  modelPending?: boolean;
   generate: Omit<GeneratePanelProps, "applicationId" | "setupMissing">;
 }
 
@@ -50,7 +55,7 @@ function Titled({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-export function ResumeSections({ applicationId, descriptionText, profile, modelSetup, generate }: ResumeSectionsProps) {
+export function ResumeSections({ applicationId, descriptionText, profile, modelSetup, modelPending = false, generate }: ResumeSectionsProps) {
   const generateSetup: Missing | null = profile === null ? NEEDS_PROFILE : modelSetup;
   return (
     <>
@@ -65,6 +70,8 @@ export function ResumeSections({ applicationId, descriptionText, profile, modelS
             <SetupRequiredState {...NEEDS_PROFILE} />
           ) : modelSetup !== null ? (
             <SetupRequiredState {...modelSetup} />
+          ) : modelPending ? (
+            <LoadingState rows={2} rowHeight={48} label="Checking your model setup..." />
           ) : (
             <TailorPanel applicationId={applicationId} />
           )}
@@ -105,7 +112,7 @@ export function ResumeSections({ applicationId, descriptionText, profile, modelS
       <div className="bj-ws-section">
         <SectionChapter id={SECTION_IDS.generate} title="Generate" />
         <DocumentBlock>
-          <GeneratePanel applicationId={applicationId} setupMissing={generateSetup} {...generate} />
+          <GeneratePanel applicationId={applicationId} setupMissing={generateSetup} setupPending={modelPending && profile !== null} {...generate} />
         </DocumentBlock>
       </div>
     </>

@@ -95,6 +95,35 @@ describe("the result", () => {
   });
 });
 
+describe("keyboard focus", () => {
+  it("stays on the one button through Run, Checking..., Check again and a failure's Retry: it is never rebuilt", () => {
+    const onRun = vi.fn();
+    const { container, rerender } = render(<ExportChecklist checklist={{ kind: "idle" }} onRun={onRun} />);
+    const button = buttonNamed(container, "Run the export checks");
+    button.focus();
+    for (const [checklist, name] of [
+      [{ kind: "loading" }, "Checking..."],
+      [ready(), "Check again"],
+      [{ kind: "loading" }, "Checking..."],
+      [{ kind: "error", message: "Failed to load checklist" }, "Retry"],
+      [{ kind: "idle" }, "Run the export checks"],
+    ] as [ChecklistState, string][]) {
+      rerender(<ExportChecklist checklist={checklist} onRun={onRun} />);
+      expect(buttonNamed(container, name), name).toBe(button);
+      expect(document.activeElement, name).toBe(button);
+    }
+  });
+
+  it("announces that the checks finished, with the counts, from a status region that was already there", () => {
+    const { container, rerender } = render(<ExportChecklist checklist={{ kind: "loading" }} onRun={() => undefined} />);
+    const region = query(container, ".bj-visually-hidden[role='status']");
+    expect(text(region)).toBe("");
+    rerender(<ExportChecklist checklist={ready()} onRun={() => undefined} />);
+    expect(query(container, ".bj-visually-hidden[role='status']")).toBe(region);
+    expect(text(region)).toBe("Export checks finished: 5 pass · 1 fail · 4 not checked.");
+  });
+});
+
 describe("the person's own marks", () => {
   it("are off by default, pressed with the keyboard like any button, and use the shared selection state", () => {
     const { container } = render(<ExportChecklist checklist={ready()} onRun={() => undefined} />);
@@ -105,9 +134,39 @@ describe("the person's own marks", () => {
     expect(keydown("Enter", { target: marks[0] })).toBe(true);
     click(marks[0]);
     expect(marks[0].getAttribute("aria-pressed")).toBe("true");
-    expect(text(marks[0])).toBe("● I checked this");
+    expect(text(marks[0])).toContain("●");
     click(marks[0]);
     expect(marks[0].getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("keep one accessible name whatever their state, tell the four rows apart, and hide the bullet from a screen reader", () => {
+    const { container } = render(<ExportChecklist checklist={ready()} onRun={() => undefined} />);
+    const marks = [...container.querySelectorAll("button.bj-selectable")] as HTMLButtonElement[];
+    const nameOf = (button: HTMLElement) => {
+      const clone = button.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll("[aria-hidden='true']").forEach((node) => node.remove());
+      return text(clone);
+    };
+    const before = marks.map(nameOf);
+    expect(before).toEqual(["I checked this: Links work", "I checked this: text_selectable", "I checked this: fonts_embedded", "I checked this: no_duplicate_bullets"]);
+    expect(new Set(before).size).toBe(4);
+    click(marks[0]);
+    expect(nameOf(marks[0])).toBe(before[0]);
+    expect(marks[0].getAttribute("aria-pressed")).toBe("true");
+    expect(marks[0].querySelector("[aria-hidden='true']")?.textContent).toContain("●");
+  });
+
+  it("are cleared when the checks go back to idle for a new generation, and kept while they re-run on the same PDF", () => {
+    const { container, rerender } = render(<ExportChecklist checklist={ready()} onRun={() => undefined} />);
+    click(query(container, "button.bj-selectable"));
+    expect(container.querySelectorAll("button.bj-selectable[aria-pressed='true']")).toHaveLength(1);
+    rerender(<ExportChecklist checklist={{ kind: "loading" }} onRun={() => undefined} />);
+    rerender(<ExportChecklist checklist={ready()} onRun={() => undefined} />);
+    expect(container.querySelectorAll("button.bj-selectable[aria-pressed='true']")).toHaveLength(1);
+    rerender(<ExportChecklist checklist={{ kind: "idle" }} onRun={() => undefined} />);
+    rerender(<ExportChecklist checklist={ready()} onRun={() => undefined} />);
+    expect(container.querySelectorAll("button.bj-selectable")).toHaveLength(4);
+    expect(container.querySelectorAll("button.bj-selectable[aria-pressed='true']")).toHaveLength(0);
   });
 
   it("are never counted: ticking every one leaves the summary and the states as the server said, and the page says they are not saved", () => {

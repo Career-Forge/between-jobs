@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type { ForgeFitResult } from "../lib/generateTypes";
 import { dimensionRows, fitBadgeLabel } from "../lib/honestFloor";
@@ -38,6 +38,12 @@ export function HonestFloor({
   const [parking, setParking] = useState(false);
   const [parked, setParked] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Parking replaces the whole read with one line, and the button that was pressed goes with it. The
+  // heading survives in that view and takes focus, so the person is left reading what happened.
+  const parkedHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (parked) parkedHeading.current?.focus();
+  }, [parked]);
 
   async function parkApplication() {
     if (parking) return;
@@ -63,7 +69,7 @@ export function HonestFloor({
   if (parked) {
     return (
       <div className="bj-ws-honest">
-        <h3 id={HONEST_READ_HEADING_ID} tabIndex={-1} className="bj-ws-block-title">
+        <h3 ref={parkedHeading} id={HONEST_READ_HEADING_ID} tabIndex={-1} className="bj-ws-block-title">
           Honest read
         </h3>
         <p className="bj-muted bj-small">Parked -- find it again under "withdrawn" on Applications anytime.</p>

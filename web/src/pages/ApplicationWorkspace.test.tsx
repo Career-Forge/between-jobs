@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { act, useEffect } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CROSS_NAV_HASH } from "../lib/applicationsBoard";
@@ -32,13 +33,21 @@ vi.mock("../lib/useHiringSignalsStatus", () => ({
 const gmail = vi.hoisted(() => ({ state: { kind: "checking" } as unknown }));
 vi.mock("../lib/useCapabilities", () => ({ useCapabilities: () => gmail.state, refreshCapabilities: () => undefined }));
 
+// How many times each stand-in has mounted: a panel that is rebuilt has asked its own requests again.
+const mounts = vi.hoisted(() => ({}) as Record<string, number>);
+
 function standIn(name: string, heading?: string) {
-  return ({ applicationId }: { applicationId: string }) => (
-    <div className="bj-card" data-standin={name}>
-      {heading !== undefined && <h2>{heading}</h2>}
-      <p>{name} for {applicationId}</p>
-    </div>
-  );
+  return ({ applicationId }: { applicationId: string }) => {
+    useEffect(() => {
+      mounts[name] = (mounts[name] ?? 0) + 1;
+    }, []);
+    return (
+      <div className="bj-card" data-standin={name}>
+        {heading !== undefined && <h2>{heading}</h2>}
+        <p>{name} for {applicationId}</p>
+      </div>
+    );
+  };
 }
 vi.mock("../components/HeaderComposer", () => ({ HeaderComposer: standIn("Header composer") }));
 vi.mock("../components/SectionOrderEditor", () => ({ SectionOrderEditor: standIn("Section order editor") }));
@@ -150,6 +159,7 @@ const cyan = (root: ParentNode) => [...root.querySelectorAll(".bj-primary, .bj-b
 
 beforeEach(() => {
   reset();
+  for (const key of Object.keys(mounts)) delete mounts[key];
   hiring.kind = "enabled";
   gmail.state = { kind: "checking" };
   scrolled = [];
@@ -955,6 +965,400 @@ describe("keyboard and accessibility", () => {
     expect(paths).toEqual(
       [APP_PATH, "GET /profile/current", "GET /credentials", `GET /applications/${ID}/prepare-result`].sort(),
     );
+  });
+});
+
+describe("asking for the setup again", () => {
+  const FAILED = (message = "no") => new FakeApiError(message, "INTERNAL", undefined, 500);
+
+  it("re-reads only the credentials that failed and leaves the ready page mounted: no loading frame, no panel rebuilt, nothing asked twice", async () => {
+    describeAccount({ credentials: FAILED() as unknown as typeof KEY, app: application({ resume_exists: true }), result: drafted([CLAIM]) });
+    const { container } = page();
+    await settle();
+    const tailor = query(container, "[data-standin='Tailor panel']");
+    const before = { ...mounts };
+    expect(Object.keys(before).length).toBeGreaterThanOrEqual(8);
+    expect(text(container)).toContain("Resume drafted");
+
+    let release: (value: unknown) => void = () => undefined;
+    on("GET /credentials", () => new Promise((resolve) => (release = resolve)));
+    click(buttonNamed(band(container), "Try again"));
+    await settle(1);
+    // While it is out: the page is still the page, and the band says it is trying.
+    expect(query(container, "[data-standin='Tailor panel']")).toBe(tailor);
+    expect(container.querySelector('[role="status"][aria-busy="true"]')).toBeNull();
+    expect(text(band(container))).toContain("Trying again...");
+    expect(buttonNamed(band(container), "Trying again...").getAttribute("aria-disabled")).toBe("true");
+    release(KEY);
+    await settle();
+
+    expect(query(container, "[data-standin='Tailor panel']")).toBe(tailor);
+    expect(mounts).toEqual(before);
+    expect(text(container)).toContain("Resume drafted");
+    expect(callsTo("GET /credentials")).toHaveLength(2);
+    expect(callsTo("GET /profile/current")).toHaveLength(1);
+    expect(callsTo(`GET /applications/${ID}/prepare-result`)).toHaveLength(1);
+    expect(callsTo(APP_PATH)).toHaveLength(1);
+    expect(text(band(container))).not.toContain("Couldn't check your setup.");
+  });
+
+  it("keeps a result made in this visit through the retry, and does not let a second paid run start", async () => {
+    describeAccount({ credentials: FAILED() as unknown as typeof KEY });
+    on(`POST /applications/${ID}/prepare`, drafted([CLAIM]));
+    const { container } = page();
+    await settle();
+    const body = [...container.querySelectorAll("button")].find((button) => text(button) === "Generate resume" && !band(container).contains(button))!;
+    click(body);
+    await settle();
+    expect(text(container)).toContain("Resume drafted");
+    on("GET /credentials", KEY);
+    click(buttonNamed(band(container), "Try again"));
+    await settle();
+    expect(text(container)).toContain("Resume drafted");
+    expect(callsTo(`POST /applications/${ID}/prepare`)).toHaveLength(1);
+    expect(callsTo(`GET /applications/${ID}/prepare-result`)).toHaveLength(1);
+  });
+
+  it("asks for a profile that failed again, and the page comes back when it answers", async () => {
+    describeAccount({ profile: FAILED() as unknown as typeof PROFILE });
+    const { container } = page();
+    await settle();
+    expect(text(band(container))).toContain("Couldn't check your setup.");
+    on("GET /profile/current", PROFILE);
+    click(buttonNamed(band(container), "Try again"));
+    await settle();
+    expect(names(container, "h1")).toEqual(["Data Engineer"]);
+    expect(callsTo("GET /profile/current")).toHaveLength(2);
+    expect(callsTo("GET /credentials")).toHaveLength(1);
+  });
+
+  it("waits for the credentials before it mounts Tailor or draws Generate's button, and a failed read is an answer that claims nothing", async () => {
+    describeAccount();
+    let answer: (value: unknown) => void = () => undefined;
+    on("GET /credentials", () => new Promise((resolve) => (answer = resolve)));
+    const held = page();
+    await settle();
+    expect(held.container.querySelector("[data-standin='Tailor panel']")).toBeNull();
+    expect(mounts["Tailor panel"]).toBeUndefined();
+    expect([...held.container.querySelectorAll("button")].some((button) => text(button) === "Generate resume")).toBe(false);
+    expect(text(held.container)).toContain("Checking your model setup...");
+    answer([]);
+    await settle();
+    // No usable key: still no Tailor, ever, and the part says so.
+    expect(mounts["Tailor panel"]).toBeUndefined();
+    expect(text(held.container)).toContain("no usable model key is saved");
+    held.unmount();
+
+    let answerKey: (value: unknown) => void = () => undefined;
+    on("GET /credentials", () => new Promise((resolve) => (answerKey = resolve)));
+    const withKey = page();
+    await settle();
+    expect(mounts["Tailor panel"]).toBeUndefined();
+    answerKey(KEY);
+    await settle();
+    expect(mounts["Tailor panel"]).toBe(1);
+    expect(buttonNamed(withKey.container, "Generate resume")).toBeTruthy();
+    withKey.unmount();
+
+    delete mounts["Tailor panel"];
+    on("GET /credentials", FAILED());
+    page();
+    await settle();
+    expect(mounts["Tailor panel"]).toBe(1);
+  });
+
+  it.each([
+    ["no usable model key", { credentials: [] as unknown as typeof KEY }],
+    ["no profile", { profile: new FakeApiError("none", "NOT_FOUND", undefined, 404) as unknown as typeof PROFILE }],
+    ["the setup check itself failing", { credentials: FAILED() as unknown as typeof KEY }],
+  ] as const)("gives the application's failed read a Retry of its own when the band is showing something else: %s", async (_name, account) => {
+    describeAccount({ ...account, app: new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500) });
+    const { container } = page();
+    await settle();
+    expect(text(band(container))).not.toContain("Couldn't load this application");
+    const body = query(container, ".bj-state--failure");
+    expect(text(body)).toContain("The server hit a problem.");
+    on(APP_PATH, application());
+    click(buttonNamed(body, "Retry"));
+    await settle();
+    expect(names(container, "h1")).toEqual(["Data Engineer"]);
+    expect(callsTo(APP_PATH)).toHaveLength(2);
+  });
+});
+
+describe("what the page says when it could not show a stored result", () => {
+  it("says a failed read of the stored result could not be read, in the band and in Review, not that none is stored", async () => {
+    describeAccount({ app: application({ resume_exists: true }) });
+    on(`GET /applications/${ID}/prepare-result`, new FakeApiError("no", "INTERNAL", undefined, 500));
+    const { container } = page();
+    await settle();
+    expect(text(band(container))).toContain("claim check result couldn't be read");
+    expect(text(band(container))).not.toContain("not stored");
+    const review = query(container, "#ch-check").parentElement!;
+    expect(text(review)).toContain("couldn't show the score or claim check");
+    expect(text(review)).not.toContain("no stored score");
+  });
+
+  it("says so after a run that did not finish dropped the result that was on screen, and keeps 'none stored' for a read that answered none", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
+    on(`POST /applications/${ID}/prepare`, new FakeApiError("Add a model key.", "SETUP_REQUIRED"));
+    const { container, unmount } = page();
+    await settle();
+    const body = [...container.querySelectorAll("button")].find((button) => text(button) === "Generate resume" && !band(container).contains(button))!;
+    click(body);
+    await settle();
+    const review = query(container, "#ch-check").parentElement!;
+    expect(text(band(container))).toContain("claim check result couldn't be read");
+    expect(text(review)).toContain("couldn't show the score or claim check");
+    unmount();
+
+    describeAccount({ app: application({ resume_exists: true }), result: null });
+    on(`POST /applications/${ID}/prepare`, new FakeApiError("Add a model key.", "SETUP_REQUIRED"));
+    const none = page();
+    await settle();
+    click([...none.container.querySelectorAll("button")].find((button) => text(button) === "Generate resume" && !band(none.container).contains(button))!);
+    await settle();
+    expect(text(band(none.container))).toContain("claim check result not stored");
+    expect(text(none.container)).toContain("This page has no stored score or claim check for your resume.");
+  });
+
+  it("marks a restored held-back result as restored, with no date, under the honest read", async () => {
+    describeAccount({ result: HELD });
+    const { container } = page();
+    await settle();
+    const generate = query(container, "#generate").parentElement!;
+    expect(text(query(generate, ".bj-ws-honest"))).toContain("Honest read");
+    expect(text(generate)).toContain("Read back from your last stored generation: no time came back with it.");
+  });
+
+  it("says what a run produces before the first one, and not once a resume exists", async () => {
+    describeAccount();
+    const empty = page();
+    await settle();
+    expect(text(query(empty.container, ".bj-ws-intro"))).toContain("A run makes a resume PDF with its ATS score and its claim check, and a cover letter if you ask for one.");
+    empty.unmount();
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([]) });
+    const drafted_ = page();
+    await settle();
+    expect(text(query(drafted_.container, ".bj-ws-intro"))).not.toContain("A run makes");
+  });
+
+  it("calls the date applied the first one when the status is back at Saved, and the date applied otherwise", async () => {
+    describeAccount({ app: application({ status: "saved", date_applied: "2026-09-22T12:00:00Z" }) });
+    const saved = page();
+    await settle();
+    expect(text(query(saved.container, ".bj-ws-facts"))).toContain("First applied Sep 22");
+    saved.unmount();
+    describeAccount({ app: application({ status: "interviewing", date_applied: "2026-09-22T12:00:00Z" }) });
+    const later = page();
+    await settle();
+    expect(text(query(later.container, ".bj-ws-facts"))).toContain("Applied Sep 22");
+    expect(text(query(later.container, ".bj-ws-facts"))).not.toContain("First applied");
+  });
+});
+
+describe("a new generation and the person's own marks", () => {
+  it("drops 'I checked this' marks and an export check that was still out when the new run began", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
+    let answerChecks: (value: unknown) => void = () => undefined;
+    on(`GET /applications/${ID}/export-checklist`, CHECKLIST);
+    on(`POST /applications/${ID}/prepare`, drafted([]));
+    const { container } = page();
+    await settle();
+    click(buttonNamed(container, "Run the export checks"));
+    await settle();
+    click(query(container, "button.bj-selectable"));
+    expect(container.querySelectorAll("button.bj-selectable[aria-pressed='true']")).toHaveLength(1);
+    click([...container.querySelectorAll("button")].find((button) => text(button) === "Generate resume" && !band(container).contains(button))!);
+    await settle();
+    on(`GET /applications/${ID}/export-checklist`, CHECKLIST);
+    click(buttonNamed(container, "Run the export checks"));
+    await settle();
+    expect(container.querySelectorAll("button.bj-selectable")).toHaveLength(4);
+    expect(container.querySelectorAll("button.bj-selectable[aria-pressed='true']")).toHaveLength(0);
+
+    // A check that is still out when the next run begins never lands under it.
+    on(`GET /applications/${ID}/export-checklist`, () => new Promise((resolve) => (answerChecks = resolve)));
+    click(buttonNamed(container, "Check again"));
+    await settle(1);
+    let finish: (value: unknown) => void = () => undefined;
+    on(`POST /applications/${ID}/prepare`, () => new Promise((resolve) => (finish = resolve)));
+    click([...container.querySelectorAll("button")].find((button) => text(button) === "Generate resume" && !band(container).contains(button))!);
+    await settle(1);
+    answerChecks(CHECKLIST);
+    await settle();
+    finish(drafted([]));
+    await settle();
+    expect(container.querySelector(".bj-checkgroup")).toBeNull();
+  });
+});
+
+describe("where keyboard focus goes when the control that had it is replaced", () => {
+  it("keeps it on the export checks button from the press to the finished checks", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
+    on(`GET /applications/${ID}/export-checklist`, CHECKLIST);
+    const { container } = page();
+    await settle();
+    const run = buttonNamed(container, "Run the export checks");
+    run.focus();
+    click(run);
+    await settle();
+    expect(document.activeElement).toBe(run);
+    expect(text(run)).toBe("Check again");
+    expect(text(query(container, ".bj-ws-export .bj-visually-hidden[role='status']"))).toContain("Export checks finished: 5 pass · 1 fail · 4 not checked.");
+  });
+
+  it("moves it from Generate anyway to the Generate button, which says Generating...", async () => {
+    describeAccount({ result: HELD });
+    let release: (value: unknown) => void = () => undefined;
+    on(`POST /applications/${ID}/prepare`, () => new Promise((resolve) => (release = resolve)));
+    const { container } = page();
+    await settle();
+    const anyway = [...container.querySelectorAll(".bj-ws-honest button")].find((button) => text(button) === "Generate anyway") as HTMLElement;
+    anyway.focus();
+    click(anyway);
+    await settle(1);
+    expect(container.contains(anyway)).toBe(false);
+    expect(document.activeElement?.tagName).toBe("BUTTON");
+    expect(text(document.activeElement!)).toBe("Generating...");
+    release(drafted());
+    await settle();
+  });
+
+  it("moves it from Park this application to the Honest read heading", async () => {
+    describeAccount({ result: HELD });
+    on(`POST /applications/${ID}/stage`, {});
+    on(APP_PATH, application({ status: "withdrawn" }));
+    const { container } = page();
+    await settle();
+    const park = buttonNamed(query(container, ".bj-ws-honest"), "Park this application");
+    park.focus();
+    click(park);
+    await settle();
+    expect(document.activeElement?.id).toBe("honest-read-heading");
+    expect(text(document.activeElement!)).toBe("Honest read");
+  });
+
+  it("moves it from I submitted this to the band's sentence, which says what is true now", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([]) });
+    on(`POST /applications/${ID}/stage`, {});
+    const { container } = page();
+    await settle();
+    const submit = buttonNamed(query(container, ".bj-ws-submit"), "I submitted this -- mark as applied");
+    submit.focus();
+    on(APP_PATH, application({ status: "applied", resume_exists: true, date_applied: "2026-10-19" }));
+    click(submit);
+    await settle();
+    expect(container.querySelector(".bj-ws-submit")).toBeNull();
+    expect(document.activeElement?.id).toBe("next-step-focus");
+    expect(text(document.activeElement!)).toContain("Applied Oct 19. Waiting on them.");
+  });
+
+  it("leaves it on the button when recording the status failed, and the block stays", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([]) });
+    on(`POST /applications/${ID}/stage`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    const { container } = page();
+    await settle();
+    const submit = buttonNamed(query(container, ".bj-ws-submit"), "I submitted this -- mark as applied");
+    submit.focus();
+    click(submit);
+    await settle();
+    expect(document.activeElement).toBe(submit);
+  });
+
+  it("moves it from Close the gaps to the block that holds the interview", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([], [attempt(61, ["Weak/missing requirement: Kafka"])]) });
+    on("GET /resume-documents/mine?application_id=app-1", { id: "doc-1" });
+    on("POST /resume-documents/doc-1/gap-interview", { questions: [] });
+    const { container } = page();
+    await settle();
+    const close = buttonNamed(container, "Close the gaps");
+    close.focus();
+    click(close);
+    await settle();
+    expect(document.activeElement).toBe(query(container, ".bj-ws-gap"));
+    expect(container.contains(close)).toBe(false);
+  });
+});
+
+describe("the status select with a keyboard", () => {
+  const select = (container: ParentNode) => query<HTMLSelectElement>(container, "select.bj-ws-status-select");
+
+  it("holds a keyboard step until Enter, records one change for the status it ended on, and says what Enter will do", async () => {
+    describeAccount();
+    on(`POST /applications/${ID}/stage`, {});
+    const { container } = page();
+    await settle();
+    const element = select(container);
+    element.focus();
+    for (const next of ["applied", "screening", "offer"]) {
+      keydown("ArrowDown", { target: element });
+      choose(element, next);
+    }
+    expect(callsTo(`POST /applications/${ID}/stage`)).toHaveLength(0);
+    expect(element.value).toBe("offer");
+    expect(text(query(container, ".bj-ws-status-hint"))).toBe("Press Enter to set Offer. Escape cancels.");
+    expect(element.getAttribute("aria-describedby")).toBe(query(container, ".bj-ws-status-hint").id);
+    on(APP_PATH, application({ status: "offer" }));
+    keydown("Enter", { target: element });
+    await settle();
+    const posts = callsTo(`POST /applications/${ID}/stage`);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toMatchObject({ new_status: "offer" });
+    expect(container.querySelector(".bj-ws-status-hint")).toBeNull();
+  });
+
+  it("drops a held step on Escape, and on leaving the select, and records nothing", async () => {
+    describeAccount();
+    on(`POST /applications/${ID}/stage`, {});
+    const { container } = page();
+    await settle();
+    const element = select(container);
+    element.focus();
+    keydown("ArrowDown", { target: element });
+    choose(element, "applied");
+    keydown("Escape", { target: element });
+    expect(element.value).toBe("saved");
+    keydown("ArrowDown", { target: element });
+    choose(element, "applied");
+    act(() => element.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(element.value).toBe("saved");
+    expect(callsTo(`POST /applications/${ID}/stage`)).toHaveLength(0);
+  });
+});
+
+describe("a deep link while the page above it is still loading", () => {
+  it("brings the section back to the top at each change in the page's height until the person takes over", async () => {
+    const callbacks: (() => void)[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        private readonly callback: () => void;
+        constructor(callback: () => void) {
+          this.callback = callback;
+          callbacks.push(callback);
+        }
+        observe() {}
+        disconnect() {
+          const at = callbacks.indexOf(this.callback);
+          if (at !== -1) callbacks.splice(at, 1);
+        }
+      },
+    );
+    describeAccount();
+    page(`/applications/${ID}#company-intel`);
+    await settle();
+    scrolled = [];
+    act(() => callbacks.forEach((callback) => callback()));
+    act(() => callbacks.forEach((callback) => callback()));
+    expect(scrolled.filter((id) => id === "company-intel").length).toBeGreaterThanOrEqual(1);
+    const held = scrolled.length;
+    act(() => {
+      window.dispatchEvent(new Event("wheel"));
+    });
+    act(() => callbacks.forEach((callback) => callback()));
+    expect(scrolled.length).toBe(held);
+    vi.unstubAllGlobals();
   });
 });
 

@@ -383,8 +383,12 @@ and a failure of one panel never changes the band.
   "verified". The body copy of the band's action (Generate, Download PDF, Generate anyway) is outlined.
   `lib/workspaceFacts.ts` turns the generation hook's state and the account reads into the rows' facts.
 - **Frames.** Loading (breadcrumb, placeholder, the band's eyebrow only), not found (`workspaceNotFound`: a way back,
-  no Try again), failed (the band names the call and offers Try again; the body's callout has no Retry of its own) and
-  ready. A profile read that fails is the setup check failing (the band's G1), naming the call.
+  no Try again), failed (the band names the call and offers Try again; the body's callout carries a Retry of its own
+  only when a higher band row, such as setup failing or no usable key, is showing instead) and ready. A profile read that
+  fails is the setup check failing (the band's G1), naming the call. The band's Try again for setup re-reads only the
+  read that failed and leaves the ready page mounted, so a run, a download and Tailor's request are not lost or sent
+  twice; Tailor and the Generate button wait for the credentials read to answer (a failed read counts as an answer that
+  claims nothing).
 - **Trails** (`lib/workspaceTrails.ts`): the page's own ("You tracked this", how, when), the generation's (with the run,
   PDF hash, ATS attempts and gate in its receipt), the ATS score (engine), the claim check, the export checks (code, no
   model) and Tailor. A slot that was not returned is left out. A result read back from storage says it was restored,
@@ -393,7 +397,20 @@ and a failure of one panel never changes the band.
   claim in its own words, and what the built-in engine did to it when it acted. A warning that does not read as a claim
   is shown as plain text. Zero flagged says "No claims flagged in this run" and that not flagged is not verified.
 - **The export checks' "I checked this" marks** are the person's own for the visit: not saved, not counted in the
-  summary, read by nothing.
+  summary, read by nothing, and cleared when a new generation resets the checks. A page that could not show a stored
+  score or claim check (a failed read, or a failed run that dropped the one on screen) says "couldn't be read", which
+  is not the same sentence as "none is stored".
+- **Keyboard.** The Status select holds a keyboard step until Enter (a change records a stage change); a pointer choice
+  applies at once. A control that is replaced by its own result hands focus on: the export button is one element for
+  every state, "Park this application" moves focus to the Honest read heading, "Generate anyway" to the Generate button,
+  "Close the gaps" to its block, and "I submitted this" to the band. A deep link's section is held in view while the page
+  above it grows (`lib/useHoldHashTarget.ts`) until the person scrolls, presses a key or touches the page.
+- **Decisions and known gaps.** The band has one practice row (A6, "Go to Practice") rather than "Start practice" and
+  "Continue practice: question n of m", because the practice sessions are read by the Practice section and not by this
+  page; the band claims nothing about them. Reading the sessions here to light the three practice rows (and an unlit row
+  when that read fails) is not built. The three Studio cards embedded under Draft
+  (header, structure, settings) are unchanged and fail axe's select-name and color-contrast checks (unlabeled selects, muted
+  text on the hidden-section rows); they get fixed when they are restyled, not here.
 - Not built: an in-browser PDF preview (it would reuse the blob a download fetches, once per generation result) and the
   band's "Answer the gap questions" (the gap interview renders only beside a drafted result).
 

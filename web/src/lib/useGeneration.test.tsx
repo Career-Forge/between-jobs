@@ -135,6 +135,95 @@ describe("a run", () => {
   });
 });
 
+describe("an answer that arrives late", () => {
+  it("is dropped when it is the export checks of a resume a new generation has since replaced", async () => {
+    on("GET /applications/a1/prepare-result", { result: RESULT });
+    let answerChecks: (value: unknown) => void = () => undefined;
+    on("GET /applications/a1/export-checklist", () => new Promise((resolve) => (answerChecks = resolve)));
+    let finishRun: (value: unknown) => void = () => undefined;
+    on("POST /applications/a1/prepare", () => new Promise((resolve) => (finishRun = resolve)));
+    render(<Probe />);
+    await settle();
+    const asked = latest.loadChecklist();
+    await settle(1);
+    expect(latest.checklist.kind).toBe("loading");
+    const run = latest.generate();
+    await settle(1);
+    expect(latest.checklist).toEqual({ kind: "idle" });
+    answerChecks({ items: [{ key: "one_page", label: "One page", status: "pass", detail: "1 page." }] });
+    await asked;
+    await settle();
+    expect(latest.checklist).toEqual({ kind: "idle" });
+    finishRun(RESULT);
+    await run;
+    await settle();
+    expect(latest.checklist).toEqual({ kind: "idle" });
+  });
+
+  it("lets only the newest ask for the export checks write its answer", async () => {
+    on("GET /applications/a1/prepare-result", { result: RESULT });
+    const answers: ((value: unknown) => void)[] = [];
+    on("GET /applications/a1/export-checklist", () => new Promise((resolve) => answers.push(resolve)));
+    render(<Probe />);
+    await settle();
+    const first = latest.loadChecklist();
+    const second = latest.loadChecklist();
+    await settle(1);
+    answers[1]({ items: [{ key: "k", label: "Newer", status: "pass", detail: "" }] });
+    await second;
+    answers[0]({ items: [{ key: "k", label: "Older", status: "fail", detail: "" }] });
+    await first;
+    await settle();
+    expect(latest.checklist).toEqual({ kind: "ready", items: [{ key: "k", label: "Newer", status: "pass", detail: "" }] });
+  });
+});
+
+describe("a result the page could not show", () => {
+  it("is told apart from none stored: a failed read is unreadable, a read that answered null is not", async () => {
+    on("GET /applications/a1/prepare-result", new FakeApiError("no", "INTERNAL"));
+    const failed = render(<Probe hasResume />);
+    await settle();
+    expect(latest.resultUnreadable).toBe(true);
+    failed.unmount();
+    on("GET /applications/a1/prepare-result", { result: null });
+    render(<Probe hasResume />);
+    await settle();
+    expect(latest.resultUnreadable).toBe(false);
+  });
+
+  it("is unreadable when a failed or setup-blocked run dropped the result that was on screen, until a result is on screen again", async () => {
+    on("GET /applications/a1/prepare-result", { result: RESULT });
+    on("POST /applications/a1/prepare", new FakeApiError("The engine did not answer.", "INTERNAL"));
+    render(<Probe hasResume />);
+    await settle();
+    expect(latest.resultUnreadable).toBe(false);
+    await latest.generate();
+    await settle();
+    expect(latest.state.kind).toBe("error");
+    expect(latest.resultUnreadable).toBe(true);
+    on("POST /applications/a1/prepare", new FakeApiError("Add a model key.", "SETUP_REQUIRED"));
+    await latest.generate();
+    await settle();
+    expect(latest.state.kind).toBe("setup");
+    expect(latest.resultUnreadable).toBe(true);
+    on("POST /applications/a1/prepare", RESULT);
+    await latest.generate();
+    await settle();
+    expect(latest.resultUnreadable).toBe(false);
+  });
+
+  it("is not unreadable when the read answered with nothing and a run then failed: nothing was dropped", async () => {
+    on("GET /applications/a1/prepare-result", { result: null });
+    on("POST /applications/a1/prepare", new FakeApiError("Add a model key.", "SETUP_REQUIRED"));
+    render(<Probe hasResume />);
+    await settle();
+    await latest.generate();
+    await settle();
+    expect(latest.state.kind).toBe("setup");
+    expect(latest.resultUnreadable).toBe(false);
+  });
+});
+
 describe("downloads and the export checks", () => {
   it("fetches a PDF from the right path, marks a resume download in this visit, and not a cover letter", async () => {
     on("GET /applications/a1/prepare-result", { result: { ...RESULT, cover_letter: RESULT.resume } });

@@ -23,6 +23,7 @@ function controller(overrides: Partial<GenerationController> = {}): GenerationCo
     read: "done",
     state: { kind: "idle" },
     hasResume: false,
+    resultUnreadable: false,
     hasCoverLetter: false,
     wantCoverLetter: false,
     setWantCoverLetter: vi.fn(),

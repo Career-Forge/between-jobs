@@ -8,7 +8,8 @@
 //   A1g  generating, a request is out                 "Generate a tailored resume ..."      Generating...
 //   A1   no resume yet                                "Generate a tailored resume ..."      Generate resume
 //   A2   a resume with flagged claims                 "Read the {n} flagged claims ..."     Download PDF
-//   A2u  a resume whose claim check is not stored     "Your resume is ready to review ..."  Download PDF
+//   A2u  a resume whose claim check is not on the   "Your resume is ready to review ..."  Download PDF
+//        page (none stored, or it could not be read)
 //   A3   a resume with no flagged claims              "No claims flagged. ..."              Download PDF
 //   A4   the PDF was downloaded in this visit         "Submit on the employer's site ..."   Open the posting
 //   A5   applied                                      "Applied {date}. Waiting on them."    (unlit)
@@ -43,8 +44,10 @@ export type GenerationFact =
   /** No resume exists and nothing was held back (or the stored result could not be read). */
   | { state: "none" }
   /** A resume exists. `flagged` is the number of claims the check flagged, or null when this page
-   *  has no stored result to count them in (a resume from before results were stored). */
-  | { state: "drafted"; flagged: number | null; downloaded: boolean };
+   *  has no result to count them in. `unreadable` says why, when it is null: true when a stored result
+   *  may exist that the page could not show (its read failed, or a failed run dropped the one on
+   *  screen), false when none is stored (a resume from before results were stored). */
+  | { state: "drafted"; flagged: number | null; unreadable: boolean; downloaded: boolean };
 
 export type GmailFact = "connected" | "not_connected" | "reconnect_needed" | "unknown";
 
@@ -79,7 +82,7 @@ function isGeneration(value: unknown): value is GenerationFact {
     case "held_back":
       return (value.ceiling === null || (typeof value.ceiling === "number" && Number.isFinite(value.ceiling))) && typeof value.earlierResume === "boolean";
     case "drafted":
-      return (value.flagged === null || isCount(value.flagged)) && typeof value.downloaded === "boolean";
+      return (value.flagged === null || isCount(value.flagged)) && typeof value.unreadable === "boolean" && typeof value.downloaded === "boolean";
     default:
       return false;
   }
@@ -211,7 +214,8 @@ const A2U: NextStepRow<WorkspaceFacts> = {
     return {
       sentence: "Your resume is ready to review. Read it against your own background, then download.",
       action: DOWNLOAD,
-      why: [statusWhy(facts), "resume drafted", "claim check result not stored"],
+      // Two different unknowns, said differently: none stored, against a result the page could not show.
+      why: [statusWhy(facts), "resume drafted", generation.unreadable ? "claim check result couldn't be read" : "claim check result not stored"],
     };
   }),
 };

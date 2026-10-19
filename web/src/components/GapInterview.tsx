@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type {
   AtsAttempt,
@@ -64,6 +64,10 @@ export function GapInterview({
   onRegenerate: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
+  // "Close the gaps" is replaced by a status line and then by the first question. Focus moves to the
+  // block itself when it is pressed, which stays mounted through every phase, so a keyboard user is not
+  // dropped to the top of the page.
+  const rootRef = useRef<HTMLDivElement>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [queue, setQueue] = useState<GapQuestion[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -173,10 +177,16 @@ export function GapInterview({
   }
 
   return (
-    <div className="bj-ws-gap">
+    <div className="bj-ws-gap" ref={rootRef} tabIndex={-1} role="group" aria-label="Close the gaps">
       {phase === "idle" && (
         <div className="bj-gap-idle">
-          <button type="button" onClick={() => void loadQuestions()}>
+          <button
+            type="button"
+            onClick={() => {
+              rootRef.current?.focus({ preventScroll: true });
+              void loadQuestions();
+            }}
+          >
             Close the gaps
           </button>
           <div className="bj-muted bj-small">

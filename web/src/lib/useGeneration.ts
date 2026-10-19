@@ -40,6 +40,12 @@ export interface GenerationController {
   state: GenerateState;
   /** A resume exists for this application, from the page's read or from a run in this visit. */
   hasResume: boolean;
+  /**
+   * A stored result for this resume may exist that this page is not showing: the read of it failed, or
+   * a result that was on screen was dropped by a run that did not finish. Not the same as "nothing is
+   * stored", which is a read that answered with none.
+   */
+  resultUnreadable: boolean;
   /** The result in view made a cover letter. */
   hasCoverLetter: boolean;
   wantCoverLetter: boolean;
@@ -69,6 +75,9 @@ export function useGeneration(applicationId: string, initialHasResume: boolean):
   const [state, setState] = useState<GenerateState>({ kind: "idle" });
   const [read, setRead] = useState<ReadState>("loading");
   const [readAttempt, setReadAttempt] = useState(0);
+  // A result has been in view in this visit. A run clears it, so if that run then fails the page no
+  // longer shows one it did have; that is "couldn't show it", not "none stored".
+  const [hadResult, setHadResult] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistState>({ kind: "idle" });
   const [downloading, setDownloading] = useState<"resume" | "cover" | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -77,6 +86,10 @@ export function useGeneration(applicationId: string, initialHasResume: boolean):
   // A press while a run is out does nothing: the controls are aria-disabled, which leaves them
   // focusable and clickable, so the guard is here.
   const running = useRef(false);
+  // Which request for the export checks may still write its answer. The checks recompile the resume
+  // that existed when they were asked for, so an answer that lands after a new generation began (or
+  // after a newer ask) is about a PDF that is no longer the one in view, and is dropped.
+  const checklistRun = useRef(0);
 
   // Restores the last real run after a reload. A component that unmounts mid-fetch is harmless: the
   // result is only applied while this effect is still the current one. A run started while the read
@@ -102,6 +115,10 @@ export function useGeneration(applicationId: string, initialHasResume: boolean):
     };
   }, [applicationId, readAttempt]);
 
+  useEffect(() => {
+    if (state.kind === "ready") setHadResult(true);
+  }, [state.kind]);
+
   const retryRead = useCallback(() => setReadAttempt((attempt) => attempt + 1), []);
 
   const generate = useCallback(
@@ -109,6 +126,7 @@ export function useGeneration(applicationId: string, initialHasResume: boolean):
       if (running.current) return;
       running.current = true;
       setState({ kind: "generating" });
+      checklistRun.current += 1;
       setChecklist({ kind: "idle" });
       setDownloadError(null);
       setDownloaded(false);
@@ -155,22 +173,25 @@ export function useGeneration(applicationId: string, initialHasResume: boolean):
   const downloadCoverLetter = useCallback(() => download("cover"), [download]);
 
   const loadChecklist = useCallback(async () => {
+    const run = ++checklistRun.current;
     setChecklist({ kind: "loading" });
     try {
       const response = await apiFetch<{ items: ChecklistItem[] }>(`/applications/${applicationId}/export-checklist`);
-      setChecklist({ kind: "ready", items: response.items });
+      if (run === checklistRun.current) setChecklist({ kind: "ready", items: response.items });
     } catch (e) {
-      setChecklist({ kind: "error", message: friendlyApiMessage(e, "Failed to load checklist") });
+      if (run === checklistRun.current) setChecklist({ kind: "error", message: friendlyApiMessage(e, "Failed to load checklist") });
     }
   }, [applicationId]);
 
   const hasResume = initialHasResume || (state.kind === "ready" && state.result.resume !== null);
   const hasCoverLetter = state.kind === "ready" && !!state.result.cover_letter;
+  const resultUnreadable = read === "failed" || (hadResult && (state.kind === "error" || state.kind === "setup"));
 
   return {
     read,
     state,
     hasResume,
+    resultUnreadable,
     hasCoverLetter,
     wantCoverLetter,
     setWantCoverLetter,
