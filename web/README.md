@@ -27,7 +27,7 @@ the main navigation, then the signed-in address, Settings, Sign out and the lega
 More button, whose sheet holds the entries that have no tab. Both navigations are always in the markup and
 CSS shows one; the destinations come from one list in `src/lib/nav.ts`. The page is the one `<main>`, and the
 first tab stop is a "Skip to content" link to it; on a page that draws a next-step band (Today, Discover, Applications, Practice, Hiring signals, Profile and Settings,
-`PATHS_WITH_A_BAND` in `AppShell.tsx`) a "Skip to next step" link to the band's button comes first. The sign-in
+`PATHS_WITH_A_BAND` in `AppShell.tsx`, and an application's workspace, `pageHasBand`) a "Skip to next step" link to the band's button comes first. The sign-in
 page has both. The command palette and the assistant drawer are reserved
 (`src/components/ReservedSlots.tsx`): `hidden` and inert, so they take no room, print no placeholder and have no
 behavior.
@@ -339,6 +339,63 @@ dialog, which the application workspace embeds too, so each component imports th
   editor's `error` is never drawn outside the dialog: a Personal details failure belongs to that card.
 - Header and section rows reorder with Move up / Move down buttons as well as by dragging, and the short
   resume settings are radio groups drawn as outlined segments (`components/RadioSegments.tsx`).
+
+## Application workspace
+
+`src/pages/ApplicationWorkspace.tsx` is the page a person works in for one role (`/applications/<id>`). It is one
+document built on the document pages' pieces (see "Document pages"): the next-step band, the section jump bar, and a
+column of blocks whose trail lines sit in the right margin from 1280px, under their block from 960px and in a sheet on
+a phone. The page is the reading: its requests, the band's facts and which frame it is in. The sections are
+components under `src/components/workspace/` and the older panels.
+
+**The sections, in page order, and their anchors** (one list: `src/lib/workspaceSections.ts`, whose ids are
+`CROSS_NAV_HASH`'s in `lib/applicationsBoard.ts`, which the Applications menu and Today link to):
+
+| Group | Section | Anchor | Where it is built |
+| --- | --- | --- | --- |
+| Resume | Tailor | `#ch-sources` | `workspace/ResumeSections.tsx`: the posting (`PostingBlock`) and `TailorPanel` |
+| Resume | Draft | `#ch-draft` | `ResumeSections.tsx`: the Studio's header, structure and settings cards, embedded as they are |
+| Resume | Generate | `#generate` | `ResumeSections.tsx` + `GeneratePanel.tsx` (the honest read is `HonestFloor.tsx`) |
+| Resume | Review | `#ch-check` | `workspace/ReviewSection.tsx`: ATS score, gap interview, claim check, export checks, the "You submit" block |
+| Research | Company intel, Contacts, Events, Hiring posts | `#company-intel`, `#contacts`, `#warm-path-events`, `#hiring-posts` | `workspace/PanelSections.tsx` |
+| Prepare | Practice, Your play | `#interview-practice`, `#your-play` | `PanelSections.tsx` |
+
+The group labels are not anchors. Hiring posts is in the bar, and the page, only while `GET /hiring-signals/status`
+says on; a link to `#hiring-posts` while it is known off lands on a note saying so. A section is
+`<SectionChapter id title /> + <DocumentBlock>`: the chapter's h2 is what a link to the anchor focuses, and the block
+is what a panel draws its trail in (`<BlockTrail>` as the last thing in it). **A panel inside `PanelSections.tsx` is
+restyled by following the convention written at the top of that file**: no h2 of its own (a rule in
+`styles/workspace.css` hides the legacy one until it is removed), a `BlockTrail` for its provenance, outlined buttons
+only (another rule draws a legacy `.bj-primary` inside a panel slot outlined; the band holds the page's one cyan fill),
+and a failure of one panel never changes the band.
+
+- **Requests.** `GET /applications/{id}` and `GET /profile/current` are the page's own data (a 404 on the profile is
+  tolerated: the Studio, Tailor and Generate then say the profile is missing, with a link). `GET /credentials` is read
+  once only to know whether a usable model key is saved (`modelKeyOf`), so Tailor, whose coverage match is a model call on
+  every mount, and Generate say so and fire nothing while it is known missing. The resume part's requests are the
+  generation hook's, `lib/useGeneration.ts`: the stored result read once on mount, a run, the two PDF downloads and the
+  export checks (on request only: they recompile the LaTeX). Changing the status is `POST /applications/{id}/stage`, then a
+  re-read.
+- **The band** (`lib/nextStep/pages/workspace.ts`, one table test per row): no resume yet, generating, failed in this
+  visit, held back by the fit check, flagged claims, no flagged claims, a PDF downloaded this visit, then a row per
+  status from Applied on. The rows for a resume (A1c to A4) apply while the status is Saved. A why line names only
+  what the page read: it never names a model or a generation time, never says a claim check "ran", and never says
+  "verified". The body copy of the band's action (Generate, Download PDF, Generate anyway) is outlined.
+  `lib/workspaceFacts.ts` turns the generation hook's state and the account reads into the rows' facts.
+- **Frames.** Loading (breadcrumb, placeholder, the band's eyebrow only), not found (`workspaceNotFound`: a way back,
+  no Try again), failed (the band names the call and offers Try again; the body's callout has no Retry of its own) and
+  ready. A profile read that fails is the setup check failing (the band's G1), naming the call.
+- **Trails** (`lib/workspaceTrails.ts`): the page's own ("You tracked this", how, when), the generation's (with the run,
+  PDF hash, ATS attempts and gate in its receipt), the ATS score (engine), the claim check, the export checks (code, no
+  model) and Tailor. A slot that was not returned is left out. A result read back from storage says it was restored,
+  with no date.
+- **Claims** (`lib/claimWarnings.ts`) are parsed from the engines' warnings into rows: unverifiable or contradicted, the
+  claim in its own words, and what the built-in engine did to it when it acted. A warning that does not read as a claim
+  is shown as plain text. Zero flagged says "No claims flagged in this run" and that not flagged is not verified.
+- **The export checks' "I checked this" marks** are the person's own for the visit: not saved, not counted in the
+  summary, read by nothing.
+- Not built: an in-browser PDF preview (it would reuse the blob a download fetches, once per generation result) and the
+  band's "Answer the gap questions" (the gap interview renders only beside a drafted result).
 
 ## Signed-out pages
 

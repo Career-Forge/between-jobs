@@ -1,5 +1,4 @@
-// Mirrors engine_contract.py's PrepareApplicationResult (Sprint 3.0d) and
-// export_checklist.py's ChecklistItem (Sprint 3.3f).
+// Mirrors engine_contract.py's PrepareApplicationResult and export_checklist.py's ChecklistItem.
 
 export interface AtsScoreBreakdown {
   semantic_coverage: number;
@@ -49,8 +48,8 @@ export interface AtsAttempt {
   confidence: string;
   rating: string;
   gaps: string[];
-  // S3 (honest-score-surfaces.md): optional, same as forge-engines' own
-  // AtsAttempt.detail -- absent from a response built before this sprint.
+  // Optional, same as the engine's own AtsAttempt.detail: absent from a response
+  // built before the score details were returned.
   detail?: AtsScoreDetail;
 }
 
@@ -61,8 +60,7 @@ export interface ArtifactRef {
   sha256: string;
 }
 
-// S4c (honest-score-surfaces.md) -- the Honest Floor's pre-generation fit
-// read. 0-10 scale, deliberately not shown as a fake "/100" -- see
+// The honest read's pre-generation fit read. 0-10 scale, deliberately not shown as a fake "/100" -- see
 // engine_contract.py's ForgeFitResult docstring for why.
 export interface ForgeScoreDimensions {
   skills_match?: number;
@@ -87,7 +85,7 @@ export interface ForgeFitResult {
 export interface PrepareApplicationResult {
   run_id: string;
   resume: ArtifactRef | null;
-  // C1/C2 (coverforge-port.md): null unless the request opted in
+  // Null unless the request opted in
   // (generate_cover_letter: true) -- see GeneratePanel.tsx.
   cover_letter?: ArtifactRef | null;
   // Empty, with `final_score` null, when the engine that wrote the resume does not score
@@ -98,7 +96,7 @@ export interface PrepareApplicationResult {
   // Absent or null when the engine computes no fit read. The server stores null, an older
   // payload has no key at all: both mean "no read", and neither is a score of zero.
   fit?: ForgeFitResult | null;
-  // outreach-v2-search-first.md Phase I: the gate's own literal verdict
+  // The gate's own literal verdict
   // ("proceed", or a decline code like REJECT_MISMATCH/SKIP_LOW_SCORE) --
   // previously only reconstructable indirectly via resume being null.
   gate_outcome?: string | null;
@@ -116,7 +114,7 @@ export interface ChecklistItem {
   detail: string;
 }
 
-// Gap Interview (S4, honest-score-surfaces.md) -- mirrors forge-engines'
+// Gap interview -- mirrors the engine's
 // gap_interview.GapQuestion/EntityCandidate/GapAnswerDraft and between-jobs'
 // own engine_contract.py mirrors of them, field for field.
 export interface GapQuestion {

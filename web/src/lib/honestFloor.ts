@@ -1,7 +1,6 @@
-// ForgeScore chart-UI pass -- pure, testable logic for HonestFloor's
-// dimension breakdown and recommendation-driven badge, split out from the
-// render component per this repo's own "new behavior needs tests" rule,
-// same pattern as scoreBreakdown.ts.
+// Pure, testable logic for HonestFloor's dimension breakdown and
+// recommendation-driven badge, split out from the render component (the same
+// pattern as scoreBreakdown.ts).
 
 import type { ForgeScoreDimensions } from "./generateTypes";
 
