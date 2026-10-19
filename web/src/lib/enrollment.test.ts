@@ -509,7 +509,7 @@ describe("buildEnrollRequest", () => {
 
   it("takes the version from the content constant, which the server compares against its own", () => {
     expect(buildEnrollRequest(FILLED)?.accept_version).toBe(TESTER_AGREEMENT_VERSION);
-    expect(TESTER_AGREEMENT_VERSION).toBe("2026-10-06");
+    expect(TESTER_AGREEMENT_VERSION).toBe("2026-10-19");
   });
 
   it("builds nothing from a form that is not complete", () => {

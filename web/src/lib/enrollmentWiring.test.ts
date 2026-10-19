@@ -254,7 +254,7 @@ describe("the page sends the version the content file holds", () => {
     expect(enrollmentSource).toContain('import { TESTER_AGREEMENT_VERSION } from "../content/testerAgreement";');
     expect(enrollmentSource).toContain("accept_version: TESTER_AGREEMENT_VERSION");
     expect(enrollmentSource).not.toMatch(/accept_version: ["']/);
-    expect(TESTER_AGREEMENT_VERSION).toBe("2026-10-06");
+    expect(TESTER_AGREEMENT_VERSION).toBe("2026-10-19");
   });
 
   it("is posted by the connected page through the shared request function, nowhere else", () => {
