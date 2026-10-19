@@ -184,8 +184,8 @@ button.bj-today-action {
   color: var(--bj-text);
 }
 
-/* A control that is waiting on its request keeps its place and focus, and is drawn quieter. */
-.bj-band button[aria-disabled="true"],
+/* A control that is waiting on its request keeps its place and focus, and is drawn quieter. The
+   band's own buttons are in paper.css, with the band. */
 .bj-today-item-actions button[aria-disabled="true"] {
   opacity: 0.65;
   cursor: progress;
