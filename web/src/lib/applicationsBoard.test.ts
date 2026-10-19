@@ -168,16 +168,26 @@ describe("CROSS_NAV_ITEMS", () => {
 // missing target fails silently (the link still navigates, the scroll just never finds anything).
 // Read from the workspace's source, not rendered, because the panels behind them need a whole
 // application to mount.
-const sources = import.meta.glob<string>(["../pages/*.tsx", "../components/**/*.tsx", "!../**/*.test.tsx"], {
+const sources = import.meta.glob<string>(["../pages/*.tsx", "../components/**/*.tsx", "./workspaceSections.ts", "!../**/*.test.tsx"], {
   query: "?raw",
   import: "default",
   eager: true,
 });
 
+// The workspace gives its sections their ids through SECTION_IDS (lib/workspaceSections.ts), whose values are
+// CROSS_NAV_HASH's: `id={SECTION_IDS.review}` is a use of CROSS_NAV_HASH.review.
+const sectionAliases = (name: string): string[] => {
+  const list = Object.entries(sources).find(([path]) => path.endsWith("workspaceSections.ts"))?.[1] ?? "";
+  return [...list.matchAll(new RegExp(`\\b(\\w+): CROSS_NAV_HASH\\.${name}\\b`, "g"))].map((match) => match[1]);
+};
+
 describe("CROSS_NAV_HASH sections", () => {
   for (const [name, hash] of Object.entries(CROSS_NAV_HASH)) {
     it(`gives ${hash} (CROSS_NAV_HASH.${name}) to an element a page or component renders`, () => {
-      const users = Object.entries(sources).filter(([, source]) => new RegExp(`\\bid=\\{CROSS_NAV_HASH\\.${name}\\}`).test(source));
+      const direct = `id=\\{CROSS_NAV_HASH\\.${name}\\}`;
+      const viaSections = sectionAliases(name).map((key) => `id=\\{SECTION_IDS\\.${key}\\}`);
+      const pattern = new RegExp(`\\b(?:${[direct, ...viaSections].join("|")})`);
+      const users = Object.entries(sources).filter(([, source]) => pattern.test(source));
       expect(users.map(([path]) => path)).not.toEqual([]);
     });
   }
