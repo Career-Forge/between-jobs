@@ -66,9 +66,9 @@ describe("the trail line of a row", () => {
     expect(trailText(rowTrail(job({ provider: "registry" }), NOW, "UTC"))).toBe(`via registry · ${REGISTRY_BASIS} · Posted Sep 20`);
   });
 
-  it("says a live-search row the liveness check kept had its link checked, and by whom it was found", () => {
-    expect(trailText(rowTrail(job(), NOW, "UTC"))).toBe("Link checked · via serper · Posted Sep 20");
-    expect(buildTrail(rowTrail(job(), NOW, "UTC"))?.glyphs).toEqual(["passed"]);
+  it("says a live-search row the liveness check kept was not found closed, in the muted code glyph: a probe that never answered keeps a row too, so it is no green pass", () => {
+    expect(trailText(rowTrail(job(), NOW, "UTC"))).toBe("Link not found closed · via serper · Posted Sep 20");
+    expect(buildTrail(rowTrail(job(), NOW, "UTC"))?.glyphs).toEqual(["code"]);
   });
 
   it("says a live-search row that never reached the check was not checked, in the muted code glyph", () => {
@@ -86,8 +86,8 @@ describe("the trail line of a row", () => {
   });
 
   it("leaves the 'when' and its separator out when the posting has no readable date", () => {
-    expect(trailText(rowTrail(job({ posted_at: null }), NOW, "UTC"))).toBe("Link checked · via serper");
-    expect(trailText(rowTrail(job({ posted_at: "yesterday-ish" }), NOW, "UTC"))).toBe("Link checked · via serper");
+    expect(trailText(rowTrail(job({ posted_at: null }), NOW, "UTC"))).toBe("Link not found closed · via serper");
+    expect(trailText(rowTrail(job({ posted_at: "yesterday-ish" }), NOW, "UTC"))).toBe("Link not found closed · via serper");
     expect(trailText(rowTrail(job({ provider: "registry", posted_at: null }), NOW, "UTC"))).toBe(`via registry · ${REGISTRY_BASIS}`);
   });
 

@@ -430,10 +430,10 @@ describe("a row's trail, built from returned fields only", () => {
     expect(signal).not.toContain("rules out");
   });
 
-  it("says a kept live-search row had its link checked, with a green mark, and by whom it was found", () => {
+  it("says a kept live-search row was not found closed, with the muted code mark and no green one, and by whom it was found", () => {
     const { container } = draw(ready());
-    expect(trails(container)).toEqual(["✓ Link checked · via serper · Posted Sep 20"]);
-    expect(query(container, ".bj-trail-glyph--emerald")).not.toBeNull();
+    expect(trails(container)).toEqual(["○ Link not found closed · via serper · Posted Sep 20"]);
+    expect(container.querySelector(".bj-trail-glyph--emerald")).toBeNull();
   });
 
   it("says a row that never reached the check was not checked yet, in the muted code glyph", () => {
@@ -443,7 +443,7 @@ describe("a row's trail, built from returned fields only", () => {
 
   it("leaves out the date, and its separator, when the posting returned none", () => {
     const { container } = draw(ready(response({ scored: [job({ posted_at: null })] })));
-    expect(trails(container)).toEqual(["✓ Link checked · via serper"]);
+    expect(trails(container)).toEqual(["○ Link not found closed · via serper"]);
   });
 
   it("is the last element of the row, inline", () => {

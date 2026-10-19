@@ -12,7 +12,8 @@
 // row it is true when the liveness check kept the row, including rows whose probe was inconclusive or
 // timed out. Either way it means "not found closed", never "verified live". So a fresh registry row
 // says it was on the company's board at the last poll, a stale one says only that it was not
-// confirmed there recently, a live-search row that was kept says "Link checked", and one that never
+// confirmed there recently, a live-search row that was kept says "Link not found closed" (in the muted
+// code glyph: the check ran and found nothing against the link, which is not a pass), and one that never
 // reached the check says it was not checked.
 // The word the trail never says is not in this file (lib/trail.ts refuses it as well).
 
@@ -57,8 +58,9 @@ export const REGISTRY_STALE_BASIS = "not confirmed on the company's board recent
 // the company's board at the last poll (no time: the card carries `posted_at`, not when the poller last
 // saw the posting). A registry row that is not fresh says only that it was not confirmed there lately,
 // because the posting may have been absent at the last poll.
-// A live-search row says "Link checked" only when the liveness check kept it, and otherwise that its
-// link was not checked yet. `when` is the posting's own date, and is left out when it is not returned.
+// A live-search row says "Link not found closed" when the liveness check kept it, and otherwise that its
+// link was not checked yet. The kept row gets the plain code glyph, never the green pass mark: a probe
+// that timed out or could not read the page keeps the row too, so "kept" is not a recorded pass. `when` is the posting's own date, and is left out when it is not returned.
 export function rowTrail(job: JobCard, now: Date, timeZone?: string): TrailInput {
   const date = job.posted_at === null ? null : formatTrailDate(job.posted_at, { now, timeZone });
   const when = date === null ? null : `Posted ${date}`;
@@ -66,8 +68,8 @@ export function rowTrail(job: JobCard, now: Date, timeZone?: string): TrailInput
     return { glyph: "code", actor: "via registry", basis: job.link_checked ? REGISTRY_BASIS : REGISTRY_STALE_BASIS, when };
   }
   return {
-    glyph: job.link_checked ? "passed" : "code",
-    actor: job.link_checked ? "Link checked" : "Link not checked yet",
+    glyph: "code",
+    actor: job.link_checked ? "Link not found closed" : "Link not checked yet",
     basis: `via ${job.provider}`,
     when,
   };
