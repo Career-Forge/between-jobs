@@ -23,11 +23,16 @@ export interface LoadingStateProps {
   rowHeight?: number;
   /** What a screen reader hears. */
   label?: string;
+  /**
+   * False when the page already says the same thing elsewhere in a live region (the next-step band's
+   * "Searching..."), so the placeholders are not announced a second time. The block stays aria-busy.
+   */
+  announce?: boolean;
 }
 
-export function LoadingState({ rows = 3, rowHeight = 56, label = "Loading..." }: LoadingStateProps) {
+export function LoadingState({ rows = 3, rowHeight = 56, label = "Loading...", announce = true }: LoadingStateProps) {
   return (
-    <div className="bj-state bj-state--loading" role="status" aria-busy="true">
+    <div className="bj-state bj-state--loading" role={announce ? "status" : undefined} aria-busy="true">
       <span className="bj-visually-hidden">{label}</span>
       <div aria-hidden="true">
         {Array.from({ length: rows }, (_, index) => (

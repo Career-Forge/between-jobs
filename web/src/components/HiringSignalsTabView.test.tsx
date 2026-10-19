@@ -705,10 +705,12 @@ describe("the live region", () => {
     expect(textOf(liveRegion(tree(ready(), actions))).trim()).toBe("");
   });
 
-  it("says a search is running, and announces the result headline afterwards", () => {
+  it("shows a running search without announcing it twice, and announces the result headline afterwards", () => {
     const { actions } = recorder();
-    const loading = liveRegion(tree(ready({ search: { kind: "loading", request: REQUEST } }), actions));
-    expect(textOf(loading)).toBe("Searching for recent hiring posts...");
+    const running = ready({ search: { kind: "loading", request: REQUEST } });
+    // Shown, but not in the live region: the page's band already announces it.
+    expect(textOf(liveRegion(tree(running, actions))).trim()).toBe("");
+    expect(html(running)).toContain("Searching for recent hiring posts...");
     const one = liveRegion(tree(results(makeOutcome([makeSignal()])), actions));
     expect(textOf(one)).toBe("1 post found");
     const many = liveRegion(tree(results(makeOutcome([makeSignal(), makeSignal({ activity_id: ID_2 })])), actions));

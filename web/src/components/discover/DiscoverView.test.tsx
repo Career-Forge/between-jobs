@@ -202,6 +202,12 @@ describe("loading: a search is running", () => {
     expect(query(container, "form input[type='text']").hasAttribute("disabled")).toBe(false);
   });
 
+  it("does not announce the placeholders: the band's 'Searching...' is the one voice for the start of a search", () => {
+    const { container } = draw(loading());
+    expect(container.querySelector(".bj-state--loading[role='status']")).toBeNull();
+    expect(words(bandOf(container))).toContain("Searching...");
+  });
+
   it("says Searching... in the band with the honest sentence about link checks, and no button", () => {
     const { container } = draw(loading());
     expect(words(bandOf(container))).toContain("Searching...");

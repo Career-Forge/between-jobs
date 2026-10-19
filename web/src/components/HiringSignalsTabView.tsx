@@ -32,7 +32,8 @@ import "../styles/hiring-signals.css";
 // hairline rules, not a card, and every row ends in its trail line, inline.
 //
 // THE LIVE REGION is always mounted so screen readers pick up its changes:
-// loading, the result headline, and the save/remove confirmations. Each notice is
+// the result headline and the save/remove confirmations. The running search is shown beside it, not in
+// it, because the page's next-step band announces that sentence. Each notice is
 // keyed by its own id, so the same words twice in a row are a new node and are
 // announced again. A failure is not announced here: its own block is role="alert".
 //
@@ -90,8 +91,10 @@ export function HiringSignalsTabView({
     <div className="bj-hs-tab">
       <div className="bj-hs-panel bj-hs-block bj-hs-form-block">
         <SearchForm state={state} actions={actions} />
+        {/* Drawn beside the live region, not in it: the page's next-step band already says it, and
+            saying it twice is two announcements for one change. */}
+        {busy && <div className="bj-small bj-muted">Searching for recent hiring posts...</div>}
         <div className="bj-small" role="status" aria-live="polite">
-          {busy && <span className="bj-muted">Searching for recent hiring posts...</span>}
           {search.kind === "ready" && !busy && (
             <strong>
               {tabResultHeadline(search.outcome.response.signals.length, search.outcome.unreadable)}

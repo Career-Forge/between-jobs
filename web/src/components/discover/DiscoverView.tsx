@@ -98,7 +98,7 @@ export function DiscoverView(props: DiscoverViewProps) {
               </p>
             </EmptyState>
           )}
-          {search.kind === "loading" && <LoadingState rows={3} rowHeight={168} label="Searching..." />}
+          {search.kind === "loading" && <LoadingState rows={3} rowHeight={168} label="Searching..." announce={false} />}
           {search.kind === "error" && <FailureState message={`The search couldn't be read: ${search.message}`} />}
           {search.kind === "ready" && (
             <ResultsView

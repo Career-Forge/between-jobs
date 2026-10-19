@@ -19,6 +19,12 @@ describe("LoadingState", () => {
     expect(rows[0].parentElement?.getAttribute("aria-hidden")).toBe("true");
   });
 
+  it("is not a live region when the page already says the same thing (announce off), and stays aria-busy", () => {
+    const { container } = view(<LoadingState announce={false} label="Searching..." />);
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(query(container, ".bj-state--loading").getAttribute("aria-busy")).toBe("true");
+  });
+
   it("reserves the height of the real rows up front, so content arriving shifts nothing", () => {
     const { container } = view(<LoadingState rows={4} rowHeight={72} label="Loading header..." />);
     const rows = [...container.querySelectorAll<HTMLElement>(".bj-skeleton-row")];
