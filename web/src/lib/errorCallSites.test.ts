@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 // vite's `?raw` import, not `node:fs`: @types/node is not installed here.
 const sources = import.meta.glob(
   [
-    "../components/GeneratePanel.tsx",
+    "./useGeneration.ts",
     "../components/CompanyIntelPanel.tsx",
     "../components/InterviewPracticePanel.tsx",
     "../pages/Discover.tsx",
@@ -29,7 +29,7 @@ const sources = import.meta.glob(
 // Call sites of `friendlyApiMessage(` (or `failureOf(`), per file. A new call site is
 // fine; one fewer is a revert.
 const MINIMUM_CALL_SITES: Record<string, number> = {
-  "../components/GeneratePanel.tsx": 4, // generate, two downloads, the export checklist
+  "./useGeneration.ts": 3, // generate, the two downloads (one function for both), the export checks
   "../components/CompanyIntelPanel.tsx": 1,
   "../components/InterviewPracticePanel.tsx": 2, // start a session, submit an answer
   "../pages/Discover.tsx": 2, // search, track
@@ -57,7 +57,7 @@ describe("components whose actions are rate limited", () => {
       expect(source).toBeTypeOf("string");
       const calls = source.match(/\b(friendlyApiMessage|failureOf|problemOf|settingsFailureMessage)\(/g) ?? [];
       expect(calls.length).toBeGreaterThanOrEqual(minimum);
-      expect(source).toMatch(/from "(\.\.\/)+lib\/(rateLimitMessage|setupRequired|settings\/settingsErrors)"/);
+      expect(source).toMatch(/from "(?:(?:\.\.\/)+lib\/|\.\/)(rateLimitMessage|setupRequired|settings\/settingsErrors)"/);
     },
   );
 });

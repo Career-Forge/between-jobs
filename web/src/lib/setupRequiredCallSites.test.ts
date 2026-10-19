@@ -101,14 +101,17 @@ const SITES: Record<string, Site> = {
     draws: 1,
     keeps: [/setState\(\{ kind: "setup", notice: setup \}\)/, NOTICE_FROM_STATE],
   },
-  "../components/GeneratePanel.tsx": {
+  // The run's failure is turned into a notice by the generation hook; the panel draws it.
+  "../lib/useGeneration.ts": {
     calls: 1,
+    draws: 0,
+    keeps: [/failureOf\(e, "Failed to generate"\)/],
+    forbids: [BY_HAND],
+  },
+  "../components/GeneratePanel.tsx": {
+    calls: 0,
     draws: 1,
-    keeps: [
-      /setGenerate\(failureOf\(e, /,
-      /generate\.kind === "setup" && <SetupRequiredNotice notice=\{generate\.notice\} \/>/,
-    ],
-    forbids: [/setGenerate\(\{ kind: "error"/],
+    keeps: [/state\.kind === "setup" && <SetupRequiredNotice notice=\{state\.notice\} \/>/],
   },
   // The three panels that read the resume document: all open with the workspace, and the
   // first thing a new account hits there is "no profile yet" (and then "no model key").

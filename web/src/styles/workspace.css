@@ -1,0 +1,621 @@
+/* The application workspace: the header, the sections the page is made of, and the resume part's blocks
+ * (posting, Tailor, Generate, the honest read, Review: score, gap interview, claim check, export checks,
+ * the submit block). The generic document pieces -- the layout and trail margin, section chapters, the
+ * jump bar, score bars, claim and checklist rows -- are paper-doc.css's; this file is only what is
+ * particular to this page.
+ *
+ * Tokens only -- no color is defined here -- and no rule fills anything cyan: the page's one cyan fill is
+ * the next-step band's button. Selection is the shared maroon fill (.bj-selectable). Red is for a real
+ * failure; the one solid red block is the sponsorship mismatch in the honest read, with the canvas color
+ * for its text.
+ *
+ * Widths are the document layout's, chosen in script (see DocumentLayout); the only media query here is
+ * the shell's own phone width. */
+
+.bj-ws-section {
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Header                                                               */
+/* ------------------------------------------------------------------ */
+
+.bj-ws-meta {
+  min-width: 0;
+  margin: calc(var(--bj-space-2) * -1) 0 var(--bj-space-4);
+}
+
+.bj-ws-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-1) var(--bj-space-4);
+  margin: 0;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+}
+
+.bj-ws-status {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-2);
+}
+
+.bj-ws-status-label {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+}
+
+select.bj-ws-status-select {
+  min-height: 40px;
+  padding: 0 var(--bj-space-3);
+  border: 1px solid var(--bj-outline);
+  border-radius: 6px;
+  background: var(--bj-surface);
+  color: var(--bj-text);
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-control);
+}
+
+select.bj-ws-status-select[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared small pieces                                                  */
+/* ------------------------------------------------------------------ */
+
+.bj-ws-intro {
+  margin: 0;
+  max-width: 680px;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+.bj-ws-caption {
+  margin: var(--bj-space-1) 0 0;
+  max-width: 680px;
+  color: var(--bj-text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+h3.bj-ws-block-title {
+  margin: 0 0 var(--bj-space-2);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+h4.bj-ws-label {
+  margin: 0 0 var(--bj-space-1);
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* An outlined word-chip: a fact about a block ("Poor fit", "addresses", "✓ Saved"), never a status. */
+.bj-ws-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 var(--bj-space-2);
+  border: 1px solid var(--bj-outline);
+  border-radius: 12px;
+  color: var(--bj-text);
+  font-size: var(--bj-text-badge);
+  white-space: nowrap;
+}
+
+.bj-ws-tag--done {
+  border-color: var(--bj-emerald);
+}
+
+/* A neutral outline note: a caution, a cap, a penalty. */
+.bj-ws-callout {
+  margin: var(--bj-space-3) 0 0;
+  padding: var(--bj-space-3) var(--bj-space-4);
+  border: 1px solid var(--bj-outline);
+  border-radius: 8px;
+  color: var(--bj-text);
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+.bj-ws-callout > p {
+  margin: 0;
+}
+
+/* The one solid red block on the page: a real concern about eligibility. Canvas-colored text on the
+   danger fill (5.46:1), never white. */
+.bj-ws-callout--danger {
+  border-color: var(--bj-danger);
+  background: var(--bj-danger);
+  color: var(--bj-bg);
+  font-weight: 600;
+}
+
+.bj-ws-bars {
+  display: grid;
+  gap: var(--bj-space-4);
+}
+
+.bj-ws-status-line {
+  min-height: 0;
+  margin: 0;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+}
+
+.bj-ws-status-line:empty {
+  display: none;
+}
+
+.bj-ws-check {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-2);
+  margin-top: var(--bj-space-2);
+  color: var(--bj-text);
+}
+
+.bj-ws-plain-list {
+  margin: 0;
+  padding-left: var(--bj-space-4);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* A list of tagged lines (requirements with weak coverage) has its tag as the marker. */
+.bj-ws-tagged-list {
+  display: grid;
+  gap: var(--bj-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Cards the resume part embeds (the Studio's three, the research panels) fill the document column
+   instead of the 640px the old page gave them. */
+.bj-ws-section .bj-card {
+  max-width: none;
+  min-width: 0;
+}
+
+/* A control inside an embedded card never makes the page wider than the phone (the Region select's
+   longest option otherwise does at 375px). */
+.bj-ws-section .bj-card select,
+.bj-ws-section .bj-card input:not([type="checkbox"]):not([type="radio"]) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* A research or prepare panel keeps its own card. The section's chapter is its heading now, so the
+   card's own leading <h2> is hidden: two headings with the same words would be read out twice. Delete
+   this rule when the panels are restyled to drop their own h2. */
+.bj-ws-panel .bj-doc-main > .bj-card > h2:first-child {
+  display: none;
+}
+
+/* The panels were built when each card could have its own cyan button. The page's one cyan fill is the
+   next-step band's, so inside a panel slot a primary button is drawn outlined until the panel is
+   restyled to stop asking for one. Delete this rule with the h2 rule above. */
+.bj-ws-panel button.bj-primary {
+  border-color: var(--bj-outline);
+  background: transparent;
+  color: var(--bj-text);
+  font-weight: 400;
+}
+
+.bj-ws-panel button.bj-primary:hover {
+  border-color: var(--bj-text-muted);
+  background: var(--bj-hover-bg);
+}
+
+/* ------------------------------------------------------------------ */
+/* Tailor                                                               */
+/* ------------------------------------------------------------------ */
+
+.bj-ws-well {
+  max-height: 280px;
+  overflow: auto;
+  padding: var(--bj-space-3) var(--bj-space-4);
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-surface);
+  color: var(--bj-text);
+  font-size: var(--bj-text-small);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.bj-ws-tailor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-ws-clusters,
+.bj-ws-skills {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-ws-clusters {
+  display: grid;
+  gap: var(--bj-space-2);
+}
+
+.bj-ws-cluster {
+  min-width: 0;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+}
+
+button.bj-ws-cluster-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--bj-space-3);
+  width: 100%;
+  min-height: 44px;
+  padding: 10px var(--bj-space-3);
+  border: none;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.bj-ws-priority {
+  flex: none;
+  min-width: 78px;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-badge);
+}
+
+.bj-ws-priority--must {
+  color: var(--bj-text);
+  font-weight: 700;
+}
+
+.bj-ws-cluster-name {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+.bj-ws-cluster-count {
+  flex: none;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.bj-ws-evidence {
+  display: grid;
+  gap: var(--bj-space-1);
+  padding: var(--bj-space-3);
+  border-top: 1px solid var(--bj-border);
+  background: var(--bj-bg);
+}
+
+.bj-ws-evidence-item {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-2);
+  min-height: 32px;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+.bj-ws-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-2);
+}
+
+/* A skill is an outline with a mark and its word: Verified ✓, Supported ◆, Adjacent ◇, Gap ○. */
+.bj-ws-skill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 var(--bj-space-3);
+  border: 1px solid var(--bj-outline);
+  border-radius: 14px;
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+.bj-ws-skill--supported,
+.bj-ws-skill--adjacent {
+  border-color: var(--bj-gold);
+}
+
+.bj-ws-skill--adjacent {
+  border-style: dashed;
+}
+
+.bj-ws-skill--unsupported {
+  color: var(--bj-text-muted);
+}
+
+.bj-ws-skill-state {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-eyebrow);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------ */
+/* Generate and the honest read                                         */
+/* ------------------------------------------------------------------ */
+
+.bj-ws-generate,
+.bj-ws-result,
+.bj-ws-honest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-ws-cautions {
+  display: grid;
+  gap: var(--bj-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-ws-cautions > li {
+  margin: 0;
+}
+
+.bj-ws-honest-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-3);
+}
+
+.bj-ws-honest-head h3.bj-ws-block-title {
+  margin: 0;
+}
+
+.bj-ws-ceiling {
+  display: flex;
+  align-items: baseline;
+  gap: var(--bj-space-3);
+  margin: 0;
+}
+
+.bj-ws-ceiling-label {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+}
+
+/* The fit read's own 0 to 10 number: gold, because it is a score, and never converted to a /100. */
+.bj-ws-ceiling-value {
+  color: var(--bj-gold);
+  font-family: var(--bj-font-display);
+  font-size: 30px;
+  font-weight: 500;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.bj-ws-honest-section {
+  min-width: 0;
+}
+
+.bj-ws-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-ws-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 13px;
+  font-size: var(--bj-text-badge);
+  overflow-wrap: anywhere;
+}
+
+/* "Missing" is a muted outline and the word, never a red chip. */
+.bj-ws-chip--missing {
+  border-style: dashed;
+  color: var(--bj-text-muted);
+}
+
+.bj-ws-chip-state {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-eyebrow);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------ */
+/* Review                                                               */
+/* ------------------------------------------------------------------ */
+
+.bj-ws-score {
+  display: grid;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-ws-rating {
+  margin: 0;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+}
+
+.bj-ws-adjusted {
+  margin: 0;
+  color: var(--bj-text);
+  font-size: var(--bj-text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.bj-ws-clusterlist {
+  display: grid;
+  gap: var(--bj-space-1);
+  margin: var(--bj-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-ws-clusterrow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--bj-space-1) var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-ws-dealbreakers {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-ws-dealbreaker {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--bj-space-3);
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-ws-dealbreaker:last-child {
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-ws-dealbreaker-state {
+  flex: none;
+  width: 96px;
+  font-size: var(--bj-text-badge);
+}
+
+.bj-ws-dealbreaker-body {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.bj-ws-dealbreaker-label {
+  margin: 0;
+  font-size: var(--bj-text-control);
+  overflow-wrap: anywhere;
+}
+
+.bj-ws-gap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-ws-gap-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-3);
+}
+
+.bj-ws-gap-head h3.bj-ws-block-title {
+  margin: 0;
+}
+
+.bj-ws-claims,
+.bj-ws-export {
+  min-width: 0;
+}
+
+.bj-ws-legend {
+  margin: 0 0 var(--bj-space-3);
+  color: var(--bj-text-muted);
+  font-size: 12.5px;
+}
+
+.bj-ws-count {
+  margin: 0 0 var(--bj-space-3);
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+}
+
+.bj-ws-zero {
+  margin: 0;
+  color: var(--bj-text);
+}
+
+/* The person's own step: an outline that says so, with no fill. */
+.bj-ws-submit {
+  display: grid;
+  gap: var(--bj-space-3);
+  padding: var(--bj-space-4);
+  border: 1px solid var(--bj-outline);
+  border-radius: 10px;
+}
+
+.bj-ws-submit h3.bj-ws-block-title,
+.bj-ws-submit p {
+  margin: 0;
+}
+
+@media (max-width: 959px) {
+  .bj-ws-status {
+    width: 100%;
+  }
+
+  select.bj-ws-status-select {
+    flex: 1 1 auto;
+    min-height: 44px;
+  }
+
+  .bj-ws-dealbreaker {
+    flex-direction: column;
+    gap: var(--bj-space-2);
+  }
+
+  .bj-ws-dealbreaker-state {
+    width: auto;
+  }
+
+  button.bj-ws-cluster-row {
+    flex-wrap: wrap;
+    row-gap: var(--bj-space-1);
+  }
+
+  .bj-ws-priority {
+    min-width: 0;
+  }
+
+  .bj-ws-evidence-item {
+    min-height: 44px;
+  }
+}

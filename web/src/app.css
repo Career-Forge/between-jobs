@@ -801,58 +801,6 @@ button.bj-danger {
   display: inline-block;
 }
 
-/* ------------------------------------------------------------------ */
-/* Application workspace                                               */
-/* ------------------------------------------------------------------ */
-
-.bj-workspace-breadcrumb {
-  color: var(--bj-text-muted);
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-
-.bj-workspace-breadcrumb a {
-  color: var(--bj-cyan);
-}
-
-.bj-workspace-layout {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 20px;
-  align-items: start;
-  margin-top: 16px;
-}
-
-.bj-workspace-studio {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-@media (max-width: 960px) {
-  .bj-workspace-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-.bj-tailor-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  border: 1px solid var(--bj-border);
-  border-radius: 10px;
-  background: var(--bj-surface);
-  padding: 20px;
-}
-
-.bj-workspace-tailor {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  position: sticky;
-  top: 16px;
-}
-
 .bj-company-intel-panel {
   display: flex;
   flex-direction: column;
@@ -869,24 +817,6 @@ button.bj-danger {
   gap: 6px;
 }
 
-.bj-coverage-cluster {
-  border: 1px solid var(--bj-border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.bj-coverage-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 12px;
-  background: var(--bj-surface-raised);
-  border: none;
-  text-align: left;
-  cursor: pointer;
-}
-
 .bj-coverage-name {
   flex: 1;
   font-size: 13px;
@@ -900,138 +830,14 @@ button.bj-danger {
   background: var(--bj-bg);
 }
 
-.bj-evidence-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--bj-text-muted);
-  cursor: pointer;
-}
-
-.bj-skill-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.bj-skill-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid;
-}
-
-.bj-skill-chip-state {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.8;
-}
-
-.bj-generate-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.bj-generate-result {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .bj-generate-warnings {
   margin: 0;
   padding-left: 18px;
   color: var(--bj-text-muted);
 }
 
-/* Pin-conflict banner -- distinct from the plain warnings list since a
-   pin is the candidate's own explicit choice failing to be fully honored. */
-.bj-pin-conflict-banner {
-  border: 1px solid var(--bj-gold);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin: 8px 0;
-}
-
-.bj-pin-conflict-banner ul {
-  margin: 6px 0;
-  padding-left: 18px;
-  color: var(--bj-text-muted);
-}
-
-/* Claim-verification banner -- danger, not gold,
-   since a flagged claim is a possible fabrication, a different severity
-   than a pin simply not fully fitting. */
-.bj-claim-warning-banner {
-  border: 1px solid var(--bj-danger);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin: 8px 0;
-}
-
-.bj-claim-warning-banner ul {
-  margin: 6px 0;
-  padding-left: 18px;
-  color: var(--bj-text-muted);
-}
-
-.bj-checklist {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.bj-checklist-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 8px 12px;
-  border: 1px solid var(--bj-border);
-  border-radius: 8px;
-  background: var(--bj-surface-raised);
-}
-
 .bj-checklist-label {
   font-size: 13px;
-}
-
-/* The Headroom Ledger -- an honest number plus
-   exactly what's movable and what isn't, replacing the old bare "ATS score:
-   X/100" line. Gold throughout per tokens.css's own contract ("gold =
-   evidence, provenance, scores, review, uncertainty"). */
-.bj-score-breakdown {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.bj-score-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.bj-score-numeral-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.bj-score-numeral {
-  font-family: var(--bj-font-display);
-  font-weight: 600;
-  font-size: 40px;
-  line-height: 1;
-  color: var(--bj-gold);
 }
 
 .bj-score-rows {
@@ -1098,28 +904,6 @@ button.bj-danger {
   cursor: pointer;
 }
 
-.bj-score-cluster-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.bj-score-cluster-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.bj-score-cap-callout {
-  border: 1px solid var(--bj-gold);
-  border-radius: 8px;
-  padding: 10px 14px;
-  color: var(--bj-text-muted);
-}
-
 /* Personal details -- work authorization.
    Same expand/collapse idiom as .bj-score-disclosure above (ScoreBreakdown.
    tsx) -- forked rather than shared, since this is its own "Examples"
@@ -1181,66 +965,11 @@ button.bj-danger {
   overflow-wrap: anywhere;
 }
 
-/* ForgeScore chart-UI pass: same shape as the cap callout, danger-colored --
-   a real, already-computed concerning signal (a penalty already applied, or
-   a visa/sponsorship mismatch), not just an explanatory note. Shared across
-   ScoreBreakdown's white-text-spam callout and HonestFloor's visa callout. */
-.bj-danger-callout {
-  border: 1px solid var(--bj-danger);
-  border-radius: 8px;
-  padding: 10px 14px;
-  color: var(--bj-text-muted);
-}
-
-/* A solid variant of the callout above, for a single genuinely elevated
-   case: HonestFloor's visa/sponsorship mismatch. Everything else that uses
-   .bj-danger-callout (the white-text-spam warning) stays the quieter
-   outline treatment -- this is deliberately louder, matching a real
-   employment-eligibility concern rather than a resume-quality note. */
-.bj-danger-callout-solid {
-  background: var(--bj-danger);
-  border-radius: 8px;
-  padding: 10px 14px;
-  color: #ffffff;
-  font-weight: 600;
-}
-
-/* A session-local what-if, never the stored score -- emerald because
-   this is a candidate-confirmed fact (verified), not evidence/uncertainty
-   (gold, the rest of this panel) or a model having acted (violet). */
-.bj-score-adjusted {
-  color: var(--bj-emerald);
-}
-
-/* Gap Interview -- colors and spacing use this file's own tokens
-   throughout. Violet = the LLM worded a question (it never
-   decides which gaps get asked -- that's deterministic, tokens.css's own
-   contract); emerald = a candidate-confirmed fact ready to become a real
-   profile version, same meaning .bj-score-adjusted already uses it for. */
-.bj-gap-interview {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-top: 4px;
-}
-
 .bj-gap-idle {
   display: flex;
   flex-direction: column;
   gap: 6px;
   align-items: flex-start;
-}
-
-.bj-gap-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.bj-gap-title {
-  margin: 0;
-  font-size: 17px;
 }
 
 .bj-gap-question-card,
@@ -1282,11 +1011,6 @@ button.bj-danger {
 
 .bj-gap-answer textarea {
   width: 100%;
-}
-
-.bj-gap-yes {
-  border-color: var(--bj-emerald);
-  color: var(--bj-emerald);
 }
 
 .bj-gap-ghost {
@@ -1356,52 +1080,6 @@ button.bj-danger {
   }
 }
 
-/* Honest Floor. Muted/neutral throughout on
-   purpose: this is a decline, not an error (bj-danger) or an achievement
-   (bj-emerald) -- tokens.css's own contract reserves red for actual
-   failure, and there's no failure here, just an honest "not yet." */
-.bj-honest-floor {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  border: 1px solid var(--bj-border);
-  border-radius: 8px;
-  background: var(--bj-surface-raised);
-  padding: 16px;
-}
-
-.bj-honest-floor-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.bj-honest-floor-title {
-  margin: 0;
-  font-size: 17px;
-}
-
-.bj-honest-floor-ceiling {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.bj-honest-floor-ceiling-label {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--bj-text-muted);
-}
-
-.bj-honest-floor-ceiling-value {
-  font-family: var(--bj-font-display);
-  font-weight: 600;
-  font-size: 28px;
-  color: var(--bj-gold);
-}
-
 .bj-honest-floor-section {
   display: flex;
   flex-direction: column;
@@ -1413,18 +1091,6 @@ button.bj-danger {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--bj-text-muted);
-}
-
-.bj-honest-floor-callout {
-  border: 1px solid var(--bj-gold);
-  border-radius: 8px;
-  padding: 10px 14px;
-  color: var(--bj-text-muted);
-}
-
-.bj-honest-floor-callout-label {
-  color: var(--bj-gold);
-  font-weight: 600;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1448,14 +1114,6 @@ button.bj-danger {
 /* ------------------------------------------------------------------ */
 /* Hiring posts -- per-application panel                               */
 /* ------------------------------------------------------------------ */
-
-/* When the feature is switched off the panel renders nothing, leaving its
-   wrapper div empty -- and an empty flex item still adds a gap, so collapse
-   it. Every other panel wrapper always has content, so this only ever
-   matches the disabled case. */
-.bj-workspace-tailor > div:empty {
-  display: none;
-}
 
 .bj-hs-panel {
   gap: 10px;

@@ -9,31 +9,29 @@ import type {
 } from "../lib/generateTypes";
 import type { ResumeDocument } from "../lib/headerComposerTypes";
 import { latestAttempt } from "../lib/scoreBreakdown";
+import { GlyphMark } from "./paper/TrailLine";
+import "../styles/workspace.css";
 
-// Gap Interview (S4, honest-score-surfaces.md) -- Reality Check artboards
-// 2-3 ("Close the gaps" / "Approve the wording"), ported from the reviewed
-// design canvas (PLANNED.md, "Honest low-score flow"). Three real API
-// calls, in order, each an explicit human action:
-//   1. POST /resume-documents/{id}/gap-interview (S4a) -- up to 3 questions,
-//      deterministically picked, LLM-worded. Real cost -> gated behind the
-//      "Close the gaps" click, never fired automatically.
-//   2. POST /profile/gap-interview/draft (S4b) -- one bullet drafted
-//      strictly from the candidate's own words, plus a proposed entity.
-//   3. POST /profile/gap-interview/approve (S4b) -- the deterministic
-//      apply, only after explicit approval (possibly edited first). Always
-//      a PENDING profile_version; activation is its own separate click
-//      against the existing /profile/versions/{id}/activate.
+// Close the gaps: a short interview that turns a real, adjacent skill into a fact the resume can cite.
+// Three real API calls, in order, each an explicit human action:
+//   1. POST /resume-documents/{id}/gap-interview -- up to 3 questions, picked by code from the posting's
+//      requirement clusters, worded by a model. It costs a model call, so it is gated behind the
+//      "Close the gaps" click and never fired on its own.
+//   2. POST /profile/gap-interview/draft -- one bullet drafted strictly from the candidate's own words,
+//      plus the profile entry it would land in.
+//   3. POST /profile/gap-interview/approve -- the deterministic apply, only after explicit approval
+//      (possibly edited first). It always creates a PENDING profile version; activating it is its own
+//      separate click against the existing /profile/versions/{id}/activate.
 //
-// D3's trigger free half (rating < 70) gates whether this renders at all;
-// the cluster-zero-coverage half needs a real Step0 call, so it isn't
-// checked until the candidate actually asks.
+// It renders only when the latest ATS score is under 70. Whether a requirement cluster has no coverage
+// at all needs a real model call, so that is not checked until the person asks.
 //
-// The design canvas showed a specific "67 -> ~71 estimated" score delta --
-// deliberately NOT reproduced here. Nothing in this flow computes what a
-// closed gap is actually worth (that depends on the NEXT real LLM
-// extraction's judgment, not a formula), so showing a precise-looking
-// number would be exactly the fabrication this whole feature exists to
-// refuse. The addressed cluster name is real and shown instead.
+// No score delta is shown for a closed gap. Nothing here computes what a closed gap is worth (that
+// depends on the next extraction's judgment, not a formula), so a precise-looking number would be a
+// fabrication. The cluster a question addresses is real and is shown instead.
+//
+// Every button here is outlined: the page's one cyan fill is the next-step band's. The model mark
+// (violet) is on what a model worded or drafted, and a fact the person has approved is marked saved.
 
 type Phase =
   | "idle"
@@ -175,10 +173,12 @@ export function GapInterview({
   }
 
   return (
-    <div className="bj-gap-interview">
+    <div className="bj-ws-gap">
       {phase === "idle" && (
         <div className="bj-gap-idle">
-          <button onClick={() => void loadQuestions()}>Close the gaps</button>
+          <button type="button" onClick={() => void loadQuestions()}>
+            Close the gaps
+          </button>
           <div className="bj-muted bj-small">
             Up to 3 questions, drafted from your own profile -- a yes becomes a fact you
             approve first; a no costs you nothing.
@@ -186,12 +186,18 @@ export function GapInterview({
         </div>
       )}
 
-      {phase === "loading" && <div className="bj-muted bj-small">Finding real gaps...</div>}
+      {phase === "loading" && (
+        <p className="bj-muted bj-small" role="status">
+          Finding real gaps...
+        </p>
+      )}
 
       {phase === "error" && (
-        <div className="bj-error">
+        <div className="bj-error" role="alert">
           {errorMessage}{" "}
-          <button onClick={() => void loadQuestions()}>Try again</button>
+          <button type="button" onClick={() => void loadQuestions()}>
+            Try again
+          </button>
         </div>
       )}
 
@@ -213,9 +219,11 @@ export function GapInterview({
         phase === "approving" ||
         phase === "approve-error" ||
         phase === "approved") && (
-        <div className="bj-gap-header">
-          <h3 className="bj-gap-title">Close the gaps</h3>
-          <span className="bj-badge-violet">✦ AI-drafted</span>
+        <div className="bj-ws-gap-head">
+          <h3 className="bj-ws-block-title">Close the gaps</h3>
+          <span className="bj-ws-tag">
+            <GlyphMark name="model" /> Worded by your model
+          </span>
         </div>
       )}
 
@@ -224,22 +232,22 @@ export function GapInterview({
           <div className="bj-gap-question-card">
             <div>{queue[activeIndex].question}</div>
             <div className="bj-gap-provenance">
-              <span className="bj-badge-gold">addresses</span>
+              <span className="bj-ws-tag">addresses</span>
               <span className="bj-muted bj-small">{queue[activeIndex].cluster_name}</span>
             </div>
             {!answering ? (
               <div className="bj-actions">
                 <button
-                  className="bj-gap-yes"
+                  type="button"
                   onClick={() => setAnswering(true)}
                   disabled={phase === "drafting"}
                 >
                   Yes, add detail
                 </button>
-                <button onClick={advanceOrExhaust} disabled={phase === "drafting"}>
+                <button type="button" onClick={advanceOrExhaust} disabled={phase === "drafting"}>
                   No
                 </button>
-                <button className="bj-gap-ghost" onClick={advanceOrExhaust} disabled={phase === "drafting"}>
+                <button type="button" className="bj-gap-ghost" onClick={advanceOrExhaust} disabled={phase === "drafting"}>
                   Not sure
                 </button>
               </div>
@@ -256,7 +264,7 @@ export function GapInterview({
                 />
                 <div className="bj-actions">
                   <button
-                    className="bj-primary"
+                    type="button"
                     onClick={() => void draftFact()}
                     disabled={phase === "drafting" || answerText.trim().length === 0}
                   >
@@ -265,7 +273,11 @@ export function GapInterview({
                 </div>
               </div>
             )}
-            {phase === "draft-error" && <div className="bj-error">{errorMessage}</div>}
+            {phase === "draft-error" && (
+              <div className="bj-error" role="alert">
+                {errorMessage}
+              </div>
+            )}
           </div>
 
           {queue.length > activeIndex + 1 && (
@@ -302,7 +314,7 @@ export function GapInterview({
           <div className="bj-gap-review-card">
             {phase !== "approved" ? (
               <>
-                <span className="bj-badge-emerald bj-gap-review-badge">New fact</span>
+                <span className="bj-ws-tag bj-gap-review-badge">◆ New fact, not saved yet</span>
                 {!editing ? (
                   <div>{editedBullet}</div>
                 ) : (
@@ -313,7 +325,7 @@ export function GapInterview({
                   />
                 )}
                 <div className="bj-gap-provenance">
-                  <span className="bj-badge-gold">from your answer</span>
+                  <span className="bj-ws-tag">from your answer</span>
                   <span className="bj-muted bj-small">gap interview</span>
                 </div>
                 <div className="bj-gap-lands-in">
@@ -340,20 +352,25 @@ export function GapInterview({
                   Addresses {draft.clusterName} -- confirmed on your next generation. An
                   estimate never pretends to be a score.
                 </div>
-                {phase === "approve-error" && <div className="bj-error">{errorMessage}</div>}
+                {phase === "approve-error" && (
+                  <div className="bj-error" role="alert">
+                    {errorMessage}
+                  </div>
+                )}
                 <div className="bj-gap-review-actions">
                   <div className="bj-actions">
                     <button
-                      className="bj-primary"
+                      type="button"
                       onClick={() => void approveFact()}
                       disabled={phase === "approving" || editedBullet.trim().length === 0}
                     >
                       {phase === "approving" ? "Saving..." : "Approve & save to profile"}
                     </button>
-                    <button onClick={() => setEditing((v) => !v)} disabled={phase === "approving"}>
+                    <button type="button" onClick={() => setEditing((v) => !v)} disabled={phase === "approving"}>
                       {editing ? "Done editing" : "Edit wording"}
                     </button>
                     <button
+                      type="button"
                       className="bj-gap-ghost"
                       onClick={discardDraft}
                       disabled={phase === "approving"}
@@ -369,7 +386,7 @@ export function GapInterview({
               </>
             ) : (
               <>
-                <span className="bj-badge-emerald bj-gap-review-badge">Saved</span>
+                <span className="bj-ws-tag bj-ws-tag--done bj-gap-review-badge">✓ Saved</span>
                 <div className="bj-muted bj-small">
                   Saved as a new profile version, pending -- your resumes still use the old
                   one until you activate it.
@@ -377,7 +394,7 @@ export function GapInterview({
                 {!activated ? (
                   <div className="bj-actions">
                     <button
-                      className="bj-primary"
+                      type="button"
                       onClick={() => void activateVersion()}
                       disabled={activating}
                     >
@@ -386,8 +403,8 @@ export function GapInterview({
                   </div>
                 ) : (
                   <div className="bj-actions">
-                    <span className="bj-badge-emerald">Active</span>
-                    <button className="bj-primary" onClick={onRegenerate}>
+                    <span className="bj-ws-tag bj-ws-tag--done">✓ Active</span>
+                    <button type="button" onClick={onRegenerate}>
                       Generate again
                     </button>
                   </div>

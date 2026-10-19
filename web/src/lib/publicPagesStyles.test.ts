@@ -307,11 +307,11 @@ describe("the rules that two stylesheets once both wrote", () => {
     for (const selector of fieldSelectors) expect(selector, "auth.css must scope .bj-field to the card").toMatch(/^\.bj-login-card\s/);
   });
 
-  it("has one breadcrumb rule: paper.css owns .bj-breadcrumb, and the workspace's own is .bj-workspace-breadcrumb in app.css", () => {
+  it("has one breadcrumb rule: paper.css owns .bj-breadcrumb, and the workspace, which now draws its breadcrumb through the page header, has no rule of its own", () => {
     const names = (css: string) => rulesOf(css).flatMap((rule) => rule.selectors);
     expect(names(appCss).filter((selector) => /\.bj-breadcrumb\b/.test(selector))).toEqual([]);
+    expect(names(appCss).filter((selector) => /\.bj-workspace-breadcrumb\b/.test(selector))).toEqual([]);
     expect(names(paperCss).filter((selector) => /\.bj-workspace-breadcrumb\b/.test(selector))).toEqual([]);
     expect(names(paperCss).some((selector) => /^\.bj-breadcrumb\b/.test(selector))).toBe(true);
-    expect(names(appCss).some((selector) => /^\.bj-workspace-breadcrumb\b/.test(selector))).toBe(true);
   });
 });

@@ -20,10 +20,18 @@ import { Wordmark } from "./Wordmark";
 // are passed in as children (App.tsx), so what the shell draws does not depend on them.
 
 // The signed-in pages that draw a next-step band (Today at "/", Discover, Applications, Practice, Hiring signals, Profile
-// and Settings): on these the first tab stop is "Skip to next step", ahead of "Skip to content". A page not listed has
-// no band to skip to.
+// and Settings; an application's workspace too, see pageHasBand): on these the first tab stop is "Skip to next step",
+// ahead of "Skip to content". A page not listed has no band to skip to.
 // AppShell.test.tsx reads the sources and fails when a signed-in page draws a band that is not here.
 export const PATHS_WITH_A_BAND: readonly string[] = ["/", "/discover", "/applications", "/practice", "/hiring-signals", "/profile", SETTINGS_PATH];
+
+// A page whose address carries an id cannot be listed by one string: an application's workspace
+// (/applications/<id>) draws a band too.
+const WORKSPACE_PATH = /^\/applications\/[^/]+\/?$/;
+
+export function pageHasBand(pathname: string): boolean {
+  return PATHS_WITH_A_BAND.includes(pathname) || WORKSPACE_PATH.test(pathname);
+}
 
 export interface AppShellProps {
   email: string | null;
@@ -35,7 +43,7 @@ export function AppShell({ email, onSignOut, children }: AppShellProps) {
   const { pathname } = useLocation();
   return (
     <div className="bj-shell">
-      {PATHS_WITH_A_BAND.includes(pathname) && <NextStepSkipLink />}
+      {pageHasBand(pathname) && <NextStepSkipLink />}
       <SkipLink />
       <header className="bj-topbar">
         <Link to="/" className="bj-topbar-brand">
