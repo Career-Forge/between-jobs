@@ -363,11 +363,9 @@ components under `src/components/workspace/` and the older panels.
 The group labels are not anchors. Hiring posts is in the bar, and the page, only while `GET /hiring-signals/status`
 says on; a link to `#hiring-posts` while it is known off lands on a note saying so. A section is
 `<SectionChapter id title /> + <DocumentBlock>`: the chapter's h2 is what a link to the anchor focuses, and the block
-is what a panel draws its trail in (`<BlockTrail>` as the last thing in it). **A panel inside `PanelSections.tsx` is
-restyled by following the convention written at the top of that file**: no h2 of its own (a rule in
-`styles/workspace.css` hides the legacy one until it is removed), a `BlockTrail` for its provenance, outlined buttons
-only (another rule draws a legacy `.bj-primary` inside a panel slot outlined; the band holds the page's one cyan fill),
-and a failure of one panel never changes the band.
+is what a panel draws its trail in (`<BlockTrail>` as the last thing in it). A panel in `PanelSections.tsx` draws no
+h2 of its own (the chapter is the heading), only outlined buttons (the band holds the page's one cyan fill), and a
+failure of one panel never changes the band. Its states and wording are under "Research and prepare sections" below.
 
 - **Requests.** `GET /applications/{id}` and `GET /profile/current` are the page's own data (a 404 on the profile is
   tolerated: the Studio, Tailor and Generate then say the profile is missing, with a link). `GET /credentials` is read
@@ -413,6 +411,41 @@ and a failure of one panel never changes the band.
   text on the hidden-section rows); they get fixed when they are restyled, not here.
 - Not built: an in-browser PDF preview (it would reuse the blob a download fetches, once per generation result) and the
   band's "Answer the gap questions" (the gap interview renders only beside a drafted result).
+
+### Research and prepare sections
+
+Company intel, Contacts, Events, Practice and Your play (and the Hiring posts panel inside its own section) share
+one build, in `components/research/` (the evidence pattern, the empty block, the run button and its problems),
+`lib/research.ts` (provider words, confidence readings, the safe-link rule), `lib/researchTrails.ts` (every trail and
+receipt) and `lib/useResearchRun.ts` (the stored-run read and the run, for the three that work that way). The styles
+are `styles/research.css`.
+
+- **A run** (Company intel, Contacts, Events) searches with the person's own You.com or Firecrawl key and calls their
+  model, so each section's intro says it spends their keys. Its trail is read only from the run: the model glyph and
+  what it wrote, the providers that searched (`providers_used`), the day (`created_at`) and, as its one other glyph, how
+  many searches failed or were skipped (one warning is one search). A field that did not come back leaves its slot out.
+  A failed run keeps what the section already showed and puts a Retry beside it; a missing key or profile is a notice
+  with the link that fixes it (through `lib/setupRequired.ts`) and no Retry; a stored run that could not be read is a
+  Retry that reads again, and its trail is the red cross.
+- **Evidence** is one pattern: a source link (an http or https address only, opened in a new tab and named as such) and,
+  where a model gave one, its confidence as gold cells with the word. Company intel's high, medium and low are 3, 2 and 1
+  cells of 3. A contact source's server value `verified` means the model read the source as clearly naming the person
+  in that role, which code backed only by checking the name appears in the source's title or snippet, so it is drawn as
+  "Clear match", never as a verification. Your play's citations are the same line with a gold diamond and no link. Nothing
+  here is green.
+- **Contacts** gives no email address or phone number with a run. Each lookup is one person at a time, behind a confirm that
+  names the credit it spends, and a failure of one person's lookup or draft sits on that person's row. The server
+  declining to draft or to build a brief for want of evidence (`INSUFFICIENT_EVIDENCE`) is a gold note with its own reason,
+  not a failure. **An outreach draft stays a draft**: it is labeled "Draft -- not sent", every message has a Copy, the copy
+  under it says nothing is sent from here, and Gmail drafting (optional, invite-only, saved as a draft in the person's own
+  Gmail) is whatever `GmailDraftActions` says for the person's own Gmail state.
+- **Practice** reads each answered question's stored score and feedback, so a session picked up on a later visit shows the
+  answers already given, each with its own trail and the time the server stored it. An answer scored in this visit has no
+  time: none came back with it. STAR is four gold segments with their words and the caption "Judged by your model". Grounding
+  in company research says it is shared across users.
+- **Known gaps.** A stored outreach draft is not read back after a reload (the endpoint exists and is unused), so the button
+  reads "Draft outreach" again. The Hiring posts panel (`HiringSignalsPanelView.tsx`) keeps its own cards and counts
+  wording; the section adds only its trails and drops its own heading.
 
 ## Signed-out pages
 

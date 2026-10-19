@@ -206,42 +206,6 @@ h4.bj-ws-label {
   max-width: 100%;
 }
 
-/* A research or prepare panel keeps its own card. The section's chapter is its heading now, so the
-   card's own leading <h2> is hidden: two headings with the same words would be read out twice. Delete
-   this rule when the panels are restyled to drop their own h2. */
-.bj-ws-panel .bj-doc-main > .bj-card > h2:first-child {
-  display: none;
-}
-
-/* The panels were built when each card could have its own cyan button. The page's one cyan fill is the
-   next-step band's, so inside a panel slot a primary button is drawn outlined until the panel is
-   restyled to stop asking for one. Delete this rule with the h2 rule above. */
-.bj-ws-panel button.bj-primary {
-  border-color: var(--bj-outline);
-  background: transparent;
-  color: var(--bj-text);
-  font-weight: 400;
-}
-
-.bj-ws-panel button.bj-primary:hover {
-  border-color: var(--bj-text-muted);
-  background: var(--bj-hover-bg);
-}
-
-/* The same for the link form of the cyan button (Contacts' "Connect Gmail in Settings" and "Reconnect
-   Gmail in Settings" are a.bj-button-link-primary). Delete these with the button rules above. */
-.bj-ws-panel a.bj-button-link-primary {
-  border-color: var(--bj-outline);
-  background: transparent;
-  color: var(--bj-text);
-  font-weight: 400;
-}
-
-.bj-ws-panel a.bj-button-link-primary:hover {
-  border-color: var(--bj-text-muted);
-  background: var(--bj-hover-bg);
-}
-
 /* A link inside a sentence is told apart by an underline, not by colour alone (WCAG 1.4.1): cyan
    against the ivory or muted text around it is about 1.5:1. A link that is drawn as a button is not
    in a sentence and keeps its outline. */

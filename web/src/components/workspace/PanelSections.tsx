@@ -31,11 +31,16 @@ import "../../styles/workspace.css";
 //    its block (components/paper/DocumentLayout.tsx). Written inside a DocumentBlock it sits in the
 //    right margin from 1280px, under the block from 960px, and opens as a sheet on a phone, without the
 //    panel knowing which. A panel with a richer layout may use several blocks.
-//  - The panel does NOT draw its own h2: the chapter is the section's heading. Until a panel is
-//    restyled, its own leading <h2> inside its card is hidden by a rule in styles/workspace.css
-//    (".bj-ws-panel ... > h2:first-child"); a restyled panel drops its h2 and that rule goes with it.
-//  - The page's one cyan fill is the next-step band's. A panel's buttons are outlined, and a failure of
-//    one panel never changes the band.
+//  - The panel does NOT draw its own h2: the chapter is the section's heading, and a panel's own headings
+//    are h3 and below. Nothing hides a panel's heading any more; one that draws an h2 gets two.
+//  - The page's one cyan fill is the next-step band's. A panel's buttons are outlined and none asks for
+//    the primary class; a failure of one panel never changes the band.
+//
+// Each of the six is built the same way (components/research/ and lib/research*.ts): an intro that says
+// what the section does and what it spends, an outlined run button, the states a block can be in (a
+// placeholder while it reads, teaching before it has anything, a stale line with the stored run's own date,
+// the searches that did not complete, a setup notice with its link, a failure with a Retry), its evidence in
+// the one evidence pattern, and one trail line from returned fields only.
 //
 // Hiring posts exists only while the server is known to have the feature on. While that is not known
 // (still being asked, or the ask failed) the anchor is an empty target with no heading, and nothing is

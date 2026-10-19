@@ -5,8 +5,7 @@ import { blockOf, declarationsFor, rulesOf, tokenResolver, withoutMedia } from "
 import workspaceCss from "./workspace.css?raw";
 
 // workspace.css is read as text. It pins what can be measured from the rules: that it defines no color of
-// its own, never fills anything cyan, keeps the page to one cyan (the panels' own primary buttons are
-// drawn outlined inside their slots), and the few rules the page's structure depends on.
+// its own, never fills anything cyan, keeps the page to one cyan, and the few rules the page's structure depends on.
 
 const resolve = tokenResolver(tokensCss);
 const base = withoutMedia(workspaceCss);
@@ -43,31 +42,10 @@ describe("workspace.css", () => {
     expect(blockOf(workspaceCss, `@media ${PHONE_QUERY}`)).toContain(".bj-ws-status");
   });
 
-  it("draws a primary button inside a research or prepare panel outlined, so the band keeps the page's only cyan", () => {
-    const rule = decl(".bj-ws-panel button.bj-primary");
-    expect(rule.background).toBe("transparent");
-    expect(rule["border-color"]).toBe("var(--bj-outline)");
-    expect(rule.color).toBe("var(--bj-text)");
-  });
-
-  it("draws the link form of the cyan button inside a panel outlined too (Contacts' Gmail links), hover included", () => {
-    const rule = decl(".bj-ws-panel a.bj-button-link-primary");
-    expect(rule.background).toBe("transparent");
-    expect(rule["border-color"]).toBe("var(--bj-outline)");
-    expect(rule.color).toBe("var(--bj-text)");
-    expect(decl(".bj-ws-panel a.bj-button-link-primary:hover").background).toBe("var(--bj-hover-bg)");
-    // It has to out-rank app.css's a.bj-button-link-primary (and its :hover) on specificity, not on order.
-    expect(workspaceCss).toContain(".bj-ws-panel a.bj-button-link-primary:hover");
-  });
-
   it("underlines a link inside a sentence, because its color alone is about 1.5:1 against the text around it", () => {
     for (const selector of [".bj-ws-callout a", ".bj-ws-intro a", ".bj-ws-caption a", ".bj-ws-section p a:not(.bj-button-link)"]) {
       expect(decl(selector)["text-decoration"], selector).toBe("underline");
     }
-  });
-
-  it("hides a panel's own leading h2: the section's chapter is its heading", () => {
-    expect(decl(".bj-ws-panel .bj-doc-main > .bj-card > h2:first-child").display).toBe("none");
   });
 
   it("draws the one solid red block with the canvas color for its text, never white", () => {

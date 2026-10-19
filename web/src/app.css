@@ -801,45 +801,6 @@ button.bj-danger {
   display: inline-block;
 }
 
-.bj-company-intel-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  border: 1px solid var(--bj-border);
-  border-radius: 10px;
-  background: var(--bj-surface);
-  padding: 20px;
-}
-
-.bj-coverage-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.bj-coverage-name {
-  flex: 1;
-  font-size: 13px;
-}
-
-.bj-coverage-evidence {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 14px;
-  background: var(--bj-bg);
-}
-
-.bj-generate-warnings {
-  margin: 0;
-  padding-left: 18px;
-  color: var(--bj-text-muted);
-}
-
-.bj-checklist-label {
-  font-size: 13px;
-}
-
 .bj-score-rows {
   display: flex;
   flex-direction: column;
@@ -1091,24 +1052,6 @@ button.bj-danger {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--bj-text-muted);
-}
-
-/* ------------------------------------------------------------------ */
-/* Interview practice                                                 */
-/* ------------------------------------------------------------------ */
-
-.bj-interview-practice-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.bj-interview-question,
-.bj-interview-feedback,
-.bj-interview-report {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 /* ------------------------------------------------------------------ */
