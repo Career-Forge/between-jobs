@@ -13,7 +13,8 @@ import "../styles/profile-studio.css";
 //
 // IT IS A REAL DIALOG. It is drawn into <body> so the rest of the page can be made inert while it is
 // open; focus moves to its first field and is kept inside it (Tab and Shift+Tab wrap); Esc cancels --
-// not while a save is out -- and focus goes back to the control that opened it (lib/useModalDialog.ts).
+// not while a save is out -- and focus goes back to the control that opened it, or to where `returnFocus`
+// says (lib/useModalDialog.ts).
 // Nothing in it is cyan: the page's one cyan fill is the next-step band's button, so Save is an
 // outlined button like every other.
 //
@@ -35,6 +36,7 @@ export function EntryEditModal({
   error,
   onSave,
   onCancel,
+  returnFocus,
 }: {
   config: SectionFieldConfig;
   initialValues: EntryValues;
@@ -49,6 +51,8 @@ export function EntryEditModal({
   error: string | null;
   onSave: (values: EntryValues) => void;
   onCancel: () => void;
+  // Where focus goes when it closes, if the page knows better than "what had focus when it opened".
+  returnFocus?: () => HTMLElement | null;
 }) {
   const [values, setValues] = useState<EntryValues>(initialValues);
   const dialog = useRef<HTMLDivElement>(null);
@@ -60,6 +64,7 @@ export function EntryEditModal({
     canClose: !saving,
     // The first thing to type in, not the close mark that comes first in the markup.
     initialFocus: () => body.current?.querySelector<HTMLElement>("input:not([type='checkbox']), textarea, select") ?? null,
+    returnFocus,
   });
 
   function setField(key: string, value: unknown) {

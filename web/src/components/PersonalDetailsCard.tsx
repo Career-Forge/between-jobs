@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { ApiError } from "../lib/api";
 import type { CanonicalProfile, Personal } from "../lib/profileTypes";
+import { saveFailureMessage } from "../lib/useProfileEditor";
 import { applyWorkAuthorization } from "../lib/workAuthorization";
 import { PersonalDetailsCardView } from "./PersonalDetailsCardView";
 
@@ -63,7 +63,7 @@ export function PersonalDetailsCard({
       // Same message-shaping useProfileEditor.save itself uses -- this
       // card just keeps its own copy instead of reading the shared one
       // back off the editor (see the file comment above for why).
-      setError(e instanceof ApiError ? e.message : "Save failed -- please try again.");
+      setError(saveFailureMessage(e));
     }
   }
 

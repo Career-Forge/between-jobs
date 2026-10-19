@@ -1,5 +1,6 @@
 import type { Ref } from "react";
 import { CONFIRMATION_PHRASE, isConfirmed } from "../lib/accountDeletion";
+import "../styles/profile.css";
 
 // "Delete my account" card (launch plan P4.5). A pure function of its props,
 // same shape as PersonalDetailsCardView: no hooks, so a test can call it
@@ -11,6 +12,7 @@ export interface AccountCardActions {
   confirm: () => void;
 }
 
+const TITLE_ID = "bj-account-delete-title";
 const INPUT_ID = "bj-account-delete-confirm";
 const HINT_ID = "bj-account-delete-hint";
 
@@ -30,8 +32,10 @@ export function AccountCardView({
   const confirmed = isConfirmed(typed);
   const disabled = busy || !confirmed;
   return (
-    <div className="bj-card bj-account-delete">
-      <h2>Delete my account</h2>
+    <section className="bj-prof-block bj-account-delete" aria-labelledby={TITLE_ID}>
+      <h2 id={TITLE_ID} className="bj-prof-title" tabIndex={-1}>
+        Delete my account
+      </h2>
       <p>This permanently removes:</p>
       <ul>
         <li>your profile and every version of it</li>
@@ -94,6 +98,6 @@ export function AccountCardView({
           {busy ? "Deleting..." : "Delete my account"}
         </button>
       </div>
-    </div>
+    </section>
   );
 }

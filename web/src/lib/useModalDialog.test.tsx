@@ -7,10 +7,10 @@ import { useModalDialog } from "./useModalDialog";
 
 // What the dialog hook owes the keyboard: focus in, focus kept in, Esc, focus back, the page inert.
 
-function Dialog({ onClose, canClose = true, focusSecond = false }: { onClose: () => void; canClose?: boolean; focusSecond?: boolean }) {
+function Dialog({ onClose, canClose = true, focusSecond = false, returnTo }: { onClose: () => void; canClose?: boolean; focusSecond?: boolean; returnTo?: () => HTMLElement | null }) {
   const root = useRef<HTMLDivElement>(null);
   const second = useRef<HTMLInputElement>(null);
-  useModalDialog(root, { onClose, canClose, initialFocus: focusSecond ? () => second.current : undefined });
+  useModalDialog(root, { onClose, canClose, initialFocus: focusSecond ? () => second.current : undefined, returnFocus: returnTo });
   return createPortal(
     <div ref={root} role="dialog" aria-modal="true" aria-label="Edit" tabIndex={-1}>
       <button type="button">First</button>
@@ -21,7 +21,7 @@ function Dialog({ onClose, canClose = true, focusSecond = false }: { onClose: ()
   );
 }
 
-function Page({ canClose = true, focusSecond = false }: { canClose?: boolean; focusSecond?: boolean }) {
+function Page({ canClose = true, focusSecond = false, returnTo }: { canClose?: boolean; focusSecond?: boolean; returnTo?: () => HTMLElement | null }) {
   const [open, setOpen] = useState(false);
   return (
     <main>
@@ -29,7 +29,7 @@ function Page({ canClose = true, focusSecond = false }: { canClose?: boolean; fo
         Open
       </button>
       <button type="button">Behind</button>
-      {open && <Dialog canClose={canClose} focusSecond={focusSecond} onClose={() => setOpen(false)} />}
+      {open && <Dialog canClose={canClose} focusSecond={focusSecond} returnTo={returnTo} onClose={() => setOpen(false)} />}
     </main>
   );
 }
@@ -77,6 +77,22 @@ describe("useModalDialog", () => {
     click(opener);
     keydown("Escape");
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("gives focus back to the element it is told to, when that is asked for, and otherwise to what opened it", () => {
+    const { container } = render(<Page returnTo={() => buttonNamed(container, "Behind")} />);
+    click(buttonNamed(container, "Open"));
+    keydown("Escape");
+    expect(document.activeElement).toBe(buttonNamed(container, "Behind"));
+  });
+
+  it("falls back to what opened it when the element it is told to is not there", () => {
+    const { container } = render(<Page returnTo={() => null} />);
+    const opener = buttonNamed(container, "Open");
+    opener.focus();
+    click(opener);
+    keydown("Escape");
     expect(document.activeElement).toBe(opener);
   });
 

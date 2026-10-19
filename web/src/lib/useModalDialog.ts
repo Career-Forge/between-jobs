@@ -5,7 +5,9 @@ import { useEffect, useRef, type RefObject } from "react";
 //  - focus moves into the dialog when it opens, to `initialFocus` or else the first control in it, and
 //    is trapped there: Tab and Shift+Tab wrap, and focus that lands outside is pulled back;
 //  - Esc closes it (unless `canClose` is false, as while a save is out);
-//  - focus returns to what opened it when it closes;
+//  - focus returns to what opened it when it closes (or to `returnFocus`, for a page that knows better:
+//    Safari and Firefox on a Mac do not focus a button on click, so "whatever had focus" can be the page
+//    body, and the opener may be gone by then);
 //  - the rest of the page is inert while it is open, and the page behind does not scroll.
 //
 // Call it with a ref to the dialog's element, from a component that is mounted only while the dialog
@@ -28,12 +30,14 @@ export interface ModalDialogOptions {
   canClose?: boolean;
   /** The control that takes focus first. Defaults to the first control in the dialog. */
   initialFocus?: () => HTMLElement | null;
+  /** Where focus goes on close, asked for when it closes. Defaults to whatever had focus on open. */
+  returnFocus?: () => HTMLElement | null;
 }
 
-export function useModalDialog(root: RefObject<HTMLElement | null>, { onClose, canClose = true, initialFocus }: ModalDialogOptions): void {
+export function useModalDialog(root: RefObject<HTMLElement | null>, { onClose, canClose = true, initialFocus, returnFocus }: ModalDialogOptions): void {
   // The latest values, so the effect below runs once per opening and a re-render never steals focus back.
-  const latest = useRef({ onClose, canClose, initialFocus });
-  latest.current = { onClose, canClose, initialFocus };
+  const latest = useRef({ onClose, canClose, initialFocus, returnFocus });
+  latest.current = { onClose, canClose, initialFocus, returnFocus };
 
   useEffect(() => {
     const dialog = root.current;
@@ -90,7 +94,8 @@ export function useModalDialog(root: RefObject<HTMLElement | null>, { onClose, c
       document.removeEventListener("focusin", onFocusIn);
       for (const element of madeInert) element.removeAttribute("inert");
       document.body.style.overflow = previousOverflow;
-      if (opener !== null && opener.isConnected) opener.focus();
+      const target = latest.current.returnFocus?.() ?? opener;
+      if (target !== null && target.isConnected) target.focus();
     };
     // `root` is a ref: its identity never changes, and the dialog is mounted once.
   }, [root]);

@@ -2,6 +2,7 @@ import {
   WORK_AUTHORIZATION_INDIA_NOTE,
   WORK_AUTHORIZATION_REGION_EXAMPLES,
 } from "../lib/workAuthorization";
+import "../styles/profile.css";
 
 // Personal details -- work authorization (work-authorization-status.md).
 // A pure function of its props, same shape as HiringSignalsPanelView: no
@@ -15,6 +16,10 @@ import {
 // shape closest to their own situation, but the field itself, and this
 // component, never ask "which country are you in." No dropdown, no
 // per-country branching.
+
+// Nothing here is cyan: the page's one cyan fill is the next-step band's button, so Save is an ordinary
+// outlined button. Its trail is none: this is a form, with nothing fetched or computed to attribute.
+const TITLE_ID = "bj-personal-details-title";
 
 export interface PersonalDetailsActions {
   setDraft: (value: string) => void;
@@ -38,8 +43,10 @@ export function PersonalDetailsCardView({
   actions: PersonalDetailsActions;
 }) {
   return (
-    <div className="bj-card">
-      <h2>Personal details</h2>
+    <section className="bj-prof-block" aria-labelledby={TITLE_ID}>
+      <h2 id={TITLE_ID} className="bj-prof-title" tabIndex={-1}>
+        Personal details
+      </h2>
       <label className="bj-field">
         <span>Work authorization</span>
         <textarea
@@ -54,9 +61,13 @@ export function PersonalDetailsCardView({
         questions read only this field -- a vague answer here (just a nationality, say) can turn
         into a confident, wrong guess about your legal status.
       </p>
-      {error && <div className="bj-error">{error}</div>}
+      {error && (
+        <div className="bj-error" role="alert">
+          {error}
+        </div>
+      )}
       <div className="bj-actions">
-        <button className="bj-primary" onClick={() => actions.save()} disabled={saving || !dirty}>
+        <button type="button" onClick={() => actions.save()} disabled={saving || !dirty}>
           {saving ? "Saving..." : "Save"}
         </button>
       </div>
@@ -87,6 +98,6 @@ export function PersonalDetailsCardView({
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 }

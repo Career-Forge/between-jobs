@@ -49,8 +49,10 @@ function toggleButton(nodes: ReturnType<typeof tree>): HostElement {
   return findAll(nodes, (el) => el.type === "button" && prop(el, "aria-expanded") !== undefined)[0];
 }
 
+// Found by its words: the page's one cyan fill is the next-step band's button, so Save carries no
+// primary class (a test further down pins that).
 function saveButton(nodes: ReturnType<typeof tree>): HostElement {
-  return findAll(nodes, (el) => el.type === "button" && el.props.className === "bj-primary")[0];
+  return findAll(nodes, (el) => el.type === "button" && ["Save", "Saving..."].includes(textOf(el)))[0];
 }
 
 describe("the field", () => {
@@ -100,6 +102,25 @@ describe("the Save button", () => {
     const { actions, calls } = recorder();
     press(saveButton(tree({ ...base(), dirty: true }, actions)));
     expect(calls).toEqual([["save"]]);
+  });
+});
+
+describe("the page's one cyan fill", () => {
+  it("is not here: Save is an outlined button, a card never takes the band's place", () => {
+    const { actions } = recorder();
+    const nodes = tree({ ...base(), dirty: true }, actions);
+    expect(findAll(nodes, (el) => String(el.props.className ?? "").includes("bj-primary"))).toHaveLength(0);
+    expect(prop(saveButton(nodes), "type")).toBe("button");
+  });
+
+  it("names its section by its heading, and shows an error as an alert", () => {
+    const { actions } = recorder();
+    const nodes = tree({ ...base(), error: "Save failed." }, actions);
+    const section = findAll(nodes, (el) => el.type === "section")[0];
+    expect(prop(section, "aria-labelledby")).toBe("bj-personal-details-title");
+    const alerts = findAll(nodes, (el) => prop(el, "role") === "alert");
+    expect(alerts).toHaveLength(1);
+    expect(textOf(alerts[0])).toBe("Save failed.");
   });
 });
 
