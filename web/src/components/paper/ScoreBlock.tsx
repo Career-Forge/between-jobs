@@ -48,8 +48,20 @@ export function ScoreBlock({ label, value, max = 100, from, caption, engine = tr
       </div>
       <p className="bj-scoreblock-numeral-row">
         <span className="bj-scoreblock-numeral">
-          {changed && <span className="bj-scoreblock-from">{from} {"->"} </span>}
-          {value}
+          {changed ? (
+            <>
+              {/* The arrow is drawn for the eye; a screen reader is told the change in words. */}
+              <span aria-hidden="true">
+                <span className="bj-scoreblock-from">{from} {"->"} </span>
+                {value}
+              </span>
+              <span className="bj-visually-hidden">
+                was {from}, now {value}
+              </span>
+            </>
+          ) : (
+            value
+          )}
         </span>
         <span className="bj-scoreblock-of">
           {" "}
@@ -74,7 +86,7 @@ export interface FitLadderProps {
   /** Nothing was scored (a fallback): hollow cells, no number, `placeholderLabel` as the words. */
   placeholder?: boolean;
   placeholderLabel?: string;
-  /** Draws the "engine ✦" micro-caption. On by default. */
+  /** Draws the "engine ✦" micro-caption when a rung was reached (never for "Not scored"). On by default. */
   engine?: boolean;
   className?: string;
 }
@@ -98,7 +110,7 @@ export function FitLadder({ levels, level, score, max = 100, placeholder = false
           {words}
         </span>
       </div>
-      {engine && !placeholder && (
+      {engine && !placeholder && rung !== -1 && (
         <p className="bj-ladder-caption">
           <GlyphMark name="engine" />
         </p>

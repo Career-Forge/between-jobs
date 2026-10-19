@@ -32,9 +32,14 @@ describe("ScoreBlock", () => {
 
   it("shows 'first -> final' only when a regeneration changed the score", () => {
     const { container, rerender } = render(<ScoreBlock label="ATS score" value={72} from={64} />);
-    expect(text(query(container, ".bj-scoreblock-numeral-row"))).toBe("64 -> 72 / 100");
+    expect(text(query(container, ".bj-scoreblock-numeral [aria-hidden]"))).toBe("64 -> 72");
+    // What a screen reader gets instead of the arrow.
+    expect(text(query(container, ".bj-scoreblock-numeral .bj-visually-hidden"))).toBe("was 64, now 72");
+    expect(container.querySelectorAll(".bj-scoreblock-numeral > *:not([aria-hidden]):not(.bj-visually-hidden)")).toHaveLength(0);
     rerender(<ScoreBlock label="ATS score" value={72} from={72} />);
     expect(container.querySelector(".bj-scoreblock-from")).toBeNull();
+    expect(container.querySelector(".bj-scoreblock-numeral .bj-visually-hidden")).toBeNull();
+    expect(text(query(container, ".bj-scoreblock-numeral-row"))).toBe("72 / 100");
     rerender(<ScoreBlock label="ATS score" value={72} from={null} />);
     expect(container.querySelector(".bj-scoreblock-from")).toBeNull();
     rerender(<ScoreBlock label="ATS score" value={72} from={Number.NaN} />);
@@ -96,6 +101,9 @@ describe("FitLadder", () => {
       const { container, unmount } = render(<FitLadder levels={LEVELS} level={level} score={90} />);
       expect(filledCells(container)).toBe(0);
       expect(query(container, '[role="img"]').getAttribute("aria-label")).toBe("Fit: Not scored");
+      // Nothing was scored, so code did no math: no "engine" caption either.
+      expect(container.querySelector(".bj-ladder-caption")).toBeNull();
+      expect(container.textContent).not.toContain("engine");
       unmount();
     }
   });
