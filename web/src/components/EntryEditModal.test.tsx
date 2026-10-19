@@ -106,7 +106,24 @@ describe("the entry dialog", () => {
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(buttonNamed(dialog(), "Cancel").disabled).toBe(true);
     expect(buttonNamed(dialog(), "Close").disabled).toBe(true);
-    expect(buttonNamed(dialog(), "Saving...").disabled).toBe(true);
+    // Save is aria-disabled, never disabled: pressing it started the request, and a button that disables itself
+    // drops keyboard focus out of the dialog, where a refused save would leave it.
+    const saving = buttonNamed(dialog(), "Saving...");
+    expect(saving.disabled).toBe(false);
+    expect(saving.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("keeps keyboard focus on Save while the save is out, and a press while it is does nothing", () => {
+    const onSave = vi.fn();
+    const view = render(<Page onSave={onSave} />);
+    click(buttonNamed(view.container, "Edit experience"));
+    const save = buttonNamed(dialog(), "Save");
+    save.focus();
+    view.rerender(<Page onSave={onSave} saving />);
+    expect(buttonNamed(dialog(), "Saving...")).toBe(save);
+    expect(document.activeElement).toBe(save);
+    click(save);
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("says what saving does: it makes the next version", () => {
@@ -127,12 +144,13 @@ describe("the entry dialog", () => {
   it("keeps Save off until the required fields have something in them", () => {
     render(<Page initialValues={{ title: "", company: "" }} />);
     click(buttonNamed(document.body, "Edit experience"));
-    expect(buttonNamed(dialog(), "Save").disabled).toBe(true);
+    const off = () => buttonNamed(dialog(), "Save").getAttribute("aria-disabled") === "true";
+    expect(off()).toBe(true);
     const [title, company] = [...dialog().querySelectorAll<HTMLInputElement>('input[type="text"]')];
     typeInto(title, "Engineer");
-    expect(buttonNamed(dialog(), "Save").disabled).toBe(true);
+    expect(off()).toBe(true);
     typeInto(company, "Acme");
-    expect(buttonNamed(dialog(), "Save").disabled).toBe(false);
+    expect(off()).toBe(false);
   });
 
   it("shows a failed save as an alert inside the dialog, which stays open", () => {

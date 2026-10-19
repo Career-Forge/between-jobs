@@ -136,7 +136,14 @@ export function EntryEditModal({
             <button type="button" onClick={onCancel} disabled={saving}>
               Cancel
             </button>
-            <button type="button" className="bj-dialog-confirm" onClick={() => onSave(values)} disabled={saving || missingRequired}>
+            {/* aria-disabled, never disabled: pressing Save is what starts the request, and a button that disables
+                itself drops keyboard focus out of the dialog, where a refused save would leave it. */}
+            <button
+              type="button"
+              className="bj-dialog-confirm"
+              onClick={() => !(saving || missingRequired) && onSave(values)}
+              aria-disabled={saving || missingRequired ? true : undefined}
+            >
               {saving ? "Saving..." : "Save"}
             </button>
           </div>
