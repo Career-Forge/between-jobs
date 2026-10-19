@@ -552,6 +552,7 @@ describe("empty: nothing matched", () => {
     const result = empty();
     const { container } = draw({ search: { kind: "ready", result }, outcome: band({ phase: "results", results: resultsFactOf(result, request) }) });
     expect(words(query(container, ".bj-state--empty"))).toContain("No results");
+    expect(words(query(container, ".bj-state--empty"))).toContain("Nothing matched this search.");
     expect(container.querySelectorAll("li.bj-disc-row")).toHaveLength(0);
     expect(words(bandOf(container))).toContain("No results. Widen your filters or clear Companies.");
     expect(words(query(bandOf(container), "button.bj-primary"))).toBe("Clear filters");
@@ -562,6 +563,16 @@ describe("empty: nothing matched", () => {
     const { container } = draw({ ...ready(empty({ warnings: ["serper: unexpected failure"], dead_removed: 4 })) });
     expect(words(container)).toContain("✕ Serper couldn't complete that search · unexpected failure");
     expect(words(container)).toContain("4 dropped -- no longer live");
+  });
+
+  it("does not claim nothing matched when listings were dropped or a provider failed, and never says 'these filters'", () => {
+    for (const result of [empty({ dead_removed: 3 }), empty({ warnings: ["brave: request failed (429)"] })]) {
+      const { container } = draw({ ...ready(result) });
+      const body = words(query(container, ".bj-state--empty"));
+      expect(body).toContain("No listings are left to show.");
+      expect(body).not.toContain("Nothing matched");
+      expect(body).not.toContain("these filters");
+    }
   });
 
   it("is unlit with no filter to clear when none was set", () => {

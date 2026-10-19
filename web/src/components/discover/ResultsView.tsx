@@ -18,7 +18,10 @@ import "../../styles/discover.css";
 //                 every bin reads "Placeholder" and no number is drawn
 //   warnings      one line per warning, "✕ Brave Search couldn't complete that search · its message"
 //   dropped       "3 dropped -- no longer live", when the link check dropped listings
-//   no rows       "No results", with the warnings and the dropped count, no example rows
+//   no rows       "No results", with the warnings and the dropped count, no example rows. "Nothing matched
+//                 this search" is said only when every provider answered and none of its listings was
+//                 dropped; otherwise the body says only that no listings are left, and the warnings and
+//                 the dropped count say why
 //
 // The band holds the next step (a search again, clear the filters); nothing here is cyan.
 
@@ -74,7 +77,7 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
       <div className="bj-disc-results">
         <WarningLines warnings={warnings} />
         <EmptyState heading="No results">
-          <p>Nothing matched these filters.</p>
+          <p>{warnings.length === 0 && dropped === 0 ? "Nothing matched this search." : "No listings are left to show."}</p>
           <DroppedNote count={dropped} />
         </EmptyState>
       </div>
