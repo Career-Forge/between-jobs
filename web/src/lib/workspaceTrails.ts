@@ -14,26 +14,21 @@ import type { ReceiptRowInput, TrailInput } from "./trail";
 import { formatTrailDate } from "./trail";
 import type { ForgeFitResult, PrepareApplicationResult } from "./generateTypes";
 import { STATUS_LABELS } from "./applicationsBoard";
+import { sourceWords } from "./applicationsView";
 import type { ApplicationStatus } from "./applicationsTypes";
 import type { WorkspaceApplication } from "./workspaceTypes";
 
 // ── the page's own trail ──────────────────────────────────────────────────
 
-// How a tracked application got here, in the words the trail uses. Only the channels the server
-// writes are named; any other is left out rather than guessed.
-const CHANNEL_BASIS: Readonly<Record<string, string>> = {
-  discover: "from Discover",
-  web: "in the web app",
-  telegram: "from Telegram",
-};
-
-// "● You tracked this · from Discover · Sep 22": the whole page's trail, under the job's identity.
+// "● You tracked this · from Discover · Sep 22": the whole page's trail, under the job's identity. How
+// the application got here is worded by sourceWords (lib/applicationsView.ts), the same as on its card
+// in the Applications list; a channel it does not name is left out rather than guessed.
 export function headerTrail(application: Pick<WorkspaceApplication, "source_channel" | "created_at">, now: Date): TrailInput {
   const channel = application.source_channel;
   return {
     glyph: "you",
     actor: "You tracked this",
-    basis: channel === undefined ? null : (CHANNEL_BASIS[channel] ?? null),
+    basis: sourceWords(channel),
     when: formatTrailDate(application.created_at, { now }),
   };
 }

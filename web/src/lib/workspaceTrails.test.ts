@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PrepareApplicationResult } from "./generateTypes";
+import { sourceWords } from "./applicationsView";
 import { buildReceipt, buildTrail, findForbiddenWord } from "./trail";
 import { checklistTrail, claimTrail, fitCeiling, generationTrail, headerTrail, scoreTrail, stateSummary, tailorTrail } from "./workspaceTrails";
 
@@ -25,10 +26,17 @@ function result(overrides: Partial<PrepareApplicationResult> = {}): PrepareAppli
 const text = (parts: { trail: Parameters<typeof buildTrail>[0] }) => buildTrail(parts.trail)?.text;
 
 describe("the page's own trail", () => {
+  it("words the channel exactly as the application's card in the list does", () => {
+    for (const channel of ["discover", "web", "telegram", "discord", "carrier-pigeon"]) {
+      expect(headerTrail({ source_channel: channel, created_at: "2026-09-22T11:00:00Z" }, NOW).basis, channel).toBe(sourceWords(channel));
+    }
+  });
+
   it.each([
     ["discover", "You tracked this · from Discover · Sep 22"],
-    ["web", "You tracked this · in the web app · Sep 22"],
+    ["web", "You tracked this · added on the web · Sep 22"],
     ["telegram", "You tracked this · from Telegram · Sep 22"],
+    ["discord", "You tracked this · from Discord · Sep 22"],
   ])("reads a %s track", (channel, words) => {
     expect(buildTrail(headerTrail({ source_channel: channel, created_at: "2026-09-22T11:00:00Z" }, NOW))?.text).toBe(words);
   });
@@ -40,7 +48,7 @@ describe("the page's own trail", () => {
   });
 
   it("writes the year for a date from another year", () => {
-    expect(buildTrail(headerTrail({ source_channel: "web", created_at: "2025-12-30T11:00:00Z" }, NOW))?.text).toBe("You tracked this · in the web app · Dec 30, 2025");
+    expect(buildTrail(headerTrail({ source_channel: "web", created_at: "2025-12-30T11:00:00Z" }, NOW))?.text).toBe("You tracked this · added on the web · Dec 30, 2025");
   });
 });
 
