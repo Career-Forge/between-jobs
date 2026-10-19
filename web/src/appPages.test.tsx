@@ -460,6 +460,44 @@ describe("the application workspace", () => {
     expectWholePage(container, "workspace failed");
   });
 
+  // The loading frame and the page are different component trees, so the breadcrumb's link is a new element
+  // when the page arrives. A keyboard that had reached the old one must not drop to the top of the document.
+  describe("when the page replaces its loading frame", () => {
+    const loadingWorkspace = async () => {
+      describeWorkspace("empty", {}, null);
+      let arrive: (value: unknown) => void = () => undefined;
+      answers.extra = (path) => (path === `/applications/${ID}` ? new Promise((resolve) => (arrive = resolve)) : undefined);
+      const container = await open(`/applications/${ID}`, 1000);
+      return { container, arrive: async () => { await act(async () => arrive(workspaceApp())); await settle(6); } };
+    };
+
+    it("keeps keyboard focus on the breadcrumb link it was on", async () => {
+      const { container, arrive } = await loadingWorkspace();
+      const loadingLink = query<HTMLAnchorElement>(container, ".bj-breadcrumb a");
+      loadingLink.focus();
+      expect(document.activeElement).toBe(loadingLink);
+      await arrive();
+      const pageLink = query<HTMLAnchorElement>(container, ".bj-breadcrumb a");
+      expect(pageLink).not.toBe(loadingLink);
+      expect(document.activeElement).toBe(pageLink);
+    });
+
+    it("leaves focus alone when it was somewhere else, or when the person had moved on", async () => {
+      const { container, arrive } = await loadingWorkspace();
+      query<HTMLAnchorElement>(container, ".bj-breadcrumb a").focus();
+      const skip = query<HTMLAnchorElement>(container, ".bj-skip-link");
+      skip.focus();
+      await arrive();
+      expect(document.activeElement).toBe(skip);
+
+      const second = await loadingWorkspace();
+      second.container.querySelector<HTMLAnchorElement>(".bj-breadcrumb a")?.focus();
+      (document.activeElement as HTMLElement).blur();
+      await second.arrive();
+      expect(document.activeElement).toBe(document.body);
+    });
+  });
+
   it("when the application is not found and when it could not be read", async () => {
     describeAccount("empty");
     on(`GET /applications/${ID}`, new FakeApiError("not found", "NOT_FOUND", undefined, 404));

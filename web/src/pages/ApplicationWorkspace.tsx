@@ -21,6 +21,7 @@ import { clockTime } from "../lib/todayFeed";
 import { formatTrailDate } from "../lib/trail";
 import { useCapabilities } from "../lib/useCapabilities";
 import { useGeneration } from "../lib/useGeneration";
+import { useKeepBreadcrumbFocus } from "../lib/useKeepBreadcrumbFocus";
 import { useHiringSignalsStatus } from "../lib/useHiringSignalsStatus";
 import { useHoldHashTarget } from "../lib/useHoldHashTarget";
 import { useScrollToHash } from "../lib/useScrollToHash";
@@ -195,6 +196,10 @@ function Workspace({ id }: { id: string }) {
       : credentials.kind === "failed"
         ? { state: "failed", call: "GET /credentials", at: credentials.at }
         : { state: "loading" };
+
+  // The frames before the page (loading, not found, failed) and the page are separate component trees, so
+  // the breadcrumb's link is a new element when the page arrives; keep the keyboard on it.
+  useKeepBreadcrumbFocus(application.kind === "ready" && profile.kind === "ready" ? "page" : "frame");
 
   if (application.kind === "ready" && profile.kind === "ready") {
     return (
