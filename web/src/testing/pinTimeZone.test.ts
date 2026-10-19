@@ -13,7 +13,10 @@ describe("the suite's time zone", () => {
       expect(new Date("2026-09-22T05:00:00Z").getTimezoneOffset()).toBe(0);
       expect(new Date("2026-09-22T05:00:00Z").getDate()).toBe(22);
     } else {
-      expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(asked);
+      // Compared by what each prints, not by name: the runtime may know a zone by an older alias.
+      const instant = new Date("2026-09-22T23:30:00Z");
+      const options = { dateStyle: "short", timeStyle: "short" } as const;
+      expect(new Intl.DateTimeFormat("en-US", options).format(instant)).toBe(new Intl.DateTimeFormat("en-US", { ...options, timeZone: asked }).format(instant));
     }
   });
 });
