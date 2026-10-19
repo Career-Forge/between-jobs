@@ -6,11 +6,12 @@ import { render } from "../testing/render";
 // jsdom has no layout, so every rectangle here is stated by the test; what is checked is that the hook
 // reads the bars, works out the scroll and applies it only where it should.
 
-function Probe() {
+function Probe({ jump = false }: { jump?: boolean }) {
   useFocusClearOfBars();
   return (
     <div>
       <header className="bj-topbar" />
+      {jump && <nav className="bj-jump bj-jump--sticky" />}
       <main>
         <textarea aria-label="Field" />
         <button type="button">Plain button</button>
@@ -50,12 +51,14 @@ afterEach(() => {
   window.cancelAnimationFrame = originalCancel;
 });
 
-function mount(bars: { top?: [number, number]; tab?: [number, number] } = { top: [0, 56], tab: [735, 800] }) {
-  const { container } = render(<Probe />);
+function mount(bars: { top?: [number, number]; tab?: [number, number]; jump?: [number, number] } = { top: [0, 56], tab: [735, 800] }) {
+  const { container } = render(<Probe jump={bars.jump !== undefined} />);
   const topbar = container.querySelector(".bj-topbar")!;
   const tabbar = container.querySelector(".bj-tabbar")!;
   if (bars.top) setRect(topbar, bars.top[0], bars.top[1]);
   if (bars.tab) setRect(tabbar, bars.tab[0], bars.tab[1]);
+  const jump = container.querySelector(".bj-jump");
+  if (jump !== null && bars.jump) setRect(jump, bars.jump[0], bars.jump[1]);
   return { container, field: container.querySelector<HTMLElement>("textarea[aria-label='Field']")!, topbar, tabbar };
 }
 
@@ -77,6 +80,28 @@ describe("keyboard focus landing under the phone's bars", () => {
   it("leaves a field that is already clear alone", () => {
     const { field } = mount();
     setRect(field, 300, 380);
+    field.focus();
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  // From 1280px the workspace has one sticky section bar at the top of the page and no phone bars.
+  it("counts a stuck section bar as a top bar, and a field under it is scrolled clear of it", () => {
+    const { field } = mount({ top: [0, 0], jump: [0, 60] });
+    setRect(field, 20, 90);
+    field.focus();
+    expect(scrollBy).toHaveBeenCalledWith({ top: 20 - (60 + 8), behavior: "instant" });
+  });
+
+  it("stacks a section bar that sticks under the phone's top bar on top of it", () => {
+    const { field } = mount({ top: [0, 56], tab: [735, 800], jump: [56, 108] });
+    setRect(field, 70, 140);
+    field.focus();
+    expect(scrollBy).toHaveBeenCalledWith({ top: 70 - (108 + 8), behavior: "instant" });
+  });
+
+  it("ignores a section bar that has not stuck yet: it is part of the page further down, over nothing", () => {
+    const { field } = mount({ top: [0, 0], jump: [400, 460] });
+    setRect(field, 20, 90);
     field.focus();
     expect(scrollBy).not.toHaveBeenCalled();
   });

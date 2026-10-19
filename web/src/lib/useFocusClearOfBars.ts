@@ -1,25 +1,46 @@
 import { useEffect } from "react";
 import { clearanceScroll, type BarEdges } from "./focusClearance";
 
-// After keyboard focus lands on a control, scrolls the page just far enough that the phone's top bar
-// and tab bar are not on top of it (lib/focusClearance.ts says why the browser does not). The shell
-// calls it once. It does nothing on a wide screen, where both bars are display:none, for a control
-// that is itself fixed or sticky or inside a modal (scrolling the page would not move it), or for a
-// click on a button (the person is already looking at what they pressed).
+// After keyboard focus lands on a control, scrolls the page just far enough that the sticky bars (the phone's
+// top bar and tab bar, the workspace's section bar) are not on top of it (lib/focusClearance.ts says why the
+// browser does not). The shell calls it once. It does nothing where no bar is drawn, for a control that is itself
+// fixed or sticky or inside a modal (scrolling the page would not move it), or for a click on a button (the
+// person is already looking at what they pressed).
 
-const TOP_BAR = ".bj-topbar";
+// The bars that can sit over the top of the page, from the one at the very top down: the phone's top bar, then
+// the workspace's section bar in whichever form the width gives it (a sticky row from 1280px, a dock from
+// 960px, a sticky select row under the phone's top bar).
+const TOP_BARS = [".bj-topbar", ".bj-jump--sticky", ".bj-jump--dock", ".bj-jump--select"];
 const TAB_BAR = ".bj-tabbar";
 
-function shownEdge(selector: string, edge: "top" | "bottom"): number | null {
-  const bar = document.querySelector<HTMLElement>(selector);
-  if (bar === null || window.getComputedStyle(bar).display === "none") return null;
+function drawn(bar: Element): DOMRect | null {
+  if (window.getComputedStyle(bar).display === "none") return null;
   const rect = bar.getBoundingClientRect();
-  return rect.height === 0 ? null : rect[edge];
+  return rect.height === 0 ? null : rect;
+}
+
+// How far down the top bars reach. A bar counts only while it is stuck, that is, while it starts where the bars
+// above it end (a sticky bar still in the flow of the page, further down, is not over anything).
+function topEdge(): number | null {
+  let edge: number | null = null;
+  for (const selector of TOP_BARS) {
+    for (const bar of document.querySelectorAll(selector)) {
+      const rect = drawn(bar);
+      if (rect !== null && rect.top <= (edge ?? 0) + 1 && rect.bottom > (edge ?? 0)) edge = rect.bottom;
+    }
+  }
+  return edge;
+}
+
+function bottomEdge(): number | null {
+  const bar = document.querySelector(TAB_BAR);
+  const rect = bar === null ? null : drawn(bar);
+  return rect === null ? null : rect.top;
 }
 
 function barEdges(): BarEdges | null {
-  const top = shownEdge(TOP_BAR, "bottom");
-  const bottom = shownEdge(TAB_BAR, "top");
+  const top = topEdge();
+  const bottom = bottomEdge();
   if (top === null && bottom === null) return null;
   return { top: top ?? 0, bottom: bottom ?? window.innerHeight };
 }
