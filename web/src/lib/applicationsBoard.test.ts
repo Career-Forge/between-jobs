@@ -170,8 +170,8 @@ describe("CROSS_NAV_ITEMS", () => {
   });
 });
 
-// Every hash the menus and the next-step band link to must be an element the workspace renders: a
-// missing target fails silently (the link still navigates, the scroll just never finds anything).
+// Every section id in CROSS_NAV_HASH (the menu's destinations and the sections the jump bar and the
+// next-step band link to) must be an element the workspace renders: a missing target fails silently (the link still navigates, the scroll just never finds anything).
 // Read from the workspace's source, not rendered, because the panels behind them need a whole
 // application to mount.
 const sources = import.meta.glob<string>(["../pages/*.tsx", "../components/**/*.tsx", "./workspaceSections.ts", "!../**/*.test.tsx"], {

@@ -104,7 +104,7 @@ const REVIEW = reviewing();
 const ASKED = importReducer(REVIEW, { type: "confirm_asked" });
 const ALREADY_IN_USE = reviewing({ already_active: true });
 // A draft with no value read from the file, so there is nothing to check one by one: the question may
-// be asked at once (the checks themselves are tested in ResumeImportCard.checks.test.tsx).
+// be asked at once (the checks themselves are tested in ResumeImportView.checks.test.tsx).
 const NOTHING_TO_CHECK = reviewing({ profile: { personal: {} } });
 
 // A file that reads as a PDF, with the parts of a File the card uses.

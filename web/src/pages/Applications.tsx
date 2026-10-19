@@ -101,8 +101,9 @@ export default function Applications() {
     void load();
   }, [load]);
 
-  // A link to /applications#start-tracking lands on the paste form. The forms are always on the page,
-  // so what the hash names exists from the first render.
+  // A hash in the address scrolls to what it names; the forms are always on the page, so
+  // /applications#start-tracking would land on the paste form from the first render. Nothing in the app
+  // links there today: the band's button reaches the form through revealTracking.
   useScrollToHash(true, location.hash);
 
   // `idempotencyKey` is only passed by a Retry, which sends the failed move again under its own key.

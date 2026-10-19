@@ -43,17 +43,16 @@ export function otherStatuses(current: ApplicationStatus): ApplicationStatus[] {
   return ALL_STATUSES.filter((status) => status !== current);
 }
 
-// The per-card cross-nav menu into the ApplicationWorkspace.tsx panels each
-// item can jump straight to. Shared by the list card and the board card so
-// the label/hash pairing only lives in one place. TailorPanel is a workspace
-// panel but not one of the menu's destinations, so it has no entry here.
+// The per-card cross-nav menu into the workspace's sections: each item jumps straight to one. Shared
+// by the list card and the board card so the label/hash pairing only lives in one place. The menu
+// lists the destinations a person goes to; the resume part's own sections (Tailor, Draft, Review) are
+// reached from the workspace's jump bar and the next-step band, so they have no menu item.
 //
-// CROSS_NAV_HASH is the single source of truth for the hash strings --
-// ApplicationWorkspace.tsx imports these same constants for its panel
-// wrapper `id`s rather than repeating the literal strings, so renaming or
-// typoing one can't silently desync a menu item from the panel it's
-// supposed to scroll to (a mismatch would otherwise fail silently: the
-// menu still navigates, `scrollIntoView` just never finds its target).
+// CROSS_NAV_HASH is the single source of truth for the hash strings of every workspace section, menu
+// destination or not. The workspace takes its section ids from it through SECTION_IDS
+// (lib/workspaceSections.ts) rather than repeating the literal strings, so renaming or typoing one
+// can't silently desync a link from the section it's supposed to scroll to (a mismatch would
+// otherwise fail silently: the link still navigates, `scrollIntoView` just never finds its target).
 export const CROSS_NAV_HASH = {
   // The sections of the workspace's resume part that have no panel of their own: the posting and
   // tailoring, the draft's header, structure and settings, and the review of a generated resume.
