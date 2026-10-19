@@ -779,53 +779,6 @@ button.bj-danger {
   display: inline-block;
 }
 
-.bj-score-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.bj-score-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.bj-score-row-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.bj-score-bar-track {
-  position: relative;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--bj-surface-raised);
-  overflow: hidden;
-}
-
-.bj-score-bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--bj-gold);
-}
-
-/* The one exact, discrete lever behind experience_quality (the
-   management-bonus points) -- a hatched segment past the solid fill, never
-   solid gold, so it never reads as "already earned." */
-.bj-score-bar-headroom {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  background: repeating-linear-gradient(
-    45deg,
-    var(--bj-gold) 0 3px,
-    transparent 3px 6px
-  );
-  opacity: 0.5;
-}
-
 .bj-score-disclosure {
   display: flex;
   flex-direction: column;

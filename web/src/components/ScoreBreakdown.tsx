@@ -42,47 +42,6 @@ import "../styles/workspace.css";
 // against the assertion. A cap or a penalty is a neutral outline note; a penalty that really was applied
 // carries a red cross and its words.
 
-// The plain horizontal bar the Interview practice panel and Discover still draw their own scores with.
-// It is kept, unchanged, for them: the workspace's ATS score and the honest read use the segmented bars
-// of components/paper/SegmentedBar.tsx instead. When those two screens move to the segmented bar this
-// goes, with the rules it reads in app.css (.bj-score-row, .bj-score-bar-*).
-export function ScoreBar({
-  label,
-  value,
-  max,
-  headroom = 0,
-  headroomLabel,
-  detail,
-}: {
-  label: string;
-  value: number;
-  max: number;
-  headroom?: number;
-  headroomLabel?: string;
-  detail?: string;
-}) {
-  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
-  const headroomPct = max > 0 ? Math.min((headroom / max) * 100, 100 - pct) : 0;
-  return (
-    <div className="bj-score-row">
-      <div className="bj-score-row-header bj-small">
-        <span>{label}</span>
-        <span className="bj-muted">{`${value} / ${max} · ${barState(value, max)}`}</span>
-      </div>
-      <div className="bj-score-bar-track">
-        <div className="bj-score-bar-fill" style={{ width: `${pct}%` }} />
-        {headroomPct > 0 && <div className="bj-score-bar-headroom" style={{ left: `${pct}%`, width: `${headroomPct}%` }} />}
-      </div>
-      {headroom > 0 && headroomLabel && (
-        <div className="bj-muted bj-small">
-          +{headroom} exact -- {headroomLabel}
-        </div>
-      )}
-      {detail && <div className="bj-muted bj-small">{detail}</div>}
-    </div>
-  );
-}
-
 type AssertState =
   | { kind: "idle" }
   | { kind: "saving"; requirement: string }
