@@ -138,9 +138,28 @@ export function documentTitleFor(view: AppView, pathname: string): string | null
       if (path === TERMS_PATH) return pageTitle("Terms of Service");
       if (path === ENROLL_PATH) return pageTitle(ENROLL_PAGE_NAME);
       if (path === SETTINGS_PATH) return pageTitle("Settings");
-      return pageTitle(null);
+      return pageTitle(appPageName(path));
     }
   }
+}
+
+// The signed-in pages, by address: what each is called in the tab, the history list and a screen
+// reader's page announcement. The router matches these without regard to case, so the table does too.
+// A tracked application's workspace is one address per application and is titled "Application".
+const APP_PAGE_NAMES: Readonly<Record<string, string>> = {
+  "/": "Today",
+  "/discover": "Discover",
+  "/hiring-signals": "Hiring signals",
+  "/applications": "Applications",
+  "/practice": "Practice",
+  "/profile": "Profile",
+};
+const WORKSPACE_PATH = /^\/applications\/[^/]+$/i;
+
+function appPageName(path: string): string | null {
+  const lower = path.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(APP_PAGE_NAMES, lower)) return APP_PAGE_NAMES[lower];
+  return WORKSPACE_PATH.test(path) ? "Application" : null;
 }
 
 export function loginPageTitle(mode: LoginMode): string {

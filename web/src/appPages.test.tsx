@@ -174,6 +174,30 @@ describe("each signed-in page, in each account state", () => {
   });
 });
 
+describe("the document title of each signed-in page", () => {
+  it("is the page's own, and no two pages share one", async () => {
+    const titles = new Map<string, string>();
+    for (const route of [...ROUTES, "/applications/app-1"]) {
+      describeAccount("data");
+      await open(route, 1000);
+      titles.set(route, document.title);
+    }
+    expect([...titles.values()].sort()).toEqual(
+      [
+        "Today -- Between Jobs",
+        "Discover -- Between Jobs",
+        "Applications -- Between Jobs",
+        "Application -- Between Jobs",
+        "Practice -- Between Jobs",
+        "Profile -- Between Jobs",
+        "Settings -- Between Jobs",
+        "Hiring signals -- Between Jobs",
+      ].sort(),
+    );
+    expect(new Set(titles.values()).size).toBe(titles.size);
+  });
+});
+
 describe("each signed-in page while its setup reads are still out", () => {
   // The skip link to the next step is on these pages from the first render, so the loading band has to
   // hold what it points at.

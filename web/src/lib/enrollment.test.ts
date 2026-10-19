@@ -972,8 +972,8 @@ describe("enrollmentTitleFor", () => {
 
   it("is the address's own title when the gate lets the page through or is waiting, so it is put back once the person joins", () => {
     for (const decision of ["pass", "wait"] as GateDecision[]) {
-      expect(enrollmentTitleFor(decision, "/discover")).toBe("Between Jobs");
-      expect(enrollmentTitleFor(decision, "/")).toBe("Between Jobs");
+      expect(enrollmentTitleFor(decision, "/discover")).toBe("Discover -- Between Jobs");
+      expect(enrollmentTitleFor(decision, "/")).toBe("Today -- Between Jobs");
       expect(enrollmentTitleFor(decision, "/privacy")).toBe("Privacy Policy -- Between Jobs");
       expect(enrollmentTitleFor(decision, "/terms/")).toBe("Terms of Service -- Between Jobs");
       expect(enrollmentTitleFor(decision, "/enroll")).toBe("Tester programme -- Between Jobs");

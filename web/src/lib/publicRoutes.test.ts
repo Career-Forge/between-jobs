@@ -287,8 +287,27 @@ describe("the document title", () => {
     expect(documentTitleFor("app", "/Enroll")).toBe("Between Jobs");
   });
 
-  it("puts the plain title back on every other page of the shell, so leaving the policy does not keep its title", () => {
-    for (const pathname of ["/", "/applications", "/applications/123", "/profile/integrations", "/Privacy", "/privacy/extra"]) {
+  it("titles each signed-in page by what it is, so a change of page changes what a tab or a screen reader says", () => {
+    for (const [pathname, name] of [
+      ["/", "Today"],
+      ["/discover", "Discover"],
+      ["/hiring-signals", "Hiring signals"],
+      ["/applications", "Applications"],
+      ["/applications/123", "Application"],
+      ["/applications/123/", "Application"],
+      ["/practice", "Practice"],
+      ["/profile", "Profile"],
+      ["/settings", "Settings"],
+      ["/Discover", "Discover"],
+    ] as const) {
+      expect(documentTitleFor("app", pathname), pathname).toBe(`${name} -- Between Jobs`);
+    }
+    const names = ["/", "/discover", "/hiring-signals", "/applications", "/applications/1", "/practice", "/profile", "/settings"].map((pathname) => documentTitleFor("app", pathname));
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("puts the plain title back on an address the shell has no page for, so leaving the policy does not keep its title", () => {
+    for (const pathname of ["/profile/integrations", "/Privacy", "/privacy/extra", "/applications/123/extra", "/nowhere"]) {
       expect(documentTitleFor("app", pathname), pathname).toBe("Between Jobs");
     }
   });
@@ -302,7 +321,7 @@ describe("the document title", () => {
       [false, "/login", null],
       [false, "/applications/1", null],
       [true, "/privacy", "Privacy Policy -- Between Jobs"],
-      [true, "/discover", "Between Jobs"],
+      [true, "/discover", "Discover -- Between Jobs"],
       [true, "/login", null],
     ] as const) {
       const state = appView({ signedIn, loading: false, pathname });

@@ -69,7 +69,7 @@ describe("the enrollment address", () => {
   it("has a title of its own inside the shell", () => {
     expect(documentTitleFor("app", ENROLL_PATH)).toBe("Tester programme -- Between Jobs");
     expect(documentTitleFor("app", "/enroll/")).toBe("Tester programme -- Between Jobs");
-    expect(documentTitleFor("app", "/discover")).toBe("Between Jobs");
+    expect(documentTitleFor("app", "/discover")).toBe("Discover -- Between Jobs");
     expect(documentTitleFor("app", "/settings")).toBe("Settings -- Between Jobs");
   });
 });
