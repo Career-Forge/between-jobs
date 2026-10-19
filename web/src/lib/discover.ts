@@ -1,19 +1,9 @@
-// Job Finder P8 -- pure, testable logic for the Discover page (badge/label
-// mapping, salary/date formatting), split out the same way honestFloor.ts
-// and applicationsBoard.ts already split their own pure logic from JSX.
+// Job Finder P8 -- pure, testable logic for the Discover page (labels, salary formatting, how a
+// warning reads), split out the same way honestFloor.ts and applicationsBoard.ts split their own
+// pure logic from JSX. What each result row shows -- its fit block, trail and receipt -- is
+// lib/discoverRow.ts; what the band is told is lib/discoverFacts.ts.
 
-import type { JobCard, ScoreBin, SavedSearch } from "./discoverTypes";
-
-const BIN_BADGE_CLASS: Record<ScoreBin, string> = {
-  Strong: "bj-badge-emerald",
-  Good: "bj-badge-cyan",
-  Mixed: "bj-badge-gold",
-  Poor: "bj-badge-danger",
-};
-
-export function binBadgeClass(bin: ScoreBin): string {
-  return BIN_BADGE_CLASS[bin];
-}
+import type { JobCard, SavedSearch } from "./discoverTypes";
 
 const SUB_SCORE_LABELS: Record<string, string> = {
   skills: "Skills",
@@ -26,13 +16,6 @@ const SUB_SCORE_LABELS: Record<string, string> = {
 
 export function subScoreLabel(key: string): string {
   return SUB_SCORE_LABELS[key] ?? key;
-}
-
-export function formatPostedDate(postedAt: string | null): string | null {
-  if (!postedAt) return null;
-  const date = new Date(postedAt);
-  if (Number.isNaN(date.getTime())) return null;
-  return `Posted ${date.toLocaleDateString()}`;
 }
 
 export function formatSalary(
@@ -80,4 +63,43 @@ export function savedSearchLabel(search: SavedSearch): string {
   if (search.location) parts.push(`in ${search.location}`);
   if (search.remote_only) parts.push("remote only");
   return parts.length > 0 ? parts.join(" ") : "Any job";
+}
+
+// ── providers and warnings ─────────────────────────────────────────────────
+
+// How the providers a search may name read in a sentence. An id this list does not know is shown as
+// the server sent it: nothing is guessed about a provider the page has not heard of.
+const PROVIDER_NAMES: Record<string, string> = {
+  registry: "The job registry",
+  remoteok: "RemoteOK",
+  arbeitnow: "Arbeitnow",
+  you_com: "You.com",
+  firecrawl: "Firecrawl",
+  serper: "Serper",
+  brave: "Brave Search",
+  jsearch: "JSearch",
+  adzuna: "Adzuna",
+  usajobs: "USAJobs",
+};
+
+export function providerName(id: string): string {
+  return PROVIDER_NAMES[id] ?? id;
+}
+
+export interface WarningLine {
+  /** The id in front of the message ("brave"), or null when the warning names no provider. */
+  provider: string | null;
+  /** What came after it, or the whole warning. */
+  message: string;
+}
+
+// A live-search provider that ran and failed leaves "{provider}: {message}"; the registry notes are
+// plain sentences. The prefix is read only when it has the shape of a provider id (lower case, no
+// spaces), so a sentence that happens to hold a colon is never cut in two.
+const PROVIDER_PREFIX = /^([a-z][a-z0-9_]{1,30}): (\S[\s\S]*)$/;
+
+export function parseWarning(text: string): WarningLine {
+  const trimmed = text.trim();
+  const match = PROVIDER_PREFIX.exec(trimmed);
+  return match === null ? { provider: null, message: trimmed } : { provider: match[1], message: match[2].trim() };
 }

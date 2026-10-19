@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { JobCard, SavedSearch } from "./discoverTypes";
 import {
-  binBadgeClass,
-  formatPostedDate,
   formatSalary,
   locationLabel,
+  parseWarning,
+  providerName,
   savedSearchLabel,
   subScoreLabel,
   trackRequestBody,
@@ -45,15 +45,6 @@ function makeJobCard(overrides: Partial<JobCard> = {}): JobCard {
   };
 }
 
-describe("binBadgeClass", () => {
-  it("maps every bin to a distinct badge class", () => {
-    expect(binBadgeClass("Strong")).toBe("bj-badge-emerald");
-    expect(binBadgeClass("Good")).toBe("bj-badge-cyan");
-    expect(binBadgeClass("Mixed")).toBe("bj-badge-gold");
-    expect(binBadgeClass("Poor")).toBe("bj-badge-danger");
-  });
-});
-
 describe("subScoreLabel", () => {
   it("returns a friendly label for a known key", () => {
     expect(subScoreLabel("workauth")).toBe("Work Authorization");
@@ -62,20 +53,6 @@ describe("subScoreLabel", () => {
 
   it("falls back to the raw key for an unknown one", () => {
     expect(subScoreLabel("mystery_dim")).toBe("mystery_dim");
-  });
-});
-
-describe("formatPostedDate", () => {
-  it("formats a real ISO date", () => {
-    expect(formatPostedDate("2026-08-01T00:00:00Z")).toMatch(/^Posted /);
-  });
-
-  it("returns null for null", () => {
-    expect(formatPostedDate(null)).toBeNull();
-  });
-
-  it("returns null for an unparseable date", () => {
-    expect(formatPostedDate("not a date")).toBeNull();
   });
 });
 
@@ -165,5 +142,39 @@ describe("savedSearchLabel", () => {
 
   it("shows just the query when that's all that's set", () => {
     expect(savedSearchLabel(makeSavedSearch({ query: "ml engineer" }))).toBe('"ml engineer"');
+  });
+});
+
+describe("providerName", () => {
+  it("names the providers a search can use", () => {
+    expect(providerName("brave")).toBe("Brave Search");
+    expect(providerName("you_com")).toBe("You.com");
+    expect(providerName("registry")).toBe("The job registry");
+  });
+
+  it("shows an id it has not heard of as the server sent it, never a guess", () => {
+    expect(providerName("newboard")).toBe("newboard");
+  });
+});
+
+describe("parseWarning", () => {
+  it("splits a provider's failure into the id and its own message", () => {
+    expect(parseWarning("brave: request failed (429)")).toEqual({ provider: "brave", message: "request failed (429)" });
+    expect(parseWarning("serper: unexpected failure")).toEqual({ provider: "serper", message: "unexpected failure" });
+  });
+
+  it("leaves a sentence that names no provider whole, even when it holds a colon", () => {
+    const registry = "The job registry could not be searched just now, so these results come from the live search providers only. Try again in a moment.";
+    expect(parseWarning(registry)).toEqual({ provider: null, message: registry });
+    expect(parseWarning("Note: the registry is slow")).toEqual({ provider: null, message: "Note: the registry is slow" });
+  });
+
+  it("does not read a prefix that is not shaped like a provider id", () => {
+    expect(parseWarning("two words: nope").provider).toBeNull();
+    expect(parseWarning("x: too short an id").provider).toBeNull();
+  });
+
+  it("trims the text it was given", () => {
+    expect(parseWarning("  brave: down  ")).toEqual({ provider: "brave", message: "down" });
   });
 });

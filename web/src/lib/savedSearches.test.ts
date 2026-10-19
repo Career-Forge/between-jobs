@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import type { SavedSearch } from "./discoverTypes";
+import { buildTrail } from "./trail";
 import {
   SAVED_SEARCHES_NOTE,
   SAVED_SEARCHES_PATH,
@@ -9,7 +10,10 @@ import {
   loadSavedSearches,
   parseSavedSearch,
   parseSavedSearches,
+  createSavedSearch,
+  isChecked,
   savedSearchActionLabel,
+  savedSearchTrail,
   savedSearchesReducer,
   setSavedSearchActive,
   type SavedSearchesFetcher,
@@ -53,7 +57,14 @@ describe("parseSavedSearch", () => {
       remote_only: true,
       is_active: true,
       created_at: "2026-10-01T00:00:00+00:00",
+      last_matched_at: null,
     });
+  });
+
+  it("reads when the matcher last ran, and nothing from a value that is not a time", () => {
+    expect(parseSavedSearch(ROW("a", { last_matched_at: "2026-10-02T06:00:00+00:00" }))?.last_matched_at).toBe("2026-10-02T06:00:00+00:00");
+    expect(parseSavedSearch(ROW("a", { last_matched_at: 12 }))?.last_matched_at).toBeNull();
+    expect(parseSavedSearch(ROW("a", { last_matched_at: null }))?.last_matched_at).toBeNull();
   });
 
   it("keeps a search whose other fields it cannot read: a search that is running must stay on the list", () => {
@@ -65,6 +76,7 @@ describe("parseSavedSearch", () => {
       remote_only: false,
       is_active: false,
       created_at: "",
+      last_matched_at: null,
     });
   });
 
@@ -250,5 +262,95 @@ describe("the words", () => {
     expect(SAVED_SEARCHES_NOTE).toBe(
       "Active saved searches are checked every few hours in the background, using your AI key to score what they find. Pause one to stop the checks, or delete it.",
     );
+  });
+});
+
+describe("a search saved from Discover", () => {
+  const ready = (searches: SavedSearch[]): SavedSearchesState => ({ kind: "ready", searches, busyId: null, error: null });
+
+  it("goes on top of the list, newest first", () => {
+    const state = savedSearchesReducer(ready([search({ id: "a" })]), { type: "created", search: search({ id: "b" }) });
+    expect(state).toEqual(ready([search({ id: "b" }), search({ id: "a" })]));
+  });
+
+  it("replaces a search already listed instead of doubling it", () => {
+    const state = savedSearchesReducer(ready([search({ id: "a" })]), { type: "created", search: search({ id: "a", query: "newer" }) });
+    expect(state).toEqual(ready([search({ id: "a", query: "newer" })]));
+  });
+
+  it("is ignored while the list is loading or failed: a reload shows it", () => {
+    const loading: SavedSearchesState = { kind: "loading" };
+    const failed: SavedSearchesState = { kind: "failed", message: "x" };
+    expect(savedSearchesReducer(loading, { type: "created", search: search() })).toBe(loading);
+    expect(savedSearchesReducer(failed, { type: "created", search: search() })).toBe(failed);
+  });
+});
+
+describe("createSavedSearch", () => {
+  const body = { query: "data analyst", location: null, companies: ["Acme"], remote_only: false };
+
+  it("posts the filters and returns the search the server made", async () => {
+    const { calls, fetcher } = recorder(ROW("new"));
+    const result = await createSavedSearch(fetcher, body);
+    expect(result.ok && result.search.id).toBe("new");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].path).toBe("/saved-searches");
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual(body);
+  });
+
+  it("fails with the server's words, or the shared ones, and never claims a save it could not read", async () => {
+    expect(await createSavedSearch(recorder(new ApiError(422, "Too many saved searches.", "INVALID_INPUT")).fetcher, body)).toEqual({
+      ok: false,
+      message: "Too many saved searches.",
+    });
+    expect(await createSavedSearch(async () => {
+      throw 5;
+    }, body)).toEqual({ ok: false, message: "We could not save that search." });
+    const unreadable = await createSavedSearch(recorder({ nothing: true }).fetcher, body);
+    expect(unreadable.ok).toBe(false);
+  });
+});
+
+describe("when a saved search was last checked", () => {
+  const NOW = new Date("2026-09-22T12:00:00Z");
+  const text = (value: SavedSearch) => buildTrail(savedSearchTrail(value, NOW, "UTC"))?.text;
+
+  it("counts a check only when it is later than the search's own creation: the matcher may stamp a search as it is saved", () => {
+    expect(isChecked(search({ created_at: "2026-09-22T05:00:00Z", last_matched_at: "2026-09-22T06:00:00Z" }))).toBe(true);
+    expect(isChecked(search({ created_at: "2026-09-22T06:00:00Z", last_matched_at: "2026-09-22T06:00:00Z" }))).toBe(false);
+    expect(isChecked(search({ created_at: "2026-09-22T07:00:00Z", last_matched_at: "2026-09-22T06:00:00Z" }))).toBe(false);
+    expect(isChecked(search({ last_matched_at: null }))).toBe(false);
+    expect(isChecked(search({ last_matched_at: undefined }))).toBe(false);
+  });
+
+  it("reads an unreadable time on either side as not checked: no time is guessed", () => {
+    expect(isChecked(search({ created_at: "", last_matched_at: "2026-09-22T06:00:00Z" }))).toBe(false);
+    expect(isChecked(search({ created_at: "2026-09-22T05:00:00Z", last_matched_at: "garbage" }))).toBe(false);
+  });
+
+  it("says 'Checked 06:00' for a check today, and the date for a check on another day", () => {
+    expect(text(search({ created_at: "2026-09-01T00:00:00Z", last_matched_at: "2026-09-22T06:00:00Z" }))).toBe("Checked 06:00");
+    expect(text(search({ created_at: "2026-09-01T00:00:00Z", last_matched_at: "2026-09-20T06:00:00Z" }))).toBe("Checked Sep 20");
+  });
+
+  it("says 'Not checked yet' when no check is on record, with the muted code glyph", () => {
+    const unchecked = search({ created_at: "2026-09-22T06:00:00Z", last_matched_at: "2026-09-22T06:00:00Z" });
+    expect(text(unchecked)).toBe("Not checked yet");
+    expect(buildTrail(savedSearchTrail(unchecked, NOW, "UTC"))?.glyphs).toEqual(["code"]);
+  });
+
+  it("adds Paused after either, when the search is paused", () => {
+    expect(text(search({ created_at: "2026-09-01T00:00:00Z", last_matched_at: "2026-09-22T06:00:00Z", is_active: false }))).toBe("Checked 06:00 · Paused");
+    expect(text(search({ last_matched_at: null, is_active: false }))).toBe("Not checked yet · Paused");
+  });
+
+  it("claims no model and no key: the matcher stamps a skipped run the same way", () => {
+    for (const value of [search({ last_matched_at: "2026-10-02T06:00:00Z" }), search({ last_matched_at: null })]) {
+      const built = buildTrail(savedSearchTrail(value, NOW, "UTC"));
+      expect(built?.glyphs ?? []).not.toContain("model");
+      expect(built?.text.toLowerCase()).not.toContain("key");
+      expect(built?.text.toLowerCase()).not.toContain("model");
+    }
   });
 });
