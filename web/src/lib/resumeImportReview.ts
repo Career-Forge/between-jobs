@@ -451,6 +451,14 @@ export function allFields(sections: readonly ReviewSection[]): ReviewField[] {
   return sections.flatMap((section) => section.blocks.flatMap((block) => block.fields));
 }
 
+// The values the person is asked to check one by one before a draft is used: every field read from the
+// file. A value that code set from other values (which address is the primary one, the flag that shows
+// the place on the resume) was not read from the file, so there is nothing in the file to check it
+// against, and it is left out of the count.
+export function fieldsToCheck(sections: readonly ReviewSection[]): ReviewField[] {
+  return allFields(sections).filter((field) => !field.derived);
+}
+
 // ── what the model proposed that the check did not keep ────────────────────
 
 // Where a path points, in words. The numbers are the model's own (see `DroppedValue.path`).

@@ -1,4 +1,4 @@
-import type { ChangeEvent, Ref } from "react";
+import type { ChangeEvent, ReactNode, Ref } from "react";
 import { highlightSegments } from "../lib/highlightSegments";
 import { IMPORT_IDS, canChooseFile, type ImportState } from "../lib/resumeImport";
 import type { ImportDraft } from "../lib/resumeImportDraft";
@@ -7,11 +7,17 @@ import {
   assumptionLines,
   buildReview,
   droppedLines,
+  fieldsToCheck,
   type ReviewField,
   type ReviewSection,
 } from "../lib/resumeImportReview";
 import type { Failure } from "../lib/setupRequired";
+import { MODEL_CHOICE_LABEL, type ModelKeyReading } from "../lib/modelKey";
+import { IMPORT_REVIEW_ID } from "../lib/nextStep/pages/profile";
+import { MODEL_PROVIDER_PATH } from "../lib/settingsPaths";
+import { SetupRequiredState } from "./paper/StateViews";
 import { SetupRequiredNotice } from "./SetupRequiredNotice";
+import "../styles/profile.css";
 
 // The card that imports a resume from a PDF or DOCX, as a function of its props (the same split as
 // AccountCardView): no hooks, so a test can render it or call it and press its buttons. The state,
@@ -22,6 +28,22 @@ import { SetupRequiredNotice } from "./SetupRequiredNotice";
 // the model proposed that the check against the file did not keep is listed apart, as left out, each
 // with its own reason (some are not in the file; others may be, but cannot be used). Nothing is used
 // until the person presses "Use this profile" and then confirms; "Discard this draft" removes it.
+//
+// CHECKING EVERY FIELD. When the page hands in `checks`, each value read from the file (not the ones a rule
+// sets from other values) has a checkbox, and "Use this profile" stays locked -- aria-disabled, with a line
+// that says how many are left -- until every one is checked. There is deliberately no "check all": a
+// reviewer who ticked everything at once would have reviewed nothing. Without `checks` (a caller that has
+// no such state) the card is as it always was.
+//
+// NOTHING HERE IS CYAN. The page's one cyan fill is the next-step band's button, so every button here is an
+// ordinary outlined one, including "Use this profile". The review has the id `import-review` (the band's
+// link lands on it) and the card's heading takes focus when a link arrives (tabIndex -1).
+//
+// SETUP KNOWN TO BE MISSING. Reading a file uses the person's own model, so when the page knows no model key is
+// usable (`modelKey`, as lib/modelKey.ts reads the saved keys) the card says what is missing, with a link to
+// where it is fixed, and "Choose a file" is switched off: no request is made while setup is known to be
+// missing. Nothing is known until the page has read the keys, so an unread or failed read leaves the card
+// as it was, and a server's SETUP_REQUIRED after a try is still shown as before.
 //
 // ACCESSIBLE BY CONSTRUCTION. A labelled region with real headings; every control is a button
 // (never a clickable div) whose name says what it acts on; a source toggle says whether it is open
@@ -54,6 +76,7 @@ export const LEAVE_NOTE =
   "If you leave this page without choosing, the draft stays saved but is not used. This page does not list saved drafts, so to review it again, upload the file again.";
 // Shown, with the file button off, while the JSON import below is being sent: the two imports do not
 // run at once (see `importInProgress`).
+export const NEEDS_MODEL_MESSAGE = "Importing from a resume file uses your own AI model, so it needs a usable model key first.";
 export const BLOCKED_NOTE = "A JSON import below is in progress. Choose a file when it has finished.";
 export const USE_LABEL = "Use this profile";
 export const DISCARD_LABEL = "Discard this draft";
@@ -62,6 +85,15 @@ export const IMPORT_MARK_ID = "bj-import-mark";
 const ACCEPT = `.pdf,.docx,${PDF_CONTENT_TYPE},${DOCX_CONTENT_TYPE}`;
 const FILE_INPUT_ID = "bj-import-file";
 const TITLE_ID = "bj-import-title";
+const PROGRESS_ID = "bj-import-progress";
+const USE_HINT_ID = "bj-import-use-hint";
+
+// The review's per-field state, owned by the page (the card keeps it per draft).
+export interface ReviewChecks {
+  /** The JSON pointers of the values the person has checked. */
+  checked: ReadonlySet<string>;
+  toggle: (path: string) => void;
+}
 
 export interface ResumeImportActions {
   chooseFile: () => void;
@@ -101,6 +133,9 @@ export function ResumeImportView({
   fileInputRef,
   actions,
   blocked = false,
+  checks,
+  trail,
+  modelKey,
 }: {
   state: ImportState;
   // There is an active profile this draft would take the place of.
@@ -109,18 +144,26 @@ export function ResumeImportView({
   actions: ResumeImportActions;
   // The page is busy with the other import: a file cannot be chosen now.
   blocked?: boolean;
+  // Which values the person has checked; absent means no per-value checking (see the top of the file).
+  checks?: ReviewChecks;
+  // The review's trail line, drawn under it. The card builds it (it holds hooks; this view holds none).
+  trail?: ReactNode;
+  // What the saved keys say about a usable model key, when the page has read them.
+  modelKey?: ModelKeyReading;
 }) {
   return (
-    <section className="bj-card bj-import" aria-labelledby={TITLE_ID}>
+    <section className="bj-prof-block bj-import" aria-labelledby={TITLE_ID}>
       <div className="bj-card-header">
-        <h2 id={TITLE_ID}>{IMPORT_TITLE}</h2>
+        <h2 id={TITLE_ID} className="bj-prof-title" tabIndex={-1}>
+          {IMPORT_TITLE}
+        </h2>
         <span className="bj-badge-violet">Read by an AI model</span>
       </div>
 
       {state.kind === "review" || state.kind === "activating" || state.kind === "discarding" ? (
-        <ReviewPanel state={state} replacesCurrent={replacesCurrent} actions={actions} />
+        <ReviewPanel state={state} replacesCurrent={replacesCurrent} actions={actions} checks={checks} trail={trail} />
       ) : (
-        <UploadPanel state={state} fileInputRef={fileInputRef} actions={actions} blocked={blocked} />
+        <UploadPanel state={state} fileInputRef={fileInputRef} actions={actions} blocked={blocked} modelKey={modelKey} />
       )}
     </section>
   );
@@ -133,17 +176,28 @@ function UploadPanel({
   fileInputRef,
   actions,
   blocked,
+  modelKey,
 }: {
   state: ImportState;
   fileInputRef?: Ref<HTMLInputElement>;
   actions: ResumeImportActions;
   blocked: boolean;
+  modelKey?: ModelKeyReading;
 }) {
   const busy = state.kind === "reading" || state.kind === "uploading";
+  // A definite "no usable key": the page read the keys and none can be used.
+  const missingKey = modelKey === "none" || modelKey === "needs_key" || modelKey === "needs_model";
   return (
     <div>
       <p className="bj-muted">{IMPORT_PRIVACY_STATEMENT}</p>
       <p className="bj-muted bj-small">{IMPORT_LIMITS}</p>
+
+      {missingKey && (
+        <SetupRequiredState
+          message={NEEDS_MODEL_MESSAGE}
+          missing={[{ label: modelKey === "needs_model" ? MODEL_CHOICE_LABEL : "Add a model key", to: MODEL_PROVIDER_PATH }]}
+        />
+      )}
 
       {state.kind === "activated" && (
         <div id={IMPORT_IDS.notice} tabIndex={-1} role="status" className="bj-import-notice">
@@ -184,7 +238,7 @@ function UploadPanel({
           <FailureView failure={state.failure} id={IMPORT_IDS.error} />
           <div className="bj-actions">
             {state.retry && (
-              <button type="button" className="bj-primary" onClick={actions.retry}>
+              <button type="button" onClick={actions.retry}>
                 Try again
               </button>
             )}
@@ -199,9 +253,9 @@ function UploadPanel({
         <button
           type="button"
           id={IMPORT_IDS.choose}
-          className={state.kind === "idle" ? "bj-primary" : undefined}
-          onClick={actions.chooseFile}
+          onClick={missingKey ? undefined : actions.chooseFile}
           disabled={!canChooseFile(state) || blocked}
+          aria-disabled={missingKey ? true : undefined}
         >
           {state.kind === "error" ? "Choose a different file" : "Choose a file"}
         </button>
@@ -210,7 +264,7 @@ function UploadPanel({
           id={FILE_INPUT_ID}
           type="file"
           accept={ACCEPT}
-          style={{ display: "none" }}
+          hidden
           tabIndex={-1}
           onChange={(event: ChangeEvent<HTMLInputElement>) => actions.fileChosen(event.target.files)}
         />
@@ -248,27 +302,45 @@ function ReviewPanel({
   state,
   replacesCurrent,
   actions,
+  checks,
+  trail,
 }: {
   state: Extract<ImportState, { kind: "review" | "activating" | "discarding" }>;
   replacesCurrent: boolean;
   actions: ResumeImportActions;
+  checks?: ReviewChecks;
+  trail?: ReactNode;
 }) {
   const { draft } = state;
   const busy = state.kind !== "review";
   const confirming = state.kind === "review" && state.confirming;
   const sections = buildReview(draft.profile, draft.spans, draft.assumptions);
   const counts = countsLine(draft);
+  // The values the person is asked to check one by one, and how many are left. Nothing is locked when
+  // the page keeps no such state.
+  const toCheck = fieldsToCheck(sections);
+  const remaining = checks === undefined ? 0 : toCheck.filter((field) => !checks.checked.has(field.path)).length;
+  const locked = checks !== undefined && remaining > 0;
 
   return (
-    <div>
+    <div id={IMPORT_REVIEW_ID}>
       <h3 id={IMPORT_IDS.review} tabIndex={-1}>
         {REVIEW_TITLE}
       </h3>
       <div className="bj-import-warning" role="note">
         <strong>{REVIEW_LABEL}.</strong> {REVIEW_DETAIL}
+        {replacesCurrent && !draft.alreadyActive ? " Using it makes it your active profile in place of your current one, which stays in your history." : ""}
       </div>
+      {trail}
       <p className="bj-muted bj-small">{documentLine(draft, state.fileName)}</p>
       {counts !== null && <p className="bj-muted bj-small">{counts}</p>}
+      {checks !== undefined && !draft.alreadyActive && (
+        <p id={PROGRESS_ID} role="status" className="bj-import-progress">
+          {remaining === 0
+            ? `All ${toCheck.length} ${toCheck.length === 1 ? "value" : "values"} checked.`
+            : `${remaining} of ${toCheck.length} ${toCheck.length === 1 ? "value" : "values"} still to check. Check each one below; there is no way to check them all at once. Your checks are kept only while this page is open.`}
+        </p>
+      )}
 
       {draft.alreadyActive && (
         <div className="bj-import-notice" role="status">
@@ -295,6 +367,7 @@ function ReviewPanel({
             openPath={state.openPath}
             locked={busy}
             toggleSource={actions.toggleSource}
+            checks={checks}
           />
         ))}
       </div>
@@ -312,7 +385,7 @@ function ReviewPanel({
 
       {draft.alreadyActive ? (
         <div className="bj-actions">
-          <button type="button" id={IMPORT_IDS.closeReview} className="bj-primary" onClick={actions.close}>
+          <button type="button" id={IMPORT_IDS.closeReview} onClick={actions.close}>
             Done
           </button>
         </div>
@@ -326,7 +399,7 @@ function ReviewPanel({
                   : "Use this profile? It becomes your active profile."}
               </p>
               <div className="bj-actions">
-                <button type="button" className="bj-primary" onClick={actions.confirmUse} disabled={busy}>
+                <button type="button" onClick={actions.confirmUse} disabled={busy}>
                   Yes, use this profile
                 </button>
                 <button type="button" onClick={actions.cancelUse} disabled={busy}>
@@ -340,9 +413,10 @@ function ReviewPanel({
               <button
                 type="button"
                 id={IMPORT_IDS.use}
-                className="bj-primary"
-                onClick={actions.askUse}
+                onClick={locked ? undefined : actions.askUse}
                 disabled={busy}
+                aria-disabled={locked ? true : undefined}
+                aria-describedby={locked ? USE_HINT_ID : undefined}
               >
                 {USE_LABEL}
               </button>
@@ -351,6 +425,11 @@ function ReviewPanel({
               {DISCARD_LABEL}
             </button>
           </div>
+          {locked && (
+            <p id={USE_HINT_ID} className="bj-muted bj-small">
+              {`Check the ${remaining} remaining ${remaining === 1 ? "value" : "values"} to use this profile.`}
+            </p>
+          )}
           <p className="bj-muted bj-small">{LEAVE_NOTE}</p>
         </>
       )}
@@ -386,6 +465,7 @@ function SectionView({
   openPath,
   locked,
   toggleSource,
+  checks,
 }: {
   section: ReviewSection;
   draft: ImportDraft;
@@ -393,6 +473,7 @@ function SectionView({
   // A decision is being sent: the draft is not to be changed on screen meanwhile.
   locked: boolean;
   toggleSource: (path: string) => void;
+  checks?: ReviewChecks;
 }) {
   const titleId = `bj-import-section-${section.id}`;
   return (
@@ -410,6 +491,7 @@ function SectionView({
                 open={openPath === field.path}
                 locked={locked}
                 toggleSource={toggleSource}
+                checks={checks}
               />
             ))}
           </dl>
@@ -425,12 +507,14 @@ function FieldView({
   open,
   locked,
   toggleSource,
+  checks,
 }: {
   field: ReviewField;
   draft: ImportDraft;
   open: boolean;
   locked: boolean;
   toggleSource: (path: string) => void;
+  checks?: ReviewChecks;
 }) {
   const panelId = sourcePanelId(field.path);
   return (
@@ -461,6 +545,12 @@ function FieldView({
         )}
         {field.assumption !== null && (
           <div className="bj-import-assumed bj-small">Assumed: {field.assumption}</div>
+        )}
+        {checks !== undefined && !field.derived && (
+          <label className="bj-import-check">
+            <input type="checkbox" checked={checks.checked.has(field.path)} disabled={locked} onChange={() => checks.toggle(field.path)} />
+            Checked<span className="bj-visually-hidden"> {field.label}</span>
+          </label>
         )}
         {open && field.span !== null && <SourcePanel field={field} text={draft.extractedText} panelId={panelId} />}
       </dd>

@@ -20,12 +20,14 @@ const recorded = vi.hoisted(() => ({
   effects: [] as { fn: () => void | (() => void); deps: readonly unknown[] | undefined }[],
   refs: [] as { current: unknown }[],
   refIndex: 0,
+  handle: null as null | { confirmAndUse: () => void },
   view: null as null | {
     state: unknown;
     replacesCurrent: boolean;
     blocked: boolean;
     fileInputRef: { current: { value: string; click: () => void } | null };
     actions: Record<string, (...args: unknown[]) => void>;
+    checks: undefined | { checked: ReadonlySet<string>; toggle: (path: string) => void };
   },
   apiFetch: vi.fn(),
   apiFetchBytes: vi.fn(),
@@ -39,6 +41,10 @@ vi.mock("react", async (importOriginal) => {
       recorded.effects.push({ fn, deps });
     },
     useReducer: () => [recorded.state, recorded.dispatch],
+    // The handle the page's band reaches the card through: kept, so a test can press it.
+    useImperativeHandle: (_ref: unknown, create: () => { confirmAndUse: () => void }) => {
+      recorded.handle = create();
+    },
     useRef: (initial: unknown) => {
       const index = recorded.refIndex++;
       recorded.refs[index] ??= { current: initial };
@@ -97,6 +103,9 @@ function reviewing(overrides: Record<string, unknown> = {}): ImportState {
 const REVIEW = reviewing();
 const ASKED = importReducer(REVIEW, { type: "confirm_asked" });
 const ALREADY_IN_USE = reviewing({ already_active: true });
+// A draft with no value read from the file, so there is nothing to check one by one: the question may
+// be asked at once (the checks themselves are tested in ResumeImportCard.checks.test.tsx).
+const NOTHING_TO_CHECK = reviewing({ profile: { personal: {} } });
 
 // A file that reads as a PDF, with the parts of a File the card uses.
 function pdf(name = "cv.pdf") {
@@ -116,6 +125,7 @@ beforeEach(() => {
   recorded.refs.length = 0;
   recorded.refIndex = 0;
   recorded.view = null;
+  recorded.handle = null;
   recorded.apiFetch.mockReset();
   recorded.apiFetchBytes.mockReset();
   onActivated.mockReset();
@@ -128,12 +138,22 @@ beforeEach(() => {
 
 // Draws the card in `state` and hands back what it gave its view. Effects and refs of an earlier
 // mount in the same test are kept when `again` is set (a second render of the same card).
-function mount(state: ImportState, props: { replacesCurrent?: boolean; blocked?: boolean; onOpenChange?: (open: boolean) => void } = {}, again = false) {
+function mount(
+  state: ImportState,
+  props: { replacesCurrent?: boolean; blocked?: boolean; onOpenChange?: (open: boolean) => void; onReviewChange?: (review: unknown) => void } = {},
+  again = false,
+) {
   recorded.state = state;
   recorded.effects.length = 0;
   recorded.refIndex = 0;
   if (!again) recorded.refs.length = 0;
-  renderToStaticMarkup(<ResumeImportCard replacesCurrent={props.replacesCurrent ?? true} onActivated={onActivated} blocked={props.blocked} onOpenChange={props.onOpenChange} />);
+  renderToStaticMarkup(<ResumeImportCard
+      replacesCurrent={props.replacesCurrent ?? true}
+      onActivated={onActivated}
+      blocked={props.blocked}
+      onOpenChange={props.onOpenChange}
+      onReviewChange={props.onReviewChange}
+    />);
   if (recorded.view === null) throw new Error("the view was not rendered");
   return recorded.view;
 }
@@ -213,7 +233,7 @@ describe("confirming: a draft is used only after the person was asked", () => {
 
 describe("the other decisions", () => {
   it("asking, backing out, closing and opening a source each dispatch their own event and send nothing", () => {
-    const { actions } = mount(REVIEW);
+    const { actions } = mount(NOTHING_TO_CHECK);
     actions.askUse();
     actions.cancelUse();
     actions.close();
@@ -417,5 +437,116 @@ describe("where focus and the page go after a change", () => {
     runEffects();
     expect(getElementById).toHaveBeenCalledWith(IMPORT_MARK_ID);
     expect(element.scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+  });
+});
+
+
+// ── checking every value, and the band's one-step button ───────────────────
+
+describe("the values the person has to check before a draft can be used", () => {
+  it("hands the view a check state that starts empty, so nothing is checked until the person says so", () => {
+    const { checks } = mount(REVIEW);
+    expect(checks).toBeDefined();
+    expect(checks?.checked.size).toBe(0);
+    expect(typeof checks?.toggle).toBe("function");
+  });
+
+  it("hands the view no check state for a draft that is already the profile in use, which has nothing to decide", () => {
+    expect(mount(ALREADY_IN_USE).checks).toBeUndefined();
+    expect(mount(initialImportState).checks).toBeUndefined();
+  });
+
+  it("does not ask the question while a value is unchecked: pressing 'Use this profile' dispatches nothing", () => {
+    mount(REVIEW).actions.askUse();
+    expect(dispatched()).toEqual([]);
+  });
+
+  it("asks it once there is nothing left to check", () => {
+    mount(NOTHING_TO_CHECK).actions.askUse();
+    expect(dispatched()).toEqual([{ type: "confirm_asked" }]);
+  });
+
+  it("tells the page what is true of a waiting draft: the values read, the ones left out, the ones still to check", () => {
+    const seen: unknown[] = [];
+    mount(REVIEW, { onReviewChange: (review) => seen.push(review) });
+    runEffects();
+    expect(seen).toEqual([{ found: 1, leftOut: null, remaining: 1, using: false }]);
+  });
+
+  it("tells the page there is no waiting draft for no draft, for one already in use, and when the card goes away", () => {
+    for (const state of [initialImportState, ALREADY_IN_USE]) {
+      const seen: unknown[] = [];
+      mount(state, { onReviewChange: (review) => seen.push(review) });
+      runEffects();
+      expect(seen).toEqual([null]);
+    }
+    const seen: unknown[] = [];
+    mount(REVIEW, { onReviewChange: (review) => seen.push(review) });
+    const cleanups = runEffects();
+    seen.length = 0;
+    for (const cleanup of cleanups) cleanup();
+    expect(seen).toContain(null);
+  });
+
+  it("says a draft is being used while the activation is in flight", () => {
+    const activating = importReducer(ASKED, { type: "activate_started" });
+    const seen: unknown[] = [];
+    mount(activating, { onReviewChange: (review) => seen.push(review) });
+    runEffects();
+    expect(seen).toEqual([{ found: 1, leftOut: null, remaining: 1, using: true }]);
+  });
+});
+
+describe("the band's one-step button: confirmAndUse", () => {
+  it("does nothing while a value is unchecked", async () => {
+    mount(REVIEW);
+    recorded.handle?.confirmAndUse();
+    await flush();
+    expect(dispatched()).toEqual([]);
+    expect(recorded.apiFetch).not.toHaveBeenCalled();
+  });
+
+  it("does nothing for no draft, for a draft already in use, and while a decision is being sent", async () => {
+    for (const state of [initialImportState, ALREADY_IN_USE, importReducer(ASKED, { type: "activate_started" })]) {
+      recorded.dispatch.mockReset();
+      mount(state);
+      recorded.handle?.confirmAndUse();
+      await flush();
+      expect(dispatched()).toEqual([]);
+      expect(recorded.apiFetch).not.toHaveBeenCalled();
+    }
+  });
+
+  it("with every value checked, asks and uses that draft through the same events, once, and tells the page once", async () => {
+    recorded.apiFetch.mockResolvedValue({});
+    mount(NOTHING_TO_CHECK);
+    recorded.handle?.confirmAndUse();
+    await flush();
+    expect(dispatched().map((event) => event.type)).toEqual(["confirm_asked", "activate_started", "activated"]);
+    expect(recorded.apiFetch).toHaveBeenCalledTimes(1);
+    expect(recorded.apiFetch).toHaveBeenCalledWith(`/profile/versions/${VERSION}/activate`, { method: "POST" });
+    expect(onActivated).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends one request for a second press while the first is in flight", async () => {
+    let finish: (value: unknown) => void = () => {};
+    recorded.apiFetch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    mount(NOTHING_TO_CHECK);
+    recorded.handle?.confirmAndUse();
+    recorded.handle?.confirmAndUse();
+    await flush();
+    expect(recorded.apiFetch).toHaveBeenCalledTimes(1);
+    finish({});
+    await flush();
+    expect(onActivated).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not tell the page when the server refused", async () => {
+    recorded.apiFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    mount(NOTHING_TO_CHECK);
+    recorded.handle?.confirmAndUse();
+    await flush();
+    expect(onActivated).not.toHaveBeenCalled();
+    expect(dispatched().map((event) => event.type)).toEqual(["confirm_asked", "activate_started", "activate_failed"]);
   });
 });
