@@ -123,6 +123,20 @@ describe("with no model key", () => {
     expect(inSection?.classList.contains("bj-primary")).toBe(false);
   });
 
+  it("shows the press where the person is looking: the band's button says it is opening OpenRouter, and a second press does nothing", async () => {
+    describeAccount([]);
+    const { container } = page();
+    await settle();
+    click(buttonIn(band(container), "Connect with OpenRouter"));
+    await settle();
+    const pressed = buttonIn(band(container), "Opening OpenRouter...");
+    expect(pressed).toBeDefined();
+    expect(pressed.getAttribute("aria-disabled")).toBe("true");
+    click(pressed);
+    await settle();
+    expect(departures).toHaveLength(1);
+  });
+
   it("starts the sign-in from either button: the same flow, a challenge in the address and the verifier kept for the return", async () => {
     describeAccount([]);
     const { container } = page();

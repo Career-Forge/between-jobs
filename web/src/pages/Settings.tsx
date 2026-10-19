@@ -153,7 +153,7 @@ export default function Settings() {
   return (
     <div className="bj-settings">
       <PageHeader title="Settings" subtitle="The model Between Jobs runs on, the search keys you add, and the accounts you link. Everything here is read from what you've saved." />
-      <NextStepBand outcome={outcome} onAction={onAction} />
+      <NextStepBand outcome={outcome} onAction={onAction} pending={connect.busy ? { intent: "connect-openrouter", label: "Opening OpenRouter..." } : null} />
       <ConnectBanner result={connect.result} busy={connect.busy} onAgain={connect.start} onRetry={connect.retry} onDismiss={connect.dismiss} />
       <p className="bj-visually-hidden" role="status" aria-live="polite">
         {announcement.text}
