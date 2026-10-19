@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { apiFetch } from "./api";
 import { friendlyApiMessage } from "./rateLimitMessage";
 import { failureOf, type Failure } from "./setupRequired";
@@ -30,6 +30,13 @@ export interface ResearchRunController<T> {
   run: () => Promise<void>;
   /** Edits the data in place -- for a per-item result that does not need a new run. */
   update: (change: (data: T) => T) => void;
+  /** Goes on the section's run button. */
+  runButton: RefObject<HTMLButtonElement | null>;
+  /**
+   * Where focus goes when a Retry removes the callout it was pressed in: the run button, which stays.
+   * (Pass it as `restoreFocusTo` to the section's FailureState and RunProblem.)
+   */
+  focusRunButton: () => HTMLElement | null;
 }
 
 export function useResearchRun<T>(path: string, fallbacks: { read: string; run: string }): ResearchRunController<T> {
@@ -39,6 +46,8 @@ export function useResearchRun<T>(path: string, fallbacks: { read: string; run: 
   // The path a reply belongs to: an answer for an application the page has moved on from is dropped.
   const current = useRef(path);
   const busy = useRef(false);
+  const runButton = useRef<HTMLButtonElement>(null);
+  const focusRunButton = useCallback(() => runButton.current, []);
 
   const load = useCallback(async () => {
     const asked = path;
@@ -78,5 +87,5 @@ export function useResearchRun<T>(path: string, fallbacks: { read: string; run: 
     setRead((previous) => (previous.kind === "ready" ? { kind: "ready", data: change(previous.data) } : previous));
   }, []);
 
-  return { read, running, problem, load, run, update };
+  return { read, running, problem, load, run, update, runButton, focusRunButton };
 }

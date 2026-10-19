@@ -68,7 +68,7 @@ function readingOf(certainty: string): { label: string; tone: ChipTone; glyph: T
 
 export function WarmPathEventsPanel({ applicationId, now }: { applicationId: string; now?: Date }) {
   const clock = useNow(now);
-  const { read, running, problem, load, run } = useResearchRun<WarmPathEventsResponse>(`/applications/${applicationId}/warm-path-events`, {
+  const { read, running, problem, load, run, runButton, focusRunButton } = useResearchRun<WarmPathEventsResponse>(`/applications/${applicationId}/warm-path-events`, {
     read: "Failed to load",
     run: "Failed to generate",
   });
@@ -99,6 +99,7 @@ export function WarmPathEventsPanel({ applicationId, now }: { applicationId: str
         busyLabel="Searching..."
         busy={running}
         held={read.kind === "loading"}
+        buttonRef={runButton}
         onRun={() => {
           if (read.kind !== "loading") void run();
         }}
@@ -109,8 +110,8 @@ export function WarmPathEventsPanel({ applicationId, now }: { applicationId: str
       </div>
 
       {read.kind === "loading" && <LoadingState rows={3} rowHeight={88} label="Loading events..." />}
-      {read.kind === "failed" && <FailureState message={read.message} onRetry={() => void load()} />}
-      <RunProblem problem={problem} onRetry={() => void run()} />
+      {read.kind === "failed" && <FailureState message={read.message} onRetry={() => void load()} restoreFocusTo={focusRunButton} />}
+      <RunProblem problem={problem} onRetry={() => void run()} restoreFocusTo={focusRunButton} />
 
       {ready !== null && data === null && (
         <EmptyBlock heading="No events found yet" link={{ to: SETTINGS_PATH, label: "Keys are added in Settings" }}>

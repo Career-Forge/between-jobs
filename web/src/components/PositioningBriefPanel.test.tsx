@@ -128,10 +128,13 @@ describe("Your play", () => {
     expect(text(query(container, "[role='alert']"))).toContain("The server hit a problem.");
     expect(container.querySelector(".bj-rs-brief")).not.toBeNull();
     on(`POST ${PATH}`, { brief: BRIEF });
-    click(buttonNamed(container, "Retry"));
+    const retry = buttonNamed(container, "Retry");
+    retry.focus();
+    click(retry);
     await settle();
     expect(container.querySelector("[role='alert']")).toBeNull();
     expect(callsTo(`POST ${PATH}`)).toHaveLength(2);
+    expect(document.activeElement).toBe(buttonNamed(container, "Refresh"));
   });
 
   it("with no brief yet, a failed first build marks the block's own trail", async () => {
@@ -164,9 +167,12 @@ describe("Your play", () => {
     await settle();
     expect(text(query(container, ".bj-trail"))).toBe("✕ Your play couldn't be read");
     on(`GET ${PATH}`, { brief: BRIEF });
-    click(buttonNamed(container, "Retry"));
+    const retry = buttonNamed(container, "Retry");
+    retry.focus();
+    click(retry);
     await settle();
     expect(container.querySelector(".bj-rs-brief")).not.toBeNull();
+    expect(document.activeElement).toBe(buttonNamed(container, "Refresh"));
   });
 
   it("draws no cyan, and has no serious accessibility violation, empty or built", async () => {

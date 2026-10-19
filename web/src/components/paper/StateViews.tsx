@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import "../../styles/paper.css";
 
@@ -141,11 +141,32 @@ export interface FailureStateProps {
   /** Present for a block's own failure; leave it out where the band already holds "Try again". */
   onRetry?: () => void;
   retryLabel?: string;
+  /**
+   * Where keyboard focus goes if this callout is removed while focus is inside it. Retry normally removes the
+   * callout it sits in (the retry clears the failure), which would drop focus to the page body; this names a
+   * control that stays, evaluated when the callout goes. Nothing moves when focus was somewhere else.
+   */
+  restoreFocusTo?: () => HTMLElement | null;
 }
 
-export function FailureState({ message, onRetry, retryLabel = "Retry" }: FailureStateProps) {
+export function FailureState({ message, onRetry, retryLabel = "Retry", restoreFocusTo }: FailureStateProps) {
+  const root = useRef<HTMLDivElement>(null);
+  const restore = useRef(restoreFocusTo);
+  restore.current = restoreFocusTo;
+  useLayoutEffect(() => {
+    const element = root.current;
+    return () => {
+      // The cleanup of a removed callout runs before its markup is taken out, so focus is still where it was.
+      if (element === null || restore.current === undefined || !element.contains(document.activeElement)) return;
+      const target = restore.current();
+      // Once the removal has finished: a target that went with the page (the whole section unmounting) is not focused.
+      queueMicrotask(() => {
+        if (target !== null && target.isConnected && (document.activeElement === null || document.activeElement === document.body)) target.focus();
+      });
+    };
+  }, []);
   return (
-    <div className="bj-state bj-state--failure" role="alert">
+    <div ref={root} className="bj-state bj-state--failure" role="alert">
       <p>
         <span className="bj-state-glyph" aria-hidden="true">
           {"✕"}

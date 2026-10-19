@@ -50,6 +50,9 @@ export function PositioningBriefPanel({ applicationId, now }: { applicationId: s
   const [building, setBuilding] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const working = useRef(false);
+  const buildButton = useRef<HTMLButtonElement>(null);
+  // Retry removes the callout it is pressed in; focus goes on to the build button, which stays.
+  const focusBuildButton = useCallback(() => buildButton.current, []);
 
   const load = useCallback(async () => {
     setRead({ kind: "loading" });
@@ -95,7 +98,7 @@ export function PositioningBriefPanel({ applicationId, now }: { applicationId: s
         posting and, if you ran it, Company intel.
       </p>
       <div className="bj-actions bj-rs-bar">
-        <button type="button" aria-disabled={building || read.kind === "loading" ? true : undefined} onClick={() => void build()}>
+        <button ref={buildButton} type="button" aria-disabled={building || read.kind === "loading" ? true : undefined} onClick={() => void build()}>
           {building ? "Building..." : brief !== null ? "Refresh" : "Build my positioning brief"}
         </button>
       </div>
@@ -105,7 +108,7 @@ export function PositioningBriefPanel({ applicationId, now }: { applicationId: s
       </div>
 
       {read.kind === "loading" && <LoadingState rows={3} rowHeight={64} label="Loading your brief..." />}
-      {read.kind === "failed" && <FailureState message={read.message} onRetry={() => void load()} />}
+      {read.kind === "failed" && <FailureState message={read.message} onRetry={() => void load()} restoreFocusTo={focusBuildButton} />}
 
       {outcome !== null &&
         (outcome.kind === "setup" ? (
@@ -113,7 +116,7 @@ export function PositioningBriefPanel({ applicationId, now }: { applicationId: s
         ) : outcome.kind === "note" ? (
           <EvidenceNote>{outcome.message}</EvidenceNote>
         ) : (
-          <FailureState message={outcome.message} onRetry={() => void build()} />
+          <FailureState message={outcome.message} onRetry={() => void build()} restoreFocusTo={focusBuildButton} />
         ))}
 
       {read.kind === "ready" && brief === null && (

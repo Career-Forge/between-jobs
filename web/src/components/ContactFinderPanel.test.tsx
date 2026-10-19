@@ -203,8 +203,57 @@ describe("Contacts: the lookups, one person at a time, on the person's own credi
     expect(buttonNamed(container, "Find LinkedIn").getAttribute("aria-disabled")).toBeNull();
     click(button);
     expect(callsTo(`POST ${PATH}/p1/enrich`)).toHaveLength(1);
+    // The second press is ignored before the confirm: it must not ask to approve a lookup that will not run.
+    expect(window.confirm).toHaveBeenCalledTimes(1);
     finish(UPDATED);
     await settle();
+  });
+
+  it("asks nothing when a Find LinkedIn or a Retry is pressed while its lookup is out", async () => {
+    on(`GET ${PATH}`, stored([candidate(1, { enriched_at: "2026-09-21T12:00:00Z" })]));
+    on(`POST ${PATH}/p1/find-linkedin`, () => new Promise(() => undefined));
+    on(`POST ${PATH}/p1/enrich`, () => new Promise(() => undefined));
+    const { container } = panel();
+    await settle();
+    const find = buttonNamed(container, "Find LinkedIn");
+    click(find);
+    await settle(1);
+    click(find);
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    const retry = buttonNamed(row(container), "Retry");
+    click(retry);
+    await settle(1);
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+    click(retry);
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+    expect(callsTo(`POST ${PATH}/p1/find-linkedin`)).toHaveLength(1);
+    expect(callsTo(`POST ${PATH}/p1/enrich`)).toHaveLength(1);
+  });
+
+  it("announces what a lookup came to in a status region that was there before it", async () => {
+    on(`GET ${PATH}`, stored([candidate(1)]));
+    on(`POST ${PATH}/p1/enrich`, UPDATED);
+    const { container } = panel();
+    await settle();
+    const region = query(container, ".bj-visually-hidden[role='status']");
+    expect(text(region)).toBe("");
+    click(buttonNamed(container, "Find work email"));
+    await settle();
+    expect(query(container, ".bj-visually-hidden[role='status']")).toBe(region);
+    expect(text(region)).toBe("Work email found for Person 1");
+  });
+
+  it("keeps focus on the person when a lookup's own button is replaced by its result", async () => {
+    on(`GET ${PATH}`, stored([candidate(1)]));
+    on(`POST ${PATH}/p1/enrich`, UPDATED);
+    const { container } = panel();
+    await settle();
+    const button = buttonNamed(container, "Find work email");
+    button.focus();
+    click(button);
+    await settle();
+    expect(container.contains(button)).toBe(false);
+    expect(document.activeElement).toBe(query(row(container), "h3"));
   });
 
   it("puts a failed lookup on that person's row, not on the others, and Retry asks again", async () => {
@@ -217,8 +266,12 @@ describe("Contacts: the lookups, one person at a time, on the person's own credi
     expect(text(query(row(container, 0), "[role='alert']"))).toContain("The server hit a problem.");
     expect(row(container, 1).querySelector("[role='alert']")).toBeNull();
     on(`POST ${PATH}/p1/enrich`, UPDATED);
-    click(buttonNamed(row(container, 0), "Retry"));
+    const retry = buttonNamed(row(container, 0), "Retry");
+    retry.focus();
+    click(retry);
     await settle();
+    // Retry went with its callout; focus is on the person, not on the page body.
+    expect(document.activeElement).toBe(query(row(container, 0), "h3"));
     expect(callsTo(`POST ${PATH}/p1/enrich`)).toHaveLength(2);
     expect(row(container, 0).querySelector("[role='alert']")).toBeNull();
     expect(text(query(row(container, 0), ".bj-rs-fact"))).toContain("person.one@northwind.example");
@@ -280,7 +333,10 @@ describe("Contacts: an outreach draft stays a draft", () => {
       ["LinkedIn message", DRAFT.linkedin_message],
       ["Follow-up", DRAFT.follow_up_message],
     ]);
-    expect([...draft.querySelectorAll(".bj-rs-field button")].map((button) => button.getAttribute("aria-label"))).toEqual(["Copy subject", "Copy email", "Copy linkedin message", "Copy follow-up"]);
+    // The visible word starts the accessible name, and nothing overrides it (label in name).
+    const copies = [...draft.querySelectorAll(".bj-rs-field button")];
+    expect(copies.map((button) => text(button))).toEqual(["Copy subject", "Copy email", "Copy LinkedIn message", "Copy follow-up"]);
+    expect(copies.some((button) => button.hasAttribute("aria-label"))).toBe(false);
     expect(text(draft)).toContain("Nothing is sent from here.");
     expect(buttonNamed(container, "Redraft outreach")).toBeTruthy();
   });
@@ -316,12 +372,17 @@ describe("Contacts: an outreach draft stays a draft", () => {
     click(subject);
     await settle();
     expect(gmail.copy).toHaveBeenCalledWith(DRAFT.subject);
-    expect(subject.textContent).toBe("Copied!");
+    expect(text(subject)).toBe("Copied! subject");
+    // The result is told to a status region that was on the page before it, since the button's own
+    // words change under a screen reader without being announced.
+    const region = query(container, ".bj-visually-hidden[role='status']");
+    expect(text(region)).toBe("Copied the subject");
     gmail.copy.mockResolvedValue(false);
     const email = buttonNamed(container, "Copy email");
     click(email);
     await settle();
-    expect(email.textContent).toBe("Couldn't copy");
+    expect(text(email)).toBe("Couldn't copy email");
+    expect(text(region)).toBe("Couldn't copy the email");
   });
 
   it("explains the server declining to draft for want of evidence as a gold note, not a failure, with no Retry", async () => {

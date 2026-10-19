@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import type { Failure } from "../../lib/setupRequired";
 import { failedSearchCount, searchesLead, type ResearchRun } from "../../lib/research";
 import { FailureState, PartialState } from "../paper/StateViews";
@@ -12,10 +13,10 @@ import "../../styles/research.css";
 //
 // `busy` is a run being out (the label says so); `held` is the section still reading what it showed
 // before, when a press has nothing to do yet (the label stays).
-export function RunButton({ label, busyLabel, busy, held = false, onRun }: { label: string; busyLabel: string; busy: boolean; held?: boolean; onRun: () => void }) {
+export function RunButton({ label, busyLabel, busy, held = false, onRun, buttonRef }: { label: string; busyLabel: string; busy: boolean; held?: boolean; onRun: () => void; buttonRef?: Ref<HTMLButtonElement> }) {
   return (
     <div className="bj-actions bj-rs-bar">
-      <button type="button" aria-disabled={busy || held ? true : undefined} onClick={onRun}>
+      <button ref={buttonRef} type="button" aria-disabled={busy || held ? true : undefined} onClick={onRun}>
         {busy ? busyLabel : label}
       </button>
     </div>
@@ -24,11 +25,12 @@ export function RunButton({ label, busyLabel, busy, held = false, onRun }: { lab
 
 // A failed run. A missing key or a provider turning the key down is a setup notice with its link and no
 // Retry (asking again cannot work until it is fixed); anything else is a danger callout whose Retry
-// makes the run again. Either way what the section showed before is still there.
-export function RunProblem({ problem, onRetry }: { problem: Failure | null; onRetry: () => void }) {
+// makes the run again. Either way what the section showed before is still there. Retry clears the callout
+// it is pressed in, so focus goes on to the section's run button (`restoreFocusTo`) rather than the page body.
+export function RunProblem({ problem, onRetry, restoreFocusTo }: { problem: Failure | null; onRetry: () => void; restoreFocusTo?: () => HTMLElement | null }) {
   if (problem === null) return null;
   if (problem.kind === "setup") return <SetupRequiredNotice notice={problem.notice} />;
-  return <FailureState message={problem.message} onRetry={onRetry} />;
+  return <FailureState message={problem.message} onRetry={onRetry} restoreFocusTo={restoreFocusTo} />;
 }
 
 // What did not complete in a run: one line per search that failed or was skipped, in the server's own

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch, ApiError } from "../lib/api";
 import { copyToClipboard } from "../lib/clipboard";
 import { gmailAccess, gmailState, gmailUnavailableMessage, learnFromGmailRefusal } from "../lib/gmailAccess";
@@ -124,11 +124,13 @@ const PERSONA_LABELS: Record<string, string> = {
   senior_ic: "Senior IC",
 };
 
+// The field, its label, and what a Copy button for it is called after "Copy" (the label with the capitals a
+// name keeps: "LinkedIn message").
 const DRAFT_FIELDS = [
-  ["subject", "Subject"],
-  ["email_body", "Email"],
-  ["linkedin_message", "LinkedIn message"],
-  ["follow_up_message", "Follow-up"],
+  ["subject", "Subject", "subject"],
+  ["email_body", "Email", "email"],
+  ["linkedin_message", "LinkedIn message", "LinkedIn message"],
+  ["follow_up_message", "Follow-up", "follow-up"],
 ] as const;
 
 function DraftTrail({ draft, now }: { draft: OutreachDraft; now: Date }) {
@@ -138,7 +140,7 @@ function DraftTrail({ draft, now }: { draft: OutreachDraft; now: Date }) {
 
 export function ContactFinderPanel({ applicationId, now }: { applicationId: string; now?: Date }) {
   const clock = useNow(now);
-  const { read, running, problem, load, run, update } = useResearchRun<ContactsResponse>(`/applications/${applicationId}/contacts`, {
+  const { read, running, problem, load, run, update, runButton, focusRunButton } = useResearchRun<ContactsResponse>(`/applications/${applicationId}/contacts`, {
     read: "Failed to load",
     run: "Failed to generate",
   });
@@ -148,6 +150,9 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
   const [copiedField, setCopiedField] = useState<string | null>(null);
   // The field whose copy the browser refused, so its button can say so instead of seeming dead.
   const [copyFailedField, setCopyFailedField] = useState<string | null>(null);
+  // What the last lookup or draft came to, for the polite region that exists before it is filled: a result
+  // that simply appears in the page is not reliably announced. Cleared when the next action starts.
+  const [outcome, setOutcome] = useState("");
   // Whether Gmail is open to this person and what state their connection is in decide what sits
   // under a draft (GmailDraftActions). Their connection is read only once Gmail is known to be open
   // to them: nothing is asked when it is not for them, nor while that is not known.
@@ -155,10 +160,39 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
   const { connection, markReconnectNeeded } = useGmailConnection(access === "available");
   const gmail = gmailState(access, connection);
 
+  // What a Copy came to, from the state that already resets itself: the same words for the status region.
+  const copyKeyHeld = copiedField ?? copyFailedField;
+  const copiedNoun =
+    copyKeyHeld === null ? null : copyKeyHeld.endsWith("-all") ? "subject and email" : (DRAFT_FIELDS.find(([field]) => copyKeyHeld.endsWith(`-${field}`))?.[2] ?? null);
+  const copyWords = copiedNoun === null ? "" : copiedField !== null ? `Copied the ${copiedNoun}` : `Couldn't copy the ${copiedNoun}`;
+
+  const headingId = (candidate: Candidate) => `contact-${candidate.id}`;
+  const focusHeading = (candidate: Candidate) => () => document.getElementById(headingId(candidate));
+
+  // A button that held focus can go when its action ends (a found email replaces "Find work email" and its
+  // Retry). Focus would drop to the page body, so once the page has settled it goes to the person's name,
+  // which stays.
+  const refocusRow = useRef<string | null>(null);
+  useEffect(() => {
+    const id = refocusRow.current;
+    if (id === null) return;
+    refocusRow.current = null;
+    if (document.activeElement === null || document.activeElement === document.body) document.getElementById(`contact-${id}`)?.focus();
+  });
+
+  function keepFocusInRow(candidate: Candidate): () => void {
+    const row = document.getElementById(headingId(candidate))?.closest("li") ?? null;
+    const held = row !== null && row.contains(document.activeElement);
+    return () => {
+      if (held) refocusRow.current = candidate.id;
+    };
+  }
+
   const key = (candidate: Candidate, action: Action) => `${candidate.id}:${action}`;
 
   function start(candidate: Candidate, action: Action): boolean {
     if (busy.has(key(candidate, action))) return false;
+    setOutcome("");
     setBusy((previous) => new Set(previous).add(key(candidate, action)));
     setIssues((previous) => {
       const { [candidate.id]: _cleared, ...rest } = previous;
@@ -187,28 +221,40 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
   }
 
   async function enrich(candidate: Candidate) {
+    // A press on a button that is already looking up is ignored before the confirm: it would ask the person
+    // to approve a paid lookup that is not going to happen.
+    if (busy.has(key(candidate, "email"))) return;
     const confirmed = window.confirm(
       `Look up a confirmed work email for ${candidate.person_name}? This uses your own Apollo ` + "and/or Hunter credit for one lookup -- never a bulk search, never personal contact info.",
     );
     if (!confirmed || !start(candidate, "email")) return;
+    const settled = keepFocusInRow(candidate);
     try {
-      merge(await apiFetch<Candidate>(`/applications/${applicationId}/contacts/${candidate.id}/enrich`, { method: "POST" }));
+      const updated = await apiFetch<Candidate>(`/applications/${applicationId}/contacts/${candidate.id}/enrich`, { method: "POST" });
+      merge(updated);
+      setOutcome(updated.enriched_email ? `Work email found for ${candidate.person_name}` : `No confirmed email found for ${candidate.person_name}`);
     } catch (e) {
       fail(candidate, "email", failureOf(e, "Enrichment failed"));
     } finally {
       finish(candidate, "email");
+      settled();
     }
   }
 
   async function findLinkedIn(candidate: Candidate) {
+    if (busy.has(key(candidate, "linkedin"))) return;
     const confirmed = window.confirm(`Look up a LinkedIn profile for ${candidate.person_name} via Exa? This uses your own Exa ` + "credit for one lookup.");
     if (!confirmed || !start(candidate, "linkedin")) return;
+    const settled = keepFocusInRow(candidate);
     try {
-      merge(await apiFetch<Candidate>(`/applications/${applicationId}/contacts/${candidate.id}/find-linkedin`, { method: "POST" }));
+      const updated = await apiFetch<Candidate>(`/applications/${applicationId}/contacts/${candidate.id}/find-linkedin`, { method: "POST" });
+      merge(updated);
+      setOutcome(updated.discovered_linkedin_url ? `LinkedIn profile found for ${candidate.person_name}` : `No LinkedIn profile found for ${candidate.person_name}`);
     } catch (e) {
       fail(candidate, "linkedin", failureOf(e, "LinkedIn lookup failed"));
     } finally {
       finish(candidate, "linkedin");
+      settled();
     }
   }
 
@@ -217,6 +263,7 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
     try {
       const result = await apiFetch<{ draft: OutreachDraft }>(`/applications/${applicationId}/contacts/${candidate.id}/draft-outreach`, { method: "POST" });
       setDrafts((previous) => ({ ...previous, [candidate.id]: result.draft }));
+      setOutcome(`Outreach draft ready for ${candidate.person_name}. Nothing is sent.`);
     } catch (e) {
       // Nothing to ground a draft in is the server's honest answer, not a failure: its reason, as a note.
       if (e instanceof ApiError && e.code === "INSUFFICIENT_EVIDENCE") fail(candidate, "draft", { kind: "note", message: e.message });
@@ -227,7 +274,9 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
   }
 
   async function copyText(field: string, text: string) {
+    setCopiedField(null);
     setCopyFailedField(null);
+    setOutcome("");
     if (await copyToClipboard(text)) {
       setCopiedField(field);
       setTimeout(() => setCopiedField(null), 2000);
@@ -242,6 +291,7 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
     try {
       const updated = await apiFetch<OutreachDraft>(`/applications/${applicationId}/contacts/${candidate.id}/push-to-gmail`, { method: "POST" });
       setDrafts((previous) => ({ ...previous, [candidate.id]: updated }));
+      setOutcome(`Gmail draft saved for ${candidate.person_name}`);
     } catch (e) {
       // The server says what this page only believed: Google stopped accepting the connection, or
       // Gmail is not open to this person. Either way the draft can still be copied or opened in a
@@ -286,6 +336,7 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
         busyLabel="Researching..."
         busy={running}
         held={read.kind === "loading"}
+        buttonRef={runButton}
         onRun={() => {
           if (read.kind !== "loading") void run();
         }}
@@ -295,9 +346,13 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
         {meta.length > 0 && <p className="bj-rs-meta">{meta.join(" · ")}</p>}
       </div>
 
+      <div role="status" className="bj-visually-hidden">
+        {outcome !== "" ? outcome : copyWords}
+      </div>
+
       {read.kind === "loading" && <LoadingState rows={3} rowHeight={112} label="Loading contacts..." />}
-      {read.kind === "failed" && <FailureState message={read.message} onRetry={() => void load()} />}
-      <RunProblem problem={problem} onRetry={() => void run()} />
+      {read.kind === "failed" && <FailureState message={read.message} onRetry={() => void load()} restoreFocusTo={focusRunButton} />}
+      <RunProblem problem={problem} onRetry={() => void run()} restoreFocusTo={focusRunButton} />
 
       {ready !== null && data === null && (
         <EmptyBlock heading="No contacts found yet" link={{ to: SETTINGS_PATH, label: "Keys are added in Settings" }}>
@@ -325,7 +380,9 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
                 const lookingUpLinkedIn = busy.has(key(candidate, "linkedin"));
                 return (
                   <li key={candidate.id} className="bj-rs-item">
-                    <h3 className="bj-rs-title">{candidate.person_name}</h3>
+                    <h3 id={headingId(candidate)} tabIndex={-1} className="bj-rs-title">
+                      {candidate.person_name}
+                    </h3>
                     {title.length > 0 && <p className="bj-rs-sub">{title.join(" · ")}</p>}
                     <p className="bj-rs-chips">
                       <Chip tone="muted">{PERSONA_LABELS[candidate.persona] ?? candidate.persona}</Chip>{" "}
@@ -400,7 +457,7 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
                         ) : issue.problem.kind === "note" ? (
                           <EvidenceNote>{issue.problem.message}</EvidenceNote>
                         ) : (
-                          <FailureState message={issue.problem.message} onRetry={() => retry(candidate, issue.action)} />
+                          <FailureState message={issue.problem.message} onRetry={() => retry(candidate, issue.action)} restoreFocusTo={focusHeading(candidate)} />
                         )}
                       </div>
                     )}
@@ -410,15 +467,17 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
                         <p className="bj-rs-draft-state">Draft -- not sent</p>
                         <DraftTrail draft={draft} now={clock} />
                         {draft.rubric_warnings.length > 0 && <PartialState lead="A code check flagged this draft:" notices={draft.rubric_warnings} />}
-                        {DRAFT_FIELDS.map(([field, label]) => {
+                        {DRAFT_FIELDS.map(([field, label, noun]) => {
                           const text = draft[field];
                           const copyKey = `${candidate.id}-${field}`;
                           return (
                             <div key={field} className="bj-rs-field">
                               <h4 className="bj-rs-label">{label}</h4>
                               <p className="bj-rs-well">{text}</p>
-                              <button type="button" className="bj-link-button" aria-label={`Copy ${label.toLowerCase()}`} onClick={() => void copyText(copyKey, text)}>
+                              {/* The visible word is the start of the name, so the name carries what is copied. */}
+                              <button type="button" className="bj-link-button" onClick={() => void copyText(copyKey, text)}>
                                 {copiedField === copyKey ? "Copied!" : copyFailedField === copyKey ? "Couldn't copy" : "Copy"}
+                                <span className="bj-visually-hidden"> {noun}</span>
                               </button>
                             </div>
                           );

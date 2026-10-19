@@ -68,7 +68,7 @@ export const COLLAPSED_SHOWS = 3;
 
 export function CompanyIntelPanel({ applicationId, now }: { applicationId: string; now?: Date }) {
   const clock = useNow(now);
-  const { read, running, problem, load, run } = useResearchRun<CompanyIntelResponse>(`/applications/${applicationId}/company-intel`, {
+  const { read, running, problem, load, run, runButton, focusRunButton } = useResearchRun<CompanyIntelResponse>(`/applications/${applicationId}/company-intel`, {
     read: "Failed to load",
     run: "Failed to generate",
   });
@@ -105,6 +105,7 @@ export function CompanyIntelPanel({ applicationId, now }: { applicationId: strin
         busyLabel="Researching..."
         busy={running}
         held={read.kind === "loading"}
+        buttonRef={runButton}
         onRun={() => {
           if (read.kind !== "loading") void run();
         }}
@@ -115,8 +116,8 @@ export function CompanyIntelPanel({ applicationId, now }: { applicationId: strin
       </div>
 
       {read.kind === "loading" && <LoadingState rows={3} rowHeight={72} label="Loading company intel..." />}
-      {read.kind === "failed" && <FailureState message={read.message} onRetry={() => void load()} />}
-      <RunProblem problem={problem} onRetry={() => void run()} />
+      {read.kind === "failed" && <FailureState message={read.message} onRetry={() => void load()} restoreFocusTo={focusRunButton} />}
+      <RunProblem problem={problem} onRetry={() => void run()} restoreFocusTo={focusRunButton} />
 
       {ready !== null && data === null && (
         <EmptyBlock heading="No dossier yet" link={{ to: SETTINGS_PATH, label: "Keys are added in Settings" }}>

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { act, useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
@@ -162,6 +163,51 @@ describe("FailureState", () => {
   it("draws Retry as a secondary button, never a cyan fill", () => {
     const { container } = view(<FailureState message="x" onRetry={() => undefined} />);
     expect(container.querySelector(".bj-primary, .bj-button-link-primary")).toBeNull();
+  });
+
+  describe("restoreFocusTo", () => {
+    // A section whose Retry clears its own failure, with a control that stays.
+    function Section({ restore = true }: { restore?: boolean }) {
+      const [failed, setFailed] = useState(true);
+      return (
+        <div>
+          <button type="button">Run</button>
+          {failed && <FailureState message="It failed." onRetry={() => setFailed(false)} restoreFocusTo={restore ? () => document.querySelector<HTMLElement>("button[data-keep]") : undefined} />}
+          <button type="button" data-keep>
+            Stays
+          </button>
+        </div>
+      );
+    }
+    const settleMicrotasks = () => act(async () => { await Promise.resolve(); });
+
+    it("hands focus to a control that stays when Retry removes the callout it was pressed in", async () => {
+      const { container } = view(<Section />);
+      const retry = buttonNamed(container, "Retry");
+      retry.focus();
+      click(retry);
+      await settleMicrotasks();
+      expect(container.querySelector("[role='alert']")).toBeNull();
+      expect(document.activeElement).toBe(query(container, "button[data-keep]"));
+    });
+
+    it("leaves focus alone when it was not inside the callout", async () => {
+      const { container } = view(<Section />);
+      const run = buttonNamed(container, "Run");
+      run.focus();
+      click(buttonNamed(container, "Retry"));
+      await settleMicrotasks();
+      expect(document.activeElement).toBe(run);
+    });
+
+    it("moves nothing when no target was named", async () => {
+      const { container } = view(<Section restore={false} />);
+      const retry = buttonNamed(container, "Retry");
+      retry.focus();
+      click(retry);
+      await settleMicrotasks();
+      expect(document.activeElement).toBe(document.body);
+    });
   });
 
   it("has no serious accessibility violation", async () => {

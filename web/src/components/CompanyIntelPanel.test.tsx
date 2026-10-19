@@ -225,11 +225,15 @@ describe("Company intel: running", () => {
     expect(text(query(container, "[role='alert']"))).toContain("The server hit a problem.");
     expect(text(query(container, ".bj-trail"))).toContain("Claims written by your model");
     on(`POST ${PATH}`, stored([claim(1), claim(2)]));
-    click(buttonNamed(container, "Retry"));
+    const retry = buttonNamed(container, "Retry");
+    retry.focus();
+    click(retry);
     await settle();
     expect(container.querySelector("[role='alert']")).toBeNull();
     expect(container.querySelectorAll(".bj-rs-item")).toHaveLength(2);
     expect(callsTo(`POST ${PATH}`)).toHaveLength(2);
+    // The Retry went with its callout: keyboard focus is on the run button, not dropped on the page body.
+    expect(document.activeElement).toBe(buttonNamed(container, "Refresh"));
   });
 
   it("says what is missing with the link that fixes it, and offers no Retry, when a run needs a key", async () => {
@@ -269,10 +273,13 @@ describe("Company intel: the stored run could not be read", () => {
     expect(text(query(container, ".bj-trail"))).toBe("✕ Company intel couldn't be read");
     expect(buttonNamed(container, "Research this company").getAttribute("aria-disabled")).toBeNull();
     on(`GET ${PATH}`, stored([claim(1)]));
-    click(buttonNamed(container, "Retry"));
+    const retry = buttonNamed(container, "Retry");
+    retry.focus();
+    click(retry);
     await settle();
     expect(container.querySelectorAll(".bj-rs-item")).toHaveLength(1);
     expect(callsTo(`GET ${PATH}`)).toHaveLength(2);
+    expect(document.activeElement).toBe(buttonNamed(container, "Refresh"));
   });
 });
 
