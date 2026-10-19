@@ -129,10 +129,15 @@ describe.each([
 
   it("starts with Skip to next step, which points at the band's button, and has one <main> and one h1", () => {
     const root = open(search);
-    const skip = query<HTMLAnchorElement>(root, "a.bj-skip-link");
+    const [skip, content] = [...root.querySelectorAll<HTMLAnchorElement>("a.bj-skip-link")];
     expect(text(skip)).toBe("Skip to next step");
     expect(root.firstElementChild).toBe(skip);
     expect(root.querySelector(skip.getAttribute("href") ?? "")).toBe(query(root, CYAN));
+    // ... then Skip to content, which lands on the page's one <main>.
+    expect(text(content)).toBe("Skip to content");
+    expect(skip.nextElementSibling).toBe(content);
+    expect(root.querySelector(content.getAttribute("href") ?? "")).toBe(query(root, "main"));
+    expect(query(root, "main").getAttribute("tabindex")).toBe("-1");
     expect(root.querySelectorAll("main")).toHaveLength(1);
     expect(root.querySelectorAll("h1")).toHaveLength(1);
     expect(text(query(root, "h1"))).toBe("Between Jobs");
@@ -256,7 +261,8 @@ describe("the password reset form", () => {
     const root = reset();
     expect(text(query(root, ".bj-login-card h2"))).toBe("Reset your password");
     expect(root.querySelector('section[aria-label="Next step"]')).toBeNull();
-    expect(root.querySelector("a.bj-skip-link")).toBeNull();
+    // No band, so no "Skip to next step": only Skip to content, onto the <main>.
+    expect([...root.querySelectorAll("a.bj-skip-link")].map((link) => text(link))).toEqual(["Skip to content"]);
     const fills = root.querySelectorAll(CYAN);
     expect(fills).toHaveLength(1);
     expect(text(fills[0])).toBe("Send reset link");

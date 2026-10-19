@@ -116,7 +116,7 @@ describe("the sign-in page", () => {
   });
 
   it("is the page's one <main> in both of its forms, with the wordmark as the heading", () => {
-    expect((login.match(/<main className="bj-login">/g) ?? []).length).toBe(2);
+    expect((login.match(/<main className="bj-login" id=\{MAIN_CONTENT_ID\} tabIndex=\{-1\}>/g) ?? []).length).toBe(2);
     expect((login.match(/<\/main>/g) ?? []).length).toBe(2);
     expect(login).not.toMatch(/<div className="bj-login">/);
     expect((login.match(/<h1 className="bj-login-brand">\s*<Wordmark \/>\s*<\/h1>/g) ?? []).length).toBe(2);

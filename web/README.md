@@ -26,7 +26,9 @@ tags name its own host; left unset they name the hosted site (`scripts/siteOrigi
 the main navigation, then the signed-in address, Settings, Sign out and the legal links). Under 960px the rail is replaced by a slim top bar and a bottom tab bar with four tabs and a
 More button, whose sheet holds the entries that have no tab. Both navigations are always in the markup and
 CSS shows one; the destinations come from one list in `src/lib/nav.ts`. The page is the one `<main>`, and the
-first tab stop is a "Skip to content" link to it. The command palette and the assistant drawer are reserved
+first tab stop is a "Skip to content" link to it; on a page that draws a next-step band (Today and Settings,
+`PATHS_WITH_A_BAND` in `AppShell.tsx`) a "Skip to next step" link to the band's button comes first. The sign-in
+page has both. The command palette and the assistant drawer are reserved
 (`src/components/ReservedSlots.tsx`): `hidden` and inert, so they take no room, print no placeholder and have no
 behavior.
 
