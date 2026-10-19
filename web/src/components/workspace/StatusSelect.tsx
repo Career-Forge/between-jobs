@@ -5,7 +5,8 @@ import "../../styles/workspace.css";
 
 // The status of the application, always on the page, so a band that guessed wrong (someone who applied
 // but never moved the card) is one choice to correct. It changes the status through the same stage
-// endpoint the Applications page uses; the page re-reads the application afterwards.
+// endpoint the Applications page uses, and a failed change is retried under its own idempotency key as
+// there; the page re-reads the application afterwards.
 //
 // A choice made with a pointer, or in the open list, is made at once. A step on the closed select with
 // the keyboard (Arrow, Home, End, type-ahead) fires `change` for every press in a browser, and each

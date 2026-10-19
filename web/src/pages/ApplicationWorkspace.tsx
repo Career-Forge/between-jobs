@@ -152,18 +152,21 @@ function Workspace({ id }: { id: string }) {
   }, [loadApplication]);
 
   // One stage change, from the select or from "I submitted this". It is the same request the
-  // Applications page makes; the page re-reads the application afterwards, so the band follows.
+  // Applications page makes, with the same Retry rule: a Retry sends the failed change again under its
+  // own idempotency key (the key exists so that a retry of one click is not recorded twice, and a
+  // request that failed on the wire may have gone through). The page re-reads the application
+  // afterwards, so the band follows.
   const changeStatus = useCallback(
-    async (newStatus: ApplicationStatus, source: "select" | "submit") => {
+    async (newStatus: ApplicationStatus, source: "select" | "submit", idempotencyKey: string = crypto.randomUUID()) => {
       setStatusBusy(true);
       setStatusProblem(null);
       try {
         await apiFetch(`/applications/${encodeURIComponent(id)}/stage`, {
           method: "POST",
-          body: JSON.stringify({ new_status: newStatus, idempotency_key: crypto.randomUUID() }),
+          body: JSON.stringify({ new_status: newStatus, idempotency_key: idempotencyKey }),
         });
       } catch (e) {
-        setStatusProblem({ source, message: friendlyApiMessage(e, "Failed to change status"), retry: () => void changeStatus(newStatus, source) });
+        setStatusProblem({ source, message: friendlyApiMessage(e, "Failed to change status"), retry: () => void changeStatus(newStatus, source, idempotencyKey) });
         setStatusBusy(false);
         return;
       }

@@ -403,6 +403,30 @@ describe("the status select", () => {
     expect(container.querySelector(".bj-ws-meta .bj-state--failure")).toBeNull();
   });
 
+  it("retries a failed change under the same idempotency key, and a new choice under a new one", async () => {
+    describeAccount();
+    const uuid = vi.spyOn(window.crypto, "randomUUID");
+    uuid.mockReset();
+    uuid.mockReturnValueOnce("11111111-1111-4111-8111-111111111111").mockReturnValueOnce("22222222-2222-4222-8222-222222222222");
+    on(`POST /applications/${ID}/stage`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    const { container } = page();
+    await settle();
+    choose(query<HTMLSelectElement>(container, "select.bj-ws-status-select"), "applied");
+    await settle();
+    on(`POST /applications/${ID}/stage`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    click(buttonNamed(query(container, ".bj-ws-meta .bj-state--failure"), "Retry"));
+    await settle();
+    on(`POST /applications/${ID}/stage`, {});
+    on(APP_PATH, application({ status: "applied" }));
+    click(buttonNamed(query(container, ".bj-ws-meta .bj-state--failure"), "Retry"));
+    await settle();
+    const keys = callsTo(`POST /applications/${ID}/stage`).map((call) => (call.body as { idempotency_key: string }).idempotency_key);
+    expect(keys).toEqual(["11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111"]);
+    choose(query<HTMLSelectElement>(container, "select.bj-ws-status-select"), "offer");
+    await settle();
+    expect(callsTo(`POST /applications/${ID}/stage`)[3].body).toMatchObject({ new_status: "offer", idempotency_key: "22222222-2222-4222-8222-222222222222" });
+  });
+
   it("holds still while a change is out: aria-disabled, changes ignored, and the band's buttons wait too", async () => {
     describeAccount();
     let release: (value: unknown) => void = () => undefined;
