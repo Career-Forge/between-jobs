@@ -722,28 +722,6 @@ button.bj-danger {
   gap: 8px;
 }
 
-.bj-bullet-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.bj-bullet-row textarea {
-  flex: 1;
-  resize: vertical;
-}
-
-.bj-bullet-row-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.bj-bullet-row-actions button {
-  padding: 2px 8px;
-  font-size: 11px;
-}
-
 .bj-chip-removable button {
   background: none;
   border: none;

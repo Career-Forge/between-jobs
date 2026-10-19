@@ -230,8 +230,26 @@ button.bj-dialog-confirm {
   margin-top: var(--bj-space-2);
 }
 
+.bj-bullet-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.bj-bullet-row textarea {
+  flex: 1;
+  resize: vertical;
+}
+
+.bj-bullet-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .bj-bullet-row-actions button {
   padding: 4px 10px;
+  font-size: 11px;
 }
 
 @media (max-width: 959px) {
