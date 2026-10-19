@@ -19,8 +19,8 @@ import "../../styles/settings.css";
 // The row's heading and its two panel buttons have ids (`provider-<id>-heading`, `-model-button`,
 // `-replace-button`) so the section can put keyboard focus back on something after a panel closes.
 //
-// OpenRouter's row has the id `openrouter`, the anchor a link to /settings#openrouter lands on (the
-// connect form has it too while OpenRouter is not connected); the others are `provider-<id>`.
+// OpenRouter's row has the id `openrouter`, so /settings#openrouter scrolls to it (the connect form
+// has it too while OpenRouter is not connected); the others are `provider-<id>`.
 //
 // The model id is the stored string, drawn as text. A trail line says who checked it and when; the
 // "when" is the row's own `updated_at`, and a date that cannot be read is left out.

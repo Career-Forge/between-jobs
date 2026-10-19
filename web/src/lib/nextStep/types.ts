@@ -93,7 +93,7 @@ export interface NextStepInput<F = unknown> {
   credentials?: SetupCheck<CredentialsFacts>;
   /** The page's own data request failed (network or 5xx): row F1 in global.ts. */
   pageFailure?: PageFailure | null;
-  /** The sign-in page's mode; it changes only the label on the button. */
+  /** The sign-in page's mode; it changes the sentence and the label on the button. */
   authMode?: "sign-in" | "register";
   /** Page-specific facts, typed by the page's own rows file. */
   facts?: F;

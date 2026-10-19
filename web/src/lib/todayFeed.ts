@@ -19,7 +19,6 @@ import { CROSS_NAV_HASH } from "./applicationsBoard";
 import {
   AUTO_MOVE_PERCENT,
   confidencePercent,
-  TODAY_KINDS,
   newestFirst,
   isMappableProposal,
   PROPOSAL_STEPS,
@@ -96,10 +95,6 @@ export const KIND_LABELS: Readonly<Record<TodayItemKind, string>> = {
 
 export function kindLabel(kind: string): string {
   return Object.prototype.hasOwnProperty.call(KIND_LABELS, kind) ? KIND_LABELS[kind as TodayItemKind] : kind.replace(/_/g, " ");
-}
-
-export function isKnownKind(kind: string): kind is TodayItemKind {
-  return (TODAY_KINDS as readonly string[]).includes(kind);
 }
 
 // ── what the other reads add ───────────────────────────────────────────────

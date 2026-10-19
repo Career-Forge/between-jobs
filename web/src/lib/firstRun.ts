@@ -52,7 +52,7 @@
 // components/FirstRunChecklist.tsx.
 
 import { CROSS_NAV_HASH } from "./applicationsBoard";
-import { modelKeyOf } from "./modelKey";
+import { MODEL_CHOICE_LABEL, modelKeyOf } from "./modelKey";
 import { MODEL_PROVIDER_PATH } from "./settingsPaths";
 
 // ── the facts ──────────────────────────────────────────────────────────────
@@ -317,8 +317,6 @@ function resumeLink(facts: FirstRunFacts): string {
   }
   return "/applications";
 }
-
-export const MODEL_CHOICE_LABEL = "Choose a model";
 
 export function deriveFirstRun(facts: FirstRunFacts, flags: FirstRunFlags): FirstRunView {
   const applications = facts.applications;

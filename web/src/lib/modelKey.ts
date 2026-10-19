@@ -7,6 +7,10 @@
 
 import { llmSetupState } from "./settings/llmProviders";
 
+// What the action for a saved key with no model is called wherever it is offered: the setup checklist,
+// the band's "no usable key" row and the Settings page's band all say it in these words.
+export const MODEL_CHOICE_LABEL = "Choose a model";
+
 // "ready": some key is usable. Otherwise the furthest any key got: "needs_model" (checked, no model),
 // "needs_key" (saved but the provider did not confirm it), or "none" (no model key row at all).
 export type ModelKeyReading = "ready" | "needs_model" | "needs_key" | "none";

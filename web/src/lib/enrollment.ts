@@ -575,7 +575,6 @@ export function enrollPageReducer(state: EnrollPageState, event: EnrollPageEvent
 //     address (passwordReset.ts), has a session that sign-out would lose, and can do nothing else
 //     until the password is set, so consent to a programme is never a condition of recovery.
 export const PROFILE_PATH = "/profile";
-export { LEGACY_INTEGRATIONS_PATH, SETTINGS_PATH };
 export const GATE_EXEMPT_PATHS: readonly string[] = [
   ENROLL_PATH,
   PRIVACY_PATH,
