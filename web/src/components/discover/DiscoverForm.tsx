@@ -15,17 +15,20 @@ import "../../styles/discover.css";
 export const ROLE_PLACEHOLDERS: readonly string[] = ["Data Analyst", "Data Engineer", "Software Development Engineer", "Analytics Engineer", "ML Engineer"];
 const ROTATE_MS = 4000;
 
-// The suggestion shown in the empty search box. It changes every few seconds only while the box is
-// empty and the person has not asked for less motion; typing stops it, and a person who prefers
-// reduced motion gets the first one and no change.
+// The suggestion shown in the empty search box. It changes every few seconds, once through the list,
+// and only while the box is empty and not focused (a person who has gone to the field is reading the
+// suggestion, and a moving one is a distraction; leaving it empty resumes where it was). Typing stops
+// it, it stops on the last suggestion instead of looping forever, and a person who prefers reduced
+// motion gets the first one and no change (WCAG 2.2.2: nothing here moves on its own for good).
 function useRolePlaceholder(active: boolean): string {
   const [index, setIndex] = useState(0);
+  const last = ROLE_PLACEHOLDERS.length - 1;
   useEffect(() => {
-    if (!active) return;
+    if (!active || index >= last) return;
     if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const tick = window.setInterval(() => setIndex((current) => (current + 1) % ROLE_PLACEHOLDERS.length), ROTATE_MS);
-    return () => window.clearInterval(tick);
-  }, [active]);
+    const tick = window.setTimeout(() => setIndex((current) => Math.min(current + 1, last)), ROTATE_MS);
+    return () => window.clearTimeout(tick);
+  }, [active, index, last]);
   return `e.g. ${ROLE_PLACEHOLDERS[index]}`;
 }
 
@@ -44,7 +47,8 @@ export interface DiscoverFormProps {
 }
 
 export function DiscoverForm({ values, onChange, searching, searched, blockedReason, onSearch, onSave, saving }: DiscoverFormProps) {
-  const placeholder = useRolePlaceholder(values.q === "");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const placeholder = useRolePlaceholder(values.q === "" && !searchFocused);
   const unavailable = searching || blockedReason !== null;
   return (
     <form
@@ -66,6 +70,8 @@ export function DiscoverForm({ values, onChange, searching, searched, blockedRea
             maxLength={200}
             placeholder={placeholder}
             autoComplete="off"
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             onChange={(event) => onChange({ ...values, q: event.target.value })}
           />
         </label>

@@ -158,6 +158,31 @@ describe("the role suggestions", () => {
     }
   });
 
+  it("hold still while the box has focus, resume when it loses it, and stop on the last suggestion instead of looping", () => {
+    vi.useFakeTimers();
+    try {
+      installViewport(1000);
+      window.matchMedia = ((query: string) => ({ matches: false, media: query, addEventListener: () => undefined, removeEventListener: () => undefined })) as unknown as typeof window.matchMedia;
+      const { container } = render(
+        <MemoryRouter>
+          <DiscoverView {...props()} />
+        </MemoryRouter>,
+      );
+      const box = () => query<HTMLInputElement>(container, "form input[type='text']");
+      act(() => box().focus());
+      act(() => void vi.advanceTimersByTime(30000));
+      expect(box().placeholder).toBe("e.g. Data Analyst");
+      act(() => box().blur());
+      act(() => void vi.advanceTimersByTime(4000));
+      expect(box().placeholder).toBe("e.g. Data Engineer");
+      for (let step = 0; step < 10; step++) act(() => void vi.advanceTimersByTime(4000));
+      expect(box().placeholder).toBe("e.g. ML Engineer");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("do not change when the person prefers reduced motion", () => {
     vi.useFakeTimers();
     try {
