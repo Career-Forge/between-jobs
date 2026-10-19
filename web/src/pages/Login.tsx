@@ -6,6 +6,7 @@ import { LegalLinks } from "../components/LegalLinks";
 import { NextStepSkipLink } from "../components/NextStepSkipLink";
 import { NextStepBand, SUBMIT_INTENT } from "../components/paper/NextStepBand";
 import { ResetRequestForm } from "../components/ResetRequestForm";
+import { MAIN_CONTENT_ID, SkipLink } from "../components/SkipLink";
 import { Wordmark } from "../components/Wordmark";
 import { AUTH_FORM_ID, nextStep } from "../lib/nextStep";
 import {
@@ -104,25 +105,28 @@ export default function Login() {
   // band: the band's sign-in action would point at a form that is not here.
   if (mode === "reset") {
     return (
-      <main className="bj-login">
-        <div className="bj-login-column">
-          <h1 className="bj-login-brand">
-            <Wordmark />
-          </h1>
-          <div className="bj-login-card">
-            <h2>Reset your password</h2>
-            <ResetRequestForm
-              problem={linkProblem}
-              onBack={() => {
-                setMode((current) => loginModeAfter(current, "back"));
-                setLinkProblem(null);
-                setError(null);
-                setNotice(null);
-              }}
-            />
+      <>
+        <SkipLink />
+        <main className="bj-login" id={MAIN_CONTENT_ID} tabIndex={-1}>
+          <div className="bj-login-column">
+            <h1 className="bj-login-brand">
+              <Wordmark />
+            </h1>
+            <div className="bj-login-card">
+              <h2>Reset your password</h2>
+              <ResetRequestForm
+                problem={linkProblem}
+                onBack={() => {
+                  setMode((current) => loginModeAfter(current, "back"));
+                  setLinkProblem(null);
+                  setError(null);
+                  setNotice(null);
+                }}
+              />
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </>
     );
   }
 
@@ -133,7 +137,8 @@ export default function Login() {
   return (
     <>
       <NextStepSkipLink />
-      <main className="bj-login">
+      <SkipLink />
+      <main className="bj-login" id={MAIN_CONTENT_ID} tabIndex={-1}>
         <div className="bj-login-column">
           <h1 className="bj-login-brand">
             <Wordmark />

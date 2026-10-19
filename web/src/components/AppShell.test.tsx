@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { navItemsFor } from "../lib/nav";
 import { tagsOf, textOfMarkup } from "../testing/markup";
-import { AppShell } from "./AppShell";
+import { AppShell, PATHS_WITH_A_BAND } from "./AppShell";
 import { AssistantDrawerSlot, CommandPaletteSlot } from "./ReservedSlots";
 import { MAIN_CONTENT_ID, SkipLink } from "./SkipLink";
 
@@ -124,7 +124,7 @@ describe("the page you are on", () => {
 });
 
 describe("landmarks and the way in", () => {
-  const markup = shell("/");
+  const markup = shell("/discover");
 
   it("has one <main>, which the skip link targets, and the skip link comes first", () => {
     expect(tagsOf(markup, "main")).toHaveLength(1);
@@ -212,3 +212,33 @@ describe("SkipLink", () => {
     expect(renderToStaticMarkup(<SkipLink />)).toBe(`<a class="bj-skip-link" href="#${MAIN_CONTENT_ID}">Skip to content</a>`);
   });
 });
+
+describe("Skip to next step", () => {
+  const skips = (markup: string): string[] => [...markup.matchAll(/<a [^>]*class="bj-skip-link"[^>]*>([^<]*)<\/a>/g)].map((match) => match[1]);
+
+  it.each(["/", "/settings"])("is the first stop on %s, which draws a band, ahead of Skip to content", (path) => {
+    const markup = shell(path);
+    expect(skips(markup)).toEqual(["Skip to next step", "Skip to content"]);
+    expect(markup).toContain('href="#next-step-focus"');
+    expect(markup.indexOf("Skip to next step")).toBeLessThan(markup.indexOf("Skip to content"));
+    expect(markup.indexOf("Skip to content")).toBeLessThan(markup.indexOf("<header"));
+  });
+
+  it.each(["/discover", "/applications", "/profile", "/practice"])("is not offered on %s, which has no band to skip to", (path) => {
+    expect(skips(shell(path))).toEqual(["Skip to content"]);
+  });
+
+  it("is offered on every signed-in page that draws a band, and the sources say which those are", () => {
+    const sources = import.meta.glob("../**/*.tsx", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+    const drawing = Object.entries(sources)
+      .filter(([path, source]) => !/\.test\.tsx$/.test(path) && source.includes("<NextStepBand"))
+      .map(([path]) => (path.startsWith("./") ? `components/${path.slice(2)}` : path.slice(3)))
+      .filter((path) => path !== "components/paper/NextStepBand.tsx")
+      .sort();
+    // The sign-in page and the landing page carry their own skip links (Login.tsx, PublicLayout.tsx).
+    const signedIn = drawing.filter((path) => path !== "pages/Login.tsx" && path !== "pages/Landing.tsx");
+    expect(signedIn).toEqual(["components/today/TodayView.tsx", "pages/Settings.tsx"]);
+    expect(PATHS_WITH_A_BAND).toEqual(["/", "/settings"]);
+  });
+});
+
