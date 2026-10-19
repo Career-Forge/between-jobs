@@ -71,7 +71,7 @@ def test_the_servers_agreement_version_is_the_web_apps() -> None:
 
     assert match is not None, "the web constant is not where this test looks for it"
     assert match.group(1) == TESTER_AGREEMENT_VERSION
-    assert TESTER_AGREEMENT_VERSION == "2026-10-06"
+    assert TESTER_AGREEMENT_VERSION == "2026-10-19"
 
 
 def test_the_version_fits_the_column_that_records_it() -> None:

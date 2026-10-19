@@ -81,7 +81,7 @@ from .errors import ApiError
 
 logger = logging.getLogger(__name__)
 
-TESTER_AGREEMENT_VERSION = "2026-10-06"
+TESTER_AGREEMENT_VERSION = "2026-10-19"
 """The version of web/src/content/testerAgreement.ts a person must have accepted. The same string
 as the web constant of that name; tests/test_tester_enrollment.py fails when they differ."""
 

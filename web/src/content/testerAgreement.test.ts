@@ -68,12 +68,38 @@ function sectionText(id: string): string {
 
 describe("the agreement's version", () => {
   it("is the date the text was written, and fits the column that records it", () => {
-    expect(TESTER_AGREEMENT_VERSION).toBe("2026-10-06");
+    expect(TESTER_AGREEMENT_VERSION).toBe("2026-10-19");
     expect(TESTER_AGREEMENT_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     // tester_enrollments.consent_version: not empty, at most 40 characters.
     expect(ENROLLMENT_MIGRATION).toBeDefined();
     expect(ENROLLMENT_MIGRATION).toContain("char_length(consent_version) <= 40");
     expect(TESTER_AGREEMENT_VERSION.length).toBeLessThanOrEqual(40);
+  });
+});
+
+// A digest of the whole agreement as data, kept next to the version it belongs to. The agreement says
+// a change to it changes its version and asks people to accept again, and the consent record stores
+// that version: editing a word without bumping it leaves a record that names text nobody accepted.
+// FNV-1a over the JSON of the document, in hex; it detects a change, it is not a security measure.
+function digestOf(value: unknown): string {
+  let hash = 0x811c9dc5;
+  for (const char of JSON.stringify(value)) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+const TEXT_DIGEST_BY_VERSION: Readonly<Record<string, string>> = {
+  "2026-10-19": "8369e501",
+};
+
+describe("the agreement's text and its version", () => {
+  it("change together: the text matches the digest recorded for its version", () => {
+    expect(
+      digestOf(TESTER_AGREEMENT),
+      "the agreement's text changed. If that is a real change, set a new TESTER_AGREEMENT_VERSION here and in src/between_jobs/api/tester_enrollment.py (people are asked to accept again) and record the new pair above; if it is not, undo it.",
+    ).toBe(TEXT_DIGEST_BY_VERSION[TESTER_AGREEMENT_VERSION]);
   });
 });
 

@@ -20,7 +20,7 @@
 import { OPERATOR_ACCESS_LIMIT, type Block, type Inline, type LegalDocument } from "./legal";
 import { PRIVACY_EMAIL } from "./site";
 
-export const TESTER_AGREEMENT_VERSION = "2026-10-06";
+export const TESTER_AGREEMENT_VERSION = "2026-10-19";
 
 const p = (...inline: Inline[]): Block => ({ kind: "p", inline });
 const ul = (...items: (string | Inline[])[]): Block => ({
