@@ -562,8 +562,10 @@ control that goes away when it is pressed (Delete, Dismiss, Add, Save) names whe
 `lib/useFocusAfterRender.ts`, `useSavedSearches.ts` or `SectionedProfile.tsx`.
 
 Pages are loaded the first time they are opened: `src/App.tsx` imports the signed-in pages with `lazy`, and
-`components/RouteBoundary.tsx` draws the band's loading frame while a file is on the way, and a plain failure with a
-Retry if it cannot be fetched (a tab opened before a deploy asks for a file the new build no longer has). The landing,
+`components/RouteBoundary.tsx` draws the page's heading and the band's loading frame while a file is on the way, and a
+plain failure with the heading and a Retry if it cannot be fetched (a tab opened before a deploy asks for a file the new
+build no longer has; any other error while a page draws gets its own sentence, not the connection one). The page's
+subtitle and its own placeholder rows are not known to the boundary, so those change when the page arrives. The landing,
 sign-in and legal pages and the shell are in the first download, so a visitor who only reads them loads about a third
 less script than the whole app. A test that mounts `App` opens a page, so it loads the pages up front
 (`beforeAll` in `src/appPages.test.tsx`).
