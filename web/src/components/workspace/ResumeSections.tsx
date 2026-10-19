@@ -8,7 +8,7 @@ import { DocumentBlock } from "../paper/DocumentLayout";
 import { SectionChapter } from "../paper/SectionChapter";
 import { LoadingState, SetupRequiredState, type StateLink } from "../paper/StateViews";
 import type { CanonicalProfile } from "../../lib/profileTypes";
-import { SECTION_IDS } from "../../lib/workspaceSections";
+import { SECTION_IDS, SECTION_TITLES } from "../../lib/workspaceSections";
 import { PostingBlock } from "./PostingBlock";
 import "../../styles/workspace.css";
 
@@ -60,7 +60,7 @@ export function ResumeSections({ applicationId, descriptionText, profile, modelS
   return (
     <>
       <div className="bj-ws-section">
-        <SectionChapter id={SECTION_IDS.tailor} eyebrow="Resume" title="Tailor">
+        <SectionChapter id={SECTION_IDS.tailor} eyebrow="Resume" title={SECTION_TITLES.tailor}>
           <p>The posting, and how well your profile covers what it asks for.</p>
         </SectionChapter>
         <PostingBlock text={descriptionText} />
@@ -79,7 +79,7 @@ export function ResumeSections({ applicationId, descriptionText, profile, modelS
       </div>
 
       <div className="bj-ws-section">
-        <SectionChapter id={SECTION_IDS.draft} title="Draft">
+        <SectionChapter id={SECTION_IDS.draft} title={SECTION_TITLES.draft}>
           <p>Header, structure and settings for this application's resume. Changes here apply to this application only.</p>
         </SectionChapter>
         {profile === null ? (
@@ -110,7 +110,7 @@ export function ResumeSections({ applicationId, descriptionText, profile, modelS
       </div>
 
       <div className="bj-ws-section">
-        <SectionChapter id={SECTION_IDS.generate} title="Generate" />
+        <SectionChapter id={SECTION_IDS.generate} title={SECTION_TITLES.generate} />
         <DocumentBlock>
           <GeneratePanel applicationId={applicationId} setupMissing={generateSetup} setupPending={modelPending && profile !== null} {...generate} />
         </DocumentBlock>

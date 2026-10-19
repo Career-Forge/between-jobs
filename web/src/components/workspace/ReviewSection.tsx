@@ -1,7 +1,7 @@
 import { flaggedCount, isClaimWarning } from "../../lib/claimWarnings";
 import { latestAttempt } from "../../lib/scoreBreakdown";
 import type { GenerationController } from "../../lib/useGeneration";
-import { SECTION_IDS } from "../../lib/workspaceSections";
+import { SECTION_IDS, SECTION_TITLES } from "../../lib/workspaceSections";
 import { claimTrail, scoreTrail } from "../../lib/workspaceTrails";
 import { ClaimWarningsBanner } from "../ClaimWarningsBanner";
 import { ExportChecklist } from "../ExportChecklist";
@@ -44,7 +44,7 @@ export function ReviewSection({ applicationId, controller, submit }: ReviewSecti
 
   return (
     <div className="bj-ws-section">
-      <SectionChapter id={SECTION_IDS.review} title="Review">
+      <SectionChapter id={SECTION_IDS.review} title={SECTION_TITLES.review}>
         <p>What the checks found about your draft, and what is left for you to read before you send it.</p>
       </SectionChapter>
 

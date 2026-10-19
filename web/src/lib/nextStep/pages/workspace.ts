@@ -29,6 +29,7 @@
 // `workspaceNotFound` is the band for an application the server does not have. It is not a row: with
 // no application there is nothing for the setup rows to be about, so the page uses it directly.
 
+import { CROSS_NAV_HASH } from "../../applicationsBoard";
 import { definePage, type NextStep, type NextStepRow } from "../types";
 
 // What the page knows about the resume at this moment.
@@ -285,7 +286,7 @@ const A6: NextStepRow<WorkspaceFacts> = {
     if (facts === undefined || (facts.status !== "screening" && facts.status !== "interviewing")) return null;
     return {
       sentence: "Practice for this interview.",
-      action: { kind: "link", label: "Go to Practice", to: "#interview-practice" },
+      action: { kind: "link", label: "Go to Practice", to: `#${CROSS_NAV_HASH.interviewPractice}` },
       why: [statusWhy(facts)],
     };
   },

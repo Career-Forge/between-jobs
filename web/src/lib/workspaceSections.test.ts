@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CROSS_NAV_HASH } from "./applicationsBoard";
-import { SECTION_IDS, workspaceJumpGroups } from "./workspaceSections";
+import { SECTION_IDS, SECTION_TITLES, workspaceJumpGroups } from "./workspaceSections";
 
 describe("the workspace's sections", () => {
   it("are the ones the Applications menu and the other pages link to, one anchor each, none repeated", () => {
@@ -18,11 +18,17 @@ describe("the workspace's sections", () => {
       "Review:ch-check",
       "Company intel:company-intel",
       "Contacts:contacts",
-      "Events:warm-path-events",
+      "Warm-path events:warm-path-events",
       "Hiring posts:hiring-posts",
-      "Practice:interview-practice",
+      "Interview practice:interview-practice",
       "Your play:your-play",
     ]);
+  });
+
+  it("name each section once: the jump bar's label for an id is the section's title", () => {
+    expect(Object.keys(SECTION_TITLES).sort()).toEqual(Object.keys(SECTION_IDS).sort());
+    const byId = new Map<string, string>(Object.entries(SECTION_IDS).map(([key, id]) => [id, SECTION_TITLES[key as keyof typeof SECTION_TITLES]]));
+    for (const group of workspaceJumpGroups(true)) for (const link of group.links) expect(link.label).toBe(byId.get(link.id));
   });
 
   it("leaves Hiring posts out unless the server is known to have it, and makes the group labels no anchors", () => {

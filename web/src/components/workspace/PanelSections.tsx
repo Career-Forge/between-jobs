@@ -8,7 +8,7 @@ import { WarmPathEventsPanel } from "../WarmPathEventsPanel";
 import { DocumentBlock } from "../paper/DocumentLayout";
 import { SectionChapter } from "../paper/SectionChapter";
 import type { HiringStatus } from "../../lib/hiringSignalsStatus";
-import { SECTION_IDS } from "../../lib/workspaceSections";
+import { SECTION_IDS, SECTION_TITLES } from "../../lib/workspaceSections";
 import "../../styles/workspace.css";
 
 // The research and prepare parts of the workspace: Company intel, Contacts, Events and Hiring posts
@@ -66,32 +66,32 @@ export interface PanelSectionsProps {
 export function PanelSections({ applicationId, hiring, hiringRequested }: PanelSectionsProps) {
   return (
     <>
-      <Section id={SECTION_IDS.companyIntel} title="Company intel" eyebrow="Research">
+      <Section id={SECTION_IDS.companyIntel} title={SECTION_TITLES.companyIntel} eyebrow="Research">
         <CompanyIntelPanel applicationId={applicationId} />
       </Section>
-      <Section id={SECTION_IDS.contacts} title="Contacts">
+      <Section id={SECTION_IDS.contacts} title={SECTION_TITLES.contacts}>
         <ContactFinderPanel applicationId={applicationId} />
       </Section>
-      <Section id={SECTION_IDS.events} title="Warm-path events">
+      <Section id={SECTION_IDS.events} title={SECTION_TITLES.events}>
         <WarmPathEventsPanel applicationId={applicationId} />
       </Section>
       {hiring.kind === "enabled" ? (
-        <Section id={SECTION_IDS.hiringPosts} title="Hiring posts">
+        <Section id={SECTION_IDS.hiringPosts} title={SECTION_TITLES.hiringPosts}>
           <HiringSignalsPanel applicationId={applicationId} />
         </Section>
       ) : hiring.kind === "disabled" && hiringRequested ? (
         <div className="bj-ws-section">
-          <SectionChapter id={SECTION_IDS.hiringPosts} title="Hiring posts">
+          <SectionChapter id={SECTION_IDS.hiringPosts} title={SECTION_TITLES.hiringPosts}>
             <p>Hiring posts is switched off on this server. Nothing else is affected.</p>
           </SectionChapter>
         </div>
       ) : (
         <div id={SECTION_IDS.hiringPosts} />
       )}
-      <Section id={SECTION_IDS.practice} title="Interview practice" eyebrow="Prepare">
+      <Section id={SECTION_IDS.practice} title={SECTION_TITLES.practice} eyebrow="Prepare">
         <InterviewPracticePanel applicationId={applicationId} />
       </Section>
-      <Section id={SECTION_IDS.yourPlay} title="Your play">
+      <Section id={SECTION_IDS.yourPlay} title={SECTION_TITLES.yourPlay}>
         <PositioningBriefPanel applicationId={applicationId} />
       </Section>
     </>
