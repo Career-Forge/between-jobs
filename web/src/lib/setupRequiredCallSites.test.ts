@@ -61,7 +61,6 @@ interface Site {
 }
 
 const BY_HAND = /kind: "error", message: e instanceof Error/;
-const NOTICE_FROM_STATE = /<SetupRequiredNotice notice=\{state\.notice\} \/>/;
 const SETUP_BRANCH = /if \(state\.kind === "setup"\) \{\s*return <SetupRequiredNotice notice=\{state\.notice\} \/>;\s*\}/;
 
 const SITES: Record<string, Site> = {

@@ -149,15 +149,18 @@ export interface FailureStateProps {
   restoreFocusTo?: () => HTMLElement | null;
 }
 
-export function FailureState({ message, onRetry, retryLabel = "Retry", restoreFocusTo }: FailureStateProps) {
-  const root = useRef<HTMLDivElement>(null);
+// The focus handoff, kept apart from FailureState so that the callout itself stays a plain function of its props (the
+// DOM-free tests in src/testing/reactTree.ts call it and read what it returns). It draws a hidden marker inside the
+// callout and uses its parent as "the callout".
+function FocusHandoff({ restoreFocusTo }: { restoreFocusTo: () => HTMLElement | null }) {
+  const marker = useRef<HTMLSpanElement>(null);
   const restore = useRef(restoreFocusTo);
   restore.current = restoreFocusTo;
   useLayoutEffect(() => {
-    const element = root.current;
+    const element = marker.current?.parentElement ?? null;
     return () => {
       // The cleanup of a removed callout runs before its markup is taken out, so focus is still where it was.
-      if (element === null || restore.current === undefined || !element.contains(document.activeElement)) return;
+      if (element === null || !element.contains(document.activeElement)) return;
       const target = restore.current();
       // Once the removal has finished: a target that went with the page (the whole section unmounting) is not focused.
       queueMicrotask(() => {
@@ -165,8 +168,12 @@ export function FailureState({ message, onRetry, retryLabel = "Retry", restoreFo
       });
     };
   }, []);
+  return <span ref={marker} hidden />;
+}
+
+export function FailureState({ message, onRetry, retryLabel = "Retry", restoreFocusTo }: FailureStateProps) {
   return (
-    <div ref={root} className="bj-state bj-state--failure" role="alert">
+    <div className="bj-state bj-state--failure" role="alert">
       <p>
         <span className="bj-state-glyph" aria-hidden="true">
           {"✕"}
@@ -178,6 +185,7 @@ export function FailureState({ message, onRetry, retryLabel = "Retry", restoreFo
           {retryLabel}
         </button>
       )}
+      {restoreFocusTo !== undefined && <FocusHandoff restoreFocusTo={restoreFocusTo} />}
     </div>
   );
 }
