@@ -307,6 +307,52 @@ describe("switching width", () => {
     expect(container.querySelector(".bj-trail-receipt")).toBeNull();
   });
 
+  it("never mounts a sheet, takes focus or locks the page for even one commit when the placement changes", () => {
+    const viewport = installViewport(1100);
+    const { container } = render(
+      <>
+        <input id="elsewhere" aria-label="Elsewhere" />
+        <Document />
+      </>,
+    );
+    const elsewhere = query<HTMLInputElement>(container, "#elsewhere");
+    click(triggers(container)[0]);
+    expect(container.querySelector(".bj-trail-receipt")).not.toBeNull();
+    elsewhere.focus();
+
+    const added: string[] = [];
+    const record = (mutations: MutationRecord[]) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node instanceof HTMLElement && (node.matches(".bj-sheet-root, .bj-trail-receipt") || node.querySelector(".bj-sheet-root, .bj-trail-receipt"))) {
+            added.push(node.className);
+          }
+        }
+        if (mutation.type === "attributes") added.push(`${mutation.attributeName}`);
+      }
+    };
+    const observer = new MutationObserver(record);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["inert", "style"] });
+    const focused: string[] = [];
+    const onFocusIn = (event: Event) => focused.push((event.target as HTMLElement).className);
+    document.addEventListener("focusin", onFocusIn);
+    try {
+      // Inline -> sheet, then sheet -> margin, then margin -> inline: no receipt is drawn in any new place.
+      for (const width of [500, 1400, 1100]) {
+        viewport.setWidth(width);
+        record(observer.takeRecords());
+        expect(added).toEqual([]);
+        expect(focused).toEqual([]);
+        expect(document.activeElement).toBe(elsewhere);
+        expect(document.body.style.overflow).toBe("");
+        expect(container.querySelector(".bj-trail-receipt, .bj-sheet-root")).toBeNull();
+      }
+    } finally {
+      observer.disconnect();
+      document.removeEventListener("focusin", onFocusIn);
+    }
+  });
+
   it("uses 1280 and 960 as the exact edges", () => {
     let latest = "";
     function Probe() {

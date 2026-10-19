@@ -97,10 +97,17 @@ export interface DocumentLayoutProps {
 export function DocumentLayout({ children, summary, summaryLabel = "Current state", measure = "wide", className }: DocumentLayoutProps) {
   const mode = useDocumentMode();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [openedIn, setOpenedIn] = useState(mode);
 
   // A receipt does not follow a resize: it would reappear as a sheet that takes focus, or in a place
-  // the person was not looking at.
-  useEffect(() => setOpenId(null), [mode]);
+  // the person was not looking at. This is settled while rendering, not in an effect: an effect runs
+  // after the commit that already drew the receipt in its new place, so a sheet would mount (and take
+  // focus, make the page inert and lock its scroll) for one commit before it was closed. A state
+  // update during render is applied before anything is committed, so no such commit exists.
+  if (openedIn !== mode) {
+    setOpenedIn(mode);
+    setOpenId(null);
+  }
 
   const setOpen = useCallback((id: string, open: boolean) => {
     setOpenId((current) => (open ? id : current === id ? null : current));
