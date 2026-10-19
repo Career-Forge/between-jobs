@@ -125,7 +125,7 @@ describe("the page you are on", () => {
 
 describe("landmarks and the way in", () => {
   // A page with no band, so the skip link comes first and alone.
-  const markup = shell("/practice");
+  const markup = shell("/enroll");
 
   it("has one <main>, which the skip link targets, and the skip link comes first", () => {
     expect(tagsOf(markup, "main")).toHaveLength(1);
