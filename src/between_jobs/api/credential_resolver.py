@@ -148,7 +148,7 @@ async def resolve(
         raise _setup_required(
             capability,
             missing=[],
-            message=f"{capability!r} is turned off. Enable it in integrations to use it.",
+            message=f"{capability!r} is turned off. Enable it in Settings to use it.",
         )
     if mode not in ("byok_first_party", "byok_generic"):
         raise _setup_required(
