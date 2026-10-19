@@ -28,7 +28,7 @@ function step(outcome: NextStepOutcome) {
 describe("the page is registered", () => {
   it("is one of the pages the registry found, with its own row ids", () => {
     expect(PAGES.map((page) => page.page)).toContain("settings");
-    expect(rules.rows.map((row) => row.id)).toEqual(["S1", "S2", "S2k", "S3", "S4"]);
+    expect(rules.rows.map((row) => row.id)).toEqual(["S1", "S2", "S2k", "S3", "S4u", "S4"]);
   });
 });
 
@@ -67,7 +67,7 @@ describe("the table", () => {
     },
     {
       name: "a model was chosen just now",
-      input: { facts: facts({ state: "ready", names: ["OpenAI"] }, { chosenHere: "OpenAI" }) },
+      input: { facts: facts({ state: "ready", names: ["OpenAI"], defaultKnown: true }, { chosenHere: "OpenAI" }) },
       row: "S3",
       sentence: "Your model is set. Search for a role next.",
       action: "link:Go to Discover:/discover",
@@ -75,19 +75,35 @@ describe("the table", () => {
     },
     {
       name: "a model is ready and nothing needs you",
-      input: { facts: facts({ state: "ready", names: ["OpenRouter"] }) },
+      input: { facts: facts({ state: "ready", names: ["OpenRouter"], defaultKnown: true }) },
       row: "S4",
       sentence: "Your model is set. Everything else here is optional.",
       action: null,
       why: ["OpenRouter ready", "2 of 7 search keys connected"],
     },
     {
-      name: "several models are ready and nothing needs you",
-      input: { facts: facts({ state: "ready", names: ["OpenRouter", "OpenAI", "Anthropic"] }) },
+      name: "several models are ready and the default is known",
+      input: { facts: facts({ state: "ready", names: ["OpenRouter", "OpenAI", "Anthropic"], defaultKnown: true }) },
       row: "S4",
       sentence: "Your model is set. Everything else here is optional.",
       action: null,
       why: ["3 model providers ready", "2 of 7 search keys connected"],
+    },
+    {
+      name: "several models are ready and the page cannot tell which is the default",
+      input: { facts: facts({ state: "ready", names: ["OpenRouter", "OpenAI", "Anthropic"], defaultKnown: false }) },
+      row: "S4u",
+      sentence: "You have 3 connected models, and this page can't tell which one is your default. Choose one below.",
+      action: null,
+      why: ["3 model providers ready", "the API can't say which model is the default"],
+    },
+    {
+      name: "one model is ready and the page cannot tell whether it is the default",
+      input: { facts: facts({ state: "ready", names: ["Anthropic"], defaultKnown: false }) },
+      row: "S4u",
+      sentence: "Your Anthropic key is ready, and this page can't tell whether it is your default model. Choose it below to make it the default.",
+      action: null,
+      why: ["Anthropic ready", "the API can't say which model is the default"],
     },
   ];
 
@@ -105,7 +121,7 @@ describe("the table", () => {
     }
   });
 
-  it("is lit by exactly one cyan action in every row but the last, and unlit in S4", () => {
+  it("is lit by exactly one cyan action in every row but the last two, and unlit in S4 and S4u", () => {
     const lit = rows.filter((entry) => step(ask(entry.input).outcome).action !== null).map((entry) => entry.row);
     expect(lit).toEqual(["S1", "S2", "S2k", "S3"]);
   });
@@ -153,7 +169,8 @@ describe("facts the page rows cannot read", () => {
     ["a string", "ready"],
     ["no llm", { search: SEARCH, chosenHere: null }],
     ["an unknown llm state", { llm: { state: "maybe" }, search: SEARCH, chosenHere: null }],
-    ["a ready llm with no names", { llm: { state: "ready", names: [] }, search: SEARCH, chosenHere: null }],
+    ["a ready llm with no names", { llm: { state: "ready", names: [], defaultKnown: true }, search: SEARCH, chosenHere: null }],
+    ["a ready llm that does not say whether the default is known", { llm: { state: "ready", names: ["OpenAI"] }, search: SEARCH, chosenHere: null }],
     ["a waiting key with no name", { llm: { state: "needs_model", providerName: "" }, search: SEARCH, chosenHere: null }],
     ["a negative count", { llm: { state: "none" }, search: { connected: -1, total: 7 }, chosenHere: null }],
     ["a model chosen by number", { llm: { state: "none" }, search: SEARCH, chosenHere: 5 }],
