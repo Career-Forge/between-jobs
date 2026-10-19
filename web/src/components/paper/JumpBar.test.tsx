@@ -3,7 +3,7 @@ import { act } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
-import { click, installViewport, query, render } from "../../testing/render";
+import { click, installViewport, keydown, query, render } from "../../testing/render";
 import { JumpBar, type JumpGroup } from "./JumpBar";
 
 const GROUPS: JumpGroup[] = [
@@ -342,20 +342,119 @@ describe("JumpBar under 960px", () => {
     const select = query<HTMLSelectElement>(nav, "select");
     expect(label.htmlFor).toBe(select.id);
     expect([...select.querySelectorAll("optgroup")].map((group) => group.label)).toEqual(["Resume", "Research", "Prepare"]);
-    expect([...select.querySelectorAll("option")].map((option) => [option.textContent, option.value])).toEqual(
+    // Before a section is reached the select also holds a disabled prompt; every other option is a section.
+    expect([...select.querySelectorAll<HTMLOptionElement>("option:not([disabled])")].map((option) => [option.textContent, option.value])).toEqual(
       GROUPS.flatMap((group) => group.links.map((link) => [link.label, link.id])),
     );
   });
 
-  it("shows the first section until one is reached, then the section in view, and marks that option", () => {
+  it("shows a prompt until a section is reached, then the section in view, and marks that option", () => {
     installViewport(375);
     const { container } = render(<Page />);
     const select = query<HTMLSelectElement>(container, "select");
-    expect(select.value).toBe("ch-sources");
+    expect(select.value).toBe("");
+    expect(select.selectedOptions[0].textContent).toBe("Choose a section");
+    expect(select.selectedOptions[0].disabled).toBe(true);
     expect(current(container)).toEqual([]);
     scrollTo(readingAt("contacts"));
     expect(select.value).toBe("contacts");
+    expect(select.querySelector('option[value=""]')).toBeNull();
     expect(current(container)).toEqual(["Contacts"]);
+  });
+
+  it("can go to the first section before any section has been reached", () => {
+    installViewport(375);
+    const { container } = render(<Page />);
+    const select = query<HTMLSelectElement>(container, "select");
+    act(() => {
+      select.value = "ch-sources";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(where(container)).toBe("/applications/7#ch-sources");
+    expect(scrolls.map((scroll) => scroll.id)).toEqual(["ch-sources"]);
+  });
+
+  describe("with the keyboard on a closed select", () => {
+    // What a browser does for an Arrow, Home, End or type-ahead press: keydown, then `change`.
+    const step = (select: HTMLSelectElement, key: string, value: string) => {
+      select.focus();
+      keydown(key, { target: select });
+      act(() => {
+        select.value = value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      act(() => {
+        select.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
+      });
+    };
+
+    it("holds each step until Enter, so the select keeps focus and any option can be reached", () => {
+      installViewport(375);
+      const { container } = render(<Page />);
+      const select = query<HTMLSelectElement>(container, "select");
+      step(select, "ArrowDown", "ch-sources");
+      step(select, "ArrowDown", "ch-draft");
+      step(select, "ArrowDown", "generate");
+      expect(where(container)).toBe("/applications/7");
+      expect(scrolls).toEqual([]);
+      expect(document.activeElement).toBe(select);
+      expect(select.value).toBe("generate");
+      expect(keydown("Enter", { target: select })).toBe(false);
+      expect(where(container)).toBe("/applications/7#generate");
+      expect(scrolls.map((scroll) => scroll.id)).toEqual(["generate"]);
+      expect(document.activeElement?.textContent).toBe("Heading of generate");
+    });
+
+    it("treats Home, End and type-ahead the same way", () => {
+      installViewport(375);
+      const { container } = render(<Page />);
+      const select = query<HTMLSelectElement>(container, "select");
+      step(select, "End", "your-play");
+      step(select, "c", "contacts");
+      expect(where(container)).toBe("/applications/7");
+      expect(select.value).toBe("contacts");
+    });
+
+    it("drops a held step on Escape or when focus leaves, and shows the section in view again", () => {
+      installViewport(375);
+      const { container } = render(<Page />);
+      const select = query<HTMLSelectElement>(container, "select");
+      step(select, "ArrowDown", "ch-sources");
+      keydown("Escape", { target: select });
+      expect(select.value).toBe("");
+      step(select, "ArrowDown", "ch-draft");
+      act(() => select.blur());
+      expect(select.value).toBe("");
+      expect(where(container)).toBe("/applications/7");
+      expect(scrolls).toEqual([]);
+    });
+
+    it("still goes at once for a pointer or touch pick made after a key press that changed nothing", () => {
+      installViewport(375);
+      const { container } = render(<Page />);
+      const select = query<HTMLSelectElement>(container, "select");
+      select.focus();
+      keydown("ArrowDown", { target: select });
+      act(() => {
+        select.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowDown", bubbles: true }));
+        select.value = "your-play";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(where(container)).toBe("/applications/7#your-play");
+    });
+
+    it("goes at once when the open list is used (Alt+Down opens it; the pick follows)", () => {
+      installViewport(375);
+      const { container } = render(<Page />);
+      const select = query<HTMLSelectElement>(container, "select");
+      select.focus();
+      act(() => {
+        select.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true }));
+        select.value = "contacts";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(where(container)).toBe("/applications/7#contacts");
+    });
   });
 
   it("choosing an option moves to its hash, scrolls there and focuses its heading", () => {
