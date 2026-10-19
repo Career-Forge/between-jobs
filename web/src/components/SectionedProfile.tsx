@@ -125,7 +125,7 @@ type Save = (mutate: (draft: CanonicalProfile) => CanonicalProfile) => Promise<v
 // moved up), else the last one, else the section's own heading, else a neighbouring section's.
 const REMOVAL_LABEL = /^(Delete|Remove) /;
 
-interface RemovalSite {
+export interface RemovalSite {
   button: HTMLElement;
   sectionId: string;
   index: number;
@@ -143,7 +143,8 @@ function removalSiteOf(button: HTMLElement | null): RemovalSite | null {
   return { button, sectionId: section.id, index: removalButtonsIn(section).indexOf(button), neighbours };
 }
 
-function focusTargetAfterRemoval(site: RemovalSite, root: HTMLElement | null): HTMLElement | null {
+/** Exported for its test: the DOM-only rules of where focus goes. */
+export function focusTargetAfterRemoval(site: RemovalSite, root: HTMLElement | null): HTMLElement | null {
   const section = document.getElementById(site.sectionId);
   if (section !== null) {
     const buttons = removalButtonsIn(section);

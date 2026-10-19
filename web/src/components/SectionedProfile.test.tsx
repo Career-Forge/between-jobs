@@ -5,7 +5,7 @@ import type { CanonicalProfile } from "../lib/profileTypes";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { settle, text, typeInto } from "../testing/forms";
 import { buttonNamed, click, keydown, query, render } from "../testing/render";
-import { SectionedProfile } from "./SectionedProfile";
+import { SectionedProfile, focusTargetAfterRemoval } from "./SectionedProfile";
 
 vi.mock("../lib/api", () => ({ apiFetch: vi.fn(), ApiError: class ApiError extends Error {} }));
 
@@ -68,6 +68,17 @@ describe("what is drawn", () => {
     expect(text(query(container, "#section-experience .bj-section-count"))).toBe("2");
     expect(container.querySelector("#section-publications")).toBeNull();
     expect(container.querySelector("#section-patents")).toBeNull();
+  });
+
+  it("puts an experience entry's title and company in the box the stylesheet lets shrink, so a long address in them wraps instead of widening the page", () => {
+    // styles/profile.css gives .bj-timeline-title min-width: 0 and overflow-wrap (profileStyles.test.ts pins the rule);
+    // this pins that the markup the rule is for carries the class.
+    const { container } = page(editor());
+    const titles = [...container.querySelectorAll("#section-experience .bj-timeline-head > .bj-timeline-title")];
+    expect(titles).toHaveLength(2);
+    expect(text(titles[0])).toContain("Senior Data Engineer");
+    expect(text(titles[0])).toContain("Acme Analytics");
+    expect(titles[0].querySelector("h4")).not.toBeNull();
   });
 
   it("indexes the sections that are there, as real links to them, and not at all for a profile with one", () => {
@@ -418,7 +429,8 @@ describe("keyboard focus when something is removed or edited in place", () => {
     await settle();
     expect(container.querySelector("#section-education")).toBeNull();
     expect(document.activeElement?.tagName).toBe("H3");
-    expect(document.activeElement?.id).toMatch(/^section-.+-title$/);
+    // the heading of the section after it (Skills), not just any heading on the page
+    expect(document.activeElement?.id).toBe("section-skills-title");
   });
 
   it("goes to a heading when the only achievement is deleted", async () => {
@@ -429,6 +441,29 @@ describe("keyboard focus when something is removed or edited in place", () => {
     await settle();
     expect(container.querySelector("#section-achievements")).toBeNull();
     expect(document.activeElement?.tagName).toBe("H3");
+    // nothing follows Achievements, so the section before it (Skills)
+    expect(document.activeElement?.id).toBe("section-skills-title");
+  });
+
+  it("falls back to the page's first section heading when no section the removal touched is left", () => {
+    document.body.innerHTML = '<div id="root"><section id="section-first"><h3 id="first-title">First</h3></section></div>';
+    const site = { button: document.createElement("button"), sectionId: "section-gone", index: 0, neighbours: ["section-also-gone"] };
+    expect(focusTargetAfterRemoval(site, document.getElementById("root"))?.id).toBe("first-title");
+    expect(focusTargetAfterRemoval(site, null)).toBeNull();
+  });
+
+  it("prefers the section's own heading when the section is still drawn with no removal button left, then the next section's, then the previous one's", () => {
+    document.body.innerHTML =
+      '<div id="root"><section id="section-before"><h3 id="before-title">Before</h3></section>' +
+      '<section id="section-here"><h3 id="here-title">Here</h3></section>' +
+      '<section id="section-after"><h3 id="after-title">After</h3><button aria-label="Delete something">x</button></section></div>';
+    const root = document.getElementById("root");
+    const site = { button: document.createElement("button"), sectionId: "section-here", index: 0, neighbours: ["section-after", "section-before"] };
+    expect(focusTargetAfterRemoval(site, root)?.id).toBe("here-title");
+    document.getElementById("section-here")?.remove();
+    expect(focusTargetAfterRemoval(site, root)?.id).toBe("after-title");
+    document.getElementById("section-after")?.remove();
+    expect(focusTargetAfterRemoval(site, root)?.id).toBe("before-title");
   });
 
   it("leaves a failed removal to its alert (which takes focus, and Dismiss gives it back), and a person who has moved on alone", async () => {
