@@ -395,6 +395,19 @@ button.bj-band-locked:hover {
     max-width: none;
     text-align: left;
   }
+
+  /* Links that stand alone (not inside a sentence) are 44px tall on a phone: the breadcrumb, and the
+     places a missing profile, key or model is fixed in a state callout. */
+  .bj-breadcrumb a,
+  .bj-state-missing a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .bj-breadcrumb ol {
+    align-items: center;
+  }
 }
 
 /* ------------------------------------------------------------------ */

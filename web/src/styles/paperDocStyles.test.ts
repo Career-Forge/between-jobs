@@ -247,6 +247,10 @@ describe("the claim and checklist rows", () => {
     expect(decl(".bj-claimrow").display).toBe("flex");
   });
 
+  it("keeps the claim row's link 44px tall on its own, so a wrapped row does not shrink it to a line of text", () => {
+    expect(declarationsFor(phone, ".bj-claimrow-actions a")).toMatchObject({ "min-height": "44px", display: "inline-flex", "align-items": "center" });
+  });
+
   it("holds the state column at one width so every label starts in the same place", () => {
     expect(decl(".bj-checkrow-state").width).toBe("112px");
     expect(decl(".bj-checkrow-state").flex).toBe("none");

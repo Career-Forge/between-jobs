@@ -35,6 +35,12 @@ describe("paper.css", () => {
     expect(declarationsFor(base, "h1.bj-page-title")["overflow-wrap"]).toBe("anywhere");
   });
 
+  it("makes the links that stand alone (the breadcrumb, a missing-setup link in a callout) 44px tall on a phone", () => {
+    for (const selector of [".bj-breadcrumb a", ".bj-state-missing a"]) {
+      expect(declarationsFor(phone, selector), selector).toMatchObject({ "min-height": "44px", display: "inline-flex", "align-items": "center" });
+    }
+  });
+
   it("defines no color: no hex value, no rgb or hsl, only tokens", () => {
     const code = paperCss.replace(/\/\*[\s\S]*?\*\//g, "");
     expect(code).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);

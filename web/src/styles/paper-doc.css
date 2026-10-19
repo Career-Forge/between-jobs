@@ -606,6 +606,14 @@ select.bj-jump-select-control optgroup {
     flex-direction: column;
     gap: var(--bj-space-2);
   }
+
+  /* The link beside "Copy claim" is 44px tall by itself, not only while it happens to share a line with
+     the button: when the row wraps (a small phone, 400% zoom) it would otherwise drop to a line of text. */
+  .bj-claimrow-actions a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
 }
 
 /* ------------------------------------------------------------------ */
