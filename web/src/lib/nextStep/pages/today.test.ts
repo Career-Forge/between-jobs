@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import classifier from "../../../../../src/between_jobs/api/application_status_classifier.py?raw";
+import replyChecker from "../../../../../src/between_jobs/api/gmail_reply_checker.py?raw";
 import { findForbiddenWord } from "../../trail";
 import { nextStep, nextStepWithRow } from "../index";
 import type { NextStep, NextStepInput, SetupCheck } from "../types";
@@ -509,8 +511,12 @@ describe("proposals and intents", () => {
     }
   });
 
-  it("states the server's auto-move line", () => {
-    expect(AUTO_MOVE_PERCENT).toBe(85);
+  it("states the server's auto-move line, read from the server's own constant", () => {
+    const threshold = /^AUTO_TRACK_THRESHOLD = ([0-9.]+)$/m.exec(classifier);
+    expect(threshold, "application_status_classifier.py no longer defines AUTO_TRACK_THRESHOLD").not.toBeNull();
+    expect(AUTO_MOVE_PERCENT).toBe(Math.round(Number(threshold?.[1]) * 100));
+    // ... and that constant is the line the reply checker moves an application at.
+    expect(replyChecker).toMatch(/\["confidence"\]\s*>=\s*AUTO_TRACK_THRESHOLD/);
   });
 
   it("leaves the percentage and the line out of a confidence that is not a share", () => {
