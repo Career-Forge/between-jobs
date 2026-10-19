@@ -68,7 +68,7 @@ and the reply checker and the draft route use it to flag the connection (`gmail_
 
 GMAIL_RECONNECT_MESSAGE = (
     "Google has stopped accepting your Gmail connection (it may have expired or been revoked). "
-    "Reconnect Gmail in Integrations to create drafts and check for replies again."
+    "Reconnect Gmail in Settings to create drafts and check for replies again."
 )
 
 _INTEGRATIONS_PATH = "/profile/integrations"
@@ -92,7 +92,7 @@ permission on Google's consent screen, or withdrew one later): only reconnecting
 def reconnect_required_error() -> ApiError:
     """The one answer for "Google no longer honours this person's Gmail connection": a rejected
     provider call (so it is logged as an expected condition, not a bug) that names its reason
-    and points at the Integrations page."""
+    and points at the Settings page."""
     return ApiError(
         "PROVIDER_REJECTED",
         GMAIL_RECONNECT_MESSAGE,

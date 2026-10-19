@@ -457,7 +457,7 @@ async def push_outreach_to_gmail(
         )
     except ApiError as error:
         # Google saying it no longer honours the connection is recorded (so the reply checker
-        # stops trying and the Integrations page says "Needs reconnect"); a network failure or
+        # stops trying and the Settings page says "Needs reconnect"); a network failure or
         # a Google outage is not, and passes through as the retryable error it is.
         if needs_reconnect(error):
             await flag_reconnect_required(supabase, user_id)

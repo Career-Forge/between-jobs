@@ -90,7 +90,7 @@ upstream provider refused or failed a call. They are expected conditions, not bu
 at WARNING, never sent to the error tracker. A failed call to the person's model provider names
 what happened in `details["reason"]` (a short token: `key_rejected`, `out_of_credit`,
 `request_rejected`, `rate_limited`, `timeout`, ...; api/llm_client.py has the list and the
-wording), and a PROVIDER_REJECTED the person can fix in Integrations carries `settings_path`."""
+wording), and a PROVIDER_REJECTED the person can fix in Settings carries `settings_path`."""
 
 _STATUS_BY_CODE: dict[ErrorCode, int] = {
     "AUTH_REQUIRED": 401,

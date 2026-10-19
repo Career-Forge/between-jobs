@@ -99,7 +99,7 @@ async def gmail_callback(
     if user_id is None:
         return HTMLResponse(
             _FAILURE_HTML_TEMPLATE.format(
-                message="This connection attempt expired -- try again from Integrations."
+                message="This connection attempt expired -- try again from Settings."
             ),
             status_code=400,
         )

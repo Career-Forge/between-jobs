@@ -99,7 +99,7 @@ def _error_body(status: int, **metadata: Any) -> dict[str, Any]:
 KEY_REJECTED = (
     "PROVIDER_REJECTED",
     "key_rejected",
-    "Your AI provider rejected the key. Check it in Integrations.",
+    "Your AI provider rejected the key. Check it in Settings.",
     False,
     INTEGRATIONS,
 )
@@ -107,7 +107,7 @@ OUT_OF_CREDIT = (
     "PROVIDER_REJECTED",
     "out_of_credit",
     "Your AI provider account is out of credit. Top it up, or switch to a different key in "
-    "Integrations.",
+    "Settings.",
     False,
     INTEGRATIONS,
 )
@@ -115,7 +115,7 @@ REQUEST_REJECTED = (
     "PROVIDER_REJECTED",
     "request_rejected",
     "The AI provider turned that request down, often because of the model chosen. Check the "
-    "model in Integrations, or try a different one.",
+    "model in Settings, or try a different one.",
     False,
     INTEGRATIONS,
 )
@@ -273,7 +273,7 @@ def test_the_codes_and_statuses_the_person_and_the_web_app_see() -> None:
         "code": "PROVIDER_REJECTED",
         "message": (
             "Your AI provider account is out of credit. Top it up, or switch to a different key "
-            "in Integrations."
+            "in Settings."
         ),
         "retryable": False,
         "capability": None,

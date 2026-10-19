@@ -46,7 +46,7 @@ class ResolvedCredential:
 def llm_setup_state(row: dict[str, object]) -> str:
     """Where a saved model key stands: `ready` (checked, and a model is chosen), `needs_model`
     (checked, no model chosen yet: it cannot be used until one is) or `needs_key` (not checked,
-    so not usable). The Integrations page and the setup-required errors say the same thing."""
+    so not usable). The Settings page and the setup-required errors say the same thing."""
     if row.get("is_validated") is not True:
         return "needs_key"
     return "ready" if row.get("model") else "needs_model"
@@ -57,7 +57,7 @@ def _needs_model_error(capability: str, provider_id: str) -> ApiError:
     name = spec.name if spec else provider_id
     return ApiError(
         "SETUP_REQUIRED",
-        f"Your {name} key is saved, but no model is chosen for it yet. Choose one in Integrations.",
+        f"Your {name} key is saved, but no model is chosen for it yet. Choose one in Settings.",
         capability=capability,
         missing=["model"],
         settings_path=_settings_path(capability),
@@ -193,7 +193,7 @@ async def resolve(
                 capability,
                 missing=["credential"],
                 message=f"The saved {chosen_provider} key can't be used: {e} Save it again in "
-                "Integrations.",
+                "Settings.",
             ) from e
 
     return ResolvedCredential(

@@ -13,7 +13,7 @@ Three variables, with the same all-or-nothing rule as the Telegram bridge:
   interaction's own 15-minute token has expired). Without it the commands work in full and those
   two things do not happen.
 - `DISCORD_INSTALL_URL` is cosmetic: the https address people open to add the app to their
-  account or a server, which the web app's Integrations page links to. Left empty it is Discord's
+  account or a server, which the web app's Settings page links to. Left empty it is Discord's
   own install link for the application (`https://discord.com/oauth2/authorize?client_id=<id>`);
   set it only for a custom link. It may carry a query string, as every such link does. A value
   that is not an https address (or has credentials, a fragment or invisible characters) is

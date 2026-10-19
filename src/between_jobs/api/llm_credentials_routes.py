@@ -79,7 +79,7 @@ async def _saved_key(
         raise setup_required(
             DEFAULT_CAPABILITY,
             missing=["credential"],
-            message=f"No {spec.name} key is saved yet. Save one in Integrations first.",
+            message=f"No {spec.name} key is saved yet. Save one in Settings first.",
         ) from e
     try:
         base_url = effective_base_url(spec.id, credential["base_url"])
@@ -87,7 +87,7 @@ async def _saved_key(
         raise setup_required(
             DEFAULT_CAPABILITY,
             missing=["credential"],
-            message=f"The saved {spec.name} key can't be used: {e} Save it again in Integrations.",
+            message=f"The saved {spec.name} key can't be used: {e} Save it again in Settings.",
         ) from e
     return str(credential["secret"]), base_url
 
@@ -163,7 +163,7 @@ async def choose_model(
         raise setup_required(
             DEFAULT_CAPABILITY,
             missing=["credential"],
-            message=f"No {spec.name} key is saved any more. Save one in Integrations first.",
+            message=f"No {spec.name} key is saved any more. Save one in Settings first.",
         )
     await set_preference(
         supabase,

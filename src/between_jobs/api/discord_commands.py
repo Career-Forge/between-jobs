@@ -158,7 +158,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         (
             OptionSpec(
                 OPT_CODE,
-                "The one-time code from the Integrations page on the website",
+                "The one-time code from the Settings page on the website",
                 "string",
                 required=True,
                 max_length=LINK_CODE_MAX_LENGTH,

@@ -2,14 +2,14 @@
 leave out what isn't there instead of offering it and failing.
 
 `telegram`: a server run without a bot (P2.4) has no webhook and no way to
-redeem a link code, so the Integrations page hides its Telegram card.
+redeem a link code, so the Settings page hides its Telegram card.
 `telegram_bot_username` is the bot's public name (TELEGRAM_BOT_USERNAME, null if
 not given or no bot), so the card can tell people which bot to message instead
 of assuming the hosted service's.
 
 `discord`, `discord_install_url`: present ONLY when the server has the Discord app configured (see
 `discord_config`), so a server without it answers exactly what it always did. `discord` is then
-true -- a Discord link code can be redeemed here, so the Integrations page shows its Discord card --
+true -- a Discord link code can be redeemed here, so the Settings page shows its Discord card --
 and `discord_install_url` is the address people open to add the app (DISCORD_INSTALL_URL, or
 Discord's own install link for the application when that is empty; null only when the operator's
 value was not a usable https address). The web app reads a missing `discord` as false.
@@ -20,7 +20,7 @@ and without it the connect and callback routes answer 404 FEATURE_DISABLED. A fl
 client id, a secret or the redirect address. The web app reads a missing `gmail` as unknown.
 Beside it, only then, come two more flags. `gmail_allowed` is about the CALLER: false when the
 server limits Gmail to named people (GMAIL_ALLOWED_USER_IDS) and this person is not one of them,
-so the Integrations page can say Gmail is not available for them instead of offering a button
+so the Settings page can say Gmail is not available for them instead of offering a button
 that would be refused; it is true for everyone when there is no list, and it never says who is on
 one.
 `gmail_testing_mode` is the operator's GMAIL_TESTING_MODE switch (default false): Google's OAuth
