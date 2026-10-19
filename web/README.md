@@ -81,6 +81,87 @@ Tests that need a DOM (events, focus) start with `// @vitest-environment jsdom` 
 serious or critical violation; jsdom has no layout, so it cannot check color contrast (`tokens.test.ts` does
 that for the token pairs).
 
+## Document pages
+
+The pieces a long, document-like page (the application workspace, Profile) is built from. They hold no data:
+a page hands in what it has read and they draw only that. Their styles are in `src/styles/paper-doc.css`
+(tokens only, no color of its own, no cyan fill). The page's one cyan fill is still the band's button.
+
+**`DocumentLayout`, `DocumentBlock`, `BlockTrail`, `TrailMargin`** (`components/paper/DocumentLayout.tsx`).
+A column of blocks, each with its trail line, where the trail goes by width and the page does not know which:
+
+- 1280px and up: a 280px right margin with a 1px maroon rule. A block's trail line is a button in the margin
+  beside it; opening it shows the receipt in the margin (`aria-expanded` on the button).
+- 960 to 1279px: no margin. The trail line sits under its block and the receipt opens inline, as a
+  disclosure. The page's `summary` (a compact "current state" it writes itself) is drawn once at the top.
+- Under 960px: the trail line sits under its block and the receipt is the focus-trapped bottom sheet.
+
+```tsx
+<DocumentLayout summary={<p>Status saved · resume drafted</p>} measure="wide">
+  <SectionChapter id="ch-draft" title="Draft" />
+  <DocumentBlock trail={{ glyph: "code", actor: "Checked by code" }} receipt={rows} receiptTitle="Where this came from">
+    ...
+  </DocumentBlock>
+  <DocumentBlock id="generate">
+    <GeneratePanel />   {/* calls <BlockTrail trail={...} receipt={...} /> itself, wherever it likes */}
+  </DocumentBlock>
+</DocumentLayout>
+```
+
+`DocumentLayout` props: `children`, `summary?`, `summaryLabel?` ("Current state"), `measure?` ("wide" 880px
+by default, "prose" 680px, "full"), `className?`. `DocumentBlock`: `children`, `id?`, `trail?` / `receipt?` /
+`receiptTitle?` (shorthand for a `BlockTrail` as its last child), `className?`. `BlockTrail`: `trail`,
+`receipt?`, `receiptTitle?`, `className?`, the same inputs as `TrailLine`. Rules that hold at every width:
+the DOM order is block, then its trail line, then the next block (the margin never forms a tab run of its
+own); only one receipt is open in the whole layout; Esc closes an inline or margin receipt and puts focus back
+on its line; a receipt is closed when the width crosses a breakpoint, so it never comes back as a sheet that
+takes focus. `useDocumentMode()` answers "margin", "inline" or "sheet" for the current width. The layout reads
+the viewport in script and puts the answer on the markup as a class, so the stylesheet states no width of its
+own for it. `BlockTrail` outside a layout is a plain `TrailLine`.
+
+**`JumpBar`** (`components/paper/JumpBar.tsx`). The section index: groups of real `<a href="#id">` links
+(`groups={[{ label, links: [{ id, label }] }]}`, a group with no links is left out; pass `ready` once the
+sections are on the page). At 1280px and up one sticky row; 960 to 1279px the groups wrap whole and, once the bar
+has scrolled away, a 44px "Jump to" row docks at the top; under 960px only the "Jump to" select, in a sticky row,
+with the same groups and labels. The section being read is marked `aria-current="location"` by a scroll watch
+(`lib/useScrollSpy.ts`) that only marks: it never moves focus and never scrolls. Following a link changes the
+hash and `useScrollToHash` scrolls (instantly under reduced motion) and focuses the section's heading; the bar
+calls that hook, so the page does not. Hash targets stay clear of the bar by scroll padding on the page.
+
+**`SectionChapter`** (`components/paper/SectionChapter.tsx`). The heading block of a section: `id?`, `title`,
+`level?` (2 to 6, h2 by default), `eyebrow?`, `trail?`, `children?` (an intro). The heading is serif, takes
+`tabIndex={-1}` so a hash link can focus it, and has no numeral.
+
+**`SegmentedBar`** (`components/paper/SegmentedBar.tsx`, arithmetic in `lib/segments.ts`). One score part as a
+row of cells with its label and value in words: `label`, `value` (a number, or `null` for nothing to draw),
+`max`, `segments?` (one per point up to 35, else 20), `valueText?` ("27 / 35 · near max"; take the "near max" from
+`barState()` in `lib/scoreBreakdown.ts`, never by hand), `hatched?` (exact headroom that is not earned: hatched
+gold cells after the filled ones), `detail?` (a caption). A value between 0 and the maximum never draws an empty
+bar or a full one; with one cell per point the filled count is the value. It is a `meter` named by its label
+with the words as its value text, or an `img` when there is no value, so it is never read as zero. Never a gauge,
+ring or radar.
+
+**`ScoreBlock`, `FitLadder`** (`components/paper/ScoreBlock.tsx`). `ScoreBlock` is the ATS block's frame: `label`,
+`value`, `max?` (100), `from?` (draws "64 -> 72" only when it differs), `caption?` ("medium confidence"),
+`engine?` (the "engine ✦" mark, on by default), `children` (the bars), `footer?`. `FitLadder` is Discover's
+four-rung ladder: `levels` (lowest first), `level` (the rung's name, from the engine; there is no score-to-rung
+mapping here), `score?`, `max?`, `placeholder?` (hollow, no number, for a fallback). Use them only for a score
+that code computed; a model's judgement gets the model mark in its trail, not this.
+
+**`ClaimRow`, `ClaimList`** (`components/paper/ClaimRow.tsx`). One claim and what is known about it: `status`
+("supported", "unverifiable", "contradicted" or "unchecked"), `claim` (verbatim, without quotation marks), `reason?`,
+`actions?`, `as?` ("li" or "div"). Each status has a word and a mark as well as an outline color: ◆ Supported and
+◆ Unverifiable (gold), ✕ Contradicted (red), ○ Not checked (muted). The claim check lists only what it flagged,
+so a claim it did not flag is not drawn as "supported": not flagged is not backed. Use "supported" only where
+something named does back the claim.
+
+**`ChecklistGroup`, `ChecklistRow`, `ChecklistSummary`** (`components/paper/ChecklistRow.tsx`, counts in
+`lib/checklistSummary.ts`). The rows of a review checklist: `ChecklistGroup` (`title`, `rows` with an `id` each,
+`level?`) counts its rows in its heading; `ChecklistRow` (`state` "pass" / "fail" / "not_checked", `label`,
+`hint?`, `caveat?`, `actions?`) draws ✓ Pass, ✕ Fail or ○ Not checked; `ChecklistSummary` says "5 pass · 1 fail ·
+4 not checked". A row is a statement, not a control: there is no tick box, because nothing stores a "reviewed"
+state and "not checked" is never a pass. Only what is in `actions` takes the keyboard.
+
 ## Settings
 
 `src/pages/Settings.tsx` (the old Integrations page: `/profile/integrations` redirects to `/settings`, keeping its
