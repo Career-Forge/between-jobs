@@ -19,10 +19,10 @@ import { Wordmark } from "./Wordmark";
 // The page is the one <main>, and the skip link's target (the band's button is the other). The tester-programme gate and the routes
 // are passed in as children (App.tsx), so what the shell draws does not depend on them.
 
-// The signed-in pages that draw a next-step band (Today at "/", and Settings): on these the first tab
+// The signed-in pages that draw a next-step band (Today at "/", Settings, Applications and Practice): on these the first tab
 // stop is "Skip to next step", ahead of "Skip to content". A page not listed has no band to skip to.
 // AppShell.test.tsx reads the sources and fails when a signed-in page draws a band that is not here.
-export const PATHS_WITH_A_BAND: readonly string[] = ["/", SETTINGS_PATH];
+export const PATHS_WITH_A_BAND: readonly string[] = ["/", SETTINGS_PATH, "/applications", "/practice"];
 
 export interface AppShellProps {
   email: string | null;

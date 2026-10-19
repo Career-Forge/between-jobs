@@ -229,6 +229,38 @@ receipt from the same fields.
   and lifts the shell's 960px cap on the column where the margin needs the room.
 - Links to set something up use `SETTINGS_PATH` and `MODEL_PROVIDER_PATH` (`lib/settingsPaths.ts`), the one place that names the Settings page.
 
+## Applications and Practice
+
+`src/pages/Applications.tsx` is the reading and the requests; `src/components/applications/ApplicationsView.tsx`
+draws every state from props (so each can be shown and tested on its own); the band's rows are in
+`src/lib/nextStep/pages/applications.ts`. Each tracked job is one card: its title and company, a status chip
+(`◇ Saved`, `● Applied`, `◔ Screening`, `◑ Interviewing`, `✓ Offer`, `⊖ Rejected`, `⊘ Withdrawn`: a neutral outline with a
+shape, emerald only on Offer), "✦ Resume drafted" when `resume_exists`, the applied day when `date_applied` came
+back, its controls, and its trail line as the last line. The trail is built from `source_channel` and
+`created_at` only (`cardTrail` in `lib/applicationsView.ts`): a channel the page does not know, or a date that
+cannot be read, is left out rather than guessed.
+
+- Requests: `GET /applications` is the page's own data (when it fails the band says so and offers Try again; a
+  failed re-read after a move keeps the cards it has under a callout that says they may be out of date).
+  `GET /profile/current` and `GET /credentials` are read once (`lib/applicationsSetup.ts`) because the band's
+  global rows need them. A move is `POST /applications/{id}/stage` followed by a re-read of the whole list;
+  tracking a job is `POST /applications` or `POST /applications/from-url` followed by the same re-read.
+- The status select is always on a list card and shows the real status, so a wrong one is corrected in one
+  choice. The board's cards keep "Move to..." (a required keyboard and touch fallback for drag and drop). A
+  card whose move is out is `aria-disabled` and reads "Moving..."; one whose move failed stays on its old
+  status with the reason under it and a Retry. The tracking forms are drawn secondary: the band's button is
+  the page's one cyan fill (with nothing tracked it is "Start tracking", which scrolls to the paste form).
+- The board is seven columns in one row that scrolls inside itself (`role="region"`, keyboard reachable), so the
+  page never scrolls sideways. Under 960px there is no board and no List/Board toggle: a "Showing status" select
+  with the counts and the cards of the chosen status, remembered per browser in `localStorage` (read and written
+  inside `try`, never required).
+- `#start-tracking` is the paste form (`START_TRACKING_ID`); every other hash the workspace answers to is
+  `CROSS_NAV_HASH` in `lib/applicationsBoard.ts`, and `applicationsBoard.test.ts` checks that each is given to
+  an element some page or component renders.
+- `src/pages/Practice.tsx` is a pointer: practice sessions live in each application's workspace. It reads the
+  same two setup facts for the band's global rows and nothing of its own.
+- Styles are `src/styles/applications.css` (tokens only; it lifts the shell's 960px cap from 1280px for the board).
+
 ## Signed-out pages
 
 `/` (signed out), `/login`, `/privacy` and `/terms` are the pages a stranger sees first, and each has its

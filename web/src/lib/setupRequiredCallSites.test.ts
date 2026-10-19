@@ -33,7 +33,11 @@ const sources: Record<string, string> = Object.fromEntries(
 // The components allowed to read a notice's message: the one that draws the notice with its link, and
 // Today's item problems, which hand the message to SetupRequiredState together with the link (the
 // notice's own, or the settings page when the server sent none, so there is always one).
-const DRAWS_THE_LINK_ITSELF = new Set(["../components/SetupRequiredNotice.tsx", "../components/today/ItemParts.tsx"]);
+const DRAWS_THE_LINK_ITSELF = new Set([
+  "../components/SetupRequiredNotice.tsx",
+  "../components/today/ItemParts.tsx",
+  "../components/applications/TrackForms.tsx",
+]);
 
 // Where the raw code string is allowed to appear: the module that owns the decision, the
 // list of codes, the client that carries the fields, and prose in comments.
@@ -48,7 +52,7 @@ interface Site {
   // Places that turn a failure into a notice or a message through the setup helpers. A new
   // one is fine; one fewer is a revert.
   calls: number;
-  // Places that draw a notice: <SetupRequiredNotice notice=... /> or <ProblemView problem=... />.
+  // Places that draw a notice: <SetupRequiredNotice notice=... />, <ProblemView problem=... /> or the tracking form's <FormProblem problem=... />.
   draws: number;
   // Code that must be there: the notice goes into state whole, and comes out to the screen whole.
   keeps?: readonly RegExp[];
@@ -137,10 +141,10 @@ const SITES: Record<string, Site> = {
     draws: 1,
     keeps: [/setError\(problemOf\(e, /, /<ProblemView problem=\{error\} \/>/],
   },
-  "../pages/Applications.tsx": {
+  "../components/applications/TrackForms.tsx": {
     calls: 1, // track a job from a URL
     draws: 1,
-    keeps: [/setError\(problemOf\(e, /, /<ProblemView problem=\{error\} \/>/],
+    keeps: [/setProblem\(failureOf\(e, /, /<FormProblem problem=\{problem\} \/>/],
   },
   // Its own failure model (a classifier the panels read); the link comes from the notice.
   "../lib/hiringSignals.ts": { calls: 1, draws: 0 },
@@ -155,7 +159,7 @@ function codeOnly(source: string): string {
 }
 
 const CALL = /\b(setupRequiredNotice|failureOf|problemOf)\(/g;
-const DRAW = /<(SetupRequiredNotice notice|ProblemView problem)=/g;
+const DRAW = /<(SetupRequiredNotice notice|ProblemView problem|FormProblem problem)=/g;
 
 describe("every place a SETUP_REQUIRED error is shown", () => {
   it("finds the source of the app (so the checks below are not looking at nothing)", () => {

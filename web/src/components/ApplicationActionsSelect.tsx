@@ -22,6 +22,7 @@ export function ApplicationActionsSelect({
   const items = crossNavItemsFor(CROSS_NAV_ITEMS, useHiringSignalsEnabled());
   return (
     <select
+      className="bj-app-select"
       aria-label={`Actions for "${title ?? "Untitled"}"`}
       value=""
       onChange={(e) => {
