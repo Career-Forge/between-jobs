@@ -90,6 +90,34 @@ describe("Close the gaps", () => {
     expect(container.querySelector(".bj-primary")).toBeNull();
   });
 
+  // Every step replaces the button that was pressed, which drops keyboard focus to the top of the page: it goes
+  // to the block, which stays mounted, and a person who has moved on is left alone.
+  it("keeps keyboard focus in the block through every step", async () => {
+    on("POST /resume-documents/doc-1/gap-interview", QUESTIONS);
+    on("POST /profile/gap-interview/draft", { bullet: "Built an event stream consumer.", entity_pointer: "/experience/0", candidates: [{ pointer: "/experience/0", label: "Data Engineer -- Initech" }] });
+    on("POST /profile/gap-interview/approve", { id: "pv-9" });
+    on("POST /profile/versions/pv-9/activate", {});
+    const { container } = open();
+    const block = query(container, ".bj-ws-gap");
+    const press = async (name: string | RegExp) => {
+      const button = buttonNamed(container, name);
+      button.focus();
+      click(button);
+      await settle();
+    };
+    await press("Close the gaps");
+    expect(document.activeElement).toBe(block);
+    await press("Yes, add detail");
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), "I wrote a Kafka consumer.");
+    await press(/Draft the fact/);
+    expect(block.contains(document.activeElement)).toBe(true);
+    await press("Approve & save to profile");
+    expect(block.contains(document.activeElement)).toBe(true);
+    await press("Activate now");
+    expect(block.contains(document.activeElement)).toBe(true);
+    expect(text(container)).toContain("✓ Active");
+  });
+
   it("shows no estimated score change anywhere", async () => {
     on("POST /resume-documents/doc-1/gap-interview", QUESTIONS);
     const { container } = open();

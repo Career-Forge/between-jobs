@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type {
   AtsAttempt,
@@ -80,6 +80,14 @@ export function GapInterview({
   const [newVersionId, setNewVersionId] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
   const [activated, setActivated] = useState(false);
+
+  // Each step replaces the control that was pressed, or turns it off (a disabled control drops keyboard focus
+  // to the top of the page): when that has happened, focus goes to the block, which stays mounted.
+  useEffect(() => {
+    if (phase === "idle") return;
+    const active = document.activeElement;
+    if (active === null || active === document.body) rootRef.current?.focus({ preventScroll: true });
+  }, [phase, answering, activeIndex, activating, activated, editing]);
 
   const final = latestAttempt(attempts);
   if (!final || final.overall_score >= 70) return null;
