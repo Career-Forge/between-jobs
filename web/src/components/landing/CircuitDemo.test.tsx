@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LANDING } from "../../content/landing";
 import { BOARD_STATUSES, STAGES } from "../../content/landingCircuit";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
@@ -48,6 +48,23 @@ describe("the stage buttons", () => {
     // Pressing the one that is already pressed keeps it pressed: a stage is picked, not toggled off.
     click(stageButtons(root)[0]);
     expect(pressed()[0]).toBe("true");
+  });
+
+  it("keep the pressed button where it was on screen when an earlier, taller card folds away above it", () => {
+    const root = circuit();
+    const scrollBy = vi.spyOn(window, "scrollBy").mockImplementation(() => undefined);
+    const target = stageButtons(root)[3];
+    // The button is at 373 when pressed and at 71 once the card above it has folded (a phone).
+    const tops = [373, 71];
+    vi.spyOn(target, "getBoundingClientRect").mockImplementation(() => ({ top: tops.shift() ?? 71 }) as DOMRect);
+    click(target);
+    expect(scrollBy).toHaveBeenCalledTimes(1);
+    expect(scrollBy).toHaveBeenCalledWith(0, -302);
+    // A press that moves nothing (the row layout, or the stage already in view) scrolls nothing.
+    scrollBy.mockClear();
+    click(stageButtons(root)[0]);
+    expect(scrollBy).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 
   it("mark the stage in view on its list item, which is what the phone layout shows a card for", () => {
