@@ -68,7 +68,7 @@ function application(overrides: Record<string, unknown> = {}) {
     id: ID,
     status: "saved",
     source_channel: "discover",
-    created_at: "2026-09-22T14:00:00Z",
+    created_at: "2026-09-22T11:00:00Z",
     date_applied: null,
     resume_exists: false,
     snapshot: {

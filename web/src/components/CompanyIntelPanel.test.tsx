@@ -221,7 +221,7 @@ describe("Company intel: running", () => {
     click(button);
     expect(callsTo(`POST ${PATH}`)).toHaveLength(1);
     expect(container.querySelectorAll(".bj-rs-item")).toHaveLength(1);
-    finish(stored([claim(1), claim(2), claim(3)], { created_at: "2026-09-22T09:00:00Z" }));
+    finish(stored([claim(1), claim(2), claim(3)], { created_at: "2026-09-22T11:00:00Z" }));
     await settle();
     expect(container.querySelectorAll(".bj-rs-item")).toHaveLength(3);
     expect(text(query(container, ".bj-rs-meta"))).toBe("Researched Sep 22 · 3 claims");

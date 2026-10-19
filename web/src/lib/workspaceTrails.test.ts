@@ -30,17 +30,17 @@ describe("the page's own trail", () => {
     ["web", "You tracked this · in the web app · Sep 22"],
     ["telegram", "You tracked this · from Telegram · Sep 22"],
   ])("reads a %s track", (channel, words) => {
-    expect(buildTrail(headerTrail({ source_channel: channel, created_at: "2026-09-22T14:00:00Z" }, NOW))?.text).toBe(words);
+    expect(buildTrail(headerTrail({ source_channel: channel, created_at: "2026-09-22T11:00:00Z" }, NOW))?.text).toBe(words);
   });
 
   it("leaves out a channel it does not know, and a date that did not come back", () => {
-    expect(buildTrail(headerTrail({ source_channel: "carrier-pigeon", created_at: "2026-09-22T14:00:00Z" }, NOW))?.text).toBe("You tracked this · Sep 22");
+    expect(buildTrail(headerTrail({ source_channel: "carrier-pigeon", created_at: "2026-09-22T11:00:00Z" }, NOW))?.text).toBe("You tracked this · Sep 22");
     expect(buildTrail(headerTrail({ source_channel: "discover" }, NOW))?.text).toBe("You tracked this · from Discover");
     expect(buildTrail(headerTrail({ created_at: "not a date" }, NOW))?.text).toBe("You tracked this");
   });
 
   it("writes the year for a date from another year", () => {
-    expect(buildTrail(headerTrail({ source_channel: "web", created_at: "2025-12-30T08:00:00Z" }, NOW))?.text).toBe("You tracked this · in the web app · Dec 30, 2025");
+    expect(buildTrail(headerTrail({ source_channel: "web", created_at: "2025-12-30T11:00:00Z" }, NOW))?.text).toBe("You tracked this · in the web app · Dec 30, 2025");
   });
 });
 

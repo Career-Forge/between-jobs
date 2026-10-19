@@ -98,7 +98,7 @@ describe("Your play", () => {
     expect(container.querySelector(".bj-rs-brief")).not.toBeNull();
     click(button);
     expect(callsTo(`POST ${PATH}`)).toHaveLength(1);
-    finish({ brief: { ...BRIEF, lead_with: "A new lead.", created_at: "2026-09-22T09:00:00Z" } });
+    finish({ brief: { ...BRIEF, lead_with: "A new lead.", created_at: "2026-09-22T11:00:00Z" } });
     await settle();
     expect(text(query(container, ".bj-rs-part .bj-rs-text"))).toBe("A new lead.");
     expect(text(query(container, ".bj-rs-meta"))).toBe("Built Sep 22");

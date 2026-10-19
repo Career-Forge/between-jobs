@@ -14,7 +14,7 @@ const NOW = new Date("2026-10-20T12:00:00Z");
 const KEY = "bk-" + "q".repeat(30);
 
 function saved(provider: string, extra: Partial<CredentialSummary> = {}): CredentialSummary {
-  return { id: `id-${provider}`, service: "search", provider, model: null, is_validated: true, updated_at: "2026-09-22T09:00:00Z", scope: null, ...extra };
+  return { id: `id-${provider}`, service: "search", provider, model: null, is_validated: true, updated_at: "2026-09-22T11:00:00Z", scope: null, ...extra };
 }
 
 function mount(credentials: CredentialSummary[], hiringSignalsEnabled = false, onChanged = vi.fn(async () => undefined)) {

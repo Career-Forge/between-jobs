@@ -47,8 +47,8 @@ const SAVED = {
   companies: [],
   remote_only: false,
   is_active: true,
-  created_at: "2026-09-01T00:00:00Z",
-  last_matched_at: "2026-09-22T06:00:00Z",
+  created_at: "2026-09-01T11:00:00Z",
+  last_matched_at: "2026-09-22T11:00:00Z",
 };
 
 // This environment has no usable localStorage, so the page's flags go to a plain map.

@@ -32,7 +32,7 @@ function profile(overrides: Record<string, unknown> = {}) {
       achievements: ["Team award."],
     },
     activated_at: "2026-10-12T10:15:00Z",
-    created_at: "2026-10-12T09:58:00Z",
+    created_at: "2026-10-12T10:05:00Z",
     source_kind: "web_json_paste",
     version_count: 4,
     ...overrides,

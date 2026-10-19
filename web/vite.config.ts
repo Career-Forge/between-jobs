@@ -104,6 +104,8 @@ export default defineConfig({
     assetsInlineLimit: 0,
   },
   test: {
+    // Runs the suite in one time zone (src/testing/pinTimeZone.ts): a date a page writes is the reader's.
+    globalSetup: ["./src/testing/pinTimeZone.ts"],
     // Vitest turns every stylesheet into an empty string unless it is listed here, `?raw` imports
     // included. app.css is read as text by src/lib/publicPagesStyles.test.ts (there is no DOM, so
     // no computed style): the rules that keep prose links underlined and the footer aligned. The

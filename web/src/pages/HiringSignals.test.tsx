@@ -56,7 +56,7 @@ const RESULT = (extra: Record<string, unknown> = {}) => ({
   counts: COUNTS,
   ...extra,
 });
-const SAVED_SEARCH = { id: "hs-1", query: "data scientist", location: null, created_at: "2026-09-10T00:00:00Z" };
+const SAVED_SEARCH = { id: "hs-1", query: "data scientist", location: null, created_at: "2026-09-10T11:00:00Z" };
 const KEYS = [
   { service: "llm", provider: "openrouter", is_validated: true, model: "vendor/model" },
   { service: "search", provider: "firecrawl", is_validated: true },
@@ -416,7 +416,7 @@ describe("saving the search from the band", () => {
   it("is the same request as the form's Save this search: a POST of the role and location, and then the band is unlit", async () => {
     answer({
       "/hiring-signals/search": RESULT(),
-      "POST /hiring-signals/searches": { id: "hs-2", query: "software engineer", location: null, created_at: "2026-09-22T00:00:00Z" },
+      "POST /hiring-signals/searches": { id: "hs-2", query: "software engineer", location: null, created_at: "2026-09-22T11:00:00Z" },
     });
     const { container } = await draw();
     await search(container);
@@ -435,7 +435,7 @@ describe("saving the search from the band", () => {
   it("is also what the form's own Save this search does", async () => {
     answer({
       "/hiring-signals/search": RESULT(),
-      "POST /hiring-signals/searches": { id: "hs-2", query: "software engineer", location: null, created_at: "2026-09-22T00:00:00Z" },
+      "POST /hiring-signals/searches": { id: "hs-2", query: "software engineer", location: null, created_at: "2026-09-22T11:00:00Z" },
     });
     const { container } = await draw();
     await search(container);
@@ -456,7 +456,7 @@ describe("saving the search from the band", () => {
     expect(busy.getAttribute("aria-disabled")).toBe("true");
     click(busy);
     expect(callsTo("POST /hiring-signals/searches")).toHaveLength(1);
-    await act(async () => release({ id: "hs-2", query: "software engineer", location: null, created_at: "2026-09-22T00:00:00Z" }));
+    await act(async () => release({ id: "hs-2", query: "software engineer", location: null, created_at: "2026-09-22T11:00:00Z" }));
     await flush();
   });
 
@@ -477,7 +477,7 @@ describe("saving the search from the band", () => {
   });
 
   it("is already saved when an equivalent search is on the list: case and spacing ignored", async () => {
-    answer({ "/hiring-signals/search": RESULT({ query_label: "x" }), "/hiring-signals/searches": { searches: [{ id: "hs-9", query: "Software  Engineer", location: null, created_at: "2026-09-01T00:00:00Z" }] } });
+    answer({ "/hiring-signals/search": RESULT({ query_label: "x" }), "/hiring-signals/searches": { searches: [{ id: "hs-9", query: "Software  Engineer", location: null, created_at: "2026-09-01T11:00:00Z" }] } });
     const { container } = await draw();
     await search(container);
     expect(words(band(container))).toContain("Open the posts worth a closer look.");

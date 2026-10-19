@@ -25,7 +25,7 @@ function version(overrides: Partial<ProfileVersion> = {}): ProfileVersion {
     id: "3f2a9c1e-aaaa-bbbb-cccc-1234567890ab",
     canonical_json: { personal: { name: "Asha Verma" } },
     activated_at: "2026-09-21T10:15:00Z",
-    created_at: "2026-09-20T08:00:00Z",
+    created_at: "2026-09-20T11:00:00Z",
     source_kind: "web_json_paste",
     version_count: 4,
     ...overrides,
@@ -99,7 +99,7 @@ describe("the active profile's trail", () => {
   });
 
   it("writes a date from another year with its year", () => {
-    expect(words(activeProfileTrail(version({ created_at: "2025-12-31T08:00:00Z" }), NOW))).toContain("Dec 31, 2025");
+    expect(words(activeProfileTrail(version({ created_at: "2025-12-31T11:00:00Z" }), NOW))).toContain("Dec 31, 2025");
   });
 
   it("builds the receipt from returned fields only, with a short id and no other row id", () => {
@@ -130,7 +130,7 @@ describe("the JSON import review's trail", () => {
     const spec = jsonReviewTrail(version({ warnings: [], stats: { experience: 3, projects: 0 } }), NOW);
     expect(words(spec)).toBe("Parsed by code · no model involved · Sep 20");
     const labels = rows(spec).map((row) => ("label" in row ? `${row.label}=${row.value}` : "note"));
-    expect(labels).toEqual(["draft=3f2a9c1e", "saved=2026-09-20T08:00:00Z", "experience=3", "projects=0", "note"]);
+    expect(labels).toEqual(["draft=3f2a9c1e", "saved=2026-09-20T11:00:00Z", "experience=3", "projects=0", "note"]);
   });
 });
 
