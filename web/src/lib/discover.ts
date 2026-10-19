@@ -4,6 +4,7 @@
 // lib/discoverRow.ts; what the band is told is lib/discoverFacts.ts.
 
 import type { JobCard, SavedSearch } from "./discoverTypes";
+import { providerDisplayName } from "./providerNames";
 
 const SUB_SCORE_LABELS: Record<string, string> = {
   skills: "Skills",
@@ -67,23 +68,11 @@ export function savedSearchLabel(search: SavedSearch): string {
 
 // ── providers and warnings ─────────────────────────────────────────────────
 
-// How the providers a search may name read in a sentence. An id this list does not know is shown as
-// the server sent it: nothing is guessed about a provider the page has not heard of.
-const PROVIDER_NAMES: Record<string, string> = {
-  registry: "The job registry",
-  remoteok: "RemoteOK",
-  arbeitnow: "Arbeitnow",
-  you_com: "You.com",
-  firecrawl: "Firecrawl",
-  serper: "Serper",
-  brave: "Brave Search",
-  jsearch: "JSearch",
-  adzuna: "Adzuna",
-  usajobs: "USAJobs",
-};
-
+// How the providers a search may name read in a sentence (names: lib/providerNames.ts). The job
+// registry is not a search provider and so has a phrase of its own. An id nobody has heard of is shown
+// as the server sent it: nothing is guessed about it.
 export function providerName(id: string): string {
-  return PROVIDER_NAMES[id] ?? id;
+  return id === "registry" ? "The job registry" : providerDisplayName(id);
 }
 
 export interface WarningLine {

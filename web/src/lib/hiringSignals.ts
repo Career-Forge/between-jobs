@@ -34,6 +34,7 @@ import {
   type SearchProvider,
   type SignalCounts,
 } from "./hiringSignalsTypes";
+import { providerDisplayName } from "./providerNames";
 import { setupRequiredNotice } from "./setupRequired";
 import { SETTINGS_PATH } from "./settingsPaths";
 
@@ -160,15 +161,8 @@ export function registryMatchNote(match: RegistryMatch | null): string | null {
   return match === null ? null : REGISTRY_MATCH_NOTES[match];
 }
 
-const PROVIDER_LABELS: Record<SearchProvider, string> = {
-  you_com: "You.com",
-  brave: "Brave Search",
-  serper: "Serper",
-  firecrawl: "Firecrawl",
-};
-
 export function providerLabel(provider: SearchProvider | null): string {
-  return provider === null ? "your search provider" : PROVIDER_LABELS[provider];
+  return provider === null ? "your search provider" : providerDisplayName(provider);
 }
 
 export const FRESHNESS_OPTIONS: readonly { value: Freshness; label: string }[] = [

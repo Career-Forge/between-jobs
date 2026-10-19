@@ -19,7 +19,7 @@ describe("providers", () => {
     expect(providerLabel("you_com")).toBe("You.com");
     expect(providerLabel("firecrawl")).toBe("Firecrawl");
     expect(providerLabel("github")).toBe("GitHub");
-    expect(providerLabel("serper")).toBe("serper");
+    expect(providerLabel("newboard")).toBe("newboard");
     expect(providerLabel("constructor")).toBe("constructor");
     expect(providerLabel("__proto__")).toBe("__proto__");
   });

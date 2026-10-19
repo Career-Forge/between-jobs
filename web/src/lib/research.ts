@@ -5,6 +5,7 @@
 // yet; otherwise it names the providers that searched, one warning per search that failed or was
 // skipped, and when it was made. Everything a section says about a run is read from those fields.
 
+import { providerDisplayName } from "./providerNames";
 import { formatTrailDate } from "./trail";
 
 export interface ResearchRun {
@@ -15,17 +16,9 @@ export interface ResearchRun {
   created_at: string;
 }
 
-// The names of the providers a run can report. An id this table does not know is shown as the server
-// sent it rather than guessed at.
-const PROVIDER_LABELS: Readonly<Record<string, string>> = {
-  you_com: "You.com",
-  firecrawl: "Firecrawl",
-  github: "GitHub",
-};
-
-export function providerLabel(id: string): string {
-  return Object.prototype.hasOwnProperty.call(PROVIDER_LABELS, id) ? PROVIDER_LABELS[id] : id;
-}
+// The name of a provider a run can report (lib/providerNames.ts); an id it does not know is shown as
+// the server sent it rather than guessed at.
+export const providerLabel = providerDisplayName;
 
 // "You.com", "You.com and Firecrawl", "You.com, Firecrawl and GitHub"; null when none came back.
 export function providersPhrase(ids: readonly string[]): string | null {
