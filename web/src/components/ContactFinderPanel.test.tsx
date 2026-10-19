@@ -115,9 +115,11 @@ describe("Contacts: loading, empty and a stored run", () => {
     const { container } = panel();
     await settle();
     expect(text(query(container, ".bj-rs-meta"))).toBe("Researched Sep 20 · 1 person");
-    expect(text(query(container, ".bj-trail"))).toBe("✦ People named by your model · from You.com, Firecrawl and GitHub results, on your keys · Sep 20");
+    expect(text(query(container, ".bj-trail"))).toBe("✦ People named by your model · from You.com, Firecrawl and GitHub results · Sep 20");
     click(query(container, "button.bj-trail-trigger"));
-    expect(text(query(container, ".bj-receipt"))).toContain("Code checked that each name appears in the title or snippet of the source it cites.");
+    const receipt = text(query(container, ".bj-receipt"));
+    expect(receipt).toContain("Code checked that each name appears in the title or snippet of the source it cites.");
+    expect(receipt).toContain("GitHub's public member list needs no key");
   });
 
   it("names the searches that were skipped for want of a Firecrawl key, and keeps the people found", async () => {
@@ -136,6 +138,15 @@ describe("Contacts: loading, empty and a stored run", () => {
     await settle();
     expect(text(container)).toContain("No named people turned up in that search pass.");
     expect(container.querySelector(".bj-trail")).not.toBeNull();
+  });
+
+  it("does not say a model named anyone for a run that found no one", async () => {
+    const warnings = Array.from({ length: 7 }, (_, index) => `search ${index + 1} failed`);
+    on(`GET ${PATH}`, stored([], { warnings }));
+    const { container } = panel();
+    await settle();
+    expect(text(query(container, ".bj-trail"))).toBe("○ Searched with You.com · on your keys · Sep 20 · ✕ 7 searches failed or skipped");
+    expect(text(container)).not.toContain("by your model");
   });
 });
 

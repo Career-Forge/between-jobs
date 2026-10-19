@@ -88,7 +88,7 @@ describe("Events", () => {
     await settle();
     expect(text(query(container, ".bj-state-lead"))).toBe("1 of this run's searches failed or was skipped:");
     expect(text(container)).toContain("No nearby events turned up in that search pass.");
-    expect(text(query(container, ".bj-trail"))).toContain("✕ 1 search failed or skipped");
+    expect(text(query(container, ".bj-trail"))).toBe("○ Searched with You.com · on your keys · Sep 20 · ✕ 1 search failed or skipped");
   });
 
   it("keeps the earlier events when a run fails and retries the run from the callout", async () => {

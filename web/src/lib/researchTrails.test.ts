@@ -30,6 +30,29 @@ describe("a research run's trail", () => {
     expect(trail.glyphs).toEqual(["model", "failed"]);
   });
 
+  it("draws a run with nothing in it as plain code that searched: no model glyph, no claim of results", () => {
+    const run = { ...RUN, warnings: ["a", "b", "c", "d", "e", "f", "g"] };
+    for (const parts of [intelTrail(run, 0, NOW, "UTC"), contactsTrail(run, 0, NOW, "UTC"), eventsTrail(run, 0, NOW, "UTC")]) {
+      const trail = buildTrail(parts.trail)!;
+      expect(trail.text).toBe("Searched with You.com · on your keys · Sep 20 · 7 searches failed or skipped");
+      expect(trail.glyphs).toEqual(["code", "failed"]);
+    }
+    expect(receiptText(intelTrail(run, 0, NOW).receipt).join(" ")).not.toContain("Each claim links");
+  });
+
+  it("keeps a bare run with nothing in it honest: no provider means no 'searched with' and no keys", () => {
+    const bare = { ...RUN, providers_used: [], warnings: ["a"] };
+    expect(words(intelTrail(bare, 0, NOW, "UTC").trail)).toBe("Sep 20 · 1 search failed or skipped");
+  });
+
+  it("does not put GitHub's results on the person's keys", () => {
+    const mixed = { ...RUN, providers_used: ["you_com", "github"] };
+    expect(words(contactsTrail(mixed, 2, NOW, "UTC").trail)).toBe("People named by your model · from You.com and GitHub results · Sep 20");
+    expect(receiptText(contactsTrail(mixed, 2, NOW).receipt).join(" ")).toContain("GitHub's public member list needs no key");
+    expect(words(contactsTrail({ ...RUN, providers_used: ["github"] }, 0, NOW, "UTC").trail)).toBe("Searched with GitHub · Sep 20");
+    expect(receiptText(contactsTrail(RUN, 2, NOW).receipt).join(" ")).not.toContain("GitHub");
+  });
+
   it("never names a model, never says verified and never says unknown", () => {
     for (const parts of [intelTrail(RUN, 1, NOW), contactsTrail(RUN, 1, NOW), eventsTrail(RUN, 1, NOW), draftTrail({ created_at: RUN.created_at }, NOW), briefTrail({ id: "b", created_at: RUN.created_at, rubric_warnings: [] }, NOW), answerTrail(QUESTION, NOW, true), sessionTrail(SESSION, [], NOW)]) {
       expect(findForbiddenWord(words(parts.trail) ?? "")).toBeNull();

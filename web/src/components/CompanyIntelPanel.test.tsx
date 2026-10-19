@@ -117,6 +117,17 @@ describe("Company intel: loading, empty and a stored dossier", () => {
     expect(buttonNamed(container, "Refresh")).toBeTruthy();
   });
 
+  it("does not say a model wrote claims, or that they came from results, for a run with none", async () => {
+    const warnings = Array.from({ length: 7 }, (_, index) => `search ${index + 1} failed`);
+    on(`GET ${PATH}`, stored([], { warnings }));
+    const { container } = panel();
+    await settle();
+    const line = text(query(container, ".bj-trail"));
+    expect(line).toBe("○ Searched with You.com · on your keys · Sep 20 · ✕ 7 searches failed or skipped");
+    expect(line).not.toContain("by your model");
+    expect(line).not.toContain("results");
+  });
+
   it("never makes a link of an address that is not http or https", async () => {
     on(`GET ${PATH}`, stored([claim(1, { source_url: "javascript:alert(1)", source_title: "A page" }), claim(2, { source_url: "data:text/html,x", source_title: null })]));
     const { container } = panel();

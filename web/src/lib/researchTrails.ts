@@ -5,6 +5,7 @@
 //   Company intel   "✦ Claims written by your model · from You.com results, on your keys · Sep 20"
 //   Contacts        "✦ People named by your model · from You.com results, on your keys · Sep 20"
 //   Events          "✦ Events picked out by your model · from You.com results, on your keys · Sep 20"
+//   a run that found nothing   "○ Searched with You.com · on your keys · Sep 20 · ✕ 7 searches failed or skipped"
 //   an outreach draft   "✦ Drafted by your model · on your model key · Sep 20"
 //   a practice answer   "✦ Scored by your model · on your model key · Sep 21"
 //   a practice session  "✦ Questions asked by your model · from your resume evidence · Sep 21"
@@ -47,24 +48,46 @@ interface RunTrailOptions {
   timeZone?: string;
 }
 
+// Providers that need no key of the person's: GitHub's public member list is read unauthenticated, so
+// a line that mentions it does not say the results came "on your keys".
+const KEYLESS_PROVIDERS: ReadonlySet<string> = new Set(["github"]);
+
 function runTrail(run: ResearchRun, options: RunTrailOptions): ResearchTrailParts {
   const providers = providersPhrase(run.providers_used);
   const failed = failedSearchCount(run);
+  const onYourKeys = !run.providers_used.some((id) => KEYLESS_PROVIDERS.has(id));
+  const keyless = run.providers_used.includes("github");
+  const also = failed > 0 ? { glyph: "failed" as const, text: searchesFailedWords(failed) } : null;
+  const when = runDate(run, options.now, options.timeZone);
+  // A run that came back with nothing made nothing for a model to have written, whether or not it was
+  // asked (the backend skips the model when every search failed, and drops what it cannot source). So the
+  // line says only what is true of such a run: what searched.
+  const empty = options.count.value === 0;
+  const trail: TrailInput = empty
+    ? {
+        glyph: "code",
+        actor: providers === null ? null : `Searched with ${providers}`,
+        basis: providers !== null && onYourKeys ? "on your keys" : null,
+        when,
+        also,
+      }
+    : {
+        glyph: "model",
+        actor: options.actor,
+        basis: providers === null ? "on your keys" : onYourKeys ? `from ${providers} results, on your keys` : `from ${providers} results`,
+        when,
+        also,
+      };
   return {
-    trail: {
-      glyph: "model",
-      actor: options.actor,
-      basis: providers === null ? "on your keys" : `from ${providers} results, on your keys`,
-      when: runDate(run, options.now, options.timeZone),
-      also: failed > 0 ? { glyph: "failed", text: searchesFailedWords(failed) } : null,
-    },
+    trail,
     receipt: [
       { label: "company", value: run.company_name },
       { label: "searched with", value: providers },
       { label: options.count.label, value: options.count.value },
       { label: "searches failed or skipped", value: failed > 0 ? failed : null },
       { label: "run", value: prefix(run.id, RUN_PREFIX) },
-      ...options.notes.map((note) => ({ note })),
+      ...(empty ? [] : options.notes).map((note) => ({ note })),
+      { note: keyless ? "GitHub's public member list needs no key, so those results did not use one." : null },
     ],
     receiptTitle: "Where this research came from",
   };
