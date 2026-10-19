@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { EntryEditModal } from "./EntryEditModal";
+import { useFocusAfterRender } from "../lib/useFocusAfterRender";
 import { saveFailureMessage } from "../lib/useProfileEditor";
 import { SECTION_FIELD_CONFIGS } from "../lib/sectionFieldConfigs";
 import type {
@@ -119,6 +120,45 @@ type EditTarget = {
 
 type Save = (mutate: (draft: CanonicalProfile) => CanonicalProfile) => Promise<void>;
 
+// Removing an entry removes the Delete (or Remove) button the keyboard was on, and focus would fall to the top of
+// the page. Where it goes instead: the removal button now at the same place in the same section (the entry that
+// moved up), else the last one, else the section's own heading, else a neighbouring section's.
+const REMOVAL_LABEL = /^(Delete|Remove) /;
+
+interface RemovalSite {
+  button: HTMLElement;
+  sectionId: string;
+  index: number;
+  neighbours: string[];
+}
+
+const sectionOf = (element: Element) => element.closest<HTMLElement>("section[id^='section-']");
+const removalButtonsIn = (section: Element) => [...section.querySelectorAll<HTMLElement>("button[aria-label]")].filter((button) => REMOVAL_LABEL.test(button.getAttribute("aria-label") ?? ""));
+
+function removalSiteOf(button: HTMLElement | null): RemovalSite | null {
+  if (button === null || !REMOVAL_LABEL.test(button.getAttribute("aria-label") ?? "")) return null;
+  const section = sectionOf(button);
+  if (section === null) return null;
+  const neighbours = [section.nextElementSibling, section.previousElementSibling].flatMap((sibling) => (sibling instanceof HTMLElement && sibling.id.startsWith("section-") ? [sibling.id] : []));
+  return { button, sectionId: section.id, index: removalButtonsIn(section).indexOf(button), neighbours };
+}
+
+function focusTargetAfterRemoval(site: RemovalSite, root: HTMLElement | null): HTMLElement | null {
+  const section = document.getElementById(site.sectionId);
+  if (section !== null) {
+    const buttons = removalButtonsIn(section);
+    const same = buttons[site.index] ?? buttons[buttons.length - 1];
+    if (same !== undefined) return same;
+    const heading = section.querySelector<HTMLElement>("h3");
+    if (heading !== null) return heading;
+  }
+  for (const id of site.neighbours) {
+    const heading = document.getElementById(id)?.querySelector<HTMLElement>("h3");
+    if (heading != null) return heading;
+  }
+  return root?.querySelector<HTMLElement>("section[id^='section-'] h3") ?? null;
+}
+
 export function SectionedProfile({
   profile,
   versionCount,
@@ -138,6 +178,15 @@ export function SectionedProfile({
   // The button pressed last inside the sections: where focus goes back to when a dialog it opened closes.
   // Safari and Firefox on a Mac do not focus a button on click, so "what had focus" cannot be relied on.
   const lastButton = useRef<HTMLElement | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  // Where the last removal was pressed, until its button is gone and focus has been handed on.
+  const removal = useRef<RemovalSite | null>(null);
+  useEffect(() => {
+    const site = removal.current;
+    if (site === null || site.button.isConnected) return;
+    removal.current = null;
+    if (document.activeElement === document.body) focusTargetAfterRemoval(site, root.current)?.focus();
+  });
   // The words for a failed write that has no modal (this component's own; see the file comment).
   const [actionError, setActionError] = useState<string | null>(null);
   // The alert for it sits at the top of the sections while the control that failed can be far below, so a
@@ -220,9 +269,12 @@ export function SectionedProfile({
 
   return (
     <div
+      ref={root}
       className="bj-profile-sections"
       onClickCapture={(event) => {
-        if (event.target instanceof Element) lastButton.current = event.target.closest("button");
+        if (!(event.target instanceof Element)) return;
+        lastButton.current = event.target.closest("button");
+        removal.current = removalSiteOf(lastButton.current);
       }}
     >
       {visibleSections.length > 1 && (
@@ -369,10 +421,10 @@ function SectionCard({
 
 // Edit and Delete for one entry. The visible words stay "Edit" and "Delete"; the accessible name says
 // which entry, since a list of them is otherwise a row of identical buttons.
-function EntryActions({ name, onEdit, onDelete }: { name: string; onEdit: () => void; onDelete: () => void }) {
+function EntryActions({ name, onEdit, onDelete, editFocusKey }: { name: string; onEdit: () => void; onDelete: () => void; editFocusKey?: string }) {
   return (
     <div className="bj-entry-actions">
-      <button type="button" className="bj-link-button" aria-label={`Edit ${name}`} onClick={onEdit}>
+      <button type="button" className="bj-link-button" aria-label={`Edit ${name}`} data-focus-key={editFocusKey} onClick={onEdit}>
         Edit
       </button>
       <button type="button" className="bj-link-button bj-link-button-danger" aria-label={`Delete ${name}`} onClick={onDelete}>
@@ -785,6 +837,9 @@ function AchievementsSection({ entries, onSave }: { entries: string[]; onSave: S
   const [newEntry, setNewEntry] = useState("");
   const addField = useRef<HTMLInputElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
+  // Edit swaps a row for a field, and Save or Cancel swaps it back: focus follows the control it replaced.
+  const list = useRef<HTMLDivElement>(null);
+  const focusLater = useFocusAfterRender(list);
 
   async function commitEdit(index: number) {
     const value = draft.trim();
@@ -799,6 +854,7 @@ function AchievementsSection({ entries, onSave }: { entries: string[]; onSave: S
       // Shown by the parent; the edit stays open with its text.
       return;
     }
+    focusLater(`edit:${index}`);
     setEditingIndex(null);
   }
 
@@ -834,16 +890,23 @@ function AchievementsSection({ entries, onSave }: { entries: string[]; onSave: S
 
   return (
     <SectionCard id="achievements" title="Achievements" count={entries.length}>
-      <div className="bj-simple-list">
+      <div className="bj-simple-list" ref={list}>
         {entries.map((entry, i) => (
           <div key={i} className="bj-simple-row">
             {editingIndex === i ? (
               <div className="bj-achievement-edit">
-                <input type="text" aria-label={`Achievement ${i + 1}`} value={draft} onChange={(e) => setDraft(e.target.value)} />
+                <input type="text" data-focus-key={`field:${i}`} aria-label={`Achievement ${i + 1}`} value={draft} onChange={(e) => setDraft(e.target.value)} />
                 <button type="button" className="bj-link-button" onClick={() => void commitEdit(i)}>
                   Save
                 </button>
-                <button type="button" className="bj-link-button" onClick={() => setEditingIndex(null)}>
+                <button
+                  type="button"
+                  className="bj-link-button"
+                  onClick={() => {
+                    focusLater(`edit:${i}`);
+                    setEditingIndex(null);
+                  }}
+                >
                   Cancel
                 </button>
               </div>
@@ -852,8 +915,10 @@ function AchievementsSection({ entries, onSave }: { entries: string[]; onSave: S
                 <div className="bj-simple-body bj-achievement-text">{entry}</div>
                 <EntryActions
                   name={`achievement ${i + 1}`}
+                  editFocusKey={`edit:${i}`}
                   onEdit={() => {
                     setDraft(entry);
+                    focusLater(`field:${i}`);
                     setEditingIndex(i);
                   }}
                   onDelete={() => void removeAt(i)}

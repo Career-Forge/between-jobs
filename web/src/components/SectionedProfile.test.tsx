@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CanonicalProfile } from "../lib/profileTypes";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
@@ -362,6 +363,112 @@ describe("achievements", () => {
     await settle();
     expect(alerts(container)[0]).toContain("That change was not saved");
     expect(add.value).toBe("Something");
+  });
+});
+
+// Removing an entry removes the button the keyboard was on, and editing an achievement in place swaps its Edit
+// button for a field: focus must follow instead of dropping to the top of the page.
+describe("keyboard focus when something is removed or edited in place", () => {
+  function Host({ fail = false }: { fail?: boolean }) {
+    const [profile, setProfile] = useState<CanonicalProfile>(structuredClone(PROFILE));
+    return (
+      <SectionedProfile
+        profile={profile}
+        versionCount={3}
+        saving={false}
+        error={null}
+        clearError={() => undefined}
+        onSave={async (mutate) => {
+          if (fail) throw new Error("nope");
+          setProfile(mutate(structuredClone(profile)));
+        }}
+      />
+    );
+  }
+  const labelOf = () => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.id ?? "";
+
+  beforeEach(() => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+  });
+
+  it("goes to the removal button that took the place of the removed entry, then to the last one", async () => {
+    const { container } = render(<Host />);
+    const first = buttonNamed(container, "Delete Senior Data Engineer at Acme Analytics");
+    first.focus();
+    click(first);
+    await settle();
+    expect(container.contains(first)).toBe(false);
+    expect(labelOf()).toBe("Delete Data Analyst at Orbit");
+  });
+
+  it("goes to a skill's neighbour when a skill is removed", async () => {
+    const { container } = render(<Host />);
+    const python = buttonNamed(container, "Remove Python from Programming");
+    python.focus();
+    click(python);
+    await settle();
+    expect(labelOf()).toBe("Remove SQL from Programming");
+  });
+
+  it("goes to a heading when the section's last entry goes and the section with it", async () => {
+    const { container } = render(<Host />);
+    const only = buttonNamed(container, /^Delete MS, /);
+    only.focus();
+    click(only);
+    await settle();
+    expect(container.querySelector("#section-education")).toBeNull();
+    expect(document.activeElement?.tagName).toBe("H3");
+    expect(document.activeElement?.id).toMatch(/^section-.+-title$/);
+  });
+
+  it("goes to a heading when the only achievement is deleted", async () => {
+    const { container } = render(<Host />);
+    const only = buttonNamed(container, "Delete achievement 1");
+    only.focus();
+    click(only);
+    await settle();
+    expect(container.querySelector("#section-achievements")).toBeNull();
+    expect(document.activeElement?.tagName).toBe("H3");
+  });
+
+  it("leaves a failed removal to its alert (which takes focus, and Dismiss gives it back), and a person who has moved on alone", async () => {
+    const failing = render(<Host fail />);
+    const button = buttonNamed(failing.container, "Delete Senior Data Engineer at Acme Analytics");
+    button.focus();
+    click(button);
+    await settle();
+    expect(failing.container.contains(button)).toBe(true);
+    expect(document.activeElement?.getAttribute("role")).toBe("alert");
+    click(buttonNamed(failing.container, "Dismiss"));
+    expect(document.activeElement).toBe(button);
+
+    const { container } = render(<Host />);
+    click(buttonNamed(container, "Delete Senior Data Engineer at Acme Analytics"));
+    const elsewhere = query<HTMLInputElement>(container, 'input[aria-label="Add an achievement"]');
+    elsewhere.focus();
+    await settle();
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it("moves focus into the field when an achievement's Edit is pressed, and back to Edit after Save or Cancel", async () => {
+    const { container } = render(<Host />);
+    const edit = buttonNamed(container, "Edit achievement 1");
+    edit.focus();
+    click(edit);
+    await settle();
+    const field = query<HTMLInputElement>(container, 'input[aria-label="Achievement 1"]');
+    expect(document.activeElement).toBe(field);
+
+    typeInto(field, "Team award, 2024.");
+    click(buttonNamed(container, "Save"));
+    await settle();
+    expect(labelOf()).toBe("Edit achievement 1");
+
+    click(buttonNamed(container, "Edit achievement 1"));
+    await settle();
+    click(buttonNamed(container, "Cancel"));
+    await settle();
+    expect(labelOf()).toBe("Edit achievement 1");
   });
 });
 
