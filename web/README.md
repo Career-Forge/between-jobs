@@ -454,7 +454,7 @@ are `styles/research.css`.
   in company research says it is shared across users.
 - **Known gaps.** A stored outreach draft is not read back after a reload (the endpoint exists and is unused), so the button
   reads "Draft outreach" again. The Hiring posts panel (`HiringSignalsPanelView.tsx`) keeps its own cards and counts
-  wording; the section adds only its trails and drops its own heading.
+  wording; the section adds only its one trail line (what searched and what the person saved, together) and drops its own heading.
 
 ## Signed-out pages
 

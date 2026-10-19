@@ -110,14 +110,16 @@ export function PositioningBriefPanel({ applicationId, now }: { applicationId: s
       {read.kind === "loading" && <LoadingState rows={3} rowHeight={64} label="Loading your brief..." />}
       {read.kind === "failed" && <FailureState message={read.message} onRetry={() => void load()} restoreFocusTo={focusBuildButton} />}
 
+      {/* The status region is on the page before the note, so the note's words are announced when they arrive. */}
+      <div role="status" className="bj-rs-live">
+        {outcome !== null && outcome.kind === "note" && <EvidenceNote announce={false}>{outcome.message}</EvidenceNote>}
+      </div>
       {outcome !== null &&
         (outcome.kind === "setup" ? (
           <SetupRequiredNotice notice={outcome.notice} />
-        ) : outcome.kind === "note" ? (
-          <EvidenceNote>{outcome.message}</EvidenceNote>
-        ) : (
+        ) : outcome.kind === "error" ? (
           <FailureState message={outcome.message} onRetry={() => void build()} restoreFocusTo={focusBuildButton} />
-        ))}
+        ) : null)}
 
       {read.kind === "ready" && brief === null && (
         <EmptyBlock heading="No brief yet">

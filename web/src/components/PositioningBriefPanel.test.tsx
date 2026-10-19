@@ -109,10 +109,14 @@ describe("Your play", () => {
     on(`POST ${PATH}`, new FakeApiError("There is no gap left to name for this role.", "INSUFFICIENT_EVIDENCE", undefined, 422));
     const { container } = panel();
     await settle();
+    const region = query(container, ".bj-rs-live[role='status']:not(:has(.bj-rs-meta))");
+    expect(region.textContent).toBe("");
     click(buttonNamed(container, "Refresh"));
     await settle();
     const note = query(container, ".bj-rs-note");
     expect(text(note)).toBe("◆ There is no gap left to name for this role.");
+    // The note arrives inside a status region that was already on the page, so it is announced.
+    expect(region.contains(note)).toBe(true);
     expect(container.querySelector("[role='alert']")).toBeNull();
     expect(container.querySelector(".bj-rs-brief")).not.toBeNull();
     expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);

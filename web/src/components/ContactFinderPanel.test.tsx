@@ -393,7 +393,9 @@ describe("Contacts: an outreach draft stays a draft", () => {
     click(buttonNamed(container, "Draft outreach"));
     await settle();
     const note = query(row(container), ".bj-rs-note");
-    expect(note.getAttribute("role")).toBe("status");
+    // Announced by the panel's status region, which was on the page before the note, not by the note's own role.
+    expect(note.hasAttribute("role")).toBe(false);
+    expect(text(query(container, ".bj-visually-hidden[role='status']"))).toBe("There is nothing in this contact's sources to ground a draft in.");
     expect(text(note)).toBe("◆ There is nothing in this contact's sources to ground a draft in.");
     expect(row(container).querySelector("[role='alert']")).toBeNull();
     expect([...row(container).querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);

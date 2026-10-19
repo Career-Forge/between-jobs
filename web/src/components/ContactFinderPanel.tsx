@@ -266,7 +266,10 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
       setOutcome(`Outreach draft ready for ${candidate.person_name}. Nothing is sent.`);
     } catch (e) {
       // Nothing to ground a draft in is the server's honest answer, not a failure: its reason, as a note.
-      if (e instanceof ApiError && e.code === "INSUFFICIENT_EVIDENCE") fail(candidate, "draft", { kind: "note", message: e.message });
+      if (e instanceof ApiError && e.code === "INSUFFICIENT_EVIDENCE") {
+        fail(candidate, "draft", { kind: "note", message: e.message });
+        setOutcome(e.message);
+      }
       else fail(candidate, "draft", failureOf(e, "Drafting failed"));
     } finally {
       finish(candidate, "draft");
@@ -455,7 +458,7 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
                         {issue.problem.kind === "setup" ? (
                           <SetupRequiredNotice notice={issue.problem.notice} />
                         ) : issue.problem.kind === "note" ? (
-                          <EvidenceNote>{issue.problem.message}</EvidenceNote>
+                          <EvidenceNote announce={false}>{issue.problem.message}</EvidenceNote>
                         ) : (
                           <FailureState message={issue.problem.message} onRetry={() => retry(candidate, issue.action)} restoreFocusTo={focusHeading(candidate)} />
                         )}

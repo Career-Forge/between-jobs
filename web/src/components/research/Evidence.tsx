@@ -110,12 +110,14 @@ export function Chip({ tone, glyph, children }: { tone: ChipTone; glyph?: TrailG
 }
 
 // A gold note that says something the person should know and that is not a failure (the server declined
-// to draft because it had nothing to ground a draft in, a lookup that ran and found nothing). It is a
-// status region so it is read out when it appears.
-export function EvidenceNote({ children, className }: { children: ReactNode; className?: string }) {
+// to draft because it had nothing to ground a draft in, a lookup that ran and found nothing). By default it
+// is a status region so it is read out when it appears; but a region that is inserted already holding its
+// words is not reliably announced, so a page that has a status region on the screen before the note comes
+// (and puts the words in it) passes `announce={false}` and the note is plain text.
+export function EvidenceNote({ children, className, announce = true }: { children: ReactNode; className?: string; announce?: boolean }) {
   const glyph = TRAIL_GLYPHS.evidence;
   return (
-    <p role="status" className={className === undefined ? "bj-rs-note" : `bj-rs-note ${className}`}>
+    <p role={announce ? "status" : undefined} className={className === undefined ? "bj-rs-note" : `bj-rs-note ${className}`}>
       <span className={`bj-trail-glyph bj-trail-glyph--${glyph.tone}`} aria-hidden="true">
         {glyph.char}
       </span>{" "}
