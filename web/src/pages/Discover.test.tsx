@@ -543,6 +543,34 @@ describe("Track", () => {
   });
 });
 
+describe("focus after a successful Track", () => {
+  it("moves focus to the Open workspace link that replaces the pressed Track button", async () => {
+    answer({ "/discover?": response(), "POST /discover/track": { id: "app-1" } });
+    const { container } = await draw();
+    await search(container);
+    const track = query<HTMLButtonElement>(container, "li.bj-disc-row .bj-disc-actions button");
+    act(() => track.focus());
+    click(track);
+    await flush();
+    const active = document.activeElement as HTMLElement;
+    expect(active.tagName).toBe("A");
+    expect(words(active)).toBe("Open workspace");
+  });
+
+  it("leaves focus where it is when the person has moved on while the request was out", async () => {
+    let release: (value: unknown) => void = () => undefined;
+    answer({ "/discover?": response(), "POST /discover/track": () => new Promise((resolve) => (release = resolve)) });
+    const { container } = await draw();
+    await search(container);
+    click(query<HTMLButtonElement>(container, "li.bj-disc-row .bj-disc-actions button"));
+    const box = query<HTMLInputElement>(form(container), "input[type='text']");
+    act(() => box.focus());
+    await act(async () => release({ id: "app-1" }));
+    await flush();
+    expect(document.activeElement).toBe(box);
+  });
+});
+
 describe("saved searches", () => {
   it("lists the person's searches above the results, with the last check, and no request beyond the one list", async () => {
     answer({ "/saved-searches": [SAVED] });

@@ -111,17 +111,17 @@ describe("the buttons", () => {
     ]);
   });
 
-  it("waits only for the search an action is out for, with aria-disabled so focus stays, and every button is a plain button (never a submit)", () => {
+  it("waits on every row while one action is out (one request at a time), with aria-disabled so focus stays, and every button is a plain button (never a submit)", () => {
     const nodes = tree(ready([search({ id: "a" }), search({ id: "b" })], { busyId: "a" }));
     const buttons = findAll(nodes, (el) => el.type === "button");
-    expect(buttons.map((button) => prop(button, "aria-disabled"))).toEqual([true, true, undefined, undefined]);
+    expect(buttons.map((button) => prop(button, "aria-disabled"))).toEqual([true, true, true, true]);
     expect(buttons.map((button) => prop(button, "disabled"))).toEqual([undefined, undefined, undefined, undefined]);
     expect(buttons.every((button) => prop(button, "type") === "button")).toBe(true);
   });
 
-  it("ignores a press on a button whose search has an action out", () => {
+  it("ignores a press while an action is out, on the busy row and on any other", () => {
     const { actions, calls } = recorder();
-    const nodes = tree(ready([search({ id: "a" })], { busyId: "a" }), actions);
+    const nodes = tree(ready([search({ id: "a" }), search({ id: "b" })], { busyId: "a" }), actions);
     for (const button of findAll(nodes, (el) => el.type === "button")) press(button);
     expect(calls).toEqual([]);
   });

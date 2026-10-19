@@ -94,7 +94,9 @@ export function SavedSearchesCardView({
       )}
       <ul className="bj-ss-list">
         {state.searches.map((search) => {
-          const waiting = state.busyId === search.id;
+          // One request is out at a time (lib/useSavedSearches.ts), so while any row's is, every row's
+          // buttons say so: a press on another row would be dropped without a word.
+          const waiting = state.busyId !== null;
           return (
             <li key={search.id} className="bj-ss-row">
               <div className="bj-ss-text">

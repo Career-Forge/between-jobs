@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { formatSalary, locationLabel } from "../../lib/discover";
 import type { JobCard } from "../../lib/discoverTypes";
@@ -32,6 +33,23 @@ function safeHref(url: string): string | null {
 }
 
 export function ResultRow({ job, scoringStrategy, now, trackedApplicationId, tracking, trackError, onTrack, timeZone }: ResultRowProps) {
+  // Track is replaced by "Open workspace" when it succeeds. The button a person pressed is then gone
+  // and focus would fall to the page, so focus follows to the link that took its place. Only a row
+  // whose Track was pressed does this, and only when focus really was lost (it is on the page itself),
+  // never when the person has moved on to something else.
+  const trackPressed = useRef(false);
+  const workspaceLink = useRef<HTMLAnchorElement>(null);
+  const track = () => {
+    if (tracking) return;
+    trackPressed.current = true;
+    onTrack(job);
+  };
+  useEffect(() => {
+    if (trackedApplicationId === null || !trackPressed.current) return;
+    trackPressed.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body) workspaceLink.current?.focus();
+  }, [trackedApplicationId]);
   const salary = formatSalary(job.salary_min, job.salary_max, job.salary_currency);
   const fit = fitViewOf(job, scoringStrategy);
   const href = safeHref(job.apply_url);
@@ -66,18 +84,18 @@ export function ResultRow({ job, scoringStrategy, now, trackedApplicationId, tra
           </a>
         )}
         {trackedApplicationId !== null ? (
-          <Link to={`/applications/${trackedApplicationId}`} aria-label={`Open workspace for ${what}`}>
+          <Link ref={workspaceLink} to={`/applications/${trackedApplicationId}`} aria-label={`Open workspace for ${what}`}>
             Open workspace
           </Link>
         ) : (
-          <button type="button" aria-disabled={tracking ? true : undefined} aria-label={`${tracking ? "Tracking..." : "Track"} ${what}`} onClick={() => !tracking && onTrack(job)}>
+          <button type="button" aria-disabled={tracking ? true : undefined} aria-label={`${tracking ? "Tracking..." : "Track"} ${what}`} onClick={track}>
             {tracking ? "Tracking..." : "Track"}
           </button>
         )}
       </div>
       {trackError !== null && (
         <div className="bj-disc-problem">
-          <FailureState message={`Couldn't track ${what}: ${trackError}`} onRetry={() => !tracking && onTrack(job)} />
+          <FailureState message={`Couldn't track ${what}: ${trackError}`} onRetry={track} />
         </div>
       )}
       <div className="bj-disc-trail">
