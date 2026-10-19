@@ -172,3 +172,20 @@ export const SKILL_CATEGORY_LABELS: Record<keyof Skills, string> = {
   tools: "Tools",
   other: "Other",
 };
+
+// A profile_versions row as GET /profile/current and POST /profile/versions return it (the API sends
+// the whole row). `source_kind` is how the version was made ("web_json_paste", "web_pdf_import",
+// "web_docx_import", "gap_interview", or a channel's own); it is what the page's trail line says the
+// version came from, and a value the page does not know is left out of the line rather than guessed at.
+// `stats` and `warnings` come only with a fresh JSON import, `version_count` only with /current (every
+// version the person has ever made, waiting drafts included).
+export interface ProfileVersion {
+  id: string;
+  canonical_json: CanonicalProfile;
+  activated_at: string | null;
+  created_at?: string;
+  source_kind?: string;
+  stats?: Record<string, number>;
+  warnings?: string[];
+  version_count?: number;
+}
