@@ -39,8 +39,8 @@
 // Signed in, an unknown spelling reaches the shell, whose router matches the paths it has
 // without regard to case, exactly as it did before this module existed.
 
-import { LOGIN_REGISTER_QUERY, urlCarriesAuthError, type LoginMode } from "./passwordReset";
-import { SETTINGS_PATH } from "./settingsPaths";
+import { LOGIN_REGISTER_QUERY, UPDATE_PASSWORD_PATH, urlCarriesAuthError, type LoginMode } from "./passwordReset";
+import { LEGACY_INTEGRATIONS_PATH, SETTINGS_PATH } from "./settingsPaths";
 
 export const LANDING_PATH = "/";
 export const LOGIN_PATH = "/login";
@@ -137,8 +137,12 @@ export function documentTitleFor(view: AppView, pathname: string): string | null
       if (path === PRIVACY_PATH) return pageTitle("Privacy Policy");
       if (path === TERMS_PATH) return pageTitle("Terms of Service");
       if (path === ENROLL_PATH) return pageTitle(ENROLL_PAGE_NAME);
-      if (path === SETTINGS_PATH) return pageTitle("Settings");
-      return pageTitle(appPageName(path));
+      const name = appPageName(path);
+      if (name !== null) return pageTitle(name);
+      // An address the router has no page for is the not-found page (pages/NotFound.tsx), and says so in the tab. A
+      // spelling the router does match but this table does not name (another case of a legal page, the old
+      // integrations address, the password form) keeps the plain title.
+      return pageTitle(ROUTED_WITHOUT_A_NAME.has(path.toLowerCase()) ? null : NOT_FOUND_PAGE_NAME);
     }
   }
 }
@@ -153,8 +157,22 @@ const APP_PAGE_NAMES: Readonly<Record<string, string>> = {
   "/applications": "Applications",
   "/practice": "Practice",
   "/profile": "Profile",
+  [SETTINGS_PATH]: "Settings",
 };
 const WORKSPACE_PATH = /^\/applications\/[^/]+$/i;
+
+// What the not-found page is called in its heading and in the document title.
+export const NOT_FOUND_PAGE_NAME = "Page not found";
+
+// Addresses the router matches (App.tsx) that the table above does not name: the legal pages and the tester
+// programme (titled by their own rules, which are exact about case), the old integrations address (it redirects)
+// and the password form. Lower case, like the table.
+const ROUTED_WITHOUT_A_NAME: ReadonlySet<string> = new Set([PRIVACY_PATH, TERMS_PATH, ENROLL_PATH, UPDATE_PASSWORD_PATH, LEGACY_INTEGRATIONS_PATH]);
+
+/** What a signed-in page at this address is called (its heading), or null where there is no such page. */
+export function appPageNameFor(pathname: string): string | null {
+  return appPageName(normalizePath(pathname));
+}
 
 function appPageName(path: string): string | null {
   const lower = path.toLowerCase();

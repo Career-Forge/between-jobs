@@ -219,6 +219,8 @@ describe("an address the shell has no page for", () => {
     describeAccount("data");
     const container = await open(path, 1000);
     expect([...container.querySelectorAll("main h1")].map((h) => text(h))).toEqual(["Page not found"]);
+    // the tab says what the page is, like every other signed-in page
+    expect(document.title).toBe("Page not found -- Between Jobs");
     expect(bands(container)).toHaveLength(0);
     expect(cyanFills(container)).toEqual([]);
     expect(text(query(container, "main a"))).toBe("Go to Today");

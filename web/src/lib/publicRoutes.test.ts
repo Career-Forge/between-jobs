@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
+import appSource from "../App.tsx?raw";
 import { PRIVACY, TERMS } from "../content/legal";
 import {
   ENROLL_PATH,
   LANDING_PATH,
   LOGIN_PATH,
+  NOT_FOUND_PAGE_NAME,
   PRIVACY_PATH,
   REGISTER_PATH,
   SITE_NAME,
   TERMS_PATH,
+  appPageNameFor,
   appView,
   documentTitleFor,
   loginPageTitle,
@@ -306,10 +309,37 @@ describe("the document title", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it("puts the plain title back on an address the shell has no page for, so leaving the policy does not keep its title", () => {
-    for (const pathname of ["/profile/integrations", "/Privacy", "/privacy/extra", "/applications/123/extra", "/nowhere"]) {
+  it("puts the plain title back on an address the router matches but the title table does not name, so leaving the policy does not keep its title", () => {
+    for (const pathname of ["/profile/integrations", "/Privacy", "/update-password", "/Enroll"]) {
       expect(documentTitleFor("app", pathname), pathname).toBe("Between Jobs");
     }
+  });
+
+  it("titles an address the shell has no page for as the not-found page, so the tab says what is on screen", () => {
+    expect(NOT_FOUND_PAGE_NAME).toBe("Page not found");
+    for (const pathname of ["/privacy/extra", "/applications/123/extra", "/nowhere", "/profile/settings", "/settings/extra"]) {
+      expect(documentTitleFor("app", pathname), pathname).toBe("Page not found -- Between Jobs");
+    }
+  });
+
+  it("names every address App.tsx routes: none of them is titled as the not-found page", () => {
+    // Read from the source, so a route added later without a title decision fails here.
+    const routes = [...appSource.matchAll(/<Route path=(?:"([^"]+)"|\{([A-Z_]+)\})/g)].map((match) => match[1] ?? match[2]);
+    expect(routes.length).toBeGreaterThan(10);
+    const byConstant: Record<string, string> = { UPDATE_PASSWORD_PATH, PRIVACY_PATH, TERMS_PATH, ENROLL_PATH };
+    for (const route of routes) {
+      if (route === "*") continue;
+      const path = (byConstant[route] ?? route).replace(":id", "123");
+      expect(documentTitleFor("app", path), `${route} -> ${path}`).not.toBe(`${NOT_FOUND_PAGE_NAME} -- Between Jobs`);
+    }
+    expect(routes).toContain("*");
+  });
+
+  it("gives the heading helper the table's names, and null where there is no such page", () => {
+    expect(appPageNameFor("/settings/")).toBe("Settings");
+    expect(appPageNameFor("/Discover")).toBe("Discover");
+    expect(appPageNameFor("/applications/9")).toBe("Application");
+    expect(appPageNameFor("/nowhere")).toBeNull();
   });
 
   it("gives every view a title decision, and the one the view table gives for the same visitor", () => {
