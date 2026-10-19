@@ -174,6 +174,22 @@ describe("each signed-in page, in each account state", () => {
   });
 });
 
+describe("each signed-in page while its setup reads are still out", () => {
+  // The skip link to the next step is on these pages from the first render, so the loading band has to
+  // hold what it points at.
+  for (const route of [...ROUTES, "/applications/app-1"]) {
+    for (const width of [375, 1400]) {
+      it(`${route}, ${width}px`, async () => {
+        describeAccount("data");
+        answers.extra = (path) => (path === "/profile/current" || path === "/credentials" ? new Promise(() => undefined) : undefined);
+        const container = await open(route, width);
+        expectWholePage(container, `loading ${route} ${width}px`);
+        expect(container.querySelectorAll("#next-step-focus"), `loading ${route}: the skip link's target`).toHaveLength(1);
+      });
+    }
+  }
+});
+
 describe("Hiring signals", () => {
   it("is an unlit note when the server has the feature off", async () => {
     describeAccount("empty", { hiring: false });

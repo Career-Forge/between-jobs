@@ -42,7 +42,8 @@ import "../../styles/paper.css";
 // Not built: the phone's docked sticky 56px bar (optional, and not part of this component).
 
 // The id of the element a "Skip to next step" link should focus: the button when the band is lit,
-// otherwise the sentence (which takes focus without being a tab stop).
+// otherwise the sentence, or the "Loading..." line while the band has no step yet (both take focus
+// without being a tab stop).
 export const NEXT_STEP_FOCUS_ID = "next-step-focus";
 
 // The `intent` that names a band's form submit button in `pending` (a submit action has no intent of
@@ -193,7 +194,10 @@ export function NextStepBand({ outcome, onAction, eyebrow, children, pending }: 
     return (
       <section className="bj-band bj-band--loading" aria-label="Next step" aria-busy="true">
         <p className="bj-band-eyebrow">Next step</p>
-        <p className="bj-band-loading">Loading...</p>
+        {/* The skip link points here too: it is on the page while the band loads. */}
+        <p className="bj-band-loading" id={NEXT_STEP_FOCUS_ID} tabIndex={-1}>
+          Loading...
+        </p>
         {region}
       </section>
     );
