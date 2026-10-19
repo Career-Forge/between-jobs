@@ -5,7 +5,7 @@ import { blockOf, declarationsFor, rulesOf, tokenResolver, withoutMedia } from "
 import docCss from "./paper-doc.css?raw";
 
 // paper-doc.css is read as text (the test run has no layout engine). It pins what can be measured from
-// the rules: the margin, the measures, the sizes the spec gives, that it defines no color of its own and
+// the rules: the margin, the measures, the sizes the layout is built to, that it defines no color of its own and
 // that it never fills anything cyan.
 
 const resolve = tokenResolver(tokensCss);
@@ -50,7 +50,7 @@ describe("paper-doc.css", () => {
 });
 
 describe("the document layout and its trail margin", () => {
-  it("has a 280px margin, a 32px gap, and the spec's measures: 880px for rows and cards, 680px for prose", () => {
+  it("has a 280px margin, a 32px gap, and two measures: 880px for rows and cards, 680px for prose", () => {
     const layout = decl(".bj-doc");
     expect(layout["--bj-doc-margin"]).toBe("280px");
     expect(layout["--bj-doc-gap"]).toBe("32px");

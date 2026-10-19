@@ -1,7 +1,7 @@
 import { useRef, type KeyboardEvent } from "react";
 import "../styles/profile-studio.css";
 
-// A short choice (two to four words) drawn as a group of segments, the way the design draws a
+// A short choice (two to four words) drawn as a group of segments, the way the rest of the app draws a
 // resume setting: a radio group, so the chosen segment carries aria-checked and the shared selection
 // fill (.bj-selectable, tokens.css), inside the 1px outline that makes a maroon fill read as a group.
 //

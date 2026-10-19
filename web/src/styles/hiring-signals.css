@@ -69,7 +69,7 @@
 
 /* A field's edge is its only boundary, so it takes the outline color (3:1 against the page, as the
    * Settings fields do) and not the hairline rule color, and a placeholder is the muted text color:
-   * the browser's own is dimmer than the floor the design sets for muted text. */
+   * the browser's own is dimmer than the contrast floor this app sets for muted text. */
 .bj-hs-tab-form input[type="text"] {
   border-color: var(--bj-outline);
 }
