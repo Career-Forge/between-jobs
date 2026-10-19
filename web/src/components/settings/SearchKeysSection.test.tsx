@@ -117,6 +117,30 @@ describe("saving a key", () => {
     expect(query<HTMLInputElement>(form, 'input[autocomplete="off"]').value).toBe(KEY);
   });
 
+  it("keeps focus in the key field and on the save button while the key is checked: read-only and aria-disabled, never disabled", async () => {
+    let calls = 0;
+    on("POST /credentials", () => {
+      calls += 1;
+      return new Promise(() => undefined);
+    });
+    const { container } = mount([]);
+    click(button(row(container, "brave"), "Add key"));
+    const form = query<HTMLFormElement>(row(container, "brave"), "form");
+    const input = query<HTMLInputElement>(form, 'input[autocomplete="off"]');
+    typeInto(input, KEY);
+    input.focus();
+    submit(form);
+    await settle(1);
+    expect(input.readOnly).toBe(true);
+    expect(input.disabled).toBe(false);
+    expect(document.activeElement).toBe(input);
+    const save = button(form, "Validating...");
+    expect(save.disabled).toBe(false);
+    expect(save.getAttribute("aria-disabled")).toBe("true");
+    submit(form);
+    expect(calls).toBe(1);
+  });
+
   it("will not send an empty key, and Cancel clears what was typed", async () => {
     const { container } = mount([]);
     click(button(row(container, "brave"), "Add key"));

@@ -225,6 +225,23 @@ describe("signing in", () => {
     expect(query(band, "button.bj-band-action").hasAttribute("aria-disabled")).toBe(false);
   });
 
+  it("keeps focus on Continue with Google while the redirect starts, aria-disabled rather than disabled, and ignores a second press", async () => {
+    let finish: (outcome: string | null) => void = () => undefined;
+    auth.signInWithGoogle.mockReturnValue(new Promise<string | null>((resolve) => (finish = resolve)));
+    const root = open();
+    const google = buttonNamed(root, "Continue with Google");
+    google.focus();
+    click(google);
+    await act(async () => undefined);
+    expect(google.textContent).toBe("Redirecting...");
+    expect(google.disabled).toBe(false);
+    expect(google.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(google);
+    click(google);
+    expect(auth.signInWithGoogle).toHaveBeenCalledTimes(1);
+    await act(async () => finish(null));
+  });
+
   it("shows an error from Google's redirect and lets the person try again", async () => {
     auth.signInWithGoogle.mockResolvedValue("Google is not configured");
     const root = open();

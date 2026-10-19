@@ -81,6 +81,25 @@ describe("the Gmail card", () => {
     expect(container.textContent).toContain("down");
   });
 
+  it("keeps Disconnect Gmail focused and aria-disabled (never disabled) while the request is out, and ignores a second press", async () => {
+    let calls = 0;
+    on("DELETE /credentials/oauth/gmail", () => {
+      calls += 1;
+      return new Promise(() => undefined);
+    });
+    const { container } = render(<GmailCard onDisconnected={() => undefined} />);
+    const button = buttonNamed(container, "Disconnect Gmail");
+    button.focus();
+    click(button);
+    await settle(1);
+    expect(button.textContent).toBe("Disconnecting...");
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(button);
+    click(button);
+    expect(calls).toBe(1);
+  });
+
   it("moves focus to Connect Gmail when the disconnect removes the button the keyboard was on", async () => {
     on("DELETE /credentials/oauth/gmail", undefined);
     const { container } = render(<GmailCard onDisconnected={() => undefined} />);
