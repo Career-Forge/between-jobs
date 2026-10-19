@@ -85,6 +85,7 @@ describe("settings.css", () => {
       ".bj-set-field input",
       ".bj-set-field select",
       ".bj-set-actions > button",
+      ".bj-set-oneclick > button",
       ".bj-set-row-actions > button",
       ".bj-set-chips > button",
       ".bj-set-card-head > button",
