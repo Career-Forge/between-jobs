@@ -79,11 +79,13 @@ export function CompanyIntelPanel({ applicationId, now }: { applicationId: strin
   const data = ready !== null && ready.run !== null ? { run: ready.run, claims: ready.claims } : null;
   const collapsed = data !== null && data.claims.length > COLLAPSE_ABOVE && !expanded;
   const shown = data === null ? [] : collapsed ? data.claims.slice(0, COLLAPSED_SHOWS) : data.claims;
+  // The status region's words come from the run, not from whether the disclosure is open: opening or folding
+  // the list must not read out a run summary again.
   const researched = data === null ? null : runDate(data.run, clock);
   const meta =
     data === null
       ? []
-      : [researched === null ? null : `Researched ${researched}`, collapsed ? null : countWords(data.claims.length, "claim", "claims")].filter((part): part is string => part !== null);
+      : [researched === null ? null : `Researched ${researched}`, countWords(data.claims.length, "claim", "claims")].filter((part): part is string => part !== null);
 
   const trail =
     data !== null

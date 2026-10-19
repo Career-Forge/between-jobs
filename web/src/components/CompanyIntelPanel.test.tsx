@@ -177,6 +177,10 @@ describe("Company intel: a long dossier", () => {
     await settle();
     expect(container.querySelectorAll(".bj-rs-item")).toHaveLength(3);
     expect(text(query(container, ".bj-rs-more .bj-rs-meta"))).toBe("3 of 8 claims");
+    // The status region says the run's own count whether the list is folded or not, so the disclosure
+    // never rewrites it (a rewrite would be read out as if a run had finished).
+    const live = query(container, ".bj-rs-live");
+    expect(text(live)).toBe("Researched Sep 20 · 8 claims");
     const toggle = buttonNamed(container, "Show all 8");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(toggle.getAttribute("aria-controls")).toBe(query(container, "ul.bj-rs-list").id);
@@ -184,9 +188,10 @@ describe("Company intel: a long dossier", () => {
     expect(container.querySelectorAll(".bj-rs-item")).toHaveLength(8);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(toggle.textContent).toBe("Show fewer");
-    expect(text(query(container, ".bj-rs-meta"))).toBe("Researched Sep 20 · 8 claims");
+    expect(text(live)).toBe("Researched Sep 20 · 8 claims");
     click(toggle);
     expect(container.querySelectorAll(".bj-rs-item")).toHaveLength(3);
+    expect(text(live)).toBe("Researched Sep 20 · 8 claims");
   });
 
   it("does not collapse a short one, and the section itself never collapses", async () => {

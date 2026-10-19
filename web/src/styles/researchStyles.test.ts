@@ -80,6 +80,25 @@ describe("evidence", () => {
   });
 });
 
+describe("a word the server sent that the page does not know", () => {
+  it("wraps a chip inside its card instead of widening the page: nowrap is gone and the card's column can shrink", () => {
+    const chip = decl(".bj-rs-chip");
+    expect(chip["white-space"]).toBeUndefined();
+    expect(chip["max-width"]).toBe("100%");
+    expect(chip["overflow-wrap"]).toBe("anywhere");
+    expect(decl(".bj-rs-item")["grid-template-columns"]).toBe("minmax(0, 1fr)");
+  });
+});
+
+describe("the status region", () => {
+  it("is hidden like screen-reader text while empty, never display:none (an announcer has to exist before its words change)", () => {
+    const empty = decl(".bj-rs-live:empty");
+    expect(empty.display).toBeUndefined();
+    expect(empty.position).toBe("absolute");
+    expect(empty["clip-path"]).toBe("inset(50%)");
+  });
+});
+
 describe("practice", () => {
   it("fills a STAR part gold where the model found it and outlines it where it did not", () => {
     const on = decl(".bj-rs-star-part--on");
@@ -109,6 +128,17 @@ describe("a phone", () => {
     const rule = declarationsFor(phone, ".bj-rs-ev a");
     expect(rule["min-height"]).toBe("44px");
     expect(rule.display).toBe("inline-flex");
+  });
+
+  it("makes the setup notice's link, a Copy or Retry link-button and the Hiring post link 44px targets", () => {
+    for (const selector of [".bj-rs .bj-setup-notice a", ".bj-ws-panel .bj-hs-actions a"]) {
+      expect(declarationsFor(phone, selector)["min-height"], selector).toBe("44px");
+    }
+    for (const selector of [".bj-rs-field .bj-link-button", ".bj-rs-fact .bj-link-button"]) {
+      const rule = declarationsFor(phone, selector);
+      expect(rule["min-height"], selector).toBe("44px");
+      expect(rule["min-width"], selector).toBe("44px");
+    }
   });
 
   it("lets long unbroken text from a search result wrap inside its column instead of widening the page", () => {

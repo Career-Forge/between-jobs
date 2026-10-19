@@ -23,10 +23,18 @@
   margin: 0;
 }
 
-/* The status region that announces a changed count after a run. It holds nothing while there is nothing
-   to say, and then takes no room. */
+/* The status region that announces a changed count after a run. A live region has to be in the page before
+   its words change to be announced, so while it is empty it is hidden the way screen-reader text is (still
+   there, out of the layout and out of the column's gap), never display:none. */
 .bj-rs-live:empty {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
 }
 
 .bj-rs-meta {
@@ -68,6 +76,7 @@
 
 .bj-rs-item {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--bj-space-2);
   min-width: 0;
   padding: var(--bj-space-4) 0;
@@ -212,7 +221,9 @@ h3.bj-rs-title {
   border-radius: 12px;
   color: var(--bj-text);
   font-size: var(--bj-text-badge);
-  white-space: nowrap;
+  /* A word the server sent that this page does not know can be long: it wraps inside the card. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .bj-rs-chip--solid {
@@ -453,10 +464,23 @@ button.bj-rs-answer-row {
 @media (max-width: 959px) {
   /* A touch target is 44px: a source link and a link in a lookup line are standing lines of their own. */
   .bj-rs-ev a,
-  .bj-rs-fact a {
+  .bj-rs-fact a,
+  .bj-rs .bj-setup-notice a,
+  .bj-ws-panel .bj-hs-actions a {
     display: inline-flex;
     align-items: center;
     min-height: 44px;
+  }
+
+  /* A button that reads as a link (Copy, a lookup's Retry) is 44px each way too. */
+  .bj-rs-field .bj-link-button,
+  .bj-rs-fact .bj-link-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin-top: 0;
   }
 
   .bj-rs-empty .bj-state-link a {
