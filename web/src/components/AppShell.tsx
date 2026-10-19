@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { SETTINGS_ITEM } from "../lib/nav";
 import { SETTINGS_PATH } from "../lib/settingsPaths";
+import { useFocusClearOfBars } from "../lib/useFocusClearOfBars";
 import { BottomTabBar } from "./BottomTabBar";
 import { Icon } from "./icons";
 import { LegalLinks } from "./LegalLinks";
@@ -42,6 +43,7 @@ export interface AppShellProps {
 
 export function AppShell({ email, onSignOut, children }: AppShellProps) {
   const { pathname } = useLocation();
+  useFocusClearOfBars();
   // Set by whatever stands in for the page without a band of its own (the tester-programme gate).
   const [drawsNoBand, setDrawsNoBand] = useState(false);
   return (
