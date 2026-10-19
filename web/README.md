@@ -85,11 +85,16 @@ Tests that need a DOM (events, focus) start with `// @vitest-environment jsdom` 
 serious or critical violation; jsdom has no layout, so it cannot check color contrast (`tokens.test.ts` does
 that for the token pairs).
 
+The suite runs in UTC whatever zone the machine is in (`src/testing/pinTimeZone.ts`), because the pages write
+a date in the reader's own zone. `TEST_TZ=America/New_York npm test` runs it in another zone; fixtures keep
+their instants mid-day UTC so that it passes from UTC-10 to UTC+11. A shell that exports `TZ` is not honoured.
+
 `src/appPages.test.tsx` mounts the whole signed-in app with the API faked and runs every page through each
 account state that changes its band (no profile, a profile with no key, a key with no model, all set and empty,
 all set with data) at a phone and a wide width, plus the workspace, Discover and Hiring signals states that move
 the band. For each it checks one band, one main heading, at most one cyan fill, no duplicate ids and no link to a
-place on the same page that does not exist. It also checks that the places other pages link to (Settings
+place on the same page that does not exist, also while a page's setup reads are still out and its band is
+loading. Every signed-in page also has a title of its own, and no content sits outside a landmark. It also checks that the places other pages link to (Settings
 sections, the profile's import, each workspace section) are there. A page that adds a second filled button or a
 second band fails here, whichever page it is.
 
