@@ -283,6 +283,13 @@ describe("the list", () => {
     expect(card(container, "a1").querySelector(".bj-app-applied")).toBeNull();
   });
 
+  it("words the day an application was moved back to Saved as First applied, as its workspace does", async () => {
+    answer({ "/applications": [{ ...SAVED, date_applied: "2026-09-21" }, APPLIED, INTERVIEW] });
+    const { container } = await draw();
+    expect(text(query(card(container, "a1"), ".bj-app-applied"))).toMatch(/^First applied Sep 21/);
+    expect(text(query(card(container, "a2"), ".bj-app-applied"))).toMatch(/^Applied Sep 21/);
+  });
+
   it("ends each card with its trail, built from the channel and the date the list returned", async () => {
     const { container } = await draw();
     const trail = (id: string) => text(query(card(container, id), ".bj-app-card > .bj-trail"));

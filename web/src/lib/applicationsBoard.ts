@@ -84,16 +84,20 @@ export const CROSS_NAV_ITEMS: readonly CrossNavItem[] = [
   { hash: CROSS_NAV_HASH.positioningBrief, label: "Your Play" },
 ];
 
-// The card's "Applied Sep 30" caption, or null when date_applied is unset or cannot be read as a
-// date. Pulled out as its own pure function -- rather than an inline `application.date_applied &&
-// ...` guard in the component's JSX -- so the common case (a "saved" application, where
-// date_applied is always null until it first becomes "applied") has real test coverage. The day is
-// written the way every trail line writes one (a year only when it is not this year), and a value
-// that is not a date is left out rather than drawn as "Invalid Date".
-export function formatAppliedDate(dateApplied: string | null, now: Date, timeZone?: string): string | null {
+// The "Applied Sep 30" caption, or null when date_applied is unset or cannot be read as a date. It is
+// the one place that words this fact, for the Applications cards and the workspace header alike. The
+// server stamps date_applied when an application first becomes Applied and keeps it when the
+// application is moved back to Saved, so a Saved application with a date reads "First applied Sep 30":
+// "Applied Sep 30" beside a Saved status would read as a contradiction. Pulled out as its own pure
+// function -- rather than an inline `application.date_applied && ...` guard in the component's JSX --
+// so the common case (a "saved" application that never was applied, where date_applied is null) has
+// real test coverage. The day is written the way every trail line writes one (a year only when it is
+// not this year), and a value that is not a date is left out rather than drawn as "Invalid Date".
+export function formatAppliedDate(dateApplied: string | null, now: Date, timeZone?: string, status?: string): string | null {
   if (!dateApplied) return null;
   const day = formatTrailDate(dateApplied, { now, timeZone });
-  return day === null ? null : `Applied ${day}`;
+  if (day === null) return null;
+  return `${status === "saved" ? "First applied" : "Applied"} ${day}`;
 }
 
 // How many applications sit under each status, all 7 keys always present.

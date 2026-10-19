@@ -113,6 +113,12 @@ describe("formatAppliedDate", () => {
     expect(formatAppliedDate("2026-09-30", now)).toBe("Applied Sep 30");
   });
 
+  it("reads First applied for a Saved application, which keeps the day it was first applied", () => {
+    expect(formatAppliedDate("2026-09-30", now, undefined, "saved")).toBe("First applied Sep 30");
+    expect(formatAppliedDate("2026-09-30", now, undefined, "interviewing")).toBe("Applied Sep 30");
+    expect(formatAppliedDate(null, now, undefined, "saved")).toBeNull();
+  });
+
   it("adds the year when the day is not in the current year", () => {
     expect(formatAppliedDate("2025-12-01", now)).toBe("Applied Dec 1, 2025");
   });

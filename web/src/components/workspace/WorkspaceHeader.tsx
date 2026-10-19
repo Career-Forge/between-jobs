@@ -1,6 +1,6 @@
 import { PageHeader } from "../paper/PageHeader";
 import { StaticTrailLine } from "../paper/TrailLine";
-import { formatTrailDate } from "../../lib/trail";
+import { formatAppliedDate } from "../../lib/applicationsBoard";
 import { headerTrail } from "../../lib/workspaceTrails";
 import type { WorkspaceApplication } from "../../lib/workspaceTypes";
 import type { ApplicationStatus } from "../../lib/applicationsTypes";
@@ -11,9 +11,9 @@ import "../../styles/workspace.css";
 // The top of the workspace: the job's identity (title, company, place), the status select, and under
 // them one line about the whole page -- how the application was tracked and when -- plus the dates and
 // the link the application carries. The trail line here sits inline at every width: it describes the
-// page, not one block, so it never goes in the margin. The date is when the application first became
-// Applied, and the server keeps it when it is moved back to Saved, so there it reads "First applied":
-// "Applied Sep 22" beside "Status: Saved" would read as a contradiction.
+// page, not one block, so it never goes in the margin. The date is worded by formatAppliedDate, which
+// the Applications cards use too: it is when the application first became Applied, and the server keeps
+// it when it is moved back to Saved, so there it reads "First applied".
 
 export interface WorkspaceHeaderProps {
   application: WorkspaceApplication;
@@ -34,7 +34,7 @@ export function WorkspaceHeader({ application, now, statusBusy, onStatus, proble
   const title = snapshot?.title ?? "Application";
   const place = [snapshot?.company_name, snapshot?.location_text].filter((part): part is string => typeof part === "string" && part.trim() !== "");
   const posting = webAddress(snapshot?.source_url);
-  const appliedOn = formatTrailDate(application.date_applied ?? undefined, { now });
+  const appliedOn = formatAppliedDate(application.date_applied, now, undefined, application.status);
   return (
     <>
       <PageHeader
@@ -47,7 +47,7 @@ export function WorkspaceHeader({ application, now, statusBusy, onStatus, proble
         <StaticTrailLine trail={headerTrail(application, now)} />
         {(appliedOn !== null || posting !== null) && (
           <p className="bj-ws-facts">
-            {appliedOn !== null && <span>{application.status === "saved" ? "First applied" : "Applied"} {appliedOn}</span>}
+            {appliedOn !== null && <span>{appliedOn}</span>}
             {posting !== null && (
               <a href={posting} target="_blank" rel="noopener noreferrer">
                 View posting

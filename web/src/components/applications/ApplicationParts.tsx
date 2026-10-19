@@ -79,7 +79,7 @@ export function CardIdentity({ application }: { application: Application }) {
 // The status chip (on the list's cards), the resume badge beside it and the applied date, when there
 // is something to say. A board card sits in the column that names its status, so it has no chip.
 export function CardMeta({ application, now, showStatus = false }: { application: Application; now: Date; showStatus?: boolean }) {
-  const applied = formatAppliedDate(application.date_applied, now);
+  const applied = formatAppliedDate(application.date_applied, now, undefined, application.status);
   if (!showStatus && !application.resume_exists && applied === null) return null;
   return (
     <p className="bj-app-meta">
