@@ -5,7 +5,7 @@
 //   Company intel   "✦ Claims written by your model · from You.com results, on your keys · Sep 20"
 //   Contacts        "✦ People named by your model · from You.com results, on your keys · Sep 20"
 //   Events          "✦ Events picked out by your model · from You.com results, on your keys · Sep 20"
-//   an outreach draft   "✦ Drafted by your model · on your model key"
+//   an outreach draft   "✦ Drafted by your model · on your model key · Sep 20"
 //   a practice answer   "✦ Scored by your model · on your model key · Sep 21"
 //   a practice session  "✦ Questions asked by your model · from your resume evidence · Sep 21"
 //   Your play       "✦ Written by your model · on your model key · Sep 20"
@@ -116,12 +116,13 @@ export function failedTrail(sentence: string): ResearchTrailParts {
 
 // ── an outreach draft ─────────────────────────────────────────────────────
 
-export function draftTrail(): ResearchTrailParts {
+// `when` is the draft row's own `created_at`, which the draft-outreach reply and the push-to-Gmail reply
+// both carry. A row without one (an untyped reply) gets a line with no time, as the omit rule says.
+export function draftTrail(draft: { created_at?: string | null }, now: Date, timeZone?: string): ResearchTrailParts {
   return {
-    trail: { glyph: "model", actor: "Drafted by your model", basis: "on your model key" },
+    trail: { glyph: "model", actor: "Drafted by your model", basis: "on your model key", when: formatTrailDate(draft.created_at, { now, timeZone }) },
     receipt: [
       { note: "Nothing is sent. Between Jobs only writes the draft: you copy it, open it in your mail app, or save the email as a draft in your own Gmail when that is set up for you." },
-      { note: "No time came back with the draft." },
     ],
     receiptTitle: "What this draft is",
   };

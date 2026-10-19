@@ -31,7 +31,7 @@ describe("a research run's trail", () => {
   });
 
   it("never names a model, never says verified and never says unknown", () => {
-    for (const parts of [intelTrail(RUN, 1, NOW), contactsTrail(RUN, 1, NOW), eventsTrail(RUN, 1, NOW), draftTrail(), briefTrail({ id: "b", created_at: RUN.created_at, rubric_warnings: [] }, NOW), answerTrail(QUESTION, NOW, true), sessionTrail(SESSION, [], NOW)]) {
+    for (const parts of [intelTrail(RUN, 1, NOW), contactsTrail(RUN, 1, NOW), eventsTrail(RUN, 1, NOW), draftTrail({ created_at: RUN.created_at }, NOW), briefTrail({ id: "b", created_at: RUN.created_at, rubric_warnings: [] }, NOW), answerTrail(QUESTION, NOW, true), sessionTrail(SESSION, [], NOW)]) {
       expect(findForbiddenWord(words(parts.trail) ?? "")).toBeNull();
       expect(words(parts.trail)).not.toMatch(/gpt|claude|gemini|llama|deepseek/i);
     }
@@ -56,11 +56,18 @@ describe("a failed block's trail", () => {
 });
 
 describe("an outreach draft's trail", () => {
-  it("says your model drafted it, on your key, with no time and no sending", () => {
-    expect(words(draftTrail().trail)).toBe("Drafted by your model · on your model key");
-    const receipt = receiptText(draftTrail().receipt).join(" ");
+  it("says your model drafted it, on your key, with the row's own time and no sending", () => {
+    const draft = { created_at: "2026-09-20T12:00:00Z" };
+    expect(words(draftTrail(draft, NOW, "UTC").trail)).toBe("Drafted by your model · on your model key · Sep 20");
+    const receipt = receiptText(draftTrail(draft, NOW, "UTC").receipt).join(" ");
     expect(receipt).toContain("Nothing is sent.");
-    expect(receipt).toContain("No time came back with the draft.");
+    expect(receipt).not.toContain("No time came back");
+  });
+
+  it("leaves the time out, and says nothing of it, for a row with no created_at", () => {
+    expect(words(draftTrail({}, NOW).trail)).toBe("Drafted by your model · on your model key");
+    expect(words(draftTrail({ created_at: "" }, NOW).trail)).toBe("Drafted by your model · on your model key");
+    expect(receiptText(draftTrail({}, NOW).receipt).join(" ")).not.toContain("No time came back");
   });
 });
 

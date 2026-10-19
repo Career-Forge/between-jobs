@@ -91,6 +91,7 @@ interface OutreachDraft {
   follow_up_message: string;
   rubric_warnings: string[];
   gmail_draft_id: string | null;
+  created_at: string;
 }
 
 interface Run {
@@ -129,6 +130,11 @@ const DRAFT_FIELDS = [
   ["linkedin_message", "LinkedIn message"],
   ["follow_up_message", "Follow-up"],
 ] as const;
+
+function DraftTrail({ draft, now }: { draft: OutreachDraft; now: Date }) {
+  const parts = draftTrail(draft, now);
+  return <TrailLine trail={parts.trail} receipt={parts.receipt} receiptTitle={parts.receiptTitle} />;
+}
 
 export function ContactFinderPanel({ applicationId, now }: { applicationId: string; now?: Date }) {
   const clock = useNow(now);
@@ -402,7 +408,7 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
                     {draft && (
                       <div className="bj-rs-draft" role="group" aria-label={`Outreach draft for ${candidate.person_name}`}>
                         <p className="bj-rs-draft-state">Draft -- not sent</p>
-                        <TrailLine trail={draftTrail().trail} receipt={draftTrail().receipt} receiptTitle={draftTrail().receiptTitle} />
+                        <DraftTrail draft={draft} now={clock} />
                         {draft.rubric_warnings.length > 0 && <PartialState lead="A code check flagged this draft:" notices={draft.rubric_warnings} />}
                         {DRAFT_FIELDS.map(([field, label]) => {
                           const text = draft[field];

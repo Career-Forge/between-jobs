@@ -34,6 +34,7 @@ const DRAFT = {
   follow_up_message: "Following up on my note.",
   rubric_warnings: [] as string[],
   gmail_draft_id: null as string | null,
+  created_at: "2026-09-20T12:00:00Z",
 };
 
 function panel() {
@@ -273,12 +274,22 @@ describe("Contacts: an outreach draft stays a draft", () => {
     expect(buttonNamed(container, "Redraft outreach")).toBeTruthy();
   });
 
-  it("carries its own trail: your model, on your key, and no time because none came back", async () => {
+  it("carries its own trail: your model, on your key, and the time the draft row came back with", async () => {
     const { container } = await withDraft();
+    const trail = query(query(container, ".bj-rs-draft"), ".bj-trail");
+    expect(text(trail)).toBe("✦ Drafted by your model · on your model key · Sep 20");
+    click(trail);
+    const receipt = text(query(container, ".bj-rs-draft .bj-receipt"));
+    expect(receipt).toContain("Nothing is sent.");
+    expect(receipt).not.toContain("No time came back");
+  });
+
+  it("leaves the time out, and says nothing about it, when the draft row carries none", async () => {
+    const { container } = await withDraft({ created_at: undefined as unknown as string });
     const trail = query(query(container, ".bj-rs-draft"), ".bj-trail");
     expect(text(trail)).toBe("✦ Drafted by your model · on your model key");
     click(trail);
-    expect(text(query(container, ".bj-rs-draft .bj-receipt"))).toContain("Nothing is sent.");
+    expect(text(query(container, ".bj-rs-draft .bj-receipt"))).not.toContain("No time came back");
   });
 
   it("flags what a code check found, as a neutral callout above the draft", async () => {
