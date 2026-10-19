@@ -114,8 +114,12 @@ by default, "prose" 680px, "full"), `className?`. `DocumentBlock`: `children`, `
 `receipt?`, `receiptTitle?`, `className?`, the same inputs as `TrailLine`. Rules that hold at every width:
 the DOM order is block, then its trail line, then the next block (the margin never forms a tab run of its
 own); only one receipt is open in the whole layout; Esc closes an inline or margin receipt and puts focus back
-on its line; a receipt is closed when the width crosses a breakpoint, so it never comes back as a sheet that
-takes focus. `useDocumentMode()` answers "margin", "inline" or "sheet" for the current width. The layout reads
+on its line; a receipt is closed when the width crosses a breakpoint, in the same render that notices the
+crossing, so it is never drawn in its new place (not even as a sheet that takes focus) for a moment.
+Blocks may sit inside a wrapper such as a `<section>` that groups a chapter with its blocks: the margin cells
+and the rule still line up, and a `SectionChapter` is kept in the document column wherever it is. Other loose
+content at 1280px and up should be a direct child of the layout (it is kept in the column) or inside a block;
+inside a wrapper it would run under the rule. `useDocumentMode()` answers "margin", "inline" or "sheet" for the current width. The layout reads
 the viewport in script and puts the answer on the markup as a class, so the stylesheet states no width of its
 own for it. `BlockTrail` outside a layout is a plain `TrailLine`.
 
@@ -123,7 +127,9 @@ own for it. `BlockTrail` outside a layout is a plain `TrailLine`.
 (`groups={[{ label, links: [{ id, label }] }]}`, a group with no links is left out; pass `ready` once the
 sections are on the page). At 1280px and up one sticky row; 960 to 1279px the groups wrap whole and, once the bar
 has scrolled away, a 44px "Jump to" row docks at the top; under 960px only the "Jump to" select, in a sticky row,
-with the same groups and labels. The section being read is marked `aria-current="location"` by a scroll watch
+with the same groups and labels. A pick with the pointer or from the open list goes at once; on a closed select
+the keyboard's Arrow, Home, End and type-ahead steps wait for Enter (Tab or Esc drops them), because browsers
+fire a change per step. Until a section has been reached the select reads "Choose a section". The section being read is marked `aria-current="location"` by a scroll watch
 (`lib/useScrollSpy.ts`) that only marks: it never moves focus and never scrolls. Following a link changes the
 hash and `useScrollToHash` scrolls (instantly under reduced motion) and focuses the section's heading; the bar
 calls that hook, so the page does not. Hash targets stay clear of the bar by scroll padding on the page.
@@ -142,18 +148,23 @@ with the words as its value text, or an `img` when there is no value, so it is n
 ring or radar.
 
 **`ScoreBlock`, `FitLadder`** (`components/paper/ScoreBlock.tsx`). `ScoreBlock` is the ATS block's frame: `label`,
-`value`, `max?` (100), `from?` (draws "64 -> 72" only when it differs), `caption?` ("medium confidence"),
+`value`, `max?` (100), `from?` (draws "64 -> 72" only when it differs, and says "was 64, now 72" to a screen reader), `caption?` ("medium confidence"),
 `engine?` (the "engine ✦" mark, on by default), `children` (the bars), `footer?`. `FitLadder` is Discover's
 four-rung ladder: `levels` (lowest first), `level` (the rung's name, from the engine; there is no score-to-rung
-mapping here), `score?`, `max?`, `placeholder?` (hollow, no number, for a fallback). Use them only for a score
+mapping here), `score?`, `max?`, `placeholder?` (hollow, no number, for a fallback). The "engine" caption is drawn only when a rung
+was reached, never for "Not scored" or a placeholder. Use them only for a score
 that code computed; a model's judgement gets the model mark in its trail, not this.
 
 **`ClaimRow`, `ClaimList`** (`components/paper/ClaimRow.tsx`). One claim and what is known about it: `status`
 ("supported", "unverifiable", "contradicted" or "unchecked"), `claim` (verbatim, without quotation marks), `reason?`,
-`actions?`, `as?` ("li" or "div"). Each status has a word and a mark as well as an outline color: ◆ Supported and
-◆ Unverifiable (gold), ✕ Contradicted (red), ○ Not checked (muted). The claim check lists only what it flagged,
+`actions?`, `as?` ("li" or "div"). Each status has a word and a mark as well as an outline: ◆ Supported (solid gold),
+◆ Unverifiable (dashed gold), ✕ Contradicted (red), ○ Not checked (muted). The claim check lists only what it flagged,
 so a claim it did not flag is not drawn as "supported": not flagged is not backed. Use "supported" only where
-something named does back the claim.
+something named does back the claim. The sentences around the list are the page's to write, because the
+components do not supply them: the claim check's always-visible legend ("claims that weren't flagged aren't
+listed"), its "Flags only -- nothing was auto-edited or blocked" footer, and the zero-flag state with its "Not
+flagged isn't verified" caveat; for the checklist, the "Checked by code · no model involved" trail and the
+one-page caveat. Leaving one out turns an honest list into a verdict.
 
 **`ChecklistGroup`, `ChecklistRow`, `ChecklistSummary`** (`components/paper/ChecklistRow.tsx`, counts in
 `lib/checklistSummary.ts`). The rows of a review checklist: `ChecklistGroup` (`title`, `rows` with an `id` each,
