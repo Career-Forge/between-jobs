@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ProblemView } from "../SetupRequiredNotice";
 import { apiFetch } from "../../lib/api";
 import { discordInstallUrl, isDiscordAvailable, isTelegramAvailable, telegramBotUsername } from "../../lib/capabilities";
@@ -73,7 +73,7 @@ export function TelegramLinkCard({ botUsername }: { botUsername: string | null }
       )}
       {error && <div className="bj-set-error">{error}</div>}
       <div className="bj-set-actions">
-        <button onClick={() => void generate()} disabled={busy}>
+        <button aria-disabled={busy || undefined} onClick={() => !busy && void generate()}>
           {busy ? "Generating..." : code ? "Generate a new code" : "Generate a code"}
         </button>
       </div>
@@ -139,7 +139,7 @@ export function DiscordLinkCard({ installUrl }: { installUrl: string | null }) {
       )}
       {error && <div className="bj-set-error">{error}</div>}
       <div className="bj-set-actions">
-        <button onClick={() => void generate()} disabled={busy}>
+        <button aria-disabled={busy || undefined} onClick={() => !busy && void generate()}>
           {busy ? "Generating..." : code ? "Generate a new code" : "Generate a code"}
         </button>
       </div>
@@ -182,6 +182,16 @@ export function GmailConnectCard({
   const [connecting, setConnecting] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<Problem | null>(null);
+  const card = useRef<HTMLDivElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const focusAfterDisconnect = useRef(false);
+  useEffect(() => {
+    if (!focusAfterDisconnect.current || credential !== null) return;
+    focusAfterDisconnect.current = false;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    (card.current?.querySelector<HTMLElement>(".bj-set-actions button") ?? heading.current)?.focus();
+  });
 
   async function connect() {
     setConnecting(true);
@@ -205,6 +215,7 @@ export function GmailConnectCard({
     setError(null);
     try {
       await apiFetch("/credentials/oauth/gmail", { method: "DELETE" });
+      focusAfterDisconnect.current = true;
       await onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to disconnect Gmail.");
@@ -213,21 +224,26 @@ export function GmailConnectCard({
     }
   }
 
+  // Busy buttons are aria-disabled, not disabled: a disabled button drops keyboard focus to the top of the
+  // page. And when a disconnect succeeds, the Disconnect button is gone (the card now reads Not connected),
+  // so focus goes to what the card offers next, or to its heading.
   const connectButton = (label: string) => (
-    <button onClick={() => void connect()} disabled={connecting}>
+    <button aria-disabled={connecting || undefined} onClick={() => !connecting && void connect()}>
       {connecting ? "Connecting..." : label}
     </button>
   );
   const disconnectButton = (
-    <button onClick={() => void disconnect()} disabled={removing}>
+    <button aria-disabled={removing || undefined} onClick={() => !removing && void disconnect()}>
       {removing ? "Disconnecting..." : "Disconnect Gmail"}
     </button>
   );
 
   return (
-    <div className="bj-set-card">
+    <div className="bj-set-card" ref={card}>
       <div className="bj-set-card-head">
-        <h3>Gmail</h3>
+        <h3 tabIndex={-1} ref={heading}>
+          Gmail
+        </h3>
         {state === "unavailable" ? (
           <span className="bj-badge-muted">Not available</span>
         ) : state === "availability_unknown" ? (
