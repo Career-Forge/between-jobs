@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import {
   AGGREGATOR_LEGEND,
   CACHED_NOTE,
@@ -19,15 +18,18 @@ import {
   tabEmptyHints,
   tabEmptyNote,
   tabRegistryMatchNote,
-  tabResultSource,
   tabRoleHint,
   tabTruncationNote,
 } from "../lib/hiringSignalsTab";
 import type { TabSearchOutcome, TabSignal } from "../lib/hiringSignalsTabTypes";
 import type { Freshness, SavedPost } from "../lib/hiringSignalsTypes";
+import { signalTrail, sourceTrail } from "../lib/hiringSignalsTrail";
+import { SEARCH_KEYS_PATH } from "../lib/nextStep/pages/hiring-signals";
+import { Link } from "react-router-dom";
 import { SignalCard } from "./HiringPostCard";
-import { FailureView } from "./HiringSignalsViews";
-import { SETTINGS_PATH } from "../lib/settingsPaths";
+import { FailureState, SetupRequiredState } from "./paper/StateViews";
+import { StaticTrailLine } from "./paper/TrailLine";
+import "../styles/hiring-signals.css";
 
 // What the "Hiring signals" tab says about a search (Hiring Signals P4): the
 // failure branch and the result list, including the honest empty one. Pure
@@ -53,24 +55,33 @@ import { SETTINGS_PATH } from "../lib/settingsPaths";
 //     text too (a tooltip alone is out of reach of keyboard, touch and
 //     screen-reader users).
 //   - A failure is worded by kind. Setup-needed is a to-do, so it links to where
-//     the fix is; Try again is offered only when trying again can change the
-//     outcome; and a missing thing is reworded, because P3's wording for it names
-//     an application.
+//     the fix is; the block carries no Try again of its own, because when trying again
+//     can change the outcome the next-step band holds it; and a missing thing is
+//     reworded, because P3's wording for it names an application.
 //
 // The cards themselves are P3's SignalCard, unchanged in behavior: click-to-load
-// embeds behind the strict validator, computed facts only.
+// embeds behind the strict validator, computed facts only. Each ends in its trail line (what
+// tagged it and the post's own date), and the list opens with the search's own trail: via which
+// provider, for what, in which wording.
 
-export function TabFailureView({ failure, onRetry }: { failure: Failure; onRetry: () => void }) {
+export function TabFailureView({ failure }: { failure: Failure }) {
   if (failure.kind === "not_found") {
+    return <FailureState message={TAB_NOT_FOUND_MESSAGE} />;
+  }
+  // A missing search key is a to-do, so it names the keys the search can use and links to where
+  // they are added (the search keys of Settings), whatever link the server's reply carried.
+  if (failure.kind === "setup_required") {
     return (
-      <div className="bj-error" role="alert">
-        {TAB_NOT_FOUND_MESSAGE}
-      </div>
+      <SetupRequiredState
+        message={failure.message !== "" ? failure.message : "Connect a search provider to find hiring posts."}
+        missing={[{ label: "Add a search key", to: SEARCH_KEYS_PATH }]}
+      />
     );
   }
-  // setup_required (a link to Settings) and every other error, retry button
-  // included, are worded exactly as on the per-application panel.
-  return <FailureView failure={failure} onRetry={onRetry} />;
+  // Every other failure shows the server's own words and nothing to press: when trying again can
+  // change the outcome the next-step band holds "Try again" (it re-runs this same search), and when it
+  // cannot there is nothing to retry.
+  return <FailureState message={failure.message} />;
 }
 
 export interface TabResultsProps {
@@ -87,6 +98,7 @@ export interface TabResultsProps {
   onToggleEmbed: (key: string) => void;
   onSave: (signal: TabSignal) => void;
   onUnsave: (save: SavedPost, key: string) => void;
+  timeZone?: string;
 }
 
 export function TabResults({
@@ -103,6 +115,7 @@ export function TabResults({
   onToggleEmbed,
   onSave,
   onUnsave,
+  timeZone,
 }: TabResultsProps) {
   const { response, unreadable } = outcome;
   const signals = response.signals;
@@ -132,9 +145,7 @@ export function TabResults({
 
   return (
     <div className="bj-hs-results">
-      <div className="bj-muted bj-small bj-hs-card-text">
-        {tabResultSource(response.query_label, response.provider, response.locale)}
-      </div>
+      <StaticTrailLine trail={sourceTrail(response)} className="bj-hs-source" />
       {response.cached && <div className="bj-muted bj-small">{CACHED_NOTE}</div>}
       {summary !== null && <div className="bj-muted bj-small">{summary}</div>}
       {truncatedNote !== null && <div className="bj-muted bj-small">{truncatedNote}</div>}
@@ -146,7 +157,7 @@ export function TabResults({
           {emptyNote !== null && <div className="bj-small">{emptyNote}</div>}
           {emptyNote === TAB_YOU_COM_NO_LINKEDIN_NOTE && (
             <div className="bj-small">
-              <Link to={SETTINGS_PATH}>Open Settings</Link>
+              <Link to={SEARCH_KEYS_PATH}>Open Settings</Link>
             </div>
           )}
           {hints.map((hint) => (
@@ -194,6 +205,7 @@ export function TabResults({
                   onUnsave={save === null ? null : () => onUnsave(save, key)}
                   unsaving={save !== null && removingIds.has(save.id)}
                   registryNoteFor={tabRegistryMatchNote}
+                  trail={<StaticTrailLine trail={signalTrail(signal, now, timeZone)} />}
                 />
               );
             })}

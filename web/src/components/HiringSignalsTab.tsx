@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { apiFetch } from "../lib/api";
-import { HiringTabModel, tabFocusTargetId } from "../lib/hiringSignalsTabModel";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
+import type { HiringTabModel } from "../lib/hiringSignalsTabModel";
+import { tabFocusTargetId } from "../lib/hiringSignalsTabModel";
 import { useFocusRequests } from "../lib/useFocusRequests";
 import { HiringSignalsTabView, type TabActions } from "./HiringSignalsTabView";
 
@@ -24,11 +24,18 @@ import { HiringSignalsTabView, type TabActions } from "./HiringSignalsTabView";
 // `HiringSignalsTabView`, the requests are lib/hiringSignalsTabClient.ts, the
 // wording is lib/hiringSignalsTab.ts -- each testable without a browser.
 //
-// It is mounted only once the server has said the feature is on (see
-// pages/HiringSignals.tsx), so it starts asking for the two saved lists at once.
+// The MODEL is made by the page (pages/HiringSignals.tsx), which reads its state too, for the
+// next-step band, and passed in here. The tab is mounted only once the server has said the feature is
+// on (see HiringSignalsPageView.tsx), so it starts asking for the two saved lists at once.
 
-export function HiringSignalsTab() {
-  const [model] = useState(() => new HiringTabModel(apiFetch));
+export function HiringSignalsTab({
+  model,
+  keysMissing = false,
+}: {
+  model: HiringTabModel;
+  /** The credentials hold none of the four search keys (read by the page). */
+  keysMissing?: boolean;
+}) {
   // The third argument is the server snapshot: a static render has no
   // subscription to make, and React requires one.
   const state = useSyncExternalStore(model.subscribe, model.getState, model.getState);
@@ -61,5 +68,5 @@ export function HiringSignalsTab() {
     [model],
   );
 
-  return <HiringSignalsTabView state={state} now={new Date()} actions={actions} />;
+  return <HiringSignalsTabView state={state} now={new Date()} actions={actions} keysMissing={keysMissing} />;
 }

@@ -1,9 +1,9 @@
-import type { ReactNode } from "react";
 import { savedCardKey, savesByActivity } from "../lib/hiringSignals";
-import { TAB_INTRO, tabResultHeadline } from "../lib/hiringSignalsTab";
+import { tabResultHeadline } from "../lib/hiringSignalsTab";
 import { TAB_SAVED_POSTS_HEADING_ID, type TabState } from "../lib/hiringSignalsTabModel";
 import type { TabSignal } from "../lib/hiringSignalsTabTypes";
-import type { HiringStatus } from "../lib/hiringSignalsStatus";
+import { savedTrail } from "../lib/hiringSignalsTrail";
+import { SEARCH_KEYS_PATH } from "../lib/nextStep/pages/hiring-signals";
 import type { Freshness, SavedPost } from "../lib/hiringSignalsTypes";
 import { SavedPostCard } from "./HiringPostCard";
 import {
@@ -13,18 +13,23 @@ import {
   SearchForm,
 } from "./HiringSignalsTabForm";
 import { TabFailureView, TabResults } from "./HiringSignalsTabResults";
+import { EmptyState, FailureState, SetupRequiredState } from "./paper/StateViews";
+import { StaticTrailLine } from "./paper/TrailLine";
+import "../styles/hiring-signals.css";
 
 // The "Hiring signals" tab as a pure function of its state (Hiring Signals P4).
 //
-// HiringSignalsTab.tsx owns the model and the wiring; this file is only what the
-// state LOOKS like. It imports no API client, holds no hooks and takes its
-// handlers as props, so a test can call it directly, walk the elements it returns
-// and press its buttons (see testing/reactTree.ts).
+// HiringSignalsTab.tsx owns the wiring; this file is only what the state LOOKS like. It
+// imports no API client, holds no hooks and takes its handlers as props, so a test can call
+// it directly, walk the elements it returns and press its buttons (see testing/reactTree.ts).
+// The page around it -- the header, the next-step band, and what to show before the server has
+// said the feature is on -- is HiringSignalsPageView.tsx.
 //
 // LAYOUT, top to bottom: the search form (with the polite live region under its
-// buttons, in the same card), the saved searches, the results, the saved posts. Saved searches sit
+// buttons, in the same block), the saved searches, the results, the saved posts. Saved searches sit
 // above the results for the same reason Discover puts them there -- a returning
-// person re-runs one and reads the outcome in place.
+// person re-runs one and reads the outcome in place. Every block is a list-like section with
+// hairline rules, not a card, and every row ends in its trail line, inline.
 //
 // THE LIVE REGION is always mounted so screen readers pick up its changes:
 // loading, the result headline, and the save/remove confirmations. Each notice is
@@ -33,8 +38,9 @@ import { TabFailureView, TabResults } from "./HiringSignalsTabResults";
 //
 // TWO PAGE-LEVEL STATES are not errors and are worded calmly: the feature being
 // switched off on this server (`SwitchedOffNote`), and not yet knowing whether it
-// is (the shell renders only the heading). Neither is a red banner -- nothing has
-// gone wrong; a server that has the feature off is a configuration, not a fault.
+// is (the page renders only its header and the band's "Loading..."). Neither is a red
+// banner -- nothing has gone wrong; a server that has the feature off is a configuration,
+// not a fault.
 
 export interface TabActions extends FormActions, SavedSearchesActions {
   widen: (freshness: Freshness) => void;
@@ -47,36 +53,42 @@ export interface TabActions extends FormActions, SavedSearchesActions {
 
 export function SwitchedOffNote() {
   return (
-    <div className="bj-empty">
-      <h2>Hiring signals is switched off</h2>
-      <p>
-        This server has the feature turned off, so there is nothing to search here. The rest of the
-        app is unaffected.
-      </p>
-    </div>
+    <EmptyState heading="Hiring signals is switched off">
+      <p>This server has the feature turned off, so there is nothing to search here. The rest of the app is unaffected.</p>
+    </EmptyState>
   );
 }
+
+// The message the setup note carries when no key is saved. It names what the search needs; the link
+// is where the keys are added.
+export const SEARCH_KEY_NOTE = "Hiring signals searches with your own search provider.";
 
 export function HiringSignalsTabView({
   state,
   now,
   actions,
+  keysMissing = false,
+  timeZone,
 }: {
   state: TabState;
   now: Date;
   actions: TabActions;
+  /** The credentials hold none of the four search keys: the results slot says so and links to where they are added. */
+  keysMissing?: boolean;
+  timeZone?: string;
 }) {
   if (state.disabled) return <SwitchedOffNote />;
 
   const { search, saves, notice } = state;
   const busy = search.kind === "loading";
   const savedByActivity = savesByActivity(saves);
+  // The setup note stands in the results slot until a search has answered; after one, the answer is
+  // what the slot shows (including the server's own setup message).
+  const showKeyNote = keysMissing && (search.kind === "idle" || (search.kind === "failed" && search.failure.kind !== "setup_required"));
 
   return (
     <div className="bj-hs-tab">
-      <p className="bj-muted bj-hs-tab-intro">{TAB_INTRO}</p>
-
-      <div className="bj-card bj-hs-panel">
+      <div className="bj-hs-panel bj-hs-block bj-hs-form-block">
         <SearchForm state={state} actions={actions} />
         <div className="bj-small" role="status" aria-live="polite">
           {busy && <span className="bj-muted">Searching for recent hiring posts...</span>}
@@ -94,16 +106,22 @@ export function HiringSignalsTabView({
         </div>
       </div>
 
-      <SavedSearchesSection state={state} actions={actions} />
+      <SavedSearchesSection state={state} actions={actions} now={now} timeZone={timeZone} />
+
+      {showKeyNote && (
+        <div className="bj-hs-panel bj-hs-block">
+          <SetupRequiredState message={SEARCH_KEY_NOTE} missing={[{ label: "Add a search key", to: SEARCH_KEYS_PATH }]} />
+        </div>
+      )}
 
       {search.kind === "failed" && (
-        <div className="bj-card bj-hs-panel">
-          <TabFailureView failure={search.failure} onRetry={() => actions.retry()} />
+        <div className="bj-hs-panel bj-hs-block">
+          <TabFailureView failure={search.failure} />
         </div>
       )}
 
       {search.kind === "ready" && (
-        <section className="bj-card bj-hs-panel" aria-label="Results">
+        <section className="bj-hs-panel bj-hs-block" aria-label="Results">
           <TabResults
             outcome={search.outcome}
             request={search.request}
@@ -118,22 +136,18 @@ export function HiringSignalsTabView({
             onToggleEmbed={actions.toggleEmbed}
             onSave={(signal) => actions.save(signal, search.outcome.response.query_label)}
             onUnsave={actions.unsave}
+            timeZone={timeZone}
           />
         </section>
       )}
 
       {(saves.length > 0 || state.savesStatus === "error") && (
-        <section className="bj-card bj-hs-panel" aria-labelledby={TAB_SAVED_POSTS_HEADING_ID}>
-          <h2 id={TAB_SAVED_POSTS_HEADING_ID} tabIndex={-1}>
+        <section className="bj-hs-panel bj-hs-block" aria-labelledby={TAB_SAVED_POSTS_HEADING_ID}>
+          <h2 id={TAB_SAVED_POSTS_HEADING_ID} className="bj-hs-heading" tabIndex={-1}>
             Saved posts
           </h2>
           {state.savesStatus === "error" && state.savesError !== null && (
-            <div className="bj-error" role="alert">
-              {state.savesError}{" "}
-              <button type="button" onClick={() => actions.reloadSaves()}>
-                Try again
-              </button>
-            </div>
+            <FailureState message={state.savesError} onRetry={() => actions.reloadSaves()} retryLabel="Try again" />
           )}
           {saves.length > 0 && (
             <ul className="bj-hs-list">
@@ -149,45 +163,13 @@ export function HiringSignalsTabView({
                     error={state.cardErrors[key] ?? null}
                     onToggleEmbed={() => actions.toggleEmbed(key)}
                     onRemove={() => actions.unsave(save, key)}
+                    trail={<StaticTrailLine trail={savedTrail(save, now, timeZone)} />}
                   />
                 );
               })}
             </ul>
           )}
         </section>
-      )}
-    </div>
-  );
-}
-
-// The page around the tab: its heading, and what to show before the server has
-// said the feature is on. `children` is the connected tab, mounted only when the
-// status is "enabled" -- so a server with the feature off never gets a saves or
-// searches request from this page, and a person who reaches /hiring-signals
-// directly sees a calm explanation instead of a form that cannot work.
-export function HiringSignalsPageShell({
-  status,
-  onRetryStatus,
-  children,
-}: {
-  status: HiringStatus;
-  onRetryStatus: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div>
-      <h1>Hiring signals</h1>
-      {status.kind === "enabled" && children}
-      {status.kind === "disabled" && <SwitchedOffNote />}
-      {status.kind === "unavailable" && (
-        <div className="bj-hs-callout" role="alert">
-          <div>Could not check whether hiring signals are available on this server.</div>
-          <div>
-            <button type="button" onClick={onRetryStatus}>
-              Try again
-            </button>
-          </div>
-        </div>
       )}
     </div>
   );

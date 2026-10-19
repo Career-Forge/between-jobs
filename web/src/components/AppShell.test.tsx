@@ -124,7 +124,8 @@ describe("the page you are on", () => {
 });
 
 describe("landmarks and the way in", () => {
-  const markup = shell("/discover");
+  // A page with no band, so the skip link comes first and alone.
+  const markup = shell("/practice");
 
   it("has one <main>, which the skip link targets, and the skip link comes first", () => {
     expect(tagsOf(markup, "main")).toHaveLength(1);
@@ -216,7 +217,7 @@ describe("SkipLink", () => {
 describe("Skip to next step", () => {
   const skips = (markup: string): string[] => [...markup.matchAll(/<a [^>]*class="bj-skip-link"[^>]*>([^<]*)<\/a>/g)].map((match) => match[1]);
 
-  it.each(["/", "/settings", "/applications", "/practice"])("is the first stop on %s, which draws a band, ahead of Skip to content", (path) => {
+  it.each(["/", "/discover", "/applications", "/practice", "/hiring-signals", "/settings"])("is the first stop on %s, which draws a band, ahead of Skip to content", (path) => {
     const markup = shell(path);
     expect(skips(markup)).toEqual(["Skip to next step", "Skip to content"]);
     expect(markup).toContain('href="#next-step-focus"');
@@ -224,7 +225,7 @@ describe("Skip to next step", () => {
     expect(markup.indexOf("Skip to content")).toBeLessThan(markup.indexOf("<header"));
   });
 
-  it.each(["/discover", "/profile"])("is not offered on %s, which has no band to skip to", (path) => {
+  it.each(["/profile"])("is not offered on %s, which has no band to skip to", (path) => {
     expect(skips(shell(path))).toEqual(["Skip to content"]);
   });
 
@@ -237,8 +238,15 @@ describe("Skip to next step", () => {
       .sort();
     // The sign-in page and the landing page carry their own skip links (Login.tsx, PublicLayout.tsx).
     const signedIn = drawing.filter((path) => path !== "pages/Login.tsx" && path !== "pages/Landing.tsx");
-    expect(signedIn).toEqual(["components/applications/ApplicationsView.tsx", "components/today/TodayView.tsx", "pages/Practice.tsx", "pages/Settings.tsx"]);
-    expect(PATHS_WITH_A_BAND).toEqual(["/", "/settings", "/applications", "/practice"]);
+    expect(signedIn).toEqual([
+      "components/HiringSignalsPageView.tsx",
+      "components/applications/ApplicationsView.tsx",
+      "components/discover/DiscoverView.tsx",
+      "components/today/TodayView.tsx",
+      "pages/Practice.tsx",
+      "pages/Settings.tsx",
+    ]);
+    expect(PATHS_WITH_A_BAND).toEqual(["/", "/discover", "/applications", "/practice", "/hiring-signals", "/settings"]);
   });
 });
 

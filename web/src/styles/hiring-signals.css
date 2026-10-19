@@ -1,0 +1,161 @@
+/* The Hiring signals page: the search form, the saved searches and the saved posts, as list-like
+ * sections with hairline rules (pages/HiringSignals.tsx, components/HiringSignals*). Tokens only -- no
+ * color is defined here -- and no rule fills anything cyan: the page's one cyan fill is the next-step
+ * band's button.
+ *
+ * The result cards and their embeds are shared with the per-application panel and keep the card rules
+ * in app.css (.bj-hs-card and the rest); this file lays out the sections around them and puts each
+ * row's trail line inside its card. Widths: lists are at most 880px; under 960px (the shell's phone
+ * breakpoint) every control is at least 44px tall and the form's controls stack. A saved role or
+ * location is the person's own text and can be one long unbroken string: it wraps inside its row. */
+
+.bj-hs-page {
+  min-width: 0;
+  max-width: 880px;
+}
+
+.bj-hs-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-6);
+  min-width: 0;
+}
+
+/* The sections that were cards are plain blocks now: no box, no padding of their own. The legacy
+   .bj-hs-panel class stays on them because the per-application panel's busy-button rules hang on it. */
+.bj-hs-tab .bj-hs-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.bj-hs-heading {
+  margin: 0;
+  font-family: var(--bj-font-display);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--bj-text);
+}
+
+.bj-hs-save-error {
+  margin: 0 0 var(--bj-space-5);
+}
+
+/* ------------------------------------------------------------------ */
+/* The search form                                                      */
+/* ------------------------------------------------------------------ */
+
+.bj-hs-tab .bj-hs-form-block {
+  padding: var(--bj-space-4) 0;
+  border-top: 1px solid var(--bj-border);
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-hs-tab-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-hs-tab-form p {
+  margin: 0;
+}
+
+/* A field in error is also announced (aria-invalid plus its own message under it), so the red border
+   is never the only signal. */
+.bj-hs-tab-form input[aria-invalid="true"] {
+  border-color: var(--bj-danger);
+}
+
+.bj-hs-tab-wording {
+  display: inline-flex;
+  flex-wrap: wrap; /* on a narrow screen the select drops under its label instead of widening the page */
+  align-items: center;
+  gap: var(--bj-space-2);
+}
+
+/* No other select in the app is styled to match the inputs; this one sits in a form next to two text
+   inputs, so it is, and it gets the focus ring the global rules in tokens.css give every control. */
+.bj-hs-tab-wording select {
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--bj-border);
+  border-radius: 6px;
+  background: var(--bj-surface);
+  color: var(--bj-text);
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-control);
+}
+
+/* ------------------------------------------------------------------ */
+/* Saved searches and the rows of the lists                             */
+/* ------------------------------------------------------------------ */
+
+.bj-hs-tab .bj-hs-list {
+  gap: 0;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-hs-tab-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bj-space-2) var(--bj-space-4);
+  min-width: 0;
+  padding: var(--bj-space-3) 0;
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-hs-tab-search-text {
+  display: flex;
+  flex: 1 1 280px;
+  flex-direction: column;
+  gap: var(--bj-space-1);
+  min-width: 0;
+}
+
+.bj-hs-tab-search-label {
+  min-width: 0;
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+.bj-hs-tab-search-row .bj-hs-actions {
+  flex-shrink: 0;
+}
+
+/* The search's own trail above the result cards, and a card's trail as its last line. */
+.bj-hs-source {
+  margin: 0 0 var(--bj-space-1);
+}
+
+.bj-hs-tab .bj-hs-card > .bj-trail {
+  margin-top: var(--bj-space-1);
+}
+
+/* ------------------------------------------------------------------ */
+/* Phones and tablets: under the shell's 960px breakpoint                */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 959px) {
+  .bj-hs-tab button,
+  .bj-hs-tab-wording select,
+  .bj-hs-tab-form input[type="text"] {
+    min-height: 44px;
+  }
+
+  .bj-hs-tab .bj-hs-actions a,
+  .bj-hs-tab .bj-state-missing a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
