@@ -73,13 +73,25 @@ what it has read, and they draw only that.
   setup checklist: "Add a model key", or "Choose a model" for a saved key that has none. Settings does not supply
   it; its own rows (S1, S2, S2k) say the same thing with buttons that act in place.
 - `components/paper/PageHeader.tsx` (breadcrumb, the page's one `<h1>`, subtitle, actions) and
-  `components/paper/StateViews.tsx` (loading, empty, partial, stale, setup-required, failure).
+  `components/paper/StateViews.tsx` (loading, empty, partial, stale, setup-required, failure). `LoadingState`
+  takes `announce={false}` where the band already says the same thing in a live region. `FailureState` takes
+  `restoreFocusTo` for a Retry that removes the callout it sits in; the handoff lives in its own marker
+  component so that `FailureState` itself stays a plain function of its props, which the DOM-free tests in
+  `src/testing/reactTree.ts` rely on (they call components as functions).
 - Their styles are in `src/styles/paper.css`, which defines no color of its own.
 
 Tests that need a DOM (events, focus) start with `// @vitest-environment jsdom` and use
 `src/testing/render.tsx`. `src/testing/a11y.ts` runs axe-core over a rendered container and fails on a
 serious or critical violation; jsdom has no layout, so it cannot check color contrast (`tokens.test.ts` does
 that for the token pairs).
+
+`src/appPages.test.tsx` mounts the whole signed-in app with the API faked and runs every page through each
+account state that changes its band (no profile, a profile with no key, a key with no model, all set and empty,
+all set with data) at a phone and a wide width, plus the workspace, Discover and Hiring signals states that move
+the band. For each it checks one band, one main heading, at most one cyan fill, no duplicate ids and no link to a
+place on the same page that does not exist. It also checks that the places other pages link to (Settings
+sections, the profile's import, each workspace section) are there. A page that adds a second filled button or a
+second band fails here, whichever page it is.
 
 ## Document pages
 
