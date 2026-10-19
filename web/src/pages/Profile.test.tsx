@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseImportResponse } from "../lib/resumeImportDraft";
 import { buildReview, fieldsToCheck } from "../lib/resumeImportReview";
 import { findForbiddenWord } from "../lib/trail";
-import { expectNoSeriousA11yViolations } from "../testing/a11y";
+import { expectNoSeriousA11yViolations, violationsOfRule } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
 import { settle, text, typeInto } from "../testing/forms";
 import { buttonNamed, click, installViewport, keydown, query, render } from "../testing/render";
@@ -1319,6 +1319,15 @@ describe("accessibility", () => {
     await settle();
     await readFile(container);
     await expectNoSeriousA11yViolations(container);
+  });
+
+  it("a resume file's draft beside an active profile repeats no landmark name: the review's groups are not regions", async () => {
+    describeAccount();
+    upload.fetchBytes.mockResolvedValue(DRAFT);
+    const { container } = page();
+    await settle();
+    await readFile(container);
+    expect(await violationsOfRule(container, "landmark-unique")).toEqual([]);
   });
 
   it("draws the controls in the order a keyboard meets them: Settings, the band's button, then the import controls, then the account", async () => {

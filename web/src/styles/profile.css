@@ -359,6 +359,15 @@
   color: var(--bj-danger);
 }
 
+/* A button that reads as a link is a 24px target at least (WCAG 2.5.8) on a wide screen; the phone rule
+   below makes it 44. Centered so its words stay where they were. */
+.bj-profile .bj-link-button {
+  display: inline-flex;
+  align-items: center;
+  min-width: 24px;
+  min-height: 24px;
+}
+
 .bj-entry-detail {
   margin-top: var(--bj-space-2);
 }
@@ -522,7 +531,7 @@
 .bj-inline-chip-input {
   width: 90px;
   padding: 3px 9px;
-  border: 1px dashed var(--bj-border);
+  border: 1px dashed var(--bj-outline);
   border-radius: 6px;
   background: transparent;
   font-size: var(--bj-text-badge);
@@ -755,7 +764,9 @@
   }
 
   .bj-profile .bj-link-button {
+    min-width: 44px;
     min-height: 44px;
+    justify-content: center;
     padding: 0 var(--bj-space-2);
   }
 
@@ -773,6 +784,8 @@
   .bj-profile .bj-project-body > a {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    min-width: 44px;
     min-height: 44px;
   }
 

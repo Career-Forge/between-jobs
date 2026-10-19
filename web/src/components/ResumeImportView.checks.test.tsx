@@ -13,13 +13,13 @@ import { ResumeImportView, type ResumeImportActions } from "./ResumeImportView";
 // Checking every value one by one before a draft can be used: a checkbox on each value read from the
 // file, a count of what is left, and "Use this profile" locked until none is. There is no "check all".
 
-function draft() {
+function draft(experience: Record<string, unknown>[] = [{ title: "Data Engineer", company: "Acme Corp", start_date: "2022-01", end_date: "present", is_current: true }]) {
   const parsed = parseImportResponse({
     version_id: "11111111-1111-1111-1111-111111111111",
     already_active: false,
     profile: {
       personal: { name: "Pat Example", emails: [{ address: "pat@example.com", primary: true }] },
-      experience: [{ title: "Data Engineer", company: "Acme Corp", start_date: "2022-01", end_date: "present", is_current: true }],
+      experience,
     },
     span_unit: "utf16",
     source_spans: {},
@@ -34,8 +34,8 @@ function draft() {
   return parsed;
 }
 
-function reviewing(): ImportState {
-  const events: ImportEvent[] = [{ type: "file_chosen", fileName: "cv.pdf" }, { type: "upload_started" }, { type: "uploaded", draft: draft() }];
+function reviewing(parsed = draft()): ImportState {
+  const events: ImportEvent[] = [{ type: "file_chosen", fileName: "cv.pdf" }, { type: "upload_started" }, { type: "uploaded", draft: parsed }];
   return events.reduce(importReducer, initialImportState);
 }
 
@@ -89,9 +89,29 @@ describe("the review with checks", () => {
     const names = [...container.querySelectorAll(".bj-import-check")].map((label) => text(label));
     expect(names).toContain("Checked Name");
     const titleLabel = TO_CHECK.find((field) => field.path === "/experience/0/title")?.label ?? "";
-    expect(names).toContain(`Checked ${titleLabel}`);
+    expect(names.some((name) => name.startsWith(`Checked ${titleLabel} in `))).toBe(true);
     const derivedRow = [...container.querySelectorAll(".bj-import-field")].find((row) => text(row).includes("Set by a rule"));
     expect(derivedRow?.querySelector("input")).toBeNull();
+  });
+
+  it("names each checkbox and each source button by the entry it is in, so two entries do not have the same controls", () => {
+    const two = draft([
+      { title: "Data Engineer", company: "Acme Corp", start_date: "2022-01", end_date: "present", is_current: true },
+      { title: "Analyst", company: "Beta LLC", start_date: "2019-01", end_date: "2021-12", is_current: false },
+    ]);
+    const { container } = render(<Harness state={reviewing(two)} />);
+    const checkNames = [...container.querySelectorAll(".bj-import-check")].map((label) => text(label));
+    expect(new Set(checkNames).size).toBe(checkNames.length);
+    expect(checkNames).toContain("Checked Company in Experience 1: Data Engineer, Acme Corp");
+    expect(checkNames).toContain("Checked Company in Experience 2: Analyst, Beta LLC");
+    // the visible words are still "Checked": the name begins with them
+    expect(checkNames.every((name) => name.startsWith("Checked"))).toBe(true);
+  });
+
+  it("draws the review's groups as plain groups, not as landmarks that repeat the page's own region names", () => {
+    const { container } = render(<Harness />);
+    expect(query(container, "#import-review").querySelectorAll("section[aria-labelledby]")).toHaveLength(1);
+    expect(text(query(container, "#import-review .bj-import-section h4"))).toBe("Personal details");
   });
 
   it("says how many are left, in a polite status, and has no way to check them all at once", () => {

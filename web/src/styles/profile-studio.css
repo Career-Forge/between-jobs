@@ -62,8 +62,10 @@
   overflow-wrap: anywhere;
 }
 
-/* A section that is hidden says "Hidden" in words; the dimming is only a second cue. */
-.bj-section-hidden {
+/* A section that is hidden says "Hidden" in words; dimming its name is only a second cue. Only the name
+   is dimmed: the words that carry the state ("Hidden", "No content yet", "Show") stay at full strength,
+   since text dimmed with the whole row falls under 4.5:1. */
+.bj-section-hidden .bj-header-composer-field {
   opacity: 0.7;
 }
 
@@ -236,6 +238,21 @@ button.bj-dialog-confirm {
   .bj-header-composer-row,
   .bj-shape-settings-row {
     padding: var(--bj-space-2);
+  }
+
+  /* A 44px target is 44 wide as well as tall: an arrow button or a one-word link would otherwise be narrower. */
+  .bj-row-moves button {
+    min-width: 44px;
+  }
+
+  /* The dialog is drawn through a portal, outside .bj-profile, so the page's own phone rules never reach
+     it: its small controls get theirs here. */
+  .bj-entry-modal .bj-modal-close,
+  .bj-entry-modal .bj-chip-removable button,
+  .bj-entry-modal .bj-bullets-editor > button,
+  .bj-entry-modal .bj-bullet-row-actions button {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .bj-row-moves button,

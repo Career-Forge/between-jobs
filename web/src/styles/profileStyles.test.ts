@@ -104,6 +104,22 @@ describe("profile.css", () => {
     expect(declarationsFor(phoneBlock, ".bj-profile .bj-import-check")["min-height"]).toBe("44px");
   });
 
+  it("makes the page's link-style buttons and anchor links 44 wide as well as tall on a phone", () => {
+    for (const selector of [".bj-profile .bj-link-button", ".bj-profile .bj-anchor-nav a"]) {
+      const own = declarationsFor(phoneBlock, selector);
+      expect([own["min-width"], own["min-height"]], selector).toEqual(["44px", "44px"]);
+    }
+  });
+
+  it("makes a link-style button at least a 24px target on a wide screen too (WCAG 2.5.8)", () => {
+    const own = declarationsFor(base, ".bj-profile .bj-link-button");
+    expect([own["min-width"], own["min-height"]]).toEqual(["24px", "24px"]);
+  });
+
+  it("draws the dashed add-a-skill box with the outline token, which is 3:1 against the page", () => {
+    expect(declarationsFor(base, ".bj-inline-chip-input").border).toContain("var(--bj-outline)");
+  });
+
   it("underlines a link inside a sentence", () => {
     expect(declarationsFor(base, ".bj-prof-block p a")["text-decoration"]).toBe("underline");
   });
@@ -132,6 +148,25 @@ describe("profile-studio.css", () => {
       expect(flat, selector).toContain(selector);
     }
     expect(declarationsFor(phoneBlock, ".bj-row-moves button")["min-height"]).toBe("44px");
+    expect(declarationsFor(phoneBlock, ".bj-row-moves button")["min-width"]).toBe("44px");
+  });
+
+  // The dialog is portaled into the body, outside .bj-profile, so the page's phone rules never reach it.
+  it("gives the dialog's small controls 44 by 44 under the dialog itself, not under the page", () => {
+    for (const selector of [
+      ".bj-entry-modal .bj-modal-close",
+      ".bj-entry-modal .bj-chip-removable button",
+      ".bj-entry-modal .bj-bullets-editor > button",
+      ".bj-entry-modal .bj-bullet-row-actions button",
+    ]) {
+      const own = declarationsFor(phoneBlock, selector);
+      expect([own["min-width"], own["min-height"]], selector).toEqual(["44px", "44px"]);
+    }
+  });
+
+  it("dims a hidden section's name and nothing else, since the words that say it is hidden must stay at 4.5:1", () => {
+    expect(declarationsFor(base, ".bj-section-hidden")).toEqual({});
+    expect(declarationsFor(base, ".bj-section-hidden .bj-header-composer-field").opacity).toBe("0.7");
   });
 
   it("does not reach outside its own components: no rule here styles every button on a phone", () => {

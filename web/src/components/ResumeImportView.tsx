@@ -477,10 +477,11 @@ function SectionView({
   toggleSource: (path: string) => void;
   checks?: ReviewChecks;
 }) {
-  const titleId = `bj-import-section-${section.id}`;
+  // A plain group, not a landmark: the page has regions of the same names (Experience, Skills, ...), and
+  // two landmarks with one name cannot be told apart in a screen reader's list.
   return (
-    <section aria-labelledby={titleId} className="bj-import-section">
-      <h4 id={titleId}>{section.title}</h4>
+    <div className="bj-import-section">
+      <h4>{section.title}</h4>
       {section.blocks.map((block) => (
         <div key={block.id} className="bj-import-block">
           {block.heading !== null && <h5>{block.heading}</h5>}
@@ -489,6 +490,7 @@ function SectionView({
               <FieldView
                 key={field.path}
                 field={field}
+                entry={block.heading}
                 draft={draft}
                 open={openPath === field.path}
                 locked={locked}
@@ -499,12 +501,13 @@ function SectionView({
           </dl>
         </div>
       ))}
-    </section>
+    </div>
   );
 }
 
 function FieldView({
   field,
+  entry,
   draft,
   open,
   locked,
@@ -512,6 +515,8 @@ function FieldView({
   checks,
 }: {
   field: ReviewField;
+  // The entry the field is in ("Experience 1: Data Engineer, Acme"), or null for a field of no entry.
+  entry: string | null;
   draft: ImportDraft;
   open: boolean;
   locked: boolean;
@@ -519,6 +524,9 @@ function FieldView({
   checks?: ReviewChecks;
 }) {
   const panelId = sourcePanelId(field.path);
+  // Two entries have a "Company" each: the name a screen reader gets says whose, since the visible heading
+  // above is not part of the control.
+  const whose = entry === null || entry === "" ? field.label : `${field.label} in ${entry}`;
   return (
     <div className="bj-import-field">
       <dt>{field.label}</dt>
@@ -536,7 +544,7 @@ function FieldView({
             onClick={() => toggleSource(field.path)}
           >
             {open ? "Hide where this came from" : "Show where this came from"}
-            <span className="bj-visually-hidden"> for {field.label}</span>
+            <span className="bj-visually-hidden"> for {whose}</span>
           </button>
         ) : (
           <div className="bj-muted bj-small">
@@ -551,7 +559,7 @@ function FieldView({
         {checks !== undefined && !field.derived && (
           <label className="bj-import-check">
             <input type="checkbox" checked={checks.checked.has(field.path)} disabled={locked} onChange={() => checks.toggle(field.path)} />
-            Checked<span className="bj-visually-hidden"> {field.label}</span>
+            Checked<span className="bj-visually-hidden"> {whose}</span>
           </label>
         )}
         {open && field.span !== null && <SourcePanel field={field} text={draft.extractedText} panelId={panelId} />}
