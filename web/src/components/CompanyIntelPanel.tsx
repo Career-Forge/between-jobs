@@ -98,7 +98,8 @@ export function CompanyIntelPanel({ applicationId, now }: { applicationId: strin
     <div className="bj-rs">
       <p className="bj-ws-intro">
         Sourced claims about this company. Each one links to a page your search returned, and the confidence beside it is your model's own reading. A run searches with your You.com or Firecrawl key
-        and makes one call to your model, so it uses your own keys each time.
+        and calls your model to write the claims. When it finds claims about the interview process it calls your model once more, to build interview research that other people's practice sessions can
+        use too. It uses your own keys each time.
       </p>
       <RunButton
         label={data !== null ? "Refresh" : "Research this company"}

@@ -71,6 +71,12 @@ export function InterviewPracticePanel({ applicationId, now }: { applicationId: 
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(new Set());
   const [lastSessionReport, setLastSessionReport] = useState<SessionReport | null>(null);
   const answerRef = useRef<HTMLTextAreaElement>(null);
+  // Controls that stay when a Retry removes the callout it was pressed in, so focus is not dropped on the page:
+  // the paragraph above everything (a failed read), the button that starts a session and the one that sends
+  // an answer.
+  const introRef = useRef<HTMLParagraphElement>(null);
+  const startRef = useRef<HTMLButtonElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
   const feedbackRef = useRef<HTMLHeadingElement>(null);
   const wantFocus = useRef<FocusTarget | null>(null);
   const working = useRef(false);
@@ -205,14 +211,14 @@ export function InterviewPracticePanel({ applicationId, now }: { applicationId: 
 
   return (
     <div className="bj-rs bj-rs-practice">
-      <p className="bj-ws-intro">
+      <p ref={introRef} tabIndex={-1} className="bj-ws-intro">
         Five mock questions for this role, asked by your model and grounded in your resume evidence and, when one was found, a cited interview-process brief for this company. Each answer is scored by your model
         on your key.
       </p>
 
       {state.kind === "loading" && <LoadingState rows={2} rowHeight={56} label="Loading practice sessions..." />}
 
-      {state.kind === "error" && <FailureState message={state.message} onRetry={() => void load()} />}
+      {state.kind === "error" && <FailureState message={state.message} onRetry={() => void load()} restoreFocusTo={() => introRef.current} />}
 
       {state.kind === "idle" && (
         <>
@@ -224,7 +230,7 @@ export function InterviewPracticePanel({ applicationId, now }: { applicationId: 
             <p>It needs a model key and an active profile.</p>
           </EmptyBlock>
           <div className="bj-actions">
-            <button type="button" aria-disabled={starting ? true : undefined} onClick={() => void startSession()}>
+            <button ref={startRef} type="button" aria-disabled={starting ? true : undefined} onClick={() => void startSession()}>
               {starting ? "Starting..." : "Start practice session"}
             </button>
           </div>
@@ -252,7 +258,7 @@ export function InterviewPracticePanel({ applicationId, now }: { applicationId: 
                     </button>
                     {open && (
                       <div id={panelId}>
-                        <AnswerReview question={question} now={clock} savedEarlier={!answeredHere.has(question.id)} headingLevel={4} />
+                        <AnswerReview question={question} now={clock} savedEarlier={!answeredHere.has(question.id)} />
                       </div>
                     )}
                   </li>
@@ -263,7 +269,7 @@ export function InterviewPracticePanel({ applicationId, now }: { applicationId: 
 
           {pending !== null && (
             <div className="bj-rs-feedback">
-              <AnswerReview question={pending} now={clock} savedEarlier={false} headingLevel={3} headingRef={feedbackRef} />
+              <AnswerReview question={pending} now={clock} savedEarlier={false} headingRef={feedbackRef} />
               {currentQuestion(questions) !== null && (
                 <div className="bj-actions">
                   <button type="button" onClick={nextQuestion}>
@@ -284,18 +290,19 @@ export function InterviewPracticePanel({ applicationId, now }: { applicationId: 
               problem={submitProblem}
               onSubmit={() => void submitAnswer()}
               textareaRef={answerRef}
+              submitRef={submitRef}
             />
           )}
 
           {finished && report !== null && (
-            <SessionReportSummary report={report} questions={questions} onPracticeAgain={() => void startSession()} starting={starting} />
+            <SessionReportSummary report={report} questions={questions} onPracticeAgain={() => void startSession()} starting={starting} buttonRef={startRef} />
           )}
         </>
       )}
 
       {state.kind !== "loading" && state.kind !== "error" && startProblem !== null && (
         <div className="bj-rs-issue">
-          {startProblem.kind === "setup" ? <SetupRequiredNotice notice={startProblem.notice} /> : <FailureState message={startProblem.message} onRetry={() => void startSession()} />}
+          {startProblem.kind === "setup" ? <SetupRequiredNotice notice={startProblem.notice} /> : <FailureState message={startProblem.message} onRetry={() => void startSession()} restoreFocusTo={() => startRef.current} />}
         </div>
       )}
 
@@ -313,6 +320,7 @@ function QuestionForm({
   problem,
   onSubmit,
   textareaRef,
+  submitRef,
 }: {
   question: InterviewQuestion;
   total: number;
@@ -322,6 +330,7 @@ function QuestionForm({
   problem: Failure | null;
   onSubmit: () => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
+  submitRef: RefObject<HTMLButtonElement | null>;
 }) {
   const questionId = useId();
   const empty = draft.trim().length === 0;
@@ -349,14 +358,14 @@ function QuestionForm({
         aria-labelledby={questionId}
       />
       <div className="bj-actions">
-        <button type="button" aria-disabled={submitting || empty ? true : undefined} onClick={onSubmit}>
+        <button ref={submitRef} type="button" aria-disabled={submitting || empty ? true : undefined} onClick={onSubmit}>
           {submitting ? "Scoring..." : "Submit answer"}
         </button>
         {empty && !submitting && <span className="bj-ws-caption">Write an answer to submit it.</span>}
       </div>
       {problem !== null && (
         <div className="bj-rs-issue">
-          {problem.kind === "setup" ? <SetupRequiredNotice notice={problem.notice} /> : <FailureState message={problem.message} onRetry={onSubmit} retryLabel="Send again" />}
+          {problem.kind === "setup" ? <SetupRequiredNotice notice={problem.notice} /> : <FailureState message={problem.message} onRetry={onSubmit} retryLabel="Send again" restoreFocusTo={() => submitRef.current} />}
         </div>
       )}
     </div>
@@ -370,26 +379,25 @@ function AnswerReview({
   question,
   now,
   savedEarlier,
-  headingLevel,
   headingRef,
 }: {
   question: InterviewQuestion;
   now: Date;
   savedEarlier: boolean;
-  headingLevel: 3 | 4;
   headingRef?: RefObject<HTMLHeadingElement | null>;
 }) {
   const feedback = question.feedback;
   const score = question.score ?? feedback?.score ?? null;
   const star = feedback?.star_coverage ?? null;
-  const Heading = `h${headingLevel}` as const;
   const trail = answerTrail(question, now, savedEarlier);
   return (
     <div className="bj-rs-review">
-      <Heading ref={headingRef} tabIndex={-1} className="bj-rs-eyebrow bj-rs-review-title">
+      {/* An answer's title is an h3 under the section's h2 whether it is the one just scored or an earlier one,
+          with its labels ("Your answer", "A stronger version") as h4s under it. */}
+      <h3 ref={headingRef} tabIndex={-1} className="bj-rs-eyebrow bj-rs-review-title">
         Question {question.ordinal + 1} · {QUESTION_TYPE_LABELS[question.question_type]}
         {question.target_skill ? ` · Targets ${question.target_skill}` : ""}
-      </Heading>
+      </h3>
       <p className="bj-rs-text">{question.question_text}</p>
       {question.answer_text && (
         <>
@@ -447,11 +455,13 @@ function SessionReportSummary({
   questions,
   onPracticeAgain,
   starting,
+  buttonRef,
 }: {
   report: SessionReport;
   questions: InterviewQuestion[];
   onPracticeAgain: () => void;
   starting: boolean;
+  buttonRef: RefObject<HTMLButtonElement | null>;
 }) {
   const star = starSummary(report, questions);
   return (
@@ -463,7 +473,7 @@ function SessionReportSummary({
         {star !== null && ` · ${star}`}
       </p>
       <div className="bj-actions">
-        <button type="button" aria-disabled={starting ? true : undefined} onClick={onPracticeAgain}>
+        <button ref={buttonRef} type="button" aria-disabled={starting ? true : undefined} onClick={onPracticeAgain}>
           {starting ? "Starting..." : "Practice again"}
         </button>
       </div>

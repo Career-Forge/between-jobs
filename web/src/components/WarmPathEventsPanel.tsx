@@ -56,14 +56,24 @@ interface WarmPathEventsResponse {
   events: WarmPathEvent[];
 }
 
-const CERTAINTY: Record<Certainty, { label: string; tone: ChipTone; glyph: TrailGlyphName; rank: number }> = {
+// The gold diamond marks the two firmer readings. The weakest, and a certainty this page does not know, have
+// no mark: the plain-code circle means "no model involved", which none of these is, since all three are a
+// model's reading (or code's downgrade of one).
+interface Reading {
+  label: string;
+  tone: ChipTone;
+  glyph?: TrailGlyphName;
+  rank: number;
+}
+
+const CERTAINTY: Record<Certainty, Reading> = {
   confirmed_speaker: { label: "Confirmed speaker", tone: "solid", glyph: "evidence", rank: 0 },
   likely_staffed_sponsor: { label: "Likely-staffed sponsor", tone: "dashed", glyph: "evidence", rank: 1 },
-  company_adjacent: { label: "Company-adjacent", tone: "muted", glyph: "code", rank: 2 },
+  company_adjacent: { label: "Company-adjacent", tone: "muted", rank: 2 },
 };
 
-function readingOf(certainty: string): { label: string; tone: ChipTone; glyph: TrailGlyphName; rank: number } {
-  return Object.prototype.hasOwnProperty.call(CERTAINTY, certainty) ? CERTAINTY[certainty as Certainty] : { label: certainty, tone: "muted", glyph: "code", rank: 3 };
+function readingOf(certainty: string): Reading {
+  return Object.prototype.hasOwnProperty.call(CERTAINTY, certainty) ? CERTAINTY[certainty as Certainty] : { label: certainty, tone: "muted", rank: 3 };
 }
 
 export function WarmPathEventsPanel({ applicationId, now }: { applicationId: string; now?: Date }) {

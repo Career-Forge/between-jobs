@@ -47,13 +47,20 @@ describe("Events", () => {
     expect(buttonNamed(container, "Find events")).toBeTruthy();
   });
 
+  it("draws a certainty it does not know as its own word with no mark, not as a plain-code circle", async () => {
+    on(`GET ${PATH}`, stored([event(1, "mystery_reading")]));
+    const { container } = panel();
+    await settle();
+    expect(text(query(container, ".bj-rs-chip"))).toBe("mystery_reading");
+  });
+
   it("labels each event by how certain the tie is, with a mark and the word, firmest first, and never merges them into one list of equals", async () => {
     on(`GET ${PATH}`, stored([event(1, "company_adjacent"), event(2, "likely_staffed_sponsor"), event(3, "confirmed_speaker")]));
     const { container } = panel();
     await settle();
     const items = [...container.querySelectorAll(".bj-rs-item")];
     expect(items.map((item) => text(item.querySelector("h3")!))).toEqual(["Event 3", "Event 2", "Event 1"]);
-    expect(items.map((item) => text(item.querySelector(".bj-rs-chip")!))).toEqual(["◆ Confirmed speaker", "◆ Likely-staffed sponsor", "○ Company-adjacent"]);
+    expect(items.map((item) => text(item.querySelector(".bj-rs-chip")!))).toEqual(["◆ Confirmed speaker", "◆ Likely-staffed sponsor", "Company-adjacent"]);
     expect(items.map((item) => [...item.querySelector(".bj-rs-chip")!.classList].find((name) => name.startsWith("bj-rs-chip--")))).toEqual(["bj-rs-chip--solid", "bj-rs-chip--dashed", "bj-rs-chip--muted"]);
     expect(container.innerHTML).not.toContain("bj-badge-emerald");
   });

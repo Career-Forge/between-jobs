@@ -108,6 +108,15 @@ describe("Company intel: loading, empty and a stored dossier", () => {
     expect(text(query(container, ".bj-receipt-note"))).toContain("your model's own reading, not a check");
   });
 
+  it("does not say a run makes one call to the model: a run with interview-process claims makes a second", async () => {
+    on(`GET ${PATH}`, { run: null, claims: [] });
+    const { container } = panel();
+    await settle();
+    const intro = text(query(container, ".bj-ws-intro"));
+    expect(intro).not.toContain("one call");
+    expect(intro).toContain("calls your model once more");
+  });
+
   it("names a run with no claims, keeps its trail (it did run) and offers Refresh", async () => {
     on(`GET ${PATH}`, stored([]));
     const { container } = panel();

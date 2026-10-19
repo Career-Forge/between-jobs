@@ -51,7 +51,12 @@ describe("Practice: loading, failure and empty", () => {
     expect(text(query(container, "[role='alert']"))).toContain("The server hit a problem.");
     expect(text(query(container, ".bj-trail"))).toBe("✕ Practice couldn't be read");
     resume(five(0));
-    click(buttonNamed(container, "Retry"));
+    const retry = buttonNamed(container, "Retry");
+    retry.focus();
+    click(retry);
+    await settle(1);
+    // The callout is gone and focus is on the panel's intro, not the page body.
+    expect(document.activeElement).toBe(query(container, ".bj-ws-intro"));
     await settle();
     expect(container.querySelector("[role='alert']")).toBeNull();
     expect(text(container)).toContain("Question 1 of 5");
@@ -96,6 +101,22 @@ describe("Practice: starting", () => {
     await settle();
     expect(container.querySelector("[role='alert']")).toBeNull();
     expect(callsTo(`POST ${BASE}`)).toHaveLength(2);
+  });
+
+  it("hands keyboard focus to the Start button when its Retry removes the callout it was pressed in", async () => {
+    on(`GET ${BASE}`, { sessions: [] });
+    on(`POST ${BASE}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    const { container } = panel();
+    await settle();
+    click(buttonNamed(container, "Start practice session"));
+    await settle();
+    on(`POST ${BASE}`, () => new Promise(() => undefined));
+    const retry = buttonNamed(container, "Retry");
+    retry.focus();
+    click(retry);
+    await settle(1);
+    expect(container.querySelector("[role='alert']")).toBeNull();
+    expect(document.activeElement).toBe(buttonNamed(container, "Starting..."));
   });
 
   it("links to what the server says is missing, with no Retry", async () => {
@@ -318,6 +339,23 @@ describe("Practice: answering", () => {
     expect(container.querySelector(".bj-rs-feedback")).not.toBeNull();
   });
 
+  it("hands keyboard focus to the Submit button when Send again removes the callout it was pressed in", async () => {
+    resume(five(0));
+    on(`POST ${ANSWERS}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    const { container } = panel();
+    await settle();
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), "My draft answer.");
+    click(buttonNamed(container, "Submit answer"));
+    await settle();
+    on(`POST ${ANSWERS}`, () => new Promise(() => undefined));
+    const again = buttonNamed(container, "Send again");
+    again.focus();
+    click(again);
+    await settle(1);
+    expect(container.querySelector("[role='alert']")).toBeNull();
+    expect(document.activeElement).toBe(buttonNamed(container, "Scoring..."));
+  });
+
   it("links to what is missing when scoring needs a key the person removed, keeps the draft and offers no Send again", async () => {
     resume(five(0));
     on(`POST ${ANSWERS}`, new FakeSetupError("Interview practice needs a model key.", "/profile/integrations", "interview_practice", ["credential"]));
@@ -348,6 +386,17 @@ describe("Practice: answering", () => {
     click(buttonNamed(container, "Practice again"));
     await settle();
     expect(text(container)).toContain("Question 1 of 5");
+  });
+});
+
+describe("Practice: the heading outline", () => {
+  it("titles an earlier answer with an h3 and labels it with h4s, the same as the one just scored", async () => {
+    resume(five(2));
+    const { container } = panel();
+    await settle();
+    click(buttonNamed(container, /Question 1/));
+    const levels = [...container.querySelectorAll("h1, h2, h3, h4")].map((heading) => `${heading.tagName} ${text(heading)}`);
+    expect(levels).toEqual(["H3 Question 1 · Behavioral · Targets Mentoring", "H4 Your answer", "H4 A stronger version, written by your model"]);
   });
 });
 
