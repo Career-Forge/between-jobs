@@ -11,7 +11,7 @@ import { SavedSearchesCard } from "../components/SavedSearchesCard";
 import { nextStep } from "../lib/nextStep";
 import type { SettingsFacts, SettingsLlm } from "../lib/nextStep/pages/settings";
 import { SEARCH_PROVIDER_CARDS } from "../lib/providerStatus";
-import { llmRows, llmSetupState, providerName, searchRows } from "../lib/settings/llmProviders";
+import { knownDefaultProvider, llmRows, llmSetupState, providerName, searchRows } from "../lib/settings/llmProviders";
 import { useOpenRouterConnect } from "../lib/settings/useOpenRouterConnect";
 import { useProviderCatalog } from "../lib/settings/useProviderCatalog";
 import { useSettingsData } from "../lib/settings/useSettingsData";
@@ -102,8 +102,10 @@ export default function Settings() {
     const dropped = droppedModelFor === null ? undefined : states.find((entry) => entry.row.provider === droppedModelFor && entry.state === "needs_model");
     const awaiting = dropped ?? states.find((entry) => entry.state === "needs_model") ?? states.find((entry) => entry.state === "needs_key");
     let llmFacts: SettingsLlm;
-    if (ready.length > 0 && dropped === undefined) llmFacts = { state: "ready", names: ready.map((entry) => nameOf(entry.row.provider)) };
-    else if (awaiting !== undefined) llmFacts = { state: awaiting.state === "needs_model" ? "needs_model" : "needs_key", providerName: nameOf(awaiting.row.provider) };
+    if (ready.length > 0 && dropped === undefined) {
+      // A default cleared on this visit is the `dropped` case above, so it is not passed here.
+      llmFacts = { state: "ready", names: ready.map((entry) => nameOf(entry.row.provider)), defaultKnown: knownDefaultProvider(llm, chosenHere, false) !== null };
+    } else if (awaiting !== undefined) llmFacts = { state: awaiting.state === "needs_model" ? "needs_model" : "needs_key", providerName: nameOf(awaiting.row.provider) };
     else llmFacts = { state: "none" };
     const connected = SEARCH_PROVIDER_CARDS.filter((card) => searchRows(rows).some((row) => row.provider === card.provider)).length;
     return {

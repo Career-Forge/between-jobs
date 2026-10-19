@@ -158,6 +158,24 @@ export function llmRows(rows: readonly CredentialSummary[]): CredentialSummary[]
   return rows.filter((row) => row.service === "llm");
 }
 
+// Which model key is the default, as far as the page can know. The API stores the default but has no
+// route that reads it back, so this is the one place the page's knowledge is written down (the band
+// on the Settings page and the Default model card both read it, and cannot disagree):
+//   - the key whose model was chosen on this visit (`chosenHere`) is the default;
+//   - a single ready key is the default, the API repoints the default there when the other key is
+//     removed and a model choice always sets it, unless another key is waiting for a model: saving a
+//     key without one clears a default that named it, and the API does not repoint it there;
+//   - with several ready keys, or any reason to think the default was cleared (`defaultCleared`),
+//     it is not known, and nothing here guesses.
+export function knownDefaultProvider(rows: readonly CredentialSummary[], chosenHere: string | null, defaultCleared: boolean): string | null {
+  if (defaultCleared) return null;
+  const ready = rows.filter((row) => row.service === "llm" && llmSetupState(row) === "ready" && row.model !== null);
+  const chosen = ready.find((row) => row.provider === chosenHere);
+  if (chosen !== undefined) return chosen.provider;
+  const waiting = rows.some((row) => row.service === "llm" && llmSetupState(row) === "needs_model");
+  return ready.length === 1 && !waiting ? ready[0].provider : null;
+}
+
 export function searchRows(rows: readonly CredentialSummary[]): CredentialSummary[] {
   return rows.filter((row) => row.service === "search");
 }

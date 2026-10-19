@@ -217,7 +217,7 @@ describe("a key replaced at another address", () => {
     on("POST /credentials/llm/models", { provider: "qwen", listing: "unavailable", truncated: false, models: [] });
     const { container } = page();
     await settle();
-    expect(text(band(container))).toContain("Your model is set.");
+    expect(text(band(container))).toContain("You have 2 connected models, and this page can't tell which one is your default.");
     // the replacement lands at another address, so the API returns it with no model
     on("POST /credentials", key("qwen", { setup_state: "needs_model", base_url: "https://maas.qwencloudapi.com/compatible-mode/v1" }));
     on("GET /credentials", [key("openai", { model: "gpt-x", setup_state: "ready" }), key("qwen", { setup_state: "needs_model" })]);
@@ -256,6 +256,62 @@ describe("a model chosen on this visit", () => {
     await settle();
     expect(text(band(container))).not.toContain("model chosen this visit");
     expect(text(band(container))).toContain("OpenRouter ready");
+  });
+});
+
+describe("when the page cannot tell which model is the default", () => {
+  const BAND_SET = "Your model is set";
+
+  it("says so in the band, in the words of the Default model card, when several keys are ready", async () => {
+    describeAccount([key("openai", { model: "g", setup_state: "ready" }), key("openrouter", { model: "m", setup_state: "ready" })]);
+    const { container } = page();
+    await settle();
+    expect(text(band(container))).toContain("You have 2 connected models, and this page can't tell which one is your default. Choose one below.");
+    expect(text(band(container))).not.toContain(BAND_SET);
+    expect(text(query(container, "#default-model"))).toContain("can't tell which one is your default");
+  });
+
+  it("does not call a single ready key the default while another key is waiting for a model", async () => {
+    describeAccount([key("openai", { setup_state: "needs_model" }), key("openrouter", { model: "m", setup_state: "ready" })]);
+    const { container } = page();
+    await settle();
+    // The waiting key is what the band asks about first; the card must not name a default either.
+    expect(text(band(container))).not.toContain(BAND_SET);
+    expect(text(query(container, "#default-model"))).not.toContain("m on OpenRouter.");
+    expect(text(query(container, "#default-model"))).toContain("can't tell whether it is your default");
+  });
+
+  it("is the same after the key that was chosen as the default is removed from three", async () => {
+    describeAccount([
+      key("openai", { model: "g", setup_state: "ready" }),
+      key("openrouter", { model: "m", setup_state: "ready" }),
+      key("anthropic", { model: "c", setup_state: "ready" }),
+    ]);
+    on("PUT /credentials/llm/openai/model", key("openai", { model: "g", setup_state: "ready" }));
+    const { container } = page();
+    await settle();
+    const card = query(container, "#default-model");
+    const { choose } = await import("../testing/forms");
+    choose(query<HTMLSelectElement>(card, "select"), "openai");
+    click(buttonIn(card, "Make default"));
+    await settle();
+    expect(text(band(container))).toContain(BAND_SET);
+    expect(text(band(container))).toContain("OpenAI model chosen this visit");
+    on("DELETE /credentials/llm/openai", undefined);
+    on("GET /credentials", [key("openrouter", { model: "m", setup_state: "ready" }), key("anthropic", { model: "c", setup_state: "ready" })]);
+    click(buttonIn(query(container, "#provider-openai"), "Remove key"));
+    click(buttonIn(query(container, "#provider-openai"), "Remove key"));
+    await settle();
+    expect(text(band(container))).toContain("You have 2 connected models, and this page can't tell which one is your default.");
+    expect(text(band(container))).not.toContain(BAND_SET);
+    expect(text(query(container, "#default-model"))).toContain("can't tell which one is your default");
+  });
+
+  it("still says the model is set when it is the only key", async () => {
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" })]);
+    const { container } = page();
+    await settle();
+    expect(text(band(container))).toContain("Your model is set. Everything else here is optional.");
   });
 });
 

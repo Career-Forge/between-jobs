@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import type { CredentialSummary } from "../../lib/settings/credentials";
-import { llmSetupState, providerName, type LlmProvider } from "../../lib/settings/llmProviders";
+import { knownDefaultProvider, llmSetupState, providerName, type LlmProvider } from "../../lib/settings/llmProviders";
 import { settingsFailureMessage } from "../../lib/settings/settingsErrors";
 import "../../styles/settings.css";
 
@@ -12,12 +12,14 @@ import "../../styles/settings.css";
 // WHAT THE PAGE CAN KNOW. The API stores the default but has no route that reads it back, and a key's
 // row does not say whether it is the default. So:
 //   - with one ready key, that key and its model are the default (the API repoints the default to
-//     the only other ready key when one is removed, and clears it when there is none);
+//     the only other ready key when one is removed, and clears it when there is none) -- unless
+//     another key is waiting for a model, which the API may have cleared the default for;
 //   - with several, which one is the default is not known here until it is chosen on this visit;
 //   - with none, there is nothing to show;
 //   - after a key was replaced at another address and lost its model, the API may have cleared the
 //     default, so the page claims none until one is chosen (`defaultUnknown`).
-// The page says which of these it is rather than guessing.
+// The page says which of these it is rather than guessing (`knownDefaultProvider` in
+// lib/settings/llmProviders.ts decides, and the next-step band reads the same answer).
 //
 // Making a key the default again sends the same one tiny real request choosing a model does, so a
 // model the provider has since retired is found out here and not on the next draft.
@@ -45,8 +47,9 @@ export function DefaultModel({ credentials, catalog, chosenHere, defaultUnknown 
 
   if (ready.length === 0) return null;
 
-  const knownDefault = defaultUnknown ? null : ready.length === 1 ? ready[0] : (ready.find((row) => row.provider === chosenHere) ?? null);
-  const canChoose = ready.length > 1 || defaultUnknown;
+  const knownProvider = knownDefaultProvider(credentials, chosenHere, defaultUnknown);
+  const knownDefault = ready.find((row) => row.provider === knownProvider) ?? null;
+  const canChoose = knownDefault === null || ready.length > 1;
 
   async function setDefault() {
     const row = ready.find((candidate) => candidate.provider === pick);

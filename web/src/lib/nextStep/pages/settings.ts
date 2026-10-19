@@ -8,6 +8,12 @@
 //   S2k a key is not confirmed     "Your X key isn't ..."       Replace the key
 //   S3  a model was chosen just now "Your model is set ..."     Go to Discover
 //   S4  a model is ready           "... Everything else here is optional."   (unlit)
+//   S4u models are ready, the default is not known   "... can't tell which is your default"   (unlit)
+//
+// The API has no route that reads the default model back, so "your model is set" is said only where
+// the page can know which model that is (`defaultKnown`, from knownDefaultProvider in
+// lib/settings/llmProviders.ts, the same answer the Default model card gives). Where it cannot, S4u
+// says so, in the card's words, instead of the page contradicting itself.
 //
 // WHICH CONTROL IS THE PAGE'S PRIMARY. The band holds the only cyan fill, and where its action also
 // exists in the page's body the body copy is drawn as an ordinary outlined button (one action, one
@@ -26,7 +32,7 @@ import { definePage, type NextStepRow } from "../types";
 export type SettingsLlm =
   | { state: "none" }
   | { state: "needs_model" | "needs_key"; providerName: string }
-  | { state: "ready"; names: readonly string[] };
+  | { state: "ready"; names: readonly string[]; defaultKnown: boolean };
 
 export interface SettingsFacts {
   llm: SettingsLlm;
@@ -55,7 +61,12 @@ export function isSettingsFacts(value: unknown): value is SettingsFacts {
     case "needs_key":
       return typeof llm.providerName === "string" && llm.providerName !== "";
     case "ready":
-      return Array.isArray(llm.names) && llm.names.length > 0 && llm.names.every((name) => typeof name === "string" && name !== "");
+      return (
+        Array.isArray(llm.names) &&
+        llm.names.length > 0 &&
+        llm.names.every((name) => typeof name === "string" && name !== "") &&
+        typeof llm.defaultKnown === "boolean"
+      );
     default:
       return false;
   }
@@ -120,11 +131,28 @@ const S3: NextStepRow<SettingsFacts> = {
   },
 };
 
+const S4U: NextStepRow<SettingsFacts> = {
+  id: "S4u",
+  match: (input) => {
+    const facts = input.facts;
+    if (facts === undefined || facts.llm.state !== "ready" || facts.llm.defaultKnown) return null;
+    const names = facts.llm.names;
+    return {
+      sentence:
+        names.length === 1
+          ? `Your ${names[0]} key is ready, and this page can't tell whether it is your default model. Choose it below to make it the default.`
+          : `You have ${names.length} connected models, and this page can't tell which one is your default. Choose one below.`,
+      action: null,
+      why: [readyWhy(names), "the API can't say which model is the default"],
+    };
+  },
+};
+
 const S4: NextStepRow<SettingsFacts> = {
   id: "S4",
   match: (input) => {
     const facts = input.facts;
-    if (facts === undefined || facts.llm.state !== "ready") return null;
+    if (facts === undefined || facts.llm.state !== "ready" || !facts.llm.defaultKnown) return null;
     return {
       sentence: "Your model is set. Everything else here is optional.",
       action: null,
@@ -133,4 +161,4 @@ const S4: NextStepRow<SettingsFacts> = {
   },
 };
 
-export const rules = definePage("settings", [S1, S2, S2K, S3, S4], { facts: isSettingsFacts });
+export const rules = definePage("settings", [S1, S2, S2K, S3, S4U, S4], { facts: isSettingsFacts });

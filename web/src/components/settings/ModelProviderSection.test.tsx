@@ -317,11 +317,20 @@ describe("the default model", () => {
     expect(container.querySelector("#default-model")).toBeNull();
   });
 
-  it("is the one ready key's model when there is one", () => {
-    const { container } = mount({ credentials: [row("openai", { model: "gpt-5.5" }), row("anthropic", { setup_state: "needs_model" })] });
+  it("is the one ready key's model when there is one and no other key is waiting", () => {
+    const { container } = mount({ credentials: [row("openai", { model: "gpt-5.5" })] });
     const block = query(container, "#default-model");
     expect(text(block)).toContain("gpt-5.5 on OpenAI.");
     expect(block.querySelector("select")).toBeNull();
+  });
+
+  it("does not name the one ready key as the default while another key is waiting for a model", () => {
+    // Saving a key without a model clears a default that named it, and the API does not repoint it.
+    const { container } = mount({ credentials: [row("openai", { model: "gpt-5.5" }), row("anthropic", { setup_state: "needs_model" })] });
+    const block = query(container, "#default-model");
+    expect(text(block)).not.toContain("gpt-5.5 on OpenAI.");
+    expect(text(block)).toContain("can't tell whether it is your default");
+    expect(block.querySelector("select")).not.toBeNull();
   });
 
   it("claims no default while the stored one may be gone, and lets even a single ready model be made the default", async () => {
