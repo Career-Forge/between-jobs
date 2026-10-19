@@ -229,7 +229,7 @@ export function ProviderConnectCard({ provider, mode, autoFocus, savedBaseUrl, o
         onChange={setSecret}
         placeholder="Paste your key"
         hint={provider.keyHint === "" ? undefined : provider.keyHint}
-        disabled={saving}
+        readOnly={saving}
         describedBy={error === null ? undefined : errorId}
       />
 

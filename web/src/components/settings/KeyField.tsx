@@ -12,13 +12,14 @@ export interface KeyFieldProps {
   onChange: (value: string) => void;
   placeholder?: string;
   hint?: string;
-  disabled?: boolean;
+  /** The field cannot be edited (a save is out). Read-only, never disabled: pressing Enter in the field is what starts the save, and a disabled field drops keyboard focus to the top of the page. */
+  readOnly?: boolean;
   /** Names the element a screen reader should read after the label (the hint, the error). */
   describedBy?: string;
   inputRef?: (element: HTMLInputElement | null) => void;
 }
 
-export function KeyField({ label, value, onChange, placeholder, hint, disabled, describedBy, inputRef }: KeyFieldProps) {
+export function KeyField({ label, value, onChange, placeholder, hint, readOnly, describedBy, inputRef }: KeyFieldProps) {
   const [shown, setShown] = useState(false);
   const inputId = useId();
   const hintId = useId();
@@ -39,7 +40,7 @@ export function KeyField({ label, value, onChange, placeholder, hint, disabled, 
           className="bj-set-mono-input"
           value={value}
           placeholder={placeholder}
-          disabled={disabled}
+          readOnly={readOnly}
           autoComplete="off"
           autoCapitalize="none"
           autoCorrect="off"

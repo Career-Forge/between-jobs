@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { act } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
 import { FakeApiError, calls, callsTo, on, reset } from "../../testing/fakeApi";
@@ -133,6 +134,26 @@ describe("a plain key provider", () => {
     expect(callsTo("POST /credentials")).toHaveLength(1);
     finish(SAVED_ROW);
     await settle();
+  });
+
+  // Enter in the field is what starts the save, so the field must not disable itself: a disabled field drops
+  // keyboard focus to the top of the page, and a refused key would leave it there.
+  it("keeps keyboard focus in the key field while it validates, and after a refusal", async () => {
+    let refuse: (error: unknown) => void = () => undefined;
+    on("POST /credentials", () => new Promise((_resolve, reject) => (refuse = reject)));
+    const { container, form } = mount({ provider: provider("openai") });
+    const field = keyInput(container);
+    typeInto(field, KEY);
+    field.focus();
+    submit(form);
+    await settle(1);
+    expect(field.readOnly).toBe(true);
+    expect(field.disabled).toBe(false);
+    expect(document.activeElement).toBe(field);
+    await act(async () => refuse(new FakeApiError("OpenAI rejected that key.", "PROVIDER_REJECTED", "key_rejected")));
+    await settle();
+    expect(field.readOnly).toBe(false);
+    expect(document.activeElement).toBe(field);
   });
 
   it("says why a key was refused, in the provider's name, keeps what was typed, and leaks nothing", async () => {
