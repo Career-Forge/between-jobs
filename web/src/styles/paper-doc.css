@@ -59,8 +59,12 @@
   pointer-events: none;
 }
 
-/* Anything in the document that is not a block (a chapter heading) stays in the document column. */
-.bj-doc--margin > :not(.bj-doc-block) {
+/* Anything in the document that is not a block (a chapter heading) stays in the document column.
+   A wrapper that holds blocks (a <section> grouping a chapter with its blocks) is not capped: its
+   blocks keep the full-width two-column row, so their margin cells stay under the layout's rule. What
+   such a wrapper holds that is not a block is capped by the chapter rule below, or goes in a block. */
+.bj-doc--margin > :not(.bj-doc-block):not(:has(.bj-doc-block)),
+.bj-doc--margin .bj-chapter {
   max-width: calc(100% - var(--bj-doc-margin) - var(--bj-doc-gap));
 }
 
@@ -554,6 +558,11 @@ select.bj-jump-select-control optgroup {
 .bj-claimrow-chip--supported,
 .bj-claimrow-chip--unverifiable {
   border-color: var(--bj-gold);
+}
+
+/* Flagged is drawn differently from backed: a dashed outline says nothing here confirms the claim. */
+.bj-claimrow-chip--unverifiable {
+  border-style: dashed;
 }
 
 .bj-claimrow-chip--contradicted {

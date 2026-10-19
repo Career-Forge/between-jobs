@@ -81,7 +81,18 @@ describe("the document layout and its trail margin", () => {
   });
 
   it("keeps anything that is not a block inside the document column, so a heading never runs under the rule", () => {
-    expect(decl(".bj-doc--margin > :not(.bj-doc-block)")["max-width"]).toBe("calc(100% - var(--bj-doc-margin) - var(--bj-doc-gap))");
+    expect(decl(".bj-doc--margin > :not(.bj-doc-block):not(:has(.bj-doc-block))")["max-width"]).toBe(
+      "calc(100% - var(--bj-doc-margin) - var(--bj-doc-gap))",
+    );
+  });
+
+  it("does not cap a wrapper that holds blocks, so its blocks' margin cells stay under the layout's rule", () => {
+    // A <section> grouping a chapter with its blocks must stay full width (the rule is drawn from the
+    // layout, not the wrapper); the chapter inside it is capped on its own.
+    const capped = rulesOf(docCss).find((rule) => rule.selectors.includes(".bj-doc--margin > :not(.bj-doc-block):not(:has(.bj-doc-block))"));
+    expect(capped?.selectors).toContain(".bj-doc--margin .bj-chapter");
+    expect(capped?.declarations["max-width"]).toBe("calc(100% - var(--bj-doc-margin) - var(--bj-doc-gap))");
+    expect(rulesOf(docCss).some((rule) => rule.selectors.includes(".bj-doc--margin > :not(.bj-doc-block)"))).toBe(false);
   });
 
   it("lifts the shell's 960px cap only where the margin is drawn", () => {
@@ -221,6 +232,9 @@ describe("the claim and checklist rows", () => {
     expect(declarationsFor(base, ".bj-claimrow-chip--supported")["border-color"]).toBe("var(--bj-gold)");
     expect(declarationsFor(base, ".bj-claimrow-chip--contradicted")["border-color"]).toBe("var(--bj-danger)");
     expect(declarationsFor(base, ".bj-claimrow-chip--unchecked")["border-color"]).toBeUndefined();
+    // Flagged is not backed: the two gold chips differ in the outline's style as well as the word.
+    expect(declarationsFor(base, ".bj-claimrow-chip--unverifiable")["border-style"]).toBe("dashed");
+    expect(declarationsFor(base, ".bj-claimrow-chip--supported")["border-style"]).toBeUndefined();
     // Red is an outline, never a fill.
     for (const rule of rulesOf(docCss)) {
       expect(rule.declarations.background ?? "").not.toContain("--bj-danger");

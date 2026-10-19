@@ -11,12 +11,12 @@ import "../../styles/paper-doc.css";
 //             actions={<><Link to="/profile">If it's true, add it to your profile</Link>
 //                        <button type="button">Copy claim</button></>} />
 //
-// The four statuses each have a word AND a mark AND a differently drawn chip, so color is never the
-// only thing telling them apart:
+// The four statuses each have a word AND a mark AND an outline, so color is never the only thing
+// telling them apart (the two gold chips share a mark and differ in the word and the outline's style):
 //
-//   supported      ◆ Supported     gold outline. The claim matches something the page can name; the
-//                                  reason says what. It is not "verified" and is never green.
-//   unverifiable   ◆ Unverifiable  gold outline. Flagged: nothing the check could see supports it.
+//   supported      ◆ Supported     solid gold outline. The claim matches something the page can name;
+//                                  the reason says what. It is not "verified" and is never green.
+//   unverifiable   ◆ Unverifiable  dashed gold outline. Flagged: nothing the check could see supports it.
 //   contradicted   ✕ Contradicted  red outline. Flagged: something the check could see says otherwise.
 //   unchecked      ○ Not checked   muted outline. Nobody has looked; that is not a pass.
 //
@@ -25,6 +25,10 @@ import "../../styles/paper-doc.css";
 // `supported` is for a list where something does back each claim. The claim is shown in curly quotes
 // in the italic serif: it is quoted source text, never reworded here. On a phone the chip stacks above
 // the claim.
+//
+// The honest copy around a list is the page's to write, not this file's: the claim check's legend
+// ("claims that weren't flagged aren't listed"), its "Flags only -- nothing was auto-edited or blocked"
+// footer, and the zero-flag line with "Not flagged isn't verified". See the web README.
 
 export type ClaimStatus = "supported" | "unverifiable" | "contradicted" | "unchecked";
 
