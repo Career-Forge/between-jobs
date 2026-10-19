@@ -77,10 +77,11 @@ export function JsonReview({
         </div>
       )}
       <div className="bj-actions">
-        <button type="button" onClick={onActivate} disabled={busy}>
+        {/* aria-disabled, never disabled: a button that disables itself drops keyboard focus to the top of the page. */}
+        <button type="button" onClick={() => !busy && onActivate()} aria-disabled={busy ? true : undefined}>
           Looks good -- activate
         </button>
-        <button type="button" onClick={onCancel} disabled={busy}>
+        <button type="button" onClick={() => !busy && onCancel()} aria-disabled={busy ? true : undefined}>
           Cancel
         </button>
       </div>

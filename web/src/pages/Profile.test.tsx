@@ -988,7 +988,7 @@ describe("a resume file's draft for a person with a profile", () => {
     await readFile(container);
     expect(query<HTMLTextAreaElement>(jsonImport(container), "textarea").disabled).toBe(true);
     expect(text(jsonImport(container))).toContain("A file import above is in progress.");
-    expect(buttonNamed(jsonImport(container), "Import").disabled).toBe(true);
+    expect(buttonNamed(jsonImport(container), "Import").getAttribute("aria-disabled")).toBe("true");
   });
 
   it("goes to the review when the link is followed: the band becomes IR1, locked, and focus lands on the review's heading", async () => {

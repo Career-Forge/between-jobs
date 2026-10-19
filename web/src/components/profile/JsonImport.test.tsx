@@ -88,11 +88,16 @@ describe("ImportSection", () => {
   it("keeps Import off until something is pasted, then sends exactly the pasted text", () => {
     const onImport = vi.fn();
     const { container } = section({ onImport });
-    expect(buttonNamed(container, "Import").disabled).toBe(true);
+    const imports = () => buttonNamed(container, "Import");
+    expect(imports().getAttribute("aria-disabled")).toBe("true");
+    click(imports());
     typeInto(query<HTMLTextAreaElement>(container, "textarea"), "   ");
-    expect(buttonNamed(container, "Import").disabled).toBe(true);
+    expect(imports().getAttribute("aria-disabled")).toBe("true");
+    click(imports());
+    expect(onImport).not.toHaveBeenCalled();
     typeInto(query<HTMLTextAreaElement>(container, "textarea"), '  {"personal": {}}  ');
-    click(buttonNamed(container, "Import"));
+    expect(imports().getAttribute("aria-disabled")).toBeNull();
+    click(imports());
     expect(onImport).toHaveBeenCalledWith('  {"personal": {}}  ');
   });
 
@@ -110,10 +115,25 @@ describe("ImportSection", () => {
     expect(input.value).toBe("");
   });
 
-  it("says Importing... and turns the buttons that would start another off while a request is out", () => {
-    const { container } = section({ busy: true });
-    expect(buttonNamed(container, "Importing...").disabled).toBe(true);
-    expect(buttonNamed(container, "Upload .json file").disabled).toBe(true);
+  // aria-disabled and never disabled: the press is what makes the section busy, and a button that disables
+  // itself drops keyboard focus to the top of the page, where a refused import would leave it.
+  it("says Importing... and turns the buttons that would start another off while a request is out, keeping focus", () => {
+    const onImport = vi.fn();
+    const { container, rerender } = render(<ImportSection replacing={false} busy={false} disabled={false} error={null} onImport={onImport} />);
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), '{"personal": {}}');
+    const imports = buttonNamed(container, "Import");
+    imports.focus();
+    rerender(<ImportSection replacing={false} busy disabled={false} error={null} onImport={onImport} />);
+    const busy = buttonNamed(container, "Importing...");
+    expect(busy).toBe(imports);
+    expect(busy.disabled).toBe(false);
+    expect(busy.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(busy);
+    click(busy);
+    expect(onImport).not.toHaveBeenCalled();
+    const upload = buttonNamed(container, "Upload .json file");
+    expect(upload.disabled).toBe(false);
+    expect(upload.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("shows the importer's refusal as an alert", () => {

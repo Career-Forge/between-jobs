@@ -81,7 +81,10 @@ export function ImportSection({
         <button type="button" onClick={() => void copyPrompt()}>
           {promptCopied ? "Copied ✓" : "Copy conversion prompt"}
         </button>
-        <button type="button" onClick={() => fileInput.current?.click()} disabled={busy || disabled}>
+        {/* aria-disabled, never disabled, for the buttons that start an import: the press (or the file it chose)
+            is what makes the section busy, and a button that disables itself drops keyboard focus to the top
+            of the page, where a refused import would leave it. */}
+        <button type="button" aria-disabled={busy || disabled ? true : undefined} onClick={() => !(busy || disabled) && fileInput.current?.click()}>
           Upload .json file
         </button>
         <input
@@ -123,8 +126,8 @@ export function ImportSection({
       <div className="bj-actions">
         <button
           type="button"
-          onClick={() => onImport(pasted)}
-          disabled={busy || disabled || pasted.trim() === ""}
+          onClick={() => !(busy || disabled || pasted.trim() === "") && onImport(pasted)}
+          aria-disabled={busy || disabled || pasted.trim() === "" ? true : undefined}
         >
           {busy ? "Importing..." : "Import"}
         </button>
