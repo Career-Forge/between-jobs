@@ -164,8 +164,23 @@ describe("a search that could not be saved from Discover", () => {
     expect(tagsOf(markup, "div").some((tag) => tag.role === "alert")).toBe(true);
   });
 
-  it("is not shown for a list that is still loading or failed to load", () => {
-    const loading = renderToStaticMarkup(<SavedSearchesCardView state={{ kind: "loading" }} actions={recorder().actions} createError="x" />);
-    expect(loading).toBe("");
+  it("is shown while the list is still loading, as its own alert, so a failed save is never silent", () => {
+    const loading = renderToStaticMarkup(<SavedSearchesCardView state={{ kind: "loading" }} actions={recorder().actions} createError="You can keep at most 25 saved searches." />);
+    expect(textOfMarkup(loading)).toContain("You can keep at most 25 saved searches.");
+    expect(tagsOf(loading, "div").some((tag) => tag.role === "alert")).toBe(true);
+  });
+
+  it("is shown beside a failed read of the list, inside the card that is already the alert", () => {
+    const failed = renderToStaticMarkup(
+      <SavedSearchesCardView state={{ kind: "failed", message: "The service is down." }} actions={recorder().actions} createError="You can keep at most 25 saved searches." />,
+    );
+    const text = textOfMarkup(failed);
+    expect(text).toContain("The service is down.");
+    expect(text).toContain("You can keep at most 25 saved searches.");
+    expect(tagsOf(failed, "div").filter((tag) => tag.role === "alert")).toHaveLength(1);
+  });
+
+  it("still draws nothing for a loading list when no save failed", () => {
+    expect(renderToStaticMarkup(<SavedSearchesCardView state={{ kind: "loading" }} actions={recorder().actions} createError={null} />)).toBe("");
   });
 });

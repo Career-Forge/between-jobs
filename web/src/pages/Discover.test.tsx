@@ -545,6 +545,38 @@ describe("saved searches", () => {
     expect(query<HTMLInputElement>(form(container), "input[type='text']").value).toBe("kept");
   });
 
+  it("shows a refused save even when the saved list failed to load, and does not announce a save", async () => {
+    answer({
+      "/saved-searches": new FakeApiError(500, "The service is down."),
+      "POST /saved-searches": new FakeApiError(422, "You can keep at most 25 saved searches.", { code: "INVALID_INPUT" }),
+    });
+    const { container } = await draw();
+    click(buttonNamed(form(container), "Save this search"));
+    await flush();
+    expect(words(query(container, ".bj-ss"))).toContain("You can keep at most 25 saved searches.");
+    expect(words(query(container, ".bj-ss"))).toContain("Try again");
+    expect(status(container)).toBe("");
+  });
+
+  it("shows a refused save while the saved list is still loading", async () => {
+    answer({
+      "/saved-searches": () => new Promise(() => undefined),
+      "POST /saved-searches": new FakeApiError(422, "You can keep at most 25 saved searches.", { code: "INVALID_INPUT" }),
+    });
+    const { container } = await draw();
+    click(buttonNamed(form(container), "Save this search"));
+    await flush();
+    expect(words(query(container, ".bj-ss [role='alert']"))).toBe("You can keep at most 25 saved searches.");
+  });
+
+  it("does not say a search is saved when the list that would show it failed to load", async () => {
+    answer({ "/saved-searches": new FakeApiError(500, "The service is down."), "POST /saved-searches": { ...SAVED, id: "ss-9", last_matched_at: null } });
+    const { container } = await draw();
+    click(buttonNamed(form(container), "Save this search"));
+    await flush();
+    expect(status(container)).toBe("Search saved, but the saved searches list isn't showing it yet.");
+  });
+
   it("is one save at a time", async () => {
     let release: (value: unknown) => void = () => undefined;
     answer({ "POST /saved-searches": () => new Promise((resolve) => (release = resolve)) });

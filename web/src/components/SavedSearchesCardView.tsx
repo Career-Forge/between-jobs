@@ -22,7 +22,8 @@ import "../styles/saved-searches.css";
 // (a page has no use for an empty card). A failed lookup is NOT nothing: it says so, with a retry,
 // because a search that still runs must not look as though it were not there. A search that could
 // not be saved (`createError`, from Discover's "Save this search") is shown inside the card too, so
-// the failure sits with the list it would have joined.
+// the failure sits with the list it would have joined -- in every state of the list, including while
+// it is loading or when its own read failed (the usual cause, the service being down, fails both).
 
 export interface SavedSearchesActions {
   toggle: (id: string, isActive: boolean) => void;
@@ -45,12 +46,30 @@ export function SavedSearchesCardView({
   createError?: string | null;
   timeZone?: string;
 }) {
-  if (state.kind === "loading") return null;
+  // Inside the failed-read card, which is itself the alert, the failure is a plain block of that
+  // alert (a nested alert would be announced twice).
+  const createFailure = (alert: boolean) =>
+    createError === null ? null : (
+      <div className="bj-ss-error" role={alert ? "alert" : undefined}>
+        {createError}
+      </div>
+    );
+
+  if (state.kind === "loading") {
+    if (createError === null) return null;
+    return (
+      <div className="bj-ss">
+        <h2 className="bj-ss-heading">{SAVED_SEARCHES_HEADING}</h2>
+        {createFailure(true)}
+      </div>
+    );
+  }
 
   if (state.kind === "failed") {
     return (
       <div className="bj-ss" role="alert">
         <h2 className="bj-ss-heading">{SAVED_SEARCHES_HEADING}</h2>
+        {createFailure(false)}
         <p>{state.message}</p>
         <div className="bj-ss-actions">
           <button type="button" onClick={() => actions.retry()}>
@@ -67,11 +86,7 @@ export function SavedSearchesCardView({
     <div className="bj-ss">
       <h2 className="bj-ss-heading">{SAVED_SEARCHES_HEADING}</h2>
       <p className="bj-ss-note">{SAVED_SEARCHES_NOTE}</p>
-      {createError !== null && (
-        <div className="bj-ss-error" role="alert">
-          {createError}
-        </div>
-      )}
+      {createFailure(true)}
       {state.error !== null && (
         <div className="bj-ss-error" role="alert">
           {state.error}

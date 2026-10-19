@@ -190,7 +190,9 @@ export default function Discover() {
     const result = await createSavedSearch(apiFetch, savedSearchBody(values));
     if (result.ok) {
       saved.add(result.search);
-      setAnnouncement("Search saved.");
+      // The list takes the new search only once it has been read; saying "saved" without that would
+      // point at a list that does not show it.
+      setAnnouncement(saved.state.kind === "ready" ? "Search saved." : "Search saved, but the saved searches list isn't showing it yet.");
     } else {
       setCreateError(result.message);
     }
