@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { IMPORT_REVIEW_ID } from "../../lib/nextStep/pages/profile";
 import type { ProfileVersion } from "../../lib/profileTypes";
 import "../../styles/profile.css";
@@ -29,6 +29,12 @@ export function JsonReview({
   onCancel: () => void;
   trail?: ReactNode;
 }) {
+  // The review replaces the page's body, so the control that was pressed to get here is gone: focus goes
+  // to the review's heading when it opens, where a screen reader and a keyboard start reading it.
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
   const personal = version.canonical_json.personal;
   const stats = version.stats ?? {};
   const warnings = version.warnings ?? [];
@@ -36,15 +42,16 @@ export function JsonReview({
   return (
     <section id={IMPORT_REVIEW_ID} className="bj-prof-block" aria-labelledby={TITLE_ID}>
       <div className="bj-card-header">
-        <h2 id={TITLE_ID} className="bj-prof-title" tabIndex={-1}>
-          Review before saving
+        <h2 ref={heading} id={TITLE_ID} className="bj-prof-title" tabIndex={-1}>
+          Review before activating
         </h2>
         <span className="bj-badge-gold">
           <span aria-hidden="true">{"◆"}</span> Pending
         </span>
       </div>
       <p className="bj-muted">
-        Parsed deterministically -- no AI touched this. Check it, then activate.
+        This draft is saved but not in use. It was read by code, with no model involved in the reading.
+        Check it, then activate.
       </p>
       <div>
         <strong>{personal.name}</strong>

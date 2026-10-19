@@ -36,8 +36,25 @@ const words = (spec: BlockTrailSpec) => buildTrail(spec.trail)?.text ?? null;
 const rows = (spec: BlockTrailSpec) => buildReceipt(spec.receipt)?.rows ?? [];
 
 describe("the active profile's trail", () => {
-  it("says a JSON import was parsed by code, when it was saved and how many versions there are", () => {
-    expect(words(activeProfileTrail(version(), NOW))).toBe("Parsed by code · no model involved · Sep 20 · 4 versions saved");
+  it("says a version saved from JSON or an edit was parsed by code, when it was saved and how many versions there are", () => {
+    expect(words(activeProfileTrail(version(), NOW))).toBe("Saved from your JSON or edits · parsed by code · Sep 20 · 4 versions saved");
+  });
+
+  it("never claims that no model was involved for the kind every edit is stamped with, since an edited PDF read is still a model's reading", () => {
+    // The server stamps web_json_paste on every edit, including an edit of a profile a model first read.
+    const text = words(activeProfileTrail(version({ source_kind: "web_json_paste", version_count: 6 }), NOW)) ?? "";
+    expect(text).not.toMatch(/no model/i);
+    expect(buildTrail(activeProfileTrail(version(), NOW).trail)?.glyphs).not.toContain("code");
+  });
+
+  it("writes the receipt's made-from in words, and shows a kind it does not know as it came", () => {
+    const made = (kind: string) => rows(activeProfileTrail(version({ source_kind: kind }), NOW)).find((row) => "label" in row && row.label === "made from");
+    const value = (kind: string) => { const row = made(kind); return row !== undefined && "value" in row ? row.value : undefined; };
+    expect(value("web_json_paste")).toBe("pasted or uploaded JSON, or an edit saved from this page");
+    expect(value("web_pdf_import")).toBe("a PDF file read by your model");
+    expect(value("web_docx_import")).toBe("a DOCX file read by your model");
+    expect(value("gap_interview")).toBe("a bullet from the gap interview");
+    expect(value("telegram_json")).toBe("telegram_json");
   });
 
   it("says a resume file was read by the person's model, with the kind of file", () => {
@@ -47,7 +64,7 @@ describe("the active profile's trail", () => {
 
   it("uses the model glyph only for a model's work, the code glyph for code and the you glyph for the person", () => {
     expect(buildTrail(activeProfileTrail(version({ source_kind: "web_pdf_import" }), NOW).trail)?.glyphs).toEqual(["model"]);
-    expect(buildTrail(activeProfileTrail(version(), NOW).trail)?.glyphs).toEqual(["code"]);
+    expect(buildTrail(activeProfileTrail(version(), NOW).trail)?.glyphs).toEqual(["you"]);
     expect(buildTrail(activeProfileTrail(version({ source_kind: "gap_interview" }), NOW).trail)?.glyphs).toEqual(["you"]);
   });
 
@@ -71,8 +88,8 @@ describe("the active profile's trail", () => {
 
   it("leaves out the date and the count when they were not returned, with their separators", () => {
     const bare = version({ created_at: undefined, version_count: undefined });
-    expect(words(activeProfileTrail(bare, NOW))).toBe("Parsed by code · no model involved");
-    expect(words(activeProfileTrail(version({ created_at: "not a date" }), NOW))).toBe("Parsed by code · no model involved · 4 versions saved");
+    expect(words(activeProfileTrail(bare, NOW))).toBe("Saved from your JSON or edits · parsed by code");
+    expect(words(activeProfileTrail(version({ created_at: "not a date" }), NOW))).toBe("Saved from your JSON or edits · parsed by code · 4 versions saved");
   });
 
   it("says one version in the singular and refuses a count that is not a count", () => {

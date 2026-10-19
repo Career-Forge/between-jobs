@@ -60,6 +60,11 @@ export interface ProfilePageFacts {
   onReview: boolean;
   /** "Sep 21": when the active version was activated, from `activated_at`; null when it was not returned. */
   activeSince: string | null;
+  /**
+   * A profile is in use now, so making the waiting import active takes its place. The band's one-step
+   * button does that in a single press, so its sentence says so; absent means the page did not say.
+   */
+  replacesCurrent?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -73,6 +78,7 @@ function isCount(value: unknown): value is number {
 export function isProfilePageFacts(value: unknown): value is ProfilePageFacts {
   if (!isRecord(value) || typeof value.onReview !== "boolean") return false;
   if (value.activeSince !== null && typeof value.activeSince !== "string") return false;
+  if (value.replacesCurrent !== undefined && typeof value.replacesCurrent !== "boolean") return false;
   const waiting = value.waiting;
   if (waiting === null) return true;
   if (!isRecord(waiting)) return false;
@@ -108,13 +114,18 @@ function fieldsWord(count: number): string {
   return count === 1 ? "field" : "fields";
 }
 
+// The band's button activates in one press, with no question asked at the button, so when it would take
+// the place of a profile in use the sentence beside it says that.
+const REPLACES_NOTE = " It replaces your current one.";
+
 /** IR1's step for a waiting import, or null when none is waiting. Also what replaces G2b on the review. */
 export function reviewStep(facts: ProfilePageFacts): NextStep | null {
   const waiting = facts.waiting;
   if (waiting === null) return null;
+  const replaces = facts.replacesCurrent === true ? REPLACES_NOTE : "";
   if (waiting.source === "json") {
     return {
-      sentence: "Check what was read, then make this your profile.",
+      sentence: `Check what was read, then make this your profile.${replaces}`,
       action: { kind: "button", label: "Confirm and make active", intent: PROFILE_INTENTS.activateJson },
       why: ["import waiting for review", WAITING_WHY.json, "draft inactive"],
     };
@@ -126,7 +137,7 @@ export function reviewStep(facts: ProfilePageFacts): NextStep | null {
     "draft inactive",
   ];
   const step: NextStep = {
-    sentence: "Check every field, then make this your profile.",
+    sentence: `Check every field, then make this your profile.${replaces}`,
     action: { kind: "button", label: "Confirm and make active", intent: PROFILE_INTENTS.useImport },
     why,
   };

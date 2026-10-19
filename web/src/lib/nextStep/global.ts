@@ -114,9 +114,9 @@ const SETUP_LOADING: NextStepRow = {
   },
 };
 
-// The link is the profile page, not a section of it: the review of an import has an element id, but
-// only while the review is open, and the page does not scroll to an address fragment, so a fragment
-// would promise a jump that does not happen.
+// The global row links to the profile page itself, since which section holds the review is the page's
+// to say. The Profile page, which scrolls to the section its address names, points this link at the
+// review itself (pages/profile.ts, profileOutcome); any other page just opens /profile.
 const G2B: NextStepRow = {
   id: "G2b",
   match: (input) => {

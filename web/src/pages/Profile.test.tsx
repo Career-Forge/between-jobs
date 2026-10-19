@@ -299,7 +299,7 @@ describe("the trail lines are made of returned fields only", () => {
     describeAccount();
     const { container } = page();
     await settle();
-    expect(trails(container)).toContain("○ Parsed by code · no model involved · Oct 12 · 4 versions saved");
+    expect(trails(container)).toContain("● Saved from your JSON or edits · parsed by code · Oct 12 · 4 versions saved");
   });
 
   it("says a model read it for a resume file, and names no model", async () => {
@@ -322,12 +322,13 @@ describe("the trail lines are made of returned fields only", () => {
     describeAccount();
     const { container } = page();
     await settle();
-    const opener = [...container.querySelectorAll<HTMLButtonElement>("button.bj-trail-trigger")].find((button) => text(button).includes("Parsed by code"));
+    const opener = [...container.querySelectorAll<HTMLButtonElement>("button.bj-trail-trigger")].find((button) => text(button).includes("Saved from your JSON or edits"));
     click(opener as HTMLButtonElement);
     const receipt = text(query(container, ".bj-receipt"));
     expect(receipt).toContain("3f2a9c1e");
     expect(receipt).not.toContain(VERSION_ID);
-    expect(receipt).toContain("web_json_paste");
+    expect(receipt).toContain("pasted or uploaded JSON, or an edit saved from this page");
+    expect(receipt).not.toContain("web_json_paste");
     expect(receipt).toContain("2026-10-12T10:15:00Z");
   });
 
@@ -352,7 +353,7 @@ describe("the trail margin and its inline and sheet forms", () => {
     expect(layout.classList.contains("bj-doc--margin")).toBe(true);
     const inMargin = [...layout.querySelectorAll(".bj-doc-margin .bj-trail")];
     expect(inMargin.length).toBeGreaterThanOrEqual(2);
-    expect(text(inMargin[0])).toContain("Parsed by code");
+    expect(text(inMargin[0])).toContain("Saved from your JSON or edits");
     expect(container.querySelector(".bj-doc-summary")).toBeNull();
   });
 
@@ -430,7 +431,8 @@ describe("when the profile cannot be read", () => {
     await settle();
     expect(text(container)).toContain("Asha Verma");
     expect(callsTo("GET /profile/current")).toHaveLength(2);
-    expect(callsTo("GET /credentials")).toHaveLength(2);
+    // the keys were read fine the first time: only what failed is read again
+    expect(callsTo("GET /credentials")).toHaveLength(1);
   });
 
   it("treats a failed credentials read as a setup check that failed too, while the profile still shows", async () => {
@@ -517,8 +519,8 @@ describe("the JSON import for a person with no profile", () => {
     await importJson(container, "  raw text  ");
     expect(callsTo("POST /profile/versions")[0].body).toEqual({ raw_text: "  raw text  " });
     const review = query(container, "#import-review");
-    expect(text(query(review, "h2"))).toBe("Review before saving");
-    expect(text(review)).toContain("Parsed deterministically -- no AI touched this.");
+    expect(text(query(review, "h2"))).toBe("Review before activating");
+    expect(text(review)).toContain("This draft is saved but not in use. It was read by code, with no model involved in the reading.");
     expect([...review.querySelectorAll(".bj-stat")].map((stat) => text(stat))).toEqual(["Experience2", "Projects1", "Education1", "Skills8"]);
     expect(text(review)).toContain("Note: No certification entries.");
     expect(trails(container)).toContain("○ Parsed by code · no model involved · Oct 19 · 1 warning");
@@ -642,6 +644,245 @@ describe("the JSON import for a person with no profile", () => {
     await settle();
     expect(text(container)).toContain("Your profile is active.");
     expect(container.querySelector("#import-review")).toBeNull();
+  });
+});
+
+describe("the JSON import says only what is true about the draft", () => {
+  it("calls the band's button Cancelling... while a draft is being thrown away, never Activating..., and ignores a press on it", async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    describeAccount({ current: NOT_FOUND });
+    on("POST /profile/versions", PENDING);
+    on("DELETE /profile/versions/pending-1", () => new Promise((resolve) => (finish = resolve)));
+    on("POST /profile/versions/pending-1/activate", {});
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    click(buttonNamed(container, "Cancel"));
+    await settle(1);
+    expect(text(band(container))).not.toContain("Activating...");
+    const pressed = buttonNamed(band(container), "Cancelling...");
+    expect(pressed.getAttribute("aria-disabled")).toBe("true");
+    click(pressed);
+    await settle(1);
+    expect(callsTo("POST /profile/versions/pending-1/activate")).toHaveLength(0);
+    finish(undefined);
+    await settle();
+    expect(container.querySelector("#set-up")).not.toBeNull();
+  });
+
+  it("moves keyboard focus to the review's heading when it opens, since the Import button that was pressed is gone", async () => {
+    describeAccount({ current: NOT_FOUND });
+    on("POST /profile/versions", PENDING);
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    expect(document.activeElement).toBe(query(query(container, "#import-review"), "h2"));
+  });
+
+  it("does not draw a pending draft for JSON that is the profile in use: it says so on the import section and the band stays as it was", async () => {
+    describeAccount();
+    on("POST /profile/versions", { ...profile(), stats: { experience: 1 }, warnings: [] });
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    expect(container.querySelector("#import-review")).toBeNull();
+    expect(container.querySelector(".bj-badge-gold")).toBeNull();
+    expect(text(jsonImport(container))).toContain("This matches your current profile: nothing to change.");
+    expect(text(query(jsonImport(container), "[role='status']"))).toBe("This matches your current profile: nothing to change.");
+    expect(text(band(container))).toContain("Your profile is active.");
+    expect(text(band(container))).not.toContain("draft inactive");
+    expect(cyan(container)).toHaveLength(0);
+    expect(container.querySelector(".bj-profile-identity")).not.toBeNull();
+    // a later import is a new question: the note goes
+    on("POST /profile/versions", PENDING);
+    click(buttonNamed(jsonImport(container), "Import"));
+    await settle();
+    expect(container.querySelector("#import-review")).not.toBeNull();
+  });
+
+  it("still draws a draft for JSON that matches an older, replaced version: that one can be made active again", async () => {
+    describeAccount();
+    on("POST /profile/versions", profile({ id: "older-version", stats: {}, warnings: [] }));
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    expect(container.querySelector("#import-review")).not.toBeNull();
+    expect(text(band(container))).toContain("draft inactive");
+  });
+
+  it("does not leave a failed activation's message anywhere once the next try works", async () => {
+    describeAccount({ current: NOT_FOUND });
+    on("POST /profile/versions", PENDING);
+    let tries = 0;
+    on("POST /profile/versions/pending-1/activate", () => {
+      tries += 1;
+      if (tries === 1) throw new FakeApiError("Could not activate", "INTERNAL_ERROR", undefined, 500);
+      return {};
+    });
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    click(buttonNamed(container, "Looks good -- activate"));
+    await settle();
+    expect(text(query(container, "#import-review [role='alert']"))).toBe("Could not activate");
+    on("GET /profile/current", profile({ id: "pending-1" }));
+    click(buttonNamed(container, "Looks good -- activate"));
+    await settle();
+    expect(container.querySelector("#import-review")).toBeNull();
+    expect(container.querySelector("[role='alert']")).toBeNull();
+    expect(text(container)).not.toContain("Could not activate");
+  });
+
+  it("keeps a failed activation off the import section, and a refused import off the review", async () => {
+    describeAccount({ current: NOT_FOUND });
+    on("POST /profile/versions", new FakeApiError("personal.name: field required", "INVALID_INPUT", undefined, 422));
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    expect(container.querySelectorAll("[role='alert']")).toHaveLength(1);
+    on("POST /profile/versions", PENDING);
+    on("POST /profile/versions/pending-1/activate", new FakeApiError("Could not activate", "INTERNAL_ERROR", undefined, 500));
+    await importJson(container);
+    // the refusal of the first import is gone with the second, and the review shows nothing of it
+    expect(text(query(container, "#import-review"))).not.toContain("personal.name");
+    click(buttonNamed(container, "Looks good -- activate"));
+    await settle();
+    expect(container.querySelectorAll("[role='alert']")).toHaveLength(1);
+    expect(query(container, "#import-review [role='alert']")).not.toBeNull();
+  });
+
+  it("clears a refused JSON import's message when a resume file's draft arrives", async () => {
+    describeAccount({ current: NOT_FOUND });
+    upload.fetchBytes.mockResolvedValue(DRAFT);
+    on("POST /profile/versions", new FakeApiError("personal.name: field required", "INVALID_INPUT", undefined, 422));
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    expect(text(query(container, "#set-up [role='alert']"))).toBe("personal.name: field required");
+    await readFile(container);
+    expect(container.querySelector("#import-review")).not.toBeNull();
+    expect(text(container)).not.toContain("personal.name: field required");
+  });
+
+  it("tells the band's one-step button apart by saying it replaces the current profile, when one is in use", async () => {
+    describeAccount();
+    on("POST /profile/versions", PENDING);
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    expect(text(band(container))).toContain("Check what was read, then make this your profile. It replaces your current one.");
+  });
+
+  it("says nothing of replacing when there is no profile to replace", async () => {
+    describeAccount({ current: NOT_FOUND });
+    on("POST /profile/versions", PENDING);
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    expect(text(band(container))).not.toContain("replaces");
+  });
+
+  it("describes the saved draft in the import section's own words and the review's, without saying nothing is saved", async () => {
+    describeAccount({ current: NOT_FOUND });
+    on("POST /profile/versions", PENDING);
+    const { container } = page();
+    await settle();
+    expect(text(jsonImport(container))).toContain("saved as an inactive draft that you review before it becomes your profile");
+    expect(text(jsonImport(container))).not.toContain("before anything is saved");
+    await importJson(container);
+    expect(text(query(container, "#import-review"))).not.toContain("before saving");
+  });
+});
+
+describe("a failed re-read after the profile changed replaces the page and says so", () => {
+  const FAILED_READ = new FakeApiError("Internal error", "INTERNAL_ERROR", undefined, 500);
+
+  function expectFailedPage(container: HTMLElement) {
+    expect(text(band(container))).toContain("Couldn't check your setup.");
+    expect(text(band(container))).toMatch(/why: GET \/profile\/current failed/);
+    expect(text(query(container, ".bj-state--failure"))).toContain("Couldn't read your profile (Internal error).");
+    expect(cyan(container).map((button) => text(button))).toEqual(["Try again"]);
+    expect(container.querySelector(".bj-profile-identity")).toBeNull();
+  }
+
+  it("after an edit is saved: the dialog is closed", async () => {
+    describeAccount();
+    on("POST /profile/versions", { id: "v5" });
+    on("POST /profile/versions/v5/activate", {});
+    const { container } = page();
+    await settle();
+    click(buttonNamed(container, "Edit Senior Data Engineer at Acme Analytics"));
+    const dialog = query(document.body, '[role="dialog"]');
+    typeInto(query(dialog, 'input[type="text"]'), "Staff Data Engineer");
+    on("GET /profile/current", FAILED_READ);
+    click(buttonNamed(dialog, "Save"));
+    await settle();
+    expectFailedPage(container);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("after the JSON preview is activated", async () => {
+    describeAccount({ current: NOT_FOUND });
+    on("POST /profile/versions", PENDING);
+    on("POST /profile/versions/pending-1/activate", {});
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    on("GET /profile/current", FAILED_READ);
+    click(buttonNamed(container, "Looks good -- activate"));
+    await settle();
+    expectFailedPage(container);
+    expect(container.querySelector("#import-review")).toBeNull();
+  });
+
+  it("after the JSON preview is cancelled", async () => {
+    describeAccount({ current: NOT_FOUND });
+    on("POST /profile/versions", PENDING);
+    on("DELETE /profile/versions/pending-1", undefined);
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    on("GET /profile/current", FAILED_READ);
+    click(buttonNamed(container, "Cancel"));
+    await settle();
+    expectFailedPage(container);
+    expect(container.querySelector("#import-review")).toBeNull();
+  });
+});
+
+describe("the band's Try again reads again only what failed", () => {
+  it("keeps a waiting JSON preview when only the keys failed to read", async () => {
+    describeAccount({ current: NOT_FOUND, credentials: new FakeApiError("Down", "INTERNAL_ERROR", undefined, 500) });
+    on("POST /profile/versions", PENDING);
+    const { container } = page();
+    await settle();
+    await importJson(container);
+    expect(text(band(container))).toMatch(/why: GET \/credentials failed/);
+    expect(container.querySelector("#import-review")).not.toBeNull();
+    on("GET /credentials", READY_KEY);
+    click(buttonNamed(band(container), "Try again"));
+    await settle();
+    expect(container.querySelector("#import-review")).not.toBeNull();
+    expect(callsTo("GET /profile/current")).toHaveLength(1);
+    expect(callsTo("GET /credentials")).toHaveLength(2);
+    expect(text(band(container))).toContain("Check what was read, then make this your profile.");
+  });
+});
+
+describe("the band's link to a hash already in the address", () => {
+  it("scrolls again when it is followed a second time", async () => {
+    describeAccount({ current: NOT_FOUND });
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    const { container } = page();
+    await settle();
+    expect(scrolled).not.toHaveBeenCalled();
+    click(named(band(container), "Set up your profile"));
+    await settle();
+    expect(scrolled).toHaveBeenCalledTimes(1);
+    click(named(band(container), "Set up your profile"));
+    await settle();
+    expect(scrolled).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -854,6 +1095,36 @@ describe("a resume file's draft for a person with a profile", () => {
     const failure = query(container, ".bj-import-failure");
     expect(text(failure)).toContain("Reading a resume file needs your own AI model.");
     expect(failure.querySelector("a")?.getAttribute("href")).toBe("/settings");
+  });
+});
+
+describe("the mark that a model read something", () => {
+  it("is not drawn on the idle file import card, where no model has acted, and is once a draft exists", async () => {
+    describeAccount({ current: NOT_FOUND });
+    upload.fetchBytes.mockResolvedValue(DRAFT);
+    const { container } = page();
+    await settle();
+    expect(container.querySelector(".bj-badge-violet")).toBeNull();
+    await readFile(container);
+    expect(text(query(container, ".bj-badge-violet"))).toBe("Read by an AI model");
+  });
+
+  it("names both buttons that use the draft, since the band's one-step button also does", async () => {
+    describeAccount({ current: NOT_FOUND });
+    upload.fetchBytes.mockResolvedValue(DRAFT);
+    const { container } = page();
+    await settle();
+    await readFile(container);
+    expect(text(query(container, "#import-review .bj-import-warning"))).toContain('"Use this profile" below or "Confirm and make active" in the next-step band');
+  });
+
+  it("tells the band's one-step button apart by saying a file draft replaces the profile in use", async () => {
+    describeAccount();
+    upload.fetchBytes.mockResolvedValue(DRAFT);
+    const { container } = page("/profile#import-review");
+    await settle();
+    await readFile(container);
+    expect(text(band(container))).toContain("Check every field, then make this your profile. It replaces your current one.");
   });
 });
 

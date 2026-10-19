@@ -22,6 +22,7 @@ export function ImportSection({
   busy,
   disabled,
   error,
+  notice,
   onImport,
 }: {
   replacing: boolean;
@@ -29,6 +30,9 @@ export function ImportSection({
   // A resume-file import is under way above: this one waits for it.
   disabled: boolean;
   error: string | null;
+  // Something true that is not a failure: the pasted JSON is the profile already in use, so there is
+  // nothing to review. It is its own line (not the error's) so it is never drawn as a failure.
+  notice?: string | null;
   onImport: (rawText: string) => void;
 }) {
   const [pasted, setPasted] = useState("");
@@ -65,9 +69,10 @@ export function ImportSection({
         {replacing ? "Import a new version" : "Set up your profile"}
       </h2>
       <p className="bj-muted">
-        Your resume lives here as structured JSON -- deterministic, private, and reviewed by
-        you before anything is saved. Fill the template (an AI assistant can do the
-        conversion; only the fixed template ever gets imported), then paste or upload it.
+        Your resume lives here as structured JSON -- private, and read by code rather than a model.
+        What you import is saved as an inactive draft that you review before it becomes your
+        profile. Fill the template (an AI assistant can do the conversion; only the fixed
+        template ever gets imported), then paste or upload it.
       </p>
       <div className="bj-actions">
         <button type="button" onClick={() => downloadJson(RESUME_TEMPLATE, "between-jobs-template.json")}>
@@ -109,6 +114,7 @@ export function ImportSection({
           {error}
         </div>
       )}
+      <div role="status">{notice && <p className="bj-muted">{notice}</p>}</div>
       {disabled && (
         <p role="status" className="bj-muted bj-small">
           {FILE_IMPORT_OPEN_NOTE}

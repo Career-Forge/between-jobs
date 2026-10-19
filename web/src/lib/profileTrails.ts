@@ -23,13 +23,18 @@ interface SourceWords {
 }
 
 // How each known `source_kind` produced the version's content. The two file imports are read by the
-// person's own model; a JSON import (and every edit, which goes through the same importer) is parsed
-// by code; a gap-interview bullet is one the person approved (the model drafts it, a person approves it, and code appends it). A kind the page does not know says
-// nothing about who acted.
+// person's own model; a gap-interview bullet is one the person approved (the model drafts it, a person
+// approves it, and code appends it). A kind the page does not know says nothing about who acted.
+//
+// "web_json_paste" is the one kind that says nothing about where the CONTENT came from. The server stamps
+// it on a pasted or uploaded JSON AND on every edit saved from this page, because an edit goes through the
+// same importer. So a profile first read from a PDF by the person's model, then edited once, carries it:
+// the line may say that code parsed what was saved and that the person pasted or edited it, never that no
+// model was involved.
 function sourceWords(sourceKind: string | undefined): SourceWords | null {
   switch (sourceKind) {
     case "web_json_paste":
-      return { glyph: "code", actor: "Parsed by code", basis: "no model involved" };
+      return { glyph: "you", actor: "Saved from your JSON or edits", basis: "parsed by code" };
     case "web_pdf_import":
       return { glyph: "model", actor: "Read by your model", basis: "from your PDF file" };
     case "web_docx_import":
@@ -44,6 +49,22 @@ function sourceWords(sourceKind: string | undefined): SourceWords | null {
 function versionsWord(count: number | undefined): string | null {
   if (typeof count !== "number" || !Number.isInteger(count) || count < 1) return null;
   return count === 1 ? "1 version saved" : `${count} versions saved`;
+}
+
+// The receipt's "made from": the kind in words. A kind the page does not know is shown as it was returned.
+function sourceKindWords(sourceKind: string | undefined): string | undefined {
+  switch (sourceKind) {
+    case "web_json_paste":
+      return "pasted or uploaded JSON, or an edit saved from this page";
+    case "web_pdf_import":
+      return "a PDF file read by your model";
+    case "web_docx_import":
+      return "a DOCX file read by your model";
+    case "gap_interview":
+      return "a bullet from the gap interview";
+    default:
+      return sourceKind;
+  }
 }
 
 // A short, stable piece of an id for a receipt: enough to tell two apart, never the whole row id.
@@ -71,7 +92,7 @@ export function activeProfileTrail(version: ProfileVersion, now: Date): BlockTra
     },
     receipt: [
       { label: "version", value: idPrefix(version.id) },
-      { label: "made from", value: version.source_kind },
+      { label: "made from", value: sourceKindWords(version.source_kind) },
       { label: "saved", value: version.created_at },
       { label: "activated", value: version.activated_at },
       { label: "versions", value: version.version_count },

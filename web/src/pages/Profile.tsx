@@ -9,6 +9,7 @@ import { ActiveProfile } from "../components/profile/ActiveProfile";
 import { ImportSection } from "../components/profile/JsonImport";
 import { JsonReview } from "../components/profile/JsonReview";
 import { ResumeImportCard, type ResumeImportHandle, type ReviewSummary } from "../components/ResumeImportCard";
+import { ALREADY_ACTIVE_NOTICE } from "../components/ResumeImportView";
 import { TesterProgrammeLine } from "../components/TesterProgrammeLine";
 import { ApiError, apiFetch } from "../lib/api";
 import { modelKeyOf, type ModelKeyReading } from "../lib/modelKey";
@@ -77,8 +78,16 @@ function clockTime(now: Date): string {
 export default function Profile() {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [credentials, setCredentials] = useState<Credentials>({ kind: "loading" });
+  // What the page's own request is doing, so the band and the buttons say the true thing: the JSON import,
+  // an activation, or the cancel of a draft. At most one runs at a time.
+  const [working, setWorking] = useState<"import" | "activate" | "cancel" | null>(null);
+  const busy = working !== null;
+  // Each failure and note is drawn where the person acted and nowhere else: a refused import under the
+  // import section, a failed activation or cancel under the review, and the note that a pasted JSON
+  // matched the profile in use, also under the import section.
   const [importError, setImportError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
   // A resume-file import is under way (a file being read, a draft waiting to be decided). The
   // JSON import waits for it: its preview replaces the whole card list below, which would drop the
   // file draft's review with no word. The reverse holds too (`blocked={busy}`), so the two never run
@@ -86,6 +95,14 @@ export default function Profile() {
   const [fileImportOpen, setFileImportOpen] = useState(false);
   // What is true of a resume file's draft that is waiting for a decision, or null.
   const [fileReview, setFileReview] = useState<ReviewSummary | null>(null);
+  // A resume file's draft arriving ends the story of any refused or matching JSON import above it.
+  const onFileReviewChange = useCallback((review: ReviewSummary | null) => {
+    setFileReview(review);
+    if (review !== null) {
+      setImportError(null);
+      setImportNotice(null);
+    }
+  }, []);
   const importCard = useRef<ResumeImportHandle>(null);
   // The JSON preview was just left (activated, or cancelled): the control that had focus is gone, so focus
   // goes to where the person's place went once the page shows what the read answered.
@@ -122,32 +139,43 @@ export default function Profile() {
 
   async function importJson(rawText: string) {
     if (fileImportOpen) return;
-    setBusy(true);
+    setWorking("import");
     setImportError(null);
+    setReviewError(null);
+    setImportNotice(null);
     const hadActive = state.kind === "active";
+    const activeId = state.kind === "active" ? state.version.id : null;
     try {
       const version = await apiFetch<ProfileVersion>("/profile/versions", {
         method: "POST",
         body: JSON.stringify({ raw_text: rawText }),
       });
-      setState({ kind: "pending", version, hadActive });
+      // The importer returns an existing version with the same content as it is, so text identical to the
+      // profile in use comes back as that very version -- already active, with nothing to review. (A
+      // replaced version of the same content is not this: it is a draft that can be made active again.)
+      if (activeId !== null && version.id === activeId) {
+        setImportNotice(ALREADY_ACTIVE_NOTICE);
+      } else {
+        setState({ kind: "pending", version, hadActive });
+      }
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Import failed");
     } finally {
-      setBusy(false);
+      setWorking(null);
     }
   }
 
   async function activate(versionId: string) {
-    setBusy(true);
+    setWorking("activate");
+    setReviewError(null);
     try {
       await apiFetch(`/profile/versions/${versionId}/activate`, { method: "POST" });
       setLeftReview(true);
       await loadCurrent();
     } catch (e) {
-      setImportError(e instanceof Error ? e.message : "Activation failed");
+      setReviewError(e instanceof Error ? e.message : "Activation failed");
     } finally {
-      setBusy(false);
+      setWorking(null);
     }
   }
 
@@ -155,20 +183,20 @@ export default function Profile() {
   // activated (CONFLICT) -- reloads the truth. Any other failure (the network, a 5xx) leaves the review
   // up with its words, and pressing Cancel again is the retry.
   async function cancel(versionId: string) {
-    setBusy(true);
+    setWorking("cancel");
+    setReviewError(null);
     try {
       await apiFetch(`/profile/versions/${versionId}`, { method: "DELETE" });
     } catch (e) {
       if (!(e instanceof ApiError && (e.code === "NOT_FOUND" || e.code === "CONFLICT"))) {
-        setImportError(e instanceof Error ? e.message : "Cancel failed");
-        setBusy(false);
+        setReviewError(e instanceof Error ? e.message : "Cancel failed");
+        setWorking(null);
         return;
       }
     }
-    setImportError(null);
     setLeftReview(true);
     await loadCurrent();
-    setBusy(false);
+    setWorking(null);
   }
 
   // ── the band ───────────────────────────────────────────────────────────
@@ -188,6 +216,7 @@ export default function Profile() {
     waiting,
     onReview,
     activeSince: state.kind === "active" ? activeSince(state.version, now) : null,
+    replacesCurrent: active,
   };
 
   const input: NextStepInput = {
@@ -204,10 +233,14 @@ export default function Profile() {
   };
   const outcome = profileOutcome(nextStepWithRow(input), facts);
 
+  // Reads again only what failed. Re-reading the profile when only the keys failed would put the page back
+  // to the profile or to "none" and drop a JSON preview that is waiting, which nothing can list again.
   function retrySetup() {
-    if (state.kind === "error") setState({ kind: "loading" });
-    void loadCurrent();
-    void loadCredentials();
+    if (state.kind === "error") {
+      setState({ kind: "loading" });
+      void loadCurrent();
+    }
+    if (credentials.kind === "failed") void loadCredentials();
   }
 
   function onBandAction(intent: string) {
@@ -224,17 +257,23 @@ export default function Profile() {
     }
   }
 
+  // The band's button is the JSON preview's while one is open, so it names what the page is doing with the
+  // draft: making it active, or throwing it away.
   const activating =
-    busy && state.kind === "pending"
+    state.kind === "pending" && working === "activate"
       ? { intent: PROFILE_INTENTS.activateJson, label: "Activating..." }
-      : fileReview?.using
-        ? { intent: PROFILE_INTENTS.useImport, label: "Activating..." }
-        : null;
+      : state.kind === "pending" && working === "cancel"
+        ? { intent: PROFILE_INTENTS.activateJson, label: "Cancelling..." }
+        : fileReview?.using
+          ? { intent: PROFILE_INTENTS.useImport, label: "Activating..." }
+          : null;
 
   // A hash that names the import section or the review (the band's links, the setup checklist's) scrolls
   // there and puts focus on its heading once the page has what it points at. The review can arrive after
   // the hash is already in the address, so its arrival is a reason to look again.
-  useScrollToHash(state.kind !== "loading", location.hash, waiting !== null, state.kind);
+  // The location's key is a reason too: following a link to the hash already in the address changes the key
+  // and not the hash, and it should scroll again.
+  useScrollToHash(state.kind !== "loading", location.hash, waiting !== null, state.kind, location.key);
 
   // Focus after the JSON preview goes: the profile's name when there is one, else the import section's first heading.
   useEffect(() => {
@@ -277,7 +316,7 @@ export default function Profile() {
             <JsonReview
               version={state.version}
               busy={busy}
-              error={importError}
+              error={reviewError}
               onActivate={() => void activate(state.version.id)}
               onCancel={() => void cancel(state.version.id)}
               trail={<JsonReviewTrail version={state.version} now={now} />}
@@ -306,10 +345,14 @@ export default function Profile() {
               <ResumeImportCard
                 ref={importCard}
                 replacesCurrent={state.kind === "active"}
-                onActivated={() => void loadCurrent()}
+                onActivated={() => {
+                  setImportError(null);
+                  setImportNotice(null);
+                  void loadCurrent();
+                }}
                 blocked={busy}
                 onOpenChange={setFileImportOpen}
-                onReviewChange={setFileReview}
+                onReviewChange={onFileReviewChange}
                 modelKey={credentials.kind === "ready" ? credentials.modelKey : undefined}
               />
             </DocumentBlock>
@@ -319,6 +362,7 @@ export default function Profile() {
                 busy={busy}
                 disabled={fileImportOpen}
                 error={importError}
+                notice={importNotice}
                 onImport={(text) => void importJson(text)}
               />
             </DocumentBlock>

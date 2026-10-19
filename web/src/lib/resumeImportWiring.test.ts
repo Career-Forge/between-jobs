@@ -182,7 +182,8 @@ describe("the Profile page", () => {
     expect(active).toBeLessThan(card);
     expect(card).toBeLessThan(json);
     expect(profileSource).toContain('replacesCurrent={state.kind === "active"}');
-    expect(profileSource).toContain("onActivated={() => void loadCurrent()}");
+    // a file draft that was made the profile reads the profile again
+    expect(profileSource).toMatch(/onActivated=\{\(\) => \{[^}]*void loadCurrent\(\);/);
     expect((profileSource.match(/<ResumeImportCard/g) ?? []).length).toBe(1);
   });
 
@@ -217,7 +218,7 @@ describe("the Profile page", () => {
     // refused in the function itself, so a way round the disabled controls is no way round
     const importJson = withoutComments(bodyOf(profileSource, "importJson"));
     expect(importJson).toContain("if (fileImportOpen) return;");
-    expect(importJson.indexOf("if (fileImportOpen) return;")).toBeLessThan(importJson.indexOf("setBusy(true)"));
+    expect(importJson.indexOf("if (fileImportOpen) return;")).toBeLessThan(importJson.indexOf('setWorking("import")'));
     expect(importJson.indexOf("if (fileImportOpen) return;")).toBeLessThan(importJson.indexOf("apiFetch"));
   });
 
@@ -260,7 +261,7 @@ describe("the Profile page", () => {
         ],
       ],
       [jsonImportSource, ["Download blank template", "Copy conversion prompt", "Upload .json file", 'accept=".json,application/json"']],
-      [jsonReviewSource, ["Looks good -- activate", "Review before saving"]],
+      [jsonReviewSource, ["Looks good -- activate", "Review before activating"]],
     ];
     for (const [source, pieces] of where) {
       for (const piece of pieces) expect(source, piece).toContain(piece);

@@ -64,7 +64,7 @@ export const IMPORT_LIMITS = `PDF or DOCX, up to ${MAX_IMPORT_BYTES / (1024 * 10
 export const REVIEW_TITLE = "Check what was read from your file";
 export const REVIEW_LABEL = "Read from your file by an AI model: check every field before you use it";
 export const REVIEW_DETAIL =
-  "Each value was checked against the text of your file, which shows it appears there, not that it is in the right place. This draft is saved but not in use: nothing changes until you press \"Use this profile\".";
+  "Each value was checked against the text of your file, which shows it appears there, not that it is in the right place. This draft is saved but not in use: nothing changes until you use it, with \"Use this profile\" below or \"Confirm and make active\" in the next-step band.";
 export const ALREADY_ACTIVE_NOTICE = "This matches your current profile: nothing to change.";
 // The heading and the intro are about every reason a value is left out, so they claim none of them:
 // "not in your file" is one reason among several (a work arrangement given as a city, or a date of
@@ -151,16 +151,18 @@ export function ResumeImportView({
   // What the saved keys say about a usable model key, when the page has read them.
   modelKey?: ModelKeyReading;
 }) {
+  // The mark says a model acted, so it is drawn only once there is a draft a model made.
+  const hasDraft = state.kind === "review" || state.kind === "activating" || state.kind === "discarding";
   return (
     <section className="bj-prof-block bj-import" aria-labelledby={TITLE_ID}>
       <div className="bj-card-header">
         <h2 id={TITLE_ID} className="bj-prof-title" tabIndex={-1}>
           {IMPORT_TITLE}
         </h2>
-        <span className="bj-badge-violet">Read by an AI model</span>
+        {hasDraft && <span className="bj-badge-violet">Read by an AI model</span>}
       </div>
 
-      {state.kind === "review" || state.kind === "activating" || state.kind === "discarding" ? (
+      {hasDraft ? (
         <ReviewPanel state={state} replacesCurrent={replacesCurrent} actions={actions} checks={checks} trail={trail} />
       ) : (
         <UploadPanel state={state} fileInputRef={fileInputRef} actions={actions} blocked={blocked} modelKey={modelKey} />

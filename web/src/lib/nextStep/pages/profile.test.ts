@@ -248,6 +248,17 @@ describe("profileOutcome: what the global rows say on the Profile page itself", 
   });
 });
 
+describe("the one-step button when it would take the place of a profile in use", () => {
+  it.each([
+    ["a JSON import", { source: "json" } as WaitingImport, "Check what was read, then make this your profile."],
+    ["a file draft", FILE({ remaining: 0 }), "Check every field, then make this your profile."],
+  ])("says so in the sentence beside the button for %s, and only then", (_name, waiting, sentence) => {
+    expect(reviewStep(facts({ waiting, onReview: true, replacesCurrent: true }))?.sentence).toBe(`${sentence} It replaces your current one.`);
+    expect(reviewStep(facts({ waiting, onReview: true, replacesCurrent: false }))?.sentence).toBe(sentence);
+    expect(reviewStep(facts({ waiting, onReview: true }))?.sentence).toBe(sentence);
+  });
+});
+
 describe("the facts guard", () => {
   it("accepts what the page builds", () => {
     expect(isProfilePageFacts(facts())).toBe(true);
@@ -262,6 +273,7 @@ describe("the facts guard", () => {
     ["more fields to check than found", { waiting: { source: "file", found: 1, leftOut: 0, remaining: 2 }, onReview: false, activeSince: null }],
     ["a negative count", { waiting: { source: "file", found: 1, leftOut: -1, remaining: 0 }, onReview: false, activeSince: null }],
     ["an unknown source", { waiting: { source: "email" }, onReview: false, activeSince: null }],
+    ["a non-boolean replacesCurrent", { waiting: null, onReview: false, activeSince: null, replacesCurrent: "yes" }],
   ])("refuses %s, so no step is made up from it", (_name, value) => {
     expect(isProfilePageFacts(value)).toBe(false);
     const unreadable: NextStepInput = { ...input(facts()), facts: value };
