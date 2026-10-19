@@ -1,9 +1,11 @@
 """The page where keys, connections and linked chats live is called Settings. Server messages and
 the chat bot's text are read by people, so none of them may send a person to the old name."""
 
+import re
 from pathlib import Path
 
 SOURCE = Path(__file__).parent.parent / "src" / "between_jobs"
+OLD_NAME = re.compile(r"Integrations|\b(?:in|to|from) integrations\b")
 CONTRIBUTING = Path(__file__).parent.parent / "CONTRIBUTING.md"
 
 
@@ -12,7 +14,7 @@ def test_no_server_text_names_the_old_integrations_page() -> None:
         f"{path.relative_to(SOURCE)}:{number}"
         for path in sorted(SOURCE.rglob("*.py"))
         for number, line in enumerate(path.read_text().splitlines(), start=1)
-        if "Integrations" in line
+        if OLD_NAME.search(line)
     ]
 
     assert offenders == []
