@@ -1,17 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
-import { expand } from "../testing/reactTree";
 import { ApplicationActionsSelect } from "./ApplicationActionsSelect";
-import { HiringPostsSlot } from "./HiringPostsSlot";
 import { PrimaryNav } from "./PrimaryNav";
 
 // What each answer to "is Hiring signals on?" actually puts in front of a person,
 // rendered rather than reasoned about. `navItemsFor`, `crossNavItemsFor` and the
 // status store are tested on their own; what these pin is the JSX that APPLIES
-// them -- the nav, the Applications "Actions..." menu, and the workspace's Hiring
-// posts slot -- because a component that forgot to apply the filter would pass
-// every one of those tests and still show a dead link.
+// them -- the nav and the Applications "Actions..." menu -- because a component that forgot to apply
+// the filter would pass every one of those tests and still show a dead link. The workspace's Hiring
+// posts section follows the same answer in components/workspace/PanelSections.test.tsx.
 //
 // The status hook is replaced by a variable the test sets (a static render has no
 // network); the real client is never reached (nothing here may fetch).
@@ -102,41 +100,5 @@ describe("the Applications 'Actions...' menu", () => {
         </MemoryRouter>,
       ),
     ).toContain("Actions for &quot;Untitled&quot;");
-  });
-});
-
-describe("the workspace's Hiring posts slot", () => {
-  // The panel renders nothing until its first saved-posts reply, so its own markup
-  // cannot tell "mounted" from "not mounted". The ELEMENT tree can: `expand` calls
-  // the (hook-free) slot and leaves the panel, which uses hooks, as an opaque leaf.
-  function slot(enabled: boolean) {
-    const [root] = expand(<HiringPostsSlot enabled={enabled} applicationId="app-1" />);
-    if (typeof root !== "object" || root.kind !== "host") throw new Error("no wrapper");
-    return root;
-  }
-
-  it("keeps the hash target but mounts no panel while the feature is off or not yet known", () => {
-    const off = slot(false);
-    expect(off.type).toBe("div");
-    expect(off.props.id).toBe("hiring-posts"); // the target exists ...
-    expect(off.children).toEqual([]); // ... and nothing is in it
-    expect(renderToStaticMarkup(<HiringPostsSlot enabled={false} applicationId="app-1" />)).toBe(
-      '<div id="hiring-posts"></div>',
-    );
-  });
-
-  it("mounts the panel for the right application once the feature is known to be on", () => {
-    const on = slot(true);
-    expect(on.props.id).toBe("hiring-posts");
-    // exactly one thing inside, and it is a component (the panel), not markup
-    expect(on.children).toHaveLength(1);
-    expect(typeof on.children[0]).toBe("object");
-    expect((on.children[0] as { kind: string }).kind).toBe("component");
-    const element = (
-      HiringPostsSlot({ enabled: true, applicationId: "app-9" }) as {
-        props: { children: { props: { applicationId: string } } };
-      }
-    ).props.children;
-    expect(element.props.applicationId).toBe("app-9");
   });
 });
