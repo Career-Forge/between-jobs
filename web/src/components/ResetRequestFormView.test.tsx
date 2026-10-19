@@ -51,13 +51,16 @@ describe("ResetRequestFormView", () => {
     expect(markup).not.toContain('role="alert"');
   });
 
-  it("says Sending... and blocks a second send and edits while busy", () => {
+  // aria-disabled and read-only, never disabled: a disabled control drops keyboard focus to the top of the page.
+  it("says Sending... and blocks a second send and edits while busy, without disabling anything", () => {
     const nodes = expand(view({ busy: true, email: "pat@example.com" }));
     const submit = findAll(nodes, (el) => el.type === "button" && prop(el, "type") === "submit")[0];
     expect(textOf(submit)).toBe("Sending...");
-    expect(prop(submit, "disabled")).toBe(true);
+    expect(prop(submit, "aria-disabled")).toBe(true);
+    expect(prop(submit, "disabled")).toBeUndefined();
     const input = findAll(nodes, (el) => el.type === "input")[0];
-    expect(prop(input, "disabled")).toBe(true);
+    expect(prop(input, "readOnly")).toBe(true);
+    expect(prop(input, "disabled")).toBeUndefined();
   });
 
   it("shows only the confirmation once sent, without the address, and no form to send again", () => {

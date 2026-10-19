@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { ConsentNotice } from "../components/ConsentNotice";
@@ -51,6 +51,15 @@ export default function Login() {
 
   // The tab says which form this is: Sign in, Create account or the password reset.
   useDocumentTitle(loginPageTitle(mode));
+
+  // "Back to sign in" removes the button that was pressed along with the reset form: the person lands in
+  // the email field of the form they asked for, not at the top of the document.
+  const previousMode = useRef(mode);
+  useEffect(() => {
+    const was = previousMode.current;
+    previousMode.current = mode;
+    if (was === "reset" && mode !== "reset" && document.activeElement === document.body) document.getElementById(emailId)?.focus();
+  }, [mode, emailId]);
 
   // Drops the dead link's error (and the /update-password path it arrived on) from the
   // address bar, so a reload, or signing in afterwards, does not replay it. It goes to /login,
@@ -212,8 +221,8 @@ export default function Login() {
             <button
               type="button"
               className="bj-google-button"
-              onClick={() => void onGoogleClick()}
-              disabled={googleBusy}
+              onClick={() => !googleBusy && void onGoogleClick()}
+              aria-disabled={googleBusy ? true : undefined}
             >
               {googleBusy ? "Redirecting..." : "Continue with Google"}
             </button>

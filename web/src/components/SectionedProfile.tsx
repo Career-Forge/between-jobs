@@ -783,6 +783,8 @@ function AchievementsSection({ entries, onSave }: { entries: string[]; onSave: S
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [newEntry, setNewEntry] = useState("");
+  const addField = useRef<HTMLInputElement>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
 
   async function commitEdit(index: number) {
     const value = draft.trim();
@@ -825,6 +827,9 @@ function AchievementsSection({ entries, onSave }: { entries: string[]; onSave: S
       return;
     }
     setNewEntry("");
+    // Add has nothing to add now, and a person who pressed it with the keyboard is most likely adding
+    // another: the field takes focus back from the button.
+    if (document.activeElement === addButton.current) addField.current?.focus();
   }
 
   return (
@@ -859,6 +864,7 @@ function AchievementsSection({ entries, onSave }: { entries: string[]; onSave: S
         ))}
         <div className="bj-achievement-add">
           <input
+            ref={addField}
             type="text"
             aria-label="Add an achievement"
             placeholder="Add an achievement..."
@@ -871,7 +877,9 @@ function AchievementsSection({ entries, onSave }: { entries: string[]; onSave: S
               }
             }}
           />
-          <button type="button" onClick={() => void addNew()} disabled={!newEntry.trim()}>
+          {/* aria-disabled, not disabled: the press itself empties the field, and a button that disables
+              itself drops keyboard focus to the top of the page. */}
+          <button ref={addButton} type="button" aria-disabled={newEntry.trim() ? undefined : true} onClick={() => void addNew()}>
             Add
           </button>
         </div>

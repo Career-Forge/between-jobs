@@ -67,7 +67,9 @@ export function PersonalDetailsCardView({
         </div>
       )}
       <div className="bj-actions">
-        <button type="button" onClick={() => actions.save()} disabled={saving || !dirty}>
+        {/* aria-disabled, not disabled: pressing Save is what makes the draft clean (and a press while
+            saving is ignored), and a button that disables itself drops keyboard focus to the top of the page. */}
+        <button type="button" aria-disabled={saving || !dirty ? true : undefined} onClick={() => !saving && dirty && actions.save()}>
           {saving ? "Saving..." : "Save"}
         </button>
       </div>

@@ -85,17 +85,31 @@ describe("the field", () => {
 });
 
 describe("the Save button", () => {
-  it("is disabled when nothing changed, and enabled once it has", () => {
+  // aria-disabled and never disabled: pressing Save is what makes the draft clean, and a button that disables
+  // itself drops keyboard focus to the top of the page.
+  it("is aria-disabled when nothing changed, and enabled once it has", () => {
     const { actions } = recorder();
-    expect(prop(saveButton(tree({ ...base(), dirty: false }, actions)), "disabled")).toBe(true);
-    expect(prop(saveButton(tree({ ...base(), dirty: true }, actions)), "disabled")).toBe(false);
+    const clean = saveButton(tree({ ...base(), dirty: false }, actions));
+    expect(prop(clean, "aria-disabled")).toBe(true);
+    expect(prop(clean, "disabled")).toBeUndefined();
+    const dirty = saveButton(tree({ ...base(), dirty: true }, actions));
+    expect(prop(dirty, "aria-disabled")).toBeUndefined();
+    expect(prop(dirty, "disabled")).toBeUndefined();
   });
 
-  it("is disabled while saving, regardless of dirty, and says so", () => {
+  it("is aria-disabled while saving, regardless of dirty, and says so", () => {
     const { actions } = recorder();
     const nodes = tree({ ...base(), dirty: true, saving: true }, actions);
-    expect(prop(saveButton(nodes), "disabled")).toBe(true);
+    expect(prop(saveButton(nodes), "aria-disabled")).toBe(true);
+    expect(prop(saveButton(nodes), "disabled")).toBeUndefined();
     expect(textOf(saveButton(nodes))).toBe("Saving...");
+  });
+
+  it("ignores a press when nothing changed or while saving", () => {
+    const { actions, calls } = recorder();
+    press(saveButton(tree({ ...base(), dirty: false }, actions)));
+    press(saveButton(tree({ ...base(), dirty: true, saving: true }, actions)));
+    expect(calls).toEqual([]);
   });
 
   it("calls actions.save when pressed", () => {

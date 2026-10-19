@@ -59,7 +59,8 @@ describe("UpdatePasswordFormView", () => {
     expect(markup).toContain("New password should be different from the old password.");
   });
 
-  it("disables everything while updating, and says so", () => {
+  // aria-disabled and read-only, never disabled: a disabled control drops keyboard focus to the top of the page.
+  it("blocks everything while updating, without disabling anything, and says so", () => {
     const nodes = expand(
       UpdatePasswordFormView({
         state: { ...initialUpdatePasswordState, status: "submitting" },
@@ -68,9 +69,11 @@ describe("UpdatePasswordFormView", () => {
     );
     const submit = findAll(nodes, (el) => el.type === "button")[0];
     expect(textOf(submit)).toBe("Updating...");
-    expect(prop(submit, "disabled")).toBe(true);
+    expect(prop(submit, "aria-disabled")).toBe(true);
+    expect(prop(submit, "disabled")).toBeUndefined();
     for (const input of findAll(nodes, (el) => el.type === "input")) {
-      expect(prop(input, "disabled")).toBe(true);
+      expect(prop(input, "readOnly")).toBe(true);
+      expect(prop(input, "disabled")).toBeUndefined();
     }
   });
 
@@ -82,7 +85,7 @@ describe("UpdatePasswordFormView", () => {
     const nodes = expand(
       UpdatePasswordFormView({ state: { ...initialUpdatePasswordState, status: "done" }, actions: formActions().actions }),
     );
-    expect(prop(findAll(nodes, (el) => el.type === "button")[0], "disabled")).toBe(true);
+    expect(prop(findAll(nodes, (el) => el.type === "button")[0], "aria-disabled")).toBe(true);
   });
 
   it("shows each field its own text: the password in the first, the confirmation in the second", () => {
@@ -172,6 +175,9 @@ describe("LinkProblemView", () => {
     );
     const button = findAll(busy, (el) => el.type === "button")[0];
     expect(textOf(button)).toBe("Sending...");
-    expect(prop(button, "disabled")).toBe(true);
+    expect(prop(button, "aria-disabled")).toBe(true);
+    expect(prop(button, "disabled")).toBeUndefined();
+    press(button);
+    expect(calls).toEqual(["resend"]);
   });
 });

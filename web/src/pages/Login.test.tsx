@@ -279,6 +279,47 @@ describe("the password reset form", () => {
     expect(auth.resetPassword.mock.calls[0][0]).toBe("someone@example.test");
   });
 
+  // The button that was pressed leaves with the screen it was on: focus must land somewhere the person can
+  // use, not at the top of the document.
+  it("puts keyboard focus in the email field when it opens, on the confirmation once a link is sent, and in the sign-in email field when it closes", async () => {
+    auth.resetPassword.mockResolvedValue({ kind: "sent", message: "If an account exists for that address, a reset link is on its way." });
+    const root = open();
+    const forgot = buttonNamed(root, "Forgot password?");
+    forgot.focus();
+    click(forgot);
+    expect(document.activeElement).toBe(query(root, 'input[type="email"]'));
+    typeInto(query(root, 'input[type="email"]'), "someone@example.test");
+    await submit(query(root, "form"));
+    expect(document.activeElement).toBe(query(root, '[role="status"]'));
+    click(buttonNamed(root, "Back to sign in"));
+    expect(document.activeElement).toBe(query(root, 'input[type="email"]'));
+  });
+
+  it("does not take focus when the page arrives with the form already open under a dead-link sentence", () => {
+    const root = open("#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired");
+    expect(text(query(root, ".bj-login-card h2"))).toBe("Reset your password");
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("keeps focus on Send reset link while the request is out, with the field read-only", async () => {
+    let finish: (outcome: unknown) => void = () => undefined;
+    auth.resetPassword.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const root = reset();
+    typeInto(query(root, 'input[type="email"]'), "someone@example.test");
+    const send = buttonNamed(root, "Send reset link");
+    send.focus();
+    await submit(query(root, "form"));
+    const busy = buttonNamed(root, "Sending...");
+    expect(busy).toBe(send);
+    expect(busy.disabled).toBe(false);
+    expect(busy.getAttribute("aria-disabled")).toBe("true");
+    expect(query<HTMLInputElement>(root, 'input[type="email"]').readOnly).toBe(true);
+    expect(document.activeElement).toBe(send);
+    await submit(query(root, "form"));
+    expect(auth.resetPassword).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ kind: "error", message: "Could not send." }));
+  });
+
   it("goes back to sign-in", () => {
     const root = reset();
     click(buttonNamed(root, "Back to sign in"));

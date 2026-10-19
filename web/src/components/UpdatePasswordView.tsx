@@ -29,7 +29,7 @@ export function UpdatePasswordFormView({
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    actions.submit();
+    if (!busy && !done) actions.submit();
   }
 
   return (
@@ -46,7 +46,7 @@ export function UpdatePasswordFormView({
             value={state.password}
             autoComplete="new-password"
             minLength={MIN_PASSWORD_LENGTH}
-            disabled={busy || done}
+            readOnly={busy || done}
             onChange={(e) => actions.setPassword(e.target.value)}
             required
           />
@@ -58,7 +58,7 @@ export function UpdatePasswordFormView({
             value={state.confirm}
             autoComplete="new-password"
             minLength={MIN_PASSWORD_LENGTH}
-            disabled={busy || done}
+            readOnly={busy || done}
             onChange={(e) => actions.setConfirm(e.target.value)}
             required
           />
@@ -75,7 +75,9 @@ export function UpdatePasswordFormView({
           </div>
         )}
         <div className="bj-actions">
-          <button className="bj-primary" type="submit" disabled={busy || done}>
+          {/* Read-only fields and an aria-disabled button, never disabled ones: a disabled control drops
+              keyboard focus to the top of the page. */}
+          <button className="bj-primary" type="submit" aria-disabled={busy || done ? true : undefined}>
             {busy ? "Updating..." : "Update password"}
           </button>
         </div>
@@ -125,8 +127,8 @@ export function LinkProblemView({
             <button
               className="bj-primary"
               type="button"
-              onClick={actions.resend}
-              disabled={resend.busy}
+              onClick={() => !resend.busy && actions.resend()}
+              aria-disabled={resend.busy ? true : undefined}
             >
               {resend.busy ? "Sending..." : "Email me a new link"}
             </button>
