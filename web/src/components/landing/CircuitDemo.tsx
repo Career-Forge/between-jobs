@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { LANDING } from "../../content/landing";
 import { BOARD_STATUSES, STAGES, type Stage, type StageId } from "../../content/landingCircuit";
 import { StaticTrailLine } from "../paper/TrailLine";
@@ -135,6 +135,18 @@ export function CircuitDemo() {
   const [active, setActive] = useState<StageId>(DEFAULT_STAGE);
   const list = useRef<HTMLOListElement>(null);
   const idBase = useId();
+  // Where the pressed stage button was on screen when it was pressed. In the list layout only the stage
+  // in view shows its card, so choosing a later stage folds an earlier, taller card away above the
+  // button and the button would jump up the screen under the finger; the effect below scrolls by the
+  // difference so it stays where it was.
+  const pressed = useRef<{ button: HTMLButtonElement; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const was = pressed.current;
+    pressed.current = null;
+    if (was === null || !was.button.isConnected) return;
+    const moved = was.button.getBoundingClientRect().top - was.top;
+    if (moved !== 0) window.scrollBy(0, moved);
+  }, [active]);
   const current = STAGES.find((stage) => stage.id === active) ?? STAGES[0];
   const position = STAGES.indexOf(current) + 1;
 
@@ -175,7 +187,10 @@ export function CircuitDemo() {
                     className="bj-circuit-stage-button bj-selectable"
                     aria-pressed={on}
                     aria-controls={cardId}
-                    onClick={() => setActive(stage.id)}
+                    onClick={(event) => {
+                      pressed.current = { button: event.currentTarget, top: event.currentTarget.getBoundingClientRect().top };
+                      setActive(stage.id);
+                    }}
                   >
                     <span className="bj-circuit-node" aria-hidden="true">
                       {index + 1}
