@@ -119,6 +119,40 @@ describe("dealbreakers", () => {
     expect(text(query(container, ".bj-scoreblock-numeral"))).toBe("72");
   });
 
+  // The button is replaced by the line that says it was saved, and a removed control drops keyboard focus to the page.
+  it("moves focus to the 'Saved' line that replaces the button the keyboard pressed, and leaves a person who has moved on alone", async () => {
+    on("GET /resume-documents/mine?application_id=a1", { id: "doc-1", assertions: [] });
+    on("PATCH /resume-documents/doc-1/assertions", {});
+    const { container } = render(
+      <div>
+        <ScoreBreakdown applicationId="a1" attempts={[attempt({ gaps })]} />
+        <button type="button" id="elsewhere">
+          Elsewhere
+        </button>
+      </div>,
+    );
+    const button = buttonNamed(container, "This works for me");
+    button.focus();
+    click(button);
+    await settle();
+    const saved = query(container, ".bj-ws-dealbreaker .bj-ws-caption");
+    expect(text(saved)).toContain("Saved --");
+    expect(document.activeElement).toBe(saved);
+
+    const other = render(
+      <div>
+        <ScoreBreakdown applicationId="a1" attempts={[attempt({ gaps })]} />
+        <button type="button" id="elsewhere-2">
+          Elsewhere
+        </button>
+      </div>,
+    );
+    click(buttonNamed(other.container, "This works for me"));
+    query<HTMLButtonElement>(other.container, "#elsewhere-2").focus();
+    await settle();
+    expect(document.activeElement).toBe(query(other.container, "#elsewhere-2"));
+  });
+
   it("shows a failed save on the row and keeps it missing", async () => {
     on("GET /resume-documents/mine?application_id=a1", { id: "doc-1" });
     on("PATCH /resume-documents/doc-1/assertions", new FakeApiError("The server hit a problem.", "INTERNAL"));

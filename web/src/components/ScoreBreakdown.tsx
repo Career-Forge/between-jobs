@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { apiFetch } from "../lib/api";
 import type { AtsAttempt } from "../lib/generateTypes";
 import type { ResumeDocument } from "../lib/headerComposerTypes";
@@ -63,6 +63,9 @@ export function ScoreBreakdown({ applicationId, attempts }: { applicationId: str
   const [assertState, setAssertState] = useState<AssertState>({ kind: "idle" });
   const [assertedThisSession, setAssertedThisSession] = useState<string[]>([]);
   const [clustersOpen, setClustersOpen] = useState(false);
+  // The requirement whose "This works for me" was just pressed. The button goes when the save lands (the row
+  // reads "Saved" instead), and focus would fall to the top of the page: the line that replaces it takes it.
+  const focusSavedFor = useRef<string | null>(null);
 
   if (attempts.length === 0) return null;
   const final = attempts[attempts.length - 1];
@@ -90,6 +93,7 @@ export function ScoreBreakdown({ applicationId, attempts }: { applicationId: str
         method: "PATCH",
         body: JSON.stringify({ assertions: updated }),
       });
+      focusSavedFor.current = requirement;
       setAssertedThisSession((prev) => (prev.includes(requirement) ? prev : [...prev, requirement]));
       setAssertState({ kind: "idle" });
     } catch (e) {
@@ -209,7 +213,18 @@ export function ScoreBreakdown({ applicationId, attempts }: { applicationId: str
                 <div className="bj-ws-dealbreaker-body">
                   <p className="bj-ws-dealbreaker-label">{req}</p>
                   {asserted ? (
-                    <p className="bj-ws-caption">Saved -- this becomes part of your real score next generation.</p>
+                    <p
+                      className="bj-ws-caption"
+                      tabIndex={-1}
+                      ref={(node) => {
+                        // Only when the keyboard was on the button that went (focus is on the page itself).
+                        if (node === null || focusSavedFor.current !== req) return;
+                        focusSavedFor.current = null;
+                        if (document.activeElement === null || document.activeElement === document.body) node.focus();
+                      }}
+                    >
+                      Saved -- this becomes part of your real score next generation.
+                    </p>
                   ) : (
                     <>
                       <p className="bj-ws-caption">
