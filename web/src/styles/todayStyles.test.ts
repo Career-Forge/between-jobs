@@ -27,6 +27,15 @@ const wide = blocksOf("@media (min-width: 1280px)");
 const mid = blocksOf("@media (min-width: 960px)");
 const phone = blocksOf("@media (max-width: 959px)");
 const resolve = tokenResolver(tokensCss);
+
+// The band's quiet Dismiss is pulled left by its own padding to line its words up with the text, but
+// not on a phone, where that would put its focus ring (2px outline, 2px offset) off the screen.
+describe("the band's quiet Dismiss", () => {
+  it("lines up with the text on a wide screen and keeps its focus ring on screen on a phone", () => {
+    expect(declarationsFor(base, ".bj-band-item .bj-today-item-actions")["margin-left"]).toBe("calc(-1 * var(--bj-space-4))");
+    expect(declarationsFor(phone, ".bj-band-item .bj-today-item-actions")["margin-left"]).toBe("0");
+  });
+});
 const code = todayCss.replace(/\/\*[\s\S]*?\*\//g, "");
 
 describe("today.css", () => {

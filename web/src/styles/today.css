@@ -84,9 +84,17 @@
   max-width: 100%;
 }
 
-/* The lone quiet Dismiss keeps its hit area but lines its words up with the item's text. */
+/* The lone quiet Dismiss keeps its hit area but lines its words up with the item's text. Not on a
+   phone: the band sits at the screen's gutter there, and pulling the button out by its own padding
+   would put its left edge on the screen's, where the 2px focus ring and its 2px offset are cut off. */
 .bj-band-item .bj-today-item-actions {
   margin-left: calc(-1 * var(--bj-space-4));
+}
+
+@media (max-width: 959px) {
+  .bj-band-item .bj-today-item-actions {
+    margin-left: 0;
+  }
 }
 
 /* ------------------------------------------------------------------ */
