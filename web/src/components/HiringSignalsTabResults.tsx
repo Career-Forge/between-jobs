@@ -156,7 +156,7 @@ export function TabResults({
         <div className="bj-hs-empty">
           {emptyNote !== null && <div className="bj-small">{emptyNote}</div>}
           {emptyNote === TAB_YOU_COM_NO_LINKEDIN_NOTE && (
-            <div className="bj-small">
+            <div className="bj-small bj-hs-empty-link">
               <Link to={SEARCH_KEYS_PATH}>Open Settings</Link>
             </div>
           )}

@@ -27,6 +27,18 @@
   border-bottom: 1px solid var(--bj-border);
 }
 
+/* A field's edge is its only boundary, so it takes the outline color (3:1 against the page, as the
+   * Settings fields do) and not the hairline rule color, and a placeholder is the muted text color:
+   * the browser's own is dimmer than the floor the design sets for muted text. */
+.bj-disc-form input[type="text"] {
+  border-color: var(--bj-outline);
+}
+
+.bj-disc-form input::placeholder {
+  color: var(--bj-text-muted);
+  opacity: 1;
+}
+
 .bj-disc-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

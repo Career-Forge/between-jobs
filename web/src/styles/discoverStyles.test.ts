@@ -162,6 +162,26 @@ describe("the saved-searches card", () => {
   });
 });
 
+describe("the form fields of Discover and Hiring signals", () => {
+  const phoneOf = (css: string) => blocksOf(css, "@media (max-width: 959px)");
+
+  it("draw a text field's edge in the outline color, which clears 3:1 against the page, not the hairline rule color", () => {
+    expect(declarationsFor(discoverCss, '.bj-disc-form input[type="text"]')["border-color"]).toBe("var(--bj-outline)");
+    expect(declarationsFor(hiringCss, '.bj-hs-tab-form input[type="text"]')["border-color"]).toBe("var(--bj-outline)");
+    expect(declarationsFor(hiringCss, ".bj-hs-tab-wording select")["border"]).toBe("1px solid var(--bj-outline)");
+  });
+
+  it("set a placeholder in the muted text color, not the browser's dimmer default", () => {
+    expect(declarationsFor(discoverCss, ".bj-disc-form input::placeholder")["color"]).toBe("var(--bj-text-muted)");
+    expect(declarationsFor(hiringCss, ".bj-hs-tab-form input::placeholder")["color"]).toBe("var(--bj-text-muted)");
+  });
+
+  it("keep the Open Settings link of an empty You.com result 44px tall on a phone", () => {
+    expect(declarationsFor(phoneOf(hiringCss), ".bj-hs-tab .bj-hs-empty-link a")["min-height"]).toBe("44px");
+    expect(hiringResults).toContain("bj-hs-empty-link");
+  });
+});
+
 describe("the Hiring signals sections", () => {
   const base = withoutMedia(hiringCss);
   const phone = blocksOf(hiringCss, `@media ${PHONE_QUERY}`);

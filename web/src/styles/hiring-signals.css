@@ -67,6 +67,18 @@
   margin: 0;
 }
 
+/* A field's edge is its only boundary, so it takes the outline color (3:1 against the page, as the
+   * Settings fields do) and not the hairline rule color, and a placeholder is the muted text color:
+   * the browser's own is dimmer than the floor the design sets for muted text. */
+.bj-hs-tab-form input[type="text"] {
+  border-color: var(--bj-outline);
+}
+
+.bj-hs-tab-form input::placeholder {
+  color: var(--bj-text-muted);
+  opacity: 1;
+}
+
 /* A field in error is also announced (aria-invalid plus its own message under it), so the red border
    is never the only signal. */
 .bj-hs-tab-form input[aria-invalid="true"] {
@@ -85,7 +97,7 @@
 .bj-hs-tab-wording select {
   max-width: 100%;
   padding: 7px 10px;
-  border: 1px solid var(--bj-border);
+  border: 1px solid var(--bj-outline);
   border-radius: 6px;
   background: var(--bj-surface);
   color: var(--bj-text);
@@ -152,6 +164,7 @@
   }
 
   .bj-hs-tab .bj-hs-actions a,
+  .bj-hs-tab .bj-hs-empty-link a,
   .bj-hs-tab .bj-state-missing a {
     display: inline-flex;
     align-items: center;
