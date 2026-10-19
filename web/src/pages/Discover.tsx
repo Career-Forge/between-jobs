@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth";
 import { DiscoverView, type SearchView, type SetupView } from "../components/discover/DiscoverView";
-import { NEXT_STEP_FOCUS_ID } from "../components/paper/NextStepBand";
 import type { StateLink } from "../components/paper/StateViews";
 import { apiFetch } from "../lib/api";
 import { trackRequestBody } from "../lib/discover";
@@ -24,6 +23,7 @@ import { searchKeyCount, setupChecks } from "../lib/setupReads";
 import { MODEL_PROVIDER_PATH, SETTINGS_PATH } from "../lib/settingsPaths";
 import { type SetupNotice, failureOf } from "../lib/setupRequired";
 import { clockTime } from "../lib/todayFeed";
+import { useBandFocus } from "../lib/useBandFocus";
 import { useSavedSearches } from "../lib/useSavedSearches";
 import { useSetupReads } from "../lib/useSetupReads";
 
@@ -91,7 +91,7 @@ export default function Discover() {
   const [announcement, setAnnouncement] = useState("");
   const searchInFlight = useRef(false);
   const trackInFlight = useRef(new Set<string>());
-  const refocusBand = useRef(false);
+  const bandFocus = useBandFocus(state.kind !== "loading");
 
   // ── what setup says ──────────────────────────────────────────────────────
 
@@ -179,8 +179,7 @@ export default function Discover() {
     if (setupMissing) return;
     // The band's button is where focus is when it asks; that button is replaced by "Searching...", so
     // focus is handed to the band's own sentence rather than dropped.
-    const active = document.activeElement;
-    refocusBand.current = active instanceof HTMLElement && active.id === NEXT_STEP_FOCUS_ID;
+    bandFocus.armIfBandFocused();
     void search(values);
   }
 
@@ -224,7 +223,7 @@ export default function Discover() {
   function onBandAction(intent: string) {
     if (intent === "retry") {
       if (state.kind === "error") {
-        refocusBand.current = true;
+        bandFocus.arm();
         void search(state.request);
       }
       return;
@@ -241,19 +240,6 @@ export default function Discover() {
       window.setTimeout(() => document.querySelector<HTMLInputElement>(SEARCH_INPUT_SELECTOR)?.focus(), 0);
     }
   }
-
-  // Keeps keyboard focus on the band when the button that had it is replaced while a search runs, and
-  // leaves it alone once it is anywhere real.
-  useEffect(() => {
-    if (!refocusBand.current) return;
-    const active = document.activeElement;
-    if (active !== null && active !== document.body) {
-      refocusBand.current = false;
-      return;
-    }
-    document.getElementById(NEXT_STEP_FOCUS_ID)?.focus();
-    if (state.kind !== "loading") refocusBand.current = false;
-  });
 
   const searchView: SearchView =
     state.kind === "loading"
