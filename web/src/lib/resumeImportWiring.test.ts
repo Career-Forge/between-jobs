@@ -212,9 +212,12 @@ describe("the Profile page", () => {
     expect(page).toContain("disabled={fileImportOpen}");
     // the section's own controls: the upload button, the text box and the Import button
     const section = withoutComments(jsonImportSource);
-    expect(section).toContain("disabled={busy || disabled}");
+    // the two buttons that start an import are aria-disabled (a disabled button drops keyboard focus), the text box is disabled
+    expect(section).toContain("aria-disabled={busy || disabled ? true : undefined}");
+    expect(section).toContain("!(busy || disabled) && fileInput.current?.click()");
     expect(section).toContain("disabled={disabled}");
-    expect(section).toContain('disabled={busy || disabled || pasted.trim() === ""}');
+    expect(section).toContain('aria-disabled={busy || disabled || pasted.trim() === "" ? true : undefined}');
+    expect(section).toContain('!(busy || disabled || pasted.trim() === "") && onImport(pasted)');
     // refused in the function itself, so a way round the disabled controls is no way round
     const importJson = withoutComments(bodyOf(profileSource, "importJson"));
     expect(importJson).toContain("if (fileImportOpen) return;");
