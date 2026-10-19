@@ -199,6 +199,43 @@ describe("landmarks", () => {
   });
 });
 
+describe("the tester-programme gate standing in for a page", () => {
+  const NOT_JOINED = { enrolled: false, role_cohort: null, seniority: null, needs_sponsorship: null, consent_version: null, consented_at: null, withdrawn_at: null, current_version: "2026-10-01", needs_reconsent: false };
+  const skipLinks = (root: ParentNode) => [...root.querySelectorAll(".bj-skip-link")].map((link) => text(link));
+
+  // The shell offers "Skip to next step" at every address that has a band. The page the gate draws in
+  // its place has none, so the link would point at nothing: a keyboard user would press it and nothing
+  // would move.
+  it("offers only 'Skip to content' while the enrollment page replaces Today", async () => {
+    describeAccount("data");
+    on("GET /capabilities", { telegram: false, tester_program_required: true });
+    on("GET /tester/enrollment", NOT_JOINED);
+    const container = await open("/", 1000);
+    expect(text(query(container, "main h1"))).toBe("Tester programme");
+    expect(skipLinks(container)).toEqual(["Skip to content"]);
+    expect(brokenLocalLinks(container)).toEqual([]);
+  });
+
+  it("offers it again on the page once the person has joined", async () => {
+    describeAccount("data");
+    on("GET /capabilities", { telegram: false, tester_program_required: true });
+    on("GET /tester/enrollment", { ...NOT_JOINED, enrolled: true });
+    const container = await open("/", 1000);
+    expect(skipLinks(container)).toEqual(["Skip to next step", "Skip to content"]);
+    expect(brokenLocalLinks(container)).toEqual([]);
+  });
+
+  it("has a main heading and no skip link to a band when the lookup of the person's enrollment failed", async () => {
+    describeAccount("data");
+    on("GET /capabilities", { telegram: false, tester_program_required: true });
+    on("GET /tester/enrollment", new FakeApiError("down", "INTERNAL", undefined, 500));
+    const container = await open("/", 1000);
+    expect(container.querySelectorAll("main h1")).toHaveLength(1);
+    expect(text(query(container, "main h1"))).toBe("Tester programme");
+    expect(skipLinks(container)).toEqual(["Skip to content"]);
+  });
+});
+
 describe("the document title of each signed-in page", () => {
   it("is the page's own, and no two pages share one", async () => {
     const titles = new Map<string, string>();

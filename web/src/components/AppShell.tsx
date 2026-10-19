@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { SETTINGS_ITEM } from "../lib/nav";
 import { SETTINGS_PATH } from "../lib/settingsPaths";
@@ -8,6 +8,7 @@ import { LegalLinks } from "./LegalLinks";
 import { PrimaryNav } from "./PrimaryNav";
 import { AssistantDrawerSlot, CommandPaletteSlot } from "./ReservedSlots";
 import { NextStepSkipLink } from "./NextStepSkipLink";
+import { ShellBandContext } from "./ShellBandContext";
 import { MAIN_CONTENT_ID, SkipLink } from "./SkipLink";
 import { Wordmark } from "./Wordmark";
 
@@ -41,9 +42,11 @@ export interface AppShellProps {
 
 export function AppShell({ email, onSignOut, children }: AppShellProps) {
   const { pathname } = useLocation();
+  // Set by whatever stands in for the page without a band of its own (the tester-programme gate).
+  const [drawsNoBand, setDrawsNoBand] = useState(false);
   return (
     <div className="bj-shell">
-      {pageHasBand(pathname) && <NextStepSkipLink />}
+      {pageHasBand(pathname) && !drawsNoBand && <NextStepSkipLink />}
       <SkipLink />
       <header className="bj-topbar">
         <Link to="/" className="bj-topbar-brand">
@@ -69,7 +72,7 @@ export function AppShell({ email, onSignOut, children }: AppShellProps) {
         </div>
       </aside>
       <main className="bj-main" id={MAIN_CONTENT_ID} tabIndex={-1}>
-        {children}
+        <ShellBandContext.Provider value={setDrawsNoBand}>{children}</ShellBandContext.Provider>
       </main>
       <BottomTabBar email={email} onSignOut={onSignOut} />
       <AssistantDrawerSlot />
