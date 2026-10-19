@@ -385,6 +385,20 @@ describe("a row's trail, built from returned fields only", () => {
     expect(trails(container)).toEqual(["○ via registry · on the company's job board at last poll · Posted Sep 20"]);
   });
 
+  it("does not say a registry row the API calls stale was on the company's board at the last poll", () => {
+    const { container } = draw(ready(response({ scored: [job({ provider: "registry", link_checked: false })] })));
+    expect(trails(container)).toEqual(["○ via registry · not confirmed on the company's board recently · Posted Sep 20"]);
+  });
+
+  it("words a USAJobs sponsorship as the provider's category fact, with no text-match tag", () => {
+    const { container } = draw(ready(response({ scored: [job({ provider: "usajobs", sponsorship_signal: "explicit_no", snippet: "Federal analyst role." })] })));
+    const signal = words(query(container, ".bj-disc-signal"));
+    expect(signal).toContain("Federal roles generally require US work authorization");
+    expect(signal).toContain("by provider, no text read");
+    expect(signal).not.toContain("text match");
+    expect(signal).not.toContain("rules out");
+  });
+
   it("says a kept live-search row had its link checked, with a green mark, and by whom it was found", () => {
     const { container } = draw(ready());
     expect(trails(container)).toEqual(["✓ Link checked · via serper · Posted Sep 20"]);

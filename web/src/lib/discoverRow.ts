@@ -7,11 +7,13 @@
 // listed has no salary line. "Unknown" is said as unknown (a location the model could not place
 // reads "can't tell"), never as a no.
 //
-// LINK WORDS. `link_checked` is true on every registry row (stamped from the poller's own
-// absence tracking, not a probe) and on every live-search row the liveness check kept, including
-// rows whose probe was inconclusive or timed out: it means "not found closed", never "verified
-// live". So a registry row says where it came from and when it was last polled, a live-search row
-// that was kept says "Link checked", and one that never reached the check says it was not checked.
+// LINK WORDS. On a registry row `link_checked` is the database's freshness answer (seen within 3
+// days, its company polled within 48 hours, no consecutive failures), not a probe; on a live-search
+// row it is true when the liveness check kept the row, including rows whose probe was inconclusive or
+// timed out. Either way it means "not found closed", never "verified live". So a fresh registry row
+// says it was on the company's board at the last poll, a stale one says only that it was not
+// confirmed there recently, a live-search row that was kept says "Link checked", and one that never
+// reached the check says it was not checked.
 // The word the trail never says is not in this file (lib/trail.ts refuses it as well).
 
 import { subScoreLabel } from "./discover";
@@ -49,16 +51,19 @@ export function tierWords(tier: number): string | null {
 // ── the trail ──────────────────────────────────────────────────────────────
 
 export const REGISTRY_BASIS = "on the company's job board at last poll";
+export const REGISTRY_STALE_BASIS = "not confirmed on the company's board recently";
 
-// The row's last line. Registry rows say where they came from and that it was the company's board at
-// the last poll (no time: the card carries `posted_at`, not when the poller last saw the posting).
+// The row's last line. A registry row the database calls fresh says where it came from and that it was
+// the company's board at the last poll (no time: the card carries `posted_at`, not when the poller last
+// saw the posting). A registry row that is not fresh says only that it was not confirmed there lately,
+// because the posting may have been absent at the last poll.
 // A live-search row says "Link checked" only when the liveness check kept it, and otherwise that its
 // link was not checked yet. `when` is the posting's own date, and is left out when it is not returned.
 export function rowTrail(job: JobCard, now: Date, timeZone?: string): TrailInput {
   const date = job.posted_at === null ? null : formatTrailDate(job.posted_at, { now, timeZone });
   const when = date === null ? null : `Posted ${date}`;
   if (job.provider === "registry") {
-    return { glyph: "code", actor: "via registry", basis: REGISTRY_BASIS, when };
+    return { glyph: "code", actor: "via registry", basis: job.link_checked ? REGISTRY_BASIS : REGISTRY_STALE_BASIS, when };
   }
   return {
     glyph: job.link_checked ? "passed" : "code",
@@ -87,13 +92,30 @@ export function locationReading(score: JobScore): { state: LocationMatch; words:
 }
 
 export const SPONSORSHIP_TAG = "text match, no model";
+export const SPONSORSHIP_PROVIDER_TAG = "by provider, no text read";
 
-// A match over the posting's own text (what the card holds of it), never a model's judgement and
-// never a statement about the employer. "Not stated" is what no match looks like, and says so.
-export function sponsorshipWords(signal: string): string {
+// USAJobs lists federal positions, and the API sets "explicit_no" on every one of them as a fact about
+// the job category: no posting text is read for it.
+const CATEGORY_SIGNAL_PROVIDER = "usajobs";
+
+function isProviderCategorySignal(signal: string, provider: string | undefined): boolean {
+  return signal === "explicit_no" && provider === CATEGORY_SIGNAL_PROVIDER;
+}
+
+// What the sponsorship signal says. For most providers it is a match over the posting's own text (what
+// the card holds of it), never a model's judgement and never a statement about the employer. For
+// USAJobs it is set by the provider for the whole job category and is worded as that, never as a text
+// match. "Not stated" is what no match looks like, and says so.
+export function sponsorshipWords(signal: string, provider?: string): string {
+  if (isProviderCategorySignal(signal, provider)) return "Federal roles generally require US work authorization";
   if (signal === "explicit_yes") return "The posting text mentions visa sponsorship";
   if (signal === "explicit_no") return "The posting text rules out visa sponsorship";
   return "Visa sponsorship is not stated in the text read";
+}
+
+// The tag beside that sentence: how the signal was arrived at.
+export function sponsorshipTag(signal: string, provider?: string): string {
+  return isProviderCategorySignal(signal, provider) ? SPONSORSHIP_PROVIDER_TAG : SPONSORSHIP_TAG;
 }
 
 export function hasSponsorshipSignal(signal: string): boolean {
@@ -176,7 +198,9 @@ export function fitViewOf(job: JobCard, scoringStrategy: string): FitView {
 
 function linkCheckWords(job: JobCard): string {
   if (job.provider === "registry") {
-    return "not probed -- a registry row rests on the poller's last pass over the company's board, which is not a check of this link";
+    return job.link_checked
+      ? "not probed -- a registry row rests on the poller's last pass over the company's board, which is not a check of this link"
+      : "not probed, and not confirmed on the company's board recently -- the posting was last seen a while ago, or its board was not polled lately or its recent polls failed";
   }
   return job.link_checked
     ? "probed and not found closed -- a page that timed out or could not be read also stays"
@@ -215,7 +239,7 @@ export function rowReceipt(job: JobCard, scoringStrategy: string): ReceiptRowInp
     { label: "location", value: locationReceipt(job, fallback) },
     {
       label: "sponsorship",
-      value: `${job.sponsorship_signal} (${SPONSORSHIP_TAG})`,
+      value: `${job.sponsorship_signal} (${sponsorshipTag(job.sponsorship_signal, job.provider)})`,
     },
     { label: "sub-scores", value: parts },
     {

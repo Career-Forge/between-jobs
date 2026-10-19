@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { formatSalary, locationLabel } from "../../lib/discover";
 import type { JobCard } from "../../lib/discoverTypes";
-import { SPONSORSHIP_TAG, fitViewOf, hasSponsorshipSignal, rowReceipt, rowTrail, sponsorshipWords } from "../../lib/discoverRow";
+import { fitViewOf, hasSponsorshipSignal, rowReceipt, rowTrail, sponsorshipTag, sponsorshipWords } from "../../lib/discoverRow";
 import { FailureState } from "../paper/StateViews";
 import { TrailLine } from "../paper/TrailLine";
 import { FitBlock } from "./FitBlock";
@@ -48,12 +48,12 @@ export function ResultRow({ job, scoringStrategy, now, trackedApplicationId, tra
         {job.snippet !== "" && <p className="bj-disc-snippet">{job.snippet}</p>}
         {hasSponsorshipSignal(job.sponsorship_signal) && (
           <p className="bj-disc-signal">
-            {sponsorshipWords(job.sponsorship_signal)}{" "}
+            {sponsorshipWords(job.sponsorship_signal, job.provider)}{" "}
             <span className="bj-disc-signal-tag">
               <span className="bj-trail-glyph bj-trail-glyph--muted" aria-hidden="true">
                 {"○"}
               </span>{" "}
-              {SPONSORSHIP_TAG}
+              {sponsorshipTag(job.sponsorship_signal, job.provider)}
             </span>
           </p>
         )}

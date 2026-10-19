@@ -281,8 +281,10 @@ their trail line, inline at every width. Neither makes a search when it opens.
   fit block is the four-cell ladder with "Good -- 61 / 100" and the "engine" mark, a bar out of 100 for each applied
   part, what was not applied and why, the lowest part, and the model's three-way reading of the location. Rows
   past the scoring batch say "Not scored"; when the scoring fell back every row says "Placeholder" with no rung
-  and no number. The trail says `via registry` on the company's job board at the last poll for a registry row,
-  and "Link checked" for a live-search row the link check kept (it means not found closed, never "verified");
+  and no number. The trail says `via registry` on the company's job board at the last poll for a registry row the
+  database calls fresh, and only "not confirmed on the company's board recently" for one that is not;
+  USAJobs' sponsorship line is worded as the provider's category fact ("by provider, no text read"), never a
+  text match. A live-search row says "Link checked" for a live-search row the link check kept (it means not found closed, never "verified");
   a row that never reached the check says so. Only an http(s) address becomes a link.
 - **Saved searches** (`components/SavedSearchesCardView.tsx`, shared with Settings through `lib/useSavedSearches.ts`)
   read "Checked 06:00" only when `last_matched_at` is later than `created_at`, otherwise "Not checked yet", and

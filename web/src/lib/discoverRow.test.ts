@@ -3,8 +3,12 @@ import type { JobCard, JobScore } from "./discoverTypes";
 import {
   COMPENSATION_DETAIL,
   REGISTRY_BASIS,
+  REGISTRY_STALE_BASIS,
   fitViewOf,
   hasSponsorshipSignal,
+  sponsorshipTag,
+  SPONSORSHIP_PROVIDER_TAG,
+  SPONSORSHIP_TAG,
   isFallback,
   locationReading,
   rowReceipt,
@@ -95,10 +99,13 @@ describe("the trail line of a row", () => {
     expect(trailText(rowTrail(job({ posted_at: "2026-09-20" }), NOW, "UTC"))).toContain("Posted Sep 20");
   });
 
-  it("keeps the registry line the same whether or not the row says its link was checked (the registry stamps every row)", () => {
-    const a = trailText(rowTrail(job({ provider: "registry", link_checked: true }), NOW, "UTC"));
-    const b = trailText(rowTrail(job({ provider: "registry", link_checked: false }), NOW, "UTC"));
-    expect(a).toBe(b);
+  it("tells a registry row the database calls fresh from one it does not: the stale one never claims the last poll", () => {
+    const fresh = trailText(rowTrail(job({ provider: "registry", link_checked: true }), NOW, "UTC"));
+    const stale = trailText(rowTrail(job({ provider: "registry", link_checked: false }), NOW, "UTC"));
+    expect(fresh).toBe(`via registry · ${REGISTRY_BASIS} · Posted Sep 20`);
+    expect(stale).toBe(`via registry · ${REGISTRY_STALE_BASIS} · Posted Sep 20`);
+    expect(stale).not.toContain("at last poll");
+    expect(findForbiddenWord(stale ?? "")).toBeNull();
   });
 });
 
@@ -201,6 +208,14 @@ describe("sponsorship, as a text signal", () => {
     expect(sponsorshipWords("something new")).toBe("Visa sponsorship is not stated in the text read");
   });
 
+  it("words USAJobs' explicit_no as the provider's category fact, never as a text match", () => {
+    expect(sponsorshipWords("explicit_no", "usajobs")).toBe("Federal roles generally require US work authorization");
+    expect(sponsorshipTag("explicit_no", "usajobs")).toBe(SPONSORSHIP_PROVIDER_TAG);
+    expect(sponsorshipWords("explicit_no", "serper")).toBe("The posting text rules out visa sponsorship");
+    expect(sponsorshipTag("explicit_no", "serper")).toBe(SPONSORSHIP_TAG);
+    expect(sponsorshipTag("explicit_yes", "usajobs")).toBe(SPONSORSHIP_TAG);
+  });
+
   it("is a signal worth a line in the row only when the text said something", () => {
     expect(hasSponsorshipSignal("explicit_yes")).toBe(true);
     expect(hasSponsorshipSignal("explicit_no")).toBe(true);
@@ -239,6 +254,13 @@ describe("the receipt", () => {
 
   it("says a registry row was not probed, and that its poll is not a check of this link", () => {
     expect(value(job({ provider: "registry" }), "link check")).toContain("not probed");
+  });
+
+  it("tells a stale registry row's link check from a fresh one's, and words a USAJobs sponsorship by provider", () => {
+    expect(value(job({ provider: "registry", link_checked: false }), "link check")).toContain("not confirmed on the company's board recently");
+    expect(value(job({ provider: "registry", link_checked: true }), "link check")).not.toContain("not confirmed");
+    expect(value(job({ provider: "usajobs", sponsorship_signal: "explicit_no" }), "sponsorship")).toBe("explicit_no (by provider, no text read)");
+    expect(value(job({ provider: "serper", sponsorship_signal: "explicit_no" }), "sponsorship")).toBe("explicit_no (text match, no model)");
   });
 
   it("says a row past the liveness check was not checked yet", () => {
