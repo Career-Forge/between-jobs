@@ -264,6 +264,17 @@ describe("a search", () => {
     expect(document.activeElement?.id).toBe("next-step-focus");
   });
 
+  it("moves focus to the band's new button when the answer lights one (Search again after a fallback)", async () => {
+    answer({ "/discover?": response({ scoring_strategy: "neutral_fallback" }) });
+    const { container } = await draw();
+    const lit = query<HTMLButtonElement>(band(container), "button.bj-primary");
+    act(() => lit.focus());
+    click(lit);
+    await flush();
+    expect(words(document.activeElement)).toBe("Search again");
+    expect(document.activeElement?.id).toBe("next-step-focus");
+  });
+
   it("leaves focus alone when it was somewhere else", async () => {
     answer({ "/discover?": response() });
     const { container } = await draw();

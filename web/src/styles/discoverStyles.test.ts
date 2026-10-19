@@ -114,6 +114,7 @@ describe("the Discover rows", () => {
       expect(declarationsFor(phone, selector)["min-height"], selector).toBe("44px");
     }
     expect(declarationsFor(phone, '.bj-disc-form input[type="text"]')["min-height"]).toBe("44px");
+    expect(declarationsFor(phone, ".bj-discover .bj-state-missing a")["min-height"]).toBe("44px");
   });
 
   it("draw the elapsed counter in the mono face and cyan as text, never a fill", () => {
@@ -173,9 +174,9 @@ describe("the Hiring signals sections", () => {
     expect(block.background).toBe("none");
   });
 
-  it("put hairline rules above and below the form, not a box", () => {
+  it("close the form with a hairline rule (the band's own rule is above it), not a box", () => {
     const form = declarationsFor(base, ".bj-hs-tab .bj-hs-form-block");
-    expect(form["border-top"]).toBe("1px solid var(--bj-border)");
+    expect(form["border-top"]).toBeUndefined();
     expect(form["border-bottom"]).toBe("1px solid var(--bj-border)");
   });
 

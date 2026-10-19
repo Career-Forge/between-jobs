@@ -26,7 +26,7 @@ tags name its own host; left unset they name the hosted site (`scripts/siteOrigi
 the main navigation, then the signed-in address, Settings, Sign out and the legal links). Under 960px the rail is replaced by a slim top bar and a bottom tab bar with four tabs and a
 More button, whose sheet holds the entries that have no tab. Both navigations are always in the markup and
 CSS shows one; the destinations come from one list in `src/lib/nav.ts`. The page is the one `<main>`, and the
-first tab stop is a "Skip to content" link to it; on a page that draws a next-step band (Today and Settings,
+first tab stop is a "Skip to content" link to it; on a page that draws a next-step band (Today, Discover, Hiring signals and Settings,
 `PATHS_WITH_A_BAND` in `AppShell.tsx`) a "Skip to next step" link to the band's button comes first. The sign-in
 page has both. The command palette and the assistant drawer are reserved
 (`src/components/ReservedSlots.tsx`): `hidden` and inert, so they take no room, print no placeholder and have no
@@ -260,6 +260,40 @@ cannot be read, is left out rather than guessed.
 - `src/pages/Practice.tsx` is a pointer: practice sessions live in each application's workspace. It reads the
   same two setup facts for the band's global rows and nothing of its own.
 - Styles are `src/styles/applications.css` (tokens only; it lifts the shell's 960px cap from 1280px for the board).
+
+## Discover and Hiring signals
+
+`src/pages/Discover.tsx` is the job search; `src/pages/HiringSignals.tsx` is the search for recent public posts that
+mention a role. Both are list-like pages: a header, the next-step band, a filter form, and rows that each end in
+their trail line, inline at every width. Neither makes a search when it opens.
+
+- **Discover requests.** On open: `GET /profile/current`, `GET /credentials` (`lib/setupReads.ts`, so the band knows
+  what is missing before any request that would need it is made) and `GET /saved-searches`. `GET /discover` runs
+  only from the form (Enter, its Search, or the band's Search), one at a time, and never while the profile or model
+  key is known to be missing. `POST /discover/track`, `POST /saved-searches` and the saved-search PATCH and DELETE
+  are the ones the page has always made.
+- **The band** (`lib/nextStep/pages/discover.ts`, rows D1 to D5; `hiring-signals.ts`, rows HS0 to HS3) holds the
+  page's one cyan fill: Search when ready, Search again when the scoring fell back, Clear filters when nothing
+  matched, Save this search when Hiring signals results are on the page for a search that is not saved. The form's
+  own Search, every row's Track and Save are outlined. The elapsed counter of a running search is drawn beside the
+  band (`role="timer"`, live region off), not in its sentence, so the sentence is announced once.
+- **A Discover row** (`lib/discoverRow.ts`, drawn by `components/discover/`) is built from returned fields only. Its
+  fit block is the four-cell ladder with "Good -- 61 / 100" and the "engine" mark, a bar out of 100 for each applied
+  part, what was not applied and why, the lowest part, and the model's three-way reading of the location. Rows
+  past the scoring batch say "Not scored"; when the scoring fell back every row says "Placeholder" with no rung
+  and no number. The trail says `via registry` on the company's job board at the last poll for a registry row,
+  and "Link checked" for a live-search row the link check kept (it means not found closed, never "verified");
+  a row that never reached the check says so. Only an http(s) address becomes a link.
+- **Saved searches** (`components/SavedSearchesCardView.tsx`, shared with Settings through `lib/useSavedSearches.ts`)
+  read "Checked 06:00" only when `last_matched_at` is later than `created_at`, otherwise "Not checked yet", and
+  "Paused" after either.
+- **Hiring signals** reads `GET /hiring-signals/status` once for the app, then (only when it is on) the two saved
+  lists. The page also reads `GET /profile/current` and `GET /credentials` for the band. The model lives in the page
+  (the band reads it) and the tab is mounted only when the feature is on. A failed status read, and a search that
+  failed in a way trying again can change, are the band's F1; the results block carries no Try again of its own.
+  Result and saved-post cards take an optional `trail` prop (`components/HiringPostCard.tsx`).
+- A band button that starts a request is replaced while it runs; `lib/useBandFocus.ts` keeps keyboard focus on the
+  band meanwhile.
 
 ## Signed-out pages
 
