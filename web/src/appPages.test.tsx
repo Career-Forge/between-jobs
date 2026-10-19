@@ -174,6 +174,31 @@ describe("each signed-in page, in each account state", () => {
   });
 });
 
+describe("landmarks", () => {
+  // axe's `region` rule does not run on a fragment in jsdom, so the shell's own claim is checked
+  // directly: every link, button and line of text sits inside a landmark, except the two skip links,
+  // which are meant to be the first things on the page, and the closed More sheet (a <dialog>, not drawn).
+  const LANDMARK = "main, nav, aside, header, footer, section[aria-label], [role='region'], dialog";
+
+  it("leaves no content of a signed-in page outside a landmark, the rail included", async () => {
+    for (const route of [...ROUTES, "/applications/app-1"]) {
+      describeAccount("data");
+      const container = await open(route, 1280);
+      const outside = [...container.querySelectorAll("a, button, p")]
+        .filter((element) => !element.classList.contains("bj-skip-link") && element.closest(LANDMARK) === null)
+        .map((element) => `${element.tagName.toLowerCase()}.${element.className} ${text(element).slice(0, 30)}`);
+      expect(outside, route).toEqual([]);
+    }
+  });
+
+  it("names the rail", async () => {
+    describeAccount("data");
+    const container = await open("/", 1280);
+    expect(query(container, ".bj-rail").tagName).toBe("ASIDE");
+    expect(query(container, ".bj-rail").getAttribute("aria-label")).toBe("Sidebar");
+  });
+});
+
 describe("the document title of each signed-in page", () => {
   it("is the page's own, and no two pages share one", async () => {
     const titles = new Map<string, string>();
