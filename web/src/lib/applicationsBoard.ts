@@ -55,6 +55,11 @@ export function otherStatuses(current: ApplicationStatus): ApplicationStatus[] {
 // supposed to scroll to (a mismatch would otherwise fail silently: the
 // menu still navigates, `scrollIntoView` just never finds its target).
 export const CROSS_NAV_HASH = {
+  // The sections of the workspace's resume part that have no panel of their own: the posting and
+  // tailoring, the draft's header, structure and settings, and the review of a generated resume.
+  tailor: "ch-sources",
+  draft: "ch-draft",
+  review: "ch-check",
   generate: "generate",
   companyIntel: "company-intel",
   contacts: "contacts",
