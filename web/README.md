@@ -34,6 +34,9 @@ page has both. The command palette and the assistant drawer are reserved
 (`src/components/ReservedSlots.tsx`): `hidden` and inert, so they take no room, print no placeholder and have no
 behavior.
 
+An address the shell has no page for draws `src/pages/NotFound.tsx` (a heading and a link to Today, no band) instead of an
+empty column; a signed-out visitor to any address but the public ones still gets the sign-in page.
+
 One style marks a chosen item everywhere: a maroon fill with ivory text and weight 600, set by the item's
 ARIA state (`aria-current`, `aria-pressed`, `aria-selected` or `aria-checked`) on an element with
 `.bj-selectable`; a group of them sits in `.bj-segmented`. Focus is separate: a 2px cyan outline, offset 2px.
