@@ -200,7 +200,7 @@ export function TailorPanel({ applicationId }: { applicationId: string }) {
               <span className={`bj-trail-glyph bj-trail-glyph--${tone}`} aria-hidden="true">
                 {mark.char}
               </span>{" "}
-              {s.skill}
+              {s.skill}{" "}
               <span className="bj-ws-skill-state">{SKILL_STATE_LABELS[s.state]}</span>
             </li>
           );

@@ -83,7 +83,7 @@ export function HonestFloor({
       </div>
 
       <p className="bj-ws-ceiling">
-        <span className="bj-ws-ceiling-label">Ceiling</span>
+        <span className="bj-ws-ceiling-label">Ceiling</span>{" "}
         <span className="bj-ws-ceiling-value">{fit.overall_score.toFixed(1)} / 10</span>
       </p>
       <p className="bj-small">
