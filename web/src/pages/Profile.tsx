@@ -24,7 +24,7 @@ import {
 import { activeSince, jsonReviewTrail, profileSummary } from "../lib/profileTrails";
 import type { ProfileVersion } from "../lib/profileTypes";
 import { SETTINGS_PATH } from "../lib/settingsPaths";
-import { clockTime } from "../lib/todayFeed";
+import { formatTrailTime } from "../lib/trail";
 import { useScrollToHash } from "../lib/useScrollToHash";
 import "../styles/profile.css";
 
@@ -68,6 +68,11 @@ type State =
 
 // What GET /credentials said, as far as the band needs it: whether some model key is usable.
 type Credentials = { kind: "loading" } | { kind: "failed"; at: string } | { kind: "ready"; modelKey: ModelKeyReading };
+
+// The client's own wall-clock time as the band's failure line writes it: "09:14".
+function clockTime(now: Date): string {
+  return formatTrailTime(now.toISOString()) ?? "";
+}
 
 export default function Profile() {
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -245,7 +250,7 @@ export default function Profile() {
     <div className="bj-profile">
       <PageHeader
         title="Profile"
-        subtitle="What every resume draft, score and practice question is built from."
+        subtitle="What every resume draft, score and practice question is built from. Read from your saved profile and resume settings."
         actions={
           <Link className="bj-button-link" to={SETTINGS_PATH}>
             Settings

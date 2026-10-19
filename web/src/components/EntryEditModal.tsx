@@ -6,7 +6,7 @@ import "../styles/profile-studio.css";
 
 // Generic entry editor -- one modal, driven by a per-section field config, used for every "array of
 // typed objects" section (Experience, Projects, Education, Publications, Certifications, Languages,
-// Volunteering). Built to design-references/profile-edit-versioned-modal with two deliberate
+// Volunteering). Drawn after the versioned-edit dialog design, with two deliberate
 // deviations from that render: no "Location type" field (invented in the mockup -- it doesn't exist in
 // the schema, so it doesn't exist here), and bullet reordering is up/down buttons instead of
 // drag-and-drop (a button works from the keyboard and on a phone).

@@ -4,8 +4,8 @@ import { saveFailureMessage } from "../lib/useProfileEditor";
 import { applyWorkAuthorization } from "../lib/workAuthorization";
 import { PersonalDetailsCardView } from "./PersonalDetailsCardView";
 
-// Connected wrapper for the "Personal details" card (work-authorization-
-// status.md) -- wiring only, matching HiringSignalsPanel.tsx's own split
+// Connected wrapper for the "Personal details" card (work authorization)
+// -- wiring only, matching HiringSignalsPanel.tsx's own split
 // from its view. Owns the draft text, whether Examples is open, AND its
 // own save-error message -- deliberately NOT the shared `useProfileEditor`
 // error (see below). `onSave` still threads through to the exact same

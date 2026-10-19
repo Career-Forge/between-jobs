@@ -59,6 +59,10 @@ describe("the active profile's trail", () => {
     }
   });
 
+  it("says a gap-interview version holds a bullet the person approved", () => {
+    expect(words(activeProfileTrail(version({ source_kind: "gap_interview" }), NOW))).toBe("You approved an added bullet · from the gap interview · Sep 20 · 4 versions saved");
+  });
+
   it("does not guess who acted for a source it does not know", () => {
     const text = words(activeProfileTrail(version({ source_kind: "telegram_json" }), NOW));
     expect(text).toBe("Saved to your account · Sep 20 · 4 versions saved");

@@ -4,14 +4,14 @@ import {
 } from "../lib/workAuthorization";
 import "../styles/profile.css";
 
-// Personal details -- work authorization (work-authorization-status.md).
+// Personal details -- work authorization.
 // A pure function of its props, same shape as HiringSignalsPanelView: no
 // hooks, so a test can call it directly and walk what it returns (see
 // src/testing/reactTree.ts) instead of needing a browser. All local UI
 // state (the draft text, whether Examples is open) lives one level up, in
 // PersonalDetailsCard.tsx.
 //
-// D1 (the plan doc): ONE free-text field, region-agnostic -- the "Examples"
+// ONE free-text field, region-agnostic -- the "Examples"
 // disclosure lists one real sentence per region so a person can find the
 // shape closest to their own situation, but the field itself, and this
 // component, never ask "which country are you in." No dropdown, no

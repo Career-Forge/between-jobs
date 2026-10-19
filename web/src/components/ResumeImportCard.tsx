@@ -30,11 +30,12 @@ import { IMPORT_MARK_ID, ResumeImportView, type ReviewChecks } from "./ResumeImp
 // THE PAGE'S BAND CAN USE A DRAFT TOO, with the same guard. While a draft waits, `onReviewChange` tells the
 // page what is true of it (how many values were read from the file, how many were left out, how many the
 // person has still to check), and the page's band holds a "Confirm and make active" button that calls
-// `confirmAndUse` on this card's ref. That asks and confirms in one step through the same reducer events,
-// and only for a draft that is waiting, is not already in use and has every value checked; the question
-// "use this profile?" is still on the page before it (the review says that using it replaces the current
-// one), and the button is the band's locked one until the last value is checked. Every path that sends the
-// activation goes through `confirmUse`, which hands `activateDraft` a state the person was asked about.
+// `confirmAndUse` on this card's ref. That button is the confirmation: it is locked until every value is
+// checked one by one, the review's own text has already said that using the draft replaces the current
+// profile, and a press asks and uses the draft in one step through the same reducer events. It does
+// nothing for a draft that is not waiting, is already in use or has a value left unchecked. Every path
+// that sends the activation goes through `confirmUse`, which hands `activateDraft` a state the person was
+// asked about.
 //
 // One request at a time: a ref, not the state, guards against a second click, since state only
 // updates on the next render and a double click can land before it. FOCUS: after each change that

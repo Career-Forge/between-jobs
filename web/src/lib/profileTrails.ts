@@ -24,7 +24,7 @@ interface SourceWords {
 
 // How each known `source_kind` produced the version's content. The two file imports are read by the
 // person's own model; a JSON import (and every edit, which goes through the same importer) is parsed
-// by code; a gap-interview answer is one the person approved. A kind the page does not know says
+// by code; a gap-interview bullet is one the person approved (the model drafts it, a person approves it, and code appends it). A kind the page does not know says
 // nothing about who acted.
 function sourceWords(sourceKind: string | undefined): SourceWords | null {
   switch (sourceKind) {
@@ -35,7 +35,7 @@ function sourceWords(sourceKind: string | undefined): SourceWords | null {
     case "web_docx_import":
       return { glyph: "model", actor: "Read by your model", basis: "from your DOCX file" };
     case "gap_interview":
-      return { glyph: "you", actor: "You approved this answer", basis: "from the gap interview" };
+      return { glyph: "you", actor: "You approved an added bullet", basis: "from the gap interview" };
     default:
       return null;
   }

@@ -101,7 +101,7 @@ describe("the page", () => {
     const { container } = page();
     await settle();
     expect([...container.querySelectorAll("h1")].map((h) => text(h))).toEqual(["Profile"]);
-    expect(text(container)).toContain("What every resume draft, score and practice question is built from.");
+    expect(text(container)).toContain("What every resume draft, score and practice question is built from. Read from your saved profile and resume settings.");
     const settings = named(container, "Settings") as HTMLAnchorElement;
     expect(settings.getAttribute("href")).toBe("/settings");
     expect(settings.classList.contains("bj-button-link-primary")).toBe(false);

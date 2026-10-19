@@ -714,10 +714,16 @@
 
 .bj-profile .bj-tester-line {
   max-width: 100%;
-  margin-bottom: 0;
+  margin-bottom: var(--bj-space-5);
   padding: 0;
   border: none;
   background: transparent;
+}
+
+.bj-profile .bj-tester-line h2 {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .bj-account-delete {

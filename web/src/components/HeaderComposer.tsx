@@ -31,7 +31,7 @@ import "../styles/profile-studio.css";
 //                    failure's own words when the read or the save failed
 //   activeVersionId  the id of the profile version in use. The chips come from the version the resume
 //                    document was created against, which a later activation never moves, so when the two
-//                    differ the preview says it uses an earlier version (section 14.4 "Stale")
+//                    differ the preview says it uses an earlier version
 
 const DEFAULT_LAYOUT: Required<HeaderLayout> = {
   chips: ALL_HEADER_FIELDS.map((field) => ({ field, display_mode: "full" as ChipDisplayMode })),

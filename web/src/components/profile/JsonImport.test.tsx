@@ -1,7 +1,20 @@
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CONVERSION_PROMPT, RESUME_TEMPLATE } from "../../lib/template";
+import { expectNoSeriousA11yViolations } from "../../testing/a11y";
+import { settle, text, typeInto } from "../../testing/forms";
 import { tagsOf, textOfMarkup } from "../../testing/markup";
+import { buttonNamed, click, query, render } from "../../testing/render";
 import { ImportSection } from "./JsonImport";
+
+const download = vi.hoisted(() => ({ downloadJson: vi.fn() }));
+vi.mock("../../lib/profileDownload", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../lib/profileDownload")>()), downloadJson: download.downloadJson }));
+
+afterEach(() => {
+  download.downloadJson.mockReset();
+  vi.unstubAllGlobals();
+});
 
 // The JSON import waits while a resume-file import is under way (a file being read, a draft waiting
 // for a decision): the JSON preview replaces the file card, which would drop its review unseen.
@@ -38,5 +51,79 @@ describe("ImportSection while a resume-file import is open", () => {
     expect("disabled" in tagsOf(html, "textarea")[0]).toBe(false);
     expect(buttonStates(html)["Upload .json file"]).toBe(false);
     expect(textOfMarkup(html)).not.toContain("A file import above is in progress");
+  });
+});
+
+// What the import offers: the template, the conversion prompt, an upload and a paste box, and an Import that
+// is only ever pressed on purpose.
+describe("ImportSection", () => {
+  const section = (props: Partial<Parameters<typeof ImportSection>[0]> = {}) => render(<ImportSection replacing={false} busy={false} disabled={false} error={null} onImport={() => undefined} {...props} />);
+
+  it("is titled for what it does: set up a profile for a person with none, a new version for one with a profile", () => {
+    expect(text(query(section().container, "h2"))).toBe("Set up your profile");
+    expect(text(query(section({ replacing: true }).container, "h2"))).toBe("Import a new version");
+  });
+
+  it("downloads the blank template, which is the fixed one", () => {
+    const { container } = section();
+    click(buttonNamed(container, "Download blank template"));
+    expect(download.downloadJson).toHaveBeenCalledWith(RESUME_TEMPLATE, "between-jobs-template.json");
+  });
+
+  it("copies the conversion prompt and says so, and says when the browser refused", async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText: write } });
+    const { container } = section();
+    click(buttonNamed(container, "Copy conversion prompt"));
+    await settle();
+    expect(write).toHaveBeenCalledWith(CONVERSION_PROMPT);
+    expect(text(buttonNamed(container, "Copied ✓"))).toBe("Copied ✓");
+    const refused = section();
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockRejectedValue(new Error("blocked")) } });
+    click(buttonNamed(refused.container, "Copy conversion prompt"));
+    await settle();
+    expect(text(refused.container)).toContain("Couldn't copy to the clipboard.");
+  });
+
+  it("keeps Import off until something is pasted, then sends exactly the pasted text", () => {
+    const onImport = vi.fn();
+    const { container } = section({ onImport });
+    expect(buttonNamed(container, "Import").disabled).toBe(true);
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), "   ");
+    expect(buttonNamed(container, "Import").disabled).toBe(true);
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), '  {"personal": {}}  ');
+    click(buttonNamed(container, "Import"));
+    expect(onImport).toHaveBeenCalledWith('  {"personal": {}}  ');
+  });
+
+  it("sends an uploaded .json file's text at once, and lets the same file be chosen again", async () => {
+    const onImport = vi.fn();
+    const { container } = section({ onImport });
+    const input = query<HTMLInputElement>(container, 'input[type="file"]');
+    expect(input.accept).toBe(".json,application/json");
+    expect(input.hidden).toBe(true);
+    const file = { text: () => Promise.resolve('{"personal":{"name":"A"}}') };
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle();
+    expect(onImport).toHaveBeenCalledWith('{"personal":{"name":"A"}}');
+    expect(input.value).toBe("");
+  });
+
+  it("says Importing... and turns the buttons that would start another off while a request is out", () => {
+    const { container } = section({ busy: true });
+    expect(buttonNamed(container, "Importing...").disabled).toBe(true);
+    expect(buttonNamed(container, "Upload .json file").disabled).toBe(true);
+  });
+
+  it("shows the importer's refusal as an alert", () => {
+    const { container } = section({ error: "personal.name: field required" });
+    expect(text(query(container, '[role="alert"]'))).toBe("personal.name: field required");
+  });
+
+  it("is never a cyan fill, carries no inline style, and has no serious accessibility violation", async () => {
+    const { container } = section();
+    expect(container.querySelector(".bj-primary, [style]")).toBeNull();
+    await expectNoSeriousA11yViolations(container);
   });
 });
