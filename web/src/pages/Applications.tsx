@@ -5,16 +5,17 @@ import { nameOf, type MoveProblem } from "../components/applications/Application
 import { START_TRACKING_HEADING_ID, START_TRACKING_ID } from "../components/applications/TrackForms";
 import { NEXT_STEP_FOCUS_ID } from "../components/paper/NextStepBand";
 import { apiFetch } from "../lib/api";
-import { useSetupChecks } from "../lib/applicationsSetup";
 import { STATUS_LABELS, statusCounts } from "../lib/applicationsBoard";
 import type { Application, ApplicationStatus } from "../lib/applicationsTypes";
 import { phoneStatus, readStoredStatus, storeStatus } from "../lib/applicationsView";
 import { browserStorage } from "../lib/firstRun";
 import { nextStepWithRow, type NextStepInput } from "../lib/nextStep";
 import { START_TRACKING_INTENT, type ApplicationsFacts } from "../lib/nextStep/pages/applications";
+import { setupChecks } from "../lib/setupReads";
 import { formatTrailTime } from "../lib/trail";
 import { useIsPhone } from "../lib/useMediaQuery";
 import { useScrollToHash } from "../lib/useScrollToHash";
+import { useSetupReads } from "../lib/useSetupReads";
 
 // Applications: every job the person tracks, with its status, as a list, a board, or -- on a phone --
 // one status at a time. This file is the reading and the requests; what is drawn for each state is
@@ -22,7 +23,7 @@ import { useScrollToHash } from "../lib/useScrollToHash";
 // lib/nextStep/pages/applications.ts.
 //
 // Requests. GET /applications is the page's own data: when it fails the band says so (row F1) and
-// offers Try again. GET /profile/current and GET /credentials are read once (lib/applicationsSetup.ts)
+// offers Try again. GET /profile/current and GET /credentials are read once (lib/useSetupReads.ts)
 // because the band's setup rows need them. A status change is POST /applications/{id}/stage, followed
 // by a re-read of the whole list (no optimistic merge of a half-known row). Creating one is
 // POST /applications (a pasted posting) or POST /applications/from-url, each followed by the same
@@ -71,11 +72,13 @@ export default function Applications() {
   const [now] = useState(() => new Date());
   const phone = useIsPhone();
   const location = useLocation();
-  const { checks, retry: retrySetup } = useSetupChecks();
+  const setup = useSetupReads();
+  const checks = useMemo(() => setupChecks(setup.reads, setup.at, { modelKey: true }), [setup.reads, setup.at]);
+  const retrySetup = setup.retry;
   const inFlight = useRef(new Set<string>());
   // The setup reads as they were when "Try again" was pressed on them: their answer is the first
   // different one that is not still loading, and focus returns to the band then.
-  const setupRetry = useRef<typeof checks | null>(null);
+  const setupRetry = useRef<typeof setup.reads | null>(null);
   const latest = useRef<Application[] | null>(null);
   latest.current = applications;
 
@@ -167,7 +170,7 @@ export default function Applications() {
         void retryLoad();
         return;
       case "retry-setup":
-        setupRetry.current = checks;
+        setupRetry.current = setup.reads;
         retrySetup();
         // When the whole API was down the list failed too, and the body has no Retry of its own (the
         // band holds the only one), so a single press reads both.
@@ -199,10 +202,10 @@ export default function Applications() {
 
   useEffect(() => {
     const before = setupRetry.current;
-    if (before === null || checks === before || checks.profile.state === "loading" || checks.credentials.state === "loading") return;
+    if (before === null || setup.reads === before || setup.reads.profile.kind === "loading" || setup.reads.credentials.kind === "loading") return;
     setupRetry.current = null;
     setRefocus({ kind: "band" });
-  }, [checks]);
+  }, [setup.reads]);
 
   // Moves focus to where the person's place went: the band after "Try again" replaced its button, or
   // the card they just moved (a board card that changes column is a new element). It waits until the

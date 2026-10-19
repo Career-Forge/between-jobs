@@ -34,7 +34,7 @@ export function WorkspaceHeader({ application, now, statusBusy, onStatus, proble
   const title = snapshot?.title ?? "Application";
   const place = [snapshot?.company_name, snapshot?.location_text].filter((part): part is string => typeof part === "string" && part.trim() !== "");
   const posting = webAddress(snapshot?.source_url);
-  const appliedOn = formatAppliedDate(application.date_applied, now, undefined, application.status);
+  const appliedOn = formatAppliedDate(application.date_applied ?? null, now, undefined, application.status);
   return (
     <>
       <PageHeader

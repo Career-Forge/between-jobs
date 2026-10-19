@@ -239,6 +239,8 @@ describe("the band as the answers arrive", () => {
     api.apiFetch.mockClear();
     buttonNamed(band(container), "Try again").focus();
     click(buttonNamed(band(container), "Try again"));
+    // The old failure is gone in the render the press made, not a render later.
+    expect(text(band(container))).not.toContain("Couldn't check your setup");
     await settle();
     expect(calls().sort()).toEqual(["GET /credentials", "GET /profile/current"]);
     expect(sentence(container)).toBe("Your move on 2 · their move on 1.");
