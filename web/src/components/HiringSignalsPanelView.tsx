@@ -10,7 +10,7 @@ import {
   SEARCH_BUTTON_ID,
 } from "../lib/hiringSignalsPanelModel";
 import type { Freshness, HiringSignal, SavedPost } from "../lib/hiringSignalsTypes";
-import { hiringResultsTrail, hiringSavedTrail } from "../lib/researchTrails";
+import { hiringTrail } from "../lib/researchTrails";
 import { SavedPostCard } from "./HiringPostCard";
 import { FailureView, SearchResults } from "./HiringSignalsViews";
 import { BlockTrail } from "./paper/DocumentLayout";
@@ -64,6 +64,7 @@ export function HiringSignalsPanelView({
   const { search, freshness, saves, notice } = state;
   const busy = search.kind === "loading";
   const savedByActivity = savesByActivity(saves);
+  const trail = hiringTrail(search.kind === "ready" ? search.outcome.response : null, saves.length);
 
   return (
     <div className="bj-card bj-hs-panel">
@@ -169,10 +170,9 @@ export function HiringSignalsPanelView({
         </section>
       )}
 
-      {/* One trail line per block, in the document's margin from 1280px: where the results came from, and
-          what the person saved. */}
-      {search.kind === "ready" && <BlockTrail {...hiringResultsTrail(search.outcome.response)} />}
-      {saves.length > 0 && <BlockTrail {...hiringSavedTrail(saves.length)} />}
+      {/* One trail line for the block, in the document's margin from 1280px: where the results came from and
+          what the person saved, together. A result is drawn only once a search has come back. */}
+      {trail !== null && <BlockTrail {...trail} />}
     </div>
   );
 }

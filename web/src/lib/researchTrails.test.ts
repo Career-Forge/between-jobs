@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InterviewQuestion, InterviewSession } from "./interviewPracticeTypes";
-import { answerTrail, briefTrail, contactsTrail, draftTrail, eventsTrail, failedTrail, hiringResultsTrail, hiringSavedTrail, intelTrail, sessionTrail } from "./researchTrails";
+import { answerTrail, briefTrail, contactsTrail, draftTrail, eventsTrail, failedTrail, hiringTrail, intelTrail, sessionTrail } from "./researchTrails";
 import { buildReceipt, buildTrail, findForbiddenWord, type TrailInput } from "./trail";
 import type { ResearchRun } from "./research";
 
@@ -125,20 +125,39 @@ describe("Your play's trail", () => {
   });
 });
 
-describe("hiring posts trails", () => {
+describe("hiring posts trail", () => {
+  const search = (overrides: Partial<{ provider: string | null; cached: boolean }> = {}) => ({ provider: "brave", cached: false, signals: [], ...overrides }) as Parameters<typeof hiringTrail>[0];
+
   it("says the person's own search provider found the posts, code tagged them and no model was involved", () => {
-    const parts = hiringResultsTrail({ provider: "brave", cached: false, signals: [] });
+    const parts = hiringTrail(search(), 0)!;
     expect(words(parts.trail)).toBe("via Brave Search · tagged by code, no model involved");
     expect(buildTrail(parts.trail)!.glyphs).toEqual(["code"]);
   });
 
   it("names a cached result, and a provider this page does not know as the person's own", () => {
-    expect(words(hiringResultsTrail({ provider: null, cached: true, signals: [] }).trail)).toBe("via your search provider · tagged by code, no model involved · cached result");
+    expect(words(hiringTrail(search({ provider: null, cached: true }), 0)!.trail)).toBe("via your search provider · tagged by code, no model involved · cached result");
   });
 
-  it("says the person saved their posts, with the count", () => {
-    expect(words(hiringSavedTrail(1).trail)).toBe("You saved these · 1 post");
-    expect(words(hiringSavedTrail(3).trail)).toBe("You saved these · 3 posts");
-    expect(buildTrail(hiringSavedTrail(1).trail)!.glyphs).toEqual(["you"]);
+  it("says the person saved their posts, with the count, when nothing has been searched", () => {
+    expect(words(hiringTrail(null, 1)!.trail)).toBe("You saved these · 1 post");
+    expect(words(hiringTrail(null, 3)!.trail)).toBe("You saved these · 3 posts");
+    expect(buildTrail(hiringTrail(null, 1)!.trail)!.glyphs).toEqual(["you"]);
+  });
+
+  it("folds the saved posts into the search's line, so the block has one line with two marks at most", () => {
+    const trail = buildTrail(hiringTrail(search({ cached: true }), 2)!.trail)!;
+    expect(trail.text).toBe("via Brave Search · tagged by code, no model involved · cached result · You saved 2 posts");
+    expect(trail.glyphs).toEqual(["code", "you"]);
+    expect(words(hiringTrail(search(), 1)!.trail)).toBe("via Brave Search · tagged by code, no model involved · You saved 1 post");
+  });
+
+  it("draws no line when nothing has been searched and nothing is saved", () => {
+    expect(hiringTrail(null, 0)).toBeNull();
+  });
+
+  it("explains what a save is only when something is saved, and counts what was shown", () => {
+    const withSaves = receiptText(hiringTrail(search(), 2)!.receipt);
+    expect(withSaves).toEqual(expect.arrayContaining(["posts shown 0", "posts you saved 2", "A save keeps a pointer to the post, not its text."]));
+    expect(receiptText(hiringTrail(search(), 0)!.receipt).join(" ")).not.toContain("A save keeps");
   });
 });

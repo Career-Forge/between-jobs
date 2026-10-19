@@ -426,7 +426,16 @@ are `styles/research.css`.
   many searches failed or were skipped (one warning is one search). A field that did not come back leaves its slot out.
   A failed run keeps what the section already showed and puts a Retry beside it; a missing key or profile is a notice
   with the link that fixes it (through `lib/setupRequired.ts`) and no Retry; a stored run that could not be read is a
-  Retry that reads again, and its trail is the red cross.
+  Retry that reads again, and its trail is the red cross. A run that came back with nothing in it is not drawn as
+  something a model wrote: its line is the plain-code circle and "Searched with ...", since the backend makes no model
+  call when every search failed. GitHub's public member list needs no key, so a line that names it does not say "on
+  your keys".
+- **Focus.** A Retry removes the callout it is pressed in, which would drop keyboard focus on the page body, so
+  `FailureState` takes `restoreFocusTo`: a control that stays (the section's run button, a person's name in Contacts,
+  Practice's Submit or Start button) and is focused only if focus was inside the callout. Busy buttons are
+  `aria-disabled`, and a press on one is ignored before anything else happens (a paid lookup's confirm included).
+  Each section's status region exists before its words change, and Contacts has a hidden polite region for what a
+  lookup, a draft or a Copy came to.
 - **Evidence** is one pattern: a source link (an http or https address only, opened in a new tab and named as such) and,
   where a model gave one, its confidence as gold cells with the word. Company intel's high, medium and low are 3, 2 and 1
   cells of 3. A contact source's server value `verified` means the model read the source as clearly naming the person

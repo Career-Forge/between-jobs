@@ -223,31 +223,43 @@ export function briefTrail(brief: BriefFacts, now: Date, timeZone?: string): Res
 
 // ── hiring posts ──────────────────────────────────────────────────────────
 
-// What searched, for the block of results: the person's own search provider, with code tagging each post
-// (a pattern match over its wording) and no model anywhere in it. The query's own wording is the
-// results' first line, so it is not repeated here. No time came back with a search: a post's own time is
-// read off its address and shown on the post.
-export function hiringResultsTrail(response: Pick<SearchResponse, "provider" | "cached" | "signals">): ResearchTrailParts {
+// The Hiring posts block's one trail line. Where it goes in the document's margin is the block's, and the
+// block has one cell, so what searched and what the person saved are one line rather than two stacked in
+// the order they happened to mount.
+//
+//   a search has run, nothing saved   "○ via You.com · tagged by code, no model involved"
+//   ... and posts are saved           "○ via You.com · tagged by code, no model involved · ● You saved 2 posts"
+//   nothing searched, posts saved     "● You saved these · 2 posts"
+//
+// What searched is the person's own search provider, with code tagging each post (a pattern match over its
+// wording) and no model anywhere in it. The query's own wording is the results' first line, so it is not
+// repeated here. No time came back with a search: a post's own time is read off its address and shown on
+// the post. A save is the person's own action, and a saved post is only a pointer.
+export function hiringTrail(response: Pick<SearchResponse, "provider" | "cached" | "signals"> | null, saved: number): ResearchTrailParts | null {
+  const savedWords = saved === 1 ? "1 post" : `${saved} posts`;
+  const savedNote = saved > 0 ? "A save keeps a pointer to the post, not its text." : null;
+  if (response === null) {
+    if (saved <= 0) return null;
+    return {
+      trail: { glyph: "you", actor: "You saved these", extra: savedWords },
+      receipt: [{ label: "posts you saved", value: saved }, { note: savedNote }],
+      receiptTitle: "What a saved post is",
+    };
+  }
   return {
     trail: {
       glyph: "code",
       actor: `via ${searchProviderLabel(response.provider)}`,
       basis: "tagged by code, no model involved",
       extra: response.cached ? "cached result" : null,
+      also: saved > 0 ? { glyph: "you", text: `You saved ${savedWords}` } : null,
     },
     receipt: [
       { label: "posts shown", value: response.signals.length },
+      { label: "posts you saved", value: saved > 0 ? saved : null },
       { note: "Nothing is loaded from a post's own site until you press Show post." },
+      { note: savedNote },
     ],
     receiptTitle: "Where these posts came from",
-  };
-}
-
-// The posts the person saved to this application: their own action, and a saved post is only a pointer.
-export function hiringSavedTrail(saved: number): ResearchTrailParts {
-  return {
-    trail: { glyph: "you", actor: "You saved these", extra: saved === 1 ? "1 post" : `${saved} posts` },
-    receipt: [{ note: "A save keeps a pointer to the post, not its text." }],
-    receiptTitle: "What a saved post is",
   };
 }
