@@ -324,6 +324,15 @@ button.bj-band-action,
   white-space: nowrap;
 }
 
+/* A band button that is waiting on its request keeps its place and focus (it is aria-disabled, not
+   disabled) and is drawn quieter. Not the locked one, which is aria-disabled too but is already drawn
+   as the page's one disabled primary and stays at full strength; and this lives with the band, not in
+   Today's sheet, because the sign-in page waits on its band the same way. */
+.bj-band button[aria-disabled="true"]:not(.bj-band-locked) {
+  opacity: 0.65;
+  cursor: progress;
+}
+
 /* The one disabled-primary case: a dashed cyan outline, not a fill, and it stays focusable. */
 button.bj-band-locked,
 button.bj-band-locked:hover {

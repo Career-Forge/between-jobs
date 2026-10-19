@@ -3,6 +3,7 @@ import tokensCss from "../tokens.css?raw";
 import { blockOf, declarationsFor, rulesOf, tokenResolver, withoutMedia } from "../testing/css";
 import { PHONE_QUERY } from "../lib/useMediaQuery";
 import paperCss from "./paper.css?raw";
+import todayCss from "./today.css?raw";
 
 // paper.css is read as text (there is no layout engine in the test run). What it pins is the
 // stylesheet's measurable rules: sizes, the band's shape, motion, and that it defines no color of its own.
@@ -148,6 +149,15 @@ describe("the next-step band", () => {
     const locked = declarationsFor(base, "button.bj-band-locked");
     expect(locked.border).toBe("1px dashed var(--bj-cyan)");
     expect(locked.background).toBe("transparent");
+  });
+
+  it("dims a waiting band button here, not in Today's sheet, and never the locked one (it is aria-disabled too)", () => {
+    const busy = ".bj-band button[aria-disabled=\"true\"]:not(.bj-band-locked)";
+    expect(declarationsFor(base, busy)).toEqual({ opacity: "0.65", cursor: "progress" });
+    // The same dimming at higher specificity than `button.bj-band-locked { opacity: 1 }` would win
+    // over it, which is what the :not() prevents; the rule must not come back in today.css either.
+    expect(rulesOf(todayCss).flatMap((rule) => rule.selectors).filter((selector) => selector.startsWith(".bj-band ") && selector.includes("aria-disabled"))).toEqual([]);
+    expect(declarationsFor(base, "button.bj-band-locked").opacity).toBe("1");
   });
 
   it("keeps one minimum height for loading, unlit and lit, so a step arriving does not move the page", () => {
