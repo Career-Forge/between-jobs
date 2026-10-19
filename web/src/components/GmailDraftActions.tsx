@@ -21,7 +21,11 @@ import { SETTINGS_PATH } from "../lib/settingsPaths";
 //     all. An offer waits for a definite yes.
 //
 // Nothing here sends mail. The mail-app link only opens the person's mail app with the draft
-// filled in; the recipient is the contact's work email the person looked up, or empty.
+// filled in; the recipient is the contact's work email the person looked up, or empty. "Create Gmail
+// draft" saves the email as a draft in the person's own Gmail, to be sent from there.
+//
+// Every control is secondary (outlined): the page's one cyan fill is the next-step band's. A busy button
+// is aria-disabled, not disabled, so a focused one keeps focus.
 
 export interface GmailDraftActionsProps {
   state: GmailState;
@@ -82,7 +86,13 @@ export function GmailDraftActions({
     return (
       <div className="bj-actions">
         {recipient ? (
-          <button className="bj-primary" onClick={onPush} disabled={pushing}>
+          <button
+            type="button"
+            aria-disabled={pushing ? true : undefined}
+            onClick={() => {
+              if (!pushing) onPush();
+            }}
+          >
             {pushing ? "Creating draft..." : "Create Gmail draft"}
           </button>
         ) : (
@@ -100,12 +110,12 @@ export function GmailDraftActions({
       <p className="bj-muted bj-small">{fallbackExplanation(state, unavailableMessage)}</p>
       <div className="bj-actions">
         {state === "not_connected" && (
-          <Link className="bj-button-link bj-button-link-primary" to={SETTINGS}>
+          <Link className="bj-button-link" to={SETTINGS}>
             Connect Gmail in Settings
           </Link>
         )}
         {state === "reconnect_needed" && (
-          <Link className="bj-button-link bj-button-link-primary" to={SETTINGS}>
+          <Link className="bj-button-link" to={SETTINGS}>
             Reconnect Gmail in Settings
           </Link>
         )}
@@ -118,7 +128,9 @@ export function GmailDraftActions({
             This email is too long to open in a mail app. Copy it instead.
           </span>
         )}
-        <button onClick={onCopyAll}>{copied ? "Copied!" : "Copy subject and email"}</button>
+        <button type="button" onClick={onCopyAll}>
+          {copied ? "Copied!" : "Copy subject and email"}
+        </button>
       </div>
       {copyFailed && (
         <p className="bj-error" role="status">

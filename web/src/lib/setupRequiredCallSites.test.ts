@@ -65,41 +65,58 @@ const NOTICE_FROM_STATE = /<SetupRequiredNotice notice=\{state\.notice\} \/>/;
 const SETUP_BRANCH = /if \(state\.kind === "setup"\) \{\s*return <SetupRequiredNotice notice=\{state\.notice\} \/>;\s*\}/;
 
 const SITES: Record<string, Site> = {
-  "../components/CompanyIntelPanel.tsx": {
+  // Company intel, Contacts and Events share one hook for their stored run and the run itself: it turns a
+  // failed run into the helper's result and keeps it whole, and RunProblem draws it with its link. Each of
+  // the three panels draws the run's problem through RunProblem.
+  "../lib/useResearchRun.ts": {
     calls: 1,
+    draws: 0,
+    keeps: [/setProblem\(failureOf\(e, fallbacks\.run\)\)/],
+    forbids: [BY_HAND],
+  },
+  "../components/research/RunParts.tsx": {
+    calls: 0,
     draws: 1,
-    keeps: [/setState\(\{ kind: "setup", notice: setup \}\)/, NOTICE_FROM_STATE],
+    keeps: [/problem\.kind === "setup"\) return <SetupRequiredNotice notice=\{problem\.notice\} \/>/],
+  },
+  "../components/CompanyIntelPanel.tsx": {
+    calls: 0,
+    draws: 0,
+    keeps: [/<RunProblem problem=\{problem\} /],
+  },
+  "../components/WarmPathEventsPanel.tsx": {
+    calls: 0,
+    draws: 0,
+    keeps: [/<RunProblem problem=\{problem\} /],
   },
   "../components/ContactFinderPanel.tsx": {
-    calls: 5, // generate, enrich, find LinkedIn, draft, push to Gmail
-    draws: 5,
+    // The run is the hook's. Each person's lookups and drafts keep their failure whole, on that person's
+    // row: find work email, find LinkedIn, draft, create the Gmail draft.
+    calls: 4,
+    draws: 1,
     keeps: [
-      /setState\(\{ kind: "setup", notice: setup \}\)/,
-      /setEnrichError\(setup\)/,
-      /setLinkedInError\(setup\)/,
-      /setDraftError\(setup\)/,
-      /setPushError\(setup\)/,
-      NOTICE_FROM_STATE,
-      /<ProblemView problem=\{enrichError\} \/>/,
-      /<ProblemView problem=\{linkedInError\} \/>/,
-      /<ProblemView problem=\{draftError\} \/>/,
-      /<ProblemView problem=\{pushError\} \/>/,
+      /<RunProblem problem=\{problem\} /,
+      /fail\(candidate, "email", failureOf\(e, /,
+      /fail\(candidate, "linkedin", failureOf\(e, /,
+      /fail\(candidate, "draft", failureOf\(e, /,
+      /fail\(candidate, "gmail", failureOf\(e, /,
+      /<SetupRequiredNotice notice=\{issue\.problem\.notice\} \/>/,
     ],
   },
   "../components/InterviewPracticePanel.tsx": {
-    calls: 1,
-    draws: 1,
-    keeps: [/message: setup\.message,\s*setup,/, /<SetupRequiredNotice notice=\{state\.setup\} \/>/],
+    calls: 2, // start a session, submit an answer
+    draws: 2,
+    keeps: [
+      /setStartProblem\(failureOf\(e, /,
+      /setSubmitProblem\(failureOf\(e, /,
+      /<SetupRequiredNotice notice=\{startProblem\.notice\} \/>/,
+      /<SetupRequiredNotice notice=\{problem\.notice\} \/>/,
+    ],
   },
   "../components/PositioningBriefPanel.tsx": {
     calls: 1,
     draws: 1,
-    keeps: [/setState\(\{ kind: "setup", notice: setup \}\)/, NOTICE_FROM_STATE],
-  },
-  "../components/WarmPathEventsPanel.tsx": {
-    calls: 1,
-    draws: 1,
-    keeps: [/setState\(\{ kind: "setup", notice: setup \}\)/, NOTICE_FROM_STATE],
+    keeps: [/setOutcome\(failureOf\(e, "Failed to generate"\)\)/, /<SetupRequiredNotice notice=\{outcome\.notice\} \/>/],
   },
   // The run's failure is turned into a notice by the generation hook; the panel draws it.
   "../lib/useGeneration.ts": {

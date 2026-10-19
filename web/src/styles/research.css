@@ -1,0 +1,471 @@
+/* The workspace's research and prepare sections: Company intel, Contacts, Events, Practice and Your play
+ * (components/CompanyIntelPanel.tsx and its neighbors, with the shared pieces in components/research/).
+ * The document layout, the trail margin, section chapters and state views are paper.css's and
+ * paper-doc.css's, the workspace's own pieces (intro, caption, callout) are workspace.css's; this file is
+ * only what these sections add: a list of items, the evidence line, a chip, a draft well and the practice
+ * answer rows.
+ *
+ * Tokens only -- no color is defined here -- and no rule fills anything cyan: the page's one cyan fill is
+ * the next-step band's button, and these sections add none. Gold is evidence (a model's reading, never a
+ * checked fact), muted is plain code and "not set", red is for a real failure and lives in the state
+ * views. Selection is not used here.
+ *
+ * The only media query is the shell's own phone width. */
+
+.bj-rs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-rs-bar {
+  margin: 0;
+}
+
+/* The status region that announces a changed count after a run. It holds nothing while there is nothing
+   to say, and then takes no room. */
+.bj-rs-live:empty {
+  display: none;
+}
+
+.bj-rs-meta {
+  margin: 0;
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.bj-rs-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-2) var(--bj-space-3);
+}
+
+/* What a section says before anything has been run: its paragraphs breathe, and the link to where keys are
+   added is a full-height line of its own on a phone. */
+.bj-rs-empty {
+  margin-top: var(--bj-space-2);
+}
+
+.bj-rs-empty .bj-state-body p + p {
+  margin-top: var(--bj-space-2);
+}
+
+/* ------------------------------------------------------------------ */
+/* A list of items: claims, people, events                              */
+/* ------------------------------------------------------------------ */
+
+.bj-rs-list,
+.bj-rs-answers {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-rs-item {
+  display: grid;
+  gap: var(--bj-space-2);
+  min-width: 0;
+  padding: var(--bj-space-4) 0;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-rs-item:last-child {
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-rs-eyebrow {
+  margin: 0;
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+h3.bj-rs-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.bj-rs-sub {
+  margin: 0;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+.bj-rs-text {
+  max-width: 680px;
+  margin: 0;
+  font-size: var(--bj-text-control);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bj-rs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-2) var(--bj-space-3);
+  margin: 0;
+}
+
+.bj-rs-priority {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A label over a block of text: "Subject", "Lead with". */
+.bj-rs-label {
+  margin: 0;
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------ */
+/* Evidence: a source and, where a model gave one, its confidence        */
+/* ------------------------------------------------------------------ */
+
+.bj-rs-evidence {
+  display: grid;
+  gap: var(--bj-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-rs-ev {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-1) var(--bj-space-3);
+  min-width: 0;
+  font-size: var(--bj-text-small);
+}
+
+.bj-rs-conf {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--bj-space-2);
+}
+
+.bj-rs-conf-cells {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.bj-rs-conf-word {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-badge);
+}
+
+.bj-rs-source {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bj-rs-source--plain {
+  color: var(--bj-text-muted);
+}
+
+.bj-rs-ev--citation {
+  gap: var(--bj-space-2);
+}
+
+.bj-rs-cite-label {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-badge);
+}
+
+.bj-rs-cite {
+  min-width: 0;
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+/* An outline chip with a mark and its word. Solid gold is the firmer reading, dashed gold the weaker one,
+   muted the neutral one: the word and the mark carry it, the outline only repeats it. */
+.bj-rs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 var(--bj-space-2);
+  border: 1px solid var(--bj-outline);
+  border-radius: 12px;
+  color: var(--bj-text);
+  font-size: var(--bj-text-badge);
+  white-space: nowrap;
+}
+
+.bj-rs-chip--solid {
+  border-color: var(--bj-gold);
+}
+
+.bj-rs-chip--dashed {
+  border-color: var(--bj-gold);
+  border-style: dashed;
+}
+
+.bj-rs-chip--muted {
+  color: var(--bj-text-muted);
+}
+
+/* Something to know that is not a failure: a gold diamond and the server's own words. */
+.bj-rs-note {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--bj-gold);
+  border-radius: 8px;
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+/* A link inside a sentence is told apart by an underline, not by colour alone. */
+.bj-rs-fact a,
+.bj-rs-note a,
+.bj-rs .bj-setup-notice a {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+/* ------------------------------------------------------------------ */
+/* Contacts: lookups, issues and the draft                              */
+/* ------------------------------------------------------------------ */
+
+.bj-rs-facts {
+  display: grid;
+  gap: var(--bj-space-1);
+}
+
+.bj-rs-facts:empty {
+  display: none;
+}
+
+.bj-rs-fact {
+  margin: 0;
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+.bj-rs-fact-label {
+  color: var(--bj-text-muted);
+}
+
+.bj-rs-issue {
+  min-width: 0;
+}
+
+/* A draft stays a draft: an outline that says so, with no fill. */
+.bj-rs-draft {
+  display: grid;
+  gap: var(--bj-space-3);
+  min-width: 0;
+  margin-top: var(--bj-space-2);
+  padding: var(--bj-space-4);
+  border: 1px dashed var(--bj-outline);
+  border-radius: 10px;
+}
+
+.bj-rs-draft-state {
+  margin: 0;
+  color: var(--bj-text-muted);
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.bj-rs-field {
+  display: grid;
+  justify-items: start;
+  gap: var(--bj-space-1);
+  min-width: 0;
+}
+
+/* The person's own words or a model's, set in a well on the surface color so it reads as text to copy. */
+.bj-rs-well {
+  width: 100%;
+  max-width: 680px;
+  margin: 0;
+  padding: var(--bj-space-3) var(--bj-space-4);
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-surface);
+  font-size: var(--bj-text-small);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
+/* Practice                                                             */
+/* ------------------------------------------------------------------ */
+
+.bj-rs-question,
+.bj-rs-feedback,
+.bj-rs-report,
+.bj-rs-review {
+  display: grid;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-rs-qtext {
+  font-family: var(--bj-font-display);
+  font-size: 19px;
+  line-height: 1.35;
+}
+
+.bj-rs-question textarea {
+  width: 100%;
+  max-width: 680px;
+  border-color: var(--bj-outline);
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-body);
+  line-height: 1.5;
+}
+
+.bj-rs-question textarea[readonly] {
+  opacity: 0.7;
+}
+
+/* An earlier answer is a disclosure: its question and score on one line, the rest opens under it. */
+.bj-rs-answer {
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-rs-answer:last-child {
+  border-bottom: 1px solid var(--bj-border);
+}
+
+button.bj-rs-answer-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--bj-space-3);
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 0;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+}
+
+.bj-rs-answer-name {
+  min-width: 0;
+  font-size: var(--bj-text-small);
+  overflow-wrap: anywhere;
+}
+
+.bj-rs-answer-score {
+  flex: none;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.bj-rs-answer > div {
+  padding-bottom: var(--bj-space-4);
+}
+
+/* The four STAR parts: gold and filled where the model found the part, an outline where it did not. The
+   word is in every segment, and a visually hidden "found" or "not found" says which. */
+.bj-rs-star {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bj-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-rs-star-part {
+  min-width: 84px;
+  padding: 4px var(--bj-space-3);
+  border: 1px solid var(--bj-outline);
+  border-radius: 4px;
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-badge);
+  text-align: center;
+}
+
+.bj-rs-star-part--on {
+  border-color: var(--bj-gold);
+  background: var(--bj-gold);
+  color: var(--bj-bg);
+  font-weight: 600;
+  forced-color-adjust: none;
+}
+
+.bj-rs-star-block {
+  display: grid;
+  gap: var(--bj-space-1);
+}
+
+/* ------------------------------------------------------------------ */
+/* Your play                                                            */
+/* ------------------------------------------------------------------ */
+
+.bj-rs-brief {
+  display: grid;
+  gap: var(--bj-space-4);
+}
+
+.bj-rs-part {
+  display: grid;
+  gap: var(--bj-space-2);
+  min-width: 0;
+  padding-top: var(--bj-space-3);
+  border-top: 1px solid var(--bj-border);
+}
+
+/* ------------------------------------------------------------------ */
+/* Hiring posts                                                         */
+/* ------------------------------------------------------------------ */
+
+/* The Hiring posts panel (HiringSignalsPanelView.tsx) is still drawn as a card; inside the workspace the
+   section is the card, so the panel's own border, fill and inset go. */
+.bj-ws-panel .bj-hs-panel.bj-card {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+@media (max-width: 959px) {
+  /* A touch target is 44px: a source link and a link in a lookup line are standing lines of their own. */
+  .bj-rs-ev a,
+  .bj-rs-fact a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .bj-rs-empty .bj-state-link a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .bj-rs-draft {
+    padding: var(--bj-space-3);
+  }
+}

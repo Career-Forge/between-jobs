@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 const sources = import.meta.glob(
   [
     "./useGeneration.ts",
-    "../components/CompanyIntelPanel.tsx",
+    "./useResearchRun.ts",
     "../components/InterviewPracticePanel.tsx",
     "../pages/Discover.tsx",
     "../components/settings/ProviderConnectCard.tsx",
@@ -30,7 +30,8 @@ const sources = import.meta.glob(
 // fine; one fewer is a revert.
 const MINIMUM_CALL_SITES: Record<string, number> = {
   "./useGeneration.ts": 3, // generate, the two downloads (one function for both), the export checks
-  "../components/CompanyIntelPanel.tsx": 1,
+  // Company intel, Contacts and Events share it: the stored run's read and the run itself.
+  "./useResearchRun.ts": 2,
   "../components/InterviewPracticePanel.tsx": 2, // start a session, submit an answer
   "../pages/Discover.tsx": 2, // search, track
   // Settings: saving a key (credential_save is behind the enrollment gate), choosing a model, removing

@@ -1,29 +1,49 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { apiFetch, ApiError } from "../lib/api";
 import { copyToClipboard } from "../lib/clipboard";
-import {
-  gmailAccess,
-  gmailState,
-  gmailUnavailableMessage,
-  learnFromGmailRefusal,
-} from "../lib/gmailAccess";
+import { gmailAccess, gmailState, gmailUnavailableMessage, learnFromGmailRefusal } from "../lib/gmailAccess";
 import { subjectAndBody } from "../lib/mailto";
-import { type Problem, type SetupNotice, setupRequiredNotice } from "../lib/setupRequired";
+import { contactConfidence, countWords, runDate, safeSourceUrl } from "../lib/research";
+import { contactsTrail, draftTrail, failedTrail } from "../lib/researchTrails";
+import { failureOf, type Failure } from "../lib/setupRequired";
+import { SETTINGS_PATH } from "../lib/settingsPaths";
 import { refreshCapabilities, useCapabilities } from "../lib/useCapabilities";
 import { useGmailConnection } from "../lib/useGmailConnection";
+import { useNow } from "../lib/useNow";
+import { useResearchRun } from "../lib/useResearchRun";
 import { GmailDraftActions } from "./GmailDraftActions";
-import { ProblemView, SetupRequiredNotice } from "./SetupRequiredNotice";
+import { BlockTrail } from "./paper/DocumentLayout";
+import { FailureState, LoadingState, PartialState } from "./paper/StateViews";
+import { TrailLine } from "./paper/TrailLine";
+import { EmptyBlock } from "./research/EmptyBlock";
+import { Chip, EvidenceItem, EvidenceList, EvidenceNote } from "./research/Evidence";
+import { RunButton, RunProblem, RunWarnings } from "./research/RunParts";
+import { SetupRequiredNotice } from "./SetupRequiredNotice";
+import "../styles/workspace.css";
+import "../styles/research.css";
 
-// ContactFinder panel (outreach-contactfinder.md Phase B/C) -- Proposal
-// §27, §37.4 ("Company Intel and ContactFinder are not competing
-// top-level products. They are contextual capabilities inside the
-// application"). Discovery never surfaces a bare name, matching the same
-// "claims, not one opaque blob" discipline CompanyIntelPanel already
-// established. Enrichment (Phase C) is opt-in, one candidate at a time,
-// gated behind an explicit confirm dialog naming what will happen --
-// discovery itself never touches an email or phone number.
+// Contacts: people the web publicly names for this company, each linked to the source that names them
+// (the section's one evidence pattern, components/research/Evidence.tsx), and the opt-in steps from there.
+//
+//   a run             searches with the person's own You.com or Firecrawl key and asks their model to pick
+//                     out names; code keeps a name only when the source's own title or snippet contains it,
+//                     and ranks the people (the kind of role, how many sources name them, hiring language).
+//                     No email address or phone number comes with a run.
+//   Find work email   one person at a time, on the person's own Apollo or Hunter credit, behind a
+//                     confirm that says so
+//   Find LinkedIn     one person at a time, on the person's own Exa credit, behind a confirm too
+//   Draft outreach    the person's model writes four messages from that contact's sources
+//
+// OUTREACH STAYS A DRAFT. Nothing here sends anything. A draft is shown with its four messages and a
+// Copy for each; under it, GmailDraftActions offers the ways out that match the person's own Gmail state
+// (an optional, invite-only connection: a draft saved in their Gmail, or their mail app, or the clipboard).
+// The copy under every draft says plainly that nothing is sent.
+//
+// A failure of one person's lookup or draft sits on that person's row, not at the top of the panel, and
+// the server declining to draft because it had nothing to ground a draft in (INSUFFICIENT_EVIDENCE) is a
+// gold note, not an error. A failed run keeps the people already shown (lib/useResearchRun.ts).
 
-type Confidence = "verified" | "strong" | "inferred" | "unsupported";
+type Confidence = string;
 
 interface Evidence {
   id: string;
@@ -47,25 +67,19 @@ interface Candidate {
   enriched_email: string | null;
   enriched_email_status: string | null;
   enrichment_provider: string | null;
-  // Set on every enrichment attempt, success or failure -- distinguishes
-  // "never tried" (null) from "tried, found nothing" (set, but
-  // enriched_email is still null), so the UI doesn't invite an
-  // unlimited number of repeat paid lookups with no indication a real
-  // provider credit was already spent on this candidate.
+  // Set on every enrichment attempt, success or failure -- distinguishes "never tried" (null) from
+  // "tried, found nothing" (set, but enriched_email is still null), so the UI does not invite an
+  // unlimited number of repeat paid lookups with no indication a real provider credit was already spent.
   enriched_at: string | null;
-  // outreach-v2-search-first.md Phase K -- Exa People Search, a
-  // distinct opt-in action from email enrichment above (never an
-  // email). match_confidence mirrors the evidence Confidence vocabulary
-  // informally ("strong"/"inferred"/"unsupported"), never "verified".
+  // A distinct opt-in action from email enrichment (never an email). The confidence is the lookup's own
+  // word ("strong", "inferred", "unsupported"), never a verification.
   discovered_linkedin_url: string | null;
   linkedin_discovery_confidence: string | null;
   linkedin_discovery_provider: string | null;
-  // Same "never tried" vs "tried, found nothing" distinction as
-  // enriched_at above.
+  // Same "never tried" vs "tried, found nothing" distinction as enriched_at above.
   linkedin_discovered_at: string | null;
-  // outreach-v2-search-first.md Phase I: literally the same hook
-  // outreach_writer.build_hook_context would pick for this candidate --
-  // null only when the candidate has no evidence to hook from.
+  // The hook the outreach writer would pick for this person -- null only when there is no evidence to
+  // hook from.
   approach_hint: string | null;
 }
 
@@ -92,11 +106,11 @@ interface ContactsResponse {
   candidates: Candidate[];
 }
 
-type State =
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "setup"; notice: SetupNotice }
-  | { kind: "ready"; run: Run | null; candidates: Candidate[] };
+type Action = "email" | "linkedin" | "draft" | "gmail";
+
+// What went wrong (or was said) about one person's lookup or draft: a setup notice, an error with a
+// Retry, or a plain note.
+type Issue = { action: Action; problem: Failure | { kind: "note"; message: string } };
 
 // How long "Couldn't copy" stays up before the button reads as before.
 const COPY_FAILED_NOTICE_MS = 6000;
@@ -109,34 +123,25 @@ const PERSONA_LABELS: Record<string, string> = {
   senior_ic: "Senior IC",
 };
 
-function confidenceBadgeClass(confidence: Confidence): string {
-  switch (confidence) {
-    case "verified":
-      return "bj-badge-emerald";
-    case "strong":
-      return "bj-badge-gold";
-    case "inferred":
-      return "bj-badge-muted";
-    case "unsupported":
-      return "bj-badge-muted";
-  }
-}
+const DRAFT_FIELDS = [
+  ["subject", "Subject"],
+  ["email_body", "Email"],
+  ["linkedin_message", "LinkedIn message"],
+  ["follow_up_message", "Follow-up"],
+] as const;
 
-export function ContactFinderPanel({ applicationId }: { applicationId: string }) {
-  const [state, setState] = useState<State>({ kind: "loading" });
-  const [generating, setGenerating] = useState(false);
-  const [enrichingId, setEnrichingId] = useState<string | null>(null);
-  const [enrichError, setEnrichError] = useState<Problem | null>(null);
-  const [findingLinkedInId, setFindingLinkedInId] = useState<string | null>(null);
-  const [linkedInError, setLinkedInError] = useState<Problem | null>(null);
-  const [draftingId, setDraftingId] = useState<string | null>(null);
-  const [draftError, setDraftError] = useState<Problem | null>(null);
+export function ContactFinderPanel({ applicationId, now }: { applicationId: string; now?: Date }) {
+  const clock = useNow(now);
+  const { read, running, problem, load, run, update } = useResearchRun<ContactsResponse>(`/applications/${applicationId}/contacts`, {
+    read: "Failed to load",
+    run: "Failed to generate",
+  });
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const [issues, setIssues] = useState<Readonly<Record<string, Issue>>>({});
   const [drafts, setDrafts] = useState<Record<string, OutreachDraft>>({});
   const [copiedField, setCopiedField] = useState<string | null>(null);
   // The field whose copy the browser refused, so its button can say so instead of seeming dead.
   const [copyFailedField, setCopyFailedField] = useState<string | null>(null);
-  const [pushingId, setPushingId] = useState<string | null>(null);
-  const [pushError, setPushError] = useState<Problem | null>(null);
   // Whether Gmail is open to this person and what state their connection is in decide what sits
   // under a draft (GmailDraftActions). Their connection is read only once Gmail is known to be open
   // to them: nothing is asked when it is not for them, nor while that is not known.
@@ -144,139 +149,74 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
   const { connection, markReconnectNeeded } = useGmailConnection(access === "available");
   const gmail = gmailState(access, connection);
 
-  const load = useCallback(async () => {
-    setState({ kind: "loading" });
-    try {
-      const result = await apiFetch<ContactsResponse>(`/applications/${applicationId}/contacts`);
-      setState({ kind: "ready", run: result.run, candidates: result.candidates });
-    } catch (e) {
-      setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to load" });
-    }
-  }, [applicationId]);
+  const key = (candidate: Candidate, action: Action) => `${candidate.id}:${action}`;
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  function start(candidate: Candidate, action: Action): boolean {
+    if (busy.has(key(candidate, action))) return false;
+    setBusy((previous) => new Set(previous).add(key(candidate, action)));
+    setIssues((previous) => {
+      const { [candidate.id]: _cleared, ...rest } = previous;
+      return rest;
+    });
+    return true;
+  }
 
-  async function generate() {
-    setGenerating(true);
-    try {
-      const result = await apiFetch<ContactsResponse>(`/applications/${applicationId}/contacts`, {
-        method: "POST",
-      });
-      setState({ kind: "ready", run: result.run, candidates: result.candidates });
-    } catch (e) {
-      const setup = setupRequiredNotice(e);
-      if (setup !== null) {
-        setState({ kind: "setup", notice: setup });
-        return;
-      }
-      setState({ kind: "error", message: e instanceof Error ? e.message : "Failed to generate" });
-    } finally {
-      setGenerating(false);
-    }
+  function finish(candidate: Candidate, action: Action) {
+    setBusy((previous) => {
+      const next = new Set(previous);
+      next.delete(key(candidate, action));
+      return next;
+    });
+  }
+
+  function fail(candidate: Candidate, action: Action, problem: Issue["problem"]) {
+    setIssues((previous) => ({ ...previous, [candidate.id]: { action, problem } }));
+  }
+
+  // /enrich and /find-linkedin return only the raw contact_candidates row they updated: no `evidence` (a
+  // separate table) and no `approach_hint` (made only by the list endpoint). A full replace would drop
+  // those and crash the next render's evidence list, so the reply is merged onto the existing person.
+  function merge(updated: Candidate) {
+    update((data) => ({ ...data, candidates: data.candidates.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)) }));
   }
 
   async function enrich(candidate: Candidate) {
     const confirmed = window.confirm(
-      `Look up a confirmed work email for ${candidate.person_name}? This uses your own Apollo ` +
-        "and/or Hunter credit for one lookup -- never a bulk search, never personal contact info.",
+      `Look up a confirmed work email for ${candidate.person_name}? This uses your own Apollo ` + "and/or Hunter credit for one lookup -- never a bulk search, never personal contact info.",
     );
-    if (!confirmed) return;
-
-    setEnrichingId(candidate.id);
-    setEnrichError(null);
+    if (!confirmed || !start(candidate, "email")) return;
     try {
-      const updated = await apiFetch<Candidate>(
-        `/applications/${applicationId}/contacts/${candidate.id}/enrich`,
-        { method: "POST" },
-      );
-      // /enrich returns only the raw contact_candidates row it updated --
-      // no `evidence` (a separate table) or `approach_hint` (synthesized
-      // only by the list endpoint). A full replace here would null those
-      // out and crash the very next render's candidate.evidence.map(...);
-      // merge onto the existing candidate instead.
-      setState((prev) =>
-        prev.kind === "ready"
-          ? {
-              ...prev,
-              candidates: prev.candidates.map((c) =>
-                c.id === updated.id ? { ...c, ...updated } : c,
-              ),
-            }
-          : prev,
-      );
+      merge(await apiFetch<Candidate>(`/applications/${applicationId}/contacts/${candidate.id}/enrich`, { method: "POST" }));
     } catch (e) {
-      const setup = setupRequiredNotice(e);
-      if (setup !== null) {
-        setEnrichError(setup);
-        return;
-      }
-      setEnrichError(e instanceof Error ? e.message : "Enrichment failed");
+      fail(candidate, "email", failureOf(e, "Enrichment failed"));
     } finally {
-      setEnrichingId(null);
+      finish(candidate, "email");
     }
   }
 
   async function findLinkedIn(candidate: Candidate) {
-    const confirmed = window.confirm(
-      `Look up a LinkedIn profile for ${candidate.person_name} via Exa? This uses your own Exa ` +
-        "credit for one lookup.",
-    );
-    if (!confirmed) return;
-
-    setFindingLinkedInId(candidate.id);
-    setLinkedInError(null);
+    const confirmed = window.confirm(`Look up a LinkedIn profile for ${candidate.person_name} via Exa? This uses your own Exa ` + "credit for one lookup.");
+    if (!confirmed || !start(candidate, "linkedin")) return;
     try {
-      const updated = await apiFetch<Candidate>(
-        `/applications/${applicationId}/contacts/${candidate.id}/find-linkedin`,
-        { method: "POST" },
-      );
-      // Same reasoning as enrich() above -- merge, never replace.
-      setState((prev) =>
-        prev.kind === "ready"
-          ? {
-              ...prev,
-              candidates: prev.candidates.map((c) =>
-                c.id === updated.id ? { ...c, ...updated } : c,
-              ),
-            }
-          : prev,
-      );
+      merge(await apiFetch<Candidate>(`/applications/${applicationId}/contacts/${candidate.id}/find-linkedin`, { method: "POST" }));
     } catch (e) {
-      const setup = setupRequiredNotice(e);
-      if (setup !== null) {
-        setLinkedInError(setup);
-        return;
-      }
-      setLinkedInError(e instanceof Error ? e.message : "LinkedIn lookup failed");
+      fail(candidate, "linkedin", failureOf(e, "LinkedIn lookup failed"));
     } finally {
-      setFindingLinkedInId(null);
+      finish(candidate, "linkedin");
     }
   }
 
   async function draftOutreach(candidate: Candidate) {
-    setDraftingId(candidate.id);
-    setDraftError(null);
+    if (!start(candidate, "draft")) return;
     try {
-      const result = await apiFetch<{ draft: OutreachDraft }>(
-        `/applications/${applicationId}/contacts/${candidate.id}/draft-outreach`,
-        { method: "POST" },
-      );
-      setDrafts((prev) => ({ ...prev, [candidate.id]: result.draft }));
+      const result = await apiFetch<{ draft: OutreachDraft }>(`/applications/${applicationId}/contacts/${candidate.id}/draft-outreach`, { method: "POST" });
+      setDrafts((previous) => ({ ...previous, [candidate.id]: result.draft }));
     } catch (e) {
-      const setup = setupRequiredNotice(e);
-      if (setup !== null) {
-        setDraftError(setup);
-        return;
-      }
-      if (e instanceof ApiError && e.code === "INSUFFICIENT_EVIDENCE") {
-        setDraftError(e.message);
-        return;
-      }
-      setDraftError(e instanceof Error ? e.message : "Drafting failed");
+      // Nothing to ground a draft in is the server's honest answer, not a failure: its reason, as a note.
+      if (e instanceof ApiError && e.code === "INSUFFICIENT_EVIDENCE") fail(candidate, "draft", { kind: "note", message: e.message });
+      else fail(candidate, "draft", failureOf(e, "Drafting failed"));
     } finally {
-      setDraftingId(null);
+      finish(candidate, "draft");
     }
   }
 
@@ -292,244 +232,216 @@ export function ContactFinderPanel({ applicationId }: { applicationId: string })
   }
 
   async function pushToGmail(candidate: Candidate) {
-    setPushingId(candidate.id);
-    setPushError(null);
+    if (!start(candidate, "gmail")) return;
     try {
-      const updated = await apiFetch<OutreachDraft>(
-        `/applications/${applicationId}/contacts/${candidate.id}/push-to-gmail`,
-        { method: "POST" },
-      );
-      setDrafts((prev) => ({ ...prev, [candidate.id]: updated }));
+      const updated = await apiFetch<OutreachDraft>(`/applications/${applicationId}/contacts/${candidate.id}/push-to-gmail`, { method: "POST" });
+      setDrafts((previous) => ({ ...previous, [candidate.id]: updated }));
     } catch (e) {
       // The server says what this page only believed: Google stopped accepting the connection, or
       // Gmail is not open to this person. Either way the draft can still be copied or opened in a
       // mail app, so show that now and not after a reload. This comes first and runs for every
-      // failure: the reconnect answer is also a notice, which the lines below show and return on.
+      // failure: the reconnect answer is also a notice, which the lines below show.
       learnFromGmailRefusal(e, { reconnectNeeded: markReconnectNeeded, unavailable: refreshCapabilities });
-      const setup = setupRequiredNotice(e);
-      if (setup !== null) {
-        setPushError(setup);
-        return;
-      }
-      setPushError(e instanceof Error ? e.message : "Couldn't create that Gmail draft.");
+      fail(candidate, "gmail", failureOf(e, "Couldn't create that Gmail draft."));
     } finally {
-      setPushingId(null);
+      finish(candidate, "gmail");
     }
   }
 
+  function retry(candidate: Candidate, action: Action) {
+    if (action === "email") void enrich(candidate);
+    else if (action === "linkedin") void findLinkedIn(candidate);
+    else if (action === "draft") void draftOutreach(candidate);
+    else void pushToGmail(candidate);
+  }
+
+  const ready = read.kind === "ready" ? read.data : null;
+  const data = ready !== null && ready.run !== null ? { run: ready.run, candidates: ready.candidates } : null;
+  const researched = data === null ? null : runDate(data.run, clock);
+  const meta = data === null ? [] : [researched === null ? null : `Researched ${researched}`, countWords(data.candidates.length, "person", "people")].filter((part): part is string => part !== null);
+
+  const trail =
+    data !== null
+      ? contactsTrail(data.run, data.candidates.length, clock)
+      : read.kind === "failed"
+        ? failedTrail("Contacts couldn't be read")
+        : problem?.kind === "error"
+          ? failedTrail("That contact search didn't finish")
+          : null;
+
   return (
-    <div className="bj-card bj-contact-finder-panel">
-      <h2>Contacts</h2>
-      <p className="bj-muted bj-small">
-        Publicly sourced people only -- every contact below links to where it came from. No
-        emails or phone numbers here; that's a separate, opt-in step. Runs real You.com/Firecrawl
-        searches plus one LLM call each time, using your own keys.
+    <div className="bj-rs">
+      <p className="bj-ws-intro">
+        People the web publicly names for this company, each linked to the source that names them. A run searches with your You.com or Firecrawl key and asks your model to pick out names, so it uses
+        your own keys each time. No email address or phone number comes with it: looking one up is a separate step you choose, for one person at a time.
       </p>
-      <div className="bj-actions">
-        <button className="bj-primary" onClick={() => void generate()} disabled={generating}>
-          {generating
-            ? "Researching..."
-            : state.kind === "ready" && state.run
-              ? "Refresh"
-              : "Find contacts"}
-        </button>
+      <RunButton
+        label={data !== null ? "Refresh" : "Find contacts"}
+        busyLabel="Researching..."
+        busy={running}
+        held={read.kind === "loading"}
+        onRun={() => {
+          if (read.kind !== "loading") void run();
+        }}
+      />
+
+      <div role="status" className="bj-rs-live">
+        {meta.length > 0 && <p className="bj-rs-meta">{meta.join(" · ")}</p>}
       </div>
 
-      {state.kind === "loading" && <div className="bj-muted bj-small">Loading...</div>}
-      {state.kind === "error" && <div className="bj-error">{state.message}</div>}
-      {state.kind === "setup" && <SetupRequiredNotice notice={state.notice} />}
-      <ProblemView problem={enrichError} />
-      <ProblemView problem={linkedInError} />
-      <ProblemView problem={draftError} />
-      <ProblemView problem={pushError} />
+      {read.kind === "loading" && <LoadingState rows={3} rowHeight={112} label="Loading contacts..." />}
+      {read.kind === "failed" && <FailureState message={read.message} onRetry={() => void load()} />}
+      <RunProblem problem={problem} onRetry={() => void run()} />
 
-      {state.kind === "ready" && state.run === null && (
-        <div className="bj-muted bj-small">No contacts found yet -- run a search above.</div>
+      {ready !== null && data === null && (
+        <EmptyBlock heading="No contacts found yet" link={{ to: SETTINGS_PATH, label: "Keys are added in Settings" }}>
+          <p>
+            A run finds people the web publicly names for this company: a hiring lead, a recruiter, an engineering manager, a senior leader or a senior engineer, each with the source that names them and a
+            way in to start the conversation. It gives no email address or phone number.
+          </p>
+          <p>It needs a model key and a You.com or Firecrawl key. Its hiring-post searches also need a Firecrawl key, and are skipped without one.</p>
+        </EmptyBlock>
       )}
 
-      {state.kind === "ready" && state.run !== null && (
+      {data !== null && (
         <>
-          {state.run.warnings.length > 0 && (
-            <ul className="bj-small bj-generate-warnings">
-              {state.run.warnings.map((w) => (
-                <li key={w}>{w}</li>
-              ))}
-            </ul>
-          )}
-          {state.candidates.length === 0 ? (
-            <div className="bj-muted bj-small">
-              No named individuals turned up in that search pass -- try refreshing.
-            </div>
+          <RunWarnings run={data.run} />
+          {data.candidates.length === 0 ? (
+            <p className="bj-muted bj-small">No named people turned up in that search pass. Refresh to try again.</p>
           ) : (
-            <div className="bj-coverage-list">
-              {state.candidates.map((candidate) => (
-                <div key={candidate.id} className="bj-coverage-evidence">
-                  <div className="bj-coverage-name">
-                    {candidate.person_name}
-                    {candidate.claimed_title ? ` -- ${candidate.claimed_title}` : ""}
-                  </div>
-                  {candidate.claimed_team && (
-                    <div className="bj-muted bj-small">{candidate.claimed_team}</div>
-                  )}
-                  <div className="bj-small">{candidate.relevance_reason}</div>
-                  {candidate.approach_hint && (
-                    <div className="bj-small">
-                      <strong>Approach:</strong> {candidate.approach_hint}
-                    </div>
-                  )}
-                  <div className="bj-actions">
-                    <span className="bj-badge-muted">
-                      {PERSONA_LABELS[candidate.persona] ?? candidate.persona}
-                    </span>
-                    <span className="bj-small">{Math.round(candidate.priority_score)}/100</span>
-                  </div>
-                  <ul className="bj-small">
-                    {candidate.evidence.map((e) => (
-                      <li key={e.id}>
-                        <span className={confidenceBadgeClass(e.confidence)}>{e.confidence}</span>{" "}
-                        <a href={e.source_url} target="_blank" rel="noreferrer">
-                          {e.source_title || e.source_url}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="bj-actions">
-                    {candidate.enriched_email ? (
-                      <span className="bj-small">
-                        {candidate.enriched_email}
-                        {candidate.enriched_email_status ? ` (${candidate.enriched_email_status})` : ""}
-                        {candidate.enrichment_provider ? ` via ${candidate.enrichment_provider}` : ""}
-                      </span>
-                    ) : candidate.enriched_at ? (
-                      <span className="bj-small bj-muted">
-                        No confirmed email found.{" "}
-                        <button
-                          className="bj-link-button"
-                          onClick={() => void enrich(candidate)}
-                          disabled={enrichingId === candidate.id}
-                        >
-                          {enrichingId === candidate.id ? "Looking up..." : "Retry"}
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        className="bj-primary"
-                        onClick={() => void enrich(candidate)}
-                        disabled={enrichingId === candidate.id}
-                      >
-                        {enrichingId === candidate.id ? "Looking up..." : "Find work email"}
-                      </button>
-                    )}
-                    {candidate.discovered_linkedin_url ? (
-                      <span className="bj-small">
-                        <a href={candidate.discovered_linkedin_url} target="_blank" rel="noreferrer">
-                          LinkedIn
-                        </a>
-                        {candidate.linkedin_discovery_confidence
-                          ? ` (${candidate.linkedin_discovery_confidence})`
-                          : ""}
-                      </span>
-                    ) : candidate.linkedin_discovered_at ? (
-                      <span className="bj-small bj-muted">
-                        No LinkedIn profile found.{" "}
-                        <button
-                          className="bj-link-button"
-                          onClick={() => void findLinkedIn(candidate)}
-                          disabled={findingLinkedInId === candidate.id}
-                        >
-                          {findingLinkedInId === candidate.id ? "Looking up..." : "Retry"}
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => void findLinkedIn(candidate)}
-                        disabled={findingLinkedInId === candidate.id}
-                      >
-                        {findingLinkedInId === candidate.id ? "Looking up..." : "Find LinkedIn"}
-                      </button>
-                    )}
-                    <button
-                      className="bj-primary"
-                      onClick={() => void draftOutreach(candidate)}
-                      disabled={draftingId === candidate.id}
-                    >
-                      {draftingId === candidate.id
-                        ? "Drafting..."
-                        : drafts[candidate.id]
-                          ? "Redraft outreach"
-                          : "Draft outreach"}
-                    </button>
-                  </div>
-
-                  {drafts[candidate.id] && (
-                    <div className="bj-coverage-evidence">
-                      {drafts[candidate.id].rubric_warnings.length > 0 && (
-                        <ul className="bj-small bj-generate-warnings">
-                          {drafts[candidate.id].rubric_warnings.map((w) => (
-                            <li key={w}>{w}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {(
-                        [
-                          ["subject", "Subject", drafts[candidate.id].subject],
-                          ["email_body", "Email", drafts[candidate.id].email_body],
-                          [
-                            "linkedin_message",
-                            "LinkedIn message",
-                            drafts[candidate.id].linkedin_message,
-                          ],
-                          ["follow_up_message", "Follow-up", drafts[candidate.id].follow_up_message],
-                        ] as const
-                      ).map(([field, label, text]) => (
-                        <div key={field} className="bj-small">
-                          <strong>{label}:</strong>
-                          <div>{text}</div>
-                          <button
-                            className="bj-link-button"
-                            onClick={() => void copyText(`${candidate.id}-${field}`, text)}
-                          >
-                            {copiedField === `${candidate.id}-${field}`
-                              ? "Copied!"
-                              : copyFailedField === `${candidate.id}-${field}`
-                                ? "Couldn't copy"
-                                : "Copy"}
-                          </button>
-                        </div>
-                      ))}
-                      <p className="bj-muted bj-small">
-                        Nothing is sent automatically -- copy whichever message you want and send
-                        it yourself.
+            <ul className="bj-rs-list" aria-label="People named for this company">
+              {data.candidates.map((candidate) => {
+                const draft = drafts[candidate.id];
+                const issue = issues[candidate.id];
+                const title = [candidate.claimed_title, candidate.claimed_team].filter((part): part is string => typeof part === "string" && part !== "");
+                const linkedin = safeSourceUrl(candidate.discovered_linkedin_url);
+                const lookingUpEmail = busy.has(key(candidate, "email"));
+                const lookingUpLinkedIn = busy.has(key(candidate, "linkedin"));
+                return (
+                  <li key={candidate.id} className="bj-rs-item">
+                    <h3 className="bj-rs-title">{candidate.person_name}</h3>
+                    {title.length > 0 && <p className="bj-rs-sub">{title.join(" · ")}</p>}
+                    <p className="bj-rs-chips">
+                      <Chip tone="muted">{PERSONA_LABELS[candidate.persona] ?? candidate.persona}</Chip>{" "}
+                      <span className="bj-rs-priority">Priority {Math.round(candidate.priority_score)} / 100</span>
+                    </p>
+                    <p className="bj-rs-text">{candidate.relevance_reason}</p>
+                    {candidate.approach_hint && (
+                      <p className="bj-rs-text">
+                        <strong>Approach:</strong> {candidate.approach_hint}
                       </p>
-                      <GmailDraftActions
-                        state={gmail}
-                        unavailableMessage={gmailUnavailableMessage(access)}
-                        alreadyPushed={Boolean(drafts[candidate.id].gmail_draft_id)}
-                        recipient={candidate.enriched_email}
-                        subject={drafts[candidate.id].subject}
-                        body={drafts[candidate.id].email_body}
-                        pushing={pushingId === candidate.id}
-                        copied={copiedField === `${candidate.id}-all`}
-                        copyFailed={copyFailedField === `${candidate.id}-all`}
-                        onPush={() => void pushToGmail(candidate)}
-                        onCopyAll={() =>
-                          void copyText(
-                            `${candidate.id}-all`,
-                            subjectAndBody({
-                              subject: drafts[candidate.id].subject,
-                              body: drafts[candidate.id].email_body,
-                            }),
-                          )
-                        }
-                      />
+                    )}
+                    <EvidenceList label={`Sources naming ${candidate.person_name}`}>
+                      {(candidate.evidence ?? []).map((evidence) => (
+                        <EvidenceItem key={evidence.id} url={evidence.source_url} title={evidence.source_title} confidence={contactConfidence(evidence.confidence)} />
+                      ))}
+                    </EvidenceList>
+
+                    <div className="bj-rs-facts">
+                      {candidate.enriched_email ? (
+                        <p className="bj-rs-fact">
+                          <span className="bj-rs-fact-label">Work email</span> {candidate.enriched_email}
+                          {candidate.enriched_email_status ? ` (${candidate.enriched_email_status})` : ""}
+                          {candidate.enrichment_provider ? ` via ${candidate.enrichment_provider}` : ""}
+                        </p>
+                      ) : candidate.enriched_at ? (
+                        <p className="bj-rs-fact bj-muted">
+                          No confirmed email found.{" "}
+                          <button type="button" className="bj-link-button" aria-disabled={lookingUpEmail ? true : undefined} onClick={() => void enrich(candidate)}>
+                            {lookingUpEmail ? "Looking up..." : "Retry"}
+                          </button>
+                        </p>
+                      ) : null}
+                      {linkedin !== null ? (
+                        <p className="bj-rs-fact">
+                          <a href={linkedin} target="_blank" rel="noopener noreferrer">
+                            LinkedIn profile<span className="bj-visually-hidden"> for {candidate.person_name} (opens in a new tab)</span>
+                          </a>
+                          {candidate.linkedin_discovery_confidence ? ` · ${candidate.linkedin_discovery_confidence} match` : ""}
+                          {candidate.linkedin_discovery_provider ? ` via ${candidate.linkedin_discovery_provider}` : ""}
+                          {candidate.linkedin_discovery_confidence !== "strong" ? ". A name search can surface someone else: check it is the right person." : ""}
+                        </p>
+                      ) : candidate.linkedin_discovered_at ? (
+                        <p className="bj-rs-fact bj-muted">
+                          No LinkedIn profile found.{" "}
+                          <button type="button" className="bj-link-button" aria-disabled={lookingUpLinkedIn ? true : undefined} onClick={() => void findLinkedIn(candidate)}>
+                            {lookingUpLinkedIn ? "Looking up..." : "Retry"}
+                          </button>
+                        </p>
+                      ) : null}
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
+
+                    <div className="bj-actions">
+                      {!candidate.enriched_email && !candidate.enriched_at && (
+                        <button type="button" aria-disabled={lookingUpEmail ? true : undefined} onClick={() => void enrich(candidate)}>
+                          {lookingUpEmail ? "Looking up..." : "Find work email"}
+                        </button>
+                      )}
+                      {!candidate.discovered_linkedin_url && !candidate.linkedin_discovered_at && (
+                        <button type="button" aria-disabled={lookingUpLinkedIn ? true : undefined} onClick={() => void findLinkedIn(candidate)}>
+                          {lookingUpLinkedIn ? "Looking up..." : "Find LinkedIn"}
+                        </button>
+                      )}
+                      <button type="button" aria-disabled={busy.has(key(candidate, "draft")) ? true : undefined} onClick={() => void draftOutreach(candidate)}>
+                        {busy.has(key(candidate, "draft")) ? "Drafting..." : draft ? "Redraft outreach" : "Draft outreach"}
+                      </button>
+                    </div>
+
+                    {issue !== undefined && (
+                      <div className="bj-rs-issue">
+                        {issue.problem.kind === "setup" ? (
+                          <SetupRequiredNotice notice={issue.problem.notice} />
+                        ) : issue.problem.kind === "note" ? (
+                          <EvidenceNote>{issue.problem.message}</EvidenceNote>
+                        ) : (
+                          <FailureState message={issue.problem.message} onRetry={() => retry(candidate, issue.action)} />
+                        )}
+                      </div>
+                    )}
+
+                    {draft && (
+                      <div className="bj-rs-draft" role="group" aria-label={`Outreach draft for ${candidate.person_name}`}>
+                        <p className="bj-rs-draft-state">Draft -- not sent</p>
+                        <TrailLine trail={draftTrail().trail} receipt={draftTrail().receipt} receiptTitle={draftTrail().receiptTitle} />
+                        {draft.rubric_warnings.length > 0 && <PartialState lead="A code check flagged this draft:" notices={draft.rubric_warnings} />}
+                        {DRAFT_FIELDS.map(([field, label]) => {
+                          const text = draft[field];
+                          const copyKey = `${candidate.id}-${field}`;
+                          return (
+                            <div key={field} className="bj-rs-field">
+                              <h4 className="bj-rs-label">{label}</h4>
+                              <p className="bj-rs-well">{text}</p>
+                              <button type="button" className="bj-link-button" aria-label={`Copy ${label.toLowerCase()}`} onClick={() => void copyText(copyKey, text)}>
+                                {copiedField === copyKey ? "Copied!" : copyFailedField === copyKey ? "Couldn't copy" : "Copy"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                        <p className="bj-ws-caption">Nothing is sent from here. Copy whichever message you want and send it yourself.</p>
+                        <GmailDraftActions
+                          state={gmail}
+                          unavailableMessage={gmailUnavailableMessage(access)}
+                          alreadyPushed={Boolean(draft.gmail_draft_id)}
+                          recipient={candidate.enriched_email}
+                          subject={draft.subject}
+                          body={draft.email_body}
+                          pushing={busy.has(key(candidate, "gmail"))}
+                          copied={copiedField === `${candidate.id}-all`}
+                          copyFailed={copyFailedField === `${candidate.id}-all`}
+                          onPush={() => void pushToGmail(candidate)}
+                          onCopyAll={() => void copyText(`${candidate.id}-all`, subjectAndBody({ subject: draft.subject, body: draft.email_body }))}
+                        />
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </>
       )}
+
+      {trail !== null && <BlockTrail trail={trail.trail} receipt={trail.receipt} receiptTitle={trail.receiptTitle} />}
     </div>
   );
 }
