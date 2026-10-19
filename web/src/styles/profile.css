@@ -377,6 +377,7 @@
 
 .bj-entry-detail {
   margin-top: var(--bj-space-2);
+  overflow-wrap: anywhere;
 }
 
 .bj-entry-detail ul {

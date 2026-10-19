@@ -80,7 +80,7 @@ describe("profile.css", () => {
   const phoneBlock = phone(profileCss);
 
   it("lets user text wrap inside its column instead of widening the page", () => {
-    for (const selector of [".bj-prof-block", ".bj-profile-headline", ".bj-chip", ".bj-simple-body", ".bj-project-body", ".bj-language-chip", ".bj-metric-pill", ".bj-import-text pre", ".bj-timeline-title", ".bj-citation-body"]) {
+    for (const selector of [".bj-prof-block", ".bj-profile-headline", ".bj-chip", ".bj-simple-body", ".bj-project-body", ".bj-language-chip", ".bj-metric-pill", ".bj-import-text pre", ".bj-timeline-title", ".bj-citation-body", ".bj-entry-detail"]) {
       const own = declarationsFor(base, selector);
       expect(own["overflow-wrap"] ?? own["white-space"], selector).toBeDefined();
     }
