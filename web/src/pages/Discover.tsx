@@ -42,7 +42,8 @@ import { useSetupReads } from "../lib/useSetupReads";
 // reads GET /profile/current and GET /credentials (the setup the search needs) and GET /saved-searches
 // when it opens, so the band knows what is missing before any request that would need it is made. A
 // search is made only by the form (Enter, its Search, or the band's), one at a time, and never while
-// setup is known to be missing. A test pins this (Discover.test.tsx).
+// the setup reads show it missing (a server answer of SETUP_REQUIRED does not stop the next press: the
+// server is asked again). A test pins this (Discover.test.tsx).
 //
 // This file is the reading and the requests; what is drawn for each state is
 // components/discover/DiscoverView.tsx, the row words are lib/discoverRow.ts.
@@ -112,9 +113,13 @@ export default function Discover() {
       ? {
           message: serverNotice?.message ?? "Discover scores jobs against your profile with your model.",
           missing: knownMissing as [StateLink, ...StateLink[]],
+          blocksSearch: readMissing,
         }
       : null;
-  const setupMissing = setupView !== null;
+  // Only what the reads show stops a search. When just the server said setup is missing, a second
+  // press asks it again: the person may have fixed it in another tab, and the server is the authority.
+  const searchBlocked = setupView !== null && setupView.blocksSearch === true;
+  const checkingSetup = profileRead.kind === "loading" || credentials.kind === "loading";
 
   // ── what the band is given ───────────────────────────────────────────────
 
@@ -176,7 +181,7 @@ export default function Discover() {
   // hooks above; none of them calls `search`.
 
   function runSearch() {
-    if (setupMissing) return;
+    if (searchBlocked) return;
     // The band's button is where focus is when it asks; that button is replaced by "Searching...", so
     // focus is handed to the band's own sentence rather than dropped.
     bandFocus.armIfBandFocused();
@@ -265,6 +270,7 @@ export default function Discover() {
       saving={saving}
       search={searchView}
       setup={setupView}
+      checkingSetup={checkingSetup}
       tracking={tracking}
       tracked={tracked}
       trackErrors={trackErrors}

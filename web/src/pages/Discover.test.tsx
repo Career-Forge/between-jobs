@@ -356,6 +356,36 @@ describe("setup that is known to be missing", () => {
     expect([words(link), link.getAttribute("href")]).toEqual(["Open Settings", "/settings"]);
   });
 
+  it("asks the server again on the next press after it said setup is missing, and shows the results once it is fixed", async () => {
+    let asked = 0;
+    answer({
+      "/discover?": () => {
+        asked += 1;
+        if (asked === 1) throw new FakeApiError(409, "Add a model key before searching.", { code: "SETUP_REQUIRED", capability: "job_scoring", missing: ["credential"] });
+        return response();
+      },
+    });
+    const { container } = await draw();
+    await search(container);
+    expect(container.querySelector(".bj-state--setup")).not.toBeNull();
+    expect(words(form(container))).not.toContain("Search is waiting on the setup above.");
+    await search(container);
+    expect(callsTo("GET /discover")).toHaveLength(2);
+    expect(container.querySelector(".bj-state--setup")).toBeNull();
+    expect(container.querySelectorAll("li.bj-disc-row").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the 'Find a job' text back until the setup reads have answered, so it is not swapped for the setup block", async () => {
+    let release: (value: unknown) => void = () => undefined;
+    answer({ "/profile/current": () => new Promise((resolve) => (release = resolve)) });
+    const { container } = await draw();
+    expect(container.querySelector(".bj-state--empty")).toBeNull();
+    expect(container.querySelector(".bj-state--setup")).toBeNull();
+    await act(async () => release(GOOD_PROFILE));
+    await flush();
+    expect(words(query(container, ".bj-state--empty"))).toContain("Find a job");
+  });
+
   it("believes the server when it says the profile is what is missing", async () => {
     answer({ "/discover?": new FakeApiError(409, "Import and activate a resume profile before searching for jobs.", { code: "SETUP_REQUIRED", settingsPath: "/profile", capability: "profile", missing: ["profile_version"] }) });
     const { container } = await draw();

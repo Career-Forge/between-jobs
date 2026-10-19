@@ -30,6 +30,12 @@ export type SearchView =
 export interface SetupView {
   message: string;
   missing: readonly [StateLink, ...StateLink[]];
+  /**
+   * False when only the server said setup is missing (its own answer to a search, not something the
+   * setup reads show): Search stays pressable, since asking the server again is how a person finds out
+   * they fixed it elsewhere. True (the default) when the reads show it, where a search could not work.
+   */
+  blocksSearch?: boolean;
 }
 
 export interface DiscoverViewProps {
@@ -46,6 +52,8 @@ export interface DiscoverViewProps {
   search: SearchView;
   /** Setup is known to be missing (read, or the server said so): drawn instead of the search's body. */
   setup: SetupView | null;
+  /** The setup reads are still out: the idle "Find a job" text waits for them, so it is not swapped for the setup block a moment later. */
+  checkingSetup?: boolean;
   tracking: ReadonlySet<string>;
   tracked: Readonly<Record<string, string>>;
   trackErrors: Readonly<Record<string, string>>;
@@ -72,7 +80,7 @@ export function DiscoverView(props: DiscoverViewProps) {
         onChange={props.onValuesChange}
         searching={search.kind === "loading"}
         searched={search.kind === "ready" || search.kind === "error"}
-        blockedReason={setup === null ? null : SETUP_BLOCKED_NOTE}
+        blockedReason={setup === null || setup.blocksSearch === false ? null : SETUP_BLOCKED_NOTE}
         onSearch={props.onSearch}
         onSave={props.onSave}
         saving={props.saving}
@@ -82,7 +90,7 @@ export function DiscoverView(props: DiscoverViewProps) {
         <SetupRequiredState message={setup.message} missing={setup.missing} />
       ) : (
         <>
-          {search.kind === "idle" && (
+          {search.kind === "idle" && props.checkingSetup !== true && (
             <EmptyState heading="Find a job">
               <p>
                 Postings from company job boards and your connected search providers appear here, each with a fit score from your model. Nothing is searched until you ask: enter words
