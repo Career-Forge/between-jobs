@@ -240,6 +240,7 @@ describe("Skip to next step", () => {
     const signedIn = drawing.filter((path) => path !== "pages/Login.tsx" && path !== "pages/Landing.tsx");
     expect(signedIn).toEqual([
       "components/HiringSignalsPageView.tsx",
+      "components/RouteBoundary.tsx", // the loading band of a page whose file is on the way (at the same addresses)
       "components/applications/ApplicationsView.tsx",
       "components/discover/DiscoverView.tsx",
       "components/today/TodayView.tsx",

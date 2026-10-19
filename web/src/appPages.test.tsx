@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { CROSS_NAV_ITEMS } from "./lib/applicationsBoard";
 import { response as discoverResponse } from "./testing/discoverFixtures";
@@ -144,6 +144,21 @@ function expectWholePage(container: HTMLElement, what: string) {
   expect(duplicateIds(container), `${what}: duplicate ids`).toEqual([]);
   expect(brokenLocalLinks(container), `${what}: links to nowhere on the page`).toEqual([]);
 }
+
+// The signed-in pages are fetched the first time they are opened (App.tsx), so the first test to open one would race
+// the import of its file. They are all loaded up front: what is under test here is each page, not the loading.
+beforeAll(async () => {
+  await Promise.all([
+    import("./pages/Today"),
+    import("./pages/Discover"),
+    import("./pages/HiringSignals"),
+    import("./pages/Applications"),
+    import("./pages/ApplicationWorkspace"),
+    import("./pages/Practice"),
+    import("./pages/Profile"),
+    import("./pages/Settings"),
+  ]);
+});
 
 beforeEach(() => {
   who.n += 1;
