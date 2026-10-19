@@ -431,23 +431,6 @@ body:has(.bj-more-sheet[open]) {
   }
 }
 
-.bj-empty {
-  border: 1px solid var(--bj-border);
-  border-radius: 10px;
-  background: var(--bj-surface);
-  padding: 28px;
-  max-width: 560px;
-}
-
-.bj-empty h2 {
-  margin-top: 0;
-}
-
-.bj-empty p {
-  color: var(--bj-text-muted);
-  margin-bottom: 0;
-}
-
 .bj-error {
   color: var(--bj-danger);
   font-size: 13px;
@@ -478,15 +461,12 @@ body:has(.bj-more-sheet[open]) {
   gap: 12px;
 }
 
-/* Emerald = completed/verified; gold = review/pending; cyan = active/
- * in-flight; violet = elevated/in-process; danger = closed-out negative
- * -- per the semantic contract in tokens.css, extended for application
- * status rather than inventing new meanings per status. */
+/* Emerald = completed/verified; gold = review/pending; violet =
+ * elevated/in-process -- per the semantic contract in tokens.css. Cyan is
+ * the page's one primary fill, never a badge, so there is no cyan badge. */
 .bj-badge-emerald,
 .bj-badge-gold,
-.bj-badge-cyan,
-.bj-badge-violet,
-.bj-badge-danger {
+.bj-badge-violet {
   font-size: 12px;
   font-weight: 600;
   padding: 3px 10px;
@@ -505,27 +485,9 @@ body:has(.bj-more-sheet[open]) {
   border-color: var(--bj-gold);
 }
 
-.bj-badge-cyan {
-  color: var(--bj-cyan);
-  border-color: var(--bj-cyan);
-}
-
 .bj-badge-violet {
   color: var(--bj-violet);
   border-color: var(--bj-violet);
-}
-
-.bj-badge-danger {
-  color: var(--bj-danger);
-  border-color: var(--bj-danger);
-}
-
-/* Two or more badges side by side where a card header has room for one. */
-.bj-badge-group {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-end;
 }
 
 .bj-badge-muted {
@@ -563,14 +525,6 @@ body:has(.bj-more-sheet[open]) {
   font-size: 13px;
   color: var(--bj-text-muted);
   cursor: pointer;
-}
-
-.bj-profile-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
 }
 
 /* A group of two or more segments of which one is chosen (the selection primitive in tokens.css:
@@ -970,19 +924,6 @@ button.bj-danger {
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-.bj-honest-floor-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.bj-honest-floor-section-label {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--bj-text-muted);
 }
 
 /* ------------------------------------------------------------------ */
