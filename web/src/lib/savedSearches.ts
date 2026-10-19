@@ -134,6 +134,21 @@ export function savedSearchesReducer(
   }
 }
 
+// ── keeping the keyboard's place when a row goes ───────────────────────────
+
+/** What a row's Delete button carries as `data-focus-key`, so focus can be handed to it from a neighbour. */
+export function deleteFocusKey(id: string): string {
+  return `saved-search-delete:${id}`;
+}
+
+/** Where focus should go when this row is deleted, best first: the Delete button of the row after it,
+ *  else of the row before it. Empty when it is the only row (the card then draws nothing). */
+export function focusKeysAfterRemoving(searches: readonly SavedSearch[], id: string): string[] {
+  const index = searches.findIndex((search) => search.id === id);
+  if (index === -1) return [];
+  return [searches[index + 1], searches[index - 1]].filter((neighbour): neighbour is SavedSearch => neighbour !== undefined).map((neighbour) => deleteFocusKey(neighbour.id));
+}
+
 // ── the requests ───────────────────────────────────────────────────────────
 
 const LOAD_FAILED = "We could not load your saved searches.";

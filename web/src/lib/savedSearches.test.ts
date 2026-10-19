@@ -3,6 +3,8 @@ import { ApiError } from "./api";
 import type { SavedSearch } from "./discoverTypes";
 import { buildTrail } from "./trail";
 import {
+  deleteFocusKey,
+  focusKeysAfterRemoving,
   SAVED_SEARCHES_NOTE,
   SAVED_SEARCHES_PATH,
   deleteSavedSearch,
@@ -352,5 +354,21 @@ describe("when a saved search was last checked", () => {
       expect(built?.text.toLowerCase()).not.toContain("key");
       expect(built?.text.toLowerCase()).not.toContain("model");
     }
+  });
+});
+
+
+describe("where focus goes when a row is deleted", () => {
+  const rows = [search({ id: "a" }), search({ id: "b" }), search({ id: "c" })];
+
+  it("is the next row's Delete button, then the previous row's", () => {
+    expect(focusKeysAfterRemoving(rows, "a")).toEqual([deleteFocusKey("b")]);
+    expect(focusKeysAfterRemoving(rows, "b")).toEqual([deleteFocusKey("c"), deleteFocusKey("a")]);
+    expect(focusKeysAfterRemoving(rows, "c")).toEqual([deleteFocusKey("b")]);
+  });
+
+  it("is nothing for the only row, and for a row that is not listed", () => {
+    expect(focusKeysAfterRemoving([search({ id: "a" })], "a")).toEqual([]);
+    expect(focusKeysAfterRemoving(rows, "zzz")).toEqual([]);
   });
 });

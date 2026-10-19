@@ -1,5 +1,6 @@
 import {
   SAVED_SEARCHES_HEADING,
+  deleteFocusKey,
   SAVED_SEARCHES_NOTE,
   savedSearchActionLabel,
   savedSearchTrail,
@@ -116,6 +117,7 @@ export function SavedSearchesCardView({
                   type="button"
                   aria-disabled={waiting ? true : undefined}
                   aria-label={savedSearchActionLabel("delete", search)}
+                  data-focus-key={deleteFocusKey(search.id)}
                   onClick={() => !waiting && actions.remove(search.id)}
                 >
                   Delete
