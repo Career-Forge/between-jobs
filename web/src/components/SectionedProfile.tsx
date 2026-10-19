@@ -463,7 +463,7 @@ function ExperienceEntry({ entry, onEdit, onDelete }: { entry: Experience; onEdi
       </div>
       <div className="bj-timeline-body">
         <div className="bj-timeline-head">
-          <div>
+          <div className="bj-timeline-title">
             <h4>
               {entry.title} <PinnedBadge pin={entry.pin} />
             </h4>

@@ -80,10 +80,15 @@ describe("profile.css", () => {
   const phoneBlock = phone(profileCss);
 
   it("lets user text wrap inside its column instead of widening the page", () => {
-    for (const selector of [".bj-prof-block", ".bj-profile-headline", ".bj-chip", ".bj-simple-body", ".bj-project-body", ".bj-language-chip", ".bj-metric-pill", ".bj-import-text pre"]) {
+    for (const selector of [".bj-prof-block", ".bj-profile-headline", ".bj-chip", ".bj-simple-body", ".bj-project-body", ".bj-language-chip", ".bj-metric-pill", ".bj-import-text pre", ".bj-timeline-title", ".bj-citation-body"]) {
       const own = declarationsFor(base, selector);
       expect(own["overflow-wrap"] ?? own["white-space"], selector).toBeDefined();
     }
+    // The title and company of an experience entry sit in a flex item beside the dates, and the author line of a
+    // publication in a grid cell: each may shrink below its longest unbroken word (an address, a URL), or the whole
+    // page scrolls sideways on a phone.
+    expect(declarationsFor(base, ".bj-timeline-title")["min-width"]).toBe("0");
+    expect(declarationsFor(base, ".bj-citation-body")["min-width"]).toBe("0");
     expect(declarationsFor(base, ".bj-profile")["min-width"]).toBe("0");
     expect(declarationsFor(base, ".bj-profile-sections")["min-width"]).toBe("0");
   });
