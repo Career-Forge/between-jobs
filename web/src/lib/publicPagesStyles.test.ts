@@ -4,6 +4,7 @@ import authCss from "../styles/auth.css?raw";
 import circuitCss from "../styles/circuit.css?raw";
 import landingCss from "../styles/landing.css?raw";
 import legalCss from "../styles/legal.css?raw";
+import paperCss from "../styles/paper.css?raw";
 import publicCss from "../styles/public.css?raw";
 import tokensCss from "../tokens.css?raw";
 import { blockOf, declarationsFor, horizontalPaddingPx, rulesOf, tokenResolver, withoutMedia } from "../testing/css";
@@ -295,5 +296,22 @@ describe("colour and motion", () => {
 
   it("fades the sample next step for 200ms and no longer", () => {
     expect(declarationsFor(circuitCss, ".bj-circuit-demo-text").animation).toBe("bj-circuit-fade 200ms ease-out");
+  });
+});
+
+describe("the rules that two stylesheets once both wrote", () => {
+  it("keeps the sign-in card's field rules inside the card: .bj-field is also Profile's, Applications' and the dialogs' field", () => {
+    const selectors = rulesOf(authCss).flatMap((rule) => rule.selectors);
+    const fieldSelectors = selectors.filter((selector) => selector.includes(".bj-field"));
+    expect(fieldSelectors.length).toBeGreaterThan(0);
+    for (const selector of fieldSelectors) expect(selector, "auth.css must scope .bj-field to the card").toMatch(/^\.bj-login-card\s/);
+  });
+
+  it("has one breadcrumb rule: paper.css owns .bj-breadcrumb, and the workspace's own is .bj-workspace-breadcrumb in app.css", () => {
+    const names = (css: string) => rulesOf(css).flatMap((rule) => rule.selectors);
+    expect(names(appCss).filter((selector) => /\.bj-breadcrumb\b/.test(selector))).toEqual([]);
+    expect(names(paperCss).filter((selector) => /\.bj-workspace-breadcrumb\b/.test(selector))).toEqual([]);
+    expect(names(paperCss).some((selector) => /^\.bj-breadcrumb\b/.test(selector))).toBe(true);
+    expect(names(appCss).some((selector) => /^\.bj-workspace-breadcrumb\b/.test(selector))).toBe(true);
   });
 });
