@@ -36,11 +36,17 @@
 
 .bj-ws-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--bj-space-2);
 }
 
 .bj-ws-status-label {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-small);
+}
+
+.bj-ws-status-hint {
   color: var(--bj-text-muted);
   font-size: var(--bj-text-small);
 }
@@ -220,6 +226,32 @@ h4.bj-ws-label {
 .bj-ws-panel button.bj-primary:hover {
   border-color: var(--bj-text-muted);
   background: var(--bj-hover-bg);
+}
+
+/* The same for the link form of the cyan button (Contacts' "Connect Gmail in Settings" and "Reconnect
+   Gmail in Settings" are a.bj-button-link-primary). Delete these with the button rules above. */
+.bj-ws-panel a.bj-button-link-primary {
+  border-color: var(--bj-outline);
+  background: transparent;
+  color: var(--bj-text);
+  font-weight: 400;
+}
+
+.bj-ws-panel a.bj-button-link-primary:hover {
+  border-color: var(--bj-text-muted);
+  background: var(--bj-hover-bg);
+}
+
+/* A link inside a sentence is told apart by an underline, not by colour alone (WCAG 1.4.1): cyan
+   against the ivory or muted text around it is about 1.5:1. A link that is drawn as a button is not
+   in a sentence and keeps its outline. */
+.bj-ws-callout a,
+.bj-ws-intro a,
+.bj-ws-caption a,
+.bj-ws-section p a:not(.bj-button-link),
+.bj-ws-section .bj-small a:not(.bj-button-link) {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
 }
 
 /* ------------------------------------------------------------------ */
@@ -616,6 +648,21 @@ button.bj-ws-cluster-row {
   }
 
   .bj-ws-evidence-item {
+    min-height: 44px;
+  }
+
+  /* A touch target is 44px. The page's own buttons and button-links, the checkbox labels (the band's
+     and Generate's), the score's breakdown toggle and the header's posting link all measured 37px or
+     less. A button already centers its label in a taller box; a link needs flex to do the same. */
+  .bj-ws-section button,
+  .bj-ws-check {
+    min-height: 44px;
+  }
+
+  .bj-ws-section a.bj-button-link,
+  .bj-ws-facts a {
+    display: inline-flex;
+    align-items: center;
     min-height: 44px;
   }
 }

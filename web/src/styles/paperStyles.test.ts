@@ -28,6 +28,13 @@ describe("paper.css", () => {
     expect(PHONE_QUERY).toBe("(max-width: 959px)");
   });
 
+  it("lets text a scraped page chose (the last crumb, the subtitle) break anywhere, so one long token cannot widen the page", () => {
+    expect(declarationsFor(base, ".bj-breadcrumb li")["overflow-wrap"]).toBe("anywhere");
+    expect(declarationsFor(base, ".bj-breadcrumb li")["min-width"]).toBe("0");
+    expect(declarationsFor(base, ".bj-page-subtitle")["overflow-wrap"]).toBe("anywhere");
+    expect(declarationsFor(base, "h1.bj-page-title")["overflow-wrap"]).toBe("anywhere");
+  });
+
   it("defines no color: no hex value, no rgb or hsl, only tokens", () => {
     const code = paperCss.replace(/\/\*[\s\S]*?\*\//g, "");
     expect(code).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);

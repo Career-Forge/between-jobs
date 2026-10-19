@@ -418,6 +418,13 @@ button.bj-band-locked:hover {
   list-style: none;
 }
 
+/* The last crumb and the subtitle carry text a scraped page chose (a job title, a company). One unbroken
+   token wider than the column would otherwise push the whole page, and the fixed tab bar, sideways. */
+.bj-breadcrumb li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .bj-breadcrumb li + li::before {
   content: "/";
   margin: 0 var(--bj-space-2);
@@ -450,6 +457,7 @@ h1.bj-page-title {
   max-width: 680px;
   margin: var(--bj-space-2) 0 0;
   color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .bj-page-actions {

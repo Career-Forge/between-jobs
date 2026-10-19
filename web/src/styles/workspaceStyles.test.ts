@@ -50,6 +50,22 @@ describe("workspace.css", () => {
     expect(rule.color).toBe("var(--bj-text)");
   });
 
+  it("draws the link form of the cyan button inside a panel outlined too (Contacts' Gmail links), hover included", () => {
+    const rule = decl(".bj-ws-panel a.bj-button-link-primary");
+    expect(rule.background).toBe("transparent");
+    expect(rule["border-color"]).toBe("var(--bj-outline)");
+    expect(rule.color).toBe("var(--bj-text)");
+    expect(decl(".bj-ws-panel a.bj-button-link-primary:hover").background).toBe("var(--bj-hover-bg)");
+    // It has to out-rank app.css's a.bj-button-link-primary (and its :hover) on specificity, not on order.
+    expect(workspaceCss).toContain(".bj-ws-panel a.bj-button-link-primary:hover");
+  });
+
+  it("underlines a link inside a sentence, because its color alone is about 1.5:1 against the text around it", () => {
+    for (const selector of [".bj-ws-callout a", ".bj-ws-intro a", ".bj-ws-caption a", ".bj-ws-section p a:not(.bj-button-link)"]) {
+      expect(decl(selector)["text-decoration"], selector).toBe("underline");
+    }
+  });
+
   it("hides a panel's own leading h2: the section's chapter is its heading", () => {
     expect(decl(".bj-ws-panel .bj-doc-main > .bj-card > h2:first-child").display).toBe("none");
   });
@@ -82,6 +98,15 @@ describe("workspace.css", () => {
   it("gives the status select a 44px target on a phone", () => {
     const phone = blockOf(workspaceCss, `@media ${PHONE_QUERY}`) ?? "";
     expect(declarationsFor(phone, "select.bj-ws-status-select")["min-height"]).toBe("44px");
+  });
+
+  it("gives every control the page draws a 44px target on a phone: buttons, button-links, checkbox labels, the posting link", () => {
+    const phone = blockOf(workspaceCss, `@media ${PHONE_QUERY}`) ?? "";
+    for (const selector of [".bj-ws-section button", ".bj-ws-check", ".bj-ws-section a.bj-button-link", ".bj-ws-facts a"]) {
+      expect(declarationsFor(phone, selector)["min-height"], selector).toBe("44px");
+    }
+    // A link has no centered label of its own: it needs flex to keep the text in the middle of 44px.
+    expect(declarationsFor(phone, ".bj-ws-section a.bj-button-link")["display"]).toBe("inline-flex");
   });
 
   it("uses the contrast pairs the tokens pin: canvas on danger is at least 4.5", () => {
