@@ -19,6 +19,7 @@ import { useScrollToTopOnNavigate } from "./lib/useScrollToTopOnNavigate";
 import Enroll from "./pages/Enroll";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
+import NotFound from "./pages/NotFound";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import UpdatePassword from "./pages/UpdatePassword";
@@ -121,6 +122,7 @@ export default function App() {
             <Route path={PRIVACY_PATH} element={<Privacy />} />
             <Route path={TERMS_PATH} element={<Terms />} />
             <Route path={ENROLL_PATH} element={<Enroll />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </RouteBoundary>
       </EnrollmentGate>

@@ -214,6 +214,21 @@ describe("landmarks", () => {
   });
 });
 
+describe("an address the shell has no page for", () => {
+  it.each(["/no-such-page", "/applications/app-1/extra"])("draws a heading and a way out, with no band, at %s", async (path) => {
+    describeAccount("data");
+    const container = await open(path, 1000);
+    expect([...container.querySelectorAll("main h1")].map((h) => text(h))).toEqual(["Page not found"]);
+    expect(bands(container)).toHaveLength(0);
+    expect(cyanFills(container)).toEqual([]);
+    expect(text(query(container, "main a"))).toBe("Go to Today");
+    expect(query(container, "main a").getAttribute("href")).toBe("/");
+    expect([...container.querySelectorAll(".bj-skip-link")].map((link) => text(link))).toEqual(["Skip to content"]);
+    expect(duplicateIds(container)).toEqual([]);
+    await expectNoSeriousA11yViolations(container);
+  });
+});
+
 describe("the tester-programme gate standing in for a page", () => {
   const NOT_JOINED = { enrolled: false, role_cohort: null, seniority: null, needs_sponsorship: null, consent_version: null, consented_at: null, withdrawn_at: null, current_version: "2026-10-01", needs_reconsent: false };
   const skipLinks = (root: ParentNode) => [...root.querySelectorAll(".bj-skip-link")].map((link) => text(link));
