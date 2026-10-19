@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 
-// What a modal dialog owes the keyboard (the entry editor on the Profile page uses it):
+// What a modal dialog owes the keyboard (the entry editor on the Profile page and the bottom sheet
+// that holds a receipt use it):
 //
 //  - focus moves into the dialog when it opens, to `initialFocus` or else the first control in it, and
 //    is trapped there: Tab and Shift+Tab wrap, and focus that lands outside is pulled back;
@@ -12,8 +13,7 @@ import { useEffect, useRef, type RefObject } from "react";
 //
 // Call it with a ref to the dialog's element, from a component that is mounted only while the dialog
 // is open, and draw the dialog through a portal into <body> so every other child of <body> can be made
-// inert (the same arrangement as components/paper/BottomSheet.tsx, which is a sheet for receipts and
-// not a form dialog).
+// inert.
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
