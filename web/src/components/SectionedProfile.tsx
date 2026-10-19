@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { EntryEditModal } from "./EntryEditModal";
 import { saveFailureMessage } from "../lib/useProfileEditor";
 import { SECTION_FIELD_CONFIGS } from "../lib/sectionFieldConfigs";
@@ -140,6 +140,14 @@ export function SectionedProfile({
   const lastButton = useRef<HTMLElement | null>(null);
   // The words for a failed write that has no modal (this component's own; see the file comment).
   const [actionError, setActionError] = useState<string | null>(null);
+  // The alert for it sits at the top of the sections while the control that failed can be far below, so a
+  // new failure takes focus (the browser scrolls to what is focused), and Dismiss gives focus back to the
+  // button that was pressed, which `lastButton` no longer is by then (it is the Dismiss button).
+  const actionAlert = useRef<HTMLDivElement>(null);
+  const failedFrom = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (actionError !== null) actionAlert.current?.focus();
+  }, [actionError]);
 
   const visibleSections = SECTION_ORDER.filter((key) => isNonEmpty(profile, key));
   const emptyEntrySections = ENTRY_SECTION_KEYS.filter((key) => !isNonEmpty(profile, key));
@@ -150,6 +158,10 @@ export function SectionedProfile({
     try {
       await onSave(mutate);
     } catch (e) {
+      // Where the person acted: what has focus (a skill's text box, a button), or the last button pressed
+      // when the browser did not focus it.
+      const active = document.activeElement;
+      failedFrom.current = active instanceof HTMLElement && active !== document.body ? active : lastButton.current;
       setActionError(saveFailureMessage(e));
       throw e;
     }
@@ -224,14 +236,22 @@ export function SectionedProfile({
       )}
 
       {actionError !== null && (
-        <div className="bj-state bj-state--failure" role="alert">
+        <div ref={actionAlert} className="bj-state bj-state--failure" role="alert" tabIndex={-1}>
           <p>
             <span className="bj-state-glyph" aria-hidden="true">
               {"✕"}
             </span>
             That change was not saved: {actionError}
           </p>
-          <button type="button" onClick={() => setActionError(null)}>
+          <button
+            type="button"
+            onClick={() => {
+              setActionError(null);
+              const from = failedFrom.current;
+              failedFrom.current = null;
+              if (from !== null && from.isConnected) from.focus();
+            }}
+          >
             Dismiss
           </button>
         </div>

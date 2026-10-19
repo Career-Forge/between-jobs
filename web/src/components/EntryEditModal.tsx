@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useFocusAfterRender } from "../lib/useFocusAfterRender";
 import { useModalDialog } from "../lib/useModalDialog";
 import type { FieldConfig, SectionFieldConfig } from "../lib/sectionFieldConfigs";
 import "../styles/profile-studio.css";
@@ -198,34 +199,43 @@ function FieldRenderer({
 
 function BulletsField({ label, value, onChange }: { label: string; value: string[]; onChange: (v: string[]) => void }) {
   const groupId = useId();
+  // Keyboard focus survives a move, a removal (the button goes with its row) and an addition: see
+  // useFocusAfterRender. A Move button at either end is aria-disabled, not disabled, since a disabled
+  // button cannot keep focus. The rows are keyed by position, so a move changes what each row holds.
+  const root = useRef<HTMLDivElement>(null);
+  const focusAfter = useFocusAfterRender(root);
   function update(i: number, text: string) {
     const next = [...value];
     next[i] = text;
     onChange(next);
   }
   function remove(i: number) {
+    // The bullet that takes its place (or the one before it), else the Add button.
+    focusAfter(value.length === 1 ? "add" : `text:${Math.min(i, value.length - 2)}`);
     onChange(value.filter((_, idx) => idx !== i));
   }
   function move(i: number, delta: number) {
     const j = i + delta;
     if (j < 0 || j >= value.length) return;
+    // The bullet is now row j: the same button there is the one the person is using.
+    focusAfter(`${delta < 0 ? "up" : "down"}:${j}`);
     const next = [...value];
     [next[i], next[j]] = [next[j], next[i]];
     onChange(next);
   }
 
   return (
-    <div className="bj-field" role="group" aria-labelledby={groupId}>
+    <div className="bj-field" role="group" aria-labelledby={groupId} ref={root}>
       <span id={groupId}>{label}</span>
       <div className="bj-bullets-editor">
         {value.map((bullet, i) => (
           <div key={i} className="bj-bullet-row">
-            <textarea rows={2} aria-label={`${label} ${i + 1}`} value={bullet} onChange={(e) => update(i, e.target.value)} />
+            <textarea rows={2} data-focus-key={`text:${i}`} aria-label={`${label} ${i + 1}`} value={bullet} onChange={(e) => update(i, e.target.value)} />
             <div className="bj-bullet-row-actions">
-              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${label.toLowerCase()} ${i + 1} up`}>
+              <button type="button" data-focus-key={`up:${i}`} onClick={() => move(i, -1)} aria-disabled={i === 0 ? true : undefined} aria-label={`Move ${label.toLowerCase()} ${i + 1} up`}>
                 <span aria-hidden="true">{"↑"}</span>
               </button>
-              <button type="button" onClick={() => move(i, 1)} disabled={i === value.length - 1} aria-label={`Move ${label.toLowerCase()} ${i + 1} down`}>
+              <button type="button" data-focus-key={`down:${i}`} onClick={() => move(i, 1)} aria-disabled={i === value.length - 1 ? true : undefined} aria-label={`Move ${label.toLowerCase()} ${i + 1} down`}>
                 <span aria-hidden="true">{"↓"}</span>
               </button>
               <button type="button" onClick={() => remove(i)} aria-label={`Remove ${label.toLowerCase()} ${i + 1}`}>
@@ -234,7 +244,14 @@ function BulletsField({ label, value, onChange }: { label: string; value: string
             </div>
           </div>
         ))}
-        <button type="button" onClick={() => onChange([...value, ""])}>
+        <button
+          type="button"
+          data-focus-key="add"
+          onClick={() => {
+            focusAfter(`text:${value.length}`);
+            onChange([...value, ""]);
+          }}
+        >
           + Add bullet
         </button>
       </div>
@@ -254,6 +271,8 @@ function ChipsField({
   onChange: (v: string[]) => void;
 }) {
   const [draft, setDraft] = useState("");
+  // A removed chip takes its button with it: focus goes to the box that adds one.
+  const adder = useRef<HTMLInputElement>(null);
 
   function commit() {
     const trimmed = draft.trim();
@@ -270,13 +289,21 @@ function ChipsField({
         {value.map((chip) => (
           <span key={chip} className="bj-chip bj-chip-removable">
             {chip}
-            <button type="button" aria-label={`Remove ${chip}`} onClick={() => onChange(value.filter((c) => c !== chip))}>
+            <button
+              type="button"
+              aria-label={`Remove ${chip}`}
+              onClick={() => {
+                onChange(value.filter((c) => c !== chip));
+                adder.current?.focus();
+              }}
+            >
               <span aria-hidden="true">{"×"}</span>
             </button>
           </span>
         ))}
       </div>
       <input
+        ref={adder}
         type="text"
         aria-label={`Add to ${label.toLowerCase()}`}
         value={draft}

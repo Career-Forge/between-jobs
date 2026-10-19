@@ -79,11 +79,32 @@ describe("the section order editor", () => {
   it("moves a section up, and leaves the first one's Up and the last one's Down off", async () => {
     const { container } = render(<SectionOrderEditor profile={PROFILE} />);
     await settle();
-    expect(buttonNamed(container, "Move Summary up").disabled).toBe(true);
-    expect(buttonNamed(container, "Move Patents down").disabled).toBe(true);
+    expect(buttonNamed(container, "Move Summary up").getAttribute("aria-disabled")).toBe("true");
+    expect(buttonNamed(container, "Move Patents down").getAttribute("aria-disabled")).toBe("true");
     click(buttonNamed(container, "Move Education up"));
     await settle();
     expect(labels(container).slice(0, 3)).toEqual(["Summary", "Education", "Experience"]);
+  });
+
+  it("keeps the keyboard on the button when a section reaches the end of the list, and a press there does nothing", async () => {
+    const { container } = render(<SectionOrderEditor profile={PROFILE} />);
+    await settle();
+    const up = buttonNamed(container, "Move Education up");
+    up.focus();
+    click(up);
+    await settle();
+    click(buttonNamed(container, "Move Education up"));
+    await settle();
+    expect(labels(container).slice(0, 3)).toEqual(["Education", "Summary", "Experience"]);
+    const first = buttonNamed(container, "Move Education up");
+    expect(first.getAttribute("aria-disabled")).toBe("true");
+    expect(first.disabled).toBe(false);
+    expect(document.activeElement).toBe(first);
+    const saves = callsTo("PATCH /resume-documents/doc-1/sections").length;
+    click(first);
+    await settle();
+    expect(callsTo("PATCH /resume-documents/doc-1/sections")).toHaveLength(saves);
+    expect(document.activeElement).toBe(first);
   });
 
   it("hides a section, says Hidden in words, and saves it", async () => {

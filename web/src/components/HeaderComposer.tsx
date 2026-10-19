@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import {
   ALL_HEADER_FIELDS,
@@ -10,6 +10,7 @@ import {
 } from "../lib/headerComposerTypes";
 import { STALE_HEADER_NOTE, failedBlockTrail, headerTrail, isHeaderPreviewStale } from "../lib/profileTrails";
 import { failureOf, type SetupNotice } from "../lib/setupRequired";
+import { useFocusAfterRender } from "../lib/useFocusAfterRender";
 import { BlockTrail } from "./paper/DocumentLayout";
 import { FailureState, LoadingState } from "./paper/StateViews";
 import { SetupRequiredNotice } from "./SetupRequiredNotice";
@@ -72,6 +73,11 @@ async function preview(documentId: string, layout: HeaderLayout): Promise<Resolv
 export function HeaderComposer({ applicationId, activeVersionId, showTrail = false }: { applicationId?: string; activeVersionId?: string; showTrail?: boolean } = {}) {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  // Keyboard focus survives a move, a removal (the Remove button goes with its row) and an addition (so
+  // does the "+ field" button): see useFocusAfterRender. A Move button at the end of the list is
+  // aria-disabled, not disabled, since a disabled button cannot keep focus.
+  const root = useRef<HTMLDivElement>(null);
+  const focusAfter = useFocusAfterRender(root);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -142,15 +148,20 @@ export function HeaderComposer({ applicationId, activeVersionId, showTrail = fal
   }
 
   function remove(field: string) {
+    // The next row's Remove button, else the one before, else the first "+ field" button.
+    const at = layout.chips.findIndex((c) => c.field === field);
+    const neighbour = layout.chips[at + 1] ?? layout.chips[at - 1];
+    if (at !== -1) focusAfter(neighbour === undefined ? "add" : `remove:${neighbour.field}`);
     void applyLayout(documentId, documentVersionId, { ...layout, chips: layout.chips.filter((c) => c.field !== field) });
   }
 
   function add(field: string) {
+    focusAfter(`mode:${field}`);
     void applyLayout(documentId, documentVersionId, { ...layout, chips: [...layout.chips, { field, display_mode: "full" }] });
   }
 
   return (
-    <div className="bj-header-composer">
+    <div className="bj-header-composer" ref={root}>
       <div className="bj-contact-chips" role="group" aria-label="Header preview">
         {chips.length === 0 && <span className="bj-muted bj-small">No contact fields shown.</span>}
         {chips.map((chip) =>
@@ -193,18 +204,38 @@ export function HeaderComposer({ applicationId, activeVersionId, showTrail = fal
                 {"≡"}
               </span>
               <span className="bj-header-composer-field">{label}</span>
-              <select aria-label={`How ${label} is shown`} value={chip.display_mode ?? "full"} onChange={(e) => setMode(chip.field, e.target.value as ChipDisplayMode)}>
+              <select data-focus-key={`mode:${chip.field}`} aria-label={`How ${label} is shown`} value={chip.display_mode ?? "full"} onChange={(e) => setMode(chip.field, e.target.value as ChipDisplayMode)}>
                 <option value="full">Full</option>
                 <option value="label">Label only</option>
               </select>
               <span className="bj-row-moves">
-                <button type="button" onClick={() => reorder(i, i - 1)} disabled={i === 0} aria-label={`Move ${label} up`}>
+                <button
+                  type="button"
+                  data-focus-key={`up:${chip.field}`}
+                  onClick={() => {
+                    if (i === 0) return;
+                    focusAfter(`up:${chip.field}`);
+                    reorder(i, i - 1);
+                  }}
+                  aria-disabled={i === 0 ? true : undefined}
+                  aria-label={`Move ${label} up`}
+                >
                   <span aria-hidden="true">{"↑"}</span>
                 </button>
-                <button type="button" onClick={() => reorder(i, i + 1)} disabled={i === layout.chips.length - 1} aria-label={`Move ${label} down`}>
+                <button
+                  type="button"
+                  data-focus-key={`down:${chip.field}`}
+                  onClick={() => {
+                    if (i === layout.chips.length - 1) return;
+                    focusAfter(`down:${chip.field}`);
+                    reorder(i, i + 1);
+                  }}
+                  aria-disabled={i === layout.chips.length - 1 ? true : undefined}
+                  aria-label={`Move ${label} down`}
+                >
                   <span aria-hidden="true">{"↓"}</span>
                 </button>
-                <button type="button" onClick={() => remove(chip.field)} aria-label={`Remove ${label}`}>
+                <button type="button" data-focus-key={`remove:${chip.field}`} onClick={() => remove(chip.field)} aria-label={`Remove ${label}`}>
                   Remove
                 </button>
               </span>
@@ -215,8 +246,8 @@ export function HeaderComposer({ applicationId, activeVersionId, showTrail = fal
 
       {hiddenFields.length > 0 && (
         <div className="bj-actions">
-          {hiddenFields.map((field) => (
-            <button type="button" key={field} onClick={() => add(field)}>
+          {hiddenFields.map((field, n) => (
+            <button type="button" key={field} data-focus-key={n === 0 ? "add" : undefined} onClick={() => add(field)}>
               + {FIELD_LABELS[field]}
             </button>
           ))}

@@ -178,6 +178,36 @@ describe("the entry dialog", () => {
     expect(onSave.mock.calls[0][0]).toMatchObject({ bullets: ["Cut costs"] });
   });
 
+  it("keeps the keyboard's place when a bullet is moved, removed or added, and when a chip is removed", () => {
+    open();
+    const box = dialog();
+    // moved down: the same button on the row it moved to; at the end it stays and does nothing
+    const down = buttonNamed(box, "Move bullets 1 down");
+    down.focus();
+    click(down);
+    expect(document.activeElement).toBe(buttonNamed(box, "Move bullets 2 down"));
+    expect(buttonNamed(box, "Move bullets 2 down").getAttribute("aria-disabled")).toBe("true");
+    expect(buttonNamed(box, "Move bullets 2 down").disabled).toBe(false);
+    // added: the new bullet's text box
+    click(buttonNamed(box, "+ Add bullet"));
+    expect(document.activeElement).toBe(box.querySelector('textarea[aria-label="Bullets 3"]'));
+    // removed: the bullet that takes its place
+    const remove = buttonNamed(box, "Remove bullets 2");
+    remove.focus();
+    click(remove);
+    expect(document.activeElement).toBe(box.querySelector('textarea[aria-label="Bullets 2"]'));
+    // removing the last one leaves the previous bullet
+    click(buttonNamed(box, "Remove bullets 2"));
+    expect(document.activeElement).toBe(box.querySelector('textarea[aria-label="Bullets 1"]'));
+    click(buttonNamed(box, "Remove bullets 1"));
+    expect(document.activeElement).toBe(buttonNamed(box, "+ Add bullet"));
+    // a chip's remove button goes with the chip: focus goes to the box that adds one
+    const chip = buttonNamed(box, "Remove Python");
+    chip.focus();
+    click(chip);
+    expect(document.activeElement).toBe(box.querySelector('input[aria-label="Add to skills"]'));
+  });
+
   it("sets and clears the end of a role with Current", () => {
     const onSave = vi.fn();
     const view = render(<Page onSave={onSave} initialValues={{ title: "Engineer", company: "Acme", start_date: "2022-01", end_date: "2023-05", is_current: false }} />);

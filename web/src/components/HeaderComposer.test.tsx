@@ -101,8 +101,9 @@ describe("the header composer", () => {
     describeDocument();
     const { container } = page();
     await settle();
-    expect(buttonNamed(container, "Move Phone up").disabled).toBe(true);
-    expect(buttonNamed(container, "Move GitHub down").disabled).toBe(true);
+    expect(buttonNamed(container, "Move Phone up").getAttribute("aria-disabled")).toBe("true");
+    expect(buttonNamed(container, "Move GitHub down").getAttribute("aria-disabled")).toBe("true");
+    expect(buttonNamed(container, "Move Email up").hasAttribute("aria-disabled")).toBe(false);
     click(buttonNamed(container, "Move GitHub up"));
     await settle();
     expect(names(container)).toEqual(["Phone", "GitHub", "Email"]);
@@ -117,6 +118,55 @@ describe("the header composer", () => {
     click(down);
     await settle();
     expect(rows(container)[1].contains(document.activeElement)).toBe(true);
+  });
+
+  it("keeps the keyboard on the button when it moves a field to the end of the list, where that button stops working", async () => {
+    describeDocument();
+    const { container } = page();
+    await settle();
+    const up = buttonNamed(container, "Move GitHub up");
+    up.focus();
+    click(up);
+    await settle();
+    click(buttonNamed(container, "Move GitHub up"));
+    await settle();
+    expect(names(container)).toEqual(["GitHub", "Phone", "Email"]);
+    const first = buttonNamed(container, "Move GitHub up");
+    expect(first.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(first);
+    // a press that can do nothing saves nothing and keeps focus where it was
+    const saves = callsTo("PATCH /resume-documents/doc-1/header").length;
+    click(first);
+    await settle();
+    expect(callsTo("PATCH /resume-documents/doc-1/header")).toHaveLength(saves);
+    expect(document.activeElement).toBe(first);
+  });
+
+  it("puts focus on the next field's Remove button after a removal, else the one before, else the first add button", async () => {
+    describeDocument();
+    const { container } = page();
+    await settle();
+    buttonNamed(container, "Remove Phone").focus();
+    click(buttonNamed(container, "Remove Phone"));
+    await settle();
+    expect(document.activeElement).toBe(buttonNamed(container, "Remove Email"));
+    click(buttonNamed(container, "Remove GitHub"));
+    await settle();
+    expect(document.activeElement).toBe(buttonNamed(container, "Remove Email"));
+    click(buttonNamed(container, "Remove Email"));
+    await settle();
+    expect(names(container)).toEqual([]);
+    expect(document.activeElement).toBe(container.querySelector('[data-focus-key="add"]'));
+    expect(document.activeElement?.tagName).toBe("BUTTON");
+  });
+
+  it("puts focus on the added field's display select, since the add button that was pressed is gone", async () => {
+    describeDocument();
+    const { container } = page();
+    await settle();
+    click(buttonNamed(container, "+ LinkedIn"));
+    await settle();
+    expect(document.activeElement).toBe(query(container, 'select[aria-label="How LinkedIn is shown"]'));
   });
 
   it("removes a field and offers to add it back, and adds one", async () => {

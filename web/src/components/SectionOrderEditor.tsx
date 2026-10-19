@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type { ResumeDocument } from "../lib/headerComposerTypes";
 import { failedBlockTrail } from "../lib/profileTrails";
+import { useFocusAfterRender } from "../lib/useFocusAfterRender";
 import type { CanonicalProfile } from "../lib/profileTypes";
 import { RENDERABLE_SECTIONS, SECTION_LABELS, type SectionName, sectionHasContent } from "../lib/sectionEditorTypes";
 import { BlockTrail } from "./paper/DocumentLayout";
@@ -62,6 +63,10 @@ export function SectionOrderEditor({
 }) {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  // A moved row can lose the focus its button had, and a button at the end of the list is not disabled (a
+  // disabled button cannot keep focus), so a press that can do nothing there leaves the keyboard where it was.
+  const root = useRef<HTMLDivElement>(null);
+  const focusAfter = useFocusAfterRender(root);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -124,7 +129,7 @@ export function SectionOrderEditor({
   }
 
   return (
-    <div className="bj-section-editor">
+    <div className="bj-section-editor" ref={root}>
       <ul className="bj-section-editor-list" aria-label="Resume sections, in order">
         {order.map((section, i) => {
           const hasContent = sectionHasContent(section, profile);
@@ -153,10 +158,30 @@ export function SectionOrderEditor({
                 Show
               </label>
               <span className="bj-row-moves">
-                <button type="button" onClick={() => reorder(i, i - 1)} disabled={i === 0} aria-label={`Move ${label} up`}>
+                <button
+                  type="button"
+                  data-focus-key={`up:${section}`}
+                  onClick={() => {
+                    if (i === 0) return;
+                    focusAfter(`up:${section}`);
+                    reorder(i, i - 1);
+                  }}
+                  aria-disabled={i === 0 ? true : undefined}
+                  aria-label={`Move ${label} up`}
+                >
                   <span aria-hidden="true">{"↑"}</span>
                 </button>
-                <button type="button" onClick={() => reorder(i, i + 1)} disabled={i === order.length - 1} aria-label={`Move ${label} down`}>
+                <button
+                  type="button"
+                  data-focus-key={`down:${section}`}
+                  onClick={() => {
+                    if (i === order.length - 1) return;
+                    focusAfter(`down:${section}`);
+                    reorder(i, i + 1);
+                  }}
+                  aria-disabled={i === order.length - 1 ? true : undefined}
+                  aria-label={`Move ${label} down`}
+                >
                   <span aria-hidden="true">{"↓"}</span>
                 </button>
               </span>
