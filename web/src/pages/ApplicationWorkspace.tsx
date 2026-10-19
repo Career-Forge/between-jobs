@@ -365,13 +365,16 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
   }
 
   // The step the person pressed is replaced by the next one; when the control that had focus is gone,
-  // focus goes back to the band. It waits until nothing the band depends on is still out. "I submitted
-  // this" is one of them: recording the status removes the block that held the button, and the band
-  // (an unlit sentence from Applied on, which takes focus for that reason) says what is true now.
+  // focus goes back to the band, at once and again after each change until nothing the band depends on is
+  // still out (a run can take a minute: the band's second button, "Generate anyway", is gone as soon as
+  // the run starts, and focus would sit on the page for all of it). "I submitted this" is one of them:
+  // recording the status removes the block that held the button, and the band (an unlit sentence from
+  // Applied on, which takes focus for that reason) says what is true now. Focus that is anywhere real
+  // is never taken.
   const busy = controller.state.kind === "generating" || controller.downloading !== null || statusBusy;
   useEffect(() => {
-    if (!refocus || busy) return;
-    setRefocus(false);
+    if (!refocus) return;
+    if (!busy) setRefocus(false);
     const active = document.activeElement;
     if (active !== null && active !== document.body) return;
     document.getElementById(NEXT_STEP_FOCUS_ID)?.focus();

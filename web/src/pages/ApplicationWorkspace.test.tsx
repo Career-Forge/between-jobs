@@ -1251,6 +1251,26 @@ describe("where keyboard focus goes when the control that had it is replaced", (
     await settle();
   });
 
+  // The band's second button is gone as soon as the run starts, and a run can take a minute: focus must not
+  // sit on the page for all of it.
+  it("moves it from the band's Generate anyway to the band at once, and holds it there while the run is out", async () => {
+    describeAccount({ result: HELD });
+    let release: (value: unknown) => void = () => undefined;
+    on(`POST /applications/${ID}/prepare`, () => new Promise((resolve) => (release = resolve)));
+    const { container } = page();
+    await settle();
+    const anyway = [...container.querySelectorAll(".bj-band button")].find((button) => text(button) === "Generate anyway") as HTMLElement;
+    anyway.focus();
+    click(anyway);
+    await settle(1);
+    expect(container.contains(anyway)).toBe(false);
+    expect(document.activeElement?.id).toBe("next-step-focus");
+    expect(container.contains(document.activeElement)).toBe(true);
+    release(drafted());
+    await settle();
+    expect(document.activeElement?.id).toBe("next-step-focus");
+  });
+
   it("moves it from Park this application to the Honest read heading", async () => {
     describeAccount({ result: HELD });
     on(`POST /applications/${ID}/stage`, {});
