@@ -27,7 +27,9 @@ the main navigation, then the signed-in address, Settings, Sign out and the lega
 More button, whose sheet holds the entries that have no tab. Both navigations are always in the markup and
 CSS shows one; the destinations come from one list in `src/lib/nav.ts`. The page is the one `<main>`, and the
 first tab stop is a "Skip to content" link to it; on a page that draws a next-step band (Today, Discover, Applications, Practice, Hiring signals, Profile and Settings,
-`PATHS_WITH_A_BAND` in `AppShell.tsx`, and an application's workspace, `pageHasBand`) a "Skip to next step" link to the band's button comes first. The sign-in
+`PATHS_WITH_A_BAND` in `AppShell.tsx`, and an application's workspace, `pageHasBand`) a "Skip to next step" link to the band's button comes first,
+except while the tester-programme gate draws its own page, or its wait, at one of those addresses: the gate says so
+(`components/ShellBandContext.tsx`) and the link is left out rather than pointing at nothing. The sign-in
 page has both. The command palette and the assistant drawer are reserved
 (`src/components/ReservedSlots.tsx`): `hidden` and inert, so they take no room, print no placeholder and have no
 behavior.
@@ -496,6 +498,72 @@ paper.
 `pages/Landing.test.tsx` holds the guard on what the landing page may claim: a list of words it never uses, no
 digits, and the disclosures that must stay (the Gmail paragraph and its Privacy Policy link, the extension's
 early-tester status).
+
+## Accessibility and responsive checks
+
+The checks come in three layers, from the cheapest to the most real. Each finds things the one before cannot.
+
+1. **jsdom, in `npm test`.** `src/testing/a11y.ts` runs axe-core over a rendered container and fails on a serious or
+   critical violation; `src/appPages.test.tsx` mounts the whole signed-in app with the API faked and checks every page in
+   every account state at 375px and 1400px; the `*Styles.test.ts` files read each stylesheet as text and pin the rules
+   that keep user text inside its column and every phone control at 44px. jsdom has no layout and no focus ring, so it
+   cannot see colour contrast, overflow, or a control hidden behind the phone's bars.
+2. **A real browser, against the real components.** Serve the app from a scratch folder outside the repository and stub
+   its three seams, so any page can be shown in any state without a backend:
+
+   ```js
+   // vite.config.mjs, in a folder of your own, with node_modules linked to web/node_modules
+   const WEB = "/path/to/between-jobs/web";
+   const swapped = {
+     [`${WEB}/src/lib/api.ts`]: path.resolve("mock/api.ts"),        // apiFetch, ApiError, apiFetchBlob, apiFetchBytes
+     [`${WEB}/src/auth.tsx`]: path.resolve("mock/auth.tsx"),        // AuthProvider, useAuth
+     [`${WEB}/src/lib/supabase.ts`]: path.resolve("mock/supabase.ts"),
+   };
+   function swapModules() {
+     return {
+       name: "swap-modules",
+       enforce: "pre",
+       async resolveId(source, importer, options) {
+         if (!importer || importer.includes("/mock/") || !source.startsWith(".")) return null;
+         const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
+         return resolved && swapped[resolved.id] ? swapped[resolved.id] : null;
+       },
+     };
+   }
+   ```
+
+   `src/testing/fakeApi.ts` is the stand-in the tests use and is a good base for `mock/api.ts`: describe each route, make an
+   unknown one answer 404, and let a request stay pending to draw a loading state. Mount `src/App.tsx` inside the
+   providers `src/main.tsx` uses. Then, for each page and each state the page's own tests list (loading, partial, empty,
+   stale, setup-required, failure, and one with plenty of data), at 320, 375, 768 and 1280px:
+
+   - **Contrast and structure.** Load `node_modules/axe-core/axe.min.js` into the page, scroll to the top (a sticky bar
+     over a control makes axe report a target-size problem that is only the scroll position), and run
+     `axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"] } })`.
+     Fix every serious and critical violation. Read the `incomplete` list too: axe cannot decide contrast over a
+     pseudo-element or an overlap, so those few nodes are checked by hand.
+   - **Overflow.** `document.documentElement.scrollWidth > document.documentElement.clientWidth` is the page scrolling
+     sideways. A box can also be narrow enough while its text runs out of it, so find the innermost element whose
+     `scrollWidth` is larger than its `clientWidth` and whose ancestors do not scroll. Do the run again with long
+     unbroken strings (an address, a URL, a 90-character company name) in every field a person types.
+3. **The keyboard, with real key events.** Drive the page with the browser's key events (for example Chrome's remote
+   debugging `Input.dispatchKeyEvent`), not `element.click()`. For each page press Tab from the top and check that every
+   stop shows a focus ring (`:focus-visible`), is not under the sticky top bar or the tab bar, is not off screen, and
+   comes in an order a person would expect. Then press Enter or Space on each control and look at `document.activeElement`
+   a moment later: a control that was replaced, removed or turned off by what it did must hand focus on (to the next row,
+   the band, the field it opened), never leave it on `<body>`. Open and close each dialog and sheet with the keyboard.
+
+Two conventions come out of the third layer. A control that starts a request is `aria-disabled` while it is out, never
+`disabled`, and the handler ignores a press: a disabled control drops keyboard focus to the top of the page. And a
+control that goes away when it is pressed (Delete, Dismiss, Add, Save) names where focus goes next, as in
+`lib/useFocusAfterRender.ts`, `useSavedSearches.ts` or `SectionedProfile.tsx`.
+
+Pages are loaded the first time they are opened: `src/App.tsx` imports the signed-in pages with `lazy`, and
+`components/RouteBoundary.tsx` draws the band's loading frame while a file is on the way, and a plain failure with a
+Retry if it cannot be fetched (a tab opened before a deploy asks for a file the new build no longer has). The landing,
+sign-in and legal pages and the shell are in the first download, so a visitor who only reads them loads about a third
+less script than the whole app. A test that mounts `App` opens a page, so it loads the pages up front
+(`beforeAll` in `src/appPages.test.tsx`).
 
 ## Fonts and brand files
 
