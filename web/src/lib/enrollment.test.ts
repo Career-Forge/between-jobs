@@ -11,7 +11,6 @@ import {
   ENROLLMENT_PATH,
   ENROLL_FOCUS_IDS,
   GATE_EXEMPT_PATHS,
-  SETTINGS_PATH,
   ROLE_COHORTS,
   SENIORITIES,
   SPONSORSHIP_OPTIONS,
@@ -55,6 +54,7 @@ import {
   type EnrollmentLoad,
   type GateDecision,
 } from "./enrollment";
+import { SETTINGS_PATH } from "./settingsPaths";
 
 // The pure half of the tester programme: the lists it shares with the database, what the API's
 // answer is read as, the form and its request, joining and withdrawing, the page's state, and the

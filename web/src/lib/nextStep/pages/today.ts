@@ -29,15 +29,6 @@ export type TodayKind =
   | "high_fit_job"
   | "status_proposal";
 
-export const TODAY_KINDS: readonly TodayKind[] = [
-  "job_tracked",
-  "resume_ready",
-  "resume_failed",
-  "stage_changed",
-  "high_fit_job",
-  "status_proposal",
-];
-
 // The proposals the server can accept into a stage (the keys of its own stage map), each with the
 // words the band uses: what the sender may have done, and the stage Accept would move the
 // application to. A type that is not here has no stage to move to, so it never lights T1 and its

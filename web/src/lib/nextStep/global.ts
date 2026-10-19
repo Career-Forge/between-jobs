@@ -18,6 +18,7 @@
 // page that says nothing about keys is never sent to add one. Settings, where the key is added, does
 // not supply it and has its own rows for the same states, with the buttons that act in place.
 
+import { MODEL_CHOICE_LABEL } from "../modelKey";
 import { MODEL_PROVIDER_PATH } from "../settingsPaths";
 import type { NextStep, NextStepInput, NextStepRow, SetupCheck } from "./types";
 
@@ -150,7 +151,7 @@ const NO_USABLE_KEY = {
   },
   needs_model: {
     sentence: "Your model key is saved. Choose a model so Between Jobs can draft and score.",
-    label: "Choose a model",
+    label: MODEL_CHOICE_LABEL,
     why: "a key is saved, no model chosen",
   },
   // The setup checklist calls this "Add a model key" too; Settings, which knows the provider and can

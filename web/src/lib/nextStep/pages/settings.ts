@@ -27,6 +27,7 @@
 // S3 is session-only: "chosen just now" is known only in the visit that chose the model, like the
 // workspace's "PDF downloaded this session". After a reload the page shows S4.
 
+import { MODEL_CHOICE_LABEL } from "../../modelKey";
 import { definePage, type NextStepRow } from "../types";
 
 export type SettingsLlm =
@@ -95,7 +96,7 @@ const S2: NextStepRow<SettingsFacts> = {
     if (llm?.state !== "needs_model") return null;
     return {
       sentence: `Your ${llm.providerName} key is saved. Choose a model to finish.`,
-      action: { kind: "button", label: "Choose a model", intent: "choose-model" },
+      action: { kind: "button", label: MODEL_CHOICE_LABEL, intent: "choose-model" },
       why: [`${llm.providerName} key checked`, "no model chosen"],
     };
   },
