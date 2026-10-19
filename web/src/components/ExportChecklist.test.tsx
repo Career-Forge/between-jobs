@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChecklistItem } from "../lib/generateTypes";
 import type { ChecklistState } from "../lib/useGeneration";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
@@ -24,6 +24,15 @@ const ITEMS: ChecklistItem[] = [
 ];
 
 const ready = (items: ChecklistItem[] = ITEMS): ChecklistState => ({ kind: "ready", items });
+
+// jsdom has no layout and no scrollIntoView: a test that cares says what was asked of it.
+const scrolledIntoView = vi.fn();
+beforeEach(() => {
+  scrolledIntoView.mockClear();
+  Element.prototype.scrollIntoView = function (this: Element, options?: boolean | ScrollIntoViewOptions) {
+    scrolledIntoView(this, options);
+  };
+});
 
 describe("before the checks have run", () => {
   it("asks for them with a button, says they recompile the resume, and runs nothing by itself", () => {
@@ -112,6 +121,25 @@ describe("keyboard focus", () => {
       expect(buttonNamed(container, name), name).toBe(button);
       expect(document.activeElement, name).toBe(button);
     }
+  });
+
+  // The rows are drawn above the button that was pressed, so a tall list pushes it below the screen and the
+  // browser does not follow it: the page brings it back into view whenever the keyboard is still on it.
+  it("scrolls the button into view when the state changes with the keyboard on it, and not when the person is elsewhere", () => {
+    const { container, rerender } = render(<ExportChecklist checklist={{ kind: "idle" }} onRun={() => undefined} />);
+    const button = buttonNamed(container, "Run the export checks");
+    button.focus();
+    rerender(<ExportChecklist checklist={{ kind: "loading" }} onRun={() => undefined} />);
+    rerender(<ExportChecklist checklist={ready()} onRun={() => undefined} />);
+    expect(scrolledIntoView.mock.calls).toEqual([
+      [button, { block: "nearest" }],
+      [button, { block: "nearest" }],
+    ]);
+
+    scrolledIntoView.mockClear();
+    button.blur();
+    rerender(<ExportChecklist checklist={{ kind: "error", message: "Failed to load checklist" }} onRun={() => undefined} />);
+    expect(scrolledIntoView).not.toHaveBeenCalled();
   });
 
   it("announces that the checks finished, with the counts, from a status region that was already there", () => {

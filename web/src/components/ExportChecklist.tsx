@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChecklistItem } from "../lib/generateTypes";
 import type { ChecklistState } from "../lib/useGeneration";
 import { checklistSummary } from "../lib/checklistSummary";
@@ -60,8 +60,17 @@ export function ExportChecklist({ checklist, onRun }: { checklist: ChecklistStat
       return next;
     });
 
+  // The placeholder rows, and then the checks, are drawn ABOVE the button that was pressed, and a browser
+  // does not follow a focused control down the page: a tall list leaves the focus ring below the screen.
+  // Whenever the state changes with the keyboard still on the button, bring the button back into view.
+  const runButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const button = runButton.current;
+    if (button !== null && document.activeElement === button) button.scrollIntoView({ block: "nearest" });
+  }, [checklist.kind]);
+
   const run = (
-    <button type="button" aria-disabled={loading ? true : undefined} onClick={() => !loading && onRun()}>
+    <button ref={runButton} type="button" aria-disabled={loading ? true : undefined} onClick={() => !loading && onRun()}>
       {loading ? "Checking..." : checklist.kind === "ready" ? "Check again" : checklist.kind === "error" ? "Retry" : "Run the export checks"}
     </button>
   );
