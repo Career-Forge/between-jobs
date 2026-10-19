@@ -98,7 +98,7 @@ describe("the review with checks", () => {
     const { container } = render(<Harness />);
     const status = query(container, "#bj-import-progress");
     expect(status.getAttribute("role")).toBe("status");
-    expect(text(status)).toContain(`${TO_CHECK.length} of ${TO_CHECK.length} values still to check`);
+    expect(text(status)).toContain(`${TO_CHECK.length} of ${TO_CHECK.length} fields still to check`);
     expect(text(status)).toContain("there is no way to check them all at once");
     expect([...container.querySelectorAll("button")].some((button) => /all/i.test(text(button)) && /check/i.test(text(button)))).toBe(false);
   });
@@ -109,7 +109,7 @@ describe("the review with checks", () => {
     const button = use(container);
     expect(button.getAttribute("aria-disabled")).toBe("true");
     const hint = query(container, `#${button.getAttribute("aria-describedby")}`);
-    expect(text(hint)).toBe(`Check the ${TO_CHECK.length} remaining values to use this profile.`);
+    expect(text(hint)).toBe(`Check the ${TO_CHECK.length} remaining fields to use this profile.`);
     click(button);
     expect(actions.askUse).not.toHaveBeenCalled();
   });
@@ -118,11 +118,11 @@ describe("the review with checks", () => {
     const actions = actionsOf();
     const { container } = render(<Harness actions={actions} />);
     for (const box of boxes(container).slice(0, -1)) click(box);
-    expect(text(query(container, "#bj-import-progress"))).toContain(`1 of ${TO_CHECK.length} values still to check`);
+    expect(text(query(container, "#bj-import-progress"))).toContain(`1 of ${TO_CHECK.length} fields still to check`);
     expect(use(container).getAttribute("aria-disabled")).toBe("true");
-    expect(text(query(container, `#${use(container).getAttribute("aria-describedby")}`))).toBe("Check the 1 remaining value to use this profile.");
+    expect(text(query(container, `#${use(container).getAttribute("aria-describedby")}`))).toBe("Check the 1 remaining field to use this profile.");
     click(boxes(container).at(-1) as HTMLInputElement);
-    expect(text(query(container, "#bj-import-progress"))).toBe(`All ${TO_CHECK.length} values checked.`);
+    expect(text(query(container, "#bj-import-progress"))).toBe(`All ${TO_CHECK.length} fields checked.`);
     expect(use(container).hasAttribute("aria-disabled")).toBe(false);
     expect(use(container).hasAttribute("aria-describedby")).toBe(false);
     click(use(container));

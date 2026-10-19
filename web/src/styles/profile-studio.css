@@ -220,6 +220,10 @@ button.bj-dialog-confirm {
   font-weight: 600;
 }
 
+.bj-pin-field {
+  gap: var(--bj-space-2);
+}
+
 .bj-pin-min {
   margin-top: var(--bj-space-2);
 }
@@ -250,6 +254,12 @@ button.bj-dialog-confirm {
 
   .bj-section-editor-toggle,
   .bj-current-checkbox {
+    min-height: 44px;
+  }
+
+  a.bj-contact-chip {
+    display: inline-flex;
+    align-items: center;
     min-height: 44px;
   }
 

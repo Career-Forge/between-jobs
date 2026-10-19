@@ -217,7 +217,7 @@ describe("SkipLink", () => {
 describe("Skip to next step", () => {
   const skips = (markup: string): string[] => [...markup.matchAll(/<a [^>]*class="bj-skip-link"[^>]*>([^<]*)<\/a>/g)].map((match) => match[1]);
 
-  it.each(["/", "/discover", "/applications", "/practice", "/hiring-signals", "/settings"])("is the first stop on %s, which draws a band, ahead of Skip to content", (path) => {
+  it.each(["/", "/discover", "/applications", "/practice", "/hiring-signals", "/profile", "/settings"])("is the first stop on %s, which draws a band, ahead of Skip to content", (path) => {
     const markup = shell(path);
     expect(skips(markup)).toEqual(["Skip to next step", "Skip to content"]);
     expect(markup).toContain('href="#next-step-focus"');
@@ -225,7 +225,7 @@ describe("Skip to next step", () => {
     expect(markup.indexOf("Skip to content")).toBeLessThan(markup.indexOf("<header"));
   });
 
-  it.each(["/profile"])("is not offered on %s, which has no band to skip to", (path) => {
+  it.each(["/enroll"])("is not offered on %s, which has no band to skip to", (path) => {
     expect(skips(shell(path))).toEqual(["Skip to content"]);
   });
 
@@ -244,9 +244,10 @@ describe("Skip to next step", () => {
       "components/discover/DiscoverView.tsx",
       "components/today/TodayView.tsx",
       "pages/Practice.tsx",
+      "pages/Profile.tsx",
       "pages/Settings.tsx",
     ]);
-    expect(PATHS_WITH_A_BAND).toEqual(["/", "/discover", "/applications", "/practice", "/hiring-signals", "/settings"]);
+    expect(PATHS_WITH_A_BAND).toEqual(["/", "/discover", "/applications", "/practice", "/hiring-signals", "/profile", "/settings"]);
   });
 });
 

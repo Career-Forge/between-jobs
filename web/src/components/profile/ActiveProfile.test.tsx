@@ -1,13 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { CanonicalProfile } from "../lib/profileTypes";
-import { tagsOf, textOfMarkup } from "../testing/markup";
-import { ActiveProfile, ImportSection } from "./Profile";
+import type { CanonicalProfile } from "../../lib/profileTypes";
+import { ActiveProfile } from "./ActiveProfile";
 
 // The real API client pulls in the Supabase client, which throws at import
 // time without env vars (same reasoning as HiringSignalsPanel.test.tsx) --
 // nothing in a static render should reach a network anyway.
-vi.mock("../lib/api", () => ({
+vi.mock("../../lib/api", () => ({
   apiFetch: vi.fn(),
   ApiError: class ApiError extends Error {},
 }));
@@ -25,25 +24,25 @@ const captured = vi.hoisted(() => ({
   sectionedProfile: [] as unknown[],
 }));
 
-vi.mock("../components/HeaderComposer", () => ({
+vi.mock("../HeaderComposer", () => ({
   HeaderComposer: (props: unknown) => {
     captured.headerComposer.push(props);
     return null;
   },
 }));
-vi.mock("../components/SectionOrderEditor", () => ({
+vi.mock("../SectionOrderEditor", () => ({
   SectionOrderEditor: (props: unknown) => {
     captured.sectionOrderEditor.push(props);
     return null;
   },
 }));
-vi.mock("../components/ShapeSettingsPanel", () => ({
+vi.mock("../ShapeSettingsPanel", () => ({
   ShapeSettingsPanel: (props: unknown) => {
     captured.shapeSettingsPanel.push(props);
     return null;
   },
 }));
-vi.mock("../components/SectionedProfile", () => ({
+vi.mock("../SectionedProfile", () => ({
   SectionedProfile: (props: unknown) => {
     captured.sectionedProfile.push(props);
     return null;
@@ -64,6 +63,7 @@ function render(canonical_json: CanonicalProfile) {
     <ActiveProfile
       version={{ id: "v1", canonical_json, activated_at: "2026-09-01T00:00:00Z", version_count: 3 }}
       onEdited={() => Promise.resolve()}
+      now={new Date("2026-10-19T12:00:00Z")}
     />,
   );
 }
@@ -146,43 +146,5 @@ describe("ActiveProfile with the new Personal details card", () => {
   it("never renders or references work_authorization_status anywhere on the page", () => {
     const html = render(profile({ work_authorization: "a self-report" }));
     expect(html).not.toContain("work_authorization_status");
-  });
-});
-
-// The JSON import waits while a resume-file import is under way (a file being read, a draft waiting
-// for a decision): the JSON preview replaces the file card, which would drop its review unseen.
-describe("ImportSection while a resume-file import is open", () => {
-  function renderSection(disabled: boolean) {
-    return renderToStaticMarkup(
-      <ImportSection replacing busy={false} disabled={disabled} error={null} onImport={() => {}} />,
-    );
-  }
-
-  function buttonStates(html: string): Record<string, boolean> {
-    const states: Record<string, boolean> = {};
-    for (const match of html.matchAll(/<button([^>]*)>([^<]*)<\/button>/g)) {
-      states[match[2]] = /\bdisabled\b/.test(match[1]);
-    }
-    return states;
-  }
-
-  it("turns off pasting, the upload and the Import button, and says why", () => {
-    const html = renderSection(true);
-    expect("disabled" in tagsOf(html, "textarea")[0]).toBe(true);
-    const states = buttonStates(html);
-    expect(states["Upload .json file"]).toBe(true);
-    expect(states["Import"]).toBe(true);
-    // the template and the prompt need no server, so they stay available
-    expect(states["Download blank template"]).toBe(false);
-    expect(textOfMarkup(html)).toContain(
-      "A file import above is in progress. Finish it, or discard its draft, before importing JSON.",
-    );
-  });
-
-  it("is as it was when no file import is open: pasting and uploading are on, and no note", () => {
-    const html = renderSection(false);
-    expect("disabled" in tagsOf(html, "textarea")[0]).toBe(false);
-    expect(buttonStates(html)["Upload .json file"]).toBe(false);
-    expect(textOfMarkup(html)).not.toContain("A file import above is in progress");
   });
 });

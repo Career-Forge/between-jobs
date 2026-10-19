@@ -36,7 +36,7 @@ import webViteConfig from "../../vite.config.ts?raw";
 import extensionReadme from "../../../extension/README.md?raw";
 import accountCard from "../components/AccountCardView.tsx?raw";
 import connectionCards from "../components/settings/ConnectionCards.tsx?raw";
-import profile from "../pages/Profile.tsx?raw";
+import profile from "../components/profile/ActiveProfile.tsx?raw";
 import authSource from "../auth.tsx?raw";
 import hiringSignalsLib from "../lib/hiringSignals.ts?raw";
 import legalSource from "./legal.ts?raw";

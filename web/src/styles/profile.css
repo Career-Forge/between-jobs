@@ -63,6 +63,20 @@
   accent-color: var(--bj-text-muted);
 }
 
+/* The empty state's words and the import section under them are two blocks of the document, with air
+   between. */
+.bj-doc > .bj-state--empty {
+  margin-bottom: var(--bj-space-6);
+}
+
+/* A heading and the mark beside it (Active, Pending, Read by an AI model): the mark drops under a long
+   heading on a narrow screen instead of squeezing it. */
+.bj-prof-block .bj-card-header {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--bj-space-2) var(--bj-space-3);
+}
+
 .bj-import-group {
   display: flex;
   flex-direction: column;
@@ -749,7 +763,8 @@
   }
 
   .bj-profile .bj-anchor-nav a,
-  .bj-profile .bj-link-chip {
+  .bj-profile .bj-link-chip,
+  .bj-profile .bj-project-body > a {
     display: inline-flex;
     align-items: center;
     min-height: 44px;

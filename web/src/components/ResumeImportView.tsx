@@ -337,8 +337,8 @@ function ReviewPanel({
       {checks !== undefined && !draft.alreadyActive && (
         <p id={PROGRESS_ID} role="status" className="bj-import-progress">
           {remaining === 0
-            ? `All ${toCheck.length} ${toCheck.length === 1 ? "value" : "values"} checked.`
-            : `${remaining} of ${toCheck.length} ${toCheck.length === 1 ? "value" : "values"} still to check. Check each one below; there is no way to check them all at once. Your checks are kept only while this page is open.`}
+            ? `All ${toCheck.length} ${toCheck.length === 1 ? "field" : "fields"} checked.`
+            : `${remaining} of ${toCheck.length} ${toCheck.length === 1 ? "field" : "fields"} still to check. Check each one below; there is no way to check them all at once. Your checks are kept only while this page is open.`}
         </p>
       )}
 
@@ -427,7 +427,7 @@ function ReviewPanel({
           </div>
           {locked && (
             <p id={USE_HINT_ID} className="bj-muted bj-small">
-              {`Check the ${remaining} remaining ${remaining === 1 ? "value" : "values"} to use this profile.`}
+              {`Check the ${remaining} remaining ${remaining === 1 ? "field" : "fields"} to use this profile.`}
             </p>
           )}
           <p className="bj-muted bj-small">{LEAVE_NOTE}</p>

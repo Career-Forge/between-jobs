@@ -26,7 +26,7 @@ tags name its own host; left unset they name the hosted site (`scripts/siteOrigi
 the main navigation, then the signed-in address, Settings, Sign out and the legal links). Under 960px the rail is replaced by a slim top bar and a bottom tab bar with four tabs and a
 More button, whose sheet holds the entries that have no tab. Both navigations are always in the markup and
 CSS shows one; the destinations come from one list in `src/lib/nav.ts`. The page is the one `<main>`, and the
-first tab stop is a "Skip to content" link to it; on a page that draws a next-step band (Today, Discover, Hiring signals and Settings,
+first tab stop is a "Skip to content" link to it; on a page that draws a next-step band (Today, Discover, Applications, Practice, Hiring signals, Profile and Settings,
 `PATHS_WITH_A_BAND` in `AppShell.tsx`) a "Skip to next step" link to the band's button comes first. The sign-in
 page has both. The command palette and the assistant drawer are reserved
 (`src/components/ReservedSlots.tsx`): `hidden` and inert, so they take no room, print no placeholder and have no
@@ -296,6 +296,49 @@ their trail line, inline at every width. Neither makes a search when it opens.
   Result and saved-post cards take an optional `trail` prop (`components/HiringPostCard.tsx`).
 - A band button that starts a request is replaced while it runs; `lib/useBandFocus.ts` keeps keyboard focus on the
   band meanwhile.
+
+## Profile
+
+`src/pages/Profile.tsx` is the person's structured profile as a document: who it is, their personal
+details, the resume layout defaults, the sections (each one editable), importing a new version and deleting
+the account. It is drawn on `DocumentLayout` (so each block's trail line sits in the right margin from
+1280px, under the block below that, and opens as a sheet on a phone), and the blocks live in
+`src/components/profile/` (`ActiveProfile`, `JsonImport`, `JsonReview`) beside the older cards
+(`SectionedProfile`, `PersonalDetailsCard`, `HeaderComposer`, `SectionOrderEditor`, `ShapeSettingsPanel`,
+`EntryEditModal`, `ResumeImportCard`, `AccountCard`). Its styles are `src/styles/profile.css` (the page's
+blocks and the import review) and `src/styles/profile-studio.css` (the layout controls and the entry
+dialog, which the application workspace embeds too, so each component imports the sheet itself).
+
+- Requests: `GET /profile/current` is the page's own data (a 404 is "no profile yet"; anything else is a
+  failure the band says, with Try again). `GET /credentials` is read once, only for the band's "no usable
+  model key" row. Edits and the JSON import go through `POST /profile/versions` and
+  `POST /profile/versions/{id}/activate`, as they always have: every save is a new immutable version.
+  A re-read after an activation, a cancel or an edit never returns the page to Loading.
+- A waiting import is known only in the session that made it: no call lists a draft, so after a reload the
+  band says the profile is active. The JSON import's preview replaces the page's body; a resume file's draft
+  is reviewed in its own card, and the two never run at once.
+- The band's rows are `src/lib/nextStep/pages/profile.ts`: an import is waiting (PR1, a link to
+  `#import-review`), the person is on the review (IR1, "Confirm and make active"), or nothing is waiting
+  (PR0, unlit). `profileOutcome` points the global no-profile rows at `#set-up` and puts the review's own
+  step in place of G2b while the person is on the review. The band holds the page's one cyan fill: the
+  buttons that do the same thing in the body (`Use this profile`, `Looks good -- activate`, a dialog's
+  Save) are outlined.
+- A resume file's draft is checked field by field: each value read from the file has a checkbox, and both
+  `Use this profile` and the band's button stay locked until every one is checked. There is no "check all".
+  The checks live in the card and are not saved. The card lets the page's band use the draft through
+  `confirmAndUse` on its ref, which goes through the same guarded path as the confirm button.
+- The trail line under each block is built from returned fields only (`src/lib/profileTrails.ts`): how the
+  version was made (`source_kind`), when it was saved and how many versions there are, and nothing for a
+  field the API did not return. No model is ever named. `HeaderComposer`, `SectionOrderEditor` and
+  `ShapeSettingsPanel` draw their own trail line when given `showTrail` (off by default, so the workspace
+  embeds them unchanged); `HeaderComposer` also takes `activeVersionId` to say when its preview was built
+  from an earlier version of the profile.
+- `EntryEditModal` is a real dialog (`lib/useModalDialog.ts`): drawn into `<body>` with the page inert
+  behind it, focus kept inside, Esc to cancel (not while a save is out), and focus returned to the control
+  that opened it. A failed removal, skill or achievement save is shown above the sections, and the shared
+  editor's `error` is never drawn outside the dialog: a Personal details failure belongs to that card.
+- Header and section rows reorder with Move up / Move down buttons as well as by dragging, and the short
+  resume settings are radio groups drawn as outlined segments (`components/RadioSegments.tsx`).
 
 ## Signed-out pages
 
