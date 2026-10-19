@@ -9,8 +9,8 @@ import Applications from "./Applications";
 
 // The page itself, against a fake API: which requests it makes, what the band says as the answers
 // arrive, the list, the board and the phone's one-status-at-a-time list, a status change from the
-// first choice to the re-read after it, and what each failure leaves behind. The states drawn from
-// props are components/applications/ApplicationsView.test.tsx.
+// first choice to the re-read after it, and what each failure leaves behind. Every state is reached
+// here through the page's own requests, since the view that draws them takes only props.
 
 const api = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock("../lib/api", () => ({ apiFetch: api.apiFetch }));
@@ -255,7 +255,7 @@ describe("the list", () => {
     expect(text(query(first, ".bj-app-chip"))).toBe("◇Saved");
     const select = query<HTMLSelectElement>(first, "select[data-role='status']");
     expect(select.value).toBe("saved");
-    expect(select.getAttribute("aria-label")).toBe('Status of "Data Engineer"');
+    expect(select.getAttribute("aria-label")).toBe('Status of "Data Engineer" at Acme');
     expect([...select.options].map((option) => option.textContent)).toEqual([
       "Saved",
       "Applied",
@@ -361,7 +361,7 @@ describe("changing a status", () => {
     expect(body.idempotency_key.length).toBeGreaterThan(0);
     expect(text(query(card(container, "a1"), ".bj-app-chip"))).toBe("●Applied");
     expect(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']").value).toBe("applied");
-    expect(status(container)).toBe('Moved "Data Engineer" to Applied.');
+    expect(status(container)).toBe('Moved "Data Engineer" at Acme to Applied.');
     expect(sentence(container)).toBe("Your move on 1 · their move on 2.");
   });
 
@@ -392,7 +392,7 @@ describe("changing a status", () => {
     choose(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']"), "offer");
     await settle();
     const problem = query(card(container, "a1"), ".bj-app-problem");
-    expect(text(problem)).toBe("✕Couldn't move this to Offer. It is still where it was. Server unavailableRetry");
+    expect(text(problem)).toBe("✕The move to Offer didn't go through. Server unavailableRetry");
     expect(text(query(card(container, "a1"), ".bj-app-chip"))).toBe("◇Saved");
     // Nothing else on the page was touched: no other card has a problem, no page-level failure, no re-read.
     expect(container.querySelectorAll(".bj-app-problem")).toHaveLength(1);
@@ -406,6 +406,107 @@ describe("changing a status", () => {
     expect(calls()).toEqual(["POST /applications/a1/stage", "GET /applications"]);
     expect(bodyOf("POST /applications/a1/stage").new_status).toBe("offer");
     expect(container.querySelector(".bj-app-problem")).toBeNull();
+  });
+
+  it("does not claim where the card is: a failed move says only that the move did not go through", async () => {
+    answer({ "POST /applications/a1/stage": new TypeError("Failed to fetch") });
+    const { container } = await draw();
+    choose(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']"), "applied");
+    await settle();
+    const problem = text(query(card(container, "a1"), ".bj-app-problem"));
+    expect(problem).toContain("The move to Applied didn't go through. Failed to fetch");
+    expect(problem).not.toContain("still where it was");
+  });
+
+  it("keeps a failed move's callout while a read still shows the card where it was, and drops it once a read shows it elsewhere", async () => {
+    answer({ "POST /applications/a1/stage": new TypeError("Failed to fetch") });
+    const { container } = await draw();
+    choose(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']"), "applied");
+    await settle();
+
+    // Another card's move re-reads the list; a1 is still saved there, so its callout stands.
+    answer({ "POST /applications/a1/stage": new TypeError("Failed to fetch"), "POST /applications/a2/stage": {} });
+    choose(query<HTMLSelectElement>(card(container, "a2"), "select[data-role='status']"), "offer");
+    await settle();
+    expect(container.querySelectorAll(".bj-app-problem")).toHaveLength(1);
+
+    // The lost request had gone through after all: the next read shows a1 applied, and the card no
+    // longer says its move did not go through while it shows Applied.
+    answer({ "/applications": [{ ...SAVED, status: "applied", date_applied: "2026-10-05" }, APPLIED, INTERVIEW], "POST /applications/a2/stage": {} });
+    choose(query<HTMLSelectElement>(card(container, "a2"), "select[data-role='status']"), "offer");
+    await settle();
+    expect(card(container, "a1").querySelector(".bj-app-problem")).toBeNull();
+    expect(text(query(card(container, "a1"), ".bj-app-chip"))).toBe("●Applied");
+    expect(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']").value).toBe("applied");
+  });
+
+  it("sends a Retry under the same idempotency key as the move it repeats, and a new move under a new one", async () => {
+    let next = 0;
+    const spy = vi
+      .spyOn(globalThis.crypto, "randomUUID")
+      .mockImplementation(() => `00000000-0000-4000-8000-${String(++next).padStart(12, "0")}` as ReturnType<Crypto["randomUUID"]>);
+    try {
+      answer({ "POST /applications/a1/stage": new FakeApiError(500, "Server unavailable") });
+      const { container } = await draw();
+      choose(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']"), "offer");
+      await settle();
+      answer({ "POST /applications/a1/stage": new FakeApiError(500, "Server unavailable") });
+      click(buttonNamed(query(card(container, "a1"), ".bj-app-problem"), "Retry"));
+      await settle();
+      answer({ "POST /applications/a1/stage": {} });
+      click(buttonNamed(query(card(container, "a1"), ".bj-app-problem"), "Retry"));
+      await settle();
+      choose(query<HTMLSelectElement>(card(container, "a2"), "select[data-role='status']"), "offer");
+      await settle();
+      const keys = api.apiFetch.mock.calls
+        .filter(([path]) => String(path).endsWith("/stage"))
+        .map(([path, init]) => [path, JSON.parse(init.body).idempotency_key]);
+      expect(keys).toEqual([
+        ["/applications/a1/stage", "00000000-0000-4000-8000-000000000001"],
+        ["/applications/a1/stage", "00000000-0000-4000-8000-000000000001"],
+        ["/applications/a1/stage", "00000000-0000-4000-8000-000000000001"],
+        ["/applications/a2/stage", "00000000-0000-4000-8000-000000000002"],
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("keeps keyboard focus in the card when a Retry fails again, on the new Retry", async () => {
+    answer({ "POST /applications/a1/stage": new FakeApiError(500, "Server unavailable") });
+    const { container } = await draw();
+    choose(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']"), "offer");
+    await settle();
+    const retry = buttonNamed(query(card(container, "a1"), ".bj-app-problem"), "Retry");
+    retry.focus();
+    click(retry);
+    // The pressed Retry is replaced while the request is out, and focus goes with it.
+    (document.activeElement as HTMLElement | null)?.blur();
+    await settle();
+    expect(container.querySelectorAll(".bj-app-problem")).toHaveLength(1);
+    expect(document.activeElement).toBe(buttonNamed(query(card(container, "a1"), ".bj-app-problem"), "Retry"));
+  });
+
+  it("names the company in the announcement and the card's controls, and says a repeated move again", async () => {
+    const first = { ...SAVED, id: "b1", snapshot: snapshot("Software Engineer", "Acme") };
+    const second = { ...SAVED, id: "b2", snapshot: snapshot("Software Engineer", "Initech") };
+    answer({ "/applications": [first, second], "POST /applications/b1/stage": {}, "POST /applications/b2/stage": {} });
+    const { container } = await draw();
+    const names = (id: string) => [...card(container, id).querySelectorAll("select")].map((select) => select.getAttribute("aria-label"));
+    expect(names("b1")).toEqual(['Status of "Software Engineer" at Acme', 'Actions for "Software Engineer" at Acme']);
+    expect(names("b2")).toEqual(['Status of "Software Engineer" at Initech', 'Actions for "Software Engineer" at Initech']);
+
+    const region = () => query(container, ".bj-apps > .bj-visually-hidden[role='status']");
+    choose(query<HTMLSelectElement>(card(container, "b1"), "select[data-role='status']"), "applied");
+    await settle();
+    expect(status(container)).toBe('Moved "Software Engineer" at Acme to Applied.');
+    const once = region().textContent;
+    // The list still reads saved, so the same move is made again and says the same words; the region
+    // must still change, or a screen reader stays silent.
+    choose(query<HTMLSelectElement>(card(container, "b1"), "select[data-role='status']"), "applied");
+    await settle();
+    expect(status(container)).toBe('Moved "Software Engineer" at Acme to Applied.');
+    expect(region().textContent).not.toBe(once);
   });
 
   it("says the page's read failed when the re-read after a move fails, keeps the cards it has, and Try again recovers", async () => {
@@ -474,6 +575,24 @@ describe("failure of the list itself", () => {
     expect(document.activeElement).toBe(query(band(container), ".bj-band-sentence"));
   });
 
+  it("gives the body callout its own Retry when a setup row holds the band, since the band then has no Try again", async () => {
+    for (const setup of [{ "/profile/current": new FakeApiError(404, "no profile") }, { "/credentials": [] }]) {
+      answer({ "/applications": new FakeApiError(500, "down"), ...setup });
+      const { container, unmount } = await draw();
+      expect(() => buttonNamed(band(container), "Try again")).toThrow();
+      const callout = query(container, ".bj-state--failure");
+      expect(text(callout)).toBe("✕Your applications couldn't be read: downRetry");
+      answer({ ...setup });
+      api.apiFetch.mockClear();
+      click(buttonNamed(callout, "Retry"));
+      await settle();
+      expect(calls()).toEqual(["GET /applications"]);
+      expect(titles(container)).toHaveLength(3);
+      expect(container.querySelector(".bj-state--failure")).toBeNull();
+      unmount();
+    }
+  });
+
   it("goes back to loading for a retry of the first read, not on to a stale screen", async () => {
     answer({ "/applications": new FakeApiError(500, "down") });
     const { container } = await draw();
@@ -510,6 +629,28 @@ describe("an empty list", () => {
     expect(() => buttonNamed(query(container, ".bj-page-header"), "Track a job")).toThrow();
     // The band holds the one button; the teaching repeats none.
     expect(empty.querySelector("button, a")).toBeNull();
+  });
+
+  it("does not teach 'Nothing tracked yet' when a read after saving a posting failed: the list may be out of date", async () => {
+    let failing = false;
+    answer({
+      "/applications": () => (failing ? new FakeApiError(500, "down") : []),
+      "POST /applications": () => {
+        failing = true;
+        return {};
+      },
+    });
+    const { container } = await draw();
+    const form = query<HTMLFormElement>(container, "#start-tracking");
+    const [title, company] = [...form.querySelectorAll<HTMLInputElement>("input")];
+    typeInto(title, "Data Engineer");
+    typeInto(company, "Acme");
+    typeInto(query<HTMLTextAreaElement>(form, "textarea"), "Build pipelines.");
+    click(buttonNamed(form, "Start tracking"));
+    await settle();
+    expect(container.querySelector(".bj-state--empty")).toBeNull();
+    expect(container.textContent).not.toContain("Nothing tracked yet");
+    expect(text(query(container, ".bj-state--failure"))).toBe("✕Your applications couldn't be read again, so the list may be out of date: down");
   });
 
   it("has no serious accessibility violation", async () => {
@@ -575,6 +716,8 @@ describe("tracking a job", () => {
       "Add a Firecrawl key to fetch a job posting from a URL not already in the registry. You can also paste the posting instead.Missing:Add a Firecrawl key in Settings",
     );
     expect(query(notice, "a").getAttribute("href")).toBe("/settings");
+    // Announced on arrival, like the failure beside it: the callout sits in an alert.
+    expect(notice.closest("[role='alert']")).not.toBeNull();
     expect(form.querySelector(".bj-state--failure")).toBeNull();
     // The list is not re-read, and the forms stay usable.
     expect(calls().filter((call) => call === "GET /applications")).toHaveLength(1);
@@ -689,7 +832,7 @@ describe("List and Board", () => {
     expect(text(query(first, ".bj-app-badge"))).toBe("✦Resume drafted");
     expect(text(query(first, ".bj-app-card > .bj-trail"))).toBe("● You tracked this · from Discover · Sep 22");
     const move = query<HTMLSelectElement>(first, "select[data-role='status']");
-    expect(move.getAttribute("aria-label")).toBe('Move "Data Engineer" to a different stage');
+    expect(move.getAttribute("aria-label")).toBe('Move "Data Engineer" at Acme to a different stage');
     expect([...move.options].map((option) => option.textContent)).toEqual(["Move to...", "Applied", "Screening", "Interviewing", "Offer", "Rejected", "Withdrawn"]);
     expect(text(query(first, "a[href='/applications/a1']"))).toBe("Open");
   });
@@ -774,7 +917,7 @@ describe("List and Board", () => {
     choose(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']"), "offer");
     await settle();
     expect(titles(query(container, "[data-status='saved']"))).toEqual(["Data Engineer"]);
-    expect(text(query(card(container, "a1"), ".bj-app-problem"))).toContain("It is still where it was. Server unavailable");
+    expect(text(query(card(container, "a1"), ".bj-app-problem"))).toContain("The move to Offer didn't go through. Server unavailable");
     expect(() => buttonNamed(card(container, "a1"), "Retry")).not.toThrow();
   });
 
@@ -858,7 +1001,7 @@ describe("a phone", () => {
     choose(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']"), "applied");
     await settle();
     expect(calls()).toContain("POST /applications/a1/stage");
-    expect(status(container)).toBe('Moved "Data Engineer" to Applied.');
+    expect(status(container)).toBe('Moved "Data Engineer" at Acme to Applied.');
     expect(query<HTMLSelectElement>(container, "select[data-role='picker']").options[0].textContent).toBe("Saved (0)");
   });
 
@@ -928,5 +1071,59 @@ describe("keyboard", () => {
     keydown("Enter", { target: select });
     await settle(1);
     expect(calls()).toEqual([]);
+  });
+
+  // Windows and Linux Chromium and Firefox fire `change` on a closed select for every Arrow press.
+  function step(select: HTMLSelectElement, key: string, value: string) {
+    select.focus();
+    keydown(key, { target: select });
+    choose(select, value);
+  }
+
+  it("holds a status stepped to with the arrow keys until Enter, and drops it on Escape or leaving", async () => {
+    const { container } = await draw();
+    api.apiFetch.mockClear();
+    const select = query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']");
+    step(select, "ArrowDown", "applied");
+    step(select, "ArrowDown", "screening");
+    await settle(1);
+    expect(calls()).toEqual([]);
+    expect(select.value).toBe("screening");
+
+    keydown("Escape", { target: select });
+    expect(select.value).toBe("saved");
+    step(select, "ArrowDown", "applied");
+    act(() => select.blur());
+    expect(select.value).toBe("saved");
+    await settle(1);
+    expect(calls()).toEqual([]);
+
+    step(select, "ArrowDown", "applied");
+    step(select, "ArrowDown", "screening");
+    keydown("Enter", { target: select });
+    await settle();
+    expect(calls().filter((call) => call.startsWith("POST"))).toEqual(["POST /applications/a1/stage"]);
+    expect(bodyOf("POST /applications/a1/stage").new_status).toBe("screening");
+  });
+
+  it("holds a Move to... choice made with the arrow keys the same way, on a board card", async () => {
+    const { container } = await draw();
+    click(buttonNamed(container, "Board"));
+    api.apiFetch.mockClear();
+    const select = query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']");
+    step(select, "ArrowDown", "applied");
+    await settle(1);
+    expect(calls()).toEqual([]);
+    keydown("Enter", { target: select });
+    await settle();
+    expect(bodyOf("POST /applications/a1/stage").new_status).toBe("applied");
+  });
+
+  it("still sends at once for a choice made with the pointer or from the open list", async () => {
+    const { container } = await draw();
+    api.apiFetch.mockClear();
+    choose(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']"), "applied");
+    await settle();
+    expect(calls()[0]).toBe("POST /applications/a1/stage");
   });
 });

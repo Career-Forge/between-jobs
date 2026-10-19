@@ -49,7 +49,7 @@ export default function Practice() {
         <p>
           A practice session asks you five questions about one job, grounded in your resume evidence for it and in the company{"’"}s interview
           process when one was found. There is no company-blind practice here, so a session starts from an application: open one and use its
-          Practice section.
+          Interview practice section.
         </p>
       </EmptyState>
     </div>

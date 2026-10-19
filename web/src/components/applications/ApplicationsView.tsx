@@ -48,10 +48,21 @@ export interface ApplicationsViewProps {
   onRetryMove: (applicationId: string) => void;
   /** The tracking forms' own requests finished: read the list again. */
   onCreated: () => Promise<void>;
+  /** Read the list again: the body callout's own Retry, offered only where the band holds none. */
+  onRetryList: () => void;
   /** The header's "Track a job": scroll to the paste form. */
   onTrack: () => void;
   /** What a screen reader hears after a move: the polite status the page speaks through. */
   announcement: string;
+}
+
+// Whether the band already holds a button that reads the list again (F1's Try again, or G1's, which
+// reads the list too). When a setup row (G2, G3) holds the band instead, the failed list read has no
+// way to be retried unless the body offers one.
+function bandRetriesTheList(outcome: NextStepOutcome): boolean {
+  if (outcome.status !== "ready") return false;
+  const action = outcome.step.action;
+  return action !== null && action.kind === "button" && (action.intent === "retry" || action.intent === "retry-setup");
 }
 
 const TRACK_HEADING_ID = "bj-app-track-heading";
@@ -103,16 +114,21 @@ function Cards({ props, applications }: { props: ApplicationsViewProps; applicat
 
 function ListBody(props: ApplicationsViewProps) {
   const { list } = props;
+  const onRetry = bandRetriesTheList(props.outcome) ? undefined : props.onRetryList;
   if (list.kind === "loading") {
     return <LoadingState rows={3} rowHeight={132} label="Loading your applications..." />;
   }
   if (list.kind === "failed") {
-    return <FailureState message={`Your applications couldn't be read: ${list.message}`} />;
+    return <FailureState message={`Your applications couldn't be read: ${list.message}`} onRetry={onRetry} />;
   }
   if (list.applications.length === 0) {
+    // An empty list that could not be read again may be out of date (a job may have just been
+    // saved), so it is not taught as "nothing tracked yet" until a read says so.
+    if (list.refreshFailed !== null) {
+      return <FailureState message={`Your applications couldn't be read again, so the list may be out of date: ${list.refreshFailed}`} onRetry={onRetry} />;
+    }
     return (
       <>
-        {list.refreshFailed !== null && <FailureState message={`Your applications couldn't be read again: ${list.refreshFailed}`} />}
         <EmptyState heading="Nothing tracked yet">
           <p>
             Each job you track lands here as one card with its status, and as {"“"}Resume drafted{"”"} once a resume draft exists for it. There are
@@ -128,6 +144,7 @@ function ListBody(props: ApplicationsViewProps) {
       {list.refreshFailed !== null && (
         <FailureState
           message={`Your applications couldn't be read again, so what is shown may be out of date: ${list.refreshFailed}`}
+          onRetry={onRetry}
         />
       )}
       <div className="bj-app-toolbar">

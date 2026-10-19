@@ -14,16 +14,19 @@ import { useHiringSignalsEnabled } from "../lib/useHiringSignalsStatus";
 export function ApplicationActionsSelect({
   applicationId,
   title,
+  company,
 }: {
   applicationId: string;
   title: string | null | undefined;
+  /** Named in the control's label when known: the same title is tracked at several companies. */
+  company?: string | null;
 }) {
   const navigate = useNavigate();
   const items = crossNavItemsFor(CROSS_NAV_ITEMS, useHiringSignalsEnabled());
   return (
     <select
       className="bj-app-select"
-      aria-label={`Actions for "${title ?? "Untitled"}"`}
+      aria-label={`Actions for "${title ?? "Untitled"}"${company ? ` at ${company}` : ""}`}
       value=""
       onChange={(e) => {
         const hash = e.target.value;

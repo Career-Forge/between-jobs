@@ -81,6 +81,8 @@ describe("the page", () => {
     expect(body).toContain("five questions about one job");
     expect(body).toContain("resume evidence");
     expect(body).toContain("There is no company-blind practice here");
+    // Named as the workspace names it: its panel is headed "Interview practice".
+    expect(body).toContain("open one and use its Interview practice section");
     expect(query(container, ".bj-state--empty").querySelector("a, button")).toBeNull();
   });
 

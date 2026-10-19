@@ -22,11 +22,15 @@ function FormProblem({ problem }: { problem: Failure | null }) {
   if (problem === null) return null;
   if (problem.kind === "setup") {
     const { notice } = problem;
+    // The setup callout appears as the result of a press, so it is announced like the failure beside
+    // it (FailureState is role="alert"); on its own it is a plain div and a screen reader says nothing.
     return (
-      <SetupRequiredState
-        message={`${notice.message} You can also paste the posting instead.`}
-        missing={[{ label: notice.linkLabel ?? "Open Settings", to: notice.linkTo ?? SETTINGS_PATH }]}
-      />
+      <div role="alert">
+        <SetupRequiredState
+          message={`${notice.message} You can also paste the posting instead.`}
+          missing={[{ label: notice.linkLabel ?? "Open Settings", to: notice.linkTo ?? SETTINGS_PATH }]}
+        />
+      </div>
     );
   }
   return <FailureState message={problem.message} />;

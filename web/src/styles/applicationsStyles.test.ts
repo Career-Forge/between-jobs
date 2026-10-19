@@ -96,6 +96,12 @@ describe("the list and the board", () => {
     expect(declarationsFor(base, ".bj-app-badge-glyph").color).toBe("var(--bj-violet)");
   });
 
+  it("draws the tracking forms' fields with the outline token, not the card's hairline (a 3:1 boundary)", () => {
+    for (const selector of [".bj-app-track-card .bj-field input", ".bj-app-track-card .bj-field textarea"]) {
+      expect(declarationsFor(base, selector)["border-color"], selector).toBe("var(--bj-outline)");
+    }
+  });
+
   it("puts the tracking forms side by side from 960px and stacked below it", () => {
     expect(declarationsFor(base, ".bj-app-track-grid")["grid-template-columns"]).toBe("minmax(0, 1fr)");
     expect(declarationsFor(mid, ".bj-app-track-grid")["grid-template-columns"]).toBe("repeat(2, minmax(0, 1fr))");
@@ -104,11 +110,15 @@ describe("the list and the board", () => {
 
 describe("a phone", () => {
   it("makes every control at least 44px tall", () => {
-    const selectors = [".bj-app-select", ".bj-app-track-card button", ".bj-app-track-card .bj-field input", ".bj-app-track-link", ".bj-app-link", ".bj-app-track-card .bj-state-missing a"];
+    const selectors = [".bj-app-select", ".bj-app-track-card button", ".bj-app-track-card .bj-field input", ".bj-app-track-link", ".bj-app-link", ".bj-app-track-card .bj-state-missing a", ".bj-app-problem button"];
     for (const selector of selectors) {
       expect(declarationsFor(phone, selector)["min-height"], selector).toBe("44px");
     }
     expect(declarationsFor(base, ".bj-app-picker-select")["min-height"]).toBe("44px");
+  });
+
+  it("gives the card's short 'Open' link a 44px width as well as height", () => {
+    expect(declarationsFor(phone, ".bj-app-link")["min-width"]).toBe("44px");
   });
 
   it("lets the selects in a card share its width instead of overflowing it", () => {

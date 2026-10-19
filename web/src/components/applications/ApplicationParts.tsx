@@ -1,3 +1,4 @@
+import { useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { formatAppliedDate, otherStatuses, STATUS_LABELS } from "../../lib/applicationsBoard";
 import { cardTrail, STATUS_CHIPS } from "../../lib/applicationsView";
@@ -12,15 +13,27 @@ import "../../styles/applications.css";
 // trail) and the controls that act on it. What is said comes from lib/applicationsView.ts; this only
 // draws it.
 
-// A move that did not go through: where it was going, and what the server said. The card stays where
-// it was, with this under it and a Retry that sends the same move again.
+// A move that did not go through: where it was going, the status the card had when it was asked, the
+// key the request carried, and what the server said. The card is shown with this under it and a Retry
+// that sends the same move again under the same key, so the server can tell a retry from a new move.
+// `from` is what lets the page drop this once a re-read shows the card somewhere else: a request that
+// failed on the wire may still have gone through.
 export interface MoveProblem {
   to: ApplicationStatus;
+  from: ApplicationStatus | null;
+  idempotencyKey: string;
   message: string;
 }
 
 export function titleOf(application: Application): string {
   return application.snapshot?.title ?? "Untitled";
+}
+
+// How the card is named to a screen reader: the title alone is not enough, since the same title
+// ("Software Engineer") is tracked at several companies.
+export function nameOf(application: Application): string {
+  const company = application.snapshot?.company_name;
+  return company ? `"${titleOf(application)}" at ${company}` : `"${titleOf(application)}"`;
 }
 
 export function companyLine(application: Application): string {
@@ -82,15 +95,55 @@ export function CardTrail({ application, now }: { application: Application; now:
   return <TrailLine trail={cardTrail(application, now)} />;
 }
 
+// Says what the page knows: the request did not come back as done. It does not say where the card
+// is -- a request that failed on the wire may have gone through, and the card itself shows its status.
 export function CardProblem({ problem, onRetry }: { problem: MoveProblem; onRetry: () => void }) {
   return (
     <div className="bj-app-problem">
-      <FailureState
-        message={`Couldn't move this to ${STATUS_LABELS[problem.to]}. It is still where it was. ${problem.message}`}
-        onRetry={onRetry}
-      />
+      <FailureState message={`The move to ${STATUS_LABELS[problem.to]} didn't go through. ${problem.message}`} onRetry={onRetry} />
     </div>
   );
+}
+
+// The keys that move a closed select's value without opening it. On Windows and Linux Chromium and
+// on Firefox each of them fires `change` at once, so reading the change as a decision would send a
+// status change per Arrow press while the person is only looking through the options.
+const STEP_KEYS: ReadonlySet<string> = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"]);
+
+// A select whose choice is a decision: a choice made with the pointer or from the open list is
+// committed at once, and one made by stepping the closed select with the keyboard is held until Enter
+// (Tab, Escape or leaving drops it). The same rule as the Jump to select on the workspace page.
+function useHeldSelect(committed: string, onCommit: (value: string) => void) {
+  const [pending, setPending] = useState<string | null>(null);
+  const stepping = useRef(false);
+  return {
+    value: pending ?? committed,
+    onKeyDown: (event: KeyboardEvent<HTMLSelectElement>) => {
+      if (event.key === "Enter" && pending !== null) {
+        event.preventDefault();
+        const value = pending;
+        setPending(null);
+        onCommit(value);
+        return;
+      }
+      if (event.key === "Escape") setPending(null);
+      const modified = event.altKey || event.ctrlKey || event.metaKey;
+      stepping.current = !modified && (STEP_KEYS.has(event.key) || (event.key.length === 1 && event.key !== " "));
+    },
+    onKeyUp: () => {
+      stepping.current = false;
+    },
+    onBlur: () => setPending(null),
+    onChange: (value: string) => {
+      const viaKeyboardStep = stepping.current;
+      stepping.current = false;
+      if (viaKeyboardStep) setPending(value);
+      else {
+        setPending(null);
+        onCommit(value);
+      }
+    },
+  };
 }
 
 // The list's status control: always visible, always the card's real status, so a wrong one is a
@@ -105,16 +158,20 @@ export function StatusSelect({
   busy: boolean;
   onChange: (status: ApplicationStatus) => void;
 }) {
+  const held = useHeldSelect(application.status, (value) => {
+    if (!busy) onChange(value as ApplicationStatus);
+  });
   return (
     <select
       className="bj-app-select"
       data-role="status"
-      aria-label={`Status of "${titleOf(application)}"`}
+      aria-label={`Status of ${nameOf(application)}`}
       aria-disabled={busy ? true : undefined}
-      value={application.status}
-      onChange={(event) => {
-        if (!busy) onChange(event.target.value as ApplicationStatus);
-      }}
+      value={held.value}
+      onKeyDown={held.onKeyDown}
+      onKeyUp={held.onKeyUp}
+      onBlur={held.onBlur}
+      onChange={(event) => held.onChange(event.target.value)}
     >
       {ALL_STATUSES.map((status) => (
         <option key={status} value={status}>
@@ -135,17 +192,20 @@ export function MoveSelect({
   busy: boolean;
   onChange: (status: ApplicationStatus) => void;
 }) {
+  const held = useHeldSelect("", (value) => {
+    if (value && !busy) onChange(value as ApplicationStatus);
+  });
   return (
     <select
       className="bj-app-select"
       data-role="status"
-      aria-label={`Move "${titleOf(application)}" to a different stage`}
+      aria-label={`Move ${nameOf(application)} to a different stage`}
       aria-disabled={busy ? true : undefined}
-      value=""
-      onChange={(event) => {
-        const value = event.target.value;
-        if (value && !busy) onChange(value as ApplicationStatus);
-      }}
+      value={held.value}
+      onKeyDown={held.onKeyDown}
+      onKeyUp={held.onKeyUp}
+      onBlur={held.onBlur}
+      onChange={(event) => held.onChange(event.target.value)}
     >
       <option value="">Move to...</option>
       {otherStatuses(application.status).map((status) => (
@@ -166,5 +226,5 @@ export function OpenLink({ application, label }: { application: Application; lab
 }
 
 export function CardActions({ application }: { application: Application }) {
-  return <ApplicationActionsSelect applicationId={application.id} title={application.snapshot?.title} />;
+  return <ApplicationActionsSelect applicationId={application.id} title={application.snapshot?.title} company={application.snapshot?.company_name} />;
 }

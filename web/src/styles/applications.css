@@ -371,9 +371,12 @@
   color: var(--bj-text-muted);
 }
 
+/* A field's edge is a boundary a low-vision reader has to see (3:1), which the card's own hairline
+   is not: the fields take the same outline as the page's buttons and selects. */
 .bj-app-track-card .bj-field input,
 .bj-app-track-card .bj-field textarea {
   min-width: 0;
+  border-color: var(--bj-outline);
 }
 
 /* The header's "Track a job": a text link that happens to be a button. The shared flat button leaves
@@ -408,6 +411,13 @@
   .bj-app-link {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Retry is the only way back from a failed move on a touch screen. */
+  .bj-app-problem button {
     min-height: 44px;
   }
 

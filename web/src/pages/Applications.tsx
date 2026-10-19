@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { ApplicationsView, type ApplicationsLayout, type ApplicationsListState } from "../components/applications/ApplicationsView";
-import type { MoveProblem } from "../components/applications/ApplicationParts";
+import { nameOf, type MoveProblem } from "../components/applications/ApplicationParts";
 import { START_TRACKING_HEADING_ID, START_TRACKING_ID } from "../components/applications/TrackForms";
 import { NEXT_STEP_FOCUS_ID } from "../components/paper/NextStepBand";
 import { apiFetch } from "../lib/api";
@@ -26,14 +26,18 @@ import { useScrollToHash } from "../lib/useScrollToHash";
 // because the band's setup rows need them. A status change is POST /applications/{id}/stage, followed
 // by a re-read of the whole list (no optimistic merge of a half-known row). Creating one is
 // POST /applications (a pasted posting) or POST /applications/from-url, each followed by the same
-// re-read. A failed move is kept on its own card, which stays on its old status, with a Retry.
+// re-read. A failed move is kept on its own card with a Retry that sends it again under the same
+// idempotency key; it is dropped as soon as a read shows the card on a different status than it had
+// when the move failed, because a request that failed on the wire may have gone through.
 //
 // A Set of busy ids, not a single id: the board can have several cards in flight at once (a drag on
 // one card while another card's select is still awaiting its response), and one shared busy id would
 // let the earlier request's card read as no longer busy the moment a second one starts, re-enabling
 // it for a concurrent, racing stage change.
 
-type FocusRequest = { kind: "band" } | { kind: "card"; id: string };
+// Where focus returns to when the control that had it is gone: the band, a card's status control
+// (after a move), or a card's Retry (after a Retry that failed again).
+type FocusRequest = { kind: "band" } | { kind: "card"; id: string } | { kind: "problem"; id: string };
 
 interface LoadFailure {
   message: string;
@@ -60,7 +64,9 @@ export default function Applications() {
   const [problems, setProblems] = useState<Record<string, MoveProblem | undefined>>({});
   const [layout, setLayout] = useState<ApplicationsLayout>("list");
   const [remembered, setRemembered] = useState<ApplicationStatus | null>(() => readStoredStatus(browserStorage()));
-  const [announcement, setAnnouncement] = useState("");
+  // `count` changes with every announcement, so the same words said twice in a row (moving a card
+  // out and back) still change what the live region holds and are read again.
+  const [announcement, setAnnouncement] = useState({ text: "", count: 0 });
   const [refocus, setRefocus] = useState<FocusRequest | null>(null);
   const [now] = useState(() => new Date());
   const phone = useIsPhone();
@@ -92,11 +98,12 @@ export default function Applications() {
     void load();
   }, [load]);
 
-  // A link to /applications#start-tracking (the setup checklist's) lands on the paste form. The forms
-  // are always on the page, so what the hash names exists from the first render.
+  // A link to /applications#start-tracking lands on the paste form. The forms are always on the page,
+  // so what the hash names exists from the first render.
   useScrollToHash(true, location.hash);
 
-  async function changeStatus(applicationId: string, newStatus: ApplicationStatus) {
+  // `idempotencyKey` is only passed by a Retry, which sends the failed move again under its own key.
+  async function changeStatus(applicationId: string, newStatus: ApplicationStatus, idempotencyKey: string = crypto.randomUUID()) {
     if (inFlight.current.has(applicationId)) return;
     inFlight.current.add(applicationId);
     const application = latest.current?.find((candidate) => candidate.id === applicationId);
@@ -108,20 +115,27 @@ export default function Applications() {
           method: "POST",
           body: JSON.stringify({
             new_status: newStatus,
-            idempotency_key: crypto.randomUUID(),
+            idempotency_key: idempotencyKey,
           }),
         });
       } catch (e) {
         // The card stays on its old status with the reason under it; the rest of the page is as it was.
         setProblems((current) => ({
           ...current,
-          [applicationId]: { to: newStatus, message: e instanceof Error ? e.message : "Failed to change status" },
+          [applicationId]: {
+            to: newStatus,
+            from: application?.status ?? null,
+            idempotencyKey,
+            message: e instanceof Error ? e.message : "Failed to change status",
+          },
         }));
+        // A Retry that failed again replaced the button that was pressed with a new one.
+        setRefocus({ kind: "problem", id: applicationId });
         return;
       }
       const read = await load();
-      const title = application?.snapshot?.title;
-      setAnnouncement(read ? `Moved ${title === undefined ? "the application" : `"${title}"`} to ${STATUS_LABELS[newStatus]}.` : "");
+      const text = read ? `Moved ${application === undefined ? "the application" : nameOf(application)} to ${STATUS_LABELS[newStatus]}.` : "";
+      setAnnouncement((previous) => ({ text, count: previous.count + 1 }));
       setRefocus({ kind: "card", id: applicationId });
     } finally {
       inFlight.current.delete(applicationId);
@@ -135,7 +149,7 @@ export default function Applications() {
 
   function retryMove(applicationId: string) {
     const problem = problems[applicationId];
-    if (problem !== undefined) void changeStatus(applicationId, problem.to);
+    if (problem !== undefined) void changeStatus(applicationId, problem.to, problem.idempotencyKey);
   }
 
   async function retryLoad() {
@@ -204,7 +218,8 @@ export default function Applications() {
       return;
     }
     const card = [...document.querySelectorAll<HTMLElement>("[data-app-id]")].find((element) => element.dataset.appId === refocus.id);
-    (card?.querySelector<HTMLElement>('[data-role="status"]') ?? document.querySelector<HTMLElement>('[data-role="picker"]'))?.focus();
+    const retry = refocus.kind === "problem" ? card?.querySelector<HTMLElement>(".bj-app-problem button") : null;
+    (retry ?? card?.querySelector<HTMLElement>('[data-role="status"]') ?? document.querySelector<HTMLElement>('[data-role="picker"]'))?.focus();
   });
 
   const list: ApplicationsListState =
@@ -213,6 +228,19 @@ export default function Applications() {
       : loadFailure !== null
         ? { kind: "failed", message: loadFailure.message }
         : { kind: "loading" };
+
+  // A problem is about the card as it was when the move failed. Once a read shows the card on any
+  // other status (the move did go through, or it changed elsewhere), or no longer shows it, the
+  // problem is not about this card any more.
+  const shownProblems = useMemo(() => {
+    const kept: Record<string, MoveProblem | undefined> = {};
+    for (const [id, problem] of Object.entries(problems)) {
+      if (problem === undefined) continue;
+      const application = applications?.find((candidate) => candidate.id === id);
+      if (application !== undefined && application.status === problem.from) kept[id] = problem;
+    }
+    return kept;
+  }, [problems, applications]);
 
   const shownStatus = phoneStatus(remembered, statusCounts(applications ?? []));
 
@@ -231,14 +259,15 @@ export default function Applications() {
         storeStatus(browserStorage(), status);
       }}
       busyIds={busyIds}
-      problems={problems}
+      problems={shownProblems}
       onChangeStatus={(applicationId, status) => void changeStatus(applicationId, status)}
       onRetryMove={retryMove}
       onCreated={async () => {
         await load();
       }}
       onTrack={revealTracking}
-      announcement={announcement}
+      announcement={announcement.text + (announcement.count % 2 === 0 ? "" : "\u00a0")}
+      onRetryList={() => void retryLoad()}
     />
   );
 }
