@@ -229,7 +229,7 @@ export function SearchKeysSection({ credentials, hiringSignalsEnabled, now, onCh
         </button>
       </h2>
       <p className="bj-set-lede">
-        Discover works without these. They add {hiringSignalsEnabled ? "live job search, people lookup and hiring posts" : "live job search and people lookup"}.
+        Discover works without these. They add {hiringSignalsEnabled ? "live job search, company and event research, people lookup and hiring posts" : "live job search, company and event research, and people lookup"}.
       </p>
       {/* Always drawn and hidden while closed, so a link to one key (or a form half-filled) is not lost by closing. */}
       <div id={bodyId} className="bj-extras-body" hidden={!open}>

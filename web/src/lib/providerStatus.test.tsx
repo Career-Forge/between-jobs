@@ -2,6 +2,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import contactResearchRoutes from "../../../src/between_jobs/api/contact_research_routes.py?raw";
 import credentialsRoutes from "../../../src/between_jobs/api/credentials_routes.py?raw";
+import applicationsRoutes from "../../../src/between_jobs/api/applications_routes.py?raw";
+import companyIntelPipeline from "../../../src/between_jobs/api/company_intel_pipeline.py?raw";
+import warmPathEvents from "../../../src/between_jobs/api/warm_path_events.py?raw";
 import discoveryRoutes from "../../../src/between_jobs/api/discovery_routes.py?raw";
 import hiringSignalSearch from "../../../src/between_jobs/api/hiring_signal_search.py?raw";
 import searchProviders from "../../../src/between_jobs/api/search_providers.py?raw";
@@ -254,6 +257,32 @@ describe("a provider's card", () => {
     );
     expect(html).toContain("Connected");
     expect(html).toContain("Not yet verified live");
+  });
+});
+
+// What each key unlocks, against the routes that raise SETUP_REQUIRED without it. The one hard
+// requirement of a key listed here is easy to leave out of a note, so the sentences are held to the
+// server's.
+describe("what the Firecrawl and You.com notes and the extras' one-line summary say each key unlocks", () => {
+  const firecrawl = SEARCH_PROVIDER_CARDS.find((card) => card.provider === "firecrawl") as SearchProviderCardSpec;
+  const youCom = SEARCH_PROVIDER_CARDS.find((card) => card.provider === "you_com") as SearchProviderCardSpec;
+
+  it("names the one place a Firecrawl key is required, adding a job from a link, in both forms of its note", () => {
+    expect(applicationsRoutes).toContain("Add a Firecrawl key to fetch a job posting from a URL");
+    expect(applicationsRoutes).toContain('missing=["firecrawl_credential"]');
+    for (const hiring of [false, true]) {
+      expect(cardNote(firecrawl, hiring), String(hiring)).toContain("to fetch a job posting from a link");
+    }
+    // and a key that is not required for that does not claim it
+    expect(cardNote(youCom, true)).not.toContain("from a link");
+  });
+
+  it("says company and event research are what You.com or Firecrawl add, as the routes that need one of them say", () => {
+    expect(companyIntelPipeline).toContain('missing=["you_com_or_firecrawl_credential"]');
+    expect(warmPathEvents).toContain('missing=["you_com_or_firecrawl_credential"]');
+    for (const card of [firecrawl, youCom]) expect(cardNote(card, false), card.provider).toContain("research companies");
+    // the extras' one line says it too (SearchKeysSection.test.tsx pins its exact words)
+    expect(searchKeysSource).toContain("company and event research");
   });
 });
 

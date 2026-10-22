@@ -44,7 +44,7 @@ describe("the disclosure", () => {
     const toggle = query<HTMLButtonElement>(heading, "button");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(query(container, `#${CSS.escape(toggle.getAttribute("aria-controls") ?? "")}`).hasAttribute("hidden")).toBe(true);
-    expect(text(query(container, ".bj-set-lede"))).toBe("Discover works without these. They add live job search and people lookup.");
+    expect(text(query(container, ".bj-set-lede"))).toBe("Discover works without these. They add live job search, company and event research, and people lookup.");
   });
 
   it("is a real button inside the heading, so Enter and Space open it from the keyboard, and it opens and closes", () => {
@@ -68,7 +68,7 @@ describe("the disclosure", () => {
   it("says nothing of hiring posts to a person who does not have Hiring signals, and does to one who does", () => {
     expect(text(mount([], false).container).toLowerCase()).not.toContain("hiring");
     const on = mount([], true);
-    expect(text(query(on.container, ".bj-set-lede"))).toBe("Discover works without these. They add live job search, people lookup and hiring posts.");
+    expect(text(query(on.container, ".bj-set-lede"))).toBe("Discover works without these. They add live job search, company and event research, people lookup and hiring posts.");
   });
 
   it("has no count of connected keys anywhere, and no setup score", () => {

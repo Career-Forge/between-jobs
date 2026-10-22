@@ -122,8 +122,8 @@ export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
     placeholder: "fc-...",
     getKeyUrl: "https://www.firecrawl.dev/app/api-keys",
     checkNote: "a free credit-usage read",
-    note: `Used for job search on Discover, and to research companies and contacts. ${FIRECRAWL_VALIDATION}`,
-    hiringNote: `Used for job search on Discover, to find hiring posts on an application, and to research companies and contacts. ${FIRECRAWL_VALIDATION}`,
+    note: `Used for job search on Discover, to fetch a job posting from a link, and to research companies and contacts. ${FIRECRAWL_VALIDATION}`,
+    hiringNote: `Used for job search on Discover, to fetch a job posting from a link, to find hiring posts on an application, and to research companies and contacts. ${FIRECRAWL_VALIDATION}`,
   },
   {
     title: PROVIDER_NAMES.brave,
