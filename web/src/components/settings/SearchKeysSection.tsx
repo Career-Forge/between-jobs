@@ -89,6 +89,9 @@ export function SearchKeyRow({ card, hiringSignalsEnabled, credential, now, onCh
     try {
       await apiFetch(`/credentials/search/${provider}`, { method: "DELETE" });
       await onChanged();
+      // The confirmation that had focus is gone. The row's own button (now "Connect") is the nearest
+      // place in the same list, so the keyboard stays here instead of falling to the top of the page.
+      opener.current?.focus();
     } catch (e) {
       setError(settingsFailureMessage(e, { action: "remove_key", provider: title }, "Failed to remove that key."));
     } finally {
@@ -123,14 +126,16 @@ export function SearchKeyRow({ card, hiringSignalsEnabled, credential, now, onCh
             onClick={() => setAdding((open) => !open)}
           >
             {connected ? (
-              "Replace key"
+              <>
+                Replace key<span className="bj-visually-hidden"> for {title}</span>
+              </>
             ) : (
               <>
                 Connect<span className="bj-visually-hidden"> {title}</span>
               </>
             )}
           </button>
-          {connected && <RemoveKey what={`${title} key`} holder={title} busy={removing} onRemove={() => void remove()} />}
+          {connected && <RemoveKey what={`${title} key`} holder={title} subject={title} busy={removing} onRemove={() => void remove()} />}
         </div>
       </div>
       {connected && (

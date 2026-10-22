@@ -111,9 +111,9 @@ export function ConnectedProviderRow({ credential, provider, hostName, regionNam
             </button>
           )}
           <button type="button" className="bj-quiet" id={`provider-${credential.provider}-replace-button`} aria-expanded={panel === "replace"} onClick={() => onPanel(panel === "replace" ? null : "replace")}>
-            Replace key
+            Replace key<span className="bj-visually-hidden"> for {name}</span>
           </button>
-          <RemoveKey what={`${name} key`} holder={hostName ?? name} busy={removing} onRemove={() => void remove()} />
+          <RemoveKey what={`${name} key`} holder={hostName ?? name} subject={name} busy={removing} onRemove={() => void remove()} />
           {provider?.manageUrl != null && (
             <a href={provider.manageUrl} target="_blank" rel="noopener noreferrer">
               Manage on {name}

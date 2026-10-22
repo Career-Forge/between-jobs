@@ -15,9 +15,14 @@ export interface RemoveKeyProps {
   holder: string;
   busy: boolean;
   onRemove: () => void;
+  /**
+   * Who the opening button is for, said only to a screen reader ("Remove key for Brave Search"). Rows
+   * of keys repeat "Remove key", and a list of buttons that all read the same cannot be told apart.
+   */
+  subject?: string;
 }
 
-export function RemoveKey({ what, holder, busy, onRemove }: RemoveKeyProps) {
+export function RemoveKey({ what, holder, busy, onRemove, subject }: RemoveKeyProps) {
   const [asking, setAsking] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
   const confirm = useRef<HTMLButtonElement>(null);
@@ -35,6 +40,7 @@ export function RemoveKey({ what, holder, busy, onRemove }: RemoveKeyProps) {
     return (
       <button ref={opener} type="button" className="bj-quiet" onClick={() => setAsking(true)}>
         Remove key
+        {subject !== undefined && <span className="bj-visually-hidden"> for {subject}</span>}
       </button>
     );
   }
