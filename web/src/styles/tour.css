@@ -548,6 +548,13 @@ button.bj-tour-tab:focus-visible {
   background: transparent;
 }
 
+/* A question the extension never touches is its own state: dashed in the plain outline (3:1), not the gold of a
+   field it left for the person after trying. */
+.bj-tour-fields li[data-state="untouched"] .bj-tour-field-box {
+  border: 1px dashed var(--bj-outline);
+  background: transparent;
+}
+
 .bj-tour-submit {
   display: flex;
   flex-wrap: wrap;

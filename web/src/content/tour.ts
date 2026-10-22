@@ -183,19 +183,27 @@ export const TOUR = {
       { label: "Full name", state: "filled" },
       { label: "Email", state: "filled" },
       { label: "Resume", state: "filled" },
-      { label: "Demographic questions", state: "left" },
-      { label: "Accommodation questions", state: "left" },
+      { label: "Country", state: "left" },
+      { label: "Demographic and accommodation questions", state: "untouched" },
     ],
     filled: "Filled",
     left: "Left for you",
+    untouched: "Not touched",
+    // What the extension does with self-identification questions: it never fills or lists them (the extension
+    // README, lib/questionSafety.ts), so they are drawn as the form's own and not as part of the panel.
+    untouchedNote:
+      "The extension does not fill demographic or accommodation questions, and does not list them. They stay yours, so read the whole form before you submit.",
     submit: "Submit",
     submitNote: "Yours to press",
     panelLabel: "A sample of the browser extension's side panel",
     panelKicker: "Browser extension",
     panelFound: "Application found. Ready to fill known fields.",
     panelButton: "Fill this page",
+    panelAfter: "After you press it, the panel lists any field it could not fill.",
     panelLeftLabel: "Left empty -- check these yourself",
-    panelLeft: "Demographic questions, accommodation questions",
+    // One real left-empty line: the field, "not filled" and the reason, as the extension words them
+    // (extension/entrypoints/content.ts noteSkipped; the reason is lib/greenhouse.ts's).
+    panelLeft: "Country: not filled -- none of the form's country options matches the country in your profile.",
     panelStops: "Stops here. It never submits.",
     availability: "The extension is for early testers and is not in the Chrome Web Store yet.",
   },

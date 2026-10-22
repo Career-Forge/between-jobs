@@ -223,11 +223,12 @@ export function ApplyMock() {
           {copy.fields.map((field) => (
             <li key={field.label} data-state={field.state}>
               <span className="bj-tour-field-label">{field.label}</span>
-              <span className="bj-tour-field-state">{field.state === "filled" ? copy.filled : copy.left}</span>
+              <span className="bj-tour-field-state">{copy[field.state]}</span>
               <span className="bj-tour-field-box" aria-hidden="true" />
             </li>
           ))}
         </ul>
+        <p className="bj-tour-note">{copy.untouchedNote}</p>
         <p className="bj-tour-submit">
           <MockButton>{copy.submit}</MockButton>
           <span className="bj-tour-note">{copy.submitNote}</span>
@@ -240,6 +241,7 @@ export function ApplyMock() {
           <p className="bj-tour-sentence">{copy.panelFound}</p>
           <MockButton>{copy.panelButton}</MockButton>
           <span className="bj-visually-hidden">The side panel shows a {copy.panelButton} button.</span>
+          <p className="bj-tour-note">{copy.panelAfter}</p>
           <p className="bj-tour-kicker">{copy.panelLeftLabel}</p>
           <p className="bj-tour-meta">{copy.panelLeft}</p>
           <p className="bj-tour-note">{copy.panelStops}</p>

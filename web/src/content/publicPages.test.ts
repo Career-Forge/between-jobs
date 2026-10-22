@@ -3,6 +3,7 @@ import exportChecklist from "../../../src/between_jobs/api/export_checklist.py?r
 import genericBackend from "../../../src/between_jobs/engines/generic/backend.py?raw";
 import extensionPermissions from "../../../extension/store/PERMISSIONS.md?raw";
 import extensionReadme from "../../../extension/README.md?raw";
+import extensionListing from "../../../extension/store/LISTING.md?raw";
 import readmeRaw from "../../../README.md?raw";
 import fitBlock from "../components/discover/FitBlock.tsx?raw";
 import practicePanel from "../components/InterviewPracticePanel.tsx?raw";
@@ -120,6 +121,25 @@ describe("what the tour says is true of the product", () => {
     expect(extensionReadme).toContain("Lever, Greenhouse, and Ashby");
     expect(readme).toContain("not published to the Chrome Web Store");
     expect(TOUR.apply.availability).toContain("not in the Chrome Web Store");
+  });
+
+  it("Apply: the panel's 'left empty' line is the shape the extension writes, and demographic questions are never listed there", () => {
+    // The extension's source cannot be read here (see the Apply test above), so its own words stand in: what
+    // the panel lists under "Left empty -- check these yourself" is the fill's skipped fields, each worded
+    // `${field}: not filled -- ${reason}.` (extension/entrypoints/content.ts noteSkipped, and the reason
+    // lib/greenhouse.ts gives for a country with no matching option). The drawing's one line has that shape.
+    expect(TOUR.apply.panelLeftLabel).toBe("Left empty -- check these yourself");
+    expect(TOUR.apply.panelLeft).toMatch(/^[A-Z][A-Za-z ]+: not filled -- .+\.$/);
+    // Self-identification questions are never listed, drafted or filled, so they are not in the panel's list.
+    const readmeText = extensionReadme.replace(/\s+/g, " ");
+    expect(readmeText).toContain("never listed, drafted or filled");
+    expect(readmeText).toContain("so read the form before you submit");
+    expect(extensionListing.replace(/\s+/g, " ")).toContain("not filled, not offered for drafting and not sent anywhere");
+    expect(TOUR.apply.panelLeft).not.toMatch(/demographic|accommodation|gender|race|disability|veteran/i);
+    expect(TOUR.apply.untouchedNote).toContain("does not fill demographic or accommodation questions, and does not list them");
+    expect(TOUR.apply.untouchedNote).toContain("read the whole form before you submit");
+    expect(TOUR.apply.fields.filter((field) => field.state === "left").map((field) => field.label)).toEqual(["Country"]);
+    expect(TOUR.apply.fields.filter((field) => field.state === "untouched").map((field) => field.label)).toEqual(["Demographic and accommodation questions"]);
   });
 });
 
