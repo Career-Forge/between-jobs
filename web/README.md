@@ -516,8 +516,8 @@ the printed resume page drawn in the tour, which is white because it stands for 
 `pages/Landing.test.tsx` and `content/publicPages.test.ts` hold the guard on what the public pages may claim: a list
 of words they never use (`testing/claims.ts`), no digits, and the disclosures that must stay (the Gmail paragraph and
 its Privacy Policy link, the extension's early-tester status). `src/appPages.test.tsx` mounts the real app signed out
-and checks every public page: one heading, exactly one primary action, no repeated ids, no link to nowhere, and the
-page's own title.
+and checks five of the six public pages (every one but `/login`, whose sign-in screen `pages/Login.test.tsx` covers): one
+heading, exactly one primary action, no repeated ids, no link to nowhere, and the page's own title.
 
 ## Accessibility and responsive checks
 

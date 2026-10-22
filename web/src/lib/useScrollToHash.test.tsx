@@ -76,12 +76,12 @@ describe("following an in-page link, as the landing page's header does", () => {
     return (
       <div>
         <nav>
-          <Link to={{ hash: "#circuit" }}>Product</Link>
+          <Link to={{ hash: "#tour" }}>Product</Link>
           <Link to={{ hash: "#nowhere" }}>Nowhere</Link>
         </nav>
-        <section id="circuit">
-          <h2 id="circuit-title" tabIndex={-1}>
-            Circuit
+        <section id="tour">
+          <h2 id="tour-title" tabIndex={-1}>
+            Tour
           </h2>
         </section>
       </div>
@@ -96,9 +96,9 @@ describe("following an in-page link, as the landing page's header does", () => {
   const link = (root: HTMLElement, name: string) => [...root.querySelectorAll("a")].find((a) => a.textContent === name) as HTMLAnchorElement;
 
   it("scrolls and focuses the heading on arrival, and does nothing for no fragment or an id that is not there", () => {
-    const root = open("/#circuit");
+    const root = open("/#tour");
     expect(scrolled).toEqual([{ behavior: "smooth", block: "start" }]);
-    expect(document.activeElement).toBe(query(root, "#circuit-title"));
+    expect(document.activeElement).toBe(query(root, "#tour-title"));
     scrolled = [];
     open("/");
     open("/#nowhere");
@@ -108,7 +108,7 @@ describe("following an in-page link, as the landing page's header does", () => {
   it("moves focus on a click, and scrolls again when the same link is followed twice", () => {
     const root = open("/");
     click(link(root, "Product"));
-    expect(document.activeElement).toBe(query(root, "#circuit-title"));
+    expect(document.activeElement).toBe(query(root, "#tour-title"));
     click(link(root, "Product"));
     expect(scrolled).toHaveLength(2);
   });
