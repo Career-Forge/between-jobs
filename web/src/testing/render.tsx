@@ -47,12 +47,23 @@ export function click(element: Element): void {
 
 // Dispatches a keydown on the focused element (or `target`) and returns whether it was left
 // un-prevented, the way `dispatchEvent` does.
-export function keydown(key: string, options: { shift?: boolean; target?: Element } = {}): boolean {
+export function keydown(
+  key: string,
+  options: { shift?: boolean; alt?: boolean; ctrl?: boolean; meta?: boolean; target?: Element } = {},
+): boolean {
   let notPrevented = true;
   act(() => {
     const target = options.target ?? document.activeElement ?? document.body;
     notPrevented = target.dispatchEvent(
-      new KeyboardEvent("keydown", { key, shiftKey: options.shift === true, bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", {
+        key,
+        shiftKey: options.shift === true,
+        altKey: options.alt === true,
+        ctrlKey: options.ctrl === true,
+        metaKey: options.meta === true,
+        bubbles: true,
+        cancelable: true,
+      }),
     );
   });
   return notPrevented;

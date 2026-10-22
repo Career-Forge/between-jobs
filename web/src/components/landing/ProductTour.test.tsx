@@ -110,6 +110,29 @@ describe("the keys", () => {
   });
 });
 
+describe("the keys with a modifier", () => {
+  // Alt+Left and Cmd+Left are the browser's Back, Cmd+Right is Forward, Ctrl+Home and Cmd+End move through the
+  // page, and Shift+Arrow is a selection: after a click a tab holds focus, so the strip must not eat them.
+  const chords: [string, string, { shift?: boolean; alt?: boolean; ctrl?: boolean; meta?: boolean }][] = [
+    ["Alt+ArrowLeft", "ArrowLeft", { alt: true }],
+    ["Alt+ArrowRight", "ArrowRight", { alt: true }],
+    ["Cmd+ArrowLeft", "ArrowLeft", { meta: true }],
+    ["Cmd+ArrowRight", "ArrowRight", { meta: true }],
+    ["Ctrl+Home", "Home", { ctrl: true }],
+    ["Cmd+End", "End", { meta: true }],
+    ["Shift+ArrowRight", "ArrowRight", { shift: true }],
+  ];
+
+  it.each(chords)("leaves %s to the browser: it is not prevented and the selection stays", (_name, key, modifiers) => {
+    const root = open();
+    click(tabsOf(root)[2]);
+    tabsOf(root)[2].focus();
+    expect(keydown(key, modifiers)).toBe(true);
+    expect(selected(root)).toEqual([tabsOf(root)[2]]);
+    expect(document.activeElement).toBe(tabsOf(root)[2]);
+  });
+});
+
 describe("the sample next step", () => {
   it("is a polite, atomic live region under the tabs, named as a sample", () => {
     const root = open();

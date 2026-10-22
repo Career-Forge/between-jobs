@@ -36,6 +36,9 @@ export function ProductTour() {
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    // A chord is the browser's or the system's, not the tab strip's: Alt+Left and Cmd+Left are Back, Cmd+Right
+    // is Forward, Ctrl+Home and Cmd+End move through the page. Only the bare key moves between tabs.
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const last = TOUR_TABS.length - 1;
     let next: number | null = null;
     if (event.key === "ArrowRight") next = active === last ? 0 : active + 1;
