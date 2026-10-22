@@ -98,22 +98,25 @@ describe("the public frame's column", () => {
     expect(footerInner["margin-right"]).toBe("auto");
   });
 
-  it("is written phone first: a Menu button and its panel by default, the tabs and the way in only from 960px", () => {
+  it("is written phone first: a Menu button and its panel by default, the tabs and Sign in only from 960px, Create account at every width", () => {
     const base = withoutMedia(publicCss);
     expect(declarationsFor(base, ".bj-public-tabs").display).toBe("none");
-    expect(declarationsFor(base, ".bj-public-actions").display).toBe("none");
+    expect(declarationsFor(base, ".bj-public-signin").display).toBe("none");
+    expect(declarationsFor(base, ".bj-public-actions").display).toBe("flex");
     expect(declarationsFor(base, ".bj-public-menu-button").display).toBe("inline-flex");
     expect(declarationsFor(base, ".bj-public-menu").display).toBe("flex");
     // The panel is a row of its own under the wordmark and the button.
     expect(declarationsFor(base, ".bj-public-menu")).toMatchObject({ flex: "1 0 100%", order: "3" });
     const wide = blockOf(publicCss, "@media (min-width: 960px)") ?? "";
     expect(declarationsFor(wide, ".bj-public-tabs").display).toBe("flex");
-    expect(declarationsFor(wide, ".bj-public-actions").display).toBe("flex");
+    expect(declarationsFor(wide, ".bj-public-signin").display).toBe("inline-flex");
     expect(declarationsFor(wide, ".bj-public-menu-button").display).toBe("none");
     expect(declarationsFor(wide, ".bj-public-menu").display).toBe("none");
-    // Nothing else takes the tabs, the way in or the menu out of the page at any width.
+    // Nothing else takes anything out of the page at any width. In particular nothing hides the way in's
+    // box (.bj-public-actions) or Create account inside it: a phone visitor on a page with no hero of its
+    // own would have no cyan fill and no way in without opening the menu.
     const hiding = rulesOf(publicCss).filter((rule) => rule.declarations.display === "none").flatMap((rule) => rule.selectors);
-    expect(hiding.sort()).toEqual([".bj-public-actions", ".bj-public-menu", ".bj-public-menu-button", ".bj-public-tabs"]);
+    expect(hiding.sort()).toEqual([".bj-public-menu", ".bj-public-menu-button", ".bj-public-signin", ".bj-public-tabs"]);
   });
 
   it("makes every tab, the menu button and every link in the menu at least 44px tall", () => {
@@ -122,7 +125,8 @@ describe("the public frame's column", () => {
     expect(Number.parseFloat(declarationsFor(base, ".bj-public-menu-button")["min-height"])).toBeGreaterThanOrEqual(44);
     expect(Number.parseFloat(declarationsFor(base, ".bj-public-menu-button")["min-width"])).toBeGreaterThanOrEqual(44);
     expect(Number.parseFloat(declarationsFor(base, ".bj-public-menu a.bj-selectable")["min-height"])).toBeGreaterThanOrEqual(44);
-    expect(Number.parseFloat(declarationsFor(base, ".bj-public-menu-actions a.bj-button-link")["min-height"])).toBeGreaterThanOrEqual(44);
+    expect(Number.parseFloat(declarationsFor(base, ".bj-public-menu a.bj-public-menu-signin")["min-height"])).toBeGreaterThanOrEqual(44);
+    expect(Number.parseFloat(declarationsFor(base, ".bj-public-actions a.bj-button-link")["min-height"])).toBeGreaterThanOrEqual(44);
   });
 
   it("marks the current tab with the selection style (a fill) and never an underline, an edge bar or a maroon line", () => {

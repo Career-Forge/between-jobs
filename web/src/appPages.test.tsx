@@ -4,6 +4,8 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { CROSS_NAV_ITEMS } from "./lib/applicationsBoard";
+import publicCss from "./styles/public.css?raw";
+import { withoutMedia } from "./testing/css";
 import { response as discoverResponse } from "./testing/discoverFixtures";
 import { FakeApiError, on, reset } from "./testing/fakeApi";
 import { expectNoSeriousA11yViolations } from "./testing/a11y";
@@ -640,6 +642,41 @@ describe("each public page, signed out", () => {
       await expectNoSeriousA11yViolations(container);
       click(query(container, "button.bj-public-menu-button"));
       await expectNoSeriousA11yViolations(container);
+    }
+  });
+
+  it("shows the way in on a phone, where the tabs fold: Create account is drawn beside the Menu button on every page, and Sign in waits in the menu", async () => {
+    // The package has no layout engine, but the header's base rules (the ones a phone gets, before any
+    // min-width query) are plain `display` declarations, which jsdom's cascade does read.
+    const sheet = document.createElement("style");
+    sheet.textContent = withoutMedia(publicCss);
+    document.head.append(sheet);
+    try {
+      for (const [route, , band] of PUBLIC_ROUTES) {
+        const container = await open(route, 375);
+        const header = query(container, "header.bj-public-header");
+        const drawn = (element: Element) => {
+          for (let node: Element | null = element; node !== null; node = node.parentElement) {
+            if (getComputedStyle(node).display === "none") return false;
+          }
+          return true;
+        };
+        const links = [...header.querySelectorAll("a")].filter(drawn).map((link) => text(link));
+        expect(links, route).toEqual(["Between Jobs", "Create account"]);
+        expect(drawn(query(header, "button.bj-public-menu-button")), route).toBe(true);
+        // On a page with no hero of its own this is the page's one cyan fill, so it must be seen.
+        if (!band) expect([...header.querySelectorAll("a.bj-button-link-primary")].filter(drawn), route).toHaveLength(1);
+        click(query(container, "button.bj-public-menu-button"));
+        expect([...query(container, "nav.bj-public-menu").querySelectorAll("a")].filter(drawn).map((link) => text(link)), route).toEqual([
+          "Product",
+          "How it works",
+          "Open source",
+          "Privacy",
+          "Sign in",
+        ]);
+      }
+    } finally {
+      sheet.remove();
     }
   });
 
