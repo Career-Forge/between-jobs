@@ -501,6 +501,10 @@ the printed resume page drawn in the tour, which is white because it stands for 
   is an outlined span hidden from assistive technology), and ends in a trail line made with the same primitive the real
   screens use (who made it, what it is based on) and a plain note of what nobody checked; each one draws only what the real
   screen draws. The sample next step is deliberately not the page's band: there is one band, in the hero.
+- The tour's drawings reuse the signed-in app's paper components (the trail line, claim and checklist rows, the fit
+  ladder) and `styles/paper-doc.css`, so those ride in the first download with the home page instead of a lazy page
+  chunk. That is deliberate, since a lazy tour would pop in after the page had drawn and move what is below it; the
+  cost is a few kilobytes of CSS and script.
 - **How it works and Open source** (`pages/HowItWorks.tsx`, `pages/OpenSource.tsx`, words in `content/publicPages.ts`)
   are drawn inside the signed-in shell too, so a shared link is not a dead end, and so carry no account link of
   their own. Open source's provider list and its "not yet checked live" note come from the same table as the home page's.
