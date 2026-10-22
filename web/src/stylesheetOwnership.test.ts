@@ -63,4 +63,17 @@ describe("the stylesheets", () => {
     const shared = [...homes].filter(([, files]) => files.size > 1).map(([selector, files]) => `${selector}  in ${[...files].sort().join(", ")}`);
     expect(shared).toEqual([]);
   });
+
+  // The Profile editor's rules were moved here out of app.css. The entry dialog's scrim is the one deliberate
+  // change: app.css had a literal rgba(0, 0, 0, 0.6), and this sheet may not hold a colour literal
+  // (profileStyles.test.ts), so it is the paper sheets' scrim, built from the page colour. Pinned so the
+  // difference is a decision on the page, not something a later "move" changes again.
+  it("gives the entry dialog the paper sheets' scrim, from the page colour, as its comment says", () => {
+    const css = sheets["./styles/profile-studio.css"];
+    const rule = /\.bj-modal-backdrop\s*\{([^}]*)\}/.exec(css);
+    expect(rule).not.toBeNull();
+    expect(rule?.[1]).toMatch(/background:\s*color-mix\(in srgb, var\(--bj-bg\) 72%, transparent\);/);
+    expect(rule?.[1]).toContain("Was a literal rgba(0, 0, 0, 0.6) in app.css");
+    expect(sheets["./styles/paper.css"]).toMatch(/color-mix\(in srgb, var\(--bj-bg\) 72%, transparent\)/);
+  });
 });

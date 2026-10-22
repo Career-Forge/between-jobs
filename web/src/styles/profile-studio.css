@@ -266,7 +266,8 @@ button.bj-dialog-confirm {
 .bj-modal-backdrop {
   position: fixed;
   inset: 0;
-  /* The same scrim the sheets use (paper.css), from the page colour rather than a literal black. */
+  /* Was a literal rgba(0, 0, 0, 0.6) in app.css. This sheet may not define a colour literal (profileStyles.test.ts),
+     so the scrim is now the one the sheets use (paper.css): the page colour at 72%, a touch lighter than pure black. */
   background: color-mix(in srgb, var(--bj-bg) 72%, transparent);
   display: flex;
   align-items: center;
