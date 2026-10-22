@@ -101,7 +101,10 @@ export function SearchKeyRow({ card, hiringSignalsEnabled, credential, now, onCh
   return (
     <li className="bj-set-extra" id={`search-${provider}`}>
       <div className="bj-set-extra-line">
-        <h4 className="bj-set-extra-name">{title}</h4>
+        {/* tabIndex -1: a link to this row (#search-<provider>) leaves the keyboard here (lib/useScrollToHash.ts). */}
+        <h4 className="bj-set-extra-name" tabIndex={-1}>
+          {title}
+        </h4>
         {connected && (
           <span className="bj-set-extra-state">
             <span className="bj-set-extra-glyph" aria-hidden="true">

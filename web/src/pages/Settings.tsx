@@ -98,8 +98,18 @@ export default function Settings() {
   // one of their keys. Opening happens before the scroll below, and again for a link followed while
   // the page is already open (the hash changes without a remount).
   const [extrasOpen, setExtrasOpen] = useState(() => opensOptionalExtras(location.hash));
+  // How many times a link, not a press of the toggle, opened the disclosure after the page was up. It is
+  // the scroll's signal that the row a link names has just become visible: a row inside the closed
+  // disclosure cannot be scrolled to, so the scroll is tried again once it is open. `extrasOpen` itself
+  // is NOT given to the scroll: whatever the address still says, a person pressing the toggle must keep
+  // their place, with focus on the button and the page where it is.
+  const [openedByLink, setOpenedByLink] = useState(0);
   useEffect(() => {
-    if (opensOptionalExtras(location.hash)) setExtrasOpen(true);
+    // Runs only when the address changes, so `extrasOpen` here is the value as that change arrived.
+    if (opensOptionalExtras(location.hash) && !extrasOpen) {
+      setExtrasOpen(true);
+      setOpenedByLink((count) => count + 1);
+    }
   }, [location.hash]);
 
   // The provider list arrives after the keys and adds the "connect a provider" form above everything
@@ -109,7 +119,7 @@ export default function Settings() {
     if (catalog.kind !== "loading") setCatalogSettled(true);
   }, [catalog.kind]);
 
-  useScrollToHash(rows !== null, location.hash, extrasOpen, catalogSettled);
+  useScrollToHash(rows !== null, location.hash, openedByLink, catalogSettled);
 
   const facts = useMemo<SettingsFacts | null>(() => {
     if (rows === null) return null;
