@@ -252,6 +252,41 @@ button.bj-dialog-confirm {
   font-size: 11px;
 }
 
+/* The Profile editor's own controls: the section toggle, the entry dialog's backdrop and the "current" checkbox.
+   Their phone sizes are in the block below, so each rule has one home. */
+.bj-section-editor-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--bj-text-muted);
+  cursor: pointer;
+}
+
+.bj-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  /* The same scrim the sheets use (paper.css), from the page colour rather than a literal black. */
+  background: color-mix(in srgb, var(--bj-bg) 72%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+}
+
+.bj-current-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--bj-text-muted);
+}
+
+.bj-current-checkbox input {
+  width: auto;
+}
+
 @media (max-width: 959px) {
   .bj-header-composer-row,
   .bj-shape-settings-row {
