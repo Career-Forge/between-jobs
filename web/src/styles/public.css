@@ -1,7 +1,12 @@
-/* The signed-out frame: the header, the page's one <main> and the footer around the landing page and the
- * two legal pages (components/PublicLayout.tsx). Tokens only. The header, the page and the footer's
- * content share one 1200px column and one side inset, so their left edges line up at every width;
- * publicPagesStyles.test.ts pins that. */
+/* The signed-out frame: the header, the page's one <main> and the footer around the landing page, the two
+ * explainer pages and the two legal pages (components/PublicLayout.tsx, PublicHeader.tsx). Tokens only. The
+ * header, the page and the footer's content share one 1200px column and one side inset, so their left edges
+ * line up at every width; publicPagesStyles.test.ts pins that.
+ *
+ * The header is written phone first: the wordmark and a Menu button, whose panel holds the site's four tabs
+ * and the way in. From 960px up the button and the panel go and the same links are a row beside the
+ * wordmark. The tab for the page you are on is the selection style from tokens.css (.bj-selectable with
+ * aria-current="page"): a maroon fill, never an underline. */
 
 .bj-public {
   min-height: 100vh;
@@ -32,32 +37,34 @@
   text-decoration: none;
 }
 
-/* The in-page links of the landing page. Under 960px they drop to a row of their own under the
-   wordmark and the way in, so a phone or a tablet can still jump to a section. */
-.bj-public-sections {
-  display: flex;
-  flex: 1 1 auto;
+/* The site's tabs: Product, How it works, Open source, Privacy. */
+.bj-public-tabs {
+  display: none;
+  flex: 0 1 auto;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0 28px;
+  gap: 4px;
   margin-left: 16px;
 }
 
-.bj-public-sections a {
+.bj-public-tabs a {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
+  padding: 0 14px;
+  border-radius: 8px;
   font-size: var(--bj-text-body);
   color: var(--bj-text-muted);
 }
 
-.bj-public-sections a:hover {
+.bj-public-tabs a:hover {
+  background: var(--bj-hover-bg);
   color: var(--bj-text);
   text-decoration: none;
 }
 
 .bj-public-actions {
-  display: flex;
+  display: none;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 16px;
@@ -143,16 +150,71 @@
   text-decoration-thickness: 2px;
 }
 
-@media (max-width: 959px) {
-  .bj-public-sections {
-    order: 3;
-    flex: 1 0 100%;
-    margin-left: 0;
-    gap: 0 20px;
+/* The Menu button: the way to the tabs and the way in until the window is wide enough to show them. */
+.bj-public-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin-left: auto;
+  padding: 0 16px;
+  font-size: var(--bj-text-control);
+}
+
+/* Its panel is a row of its own under the wordmark and the button. */
+.bj-public-menu {
+  display: flex;
+  flex: 1 0 100%;
+  flex-direction: column;
+  gap: 4px;
+  order: 3;
+  margin-top: 8px;
+  padding: 12px 0 8px;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-public-menu a.bj-selectable {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 16px;
+  color: var(--bj-text);
+}
+
+.bj-public-menu a.bj-selectable:hover {
+  background: var(--bj-hover-bg);
+  text-decoration: none;
+}
+
+.bj-public-menu-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.bj-public-menu-actions a.bj-button-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 12px;
+  font-size: var(--bj-text-body);
+}
+
+/* From 960px the tabs and the way in are a row beside the wordmark, and the button and its panel go. */
+@media (min-width: 960px) {
+  .bj-public-tabs,
+  .bj-public-actions {
+    display: flex;
   }
 
-  .bj-public-sections a {
-    font-size: var(--bj-text-control);
+  .bj-public-menu-button,
+  .bj-public-menu {
+    display: none;
   }
 }
 
@@ -162,29 +224,8 @@
     gap: 0 12px;
   }
 
-  /* Wordmark, Sign in and Create account share one row down to 375px: 21px + 14px type and 10px of
-     padding on the outlined link come to about 310px of the 335px the page's inset leaves. */
   .bj-public-wordmark {
     font-size: 21px;
-  }
-
-  .bj-public-actions {
-    gap: 0 8px;
-  }
-
-  .bj-public-signin,
-  .bj-public-actions a.bj-button-link {
-    font-size: var(--bj-text-control);
-  }
-
-  .bj-public-actions a.bj-button-link {
-    padding: 0 10px;
-  }
-
-  /* Targets are 44px by 44px on a phone. Sign in is 42px wide as text, so it is given the width. */
-  .bj-public-signin {
-    justify-content: center;
-    min-width: 44px;
   }
 
   /* The footer's link rows and the two mailto links each get a 44px row of their own to tap. */

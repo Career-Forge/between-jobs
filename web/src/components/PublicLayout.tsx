@@ -1,53 +1,29 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
-import { LANDING_SECTION_LINKS } from "../content/landing";
 import { FONT_LICENSES_PATH, PRIVACY_EMAIL, REPO_URL, SUPPORT_EMAIL } from "../content/site";
-import { LANDING_PATH, LOGIN_PATH, REGISTER_PATH } from "../lib/publicRoutes";
 import { LegalLinks } from "./LegalLinks";
 import { NextStepSkipLink } from "./NextStepSkipLink";
+import { PublicHeader } from "./PublicHeader";
 import { MAIN_CONTENT_ID, SkipLink } from "./SkipLink";
 import { Wordmark } from "./Wordmark";
 import "../styles/public.css";
 
-// What a signed-out visitor sees around the landing page and the two legal pages: a header with
-// the way in, the page itself as the one <main> (the skip link's target), and a footer with the
-// wordmark, the legal links, the source and the two contact addresses. No hooks, so a test can render it directly.
+// What a signed-out visitor sees around every public page (the home page, How it works, Open source and
+// the two legal pages): a header (PublicHeader.tsx: the wordmark, the site's tabs and the way in), the
+// page itself as the one <main> (the skip link's target), and a footer with the wordmark, the legal
+// links, the source and the two contact addresses. No state of its own, so a test can render it directly.
 //
-// The header's Create account is an outlined link, not the filled one: the landing page's hero
-// holds the page's one cyan fill, and the legal pages, which have no hero, need none.
-//
-// `variant="landing"` is the page that has a next-step band: it gets the in-page section links and
-// a "Skip to next step" link ahead of "Skip to content". The legal pages have no band (they have no
-// "now"), so they get neither.
+// `variant="landing"` is the page that has a next-step band, the home page: its hero holds the page's one
+// cyan fill, so the header's Create account is outlined, and a "Skip to next step" link comes ahead of
+// "Skip to content". Every other public page has no band (they have no "now"), so its header's Create
+// account is the one cyan fill and there is only "Skip to content".
 
-export function PublicLayout({ children, variant = "legal" }: { children: ReactNode; variant?: "landing" | "legal" }) {
+export function PublicLayout({ children, variant = "page" }: { children: ReactNode; variant?: "landing" | "page" }) {
   const landing = variant === "landing";
   return (
     <div className="bj-public">
       {landing && <NextStepSkipLink />}
       <SkipLink />
-      <header className="bj-public-header">
-        <Link to={LANDING_PATH} className="bj-public-wordmark">
-          <Wordmark />
-        </Link>
-        {landing && (
-          <nav className="bj-public-sections" aria-label="On this page">
-            {LANDING_SECTION_LINKS.map((section) => (
-              <Link key={section.id} to={{ hash: `#${section.id}` }}>
-                {section.label}
-              </Link>
-            ))}
-          </nav>
-        )}
-        <nav className="bj-public-actions" aria-label="Account">
-          <Link to={LOGIN_PATH} className="bj-public-signin">
-            Sign in
-          </Link>
-          <Link to={REGISTER_PATH} className="bj-button-link">
-            Create account
-          </Link>
-        </nav>
-      </header>
+      <PublicHeader filled={!landing} />
       <main className="bj-public-main" id={MAIN_CONTENT_ID} tabIndex={-1}>
         {children}
       </main>
