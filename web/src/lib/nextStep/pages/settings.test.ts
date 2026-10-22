@@ -10,10 +10,9 @@ import { isSettingsFacts, rules, type SettingsFacts } from "./settings";
 const ACTIVE: SetupCheck<ProfileFacts> = { state: "ready", value: { active: true, importWaiting: false } };
 const NO_PROFILE: SetupCheck<ProfileFacts> = { state: "ready", value: { active: false, importWaiting: false } };
 const CREDS: SetupCheck<Record<string, never>> = { state: "ready", value: {} };
-const SEARCH = { connected: 2, total: 7 };
 
 function facts(llm: SettingsFacts["llm"], extra: Partial<SettingsFacts> = {}): SettingsFacts {
-  return { llm, search: SEARCH, chosenHere: null, ...extra };
+  return { llm, chosenHere: null, ...extra };
 }
 
 function ask(input: Partial<NextStepInput<SettingsFacts>>) {
@@ -71,7 +70,7 @@ describe("the table", () => {
       row: "S3",
       sentence: "Your model is set. Search for a role next.",
       action: "link:Go to Discover:/discover",
-      why: ["OpenAI model chosen this visit", "2 of 7 search keys connected"],
+      why: ["OpenAI model chosen this visit"],
     },
     {
       name: "a model is ready and nothing needs you",
@@ -79,7 +78,7 @@ describe("the table", () => {
       row: "S4",
       sentence: "Your model is set. Everything else here is optional.",
       action: null,
-      why: ["OpenRouter ready", "2 of 7 search keys connected"],
+      why: ["OpenRouter ready"],
     },
     {
       name: "several models are ready and the default is known",
@@ -87,7 +86,7 @@ describe("the table", () => {
       row: "S4",
       sentence: "Your model is set. Everything else here is optional.",
       action: null,
-      why: ["3 model providers ready", "2 of 7 search keys connected"],
+      why: ["3 model providers ready"],
     },
     {
       name: "several models are ready and the page cannot tell which is the default",
@@ -163,17 +162,24 @@ describe("what the global rows decide on this page", () => {
   });
 });
 
+describe("search keys", () => {
+  it("are not counted in any line the band says: the page holds no fact about them", () => {
+    const answer = ask({ facts: facts({ state: "ready", names: ["OpenRouter"], defaultKnown: true }) });
+    expect(JSON.stringify(step(answer.outcome))).not.toMatch(/search key|of 7|connected/);
+    expect("search" in facts({ state: "none" })).toBe(false);
+  });
+});
+
 describe("facts the page rows cannot read", () => {
   it.each([
     ["nothing", undefined],
     ["a string", "ready"],
-    ["no llm", { search: SEARCH, chosenHere: null }],
-    ["an unknown llm state", { llm: { state: "maybe" }, search: SEARCH, chosenHere: null }],
-    ["a ready llm with no names", { llm: { state: "ready", names: [], defaultKnown: true }, search: SEARCH, chosenHere: null }],
-    ["a ready llm that does not say whether the default is known", { llm: { state: "ready", names: ["OpenAI"] }, search: SEARCH, chosenHere: null }],
-    ["a waiting key with no name", { llm: { state: "needs_model", providerName: "" }, search: SEARCH, chosenHere: null }],
-    ["a negative count", { llm: { state: "none" }, search: { connected: -1, total: 7 }, chosenHere: null }],
-    ["a model chosen by number", { llm: { state: "none" }, search: SEARCH, chosenHere: 5 }],
+    ["no llm", { chosenHere: null }],
+    ["an unknown llm state", { llm: { state: "maybe" }, chosenHere: null }],
+    ["a ready llm with no names", { llm: { state: "ready", names: [], defaultKnown: true }, chosenHere: null }],
+    ["a ready llm that does not say whether the default is known", { llm: { state: "ready", names: ["OpenAI"] }, chosenHere: null }],
+    ["a waiting key with no name", { llm: { state: "needs_model", providerName: "" }, chosenHere: null }],
+    ["a model chosen by number", { llm: { state: "none" }, chosenHere: 5 }],
   ])("are refused (%s), and the band then shows nothing rather than a guess", (_name, value) => {
     expect(isSettingsFacts(value)).toBe(false);
     const answer = ask({ facts: value as SettingsFacts });
