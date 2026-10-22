@@ -260,7 +260,7 @@ describe("Company intel: running", () => {
     const notice = query(container, ".bj-setup-notice");
     expect(text(notice)).toContain("Company intel needs a You.com or Firecrawl key.");
     const link = query<HTMLAnchorElement>(notice, "a");
-    expect(link.getAttribute("href")).toBe("/settings");
+    expect(link.getAttribute("href")).toBe("/settings#search-keys");
     expect(text(link)).toBe("Add a You.com or Firecrawl key in Settings");
     expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
     // Setup is not a failure and produced nothing, so there is no trail.

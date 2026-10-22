@@ -9,6 +9,7 @@ import {
   setupRequiredNotice,
 } from "./setupRequired";
 import appSource from "../App.tsx?raw";
+import { opensOptionalExtras } from "./settings/optionalExtras";
 
 // What the API's SETUP_REQUIRED reply becomes on screen: the server's own message plus ONE
 // link to where the fix is. The link is the part that must not be trusted blindly -- it is
@@ -215,17 +216,38 @@ describe("setupRequiredNotice", () => {
     ).toMatchObject({ linkTo: "/profile", linkLabel: "Finish your profile" });
   });
 
+  // Where each missing key is added: a key in the Settings page's closed "Optional extras" links to the
+  // fragment that opens them (the section, or the one key's row); Gmail is its own section, open already.
   it.each([
-    ["apollo_credential", "Add an Apollo or Hunter key in Settings"],
-    ["exa_credential", "Add an Exa key in Settings"],
-    ["gmail_oauth", "Connect Gmail in Settings"],
-    ["firecrawl_credential", "Add a Firecrawl key in Settings"],
-    ["you_com_or_firecrawl_credential", "Add a You.com or Firecrawl key in Settings"],
-    ["search_credential", "Add a search key in Settings"],
-  ])("labels what is missing (%s) by name", (token, label) => {
+    ["apollo_credential", "Add an Apollo or Hunter key in Settings", "/settings#search-keys"],
+    ["hunter_credential", "Add an Apollo or Hunter key in Settings", "/settings#search-keys"],
+    ["exa_credential", "Add an Exa key in Settings", "/settings#search-exa"],
+    ["gmail_oauth", "Connect Gmail in Settings", "/settings"],
+    ["firecrawl_credential", "Add a Firecrawl key in Settings", "/settings#search-firecrawl"],
+    ["you_com_or_firecrawl_credential", "Add a You.com or Firecrawl key in Settings", "/settings#search-keys"],
+    ["search_credential", "Add a search key in Settings", "/settings#search-keys"],
+  ])("labels what is missing (%s) by name, and links to where it is added", (token, label, linkTo) => {
     expect(
       setupRequiredNotice(setupError({ path: "/profile/integrations", capability: "anything", missing: [token] })),
-    ).toMatchObject({ linkTo: "/settings", linkLabel: label });
+    ).toMatchObject({ linkTo, linkLabel: label });
+  });
+
+  it("opens the optional extras for every search-key link it gives, and keeps the capability query before the fragment", () => {
+    for (const token of ["apollo_credential", "hunter_credential", "exa_credential", "firecrawl_credential", "you_com_or_firecrawl_credential", "search_credential"]) {
+      const notice = setupRequiredNotice(
+        setupError({ path: "/profile/integrations?capability=contact_research", capability: "contact_research", missing: [token] }),
+      );
+      const linkTo = notice?.linkTo ?? "";
+      expect(linkTo, token).toMatch(/^\/settings\?capability=contact_research#search-/);
+      expect(opensOptionalExtras(linkTo.slice(linkTo.indexOf("#"))), token).toBe(true);
+    }
+  });
+
+  it("never takes a fragment from the server: a settings_path with a # is still refused, and a key link on another page gets none", () => {
+    expect(setupRequiredNotice(setupError({ path: "/settings#search-keys", missing: ["exa_credential"] }))).toMatchObject({ linkTo: null, linkLabel: null });
+    expect(setupRequiredNotice(setupError({ path: "/profile", missing: ["exa_credential"] }))).toMatchObject({ linkTo: "/profile", linkLabel: "Open your profile" });
+    // a model key stays on the plain Settings page: its section is open
+    expect(setupRequiredNotice(setupError({ path: "/profile/integrations", missing: ["credential"] }))).toMatchObject({ linkTo: "/settings" });
   });
 
   it("tells a search-key failure from a model-key failure of the same capability by what is missing", () => {

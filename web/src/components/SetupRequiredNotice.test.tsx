@@ -98,7 +98,7 @@ describe("ProblemView", () => {
     );
     expect(html).toContain("bj-setup-notice");
     expect(html).not.toContain("bj-error");
-    expect(html).toContain('href="/settings"');
+    expect(html).toContain('href="/settings#search-keys"');
     expect(html).toContain("Add an Apollo or Hunter key in Settings");
   });
 

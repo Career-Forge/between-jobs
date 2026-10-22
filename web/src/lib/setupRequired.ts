@@ -17,6 +17,10 @@
 // stands alone. A missing path is the same: the label is never a reason to guess a
 // destination.
 //
+// The one thing added to a link is a FRAGMENT from this file's own label table (never from the
+// response): a missing search or data key lives in the Settings page's closed "Optional extras", so
+// its link ends in "#search-keys" (or "#search-<provider>"), which opens them.
+//
 // Pure module: an error is read structurally (ApiError in api.ts carries these
 // fields, but importing it would pull in the Supabase client, which throws at import
 // time without env vars), and there is no React here -- the component that renders
@@ -122,6 +126,18 @@ interface Target {
   // "Finish your profile" label on a link to Settings would be a lie.
   path: string;
   label: string;
+  // Where on that page the key is added, for the keys that live in the Settings page's closed "Optional
+  // extras" (lib/settings/optionalExtras.ts: the fragment opens the disclosure and scrolls to it). It
+  // is a constant of this table, never taken from the response: the rule on `settings_path` above
+  // still refuses any '#' that the server sends.
+  fragment?: string;
+}
+
+// A key that is added in the Settings page's optional extras. `fragment` is "#search-keys" (the
+// section) or "#search-<provider>" (one key's row); setupRequired.test.ts holds each to the fragments
+// the page opens for.
+function extrasKey(label: string, fragment = "#search-keys"): Target {
+  return { path: SETTINGS_PATH, label, fragment };
 }
 
 const MODEL_KEY: Target = { path: SETTINGS, label: "Add a model key in Settings" };
@@ -131,7 +147,7 @@ const MODEL_KEY: Target = { path: SETTINGS, label: "Add a model key in Settings"
 const MODEL_CHOICE: Target = { path: SETTINGS, label: "Choose a model in Settings" };
 const PROFILE: Target = { path: "/profile", label: "Finish your profile" };
 // Apollo and Hunter are tried together for one lookup, so either one missing is the same fix.
-const ENRICHMENT_KEY: Target = { path: SETTINGS, label: "Add an Apollo or Hunter key in Settings" };
+const ENRICHMENT_KEY: Target = extrasKey("Add an Apollo or Hunter key in Settings");
 
 // What the server's `missing` list names (credential_resolver.py and the routes that
 // raise SETUP_REQUIRED themselves). The first token that is known decides, because
@@ -146,15 +162,13 @@ const TARGET_BY_MISSING = new Map<string, Target>([
   ["credential", MODEL_KEY],
   ["apollo_credential", ENRICHMENT_KEY],
   ["hunter_credential", ENRICHMENT_KEY],
-  ["exa_credential", { path: SETTINGS, label: "Add an Exa key in Settings" }],
+  ["exa_credential", extrasKey("Add an Exa key in Settings", "#search-exa")],
   ["gmail_oauth", { path: SETTINGS, label: "Connect Gmail in Settings" }],
-  ["firecrawl_credential", { path: SETTINGS, label: "Add a Firecrawl key in Settings" }],
-  [
-    "you_com_or_firecrawl_credential",
-    { path: SETTINGS, label: "Add a You.com or Firecrawl key in Settings" },
-  ],
+  ["firecrawl_credential", extrasKey("Add a Firecrawl key in Settings", "#search-firecrawl")],
+  // Either one would do, so the link opens the section rather than one of the two rows.
+  ["you_com_or_firecrawl_credential", extrasKey("Add a You.com or Firecrawl key in Settings")],
   // Several providers would do here (Brave, Serper, Firecrawl, You.com).
-  ["search_credential", { path: SETTINGS, label: "Add a search key in Settings" }],
+  ["search_credential", extrasKey("Add a search key in Settings")],
 ]);
 
 // The capabilities that run on the person's own model, so a failure to resolve one
@@ -184,16 +198,21 @@ function genericLabel(pathname: string): string {
   return "Continue";
 }
 
-function labelFor(pathname: string, capability: string | undefined, missing: readonly string[]): string {
+// The label for a link, and where on the page it should land (a fragment, or none).
+function targetFor(
+  pathname: string,
+  capability: string | undefined,
+  missing: readonly string[],
+): { label: string; fragment: string } {
   for (const token of missing) {
     const target = TARGET_BY_MISSING.get(token);
-    if (target !== undefined && target.path === pathname) return target.label;
+    if (target !== undefined && target.path === pathname) return { label: target.label, fragment: target.fragment ?? "" };
   }
   if (capability !== undefined && CAPABILITY_TOKEN.test(capability)) {
     const target = TARGET_BY_CAPABILITY.get(capability);
-    if (target !== undefined && target.path === pathname) return target.label;
+    if (target !== undefined && target.path === pathname) return { label: target.label, fragment: target.fragment ?? "" };
   }
-  return genericLabel(pathname);
+  return { label: genericLabel(pathname), fragment: "" };
 }
 
 // What the link of a rejected provider call says, by the server's reason.
@@ -247,7 +266,8 @@ export function setupRequiredNotice(error: unknown): SetupNotice | null {
   const missing = Array.isArray(fields.missing)
     ? fields.missing.filter((item): item is string => typeof item === "string")
     : [];
-  return { message, linkTo, linkLabel: labelFor(pathnameOf(linkTo), capability, missing) };
+  const { label, fragment } = targetFor(pathnameOf(linkTo), capability, missing);
+  return { message, linkTo: `${linkTo}${fragment}`, linkLabel: label };
 }
 
 // The notice for a rejected model call: the server's sentence plus the link to Settings. Null
