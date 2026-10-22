@@ -593,6 +593,83 @@ describe("the optional extras", () => {
     expect(extrasOpen(container)).toBe(true);
   });
 
+  it("leave the keyboard on a key's own heading for a link to that key's row", async () => {
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" })]);
+    const { container } = at("#search-exa");
+    await settle();
+    expect(document.activeElement).toBe(query(container, "#search-exa h4"));
+  });
+
+  it("leave focus on the toggle, and do not scroll again, when it is pressed after arriving by #search-keys", async () => {
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" })]);
+    const { container } = at("#search-keys");
+    await settle();
+    expect(extrasOpen(container)).toBe(true);
+    const arrivalScrolls = scrolled.mock.calls.length;
+    const button = toggle(container);
+    button.focus();
+    click(button);
+    await settle();
+    expect(extrasOpen(container)).toBe(false);
+    expect(document.activeElement).toBe(button);
+    click(button);
+    await settle();
+    expect(extrasOpen(container)).toBe(true);
+    expect(document.activeElement).toBe(button);
+    expect(scrolled.mock.calls.length).toBe(arrivalScrolls);
+  });
+
+  it("leave focus on the toggle, and do not scroll again, when it is pressed while the address names another section (#ai-provider, #openrouter)", async () => {
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" })]);
+    for (const hash of ["#ai-provider", "#openrouter"]) {
+      const { container, unmount } = at(hash);
+      await settle();
+      const arrivalScrolls = scrolled.mock.calls.length;
+      const button = toggle(container);
+      button.focus();
+      click(button);
+      await settle();
+      expect(extrasOpen(container), hash).toBe(true);
+      expect(document.activeElement, hash).toBe(button);
+      expect(scrolled.mock.calls.length, hash).toBe(arrivalScrolls);
+      unmount();
+    }
+  });
+
+  it("scroll to the key's row once the address that names it has opened the disclosure, while the page is already showing", async () => {
+    const scrolledTo: string[] = [];
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolledTo.push(this.id);
+    };
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" })]);
+    function Jump() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" id="jump-brave" onClick={() => navigate("/settings#search-brave")}>
+          jump
+        </button>
+      );
+    }
+    const { container } = render(
+      <MemoryRouter initialEntries={["/settings"]}>
+        <Jump />
+        <Settings />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(extrasOpen(container)).toBe(false);
+    click(query(container, "#jump-brave"));
+    await settle();
+    expect(extrasOpen(container)).toBe(true);
+    // the last scroll is the one that happened with the row visible
+    expect(scrolledTo[scrolledTo.length - 1]).toBe("search-brave");
+    expect(document.activeElement).toBe(query(container, "#search-brave h4"));
+  });
+
   it("stay closed for a link to another part of the page", async () => {
     describeAccount([key("openrouter", { model: "m", setup_state: "ready" })]);
     const { container } = at("#saved-searches");
