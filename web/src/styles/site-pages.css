@@ -1,0 +1,298 @@
+/* The two explainer pages, How it works and Open source (pages/HowItWorks.tsx, pages/OpenSource.tsx).
+ * Tokens only. Both are one reading column on the public layout's 1200px page, left-aligned with the
+ * header and the footer, and both are drawn inside the signed-in shell too, so nothing here depends on the
+ * public frame. Every grid or flex child that holds text can shrink (min-width: 0) and wraps long words, so
+ * nothing pushes a 375px phone sideways. Nothing here is filled cyan: the public header's Create account
+ * is the one cyan fill on these pages, and the GitHub link is outlined. */
+
+.bj-site {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 860px;
+  padding-top: 56px;
+}
+
+.bj-site h1,
+.bj-site h2 {
+  font-family: var(--bj-font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.bj-site h1 {
+  margin: 0;
+  font-size: clamp(38px, 5.2vw, 64px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.bj-site h2 {
+  margin: 0;
+  font-size: clamp(28px, 3.4vw, 36px);
+  line-height: 1.15;
+}
+
+/* Section headings take focus when a link such as /open-source#self-hosting lands on them. */
+.bj-site h2:focus-visible {
+  outline-offset: 6px;
+}
+
+.bj-site p {
+  max-width: 680px;
+  overflow-wrap: anywhere;
+}
+
+.bj-site-eyebrow {
+  margin: 0 0 14px;
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+.bj-site p.bj-site-lead {
+  margin: 24px 0 0;
+  font-size: 19px;
+  line-height: 1.6;
+  color: var(--bj-text-muted);
+}
+
+/* A link inside a sentence is told apart by an underline, not by colour alone: cyan beside ivory or muted
+   text is about 1.5:1, under the 3:1 WCAG 1.4.1 asks for when colour is the only cue. */
+.bj-site p a {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.bj-site p a:hover {
+  color: var(--bj-cyan-hover);
+  text-decoration-thickness: 2px;
+}
+
+.bj-site code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bj-surface-raised);
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
+/* How it works                                                         */
+/* ------------------------------------------------------------------ */
+
+.bj-how-steps {
+  margin: 56px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-how-step {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 0 8px;
+  padding: 36px 0 40px;
+  border-bottom: 1px solid var(--bj-border);
+  scroll-margin-top: 16px;
+}
+
+.bj-how-number {
+  padding-top: 10px;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-control);
+  color: var(--bj-text-muted);
+}
+
+.bj-how-body {
+  min-width: 0;
+}
+
+.bj-how-body p {
+  margin: 14px 0 0;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.bj-how-body p.bj-how-split {
+  font-size: var(--bj-text-body);
+  color: var(--bj-text-muted);
+}
+
+.bj-how-example {
+  margin-top: 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-surface);
+}
+
+.bj-how-example .bj-site-eyebrow {
+  margin: 0 0 8px;
+  font-size: var(--bj-text-eyebrow);
+}
+
+.bj-site-closing {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 40px 0 0;
+}
+
+.bj-site-closing p {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.bj-site-closing p.bj-site-motto {
+  font-family: var(--bj-font-display);
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+/* ------------------------------------------------------------------ */
+/* Open source                                                          */
+/* ------------------------------------------------------------------ */
+
+.bj-site-repo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  margin-top: 28px;
+}
+
+.bj-site-repo a.bj-button-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 8px;
+  font-size: var(--bj-text-body);
+}
+
+.bj-site-repo-label {
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-badge);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-site-section {
+  margin-top: 64px;
+  padding-top: 40px;
+  border-top: 1px solid var(--bj-border);
+  scroll-margin-top: 16px;
+}
+
+.bj-site-section p {
+  margin: 18px 0 0;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.bj-site-section p.bj-site-note {
+  font-size: var(--bj-text-control);
+  color: var(--bj-text-muted);
+}
+
+.bj-site-list {
+  margin: 24px 0 0;
+}
+
+.bj-site-list-row {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 4px 24px;
+  padding: 14px 0;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-site-list-row:last-child {
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-site-list dt {
+  font-size: var(--bj-text-body);
+  overflow-wrap: anywhere;
+}
+
+.bj-site-list dd {
+  margin: 0;
+  font-size: var(--bj-text-body);
+  line-height: 1.55;
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-site-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-site-chips li {
+  padding: 5px 12px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 999px;
+  font-size: var(--bj-text-small);
+}
+
+@media (max-width: 959px) {
+  .bj-site {
+    padding-top: 36px;
+  }
+
+  .bj-how-steps {
+    margin-top: 40px;
+  }
+
+  .bj-site p.bj-site-lead {
+    font-size: 17px;
+  }
+}
+
+@media (max-width: 719px) {
+  .bj-how-step {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 28px 0 32px;
+  }
+
+  .bj-how-number {
+    padding: 0 0 8px;
+  }
+
+  .bj-site-list-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bj-site-section {
+    margin-top: 48px;
+    padding-top: 32px;
+  }
+
+  .bj-site-repo a.bj-button-link {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .bj-site-closing a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bj-site * {
+    transition: none;
+    animation: none;
+  }
+}
