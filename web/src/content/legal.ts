@@ -154,7 +154,7 @@ const MODEL_PROVIDERS: readonly { name: string; detail: string }[] = [
     name: "DeepSeek",
     detail:
       MODEL_PROVIDER_SENTENCE +
-      " DeepSeek is operated by a company based in China, and its privacy policy says the personal data it collects is processed and stored in the People's Republic of China. That policy does not say whether text sent through the API is covered.",
+      " DeepSeek is operated by a company based in China. Its privacy policy says the personal data it collects is processed and stored in the People's Republic of China, and says it does not cover personal data collected from people who use apps built on DeepSeek's platform, so it is unclear what applies to text Between Jobs sends on your key.",
   },
   {
     name: "Alibaba Cloud (Qwen)",
