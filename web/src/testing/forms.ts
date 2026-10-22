@@ -49,3 +49,12 @@ export async function settle(times = 3): Promise<void> {
 export function text(element: Element): string {
   return (element.textContent ?? "").replace(/\s+/g, " ").trim();
 }
+
+// The words a sighted person reads: `text` without what is visually hidden for a screen reader (the
+// provider's name after "Replace key", say). A test that finds a button by its label uses this, so it
+// still matches the whole visible label exactly.
+export function visibleText(element: Element): string {
+  const copy = element.cloneNode(true) as Element;
+  for (const hidden of copy.querySelectorAll(".bj-visually-hidden")) hidden.remove();
+  return text(copy);
+}

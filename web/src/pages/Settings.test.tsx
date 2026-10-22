@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { connectStore } from "../lib/settings/openrouterOAuth";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, calls, callsTo, on, reset } from "../testing/fakeApi";
-import { settle, text } from "../testing/forms";
+import { settle, text, visibleText } from "../testing/forms";
 import { click, query, render } from "../testing/render";
 import Settings from "./Settings";
 
@@ -55,7 +55,7 @@ function page() {
 
 const band = (root: ParentNode) => query(root, 'section[aria-label="Next step"]');
 const buttonIn = (root: ParentNode, label: string | RegExp) =>
-  [...root.querySelectorAll("button, a")].find((b) => (typeof label === "string" ? text(b) === label : label.test(text(b)))) as HTMLElement;
+  [...root.querySelectorAll("button, a")].find((b) => (typeof label === "string" ? visibleText(b) === label || text(b) === label : label.test(text(b)))) as HTMLElement;
 
 beforeEach(() => {
   reset();

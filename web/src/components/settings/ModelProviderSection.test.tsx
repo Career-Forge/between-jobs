@@ -3,7 +3,7 @@ import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../../testing/fakeApi";
-import { choose, pick, settle, text, typeInto } from "../../testing/forms";
+import { choose, pick, settle, text, typeInto, visibleText } from "../../testing/forms";
 import { click, query, render } from "../../testing/render";
 import type { CredentialSummary } from "../../lib/settings/credentials";
 import { parseProviderCatalog } from "../../lib/settings/llmProviders";
@@ -79,7 +79,7 @@ function mount(props: Parameters<typeof Harness>[0]) {
 }
 
 const button = (root: ParentNode, label: string | RegExp) =>
-  [...root.querySelectorAll("button")].find((b) => (typeof label === "string" ? text(b) === label : label.test(text(b)))) as HTMLButtonElement;
+  [...root.querySelectorAll("button")].find((b) => (typeof label === "string" ? visibleText(b) === label || text(b) === label : label.test(text(b)))) as HTMLButtonElement;
 
 beforeEach(() => {
   reset();
@@ -414,6 +414,17 @@ describe("keyboard focus after a change", () => {
     click(button(container, "Remove key"));
     await settle();
     expect(document.activeElement).toBe(query(container, "#ai-provider-h"));
+  });
+});
+
+describe("two connected providers' buttons", () => {
+  it("are told apart by name: Replace key and Remove key each end with the provider", () => {
+    const { container } = mount({ credentials: [row("openai", { model: "m" }), row("anthropic", { model: "m" })] });
+    const names = [...container.querySelectorAll(".bj-set-row-actions button")]
+      .map((b) => text(b))
+      .filter((name) => /^(Replace|Remove) key/.test(name))
+      .sort();
+    expect(names).toEqual(["Remove key for Anthropic", "Remove key for OpenAI", "Replace key for Anthropic", "Replace key for OpenAI"]);
   });
 });
 

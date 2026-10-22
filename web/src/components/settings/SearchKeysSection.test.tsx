@@ -3,7 +3,7 @@ import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../../testing/fakeApi";
-import { settle, submit, text, typeInto } from "../../testing/forms";
+import { settle, submit, text, typeInto, visibleText } from "../../testing/forms";
 import { click, query, render } from "../../testing/render";
 import { SEARCH_PROVIDER_CARDS } from "../../lib/providerStatus";
 import type { CredentialSummary } from "../../lib/settings/credentials";
@@ -28,7 +28,7 @@ function mount(credentials: CredentialSummary[], hiringSignalsEnabled = false, o
 }
 
 const row = (root: ParentNode, provider: string) => query(root, `#search-${provider}`);
-const button = (root: ParentNode, label: string) => [...root.querySelectorAll("button")].find((b) => text(b) === label) as HTMLButtonElement;
+const button = (root: ParentNode, label: string) => [...root.querySelectorAll("button")].find((b) => visibleText(b) === label || text(b) === label) as HTMLButtonElement;
 const connect = (root: ParentNode, provider: string, title: string) => click(button(row(root, provider), `Connect ${title}`));
 
 beforeEach(() => {
@@ -116,9 +116,21 @@ describe("the rows", () => {
   it("make a connected key one quiet line: the name, Connected, Replace key and Remove key", () => {
     const { container } = mount([saved("brave")]);
     const set = row(container, "brave");
-    expect(text(query(set, ".bj-set-extra-line"))).toBe("Brave Search✓ ConnectedReplace keyRemove key");
+    expect(text(query(set, ".bj-set-extra-line"))).toBe("Brave Search✓ ConnectedReplace key for Brave SearchRemove key for Brave Search");
     expect(button(set, "Replace key").classList.contains("bj-quiet")).toBe(true);
     expect(query(set, ".bj-set-extra-glyph").getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("tell two connected keys' buttons apart by name: Replace key and Remove key each end with the provider", () => {
+    const { container } = mount([saved("brave"), saved("serper")]);
+    const names = [...container.querySelectorAll("button")]
+      .map((b) => text(b))
+      .filter((name) => /^(Replace|Remove) key/.test(name))
+      .sort();
+    expect(names).toEqual(["Remove key for Brave Search", "Remove key for Serper", "Replace key for Brave Search", "Replace key for Serper"]);
+    // the visible words are unchanged: the provider is said to a screen reader only
+    const visible = [...row(container, "brave").querySelectorAll(".bj-set-extra-actions > button")].map((b) => visibleText(b));
+    expect(visible).toEqual(["Replace key", "Remove key"]);
   });
 
   it("make a key that is not connected its name and a Connect text action, with no glyph, no trail and no form until it is pressed", () => {
@@ -269,6 +281,18 @@ describe("removing a key", () => {
     await settle();
     expect(callsTo("DELETE /credentials/search/brave")).toHaveLength(1);
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("keeps the keyboard in the row after the key is removed, on the row's own button", async () => {
+    on("DELETE /credentials/search/brave", undefined);
+    const { container } = mount([saved("brave")]);
+    click(button(row(container, "brave"), "Remove key"));
+    click(button(row(container, "brave"), "Remove key"));
+    await settle();
+    expect(callsTo("DELETE /credentials/search/brave")).toHaveLength(1);
+    const own = query<HTMLButtonElement>(row(container, "brave"), ".bj-set-extra-actions > button");
+    expect(document.activeElement).toBe(own);
+    expect(document.activeElement).not.toBe(document.body);
   });
 
   it("is offered for a saved key only", () => {
