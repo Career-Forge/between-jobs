@@ -129,6 +129,18 @@ describe("the public frame's column", () => {
     expect(Number.parseFloat(declarationsFor(base, ".bj-public-actions a.bj-button-link")["min-height"])).toBeGreaterThanOrEqual(44);
   });
 
+  it("lets the current page in the menu keep the selection style's hover fill: the plain hover fill is only for the other links", () => {
+    // `.bj-public-menu a.bj-selectable:hover` is (0,3,1) and tokens.css's `.bj-selectable[aria-current="page"]:hover` is
+    // (0,3,0), so a plain hover rule would replace the maroon fill of the current page with the grey one.
+    const hovers = rulesOf(publicCss).filter((rule) => rule.selectors.some((selector) => selector.includes(".bj-public-menu a.bj-selectable") && selector.endsWith(":hover")));
+    for (const rule of hovers) {
+      if (rule.declarations.background === undefined) continue;
+      expect(rule.selectors.every((selector) => selector.includes(":not([aria-current])")), rule.selectors.join(", ")).toBe(true);
+    }
+    expect(declarationsFor(publicCss, ".bj-public-menu a.bj-selectable:not([aria-current]):hover").background).toBe("var(--bj-hover-bg)");
+    expect(declarationsFor(withoutMedia(tokensCss), '.bj-selectable[aria-current="page"]:hover').background).toBe("var(--bj-selected-bg-hover)");
+  });
+
   it("marks the current tab with the selection style (a fill) and never an underline, an edge bar or a maroon line", () => {
     const rules = rulesOf(publicCss).filter((rule) => rule.selectors.some((selector) => /bj-public-(tabs|menu)/.test(selector)));
     for (const rule of rules) {
@@ -379,6 +391,17 @@ describe("contrast of what the tour and the explainer pages draw", () => {
       expect(background, name).toMatch(/^#/);
       expect(contrast(foreground, background), name).toBeGreaterThanOrEqual(4.5);
     }
+  });
+
+  it("bounds the tour's tab strip in the group outline, as every group of selectable segments is, not in the 1.3:1 hairline", () => {
+    const strip = declarationsFor(tourCss, ".bj-tour-tabs");
+    expect(strip.border).toBe("1px solid var(--bj-outline)");
+    expect(strip["border-top"]).toBeUndefined();
+    expect(strip["border-bottom"]).toBeUndefined();
+    expect(contrast(token("--bj-outline"), token("--bj-bg"))).toBeGreaterThanOrEqual(3);
+    // The hairline it replaced is far under 3:1, which is why a maroon fill alone does not bound a group.
+    expect(contrast(token("--bj-border"), token("--bj-bg"))).toBeLessThan(3);
+    expect(contrast(token("--bj-selected-bg"), token("--bj-bg"))).toBeLessThan(3);
   });
 
   it("meets 3:1 for the lines that carry meaning: the filled and hollow cells, the dashed 'left for you' field", () => {

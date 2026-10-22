@@ -191,8 +191,13 @@
   color: var(--bj-text);
 }
 
-.bj-public-menu a.bj-selectable:hover {
+/* Hover paints the plain fill on the links that are not the current page. The current page keeps the selection
+   style's own hover (tokens.css), which a plain `a.bj-selectable:hover` here would outrank. */
+.bj-public-menu a.bj-selectable:not([aria-current]):hover {
   background: var(--bj-hover-bg);
+}
+
+.bj-public-menu a.bj-selectable:hover {
   text-decoration: none;
 }
 
