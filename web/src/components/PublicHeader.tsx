@@ -14,14 +14,16 @@ import "../styles/public.css";
 // hero of its own. The home page's hero holds the page's one (its next-step band), so there the header's
 // is outlined (`filled` is false). Sign in is always a plain text link.
 //
-// UNDER 960PX the tabs and the way in fold into a menu: a disclosure button ("Menu") that opens a panel
-// right after it. Escape closes the panel and puts focus back on the button; choosing a link closes it
-// and moves focus to the page's <main>, since the page has changed under the person's finger; growing
-// the window to the wide layout closes it, because the wide layout draws the same links itself. Any
-// other way the location changes closes it too (the wordmark, a link in the page or the footer, the
-// browser's Back and Forward), so a visitor never lands on a new page under an open menu. The
-// panel is drawn only while it is open, so there is never a second copy of the links for a reader to
-// meet. The button and the panel's links are 44px tall or more.
+// UNDER 960PX the tabs and Sign in fold into a menu: a disclosure button ("Menu") that opens a panel
+// right after it. Create account stays in the header's row at every width, so a phone visitor on any
+// public page can always start; Sign in is a plain link in the panel there, and beside Create account
+// from 960px. Escape closes the panel and puts focus back on the button; choosing a link in it closes
+// it and moves focus to the page's <main>, since the page has changed under the person's finger;
+// growing the window to the wide layout closes it, because the wide layout draws the same links itself.
+// Any other way the location changes closes it too (the wordmark, a link in the page or the footer, the
+// browser's Back and Forward), so a visitor never lands on a new page under an open menu. The panel is
+// drawn only while it is open, so there is never a second copy of the links for a reader to meet. The
+// button and the panel's links are 44px tall or more.
 
 const WIDE_QUERY = "(min-width: 960px)";
 
@@ -106,14 +108,9 @@ export function PublicHeader({ filled }: { filled: boolean }) {
               {tab.label}
             </Link>
           ))}
-          <div className="bj-public-menu-actions">
-            <Link to={LOGIN_PATH} className="bj-button-link" onClick={onChoose}>
-              Sign in
-            </Link>
-            <Link to={REGISTER_PATH} className={createClass} onClick={onChoose}>
-              Create account
-            </Link>
-          </div>
+          <Link to={LOGIN_PATH} className="bj-public-menu-signin" onClick={onChoose}>
+            Sign in
+          </Link>
         </nav>
       )}
     </header>

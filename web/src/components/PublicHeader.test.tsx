@@ -109,7 +109,7 @@ describe("the menu", () => {
     expect(root.querySelectorAll("a[href='/privacy']")).toHaveLength(1);
   });
 
-  it("opens on a press into a navigation after the button, with the four tabs, Sign in and Create account", () => {
+  it("opens on a press into a navigation after the button, with the four tabs and Sign in", () => {
     const root = open("/open-source");
     const button = menuButton(root);
     click(button);
@@ -119,7 +119,7 @@ describe("the menu", () => {
     expect(button.getAttribute("aria-controls")).toBe(menu?.id);
     expect(menu?.getAttribute("aria-label")).toBe("Menu");
     expect(button.compareDocumentPosition(menu as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect([...(menu?.querySelectorAll("a") ?? [])].map((link) => text(link))).toEqual(["Product", "How it works", "Open source", "Privacy", "Sign in", "Create account"]);
+    expect([...(menu?.querySelectorAll("a") ?? [])].map((link) => text(link))).toEqual(["Product", "How it works", "Open source", "Privacy", "Sign in"]);
     // The current page is marked here too.
     expect([...(menu?.querySelectorAll("[aria-current]") ?? [])].map((link) => text(link))).toEqual(["Open source"]);
     // A press on the button again closes it.
@@ -128,11 +128,14 @@ describe("the menu", () => {
     expect(button.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("keeps the one cyan Create account in the page's markup in both states where the page has no hero", () => {
+  it("keeps Create account in the header's row, not in the panel: the way in is drawn at every width, so the panel never repeats it", () => {
     const root = open("/privacy", true);
+    expect(root.querySelectorAll(".bj-button-link-primary")).toHaveLength(1);
     click(menuButton(root));
-    // The wide layout's copy is hidden by the stylesheet under 960px, so a reader meets one of the two.
-    expect(panel(root)?.querySelectorAll(".bj-button-link-primary")).toHaveLength(1);
+    expect(root.querySelectorAll(".bj-button-link-primary")).toHaveLength(1);
+    expect(panel(root)?.querySelector(".bj-button-link-primary")).toBeNull();
+    expect([...(panel(root)?.querySelectorAll("a") ?? [])].some((link) => text(link) === "Create account")).toBe(false);
+    expect(query(root, 'nav[aria-label="Account"]').contains(query(root, ".bj-button-link-primary"))).toBe(true);
   });
 
   it("closes on Escape from inside the panel and puts focus back on the button", () => {

@@ -487,8 +487,9 @@ and `styles/tour.css` (the home page), `styles/site-pages.css` (How it works and
 the printed resume page drawn in the tour, which is white because it stands for paper.
 
 - **The header** is four tabs (Product, How it works, Open source, Privacy), the way in, and under 960px a Menu
-  button that opens the same links as a panel (Escape closes it and returns focus to the button, choosing a link
-  closes it and moves focus to `<main>`, widening the window closes it). The tab for the current page carries
+  button that opens the tabs and Sign in as a panel (Escape closes it and returns focus to the button, choosing a link
+  closes it and moves focus to `<main>`, widening the window or any navigation at all closes it). Create account stays
+  in the header's row at every width, so a phone visitor on any page can start. The tab for the current page carries
   `aria-current="page"` and the selection style (a maroon fill, never an underline: tokens.css forbids lines as a
   selection mark and a maroon line is 1.7:1 against the canvas). The header is written phone first, so the wide
   layout is the `min-width: 960px` block. Create account is the page's one cyan fill on every public page that has no
