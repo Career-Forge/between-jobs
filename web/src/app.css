@@ -518,15 +518,6 @@ body:has(.bj-more-sheet[open]) {
   width: 100%;
 }
 
-.bj-section-editor-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--bj-text-muted);
-  cursor: pointer;
-}
-
 /* A group of two or more segments of which one is chosen (the selection primitive in tokens.css:
    a maroon fill inside an outlined group). */
 .bj-view-toggle {
@@ -591,17 +582,6 @@ button.bj-danger {
 }
 
 /* Modal */
-.bj-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  padding: 24px;
-}
-
 .bj-modal {
   width: 100%;
   max-width: 560px;
@@ -703,18 +683,6 @@ button.bj-danger {
 
 .bj-daterange-group input[type="number"] {
   width: 70px;
-}
-
-.bj-current-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--bj-text-muted);
-}
-
-.bj-current-checkbox input {
-  width: auto;
 }
 
 /* ------------------------------------------------------------------ */
