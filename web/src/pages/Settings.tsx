@@ -68,6 +68,12 @@ export default function Settings() {
   // A key replaced on this visit came back with no model (the model it had belonged to its old
   // address), so the API may have cleared the default. Until a model is chosen the page claims none.
   const [droppedModelFor, setDroppedModelFor] = useState<string | null>(null);
+  // A ready key was removed on this visit while two or more others stayed ready. The API repoints the
+  // default only when exactly one other key is ready and otherwise deletes it, and the page cannot tell
+  // whether the key removed was the default, so the default may be gone. Until a model is chosen the
+  // page claims none, even if later removals leave a single ready key (which would otherwise read as
+  // "the default").
+  const [defaultMayBeCleared, setDefaultMayBeCleared] = useState(false);
 
   const rows = data.credentials.state === "ready" ? data.credentials.value : null;
   const providers = catalog.kind === "ready" ? catalog.providers : null;
@@ -131,7 +137,7 @@ export default function Settings() {
     let llmFacts: SettingsLlm;
     if (ready.length > 0 && dropped === undefined) {
       // A default cleared on this visit is the `dropped` case above, so it is not passed here.
-      llmFacts = { state: "ready", names: ready.map((entry) => nameOf(entry.row.provider)), defaultKnown: knownDefaultProvider(llm, chosenHere, false) !== null };
+      llmFacts = { state: "ready", names: ready.map((entry) => nameOf(entry.row.provider)), defaultKnown: knownDefaultProvider(llm, chosenHere, defaultMayBeCleared) !== null };
     } else if (awaiting !== undefined) llmFacts = { state: awaiting.state === "needs_model" ? "needs_model" : "needs_key", providerName: nameOf(awaiting.row.provider) };
     else llmFacts = { state: "none" };
     return {
@@ -139,8 +145,9 @@ export default function Settings() {
       // Only while that provider is still ready: a key removed since is not a model chosen.
       chosenHere: chosenHere !== null && ready.some((entry) => entry.row.provider === chosenHere) ? nameOf(chosenHere) : null,
     };
-  }, [rows, llm, providers, chosenHere, droppedModelFor]);
-  const defaultUnknown = droppedModelFor !== null && llm.some((row) => row.provider === droppedModelFor && llmSetupState(row) === "needs_model");
+  }, [rows, llm, providers, chosenHere, droppedModelFor, defaultMayBeCleared]);
+  const defaultUnknown =
+    defaultMayBeCleared || (droppedModelFor !== null && llm.some((row) => row.provider === droppedModelFor && llmSetupState(row) === "needs_model"));
 
   const outcome = nextStep({
     page: "settings",
@@ -221,9 +228,11 @@ export default function Settings() {
             onModelChosen={(providerId) => {
               setChosenHere(providerId);
               setDroppedModelFor(null);
+              setDefaultMayBeCleared(false);
             }}
             chosenHere={chosenHere}
             defaultUnknown={defaultUnknown}
+            onDefaultMayBeCleared={() => setDefaultMayBeCleared(true)}
             onModelDropped={(providerId) => {
               setDroppedModelFor(providerId);
               setChosenHere((current) => (current === providerId ? null : current));

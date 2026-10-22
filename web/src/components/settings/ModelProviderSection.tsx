@@ -3,7 +3,7 @@ import type { CatalogState } from "../../lib/settings/useProviderCatalog";
 import type { CredentialSummary } from "../../lib/settings/credentials";
 import { CONNECT_MODEL_WORDS } from "../../lib/modelKey";
 import { providerNote } from "../../lib/providerNotes";
-import { OPENROUTER_ID, endpointForAddress, knownDefaultProvider, llmRows, providerName, regionForAddress, type LlmProvider } from "../../lib/settings/llmProviders";
+import { OPENROUTER_ID, endpointForAddress, knownDefaultProvider, llmRows, llmSetupState, providerName, regionForAddress, type LlmProvider } from "../../lib/settings/llmProviders";
 import { FailureState, LoadingState } from "../paper/StateViews";
 import { ConnectedProviderRow } from "./ConnectedProviderRow";
 import { DefaultModel } from "./DefaultModel";
@@ -52,6 +52,11 @@ export interface ModelProviderSectionProps {
   defaultUnknown?: boolean;
   /** A replaced key came back with no model: the model it had belonged to its old address. */
   onModelDropped?: (providerId: string) => void;
+  /**
+   * A ready key was removed while two or more others stayed ready, so the API has probably deleted the
+   * default rather than repointing it (it repoints only to a single other ready key).
+   */
+  onDefaultMayBeCleared?: () => void;
   /** Words for a polite announcement ("Connected OpenAI."). */
   announce: (message: string) => void;
 }
@@ -77,6 +82,7 @@ export function ModelProviderSection({
   chosenHere,
   defaultUnknown = false,
   onModelDropped,
+  onDefaultMayBeCleared,
   announce,
 }: ModelProviderSectionProps) {
   const providers = catalog.kind === "ready" ? catalog.providers : null;
@@ -169,6 +175,8 @@ export function ModelProviderSection({
                 panel={open}
                 onPanel={(next) => onPanel(next === null ? null : { provider: credential.provider, panel: next })}
                 onRemoved={async () => {
+                  const othersReady = connected.filter((other) => other.provider !== credential.provider && llmSetupState(other) === "ready").length;
+                  if (othersReady >= 2) onDefaultMayBeCleared?.();
                   onPanel(null);
                   await reload();
                   announce(`${name} was removed.`);
