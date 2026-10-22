@@ -17,18 +17,27 @@ import "../styles/public.css";
 // UNDER 960PX the tabs and the way in fold into a menu: a disclosure button ("Menu") that opens a panel
 // right after it. Escape closes the panel and puts focus back on the button; choosing a link closes it
 // and moves focus to the page's <main>, since the page has changed under the person's finger; growing
-// the window to the wide layout closes it, because the wide layout draws the same links itself. The
+// the window to the wide layout closes it, because the wide layout draws the same links itself. Any
+// other way the location changes closes it too (the wordmark, a link in the page or the footer, the
+// browser's Back and Forward), so a visitor never lands on a new page under an open menu. The
 // panel is drawn only while it is open, so there is never a second copy of the links for a reader to
 // meet. The button and the panel's links are 44px tall or more.
 
 const WIDE_QUERY = "(min-width: 960px)";
 
 export function PublicHeader({ filled }: { filled: boolean }) {
-  const { pathname } = useLocation();
+  const { pathname, key: locationKey } = useLocation();
   const here = normalizePath(pathname);
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const panelId = useId();
+
+  // Every navigation gets a new location key (a link to the page you are already on, Back and Forward
+  // included), so the panel closes whichever link or button moved the person. Focus is left where the
+  // navigation put it: only a choice made inside the panel moves it (onChoose).
+  useEffect(() => {
+    setOpen(false);
+  }, [locationKey]);
 
   // The wide layout shows the tabs itself, so an open panel has nothing left to do.
   useEffect(() => {
