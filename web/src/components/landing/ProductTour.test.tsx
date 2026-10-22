@@ -167,17 +167,24 @@ describe("the sample next step", () => {
 });
 
 describe("each drawing", () => {
-  it.each(TOUR_TABS.map((tab, index) => [tab.label, index] as const))("%s is a picture: nothing in it takes focus or fetches, and it ends in its trail line", (_name, index) => {
+  it.each(TOUR_TABS.map((tab, index) => [tab.label, index] as const))("%s is a picture: nothing in it takes focus or fetches, and it ends in its trail line and a note of what nobody checked", (_name, index) => {
     const root = open();
     click(tabsOf(root)[index]);
     const panel = visiblePanel(root);
     expect(panel.querySelector("button, a, input, select, textarea, summary, [tabindex], img, svg, form")).toBeNull();
     expect(panel.querySelector(".bj-primary, .bj-button-link-primary")).toBeNull();
-    const last = panel.querySelector(".bj-tour-grid")?.lastElementChild;
-    expect(last?.classList.contains("bj-trail")).toBe(true);
-    // Who made it, what it is based on, what nobody checked.
-    expect(text(last as Element)).toMatch(/not checked: /);
-    expect(text(last as Element)).not.toMatch(/verified/i);
+    const foot = panel.querySelector(".bj-tour-grid")?.lastElementChild;
+    expect(foot?.classList.contains("bj-tour-foot")).toBe(true);
+    // The trail line says who made it and what it is based on; under it, a plain note says what nobody checked.
+    const [trail, note] = [...(foot?.children ?? [])];
+    expect(trail.classList.contains("bj-trail")).toBe(true);
+    expect(text(trail)).toContain(String(TOUR_TABS[index].trail.actor));
+    expect(text(trail)).toContain(String(TOUR_TABS[index].trail.basis));
+    expect(text(trail)).not.toMatch(/not checked/i);
+    expect(text(trail)).not.toMatch(/verified/i);
+    expect(note.classList.contains("bj-tour-not-checked")).toBe(true);
+    expect(text(note)).toBe(`Not checked: ${TOUR_TABS[index].notChecked}`);
+    expect(foot?.children).toHaveLength(2);
     expect(panel.querySelectorAll(".bj-trail")).toHaveLength(1);
   });
 
@@ -187,8 +194,8 @@ describe("each drawing", () => {
       click(tabsOf(root)[index]);
       const words = text(visiblePanel(root));
       for (const [name, pattern] of FORBIDDEN) expect(words, name).not.toMatch(pattern);
-      // The checklist's own count of its three rows, "(3)", is the one number: it is a count of what is drawn.
-      expect(words.replace(/\(3\)/, ""), "digits").not.toMatch(/\d/);
+      // The checklist's own count of its four rows, "(4)", is the one number: it is a count of what is drawn.
+      expect(words.replace(/\(4\)/, ""), "digits").not.toMatch(/\d/);
     });
   });
 
@@ -210,7 +217,7 @@ describe("each drawing", () => {
     expect(text(panel)).not.toMatch(/In your profile|Not in your profile|Skills the posting lists|Mixed|Strong/);
   });
 
-  it("Prepare: a resume page with the flagged word marked, the flagged-claim row, and the three checks that are not checked", () => {
+  it("Prepare: a resume page with the flagged word marked, the flagged-claim row, and the four checks that are not checked", () => {
     const root = open();
     click(tabsOf(root)[1]);
     const panel = visiblePanel(root);
@@ -219,9 +226,14 @@ describe("each drawing", () => {
     expect(text(query(panel, ".bj-claimrow"))).toContain("Unverifiable");
     expect(text(query(panel, ".bj-claimrow"))).toContain(TOUR.prepare.claim);
     const checks = [...panel.querySelectorAll(".bj-checkrow")];
-    expect(checks).toHaveLength(3);
+    expect(checks).toHaveLength(4);
     for (const check of checks) expect(text(check)).toContain("Not checked");
-    expect(checks.map((check) => text(query(check, ".bj-checkrow-label")))).toEqual(["Links are valid", "Fonts are embedded", "No duplicate bullets"]);
+    expect(checks.map((check) => text(query(check, ".bj-checkrow-label")))).toEqual([
+      "Links are valid",
+      "Text is selectable (not flattened to images)",
+      "Fonts are embedded",
+      "No duplicate bullets",
+    ]);
     // Nothing is ticked, and nothing can be: a row is a statement.
     expect(panel.querySelector("input, button")).toBeNull();
     // The page is paper, a group named for what it is.

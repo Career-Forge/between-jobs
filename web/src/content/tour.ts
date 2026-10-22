@@ -20,8 +20,14 @@ export interface TourTab {
   label: string;
   /** The sample next step for this tab. Never a control; the hero holds the page's one cyan fill. */
   next: { sentence: string; why: readonly string[] };
-  /** The one trail line the panel ends in: who made it, what it is based on, what nobody checked. */
+  /** The one trail line the panel ends in: who made it and what it is based on, in the trail grammar. */
   trail: TrailInput;
+  /**
+   * What nobody checked, as an ordinary note under the trail line, the way the real screens draw it (the
+   * checklist's hints, the claim check's caveat). It is not the trail line's own extra slot, which is for a
+   * count or a confidence.
+   */
+  notChecked: string;
 }
 
 export const TOUR_TABS: readonly TourTab[] = [
@@ -33,8 +39,8 @@ export const TOUR_TABS: readonly TourTab[] = [
       glyph: "engine",
       actor: "Fit rated by code from your model's sub-scores",
       basis: "the posting and your profile",
-      extra: "not checked: whether a missing skill matters to the team",
     },
+    notChecked: "whether a missing skill matters to the team.",
   },
   {
     id: "prepare",
@@ -44,8 +50,8 @@ export const TOUR_TABS: readonly TourTab[] = [
       glyph: "model",
       actor: "Drafted by your model, checked by code",
       basis: "from your profile",
-      extra: "not checked: links, fonts and repeated bullets",
     },
+    notChecked: "links, fonts, repeated bullets and whether the text can be selected.",
   },
   {
     id: "reach",
@@ -55,8 +61,8 @@ export const TOUR_TABS: readonly TourTab[] = [
       glyph: "model",
       actor: "Drafted by your model",
       basis: "on your key",
-      extra: "not checked: the recipient and the tone",
     },
+    notChecked: "the recipient and the tone.",
   },
   {
     id: "practice",
@@ -66,8 +72,8 @@ export const TOUR_TABS: readonly TourTab[] = [
       glyph: "model",
       actor: "Scored by your model",
       basis: "on your key, from your written answer",
-      extra: "not checked: whether an interviewer would agree",
     },
+    notChecked: "whether an interviewer would agree.",
   },
   {
     id: "apply",
@@ -77,8 +83,8 @@ export const TOUR_TABS: readonly TourTab[] = [
       glyph: "code",
       actor: "Filled by code",
       basis: "from your profile",
-      extra: "not checked: the fields left for you",
     },
+    notChecked: "the fields left for you.",
   },
 ];
 
@@ -89,6 +95,7 @@ export const TOUR = {
     "One fictional role: Applied AI Engineer at Northstar Labs, a fictional company. Everything in the tour is a drawing, not a control.",
   tablistLabel: "Screens of the product",
   nextLabel: "A sample next step",
+  notCheckedLabel: "Not checked",
   role: "Applied AI Engineer",
   company: "Northstar Labs",
   place: "Remote, US",
@@ -129,6 +136,7 @@ export const TOUR = {
     checksTitle: "Yours to check",
     checks: [
       { id: "links_valid", label: "Links are valid", hint: "Review header and link fields by hand." },
+      { id: "text_selectable", label: "Text is selectable (not flattened to images)", hint: "Open the PDF and try selecting text." },
       { id: "fonts_embedded", label: "Fonts are embedded", hint: "Check the PDF properties in a viewer." },
       { id: "no_duplicate_bullets", label: "No duplicate bullets", hint: "Skim the resume for repeated phrasing." },
     ],

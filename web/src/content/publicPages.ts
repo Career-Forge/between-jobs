@@ -3,7 +3,8 @@
 // code and the repository's README when it was written: change one only after checking it again.
 //
 //   - How it works says, per step, what is plain code and what is a model working on the person's own
-//     key, and shows one trail line of the kind the real screens draw. The imports follow
+//     key, and shows one example trail line in the grammar the real screens use (who made it and what it is based on,
+//     and at most a count or a confidence in its extra slot). The imports follow
 //     lib/profileTrails.ts, the fit rating lib/workspaceTrails.ts (scoreTrail), the checklist
 //     api/export_checklist.py, the board and practice the application and practice screens.
 //   - Open source is the README's own account of what the repository holds, how a key is handled and how
@@ -29,7 +30,7 @@ export interface HowStep {
 export const HOW_IT_WORKS = {
   eyebrow: "How it works",
   title: "Four steps. You make the last move in each.",
-  lead: "Most people go through them in this order, and you can start anywhere. In every step, the line under a block of work says who made it, what it is based on and what nobody has checked.",
+  lead: "Each step builds on the one before it, and you can start at any of them. Where a screen draws one, the line under a block of work says who made it and what it is based on.",
   stepsLabel: "The four steps",
   steps: [
     {
@@ -69,7 +70,6 @@ export const HOW_IT_WORKS = {
         glyph: "code",
         actor: "Checked by code",
         basis: "no model involved",
-        extra: "some checks left for you",
       },
     },
     {
@@ -82,7 +82,6 @@ export const HOW_IT_WORKS = {
         glyph: "model",
         actor: "Scored by your model",
         basis: "on your key",
-        extra: "not a prediction of an interview",
       },
     },
   ] satisfies readonly HowStep[],

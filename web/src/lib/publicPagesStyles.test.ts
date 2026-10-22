@@ -206,7 +206,7 @@ describe("nothing can push a 375px phone sideways", () => {
     const phone = blockOf(tourCss, "@media (max-width: 959px)") ?? "";
     expect(declarationsFor(phone, ".bj-tour-grid")["grid-template-columns"]).toBe("minmax(0, 1fr)");
     expect(declarationsFor(withoutMedia(tourCss), ".bj-tour-grid")["grid-template-columns"]).toBe("repeat(2, minmax(0, 1fr))");
-    expect(declarationsFor(withoutMedia(tourCss), ".bj-tour-trail")["grid-column"]).toBe("1 / -1");
+    expect(declarationsFor(withoutMedia(tourCss), ".bj-tour-foot")["grid-column"]).toBe("1 / -1");
   });
 
   it("scrolls the tab strip sideways inside its own box, never the page, and keeps each tab from shrinking below its words", () => {

@@ -12,8 +12,8 @@ import "../../styles/tour.css";
 // built from the one fictional sample role, so nothing here takes focus and nothing fetches or stores:
 // a depicted button is an outlined span that is hidden from assistive technology and said in words
 // beside it, and a drawn bar is decoration next to the word that carries its meaning. Every panel ends
-// in the trail line for what it shows (who made it, what it is based on, what nobody checked), drawn
-// with the same primitive the real screens use.
+// in the trail line for what it shows (who made it, what it is based on), drawn with the same primitive the
+// real screens use, and a plain note of what nobody checked.
 
 function Chip({ children }: { children: string }) {
   return <span className="bj-tour-chip">{children}</span>;
@@ -39,9 +39,19 @@ function Cells({ filled, total }: { filled: number; total: number }) {
   );
 }
 
+// The panel's foot: the trail line (who made it, what it is based on) and, under it in plain words, what
+// nobody checked. The second is an ordinary note, as on the real screens, not a slot of the trail line.
 function PanelTrail({ id }: { id: TourTabId }) {
   const tab = TOUR_TABS.find((candidate) => candidate.id === id);
-  return tab === undefined ? null : <StaticTrailLine trail={tab.trail} className="bj-tour-trail" />;
+  if (tab === undefined) return null;
+  return (
+    <div className="bj-tour-foot">
+      <StaticTrailLine trail={tab.trail} className="bj-tour-trail" />
+      <p className="bj-tour-note bj-tour-not-checked">
+        {TOUR.notCheckedLabel}: {tab.notChecked}
+      </p>
+    </div>
+  );
 }
 
 export function DiscoverMock() {

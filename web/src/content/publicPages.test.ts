@@ -12,7 +12,7 @@ import openrouterOAuth from "../lib/settings/openrouterOAuth.ts?raw";
 import profileTrails from "../lib/profileTrails.ts?raw";
 import workspaceTrails from "../lib/workspaceTrails.ts?raw";
 import { FORBIDDEN, strings } from "../testing/claims";
-import { findForbiddenWord } from "../lib/trail";
+import { findForbiddenWord, type TrailInput } from "../lib/trail";
 import { LANDING_PROVIDERS } from "./landing";
 import { HOW_IT_WORKS, OPEN_SOURCE } from "./publicPages";
 import { SOURCE_LICENSE } from "./site";
@@ -60,11 +60,28 @@ describe("the claims the tour and the two explainer pages do not make", () => {
     for (const step of HOW_IT_WORKS.steps) expect(findForbiddenWord(Object.values(step.trail).flatMap((slot) => strings(slot)).join(" ")), step.id).toBeNull();
   });
 
-  it("never offers more than one extra slot or glyph per line, and always says what was not checked in the tour", () => {
+  it("keeps the tour's trail lines to who made it and what it is based on, and says what was not checked as a plain note", () => {
     for (const tab of TOUR_TABS) {
-      expect(tab.trail.extra, tab.id).toMatch(/^not checked: /);
-      expect(tab.trail.also, tab.id).toBeUndefined();
+      // The trail line's extra slot is for a count or a confidence (lib/trail.ts), which a sample never has, so the
+      // not-checked statement is an ordinary note drawn under the line.
+      expect(tab.trail.actor, tab.id).toBeTruthy();
+      expect(tab.trail.basis, tab.id).toBeTruthy();
+      expect(tab.trail.extra, tab.id).toBeUndefined();
+      expect((tab.trail as TrailInput).also, tab.id).toBeUndefined();
+      expect(tab.notChecked.length, tab.id).toBeGreaterThan(10);
     }
+    expect(TOUR.notCheckedLabel).toBe("Not checked");
+  });
+
+  it("does not claim that a trail line is under every block, or says what nobody checked, on every screen", () => {
+    // Only some screens draw a trail line, and a line's extra slot is a count or a confidence, never a statement
+    // of what was left unchecked.
+    expect(HOW_IT_WORKS.lead).not.toMatch(/every step|most people|nobody has checked/i);
+    expect(HOW_IT_WORKS.lead).toContain("Where a screen draws one");
+    // The examples keep to the grammar: a count (the profile's "fields to check") and no other extra, no second glyph.
+    const withExtra = HOW_IT_WORKS.steps.filter((step) => (step.trail as TrailInput).extra !== undefined).map((step) => step.id);
+    expect(withExtra).toEqual(["profile"]);
+    for (const step of HOW_IT_WORKS.steps) expect((step.trail as TrailInput).also, step.id).toBeUndefined();
   });
 });
 
@@ -90,13 +107,15 @@ describe("what the tour says is true of the product", () => {
     expect(TOUR.discover.parts.every((part) => !("word" in part))).toBe(true);
   });
 
-  it("Prepare: the three checks left to the person are checks the export checklist reports as not checked", () => {
-    for (const check of TOUR.prepare.checks) {
-      const at = exportChecklist.indexOf(`key="${check.id}"`);
-      expect(at, check.id).toBeGreaterThan(-1);
-      expect(exportChecklist.slice(at, at + 400), check.id).toContain('status="not_checked"');
-    }
-    expect(TOUR.prepare.checks).toHaveLength(3);
+  it("Prepare: the checks left to the person are all of the checks the export checklist reports as not checked, with its own labels", () => {
+    const start = exportChecklist.indexOf("def _not_checked_items");
+    const body = exportChecklist.slice(start, exportChecklist.indexOf("\ndef ", start + 1) === -1 ? undefined : exportChecklist.indexOf("\ndef ", start + 1));
+    const notChecked = [...body.matchAll(/key="([a-z_]+)",\s*label="([^"]+)",\s*status="not_checked"/g)].map((match) => [match[1], match[2]]);
+    expect(notChecked.length).toBeGreaterThan(0);
+    // Every one the checklist leaves to the person is drawn, and nothing else: the drawing and the trail's note
+    // must not leave out one of the things nobody checked.
+    expect(TOUR.prepare.checks.map((check) => [check.id, check.label]).sort()).toEqual(notChecked.sort());
+    expect(TOUR_TABS.find((tab) => tab.id === "prepare")?.notChecked).toMatch(/links.*fonts.*repeated bullets.*(?:selected|selectable)/);
     // The claim check flags what nothing in the profile backs: the flagged row is the "unverifiable" status.
     expect(exportChecklist).toContain("unsupported claim");
   });
