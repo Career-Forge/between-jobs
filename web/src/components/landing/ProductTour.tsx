@@ -4,7 +4,9 @@ import { TOUR_MOCKS } from "./TourMocks";
 import "../../styles/tour.css";
 
 // The home page's product tour: five tabs, each a drawing of one screen of the product built from one
-// fictional sample role, with a sample next step under them that rewrites for the tab in view.
+// fictional sample role, with a sample next step right under the strip that rewrites for the tab in view.
+// The next step sits between the strip and the drawing, not under the drawing: the drawings differ in height
+// by hundreds of pixels, so a step under one would jump about and fall below the fold on the tall ones.
 //
 // Real tabs (WAI-ARIA tabs pattern): a tablist of five buttons, each controlling its own tabpanel, a
 // roving tabindex so the strip is one Tab stop, and Left, Right, Home and End to move between tabs.
@@ -83,6 +85,17 @@ export function ProductTour() {
         })}
       </div>
 
+      <section className="bj-tour-next" aria-label={TOUR.nextLabel}>
+        <p className="bj-tour-next-tag">{TOUR.nextLabel}</p>
+        <div className="bj-tour-next-live" role="status" aria-live="polite" aria-atomic="true">
+          <div key={current.id} className="bj-tour-next-text">
+            <span className="bj-visually-hidden">{`${current.label}, screen ${TOUR_TABS.indexOf(current) + 1} of ${TOUR_TABS.length}. `}</span>
+            <p className="bj-tour-next-sentence">{current.next.sentence}</p>
+            <p className="bj-tour-next-why">why: {current.next.why.join(" · ")}</p>
+          </div>
+        </div>
+      </section>
+
       {TOUR_TABS.map((tab) => {
         const selected = tab.id === current.id;
         const Mock = TOUR_MOCKS[tab.id];
@@ -100,17 +113,6 @@ export function ProductTour() {
           </div>
         );
       })}
-
-      <section className="bj-tour-next" aria-label={TOUR.nextLabel}>
-        <p className="bj-tour-next-tag">{TOUR.nextLabel}</p>
-        <div className="bj-tour-next-live" role="status" aria-live="polite" aria-atomic="true">
-          <div key={current.id} className="bj-tour-next-text">
-            <span className="bj-visually-hidden">{`${current.label}, screen ${TOUR_TABS.indexOf(current) + 1} of ${TOUR_TABS.length}. `}</span>
-            <p className="bj-tour-next-sentence">{current.next.sentence}</p>
-            <p className="bj-tour-next-why">why: {current.next.why.join(" · ")}</p>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

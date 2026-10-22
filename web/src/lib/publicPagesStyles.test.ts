@@ -220,6 +220,27 @@ describe("nothing can push a 375px phone sideways", () => {
     expect(Number.parseFloat(tab["min-height"])).toBeGreaterThanOrEqual(44);
   });
 
+  it("sets the sample next step as the tab's display line, with nothing in a drawing as large, and the sample disclosure as readable body text", () => {
+    const px = (value: string | undefined): number => Number.parseFloat(value ?? "0");
+    const sentence = declarationsFor(withoutMedia(tourCss), ".bj-landing-section .bj-tour p.bj-tour-next-sentence");
+    expect(sentence["font-family"]).toBe("var(--bj-font-display)");
+    expect(px(sentence["font-size"])).toBeGreaterThanOrEqual(30);
+    // On a phone it is the 26px the page's other display lines use, and still not smaller than a drawing's own.
+    const phone = blockOf(tourCss, "@media (max-width: 719px)") ?? "";
+    expect(px(declarationsFor(phone, ".bj-landing-section .bj-tour p.bj-tour-next-sentence")["font-size"])).toBeGreaterThanOrEqual(26);
+    // The drawings' own lines stay smaller than the step: the role title is 30px, and the Reach out sentence is body size.
+    expect(px(declarationsFor(tourCss, ".bj-tour-statement")["font-size"])).toBeLessThanOrEqual(18);
+    expect(declarationsFor(tourCss, ".bj-tour-statement")["font-family"]).toBeUndefined();
+    const label = declarationsFor(tourCss, ".bj-landing-section .bj-tour p.bj-tour-sample-label");
+    expect(label["text-transform"]).toBeUndefined();
+    expect(label["font-family"]).toBeUndefined();
+    expect(label["font-size"]).toBe("var(--bj-text-body)");
+    expect(px(resolve("var(--bj-text-body)"))).toBeGreaterThanOrEqual(14);
+    // The room kept for the step is set at every width, so a longer or shorter sentence does not move the drawing.
+    expect(declarationsFor(withoutMedia(tourCss), ".bj-tour-next-text")["min-height"]).toBeDefined();
+    expect(declarationsFor(phone, ".bj-tour-next-text")["min-height"]).toBeDefined();
+  });
+
   it("stacks How it works' steps and Open source's list rows into one column on a phone", () => {
     const phone = blockOf(siteCss, "@media (max-width: 719px)") ?? "";
     expect(declarationsFor(phone, ".bj-how-step")["grid-template-columns"]).toBe("minmax(0, 1fr)");
