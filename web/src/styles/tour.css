@@ -1,0 +1,671 @@
+/* The home page's product tour (components/landing/ProductTour.tsx and TourMocks.tsx): a strip of five
+ * tabs, one drawing of the product under it, and a sample next step. Tokens only, with one exception: the
+ * printed resume page in the Prepare drawing is white paper, so its colors are its own, set on
+ * .bj-tour-sheet. Nothing here is filled cyan: the page's one cyan fill is the hero band's button, and
+ * every depicted button is an outlined picture.
+ *
+ * Wide (960px and up) a drawing is two columns with its trail line under both. Under 960px the columns
+ * stack, and the tab strip scrolls sideways inside its own box: nothing here can widen the page. Every
+ * grid or flex child that holds text can shrink (min-width: 0) and wraps long words. The selected tab is
+ * the selection style from tokens.css (maroon fill, aria-selected), never an underline. Motion is one
+ * 200ms fade of the sample next step; under prefers-reduced-motion nothing fades or moves. */
+
+@keyframes bj-tour-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.bj-tour {
+  min-width: 0;
+}
+
+/* "Sample" and what it is a sample of. */
+.bj-landing-section .bj-tour p.bj-tour-sample-label {
+  max-width: none;
+  margin: 12px 0 24px;
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  line-height: 1.7;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+.bj-tour-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 5px;
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-badge);
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  text-transform: none;
+  color: var(--bj-text);
+}
+
+/* ------------------------------------------------------------------ */
+/* The tab strip                                                        */
+/* ------------------------------------------------------------------ */
+
+.bj-tour-tabs {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  border-top: 1px solid var(--bj-border);
+  border-bottom: 1px solid var(--bj-border);
+}
+
+button.bj-tour-tab {
+  flex: 1 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--bj-text-body);
+  color: var(--bj-text-muted);
+  white-space: nowrap;
+  transition: color 120ms ease-out;
+}
+
+/* A tab that is not chosen takes the hover fill; the chosen one keeps the selection style's own. */
+button.bj-tour-tab:not([aria-selected="true"]):hover {
+  background: var(--bj-hover-bg);
+  color: var(--bj-text);
+}
+
+/* The strip scrolls, so a ring outside the tab would be cut off at the strip's edge. */
+button.bj-tour-tab:focus-visible {
+  outline-offset: -4px;
+}
+
+.bj-tour-tab-number {
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  letter-spacing: 0.06em;
+}
+
+/* ------------------------------------------------------------------ */
+/* A panel                                                              */
+/* ------------------------------------------------------------------ */
+
+.bj-tour-panel {
+  min-width: 0;
+  padding: 36px 0;
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-tour-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 36px 56px;
+  align-items: start;
+}
+
+.bj-tour-column {
+  max-width: 680px;
+}
+
+.bj-tour-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.bj-tour-column--ruled {
+  padding-left: 56px;
+  border-left: 1px solid var(--bj-border);
+}
+
+/* The panel's trail line: under both columns, the full width of the panel (the section's 680px measure is for prose). */
+.bj-landing-section .bj-tour p.bj-tour-trail {
+  max-width: none;
+}
+
+.bj-tour-trail {
+  grid-column: 1 / -1;
+  padding-top: 16px;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-tour .bj-tour-column p,
+.bj-tour .bj-tour-card p {
+  max-width: none;
+  margin: 0;
+}
+
+.bj-tour-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--bj-border);
+  border-radius: 14px;
+  background: var(--bj-surface);
+}
+
+.bj-tour-kicker {
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+.bj-tour-role {
+  font-family: var(--bj-font-display);
+  font-size: 30px;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+}
+
+.bj-tour-meta {
+  font-size: var(--bj-text-control);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Quoted source text: the posting's own words, the one place a drawing uses the italic. */
+.bj-tour-quote {
+  font-family: var(--bj-font-display);
+  font-style: italic;
+  font-size: 18px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.bj-tour-note {
+  font-size: var(--bj-text-small);
+  line-height: 1.5;
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-tour-sentence {
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bj-tour-statement {
+  font-family: var(--bj-font-display);
+  font-size: 26px;
+  line-height: 1.2;
+}
+
+/* A button drawn as a picture: outlined, never filled, never focusable. */
+.bj-tour-mock-button {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  max-width: 100%;
+  padding: 0 16px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 6px;
+  font-size: var(--bj-text-control);
+  color: var(--bj-text);
+}
+
+/* ------------------------------------------------------------------ */
+/* Discover                                                             */
+/* ------------------------------------------------------------------ */
+
+.bj-tour-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-tour-parts li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  font-size: var(--bj-text-small);
+}
+
+.bj-tour-part-word {
+  color: var(--bj-text-muted);
+}
+
+.bj-tour-parts .bj-segbar-cells {
+  grid-column: 1 / -1;
+}
+
+.bj-tour-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: var(--bj-text-control);
+}
+
+.bj-tour-table caption {
+  padding-bottom: 8px;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+.bj-tour-table th,
+.bj-tour-table td {
+  padding: 10px 8px 10px 0;
+  border-top: 1px solid var(--bj-border);
+  text-align: left;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.bj-tour-table thead th {
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-tour-table tbody tr:last-child th,
+.bj-tour-table tbody tr:last-child td {
+  border-bottom: 1px solid var(--bj-border);
+}
+
+/* ------------------------------------------------------------------ */
+/* Prepare: a printed resume page, and the review next to it            */
+/* ------------------------------------------------------------------ */
+
+/* The page stands for a sheet of paper, so its colors are its own, not the app's. */
+.bj-tour-sheet {
+  --sheet-paper: #f6f1e7;
+  --sheet-ink: #1b1718;
+  --sheet-faint: #6b625a;
+  --sheet-bar: #cfc6b8;
+  --sheet-mark: #f0d58a;
+  width: 100%;
+  max-width: 460px;
+  min-width: 0;
+  margin: 0 auto;
+  padding: 36px;
+  border-radius: 4px;
+  background: var(--sheet-paper);
+  color: var(--sheet-ink);
+}
+
+.bj-tour .bj-tour-sheet p {
+  max-width: none;
+  margin: 0;
+}
+
+.bj-tour-sheet-name {
+  font-family: var(--bj-font-display);
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.bj-tour-sheet-contact {
+  margin-top: 4px;
+  font-family: var(--bj-font-mono);
+  font-size: 11px;
+  color: var(--sheet-faint);
+}
+
+.bj-tour .bj-tour-sheet p.bj-tour-sheet-heading {
+  margin-top: 22px;
+  font-family: var(--bj-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sheet-faint);
+}
+
+.bj-tour .bj-tour-sheet p.bj-tour-sheet-job {
+  margin-top: 8px;
+  font-size: var(--bj-text-control);
+  font-weight: 600;
+}
+
+.bj-tour .bj-tour-sheet p.bj-tour-sheet-text {
+  margin-top: 4px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+/* The flagged word is marked by a fill and an underline, so it does not rest on color alone. */
+.bj-tour-flag {
+  padding: 0 2px;
+  background: var(--sheet-mark);
+  color: var(--sheet-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.bj-tour-sheet-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.bj-tour-sheet-bar {
+  display: block;
+  height: 5px;
+  background: var(--sheet-bar);
+}
+
+.bj-tour-sheet-bar--full {
+  width: 100%;
+}
+
+.bj-tour-sheet-bar--wide {
+  width: 88%;
+}
+
+.bj-tour-sheet-bar--mid {
+  width: 64%;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reach out                                                            */
+/* ------------------------------------------------------------------ */
+
+.bj-tour-draft {
+  gap: 0;
+  padding: 0;
+}
+
+.bj-tour .bj-tour-draft p.bj-tour-draft-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-tour-draft-head {
+  margin: 0;
+}
+
+.bj-tour-draft-head > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  padding: 11px 20px;
+  border-bottom: 1px solid var(--bj-border);
+  font-size: var(--bj-text-control);
+}
+
+.bj-tour-draft-head dt {
+  color: var(--bj-text-muted);
+}
+
+.bj-tour-draft-head dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bj-tour-draft-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px 22px;
+  font-size: var(--bj-text-body);
+  line-height: 1.6;
+}
+
+/* ------------------------------------------------------------------ */
+/* Practice                                                             */
+/* ------------------------------------------------------------------ */
+
+.bj-tour-question {
+  font-family: var(--bj-font-display);
+  font-size: 26px;
+  line-height: 1.25;
+}
+
+.bj-tour-answer {
+  padding: 16px;
+  border: 1px solid var(--bj-border);
+  border-radius: 8px;
+  background: var(--bj-surface);
+  font-size: var(--bj-text-body);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+/* Four parts of an answer: gold where the model found the part, an outline where it did not. */
+.bj-tour-star {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--bj-text-small);
+}
+
+.bj-tour-star li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bj-tour-star-cell {
+  display: block;
+  height: 10px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 2px;
+}
+
+.bj-tour-star li[data-present="true"] .bj-tour-star-cell {
+  border-color: var(--bj-gold);
+  background: var(--bj-gold);
+  forced-color-adjust: none;
+}
+
+.bj-tour-points {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--bj-text-body);
+  line-height: 1.55;
+}
+
+/* ------------------------------------------------------------------ */
+/* Apply                                                                */
+/* ------------------------------------------------------------------ */
+
+.bj-tour-address {
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-tour-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bj-tour-fields li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  font-size: var(--bj-text-small);
+}
+
+.bj-tour-field-state {
+  color: var(--bj-text-muted);
+}
+
+.bj-tour-field-box {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  height: 34px;
+  border: 1px solid var(--bj-outline);
+  border-radius: 4px;
+  background: var(--bj-surface-raised);
+}
+
+/* A filled field holds a short line standing for what was written; a field left for the person is empty. */
+.bj-tour-fields li[data-state="filled"] .bj-tour-field-box::after {
+  content: "";
+  width: 42%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bj-outline);
+}
+
+.bj-tour-fields li[data-state="left"] .bj-tour-field-box {
+  border: 1px dashed var(--bj-gold);
+  background: transparent;
+}
+
+.bj-tour-submit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 6px;
+}
+
+.bj-tour-sidepanel {
+  background: var(--bj-surface-raised);
+}
+
+/* ------------------------------------------------------------------ */
+/* The sample next step                                                 */
+/* ------------------------------------------------------------------ */
+
+.bj-tour-next {
+  padding: 22px 0 6px;
+}
+
+.bj-landing-section .bj-tour p.bj-tour-next-tag {
+  max-width: none;
+  margin: 0 0 6px;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+.bj-tour-next-live {
+  min-width: 0;
+}
+
+.bj-tour-next-text {
+  min-height: 92px;
+  animation: bj-tour-fade 200ms ease-out;
+}
+
+.bj-landing-section .bj-tour .bj-tour-next-text p {
+  max-width: 680px;
+  margin: 0;
+}
+
+.bj-landing-section .bj-tour p.bj-tour-next-sentence {
+  font-family: var(--bj-font-display);
+  font-size: 22.5px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.bj-landing-section .bj-tour p.bj-tour-next-why {
+  margin-top: 8px;
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
+/* Under 960px: one column                                              */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 959px) {
+  .bj-tour-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+
+  .bj-tour-column--ruled {
+    padding: 28px 0 0;
+    border-top: 1px solid var(--bj-border);
+    border-left: 0;
+  }
+
+  .bj-tour-panel {
+    padding: 28px 0;
+  }
+
+  .bj-tour-role {
+    font-size: 26px;
+  }
+}
+
+@media (max-width: 719px) {
+  .bj-tour-sheet {
+    padding: 26px 22px;
+  }
+
+  .bj-tour-card {
+    padding: 20px 18px;
+  }
+
+  .bj-tour-draft-head > div {
+    grid-template-columns: 64px minmax(0, 1fr);
+    padding: 11px 16px;
+  }
+
+  .bj-tour .bj-tour-draft p.bj-tour-draft-top {
+    padding: 12px 16px;
+  }
+
+  .bj-tour-draft-body {
+    padding: 16px 16px 20px;
+  }
+
+  .bj-tour-statement,
+  .bj-tour-question {
+    font-size: 22px;
+  }
+
+  button.bj-tour-tab {
+    padding: 0 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bj-tour * {
+    transition: none;
+    animation: none;
+  }
+}

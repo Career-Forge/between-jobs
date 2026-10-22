@@ -37,24 +37,16 @@ export const LANDING_PROVIDER_CAVEAT: string | null =
     ? null
     : `In Settings, ${joinNames(NOT_VERIFIED)} ${NOT_VERIFIED.length === 1 ? "is" : "are"} flagged as not yet checked live: ${NOT_VERIFIED.length === 1 ? "it has" : "they have"} not had a successful run against the real service yet, so ${NOT_VERIFIED.length === 1 ? "it" : "they"} may fail or return nothing.`;
 
-// The in-page sections the header links to, in page order.
+// The in-page sections of the home page, in page order. Hero links and the tests point at these.
 export const LANDING_SECTION_IDS = {
-  circuit: "circuit",
-  how: "how",
+  tour: "tour",
   submit: "submit",
   source: "source",
   early: "early",
 } as const;
 
-export const LANDING_SECTION_LINKS = [
-  { id: LANDING_SECTION_IDS.circuit, label: "Product" },
-  { id: LANDING_SECTION_IDS.how, label: "How it works" },
-  { id: LANDING_SECTION_IDS.submit, label: "You always submit" },
-  { id: LANDING_SECTION_IDS.source, label: "Open source" },
-] as const;
-
 // The two availability lines below (Gmail, the Chrome Web Store) describe where the launch stands
-// today and are not derived from code. Re-read them, and landingCircuit.ts and legal.ts, when Google
+// today and are not derived from code. Re-read them, and tour.ts and legal.ts, when Google
 // finishes its review or the extension is listed. The Gmail one is worded as a possibility on
 // purpose: the invite list is an optional server setting (GMAIL_ALLOWED_USER_IDS), unset means open.
 
@@ -62,7 +54,7 @@ export const LANDING = {
   headlineLines: ["One career.", "Every surface.", "Nothing forgotten."],
   lead: "Between Jobs helps you find roles, keep track of your applications, prepare tailored resumes and cover letters, and practice for interviews, all in one place.",
   motto: "Draft, don't send. Fill, don't submit.",
-  secondaryCta: "See how it works",
+  secondaryCta: "Take the tour",
 
   // The hero's worked example: one flagged claim in the claim check, with the trail that says who
   // acted. The sentence is invented for this page and says so.
@@ -73,41 +65,6 @@ export const LANDING = {
     reason: "None of the achievements picked for this draft mention async workers.",
     sampleNote: "A sample sentence, written for this page. Yours shows your own work.",
   },
-
-  circuit: {
-    title: "Follow one role from posting to offer",
-    sampleLabel: "Sample role: Applied AI Engineer at Northstar Labs, a fictional company. Pick a stage.",
-    sampleRole: "Applied AI Engineer",
-    sampleCompany: "Northstar Labs",
-    stagesLabel: "Stages of the sample role",
-    demoLabel: "A sample next step",
-    boardLabel: "Then it lives on your board",
-    boardText:
-      "Every role you track sits on a board, from Saved through Offer, Rejected or Withdrawn. You move it between them.",
-  },
-
-  dossier: {
-    eyebrow: "A workspace for what comes next",
-    title: "One role. Every piece of work together.",
-    text: "A role is a dossier: the posting, your evidence, the resume and cover letter drafted from it, the people to write to, the practice questions. Open it and everything is there.",
-    sampleChip: "Sample dossier",
-    sampleNote: "Drawn for this page. Your own dossiers show your own roles.",
-  },
-
-  chapters: [
-    {
-      title: "Discover",
-      text: "Search public job boards and the search providers you connect, and, with your own model key, see how the top listings fit your profile.",
-    },
-    {
-      title: "Prepare",
-      text: "Draft a resume and a cover letter for a posting, based on your own profile, and review them before you use them.",
-    },
-    {
-      title: "Keep moving",
-      text: "Track every application on a board, from saved through to offer, and practice interview questions with written feedback on each of your answers.",
-    },
-  ],
 
   promise: {
     title: "You always submit",
@@ -139,8 +96,9 @@ export const LANDING = {
 
   source: {
     title: "Open source",
-    text: `The web app, the API and the browser extension are open source under the ${SOURCE_LICENSE} license. The service that generates resumes and cover letters is separate, and it is not in the repository yet.`,
+    text: `The web app, the API and the browser extension are open source under the ${SOURCE_LICENSE} license. A basic resume and cover-letter writer is built in and answers when no separate engine service is set up. The larger engine service the hosted version uses is not in the repository.`,
     linkText: "View the source on GitHub",
+    pageLinkText: "What is in the repository",
     license: SOURCE_LICENSE,
   },
 

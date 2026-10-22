@@ -4,28 +4,22 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { PublicLayout } from "../components/PublicLayout";
 import { LANDING, LANDING_PROVIDER_CAVEAT } from "../content/landing";
-import { STAGES } from "../content/landingCircuit";
 import { REPO_URL } from "../content/site";
+import { TOUR, TOUR_TABS } from "../content/tour";
 import indexHtml from "../../index.html?raw";
 import landingSource from "./Landing.tsx?raw";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
+import { FORBIDDEN, strings } from "../testing/claims";
 import { textOfMarkup } from "../testing/markup";
 import { render } from "../testing/render";
 import Landing from "./Landing";
 
 // What the landing page is allowed to say, and that it still says what Google's review and a visitor's
-// common sense need it to say. The words are data (content/landing.ts, content/landingCircuit.ts) so
+// common sense need it to say. The words are data (content/landing.ts, content/tour.ts) so
 // they can be scanned: every claim on the page was checked against the code when it was written, and
 // this is the guard that keeps a later edit from putting an unchecked one back.
 
-function strings(value: unknown): string[] {
-  if (typeof value === "string") return [value];
-  if (Array.isArray(value)) return value.flatMap(strings);
-  if (typeof value === "object" && value !== null) return Object.values(value).flatMap(strings);
-  return [];
-}
-
-const DATA = [...strings(LANDING), ...strings(STAGES)];
+const DATA = [...strings(LANDING), ...strings(TOUR), ...strings(TOUR_TABS)];
 const page = (): string =>
   renderToStaticMarkup(
     <MemoryRouter>
@@ -35,26 +29,6 @@ const page = (): string =>
     </MemoryRouter>,
   );
 const rendered = textOfMarkup(page());
-
-// Words a page like this reaches for and this product cannot back. Each is a claim about results, scale,
-// proof or speed; none is built, measured or true of what the code does today.
-const FORBIDDEN: [string, RegExp][] = [
-  ["verified (the product says 'checked', and never calls a link or a claim verified)", /\bverified\b/i],
-  ["guarantee", /guarant/i],
-  ["certified", /\bcertified\b/i],
-  ["proven", /\bproven\b/i],
-  ["superlatives", /\b(?:best|fastest|leading|world-class|revolutionary|cutting-edge|game-chang\w*|unrivall?ed|#1|number one)\b/i],
-  ["marketing about AI", /\bai-powered\b|\bsupercharge\w*|\b10x\b|\bmagic\w*/i],
-  ["scale and popularity", /\b(?:thousands?|millions?|hundreds)\b|\btrusted by\b|\bloved by\b|\bjoin\b[^.]*\b(?:users|people|job seekers)\b/i],
-  ["a testimonial", /testimonial|\bcustomers? (?:say|said|love)\b|[“"][^”"]{10,}[”"]\s*(?:--|-|\u2014)\s*[A-Z]/],
-  ["results", /\bget hired\b|\bland(?:ed)? (?:a|the|your) (?:job|offer)\b|\bhours? saved\b|\bsave[sd]? you\b|\bhigher response\b|\bmore interviews\b/i],
-  ["automation the product refuses", /\bauto-?appl\w*|\bone-click appl\w*|\bapplies for you\b|\bsubmits for you\b|\bsends for you\b/i],
-  ["a platform the extension does not support", /\bworkday\b|\bicims\b|\blinkedin easy apply\b/i],
-  ["the product called a studio (it is always 'Between Jobs')", /\bstudio\b/i],
-  ["a promise that every block or piece of work carries a provenance line, which only some pages draw", /every (?:block|result|piece|surface)\b[^.]*\b(?:trail|came from)|where each piece came from/i],
-  ["every result rated, when only a batch is and none is without a model key", /\b(?:each|every) (?:result|listing)\b[^.]*\b(?:rated|scored|fits)\b/i],
-  ["the brand dot, which is a mark and never copy", /\bred dot\b/i],
-];
 
 describe("the claims the landing page does not make", () => {
   it("reads the page's words: the data and the rendered page both have plenty to scan", () => {
@@ -77,10 +51,12 @@ describe("the claims the landing page does not make", () => {
 
   it("calls the sample role a fictional sample wherever it shows one, and never presents it as the visitor's", () => {
     expect(rendered).toContain("a fictional company");
-    expect(rendered).toContain(LANDING.dossier.sampleChip);
-    expect(rendered).toContain(LANDING.dossier.sampleNote);
+    expect(rendered).toContain(TOUR.sampleLabel);
     expect(rendered).toContain(LANDING.trailExample.sampleNote);
-    expect(rendered).toContain("(sample)");
+    // Every drawing of the tour says it is a sample in a visible chip or word of its own, so it cannot be
+    // read as the visitor's.
+    expect(TOUR.sampleTag).toBe("Sample");
+    expect(TOUR.discover.postingNote).toContain("Sample");
   });
 });
 
@@ -98,8 +74,6 @@ describe("the hero's worked example", () => {
 
   it("calls itself a sample and claims no provenance line on blocks the page does not draw one on", () => {
     expect(LANDING.trailExample.eyebrow).toBe("A sample flagged claim");
-    expect(LANDING.dossier.text).not.toMatch(/where each piece came from/i);
-    expect(LANDING.dossier.eyebrow).toBe("A workspace for what comes next");
   });
 });
 
@@ -135,8 +109,9 @@ describe("what the page has to disclose", () => {
     expect(rendered).toContain("Between Jobs has no AI provider of its own.");
     expect(rendered).toContain("AGPL-3.0");
     expect(page()).toContain(`href="${REPO_URL}"`);
-    // The private engine is not in the repository, and the page says so.
-    expect(rendered).toContain("is separate, and it is not in the repository yet");
+    // The hosted version's larger engine is not in the repository, and the page says so.
+    expect(rendered).toContain("A basic resume and cover-letter writer is built in");
+    expect(rendered).toContain("The larger engine service the hosted version uses is not in the repository.");
   });
 
   it("says what Settings says about the model providers, on the page itself", () => {
@@ -153,6 +128,7 @@ describe("the page works before any script has run", () => {
   it("has a hero that is plain React content: no lazy loading, no fetch, no state of its own", () => {
     expect(landingSource).not.toMatch(/\blazy\(|Suspense|\bfetch\(|useState|useReducer/);
     // The two hooks it calls only read the address and move focus to a section named in it; they draw nothing.
+    // The tour, the one piece with state, is its own component.
     expect((landingSource.match(/\buse[A-Z]\w*\(/g) ?? []).sort()).toEqual(["useLocation(", "useScrollToHash("]);
     // The static markup the server-side renderer produced has the headline, the lead and the band's link.
     const markup = page();

@@ -1,30 +1,30 @@
 import { Link, useLocation } from "react-router-dom";
-import { CircuitDemo } from "../components/landing/CircuitDemo";
-import { DossierArt } from "../components/landing/DossierArt";
+import { ProductTour } from "../components/landing/ProductTour";
 import { TrailExample } from "../components/landing/TrailExample";
 import { NextStepBand } from "../components/paper/NextStepBand";
 import { LANDING, LANDING_PROVIDERS, LANDING_PROVIDER_CAVEAT, LANDING_SECTION_IDS } from "../content/landing";
+import { TOUR } from "../content/tour";
 import { REPO_URL, SUPPORT_EMAIL } from "../content/site";
 import { nextStep } from "../lib/nextStep";
-import { LOGIN_PATH, PRIVACY_PATH, REGISTER_PATH } from "../lib/publicRoutes";
+import { LOGIN_PATH, OPEN_SOURCE_PATH, PRIVACY_PATH, REGISTER_PATH } from "../lib/publicRoutes";
 import { useScrollToHash } from "../lib/useScrollToHash";
 import "../styles/landing.css";
 
-// "/" for a signed-out visitor. The words are content/landing.ts; the circuit is drawn from
-// content/landingCircuit.ts. It draws inside PublicLayout, which supplies the header, the one <main>
-// and the footer.
+// "/" for a signed-out visitor. The words are content/landing.ts; the tour's are content/tour.ts. It
+// draws inside PublicLayout, which supplies the header, the one <main> and the footer.
 //
 // The hero holds the page's next-step band (the landing row: "Create an account, or sign in if you
 // have one."), so the page's one cyan fill is the band's button. Everything else that looks like a
-// button is outlined, and the circuit's depicted buttons are pictures, not controls.
+// button is outlined, and the tour's depicted buttons are pictures, not controls.
 //
 // The hero is plain content: no state, no effect, nothing that waits for a script to be worth reading.
+// (The tour below it is the page's one stateful piece: it picks which of five drawings shows.)
 
 const REPO_LABEL = REPO_URL.replace(/^https?:\/\//, "");
 const OUTCOME = nextStep({ page: "landing", signedIn: false });
 
 export default function Landing() {
-  // A header link such as /#circuit scrolls to the section and focuses its heading. The location key
+  // A link such as /#tour scrolls to the section and focuses its heading. The location key
   // runs it again when the same link is followed twice.
   const { hash, key } = useLocation();
   useScrollToHash(true, hash, key);
@@ -42,7 +42,7 @@ export default function Landing() {
           <p className="bj-landing-lead">{LANDING.lead}</p>
           <NextStepBand outcome={OUTCOME} />
           <div className="bj-landing-hero-links">
-            <Link to={{ hash: `#${LANDING_SECTION_IDS.circuit}` }} className="bj-button-link">
+            <Link to={{ hash: `#${LANDING_SECTION_IDS.tour}` }} className="bj-button-link">
               {LANDING.secondaryCta}
             </Link>
           </div>
@@ -56,37 +56,11 @@ export default function Landing() {
         </div>
       </section>
 
-      <section id={LANDING_SECTION_IDS.circuit} className="bj-landing-section" aria-labelledby="bj-landing-circuit">
-        <h2 id="bj-landing-circuit" tabIndex={-1}>
-          {LANDING.circuit.title}
+      <section id={LANDING_SECTION_IDS.tour} className="bj-landing-section" aria-labelledby="bj-landing-tour">
+        <h2 id="bj-landing-tour" tabIndex={-1}>
+          {TOUR.title}
         </h2>
-        <CircuitDemo />
-      </section>
-
-      <section id={LANDING_SECTION_IDS.how} className="bj-landing-section" aria-labelledby="bj-landing-how">
-        <div className="bj-landing-dossier">
-          <div className="bj-landing-dossier-copy">
-            <p className="bj-landing-eyebrow">{LANDING.dossier.eyebrow}</p>
-            <h2 id="bj-landing-how" tabIndex={-1}>
-              {LANDING.dossier.title}
-            </h2>
-            <p>{LANDING.dossier.text}</p>
-          </div>
-          <DossierArt />
-        </div>
-        <ul className="bj-landing-chapters">
-          {LANDING.chapters.map((chapter, index) => (
-            <li key={chapter.title} className="bj-landing-chapter">
-              <span className="bj-landing-chapter-number" aria-hidden="true">
-                {index + 1}
-              </span>
-              <div>
-                <h3>{chapter.title}</h3>
-                <p>{chapter.text}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <ProductTour />
       </section>
 
       <section id={LANDING_SECTION_IDS.submit} className="bj-landing-section" aria-labelledby="bj-landing-promise">
@@ -140,6 +114,9 @@ export default function Landing() {
             <span className="bj-landing-repo" aria-hidden="true">
               {REPO_LABEL}
             </span>
+            <Link to={OPEN_SOURCE_PATH} className="bj-landing-more">
+              {LANDING.source.pageLinkText}
+            </Link>
           </div>
         </div>
       </section>
