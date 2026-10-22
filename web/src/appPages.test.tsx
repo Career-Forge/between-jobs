@@ -705,3 +705,102 @@ describe("the explainer pages for a signed-in person who follows a shared link",
     expect(duplicateIds(container)).toEqual([]);
   });
 });
+
+// ── the states the tables above do not reach ───────────────────────────────
+
+// The first sweep draws each page once, in its first state. These are the states a person can put a page in
+// without leaving it (opening a disclosure, opening a form, choosing a tour tab, switching the sign-in
+// form), and the other addresses the shell answers (sign-in, the enrollment page, the legal pages
+// signed in). Each holds to the same promise: at most one cyan fill, no repeated id, no link to nowhere.
+
+const llmRow = (provider: string, model: string | null, setup_state: string) => ({ id: `c-${provider}`, service: "llm", provider, model, is_validated: true, setup_state, updated_at: "2026-10-12T10:00:00Z" });
+
+function atMostOneFill(container: HTMLElement, what: string) {
+  expect(cyanFills(container).length, `${what}: cyan fills ${JSON.stringify(cyanFills(container))}`).toBeLessThanOrEqual(1);
+  expect(duplicateIds(container), `${what}: duplicate ids`).toEqual([]);
+  expect(brokenLocalLinks(container), `${what}: links to nowhere on the page`).toEqual([]);
+}
+
+describe("Settings, in the states a person can put it in", () => {
+  it.each(["#search-keys", "#search-brave"])("with the optional extras opened by a link to %s", async (hash) => {
+    describeAccount("data", { searchKey: true });
+    const container = await open(`/settings${hash}`, 1000);
+    expect(query(container, "#search-keys-h button").getAttribute("aria-expanded"), hash).toBe("true");
+    expectWholePage(container, `settings ${hash}`);
+  });
+
+  it("with a key's form open, and a connected key's removal asked for", async () => {
+    describeAccount("data", { searchKey: true });
+    const container = await open("/settings#search-keys", 1000);
+    const connect = [...container.querySelectorAll<HTMLButtonElement>("#search-keys button")].find((button) => /^Connect/.test(text(button)));
+    expect(connect, "an unconnected key's Connect action").toBeDefined();
+    click(connect as HTMLButtonElement);
+    await settle(2);
+    expectWholePage(container, "settings with a key form open");
+    const remove = [...container.querySelectorAll<HTMLButtonElement>("#search-keys button")].find((button) => /^Remove key/.test(text(button)));
+    expect(remove, "the connected key's Remove key").toBeDefined();
+    click(remove as HTMLButtonElement);
+    await settle(2);
+    expectWholePage(container, "settings with a removal asked for");
+  });
+
+  it("with several AI providers saved, one ready, one with no model chosen and one with a note", async () => {
+    describeAccount("empty");
+    on("GET /credentials", [llmRow("openrouter", "vendor/model-a", "ready"), llmRow("deepseek", null, "needs_model"), llmRow("qwen", "qwen/model-b", "ready")]);
+    const container = await open("/settings", 1000);
+    expectWholePage(container, "settings with several providers");
+    await expectNoSeriousA11yViolations(container);
+  });
+});
+
+describe("the other addresses the shell answers, signed in", () => {
+  it.each(["/privacy", "/terms", "/enroll", "/update-password", "/profile/integrations"])("%s holds to one fill and no broken id or link", async (route) => {
+    describeAccount("data");
+    on("GET /tester/enrollment", { enrolled: true, role_cohort: null, seniority: null, needs_sponsorship: null, consent_version: null, consented_at: null, withdrawn_at: null, current_version: "2026-10-01", needs_reconsent: false });
+    atMostOneFill(await open(route, 1000), route);
+  });
+});
+
+describe("the sign-in page, signed out", () => {
+  beforeEach(() => {
+    who.signedOut = true;
+  });
+
+  it("has one band and one fill in sign-in, registration and the reset form", async () => {
+    const container = await open("/login", 1000);
+    expect(bands(container)).toHaveLength(1);
+    atMostOneFill(container, "sign in");
+    expect(cyanFills(container)).toHaveLength(1);
+    click(buttonNamed(container, "Need an account? Register"));
+    await settle(2);
+    expect(bands(container)).toHaveLength(1);
+    atMostOneFill(container, "register");
+    expect(cyanFills(container)).toHaveLength(1);
+    click(buttonNamed(container, "Already have an account? Sign in"));
+    await settle(2);
+    click(buttonNamed(container, "Forgot password?"));
+    await settle(2);
+    atMostOneFill(container, "reset");
+    expect(cyanFills(container)).toHaveLength(1);
+  });
+
+  it("keeps to the home page's one fill whichever tab of the product tour is chosen, and with the phone menu open", async () => {
+    const container = await open("/", 375);
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    expect(tabs.length).toBeGreaterThanOrEqual(5);
+    for (const tab of tabs) {
+      click(tab);
+      await settle(2);
+      expect(cyanFills(container), `tour tab ${text(tab)}`).toEqual(["Create an account"]);
+      expect(duplicateIds(container), `tour tab ${text(tab)}: duplicate ids`).toEqual([]);
+      expect(brokenLocalLinks(container), `tour tab ${text(tab)}: links to nowhere`).toEqual([]);
+    }
+    click(query(container, "button.bj-public-menu-button"));
+    expect(cyanFills(container)).toEqual(["Create an account"]);
+    expect(duplicateIds(container)).toEqual([]);
+  });
+
+  it("sends an address only the shell has, such as a deep link, to the sign-in page with one fill", async () => {
+    atMostOneFill(await open("/applications/app-1", 1000), "deep link");
+  });
+});
