@@ -3,8 +3,10 @@ import { apiFetch } from "../../lib/api";
 import { parseCredentialRows, type CredentialSummary } from "../../lib/settings/credentials";
 import { CUSTOM_ID, OPENROUTER_ID, QWEN_ID, endpointForAddress, isModelId, regionForAddress, type LlmProvider } from "../../lib/settings/llmProviders";
 import { settingsFailureMessage } from "../../lib/settings/settingsErrors";
+import { providerNote } from "../../lib/providerNotes";
 import { KeyField } from "./KeyField";
 import { ProviderFacts } from "./ProviderFacts";
+import { ProviderNote } from "./ProviderNote";
 import "../../styles/settings.css";
 
 // Connecting one model provider, or replacing its key. Two ways in:
@@ -28,6 +30,10 @@ import "../../styles/settings.css";
 //
 // SAVING A KEY IS NOT CHOOSING A MODEL. The key is stored with no model unless one was needed to
 // check it; the model is the next step (ModelPicker), because the list of models comes from the key.
+//
+// A provider that runs somewhere a person may want to know about has a side-note under the form
+// (lib/providerNotes.ts): plain text, named by the key field's aria-describedby, and for Qwen it
+// follows the region picked.
 //
 // THE KEY LEAVES THE PAGE WHEN IT IS SAVED: the field is emptied (and hidden again) the moment the
 // API accepts it, and nothing on the page ever shows a saved key back.
@@ -67,9 +73,11 @@ export function ProviderConnectCard({ provider, mode, autoFocus, savedBaseUrl, o
   const workspaceInputId = useId();
   const endpointSelectId = useId();
   const modelInputId = useId();
+  const noteId = useId();
 
   const region = provider.regions.find((candidate) => candidate.id === regionId);
   const endpoint = provider.endpoints.find((candidate) => candidate.id === endpointId);
+  const note = providerNote(provider.id, region?.id ?? null);
   const needsWorkspace = provider.id === QWEN_ID && region?.needsWorkspace === true;
   // Until a Qwen region is picked there is no page to send the person to: the QwenCloud one would
   // be the wrong one for a Model Studio key.
@@ -230,7 +238,7 @@ export function ProviderConnectCard({ provider, mode, autoFocus, savedBaseUrl, o
         placeholder="Paste your key"
         hint={provider.keyHint === "" ? undefined : provider.keyHint}
         readOnly={saving}
-        describedBy={error === null ? undefined : errorId}
+        describedBy={[note === null ? null : noteId, error === null ? null : errorId].filter((id): id is string => id !== null).join(" ") || undefined}
       />
 
       {askModel && (
@@ -276,6 +284,7 @@ export function ProviderConnectCard({ provider, mode, autoFocus, savedBaseUrl, o
         Saving checks the key with {holder} first, so a key it refuses is never stored. It is kept encrypted and used to make calls to {holder} for
         you.
       </p>
+      {note !== null && <ProviderNote id={noteId} text={note} />}
     </form>
   );
 }

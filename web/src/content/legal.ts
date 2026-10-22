@@ -31,9 +31,10 @@ import { PRIVACY_EMAIL, REPO_URL, SOURCE_LICENSE, SUPPORT_EMAIL } from "./site";
 // STILL TO SETTLE BEFORE THAT DAY, FOR THE MAINTAINER (the wording is theirs, so it is not guessed
 // at here): the processor list gained the model providers beyond OpenRouter and the custom-provider
 // hosts when the Settings page did, after the date below was set, and nothing in the tests checks
-// the version against that list. And the Alibaba Cloud (Qwen) entry says nothing of where the
-// region a person picks processes their text, though the choice includes China (Beijing) and
-// China (Hong Kong). Both are settled in the same pass that sets the version and the date.
+// the version against that list. The DeepSeek and Alibaba Cloud (Qwen) entries now say where those
+// providers run (the same sentences the Settings page shows beside their key forms). That wording is a
+// proposal that needs the maintainer's approval, and was added after the date below was set, so it is
+// settled in the same pass that sets the version and the date.
 export const LEGAL_VERSION = "2026-10-05";
 export const LEGAL_EFFECTIVE_DATE = { iso: "2026-10-05", label: "October 5, 2026" } as const;
 export const LEGAL_WHAT_CHANGED = "First version.";
@@ -147,8 +148,20 @@ const MODEL_PROVIDERS: readonly { name: string; detail: string }[] = [
   { name: "Anthropic", detail: MODEL_PROVIDER_SENTENCE },
   { name: "Google (Gemini)", detail: MODEL_PROVIDER_SENTENCE },
   { name: "xAI", detail: MODEL_PROVIDER_SENTENCE },
-  { name: "DeepSeek", detail: MODEL_PROVIDER_SENTENCE },
-  { name: "Alibaba Cloud (Qwen)", detail: MODEL_PROVIDER_SENTENCE },
+  // The two sentences each of these adds are the ones the Settings page shows as a side-note next to the
+  // provider's key form (lib/providerNotes.ts); legal.test.ts holds the two together.
+  {
+    name: "DeepSeek",
+    detail:
+      MODEL_PROVIDER_SENTENCE +
+      " DeepSeek is operated by a company based in China. What you send goes to its servers, and its privacy policy says it collects, processes and stores personal data in the People's Republic of China.",
+  },
+  {
+    name: "Alibaba Cloud (Qwen)",
+    detail:
+      MODEL_PROVIDER_SENTENCE +
+      " Qwen Cloud runs on Alibaba Cloud. What you send goes to the region you pick, and some regions are in mainland China. The choice includes China (Beijing), which is in mainland China, and China (Hong Kong).",
+  },
   {
     name: "Other OpenAI-compatible hosts",
     detail:
