@@ -263,9 +263,18 @@ describe("each drawing", () => {
       "Full nameFilled",
       "EmailFilled",
       "ResumeFilled",
-      "Demographic questionsLeft for you",
-      "Accommodation questionsLeft for you",
+      "CountryLeft for you",
+      "Demographic and accommodation questionsNot touched",
     ]);
+    // The extension's panel lists what it tried and could not fill (a country no option matched), after the
+    // button is pressed. It does not list demographic or accommodation questions, so the drawing keeps them
+    // out of the panel and says in its own words, beside the form, that they are not touched.
+    const sidepanel = query(panel, ".bj-tour-sidepanel");
+    expect(text(sidepanel)).toContain("After you press it, the panel lists any field it could not fill.");
+    expect(text(sidepanel)).toContain("Left empty -- check these yourself");
+    expect(text(sidepanel)).toContain("Country: not filled -- none of the form's country options matches the country in your profile.");
+    expect(text(sidepanel)).not.toMatch(/demographic|accommodation/i);
+    expect(text(query(panel, ".bj-tour-card:not(.bj-tour-sidepanel)"))).toContain("does not fill demographic or accommodation questions, and does not list them");
     // The depicted buttons are outlined spans hidden from assistive technology, never controls.
     const mocks = [...panel.querySelectorAll(".bj-tour-mock-button")];
     expect(mocks.map((mock) => text(mock))).toEqual(["Submit", "Fill this page"]);
