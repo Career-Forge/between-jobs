@@ -13,19 +13,26 @@
 // Each sentence says only as much as its source supports, and the source is named so it can be
 // checked again:
 //
-//   Qwen Cloud  Alibaba Cloud Model Studio's region list, as the registry has it
-//               (`_MODEL_STUDIO_REGIONS` in provider_registry.py). A Model Studio key is bound to one
-//               region, and one of the choices, China (Beijing), is in mainland China. China (Hong
-//               Kong) is not mainland, so it gets the general sentence only.
+//   Qwen Cloud  QwenCloud's "Regions, deployment scopes, and endpoints" page
+//               (https://docs.qwencloud.com/developer-guides/getting-started/regions) and Alibaba Cloud
+//               Model Studio's regions page (https://www.alibabacloud.com/help/en/model-studio/regions),
+//               both read 2026-10-22. They agree: a REGION is where requests are received and data is
+//               stored, and the service deployment scope of the workspace decides where inference runs.
+//               In Frankfurt, Hong Kong and Tokyo the default workspace scope is Global, whose inference
+//               location is any available node, "including the Chinese mainland". So the region a person
+//               picks does not say where the model runs, and no region name rules mainland China out.
+//               The registry's region list is `_MODEL_STUDIO_REGIONS` in provider_registry.py; one
+//               choice, China (Beijing), is itself in mainland China, and the note says so of it.
 //   DeepSeek    DeepSeek's Privacy Policy, last updated Feb 10, 2026
 //               (https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html, read
 //               2026-10-22). It names Hangzhou DeepSeek Artificial Intelligence Co., Ltd., with a
 //               registered address in China, as the party that provides and controls the services, and
 //               says the personal data it collects is processed and stored in the People's Republic of
 //               China. Its stated scope is DeepSeek's apps, websites, software and related services,
-//               and it covers the platform's payment data; it does not say in so many words that an API
-//               request is a "service" under it, so the sentence below says who operates DeepSeek and
-//               what the policy says about its processing, and no more.
+//               and it covers the platform's payment data; it does not say that text sent through the
+//               API is covered, so the sentence below says who operates DeepSeek and what the policy
+//               says, and says outright that the policy is silent on API requests. It does not say
+//               "what you send is stored in China".
 //
 // Pure module: no React, no network.
 
@@ -38,15 +45,15 @@ interface NoteSpec {
   mainlandRegions?: readonly string[];
 }
 
-const MAINLAND_SENTENCE = "The one you picked is in mainland China.";
+const MAINLAND_SENTENCE = "The region you picked is in mainland China.";
 
 const NOTES: Readonly<Record<string, NoteSpec>> = {
   [QWEN_ID]: {
-    text: "Qwen Cloud runs on Alibaba Cloud. What you send goes to the region you pick, and some regions are in mainland China.",
+    text: "Qwen Cloud runs on Alibaba Cloud. The region you pick is where your requests are received and stored. Where the model runs depends on your workspace's deployment scope, and under the default scope in some regions that can include mainland China.",
     mainlandRegions: ["cn-beijing"],
   },
   deepseek: {
-    text: "DeepSeek is operated by a company based in China. What you send goes to its servers, and its privacy policy says it collects, processes and stores personal data in the People's Republic of China.",
+    text: "DeepSeek is operated by a company based in China, and its privacy policy says the personal data it collects is processed and stored in the People's Republic of China. That policy does not say whether text sent through the API is covered.",
   },
 };
 

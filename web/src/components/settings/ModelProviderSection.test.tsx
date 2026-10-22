@@ -134,7 +134,8 @@ describe("the card says what is connected and what is missing, in plain words", 
 });
 
 describe("a provider's data-location side-note", () => {
-  const QWEN = "Qwen Cloud runs on Alibaba Cloud. What you send goes to the region you pick, and some regions are in mainland China.";
+  const QWEN =
+    "Qwen Cloud runs on Alibaba Cloud. The region you pick is where your requests are received and stored. Where the model runs depends on your workspace's deployment scope, and under the default scope in some regions that can include mainland China.";
 
   it("is drawn under the Qwen Cloud form for the global region, as plain text and not an alert", () => {
     const { container } = mount({ credentials: [] });
@@ -180,13 +181,13 @@ describe("a provider's data-location side-note", () => {
     const region = query<HTMLSelectElement>(container, "form select");
     expect(note()).toBe(`◆ Note ${QWEN}`);
     choose(region, "cn-beijing");
-    expect(note()).toBe(`◆ Note ${QWEN} The one you picked is in mainland China.`);
+    expect(note()).toBe(`◆ Note ${QWEN} The region you picked is in mainland China.`);
     choose(region, "cn-hongkong");
     expect(note()).toBe(`◆ Note ${QWEN}`);
     choose(region, "ap-southeast-1");
     expect(note()).toBe(`◆ Note ${QWEN}`);
     choose(region, "cn-beijing");
-    expect(note()).toContain("mainland China. The one you picked");
+    expect(note()).toContain("mainland China. The region you picked");
   });
 
   it("is drawn under DeepSeek's form and says where it is operated, as plain text", () => {
@@ -199,8 +200,9 @@ describe("a provider's data-location side-note", () => {
     const { container } = mount({ credentials: [], catalog: { kind: "ready", providers: withDeepSeek } });
     click(button(container.querySelector(".bj-set-chips") as Element, "DeepSeek"));
     const note = query(container, "form .bj-set-sidenote");
-    expect(text(note)).toContain("DeepSeek is operated by a company based in China.");
+    expect(text(note)).toContain("DeepSeek is operated by a company based in China, and its privacy policy says");
     expect(text(note)).toContain("People's Republic of China");
+    expect(text(note)).toContain("does not say whether text sent through the API is covered");
     expect(note.getAttribute("role")).toBeNull();
   });
 
