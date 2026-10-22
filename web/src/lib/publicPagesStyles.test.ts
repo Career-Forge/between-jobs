@@ -328,7 +328,7 @@ describe("colour and motion", () => {
   it("only uses tokens that tokens.css defines", () => {
     const defined = new Set([...tokensCss.matchAll(/(--[\w-]+)\s*:/g)].map((match) => match[1]));
     for (const [name, css] of Object.entries(ALL)) {
-      // The sheet's and the circuit's own custom properties are declared in the same file.
+      // The sheet's and the tour's own custom properties are declared in the same file.
       for (const own of css.matchAll(/(--[\w-]+)\s*:/g)) defined.add(own[1]);
       const used = [...css.matchAll(/var\((--[\w-]+)/g)].map((match) => match[1]);
       expect(used.filter((token) => !defined.has(token)), name).toEqual([]);
