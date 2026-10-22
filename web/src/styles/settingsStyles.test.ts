@@ -128,6 +128,18 @@ describe("settings.css", () => {
     expect(declarationsFor(phone, ".bj-set-extra-actions > button")["min-height"]).toBe("44px");
   });
 
+  it("lets the remove-key confirmation inside an extras row take the line and shrink on a phone, so its sentence wraps instead of widening the page", () => {
+    // The group is "flex: none" so its buttons stay together; left alone, an open confirmation makes it
+    // as wide as the sentence's single line (measured: 891px, a 907px page at 375px).
+    expect(declarationsFor(base, ".bj-set-extra-actions").flex).toBe("none");
+    const open = declarationsFor(phone, ".bj-set-extra-actions:has(.bj-set-confirm)");
+    expect(open.flex).toBe("1 1 100%");
+    expect(open["min-width"]).toBe("0");
+    expect(declarationsFor(phone, ".bj-set-extra-actions .bj-set-confirm")["min-width"]).toBe("0");
+    // and the confirmation is not capped narrower than the line there
+    expect(declarationsFor(phone, ".bj-set-confirm")["max-width"]).toBe("none");
+  });
+
   it("never sets display on the disclosure's body, so the hidden attribute still hides it", () => {
     expect(declarationsFor(base, ".bj-extras-body").display).toBeUndefined();
   });
