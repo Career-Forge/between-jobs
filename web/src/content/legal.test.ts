@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { providerNote } from "../lib/providerNotes";
 import registryAdapters from "../../../src/between_jobs/api/job_registry_adapters.py?raw";
 import atsLiveness from "../../../src/between_jobs/api/ats_liveness.py?raw";
 import contactEnrichment from "../../../src/between_jobs/api/contact_enrichment.py?raw";
@@ -1582,6 +1583,48 @@ function registryProviderIds(): string[] {
 function allowedCustomHosts(): string[] {
   return [...providerRegistry.matchAll(/CustomEndpoint\(\s*"[a-z]+",\s*"([^"]+)"/g)].map((m) => m[1]);
 }
+
+// ── where the two providers that run in China say their data goes ───────────────────────────────
+//
+// The Settings page shows a side-note beside these providers' key forms (lib/providerNotes.ts). The
+// policy says the same things, in the processor list, so what the page says and what the policy says
+// cannot differ. The regions the Qwen entry names are read from the registry the page draws them from.
+
+describe("the policy says where DeepSeek and Alibaba Cloud (Qwen) run, in the same words as the Settings page", () => {
+  const detailOf = (name: string) =>
+    (PROCESSORS.find((processor) => processor.name === name)?.detail ?? []).map((part) => (typeof part === "string" ? part : "")).join(" ");
+
+  it("carries the page's side-note for DeepSeek, word for word", () => {
+    const note = providerNote("deepseek");
+    expect(note).not.toBeNull();
+    expect(detailOf("DeepSeek")).toContain(note as string);
+  });
+
+  it("carries the page's general side-note for Qwen, word for word, and names the regions that are in China", () => {
+    const note = providerNote("qwen");
+    expect(note).not.toBeNull();
+    expect(detailOf("Alibaba Cloud (Qwen)")).toContain(note as string);
+    expect(detailOf("Alibaba Cloud (Qwen)")).toContain("China (Beijing), which is in mainland China, and China (Hong Kong)");
+  });
+
+  it("names regions the registry has, and the one it calls mainland is the one the side-note treats as mainland", () => {
+    expect(providerRegistry).toContain('("cn-beijing", "China (Beijing)")');
+    expect(providerRegistry).toContain('("cn-hongkong", "China (Hong Kong)")');
+    expect(providerNote("qwen", "cn-beijing")).toContain("in mainland China");
+    expect(providerNote("qwen", "cn-hongkong")).toBe(providerNote("qwen"));
+  });
+
+  it("claims no more of DeepSeek than its privacy policy says: where it is operated and where it processes data, not what it does with it", () => {
+    const text = detailOf("DeepSeek");
+    expect(text).toContain("operated by a company based in China");
+    expect(text).toContain("its privacy policy says");
+    expect(text).not.toMatch(/government|censor|train|surveil/i);
+  });
+
+  it("does not change the version the consent records point at (the maintainer sets it on launch day)", () => {
+    expect(LEGAL_VERSION).toBe("2026-10-05");
+  });
+});
 
 describe("the policy names every model provider the web app can connect", () => {
   const modelProcessors = PROCESSORS.filter((processor) => processor.group === "model");
