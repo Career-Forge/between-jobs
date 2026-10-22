@@ -237,53 +237,13 @@ button.bj-tour-tab:focus-visible {
 
 .bj-tour-parts li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px 12px;
   font-size: var(--bj-text-small);
 }
 
-.bj-tour-part-word {
-  color: var(--bj-text-muted);
-}
-
 .bj-tour-parts .bj-segbar-cells {
   grid-column: 1 / -1;
-}
-
-.bj-tour-table {
-  width: 100%;
-  margin-top: 8px;
-  border-collapse: collapse;
-  font-size: var(--bj-text-control);
-}
-
-.bj-tour-table caption {
-  padding-bottom: 8px;
-  font-family: var(--bj-font-mono);
-  font-size: var(--bj-text-eyebrow);
-  letter-spacing: 0.12em;
-  text-align: left;
-  text-transform: uppercase;
-  color: var(--bj-text-muted);
-}
-
-.bj-tour-table th,
-.bj-tour-table td {
-  padding: 10px 8px 10px 0;
-  border-top: 1px solid var(--bj-border);
-  text-align: left;
-  font-weight: 400;
-  overflow-wrap: anywhere;
-}
-
-.bj-tour-table thead th {
-  font-size: var(--bj-text-small);
-  color: var(--bj-text-muted);
-}
-
-.bj-tour-table tbody tr:last-child th,
-.bj-tour-table tbody tr:last-child td {
-  border-bottom: 1px solid var(--bj-border);
 }
 
 /* ------------------------------------------------------------------ */
