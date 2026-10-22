@@ -23,15 +23,13 @@
   min-width: 0;
 }
 
-/* "Sample" and what it is a sample of. */
+/* "Sample" and what it is a sample of: a sentence a person has to read, so body type in sentence case, not
+   a small uppercase mono label. */
 .bj-landing-section .bj-tour p.bj-tour-sample-label {
   max-width: none;
   margin: 12px 0 24px;
-  font-family: var(--bj-font-mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  line-height: 1.7;
-  text-transform: uppercase;
+  font-size: var(--bj-text-body);
+  line-height: 1.6;
   color: var(--bj-text-muted);
 }
 
@@ -209,10 +207,11 @@ button.bj-tour-tab:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* "Waiting in your drafts. You press Send." is a plain sentence of the drawing: the tab's sample next step,
+   above the drawing, is the one thing on the tab set in display type. */
 .bj-tour-statement {
-  font-family: var(--bj-font-display);
-  font-size: 26px;
-  line-height: 1.2;
+  font-size: 16px;
+  line-height: 1.5;
 }
 
 /* A button drawn as a picture: outlined, never filled, never focusable. */
@@ -538,8 +537,9 @@ button.bj-tour-tab:focus-visible {
 /* The sample next step                                                 */
 /* ------------------------------------------------------------------ */
 
+/* Between the strip and the drawing, so it stays where the eye is when a tab is chosen. */
 .bj-tour-next {
-  padding: 22px 0 6px;
+  padding: 28px 0 4px;
 }
 
 .bj-landing-section .bj-tour p.bj-tour-next-tag {
@@ -556,20 +556,21 @@ button.bj-tour-tab:focus-visible {
   min-width: 0;
 }
 
+/* Room for a two-line sentence and its why line, so a longer or shorter one does not move the drawing. */
 .bj-tour-next-text {
-  min-height: 92px;
+  min-height: 116px;
   animation: bj-tour-fade 200ms ease-out;
 }
 
 .bj-landing-section .bj-tour .bj-tour-next-text p {
-  max-width: 680px;
+  max-width: 880px;
   margin: 0;
 }
 
 .bj-landing-section .bj-tour p.bj-tour-next-sentence {
   font-family: var(--bj-font-display);
-  font-size: 22.5px;
-  line-height: 1.25;
+  font-size: 32px;
+  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
@@ -585,6 +586,14 @@ button.bj-tour-tab:focus-visible {
 /* ------------------------------------------------------------------ */
 /* Under 960px: one column                                              */
 /* ------------------------------------------------------------------ */
+
+/* Wide enough for every sample step on one line (the longest is about 800px of 32px serif), so the room kept for it
+   is one line and a why line. */
+@media (min-width: 960px) {
+  .bj-tour-next-text {
+    min-height: 84px;
+  }
+}
 
 @media (max-width: 959px) {
   .bj-tour-grid {
@@ -629,9 +638,16 @@ button.bj-tour-tab:focus-visible {
     padding: 16px 16px 20px;
   }
 
-  .bj-tour-statement,
   .bj-tour-question {
     font-size: 22px;
+  }
+
+  .bj-landing-section .bj-tour p.bj-tour-next-sentence {
+    font-size: 26px;
+  }
+
+  .bj-tour-next-text {
+    min-height: 128px;
   }
 
   button.bj-tour-tab {

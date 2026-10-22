@@ -496,10 +496,11 @@ the printed resume page drawn in the tour, which is white because it stands for 
   hero; on the home page the hero band's button is, and the header's is outlined.
 - **The home page's** words are `content/landing.ts`. Its product tour (`components/landing/ProductTour.tsx`, the
   drawings in `TourMocks.tsx`, the words in `content/tour.ts`) is real ARIA tabs: a roving tabindex, Left, Right, Home
-  and End, one panel showing, and a sample next step under them that is a polite live region. Every drawing is a
+  and End (a chord such as Alt+Left is left to the browser), one panel showing, and a sample next step between the strip and the drawing that is a polite live region. Every drawing is a
   picture of one screen built from a fictional sample role, labeled as a sample, with no control in it (a depicted button
   is an outlined span hidden from assistive technology), and ends in a trail line made with the same primitive the real
-  screens use. The sample next step is deliberately not the page's band: there is one band, in the hero.
+  screens use (who made it, what it is based on) and a plain note of what nobody checked; each one draws only what the real
+  screen draws. The sample next step is deliberately not the page's band: there is one band, in the hero.
 - **How it works and Open source** (`pages/HowItWorks.tsx`, `pages/OpenSource.tsx`, words in `content/publicPages.ts`)
   are drawn inside the signed-in shell too, so a shared link is not a dead end, and so carry no account link of
   their own. Open source's provider list and its "not yet checked live" note come from the same table as the home page's.

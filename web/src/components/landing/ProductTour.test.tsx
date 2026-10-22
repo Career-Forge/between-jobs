@@ -144,6 +144,18 @@ describe("the sample next step", () => {
     expect(root.querySelector(".bj-band")).toBeNull();
   });
 
+  it("sits between the strip and the drawing, so choosing a tab does not move it or push it below the fold", () => {
+    const root = open();
+    const strip = query(root, '[role="tablist"]');
+    const next = query(root, ".bj-tour-next");
+    const [firstPanel] = panelsOf(root);
+    expect(strip.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(next.compareDocumentPosition(firstPanel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Nothing between the strip and the step but the step itself, and every panel follows it.
+    expect(strip.nextElementSibling).toBe(next);
+    expect(panelsOf(root).every((panel) => next.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  });
+
   it("rewrites for each tab: the sentence and the why line, with the tab's name read out first", () => {
     const root = open();
     TOUR_TABS.forEach((tab, index) => {
