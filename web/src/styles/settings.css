@@ -692,6 +692,19 @@ button.bj-set-action {
     justify-content: flex-start;
   }
 
+  /* The remove-key confirmation lives inside this group. The group is "flex: none" so its buttons stay
+     on one line, which would make it as wide as the confirmation's sentence (about 890px) and push the
+     page sideways at 375px. While the confirmation is open the group takes the whole line instead, so
+     the sentence wraps inside the viewport. */
+  .bj-set-extra-actions:has(.bj-set-confirm) {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .bj-set-extra-actions .bj-set-confirm {
+    min-width: 0;
+  }
+
   .bj-set-getkey,
   .bj-set-row-actions > a,
   .bj-set-card-head > a {
