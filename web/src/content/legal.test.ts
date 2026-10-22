@@ -1600,17 +1600,19 @@ describe("the policy says where DeepSeek and Alibaba Cloud (Qwen) run, in the sa
     expect(detailOf("DeepSeek")).toContain(note as string);
   });
 
-  it("carries the page's general side-note for Qwen, word for word, and names the regions that are in China", () => {
+  it("carries the page's general side-note for Qwen, word for word, and names the one region that is itself in mainland China", () => {
     const note = providerNote("qwen");
     expect(note).not.toBeNull();
     expect(detailOf("Alibaba Cloud (Qwen)")).toContain(note as string);
-    expect(detailOf("Alibaba Cloud (Qwen)")).toContain("China (Beijing), which is in mainland China, and China (Hong Kong)");
+    expect(detailOf("Alibaba Cloud (Qwen)")).toContain("The regions you can pick include China (Beijing), which is in mainland China.");
   });
 
   it("names regions the registry has, and the one it calls mainland is the one the side-note treats as mainland", () => {
     expect(providerRegistry).toContain('("cn-beijing", "China (Beijing)")');
     expect(providerRegistry).toContain('("cn-hongkong", "China (Hong Kong)")');
     expect(providerNote("qwen", "cn-beijing")).toContain("in mainland China");
+    // Hong Kong is not itself in mainland China, so it is not named as such; the general sentence is
+    // what says that, under the default scope, inference can still run there.
     expect(providerNote("qwen", "cn-hongkong")).toBe(providerNote("qwen"));
   });
 
@@ -1618,6 +1620,8 @@ describe("the policy says where DeepSeek and Alibaba Cloud (Qwen) run, in the sa
     const text = detailOf("DeepSeek");
     expect(text).toContain("operated by a company based in China");
     expect(text).toContain("its privacy policy says");
+    expect(text).toContain("does not say whether text sent through the API is covered");
+    expect(text).not.toMatch(/what you send goes/i);
     expect(text).not.toMatch(/government|censor|train|surveil/i);
   });
 

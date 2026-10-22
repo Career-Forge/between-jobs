@@ -697,7 +697,7 @@ describe("a provider's data-location side-note on the page", () => {
     click(buttonIn(chips, "DeepSeek"));
     expect(text(query(container, ".bj-set-sidenote"))).toContain("operated by a company based in China");
     click(buttonIn(chips, "Qwen Cloud"));
-    expect(text(query(container, ".bj-set-sidenote"))).toContain("some regions are in mainland China");
+    expect(text(query(container, ".bj-set-sidenote"))).toContain("under the default scope in some regions that can include mainland China");
     click(buttonIn(chips, "OpenAI"));
     expect(container.querySelector(".bj-set-sidenote")).toBeNull();
     expect(container.querySelector('.bj-set-sidenote[role="alert"]')).toBeNull();

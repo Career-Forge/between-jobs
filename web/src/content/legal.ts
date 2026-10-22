@@ -154,13 +154,13 @@ const MODEL_PROVIDERS: readonly { name: string; detail: string }[] = [
     name: "DeepSeek",
     detail:
       MODEL_PROVIDER_SENTENCE +
-      " DeepSeek is operated by a company based in China. What you send goes to its servers, and its privacy policy says it collects, processes and stores personal data in the People's Republic of China.",
+      " DeepSeek is operated by a company based in China, and its privacy policy says the personal data it collects is processed and stored in the People's Republic of China. That policy does not say whether text sent through the API is covered.",
   },
   {
     name: "Alibaba Cloud (Qwen)",
     detail:
       MODEL_PROVIDER_SENTENCE +
-      " Qwen Cloud runs on Alibaba Cloud. What you send goes to the region you pick, and some regions are in mainland China. The choice includes China (Beijing), which is in mainland China, and China (Hong Kong).",
+      " Qwen Cloud runs on Alibaba Cloud. The region you pick is where your requests are received and stored. Where the model runs depends on your workspace's deployment scope, and under the default scope in some regions that can include mainland China. The regions you can pick include China (Beijing), which is in mainland China.",
   },
   {
     name: "Other OpenAI-compatible hosts",
