@@ -2,36 +2,43 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { PublicLayout } from "../components/PublicLayout";
-import { LANDING, LANDING_PROVIDERS, LANDING_SECTION_LINKS } from "../content/landing";
-import { STAGES } from "../content/landingCircuit";
+import { LANDING, LANDING_PROVIDERS, LANDING_SECTION_IDS } from "../content/landing";
+import { SITE_TABS } from "../content/siteNav";
 import { FONT_LICENSES_PATH, PRIVACY_EMAIL, REPO_URL, SUPPORT_EMAIL } from "../content/site";
+import { TOUR, TOUR_TABS } from "../content/tour";
+import { HOW_IT_WORKS_PATH, LANDING_PATH, OPEN_SOURCE_PATH, PRIVACY_PATH, TERMS_PATH } from "../lib/publicRoutes";
 import { anchorsOf, headingLevels, tagsOf, textOfMarkup } from "../testing/markup";
+import HowItWorks from "./HowItWorks";
 import Landing from "./Landing";
+import OpenSource from "./OpenSource";
 import Privacy from "./Privacy";
 import Terms from "./Terms";
 
-// What a signed-out visitor is shown: the landing page, and the two legal pages, each inside the
-// public layout. Rendered to markup (the package has no DOM) and read back for what a person
+// What a signed-out visitor is shown: the landing page, the two explainer pages and the two legal pages, each
+// inside the public layout. Rendered to markup (the package has no DOM) and read back for what a person
 // and a screen reader get: landmarks, one h1, headings in order, link targets and link text.
 
 // The landing page is the one public page with a next-step band, so App draws it in the "landing" variant
-// of the layout; the two legal pages have no band and use the plain one.
-function page(element: React.ReactElement, variant: "landing" | "legal" = "legal"): string {
+// of the layout; every other public page has no band and uses the plain one. `path` is the address the
+// page is at, which decides which of the header's tabs is the current one.
+function page(element: React.ReactElement, variant: "landing" | "page" = "page", path = "/"): string {
   return renderToStaticMarkup(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <PublicLayout variant={variant}>{element}</PublicLayout>
     </MemoryRouter>,
   );
 }
 
-const PAGES: [string, React.ReactElement, "landing" | "legal"][] = [
-  ["the landing page", <Landing key="landing" />, "landing"],
-  ["the Privacy Policy", <Privacy key="privacy" />, "legal"],
-  ["the Terms of Service", <Terms key="terms" />, "legal"],
+const PAGES: [string, React.ReactElement, "landing" | "page", string][] = [
+  ["the landing page", <Landing key="landing" />, "landing", LANDING_PATH],
+  ["How it works", <HowItWorks key="how" />, "page", HOW_IT_WORKS_PATH],
+  ["Open source", <OpenSource key="open" />, "page", OPEN_SOURCE_PATH],
+  ["the Privacy Policy", <Privacy key="privacy" />, "page", PRIVACY_PATH],
+  ["the Terms of Service", <Terms key="terms" />, "page", TERMS_PATH],
 ];
 
-describe.each(PAGES)("%s, in the public layout", (_name, element, variant) => {
-  const markup = page(element, variant);
+describe.each(PAGES)("%s, in the public layout", (_name, element, variant, path) => {
+  const markup = page(element, variant, path);
 
   it("has the three landmarks once each, and exactly one h1 inside the main one", () => {
     for (const landmark of ["header", "main", "footer"]) {
@@ -44,10 +51,9 @@ describe.each(PAGES)("%s, in the public layout", (_name, element, variant) => {
     expect(markup.indexOf("</main>")).toBeLessThan(markup.indexOf("<footer"));
   });
 
-  it("labels its two navigations, so a screen reader can tell them apart", () => {
+  it("labels its navigations, so a screen reader can tell them apart", () => {
     const labels = tagsOf(markup, "nav").map((tag) => tag["aria-label"]);
-    expect(labels).toContain("Account");
-    expect(labels).toContain("Legal");
+    expect(labels).toEqual(expect.arrayContaining(["Main", "Account", "Legal"]));
     expect(labels.every((label) => typeof label === "string" && label.length > 0)).toBe(true);
   });
 
@@ -86,12 +92,36 @@ describe.each(PAGES)("%s, in the public layout", (_name, element, variant) => {
     }
   });
 
-  it("has no inline style, script, image or form, and the only buttons are the circuit's stage buttons", () => {
+  it("has no inline style, script, image or form, and the only buttons are the menu button and, on the home page, the tour's tabs", () => {
     expect(markup).not.toContain("style=");
     expect(markup).not.toMatch(/<(script|img|iframe|form|input|svg|picture|video|canvas)\b/);
     const buttons = tagsOf(markup, "button");
-    expect(buttons).toHaveLength(variant === "landing" ? STAGES.length : 0);
-    for (const button of buttons) expect(button.class).toContain("bj-circuit-stage-button");
+    expect(buttons).toHaveLength(variant === "landing" ? TOUR_TABS.length + 1 : 1);
+    expect(buttons.filter((button) => button.class === "bj-public-menu-button")).toHaveLength(1);
+    for (const button of buttons.filter((candidate) => candidate.class !== "bj-public-menu-button")) {
+      expect(button.class).toContain("bj-tour-tab");
+      expect(button.role).toBe("tab");
+    }
+  });
+
+  it("holds exactly one cyan fill: the hero band's button on the home page, the header's Create account everywhere else", () => {
+    expect(markup.match(/bj-button-link-primary/g) ?? []).toHaveLength(1);
+    expect(markup).not.toMatch(/class="[^"]*\bbj-primary\b/);
+    const header = markup.slice(markup.indexOf("<header"), markup.indexOf("</header>"));
+    if (variant === "landing") {
+      expect(header).not.toContain("bj-button-link-primary");
+      expect(markup).toContain("bj-button-link bj-button-link-primary bj-band-action");
+    } else {
+      expect(header).toContain("bj-button-link-primary");
+    }
+  });
+
+  it("marks the header's tab for the page it is on, and no other, with aria-current", () => {
+    const tabsNav = /<nav class="bj-public-tabs"[^>]*>([\s\S]*?)<\/nav>/.exec(markup);
+    const tabs = anchorsOf(tabsNav?.[1] ?? "");
+    expect(tabs.map((tab) => tab.attributes.href)).toEqual(SITE_TABS.map((tab) => tab.path));
+    const current = tabs.filter((tab) => tab.attributes["aria-current"] === "page").map((tab) => tab.attributes.href);
+    expect(current).toEqual(path === TERMS_PATH ? [] : [path]);
   });
 
   it("fetches nothing by itself: no src, srcset or data attribute, no url()", () => {
@@ -142,21 +172,14 @@ describe("the landing page", () => {
     expect([...markup.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)].filter((match) => match[1].includes("optional Gmail connection"))).toHaveLength(1);
   });
 
-  it("names the three chapters and what each does", () => {
-    for (const chapter of LANDING.chapters) {
-      expect(markup).toContain(`<h3>${chapter.title}</h3>`);
-      expect(text).toContain(chapter.text);
-    }
-    expect((markup.match(/<li class="bj-landing-chapter">/g) ?? []).length).toBe(LANDING.chapters.length);
-  });
-
-  it("draws the circuit: five stages in a list, each with its sample card, the board and the sample next step", () => {
-    expect(markup).toContain(`>${LANDING.circuit.title}</h2>`);
-    expect(text).toContain("Sample role");
+  it("draws the tour: five tabs, one panel showing, and the sample next step under them", () => {
+    expect(markup).toContain(`>${TOUR.title}</h2>`);
     expect(text).toContain("fictional");
-    expect((markup.match(/class="bj-circuit-card"/g) ?? []).length).toBe(STAGES.length);
-    for (const stage of STAGES) expect(text).toContain(stage.label);
-    expect(markup).toContain(LANDING.circuit.demoLabel);
+    expect(tagsOf(markup, "button").filter((button) => button.role === "tab")).toHaveLength(TOUR_TABS.length);
+    for (const tab of TOUR_TABS) expect(text).toContain(tab.label);
+    expect((markup.match(/role="tabpanel"/g) ?? []).length).toBe(TOUR_TABS.length);
+    expect(tagsOf(markup, "div").filter((div) => div.role === "tabpanel" && "hidden" in div)).toHaveLength(TOUR_TABS.length - 1);
+    expect(markup).toContain(TOUR.nextLabel);
   });
 
   it("links the font licenses from the footer, in a new tab, with the same-origin text file", () => {
@@ -168,9 +191,7 @@ describe("the landing page", () => {
     expect(link?.text).toContain("Font licenses");
   });
 
-  it("holds exactly one cyan fill, the hero band's Create an account, so the header's and the closing section's are outlined", () => {
-    expect(markup.match(/bj-button-link-primary/g) ?? []).toHaveLength(1);
-    expect(markup).not.toMatch(/class="[^"]*\bbj-primary\b/);
+  it("keeps the header's and the closing section's Create account outlined: the hero band's is the page's one fill", () => {
     const anchors = anchorsOf(markup).filter((anchor) => anchor.attributes.href === "/login?mode=register");
     expect(anchors.map((anchor) => anchor.attributes.class)).toEqual([
       "bj-button-link",
@@ -178,7 +199,7 @@ describe("the landing page", () => {
       "bj-button-link",
     ]);
     // The one filled link is inside the band, which is inside the hero.
-    const hero = markup.slice(markup.indexOf('class="bj-landing-hero"'), markup.indexOf('id="circuit"'));
+    const hero = markup.slice(markup.indexOf('class="bj-landing-hero"'), markup.indexOf(`id="${LANDING_SECTION_IDS.tour}"`));
     expect(hero).toContain("bj-button-link-primary");
   });
 
@@ -207,19 +228,26 @@ describe("the landing page", () => {
     expect(markup).toContain('id="next-step-focus"');
   });
 
-  it("links the header's section links to sections that exist, and labels that nav", () => {
+  it("labels the header's navigations: the site's tabs and the way in, and has no in-page section links", () => {
     const header = markup.slice(markup.indexOf("<header"), markup.indexOf("</header>"));
-    expect(tagsOf(header, "nav").map((tag) => tag["aria-label"])).toEqual(["On this page", "Account"]);
-    const hrefs = anchorsOf(header).map((anchor) => anchor.attributes.href);
-    for (const link of LANDING_SECTION_LINKS) {
-      expect(hrefs).toContain(`/#${link.id}`);
-      expect(main).toContain(`<section id="${link.id}"`);
-    }
+    expect(tagsOf(header, "nav").map((tag) => tag["aria-label"])).toEqual(["Main", "Account"]);
+    expect(markup).not.toContain("On this page");
+  });
+
+  it("points its hero link at the tour, which exists", () => {
+    const hero = markup.slice(markup.indexOf('class="bj-landing-hero"'), markup.indexOf(`id="${LANDING_SECTION_IDS.tour}"`));
+    expect(anchorsOf(hero).map((anchor) => anchor.attributes.href)).toContain(`/#${LANDING_SECTION_IDS.tour}`);
+    expect(main).toContain(`<section id="${LANDING_SECTION_IDS.tour}"`);
+  });
+
+  it("links the Open source page from the source strip", () => {
+    const strip = markup.slice(markup.indexOf(`<section id="${LANDING_SECTION_IDS.source}"`), markup.indexOf(`<section id="${LANDING_SECTION_IDS.early}"`));
+    expect(anchorsOf(strip).map((anchor) => anchor.attributes.href)).toContain(OPEN_SOURCE_PATH);
   });
 
   it("makes every in-page target a heading that can take focus", () => {
-    for (const link of LANDING_SECTION_LINKS) {
-      const section = main.slice(main.indexOf(`<section id="${link.id}"`));
+    for (const id of Object.values(LANDING_SECTION_IDS)) {
+      const section = main.slice(main.indexOf(`<section id="${id}"`));
       expect(section.slice(0, section.indexOf("</h2>"))).toMatch(/<h2 id="[^"]+" tabindex="-1">/);
     }
   });
@@ -249,19 +277,19 @@ describe("the landing page", () => {
 });
 
 describe("the legal pages in the public layout", () => {
-  it("have no filled cyan button at all: their header link is outlined and there is no hero", () => {
+  it("have no hero, so the header's Create account is their one cyan fill", () => {
     for (const element of [<Privacy key="p" />, <Terms key="t" />]) {
-      expect(page(element)).not.toContain("bj-button-link-primary");
+      expect(page(element).match(/bj-button-link-primary/g) ?? []).toHaveLength(1);
     }
   });
 
-  it("have no next-step band, no Skip to next step and no section links: a legal page has no 'now'", () => {
+  it("have no next-step band, no Skip to next step and no tour: a legal page has no 'now'", () => {
     for (const element of [<Privacy key="p" />, <Terms key="t" />]) {
       const markup = page(element);
       expect(markup).not.toContain("Next step");
       expect(markup).not.toContain("bj-band");
       expect(markup).not.toContain("Skip to next step");
-      expect(markup).not.toContain("On this page");
+      expect(markup).not.toContain("bj-tour");
       expect(markup).toContain("Skip to content");
     }
   });

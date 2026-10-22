@@ -9,6 +9,8 @@ import { RouteBoundary } from "./components/RouteBoundary";
 import { UPDATE_PASSWORD_PATH, recoveryRedirect } from "./lib/passwordReset";
 import {
   ENROLL_PATH,
+  HOW_IT_WORKS_PATH,
+  OPEN_SOURCE_PATH,
   PRIVACY_PATH,
   TERMS_PATH,
   appView,
@@ -17,16 +19,18 @@ import {
 import { useDocumentTitle } from "./lib/useDocumentTitle";
 import { useScrollToTopOnNavigate } from "./lib/useScrollToTopOnNavigate";
 import Enroll from "./pages/Enroll";
+import HowItWorks from "./pages/HowItWorks";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import OpenSource from "./pages/OpenSource";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import UpdatePassword from "./pages/UpdatePassword";
 
-// The signed-in pages are fetched the first time they are opened, so a stranger who only reads the landing
-// page, signs in or reads the legal pages downloads none of them. The sign-in page, the legal pages, the
-// landing page, the password form and the enrollment page (the gate draws it) stay in the first download.
+// The signed-in pages are fetched the first time they are opened, so a stranger who only reads the public pages
+// or signs in downloads none of them. The sign-in page, the public pages (landing, how it works, open source and
+// the legal pages), the password form and the enrollment page (the gate draws it) stay in the first download.
 const Today = lazy(() => import("./pages/Today"));
 const Discover = lazy(() => import("./pages/Discover"));
 const HiringSignals = lazy(() => import("./pages/HiringSignals"));
@@ -41,8 +45,8 @@ export default function App() {
   const location = useLocation();
 
   // Which screen this visitor gets is decided by one pure function (lib/publicRoutes.ts); this
-  // component draws the answer. A signed-out visitor reaches the landing page, the two legal
-  // pages and the sign-in page; any other address shows sign-in, so a deep link such as
+  // component draws the answer. A signed-out visitor reaches the landing page, the two explainer
+  // pages, the two legal pages and the sign-in page; any other address shows sign-in, so a deep link such as
   // /applications/123 still lands there and, once signed in, opens that same page.
   const view = appView({
     signedIn: session !== null,
@@ -71,6 +75,20 @@ export default function App() {
     return (
       <PublicLayout variant="landing">
         <Landing />
+      </PublicLayout>
+    );
+  }
+  if (view === "how_it_works") {
+    return (
+      <PublicLayout>
+        <HowItWorks />
+      </PublicLayout>
+    );
+  }
+  if (view === "open_source") {
+    return (
+      <PublicLayout>
+        <OpenSource />
       </PublicLayout>
     );
   }
@@ -119,6 +137,8 @@ export default function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/profile/integrations" element={<LegacyIntegrationsRedirect />} />
             <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
+            <Route path={HOW_IT_WORKS_PATH} element={<HowItWorks />} />
+            <Route path={OPEN_SOURCE_PATH} element={<OpenSource />} />
             <Route path={PRIVACY_PATH} element={<Privacy />} />
             <Route path={TERMS_PATH} element={<Terms />} />
             <Route path={ENROLL_PATH} element={<Enroll />} />

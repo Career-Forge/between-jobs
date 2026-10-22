@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import appCss from "../app.css?raw";
 import authCss from "../styles/auth.css?raw";
-import circuitCss from "../styles/circuit.css?raw";
 import landingCss from "../styles/landing.css?raw";
 import legalCss from "../styles/legal.css?raw";
 import paperCss from "../styles/paper.css?raw";
 import publicCss from "../styles/public.css?raw";
+import siteCss from "../styles/site-pages.css?raw";
+import tourCss from "../styles/tour.css?raw";
 import tokensCss from "../tokens.css?raw";
 import { blockOf, declarationsFor, horizontalPaddingPx, rulesOf, tokenResolver, withoutMedia } from "../testing/css";
 
@@ -13,10 +14,11 @@ import { blockOf, declarationsFor, horizontalPaddingPx, rulesOf, tokenResolver, 
 // layout engine, so no computed style): that a link inside a sentence carries a cue other than colour,
 // that the header, the page and the footer sit in one column, that nothing has a width that could push a
 // phone sideways, that the reading measure and the type roles hold, and that nothing moves for someone
-// who asked for less motion. The files are public.css (the frame), landing.css and circuit.css (the
-// landing page), auth.css (sign in) and legal.css (the two documents).
+// who asked for less motion. The files are public.css (the frame), landing.css and tour.css (the
+// landing page), site-pages.css (How it works and Open source), auth.css (sign in) and legal.css (the two
+// documents).
 
-const ALL = { publicCss, landingCss, circuitCss, authCss, legalCss };
+const ALL = { publicCss, landingCss, tourCss, siteCss, authCss, legalCss };
 const resolve = tokenResolver(tokensCss);
 
 // A prose-link rule: the selector, and the stylesheet it is written in.
@@ -25,6 +27,7 @@ const PROSE_LINKS: [string, string][] = [
   [".bj-legal ul a", legalCss],
   [".bj-legal dd a", legalCss],
   [".bj-landing section p a", landingCss],
+  [".bj-site p a", siteCss],
   [".bj-public-footer p a", publicCss],
   [".bj-consent-notice a", authCss],
 ];
@@ -51,7 +54,8 @@ describe("links inside running text", () => {
       ".bj-legal li a",
       "a.bj-button-link",
       ".bj-public-wordmark",
-      ".bj-public-sections a",
+      ".bj-public-tabs a",
+      ".bj-public-menu a.bj-selectable",
       ".bj-public-signin",
     ]) {
       expect(declarationsFor(all, selector)["text-decoration"], selector).toBeUndefined();
@@ -94,22 +98,47 @@ describe("the public frame's column", () => {
     expect(footerInner["margin-right"]).toBe("auto");
   });
 
-  it("keeps the header's section links reachable under 960px: a row of their own below the wordmark and the way in, never hidden", () => {
-    const narrow = blockOf(publicCss, "@media (max-width: 959px)") ?? "";
-    const sections = declarationsFor(narrow, ".bj-public-sections");
-    expect(sections.display).toBeUndefined();
-    expect(sections.flex).toBe("1 0 100%");
-    expect(sections.order).toBe("3");
-    expect(sections["margin-left"]).toBe("0");
-    // Every media block of the frame, any width: nothing takes the links out of the page.
-    expect(rulesOf(publicCss).filter((rule) => rule.selectors.some((selector) => selector.startsWith(".bj-public-sections")) && rule.declarations.display === "none")).toEqual([]);
-    // Each link stays a 44px target (the base rule's minimum height applies at every width).
-    expect(Number.parseFloat(declarationsFor(withoutMedia(publicCss), ".bj-public-sections a")["min-height"])).toBeGreaterThanOrEqual(44);
+  it("is written phone first: a Menu button and its panel by default, the tabs and the way in only from 960px", () => {
+    const base = withoutMedia(publicCss);
+    expect(declarationsFor(base, ".bj-public-tabs").display).toBe("none");
+    expect(declarationsFor(base, ".bj-public-actions").display).toBe("none");
+    expect(declarationsFor(base, ".bj-public-menu-button").display).toBe("inline-flex");
+    expect(declarationsFor(base, ".bj-public-menu").display).toBe("flex");
+    // The panel is a row of its own under the wordmark and the button.
+    expect(declarationsFor(base, ".bj-public-menu")).toMatchObject({ flex: "1 0 100%", order: "3" });
+    const wide = blockOf(publicCss, "@media (min-width: 960px)") ?? "";
+    expect(declarationsFor(wide, ".bj-public-tabs").display).toBe("flex");
+    expect(declarationsFor(wide, ".bj-public-actions").display).toBe("flex");
+    expect(declarationsFor(wide, ".bj-public-menu-button").display).toBe("none");
+    expect(declarationsFor(wide, ".bj-public-menu").display).toBe("none");
+    // Nothing else takes the tabs, the way in or the menu out of the page at any width.
+    const hiding = rulesOf(publicCss).filter((rule) => rule.declarations.display === "none").flatMap((rule) => rule.selectors);
+    expect(hiding.sort()).toEqual([".bj-public-actions", ".bj-public-menu", ".bj-public-menu-button", ".bj-public-tabs"]);
+  });
+
+  it("makes every tab, the menu button and every link in the menu at least 44px tall", () => {
+    const base = withoutMedia(publicCss);
+    expect(Number.parseFloat(declarationsFor(base, ".bj-public-tabs a")["min-height"])).toBeGreaterThanOrEqual(44);
+    expect(Number.parseFloat(declarationsFor(base, ".bj-public-menu-button")["min-height"])).toBeGreaterThanOrEqual(44);
+    expect(Number.parseFloat(declarationsFor(base, ".bj-public-menu-button")["min-width"])).toBeGreaterThanOrEqual(44);
+    expect(Number.parseFloat(declarationsFor(base, ".bj-public-menu a.bj-selectable")["min-height"])).toBeGreaterThanOrEqual(44);
+    expect(Number.parseFloat(declarationsFor(base, ".bj-public-menu-actions a.bj-button-link")["min-height"])).toBeGreaterThanOrEqual(44);
+  });
+
+  it("marks the current tab with the selection style (a fill) and never an underline, an edge bar or a maroon line", () => {
+    const rules = rulesOf(publicCss).filter((rule) => rule.selectors.some((selector) => /bj-public-(tabs|menu)/.test(selector)));
+    for (const rule of rules) {
+      for (const property of ["text-decoration", "text-decoration-color", "border-bottom", "border-left", "box-shadow"]) {
+        // Removing the link underline (`none`) is fine; drawing one is not.
+        const value = rule.declarations[property];
+        expect(value === undefined || value === "none", `${rule.selectors.join(", ")} ${property}`).toBe(true);
+      }
+    }
   });
 
   it("gives a phone 44px targets in the frame: Sign in, the footer's link rows and its mailto links", () => {
+    // The base height of the sign-in link is already 44, and it is a tab-sized target wherever it is drawn.
     const phone = blockOf(publicCss, "@media (max-width: 719px)") ?? "";
-    expect(Number.parseFloat(declarationsFor(phone, ".bj-public-signin")["min-width"])).toBeGreaterThanOrEqual(44);
     for (const selector of [".bj-public-footer .bj-legal-links a", ".bj-public-footer p a"]) {
       expect(Number.parseFloat(declarationsFor(phone, selector)["min-height"]), selector).toBeGreaterThanOrEqual(44);
     }
@@ -138,66 +167,54 @@ describe("nothing can push a 375px phone sideways", () => {
   });
 
   it("lets every grid or flex child that holds text shrink: the layout blocks all say min-width: 0", () => {
-    for (const selector of [".bj-landing", ".bj-landing-hero-copy", ".bj-landing-hero-art", ".bj-landing-dossier-copy", ".bj-dossier-figure", ".bj-landing-card", ".bj-landing-chapter > div", ".bj-landing-source-copy"]) {
+    for (const selector of [".bj-landing", ".bj-landing-hero-copy", ".bj-landing-hero-art", ".bj-landing-card", ".bj-landing-source-copy"]) {
       expect(declarationsFor(landingCss, selector)["min-width"], selector).toBe("0");
     }
-    for (const selector of [".bj-circuit", ".bj-circuit-frame", ".bj-circuit-stage", ".bj-circuit-card", ".bj-circuit-card-body", ".bj-circuit-demo-body"]) {
-      expect(declarationsFor(circuitCss, selector)["min-width"], selector).toBe("0");
+    for (const selector of [".bj-tour", ".bj-tour-tabs", ".bj-tour-panel", ".bj-tour-column", ".bj-tour-card", ".bj-tour-sheet", ".bj-tour-next-live"]) {
+      expect(declarationsFor(tourCss, selector)["min-width"], selector).toBe("0");
+    }
+    for (const selector of [".bj-site", ".bj-how-body"]) {
+      expect(declarationsFor(siteCss, selector)["min-width"], selector).toBe("0");
     }
     expect(declarationsFor(authCss, ".bj-login-column")["min-width"]).toBe("0");
     expect(declarationsFor(authCss, ".bj-login-card")["min-width"]).toBe("0");
     expect(declarationsFor(legalCss, ".bj-legal")["min-width"]).toBe("0");
   });
 
-  it("stacks the hero, the dossier and the chapters into one column under 960px", () => {
+  it("stacks the hero into one column under 960px", () => {
     const phone = blockOf(landingCss, "@media (max-width: 959px)") ?? "";
-    for (const selector of [".bj-landing-hero", ".bj-landing-dossier", ".bj-landing-chapters"]) {
-      expect(declarationsFor(phone, selector)["grid-template-columns"], selector).toBe("minmax(0, 1fr)");
-    }
+    expect(declarationsFor(phone, ".bj-landing-hero")["grid-template-columns"]).toBe("minmax(0, 1fr)");
   });
 
-  it("turns the circuit into a vertical list under 960px: no horizontal trace, one column, only the stage in view shows its card", () => {
-    const phone = blockOf(circuitCss, "@media (max-width: 959px)") ?? "";
-    expect(declarationsFor(phone, ".bj-circuit-stages").display).toBe("block");
-    expect(declarationsFor(phone, ".bj-circuit-trunk").display).toBe("none");
-    expect(declarationsFor(phone, '.bj-circuit-stage[data-active="false"] .bj-circuit-card').display).toBe("none");
-    // On a wide screen it is five columns, each able to shrink.
-    expect(declarationsFor(withoutMedia(circuitCss), ".bj-circuit-stages")["grid-template-columns"]).toBe("repeat(5, minmax(0, 1fr))");
+  it("stacks every tour drawing into one column under 960px, with the trail line under both columns when wide", () => {
+    const phone = blockOf(tourCss, "@media (max-width: 959px)") ?? "";
+    expect(declarationsFor(phone, ".bj-tour-grid")["grid-template-columns"]).toBe("minmax(0, 1fr)");
+    expect(declarationsFor(withoutMedia(tourCss), ".bj-tour-grid")["grid-template-columns"]).toBe("repeat(2, minmax(0, 1fr))");
+    expect(declarationsFor(withoutMedia(tourCss), ".bj-tour-trail")["grid-column"]).toBe("1 / -1");
+  });
+
+  it("scrolls the tab strip sideways inside its own box, never the page, and keeps each tab from shrinking below its words", () => {
+    const strip = declarationsFor(tourCss, ".bj-tour-tabs");
+    expect(strip["overflow-x"]).toBe("auto");
+    expect(strip["overscroll-behavior-x"]).toBe("contain");
+    expect(strip["min-width"]).toBe("0");
+    const tab = declarationsFor(tourCss, "button.bj-tour-tab");
+    expect(tab.flex).toBe("1 0 auto");
+    expect(tab["white-space"]).toBe("nowrap");
+    expect(Number.parseFloat(tab["min-height"])).toBeGreaterThanOrEqual(44);
+  });
+
+  it("stacks How it works' steps and Open source's list rows into one column on a phone", () => {
+    const phone = blockOf(siteCss, "@media (max-width: 719px)") ?? "";
+    expect(declarationsFor(phone, ".bj-how-step")["grid-template-columns"]).toBe("minmax(0, 1fr)");
+    expect(declarationsFor(phone, ".bj-site-list-row")["grid-template-columns"]).toBe("minmax(0, 1fr)");
+    expect(declarationsFor(withoutMedia(siteCss), ".bj-site-list-row")["grid-template-columns"]).toBe("220px minmax(0, 1fr)");
   });
 
   it("keeps the sign-in column and its card inside the screen", () => {
     expect(declarationsFor(authCss, ".bj-login-column")).toMatchObject({ width: "100%", "max-width": "440px" });
     expect(declarationsFor(authCss, ".bj-login-card").width).toBe("100%");
     expect(horizontalPaddingPx(declarationsFor(authCss, ".bj-login"))).toEqual([16, 16]);
-  });
-});
-
-describe("the dossier picture sizes itself", () => {
-  // The picture used to have a fixed height with the card positioned inside it, so a taller card (text
-  // spacing raised under WCAG 1.4.12, a 320px window) slid down over the caption that says the picture
-  // is a sample. The card is in flow now and sets the height; only a minimum is left, for the resume page.
-  const all = rulesOf(landingCss);
-  const onArt = (property: string) => all.filter((rule) => rule.selectors.includes(".bj-dossier-art") && rule.declarations[property] !== undefined);
-
-  it("gives the picture no fixed height at any width, only a minimum", () => {
-    expect(onArt("height")).toEqual([]);
-    expect(onArt("min-height").length).toBeGreaterThan(0);
-  });
-
-  it("keeps the card in the flow, so it pushes the caption down instead of covering it", () => {
-    const card = declarationsFor(landingCss, ".bj-dossier-card");
-    expect(card.position).toBe("relative");
-    for (const rule of all.filter((r) => r.selectors.includes(".bj-dossier-card"))) {
-      expect(rule.declarations.position === undefined || rule.declarations.position === "relative").toBe(true);
-      expect(rule.declarations.top).toBeUndefined();
-    }
-    // The resume page is the one thing placed absolutely, and it sits behind the card.
-    expect(declarationsFor(landingCss, ".bj-resume-sheet").position).toBe("absolute");
-  });
-
-  it("lets the card's tab labels wrap between words and never inside one", () => {
-    expect(declarationsFor(landingCss, ".bj-dossier-tabs")["flex-wrap"]).toBe("wrap");
-    expect(declarationsFor(landingCss, ".bj-dossier-tabs span")["white-space"]).toBe("nowrap");
   });
 });
 
@@ -213,17 +230,16 @@ describe("the tester agreement keeps its compact type next to the legal pages' s
 });
 
 describe("the landing page's titles sit tight", () => {
-  it("sets the 26px chapter and promise titles on a 1.2 line, not the page's 1.55", () => {
-    for (const selector of [".bj-landing-chapter h3", ".bj-landing-card h3"]) {
-      expect(declarationsFor(landingCss, selector)["line-height"], selector).toBe("1.2");
-    }
+  it("sets the 26px promise titles on a 1.2 line, not the page's 1.55", () => {
+    expect(declarationsFor(landingCss, ".bj-landing-card h3")["line-height"]).toBe("1.2");
   });
 });
 
 describe("type and measure", () => {
-  it("holds reading prose to 680px: the legal pages and the landing's paragraphs", () => {
+  it("holds reading prose to 680px: the legal pages, the landing's paragraphs and the explainer pages'", () => {
     expect(declarationsFor(legalCss, ".bj-legal")["max-width"]).toBe("680px");
     expect(declarationsFor(landingCss, ".bj-landing-section p")["max-width"]).toBe("680px");
+    expect(declarationsFor(siteCss, ".bj-site p")["max-width"]).toBe("680px");
   });
 
   it("sets legal body text at 16px on a 1.65 line, with serif headings that are not bold", () => {
@@ -241,10 +257,14 @@ describe("type and measure", () => {
 
   it("sets the landing headline in the display serif and keeps controls out of it", () => {
     expect(declarationsFor(landingCss, ".bj-landing-hero h1")["font-family"]).toBe("var(--bj-font-display)");
-    // A control is never serif: no rule that styles a button or the stage buttons names the display face.
-    const controls = rulesOf(circuitCss).filter((rule) => rule.selectors.some((selector) => /stage-button|stage-label|node|mock/.test(selector)));
-    expect(controls.length).toBeGreaterThan(3);
+    // A control is never serif: no rule that styles a tab, the tour's depicted buttons or the header's links names the display face.
+    const controls = [
+      ...rulesOf(tourCss).filter((rule) => rule.selectors.some((selector) => /bj-tour-tab|mock-button/.test(selector))),
+      ...rulesOf(publicCss).filter((rule) => rule.selectors.some((selector) => /bj-public-(tabs|menu|signin)/.test(selector))),
+    ];
+    expect(controls.length).toBeGreaterThan(5);
     for (const rule of controls) expect(rule.declarations["font-family"] ?? "").not.toContain("display");
+
   });
 
   it("makes the sign-in inputs 16px, so a phone does not zoom the page when one takes focus, and 44px tall", () => {
@@ -256,12 +276,14 @@ describe("type and measure", () => {
 
 describe("colour and motion", () => {
   it("defines no colour of its own except the printed resume page, which stands for white paper", () => {
-    for (const [name, css] of Object.entries({ publicCss, circuitCss, authCss, legalCss })) {
+    for (const [name, css] of Object.entries({ publicCss, landingCss, siteCss, authCss, legalCss })) {
       const code = css.replace(/\/\*[\s\S]*?\*\//g, "");
       expect(code, name).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
       expect(code, name).not.toMatch(/\b(?:rgb|rgba|hsl|hsla)\(/);
     }
-    const sheetFree = landingCss.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\.bj-resume-sheet \{[^}]*\}/, "");
+    // The tour's resume page stands for white paper: its colors are custom properties on the sheet, and
+    // nothing outside that one rule names a color.
+    const sheetFree = tourCss.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\.bj-tour-sheet \{[^}]*\}/, "");
     expect(sheetFree).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(sheetFree).not.toMatch(/\b(?:rgb|rgba|hsl|hsla)\(/);
   });
@@ -286,16 +308,20 @@ describe("colour and motion", () => {
     }
   });
 
-  it("turns off every transition and animation of the circuit and the landing page under prefers-reduced-motion", () => {
-    const circuit = blockOf(circuitCss, "@media (prefers-reduced-motion: reduce)") ?? "";
-    expect(circuit).not.toBe("");
-    expect(declarationsFor(circuit, ".bj-circuit *")).toMatchObject({ transition: "none", animation: "none" });
-    const landing = blockOf(landingCss, "@media (prefers-reduced-motion: reduce)") ?? "";
-    expect(declarationsFor(landing, ".bj-landing *")).toMatchObject({ transition: "none", animation: "none" });
+  it("turns off every transition and animation of the tour, the explainer pages and the landing page under prefers-reduced-motion", () => {
+    for (const [css, selector] of [
+      [tourCss, ".bj-tour *"],
+      [siteCss, ".bj-site *"],
+      [landingCss, ".bj-landing *"],
+    ] as const) {
+      const block = blockOf(css, "@media (prefers-reduced-motion: reduce)") ?? "";
+      expect(block, selector).not.toBe("");
+      expect(declarationsFor(block, selector), selector).toMatchObject({ transition: "none", animation: "none" });
+    }
   });
 
   it("fades the sample next step for 200ms and no longer", () => {
-    expect(declarationsFor(circuitCss, ".bj-circuit-demo-text").animation).toBe("bj-circuit-fade 200ms ease-out");
+    expect(declarationsFor(tourCss, ".bj-tour-next-text").animation).toBe("bj-tour-fade 200ms ease-out");
   });
 });
 
@@ -313,5 +339,52 @@ describe("the rules that two stylesheets once both wrote", () => {
     expect(names(appCss).filter((selector) => /\.bj-workspace-breadcrumb\b/.test(selector))).toEqual([]);
     expect(names(paperCss).filter((selector) => /\.bj-workspace-breadcrumb\b/.test(selector))).toEqual([]);
     expect(names(paperCss).some((selector) => /^\.bj-breadcrumb\b/.test(selector))).toBe(true);
+  });
+});
+
+// ── contrast of the pairs the tour and the explainer pages introduce ───────────────────────────────
+
+function luminance(hex: string): number {
+  const channels = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
+  const [r, g, b] = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrast(a: string, b: string): number {
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+describe("contrast of what the tour and the explainer pages draw", () => {
+  const token = (name: string): string => resolve(`var(${name})`);
+  const sheet = (name: string): string => new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`).exec(tourCss)?.[1] ?? "";
+
+  it("meets 4.5:1 for every text pair: the tabs, the labels and notes on a surface, the selected tab, the printed page", () => {
+    const text: [string, string, string][] = [
+      ["a tab, and the header's, at rest", token("--bj-text-muted"), token("--bj-bg")],
+      ["a hovered tab", token("--bj-text"), token("--bj-surface")],
+      ["the selected tab (ivory on the maroon fill, never muted)", token("--bj-selected-text"), token("--bj-selected-bg")],
+      ["a kicker or note on the tour's cards", token("--bj-text-muted"), token("--bj-surface")],
+      ["a note on the extension's panel", token("--bj-text-muted"), token("--bj-surface-raised")],
+      ["code in a sentence", token("--bj-text"), token("--bj-surface-raised")],
+      ["the printed page's text", sheet("--sheet-ink"), sheet("--sheet-paper")],
+      ["the printed page's faint labels", sheet("--sheet-faint"), sheet("--sheet-paper")],
+      ["the flagged word on its mark", sheet("--sheet-ink"), sheet("--sheet-mark")],
+    ];
+    for (const [name, foreground, background] of text) {
+      expect(foreground, name).toMatch(/^#/);
+      expect(background, name).toMatch(/^#/);
+      expect(contrast(foreground, background), name).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("meets 3:1 for the lines that carry meaning: the filled and hollow cells, the dashed 'left for you' field", () => {
+    expect(contrast(token("--bj-gold"), token("--bj-surface"))).toBeGreaterThanOrEqual(3);
+    expect(contrast(token("--bj-outline"), token("--bj-surface"))).toBeGreaterThanOrEqual(3);
+    expect(contrast(token("--bj-outline"), token("--bj-surface-raised"))).toBeGreaterThanOrEqual(3);
+  });
+
+  it("does not let the flagged word rest on its fill alone (the mark is 1.3:1 against the paper): it is also underlined and named", () => {
+    expect(contrast(sheet("--sheet-mark"), sheet("--sheet-paper"))).toBeLessThan(3);
+    expect(declarationsFor(tourCss, ".bj-tour-flag")["text-decoration"]).toBe("underline");
   });
 });

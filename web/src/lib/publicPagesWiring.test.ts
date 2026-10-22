@@ -3,8 +3,11 @@ import app from "../App.tsx?raw";
 import appShell from "../components/AppShell.tsx?raw";
 import consentNotice from "../components/ConsentNotice.tsx?raw";
 import legalLinks from "../components/LegalLinks.tsx?raw";
+import publicHeader from "../components/PublicHeader.tsx?raw";
 import publicLayout from "../components/PublicLayout.tsx?raw";
+import howItWorksPage from "../pages/HowItWorks.tsx?raw";
 import login from "../pages/Login.tsx?raw";
+import openSourcePage from "../pages/OpenSource.tsx?raw";
 import privacyPage from "../pages/Privacy.tsx?raw";
 import termsPage from "../pages/Terms.tsx?raw";
 import { PRIVACY_PATH, TERMS_PATH } from "./publicRoutes";
@@ -28,6 +31,13 @@ describe("the shell", () => {
     // The landing page is the one public page with a next-step band, so it asks for the layout that has
     // the section links and the "Skip to next step" link; the legal pages have no band and ask for none.
     expect(app).toContain('<PublicLayout variant="landing">\n        <Landing />\n      </PublicLayout>');
+  });
+
+  it("routes the two explainer pages for a signed-in visitor, to the same pages the public layout draws, so a shared link is never a dead end", () => {
+    expect(app).toContain("<Route path={HOW_IT_WORKS_PATH} element={<HowItWorks />} />");
+    expect(app).toContain("<Route path={OPEN_SOURCE_PATH} element={<OpenSource />} />");
+    expect(app).toContain("<PublicLayout>\n        <HowItWorks />\n      </PublicLayout>");
+    expect(app).toContain("<PublicLayout>\n        <OpenSource />\n      </PublicLayout>");
   });
 
   it("links the legal pages from the nav footer, beneath Sign out", () => {
@@ -97,6 +107,17 @@ describe("the legal pages", () => {
   });
 });
 
+describe("the explainer pages", () => {
+  it.each([
+    ["How it works", howItWorksPage],
+    ["Open source", openSourcePage],
+  ])("%s scrolls to the section its address names, and has no account link of its own (it is drawn in the shell too)", (_name, source) => {
+    expect(source).toContain("const { hash } = useLocation();");
+    expect(source).toContain("useScrollToHash(true, hash);");
+    expect(source).not.toMatch(/REGISTER_PATH|LOGIN_PATH/);
+  });
+});
+
 describe("the sign-in page", () => {
   it("shows the consent line in both forms, once, above the Google button (which creates an account for a new person too)", () => {
     expect((login.match(/<ConsentNotice/g) ?? []).length).toBe(1);
@@ -143,8 +164,9 @@ describe("the public layout and the legal links", () => {
     expect(legalLinks).toContain("TERMS_PATH");
     expect(consentNotice).toContain("PRIVACY_PATH");
     expect(consentNotice).toContain("TERMS_PATH");
-    expect(publicLayout).toContain("REGISTER_PATH");
-    expect(publicLayout).toContain("LOGIN_PATH");
+    expect(publicHeader).toContain("REGISTER_PATH");
+    expect(publicHeader).toContain("LOGIN_PATH");
+    expect(publicHeader).toContain("LANDING_PATH");
     expect(publicLayout).toContain("<LegalLinks />");
   });
 });

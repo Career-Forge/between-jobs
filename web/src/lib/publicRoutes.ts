@@ -5,6 +5,7 @@
 //   loading                      -> "boot"           a blank page: nothing is decided yet
 //   signed out
 //     "/"                        -> "landing"        the public home page ...
+//     "/how-it-works", "/open-source" -> "how_it_works" / "open_source"  the two explainer pages
 //     "/privacy", "/terms"       -> "privacy" / "terms"  the two legal pages
 //     "/login"                   -> "login"
 //     any other path             -> "login"          a deep link such as /applications/123 lands
@@ -16,10 +17,12 @@
 //     any other path             -> "app"            the signed-in shell, which routes the rest
 //                                                    -- "/privacy" and "/terms" included
 //
-// WHY THE LEGAL PAGES LIVE INSIDE THE SHELL WHEN SIGNED IN. Someone who opens the Privacy
-// Policy from the nav footer is in the middle of using the app; the shell keeps the navigation
-// and the sign-out button in reach, where a bare public page would strand them. Signed out,
-// there is no shell, so the same text is drawn on the public layout.
+// WHY THE LEGAL AND EXPLAINER PAGES LIVE INSIDE THE SHELL WHEN SIGNED IN. Someone who opens the
+// Privacy Policy from the nav footer is in the middle of using the app; the shell keeps the
+// navigation and the sign-out button in reach, where a bare public page would strand them. A
+// signed-in person who follows a shared link to /how-it-works or /open-source gets the same
+// treatment rather than a not-found page. Signed out, there is no shell, so the same text is drawn
+// on the public layout.
 //
 // ONE EXCEPTION TO "/" BEING THE LANDING PAGE. The auth server sends a visitor back to the
 // site's root with the error in the URL when a link fails: a dead password-reset link when the
@@ -46,6 +49,8 @@ export const LANDING_PATH = "/";
 export const LOGIN_PATH = "/login";
 export const PRIVACY_PATH = "/privacy";
 export const TERMS_PATH = "/terms";
+export const HOW_IT_WORKS_PATH = "/how-it-works";
+export const OPEN_SOURCE_PATH = "/open-source";
 // The tester-programme enrollment page. Signed out, it is like any other deep link (sign in,
 // then the same address opens it); the gate that sends people to it is lib/enrollment.ts.
 export const ENROLL_PATH = "/enroll";
@@ -68,6 +73,8 @@ export type AppView =
   | "boot"
   | "landing"
   | "login"
+  | "how_it_works"
+  | "open_source"
   | "privacy"
   | "terms"
   | "home_redirect"
@@ -91,6 +98,10 @@ export function appView(input: ViewInput): AppView {
   switch (path) {
     case LANDING_PATH:
       return urlCarriesAuthError(input.hash ?? "", input.search ?? "") ? "login" : "landing";
+    case HOW_IT_WORKS_PATH:
+      return "how_it_works";
+    case OPEN_SOURCE_PATH:
+      return "open_source";
     case PRIVACY_PATH:
       return "privacy";
     case TERMS_PATH:
@@ -111,6 +122,10 @@ export function appView(input: ViewInput): AppView {
 
 export const SITE_NAME = "Between Jobs";
 
+// What the two explainer pages are called in their headings, the header's tabs and the document title.
+export const HOW_IT_WORKS_PAGE_NAME = "How it works";
+export const OPEN_SOURCE_PAGE_NAME = "Open source";
+
 // The project writes " -- " where other text would put a dash.
 export function pageTitle(page: string | null): string {
   return page === null ? SITE_NAME : `${page} -- ${SITE_NAME}`;
@@ -126,6 +141,10 @@ export function documentTitleFor(view: AppView, pathname: string): string | null
       return null;
     case "landing":
       return pageTitle(null);
+    case "how_it_works":
+      return pageTitle(HOW_IT_WORKS_PAGE_NAME);
+    case "open_source":
+      return pageTitle(OPEN_SOURCE_PAGE_NAME);
     case "privacy":
       return pageTitle("Privacy Policy");
     case "terms":
@@ -136,6 +155,8 @@ export function documentTitleFor(view: AppView, pathname: string): string | null
       const path = normalizePath(pathname);
       if (path === PRIVACY_PATH) return pageTitle("Privacy Policy");
       if (path === TERMS_PATH) return pageTitle("Terms of Service");
+      if (path === HOW_IT_WORKS_PATH) return pageTitle(HOW_IT_WORKS_PAGE_NAME);
+      if (path === OPEN_SOURCE_PATH) return pageTitle(OPEN_SOURCE_PAGE_NAME);
       if (path === ENROLL_PATH) return pageTitle(ENROLL_PAGE_NAME);
       const name = appPageName(path);
       if (name !== null) return pageTitle(name);
@@ -164,10 +185,10 @@ const WORKSPACE_PATH = /^\/applications\/[^/]+$/i;
 // What the not-found page is called in its heading and in the document title.
 export const NOT_FOUND_PAGE_NAME = "Page not found";
 
-// Addresses the router matches (App.tsx) that the table above does not name: the legal pages and the tester
-// programme (titled by their own rules, which are exact about case), the old integrations address (it redirects)
-// and the password form. Lower case, like the table.
-const ROUTED_WITHOUT_A_NAME: ReadonlySet<string> = new Set([PRIVACY_PATH, TERMS_PATH, ENROLL_PATH, UPDATE_PASSWORD_PATH, LEGACY_INTEGRATIONS_PATH]);
+// Addresses the router matches (App.tsx) that the table above does not name: the legal and explainer pages and the
+// tester programme (titled by their own rules, which are exact about case), the old integrations address (it
+// redirects) and the password form. Lower case, like the table.
+const ROUTED_WITHOUT_A_NAME: ReadonlySet<string> = new Set([PRIVACY_PATH, TERMS_PATH, HOW_IT_WORKS_PATH, OPEN_SOURCE_PATH, ENROLL_PATH, UPDATE_PASSWORD_PATH, LEGACY_INTEGRATIONS_PATH]);
 
 /** What a signed-in page at this address is called (its heading), or null where there is no such page. */
 export function appPageNameFor(pathname: string): string | null {
