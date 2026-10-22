@@ -479,28 +479,43 @@ are `styles/research.css`.
 
 ## Signed-out pages
 
-`/` (signed out), `/login`, `/privacy` and `/terms` are the pages a stranger sees first, and each has its
-own stylesheet next to the component that uses it: `styles/public.css` (the header, the one `<main>` and the
-footer in `components/PublicLayout.tsx`), `styles/landing.css` and `styles/circuit.css` (the landing page),
-`styles/auth.css` (sign in, register and password reset) and `styles/legal.css` (the two documents). They use
-tokens only, apart from the printed resume page drawn on the landing page, which is white because it stands for
-paper.
+`/` (signed out), `/how-it-works`, `/open-source`, `/privacy`, `/terms` and `/login` are the pages a stranger
+sees, and each has its own stylesheet next to the component that uses it: `styles/public.css` (the header, the one
+`<main>` and the footer in `components/PublicLayout.tsx` and `components/PublicHeader.tsx`), `styles/landing.css`
+and `styles/tour.css` (the home page), `styles/site-pages.css` (How it works and Open source), `styles/auth.css`
+(sign in, register and password reset) and `styles/legal.css` (the two documents). They use tokens only, apart from
+the printed resume page drawn in the tour, which is white because it stands for paper.
 
-- The landing page's words are `content/landing.ts` and the five stages of its circuit are
-  `content/landingCircuit.ts`, so a test can scan every claim. The circuit
-  (`components/landing/CircuitDemo.tsx`) is built from a sample role that is labeled as fictional; its depicted
-  buttons are outlined pictures, never controls. The hero holds the page's one next-step band, so the one cyan
-  fill on the page is its button.
-- A header link such as `/#circuit` scrolls and moves focus to the section's heading through
+- **The header** is four tabs (Product, How it works, Open source, Privacy), the way in, and under 960px a Menu
+  button that opens the same links as a panel (Escape closes it and returns focus to the button, choosing a link
+  closes it and moves focus to `<main>`, widening the window closes it). The tab for the current page carries
+  `aria-current="page"` and the selection style (a maroon fill, never an underline: tokens.css forbids lines as a
+  selection mark and a maroon line is 1.7:1 against the canvas). The header is written phone first, so the wide
+  layout is the `min-width: 960px` block. Create account is the page's one cyan fill on every public page that has no
+  hero; on the home page the hero band's button is, and the header's is outlined.
+- **The home page's** words are `content/landing.ts`. Its product tour (`components/landing/ProductTour.tsx`, the
+  drawings in `TourMocks.tsx`, the words in `content/tour.ts`) is real ARIA tabs: a roving tabindex, Left, Right, Home
+  and End, one panel showing, and a sample next step under them that is a polite live region. Every drawing is a
+  picture of one screen built from a fictional sample role, labeled as a sample, with no control in it (a depicted button
+  is an outlined span hidden from assistive technology), and ends in a trail line made with the same primitive the real
+  screens use. The sample next step is deliberately not the page's band: there is one band, in the hero.
+- **How it works and Open source** (`pages/HowItWorks.tsx`, `pages/OpenSource.tsx`, words in `content/publicPages.ts`)
+  are drawn inside the signed-in shell too, so a shared link is not a dead end, and so carry no account link of
+  their own. Open source's provider list and its "not yet checked live" note come from the same table as the home page's.
+  `content/publicPages.test.ts` pins what they say against the code and this repository's README (the self-hosting
+  paragraphs summarise "Set it up" there and invent no step).
+- A link such as `/#tour` or `/open-source#self-hosting` scrolls and moves focus to the section's heading through
   `lib/useScrollToHash.ts`, the same hook Settings and the workspace use (the router does neither).
 - The sign-in screen's cyan button is the band's: it sits outside the form and names it
   (`AUTH_FORM_ID`), so Enter in a field submits as before. The password reset form has no band and keeps its own
   button.
 - The legal pages have no band, and the text itself (`content/legal.ts`) is not styled into anything else.
 
-`pages/Landing.test.tsx` holds the guard on what the landing page may claim: a list of words it never uses, no
-digits, and the disclosures that must stay (the Gmail paragraph and its Privacy Policy link, the extension's
-early-tester status).
+`pages/Landing.test.tsx` and `content/publicPages.test.ts` hold the guard on what the public pages may claim: a list
+of words they never use (`testing/claims.ts`), no digits, and the disclosures that must stay (the Gmail paragraph and
+its Privacy Policy link, the extension's early-tester status). `src/appPages.test.tsx` mounts the real app signed out
+and checks every public page: one heading, exactly one primary action, no repeated ids, no link to nowhere, and the
+page's own title.
 
 ## Accessibility and responsive checks
 
