@@ -28,6 +28,8 @@ import { UPDATE_PASSWORD_PATH } from "./passwordReset";
 import {
   ENROLL_PAGE_NAME,
   ENROLL_PATH,
+  HOW_IT_WORKS_PATH,
+  OPEN_SOURCE_PATH,
   PRIVACY_PATH,
   TERMS_PATH,
   documentTitleFor,
@@ -563,6 +565,9 @@ export function enrollPageReducer(state: EnrollPageState, event: EnrollPageEvent
 // and the gate here must be no stricter than the server for anything that switches something off
 // or leaves:
 //   - the enrollment page itself, and the two legal documents they are asked to agree to;
+//   - the two explainer pages (How it works, Open source): static text with nothing to switch on,
+//     which a signed-in person following a shared link must be able to read like the legal pages
+//     (publicRoutes.ts), and which the server has no reason to hold back;
 //   - Profile, where account deletion lives;
 //   - Settings, where a provider key is removed, Gmail is disconnected, and a saved search is
 //     paused or deleted. Its old address, /profile/integrations, only redirects there, and stays on
@@ -579,6 +584,8 @@ export const GATE_EXEMPT_PATHS: readonly string[] = [
   ENROLL_PATH,
   PRIVACY_PATH,
   TERMS_PATH,
+  HOW_IT_WORKS_PATH,
+  OPEN_SOURCE_PATH,
   PROFILE_PATH,
   SETTINGS_PATH,
   LEGACY_INTEGRATIONS_PATH,

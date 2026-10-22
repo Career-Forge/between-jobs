@@ -801,9 +801,11 @@ const caps = (testerProgramRequired: boolean): CapabilitiesState => ({
 const READY = (e: Enrollment): EnrollmentLoad => ({ kind: "ready", enrollment: e });
 
 describe("the exempt pages", () => {
-  it("are the enrollment page, the two legal documents, Profile, Settings and the new-password page, and only those", () => {
+  it("are the enrollment page, the two legal documents, the two explainer pages, Profile, Settings and the new-password page, and only those", () => {
     expect([...GATE_EXEMPT_PATHS].sort()).toEqual([
       "/enroll",
+      "/how-it-works",
+      "/open-source",
       "/privacy",
       "/profile",
       "/profile/integrations",
@@ -819,6 +821,9 @@ describe("the exempt pages", () => {
     "/enroll",
     "/privacy",
     "/terms",
+    "/how-it-works",
+    "/open-source",
+    "/how-it-works/",
     "/profile",
     "/profile/",
     "/settings",
@@ -936,9 +941,20 @@ describe("enrollmentGate", () => {
         READY(enrollment()),
       ];
       for (const state of states) {
-        for (const pathname of ["/enroll", "/privacy", "/terms", "/profile", "/settings", "/update-password"]) {
+        for (const pathname of ["/enroll", "/privacy", "/terms", "/how-it-works", "/open-source", "/profile", "/settings", "/update-password"]) {
           expect(decide(caps(true), state, pathname), `${state.kind} ${pathname}`).toBe("pass");
         }
+      }
+    });
+
+    // A signed-in person who follows a shared link to an explainer page reads it, rather than being
+    // sent to the enrollment page, with the explainer's own document title.
+    it("lets a person who has not joined read the two explainer pages, under their own titles", () => {
+      for (const pathname of ["/how-it-works", "/open-source"]) {
+        const decision = decide(caps(true), READY(NOT_ENROLLED), pathname);
+        expect(decision, pathname).toBe("pass");
+        expect(enrollmentTitleFor(decision, pathname), pathname).toBe(documentTitleFor("app", pathname));
+        expect(enrollmentTitleFor(decision, pathname), pathname).not.toContain("Tester programme");
       }
     });
 
