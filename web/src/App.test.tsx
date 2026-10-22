@@ -4,8 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { AppShell } from "./components/AppShell";
 import { PublicLayout } from "./components/PublicLayout";
+import HowItWorks from "./pages/HowItWorks";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
+import OpenSource from "./pages/OpenSource";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 
@@ -101,10 +103,14 @@ describe("App", () => {
     }
   });
 
-  it("shows the landing page at / to a signed-out visitor, and the legal pages at their own addresses", () => {
+  it("shows the landing page at / to a signed-out visitor, the explainer and legal pages at their own addresses", () => {
     current.auth.session = null;
     current.pathname = "/";
     expect(publicScreen()).toEqual([PublicLayout, Landing]);
+    current.pathname = "/how-it-works";
+    expect(publicScreen()).toEqual([PublicLayout, HowItWorks]);
+    current.pathname = "/open-source/";
+    expect(publicScreen()).toEqual([PublicLayout, OpenSource]);
     current.pathname = "/privacy";
     expect(publicScreen()).toEqual([PublicLayout, Privacy]);
     current.pathname = "/terms/";

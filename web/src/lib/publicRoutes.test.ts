@@ -3,9 +3,11 @@ import appSource from "../App.tsx?raw";
 import { PRIVACY, TERMS } from "../content/legal";
 import {
   ENROLL_PATH,
+  HOW_IT_WORKS_PATH,
   LANDING_PATH,
   LOGIN_PATH,
   NOT_FOUND_PAGE_NAME,
+  OPEN_SOURCE_PATH,
   PRIVACY_PATH,
   REGISTER_PATH,
   SITE_NAME,
@@ -43,6 +45,8 @@ describe("a signed-out visitor", () => {
   it.each([
     ["/", "landing"],
     ["/login", "login"],
+    ["/how-it-works", "how_it_works"],
+    ["/open-source", "open_source"],
     ["/privacy", "privacy"],
     ["/terms", "terms"],
   ] as const)("reaches %s: %s", (pathname, expected) => {
@@ -60,6 +64,10 @@ describe("a signed-out visitor", () => {
     "/does-not-exist",
     "/privacy/extra",
     "/terms/extra",
+    "/how-it-works/extra",
+    "/open-source/extra",
+    "/How-It-Works",
+    "/open_source",
     "/login/extra",
     "/index.html",
     "/landing",
@@ -89,6 +97,8 @@ describe("a signed-in visitor", () => {
       "/update-password",
       "/privacy",
       "/terms",
+      "/how-it-works",
+      "/open-source",
       "/does-not-exist",
     ]) {
       expect(view({ signedIn: true, pathname }), pathname).toBe("app");
@@ -211,8 +221,15 @@ describe("the create-account link", () => {
 });
 
 describe("the public routes", () => {
-  it("are exactly these four, and every one is a bare absolute path", () => {
-    expect([LANDING_PATH, LOGIN_PATH, PRIVACY_PATH, TERMS_PATH]).toEqual(["/", "/login", "/privacy", "/terms"]);
+  it("are exactly these six, and every one is a bare absolute path", () => {
+    expect([LANDING_PATH, LOGIN_PATH, HOW_IT_WORKS_PATH, OPEN_SOURCE_PATH, PRIVACY_PATH, TERMS_PATH]).toEqual([
+      "/",
+      "/login",
+      "/how-it-works",
+      "/open-source",
+      "/privacy",
+      "/terms",
+    ]);
   });
 });
 
@@ -246,6 +263,8 @@ describe("the document title", () => {
   it("names each public screen differently, so two tabs of them can be told apart", () => {
     const titles = [
       documentTitleFor("landing", "/"),
+      documentTitleFor("how_it_works", "/how-it-works"),
+      documentTitleFor("open_source", "/open-source"),
       documentTitleFor("privacy", "/privacy"),
       documentTitleFor("terms", "/terms"),
       loginPageTitle("sign_in"),
@@ -255,6 +274,8 @@ describe("the document title", () => {
     expect(new Set(titles).size).toBe(titles.length);
     expect(titles).toEqual([
       "Between Jobs",
+      "How it works -- Between Jobs",
+      "Open source -- Between Jobs",
       "Privacy Policy -- Between Jobs",
       "Terms of Service -- Between Jobs",
       "Sign in -- Between Jobs",
@@ -281,6 +302,14 @@ describe("the document title", () => {
     expect(documentTitleFor("app", "/privacy")).toBe("Privacy Policy -- Between Jobs");
     expect(documentTitleFor("app", "/privacy/")).toBe("Privacy Policy -- Between Jobs");
     expect(documentTitleFor("app", "/terms")).toBe("Terms of Service -- Between Jobs");
+  });
+
+  it("titles the two explainer pages inside the signed-in shell too, whatever the spelling of the path", () => {
+    expect(documentTitleFor("app", "/how-it-works")).toBe("How it works -- Between Jobs");
+    expect(documentTitleFor("app", "/how-it-works/")).toBe("How it works -- Between Jobs");
+    expect(documentTitleFor("app", "/open-source")).toBe("Open source -- Between Jobs");
+    // Another case is routed (the router ignores case) but keeps the plain title, like the legal pages.
+    expect(documentTitleFor("app", "/Open-Source")).toBe("Between Jobs");
   });
 
   it("titles the tester-programme page inside the signed-in shell", () => {
@@ -326,7 +355,7 @@ describe("the document title", () => {
     // Read from the source, so a route added later without a title decision fails here.
     const routes = [...appSource.matchAll(/<Route path=(?:"([^"]+)"|\{([A-Z_]+)\})/g)].map((match) => match[1] ?? match[2]);
     expect(routes.length).toBeGreaterThan(10);
-    const byConstant: Record<string, string> = { UPDATE_PASSWORD_PATH, PRIVACY_PATH, TERMS_PATH, ENROLL_PATH };
+    const byConstant: Record<string, string> = { UPDATE_PASSWORD_PATH, PRIVACY_PATH, TERMS_PATH, HOW_IT_WORKS_PATH, OPEN_SOURCE_PATH, ENROLL_PATH };
     for (const route of routes) {
       if (route === "*") continue;
       const path = (byConstant[route] ?? route).replace(":id", "123");

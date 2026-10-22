@@ -23,9 +23,14 @@ import { buttonNamed, click, installViewport, query, render } from "./testing/re
 //
 // All names, companies and numbers are made up.
 
-const who = vi.hoisted(() => ({ n: 1 }));
+const who = vi.hoisted(() => ({ n: 1, signedOut: false }));
 vi.mock("./auth", () => ({
-  useAuth: () => ({ session: { user: { id: `user-${who.n}`, email: "someone@example.test" } }, loading: false, recovery: false, signOut: () => Promise.resolve() }),
+  useAuth: () => ({
+    session: who.signedOut ? null : { user: { id: `user-${who.n}`, email: "someone@example.test" } },
+    loading: false,
+    recovery: false,
+    signOut: () => Promise.resolve(),
+  }),
 }));
 vi.mock("./lib/supabase", () => ({ supabase: {} }));
 
@@ -162,6 +167,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   who.n += 1;
+  who.signedOut = false;
   window.scrollTo = (() => undefined) as typeof window.scrollTo;
   Element.prototype.scrollIntoView = () => undefined;
 });
@@ -570,5 +576,95 @@ describe("the places other pages link to", () => {
     const container = await open("/", 375);
     const hrefs = [...container.querySelectorAll(".bj-rail-nav a, .bj-nav-footer a, .bj-tabbar a, .bj-more-sheet a")].map((a) => a.getAttribute("href"));
     expect(new Set(hrefs)).toEqual(new Set(["/", "/discover", "/hiring-signals", "/applications", "/practice", "/profile", "/settings", "/privacy", "/terms"]));
+  });
+});
+
+// ── the public pages, signed out ───────────────────────────────────────────
+
+// The signed-out site is the same App with no session. Its pages hold to the same promises as the signed-in
+// ones, with the one difference the design makes on purpose: the home page has a band (its hero's, which holds
+// the page's one cyan fill) and every other public page has none and lets the header's Create account be the
+// one fill. A new public page goes in this list, and it fails here until it has one primary action at most.
+
+const PUBLIC_ROUTES: readonly [route: string, title: string, band: boolean][] = [
+  ["/", "Between Jobs", true],
+  ["/how-it-works", "How it works -- Between Jobs", false],
+  ["/open-source", "Open source -- Between Jobs", false],
+  ["/privacy", "Privacy Policy -- Between Jobs", false],
+  ["/terms", "Terms of Service -- Between Jobs", false],
+];
+
+// A link to a place on the page it is on, written with the path (the router draws "/#tour" for a hash link).
+function brokenSamePageLinks(root: ParentNode, path: string): string[] {
+  return [...root.querySelectorAll("a[href*='#']")]
+    .map((link) => link.getAttribute("href") ?? "")
+    .filter((href) => href.startsWith(`${path}#`) || href.startsWith("#"))
+    .filter((href) => href.slice(href.indexOf("#") + 1).length > 0 && root.querySelector(`[id="${href.slice(href.indexOf("#") + 1)}"]`) === null);
+}
+
+describe("each public page, signed out", () => {
+  beforeEach(() => {
+    who.signedOut = true;
+  });
+
+  for (const [route, , band] of PUBLIC_ROUTES) {
+    for (const width of [375, 768, 1400]) {
+      it(`${route}, ${width}px: one main heading, exactly one primary action, ${band ? "one band" : "no band"}, no repeated ids, no links to nowhere`, async () => {
+        const container = await open(route, width);
+        expect(container.querySelectorAll("main h1"), "main headings").toHaveLength(1);
+        expect(container.querySelectorAll("h1"), "all headings of level one").toHaveLength(1);
+        // The one cyan fill: the hero band's button on the home page, the header's Create account elsewhere.
+        expect(cyanFills(container), `cyan fills ${JSON.stringify(cyanFills(container))}`).toEqual([band ? "Create an account" : "Create account"]);
+        expect(bands(container)).toHaveLength(band ? 1 : 0);
+        expect(duplicateIds(container), "duplicate ids").toEqual([]);
+        expect(brokenLocalLinks(container), "links to nowhere on the page").toEqual([]);
+        expect(brokenSamePageLinks(container, route), "same-page links to nowhere").toEqual([]);
+        expect([...container.querySelectorAll(".bj-skip-link")].map((link) => text(link))).toEqual(band ? ["Skip to next step", "Skip to content"] : ["Skip to content"]);
+      });
+    }
+  }
+
+  it("titles each public page by its own name, and no two share one", async () => {
+    const titles: string[] = [];
+    for (const [route, title] of PUBLIC_ROUTES) {
+      await open(route, 1000);
+      expect(document.title, route).toBe(title);
+      titles.push(document.title);
+    }
+    expect(new Set(titles).size).toBe(titles.length);
+  });
+
+  it("has no serious or critical axe violation on any of them, with the menu closed and open", async () => {
+    for (const [route] of PUBLIC_ROUTES) {
+      const container = await open(route, 375);
+      await expectNoSeriousA11yViolations(container);
+      click(query(container, "button.bj-public-menu-button"));
+      await expectNoSeriousA11yViolations(container);
+    }
+  });
+
+  it("draws the home page's header Create account outlined and every other page's filled", async () => {
+    for (const [route, , band] of PUBLIC_ROUTES) {
+      const container = await open(route, 1400);
+      const header = query(container, "header.bj-public-header");
+      expect(header.querySelectorAll("a.bj-button-link-primary").length, route).toBe(band ? 0 : 1);
+    }
+  });
+});
+
+describe("the explainer pages for a signed-in person who follows a shared link", () => {
+  it.each([
+    ["/how-it-works", "How it works", "How it works -- Between Jobs"],
+    ["/open-source", "Open source", "Open source -- Between Jobs"],
+  ])("draw %s inside the shell, not as a page that is not found, with no account link to offer", async (route, _name, title) => {
+    describeAccount("data");
+    const container = await open(route, 1280);
+    expect(container.querySelectorAll("main h1")).toHaveLength(1);
+    expect(text(query(container, "main h1"))).not.toBe("Page not found");
+    expect(document.title).toBe(title);
+    expect(query(container, ".bj-rail")).not.toBeNull();
+    expect([...container.querySelectorAll("main a")].some((link) => /Create account|Sign in/.test(text(link)))).toBe(false);
+    expect(cyanFills(container)).toEqual([]);
+    expect(duplicateIds(container)).toEqual([]);
   });
 });
