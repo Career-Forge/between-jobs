@@ -1,9 +1,8 @@
-/* The landing page (pages/Landing.tsx) and the pictures drawn for it (components/landing/). Tokens
- * only, with one exception: the printed resume page in the dossier picture is white, because it
- * stands for a sheet of paper, not for this app's chrome, so it carries its own colors in
- * .bj-resume-sheet. Nothing here is filled cyan: the page's one cyan fill is the next-step band's
- * button in the hero. Layout is a 1200px column that gives way to one column at 960px; every
- * flex or grid child that holds text can shrink (min-width: 0) so nothing pushes a phone sideways. */
+/* The landing page (pages/Landing.tsx) and the hero's worked example (components/landing/TrailExample.tsx);
+ * the product tour has its own sheet, tour.css. Tokens only. Nothing here is filled cyan: the page's one
+ * cyan fill is the next-step band's button in the hero. Layout is a 1200px column that gives way to one
+ * column at 960px; every flex or grid child that holds text can shrink (min-width: 0) so nothing pushes a
+ * phone sideways. */
 
 .bj-landing {
   display: flex;
@@ -31,7 +30,7 @@
   scroll-margin-top: 16px;
 }
 
-/* The hero and the circuit are the first two blocks and need no rule above them. */
+/* The hero and the tour are the first two blocks and need no rule above them. */
 .bj-landing-hero + .bj-landing-section {
   margin-top: 0;
   padding-top: 24px;
@@ -222,308 +221,6 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* The dossier chapter                                                  */
-/* ------------------------------------------------------------------ */
-
-.bj-landing-dossier {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap: 48px 56px;
-  align-items: center;
-}
-
-.bj-landing-dossier-copy {
-  min-width: 0;
-}
-
-.bj-landing-dossier-copy p:not(.bj-landing-eyebrow) {
-  margin: 24px 0 0;
-  font-size: 18px;
-  line-height: 1.6;
-  color: var(--bj-text-muted);
-}
-
-.bj-dossier-figure {
-  min-width: 0;
-  margin: 0;
-}
-
-.bj-dossier-art {
-  /* The card is in flow and sets the picture's height, so a taller card (larger text, wider letter or
-     line spacing, a narrow window) pushes the caption down instead of sliding over it. The resume
-     page is the only absolutely placed piece, behind the card, and the minimum height keeps the
-     page inside the picture when the card is short. */
-  position: relative;
-  min-height: 600px;
-  padding-top: 56px;
-  /* The card is tilted, so its corner dips a few pixels below its box. */
-  padding-bottom: 12px;
-}
-
-.bj-dossier-caption {
-  margin-top: 8px;
-  font-size: var(--bj-text-small);
-  color: var(--bj-text-muted);
-}
-
-.bj-dossier-card {
-  position: relative;
-  width: min(400px, 76%);
-  padding: 22px 22px 20px;
-  border: 1px solid var(--bj-outline);
-  border-radius: 16px;
-  background: var(--bj-surface-raised);
-  transform: rotate(-1.4deg);
-}
-
-.bj-dossier-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.bj-dossier-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 11px;
-  border: 1px solid var(--bj-border);
-  border-radius: 999px;
-  font-size: var(--bj-text-badge);
-  color: var(--bj-text);
-}
-
-.bj-dossier-chip--sample {
-  border-radius: 6px;
-  border-color: var(--bj-outline);
-}
-
-.bj-dossier-role {
-  margin: 20px 0 0;
-  font-family: var(--bj-font-display);
-  font-size: 32px;
-  line-height: 1.1;
-}
-
-.bj-dossier-company {
-  margin: 4px 0 0;
-  font-family: var(--bj-font-display);
-  font-size: 19px;
-  color: var(--bj-text-muted);
-}
-
-.bj-dossier-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 18px;
-  margin: 20px 0 0;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--bj-border);
-  font-size: var(--bj-text-control);
-  color: var(--bj-text-muted);
-}
-
-.bj-dossier-tabs span {
-  white-space: nowrap;
-}
-
-.bj-dossier-tabs span:first-child {
-  color: var(--bj-text);
-}
-
-.bj-dossier-label {
-  margin: 18px 0 0;
-  font-size: var(--bj-text-small);
-  color: var(--bj-text-muted);
-}
-
-.bj-dossier-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  margin-top: 8px;
-}
-
-.bj-dossier-bar {
-  display: block;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--bj-border);
-}
-
-.bj-dossier-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--bj-border);
-  border-radius: 10px;
-  font-size: var(--bj-text-control);
-}
-
-.bj-dossier-row-sub {
-  display: block;
-  font-size: 12.5px;
-  color: var(--bj-text-muted);
-}
-
-.bj-dossier-dot {
-  flex: none;
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--bj-outline);
-  border-radius: 50%;
-}
-
-.bj-dossier-card .bj-trail {
-  margin-top: 14px;
-}
-
-/* Width classes shared by the bars in both pictures. */
-.bj-dossier-bar--full,
-.bj-circuit-line--full {
-  width: 100%;
-}
-
-.bj-dossier-bar--wide,
-.bj-circuit-line--wide {
-  width: 88%;
-}
-
-.bj-dossier-bar--mid,
-.bj-circuit-line--mid {
-  width: 64%;
-}
-
-.bj-dossier-bar--short {
-  width: 44%;
-}
-
-.bj-dossier-bar--role {
-  width: 46%;
-}
-
-/* The printed page. Its colors belong to the paper, not to the app. */
-.bj-resume-sheet {
-  --sheet-paper: #f6f1e7;
-  --sheet-ink: #1b1718;
-  --sheet-faint: #6b625a;
-  --sheet-bar: #cfc6b8;
-  --sheet-bar-strong: #b5aba0;
-  position: absolute;
-  right: 0;
-  top: 8px;
-  width: min(380px, 70%);
-  min-height: 520px;
-  padding: 34px;
-  border-radius: 4px;
-  background: var(--sheet-paper);
-  color: var(--sheet-ink);
-  transform: rotate(2.5deg);
-}
-
-.bj-resume-name {
-  margin: 0;
-  font-family: var(--bj-font-display);
-  font-size: 24px;
-  line-height: 1.1;
-}
-
-.bj-resume-contact {
-  margin: 4px 0 0;
-  font-size: 10px;
-  color: var(--sheet-faint);
-}
-
-.bj-resume-heading {
-  margin: 20px 0 0;
-  font-size: 9.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--sheet-faint);
-}
-
-.bj-resume-sheet .bj-dossier-bars {
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.bj-resume-sheet .bj-dossier-bar {
-  height: 5px;
-  border-radius: 0;
-  background: var(--sheet-bar);
-}
-
-.bj-resume-sheet .bj-dossier-bar--role {
-  height: 6px;
-  background: var(--sheet-bar-strong);
-}
-
-/* ------------------------------------------------------------------ */
-/* The three chapters                                                   */
-/* ------------------------------------------------------------------ */
-
-.bj-landing-chapters {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 72px 0 0;
-  padding: 0;
-  list-style: none;
-  border-top: 1px solid var(--bj-border);
-}
-
-.bj-landing-chapter {
-  display: flex;
-  gap: 18px;
-  min-width: 0;
-  padding: 30px 32px 10px;
-}
-
-.bj-landing-chapter + .bj-landing-chapter {
-  border-left: 1px solid var(--bj-border);
-}
-
-.bj-landing-chapter:first-child {
-  padding-left: 0;
-}
-
-.bj-landing-chapter:last-child {
-  padding-right: 0;
-}
-
-.bj-landing-chapter-number {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border: 1.5px solid var(--bj-outline);
-  border-radius: 50%;
-  font-family: var(--bj-font-display);
-  font-size: 18px;
-}
-
-.bj-landing-chapter > div {
-  min-width: 0;
-}
-
-.bj-landing-chapter h3 {
-  margin: 0;
-  font-size: 26px;
-  line-height: 1.2;
-}
-
-.bj-landing-chapter p {
-  margin: 10px 0 0;
-  font-size: 15.5px;
-  line-height: 1.6;
-  color: var(--bj-text-muted);
-}
-
-/* ------------------------------------------------------------------ */
 /* You always submit                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -637,6 +334,14 @@
   overflow-wrap: anywhere;
 }
 
+/* The pointer to the Open source page, under the GitHub link. A plain link: the button above is the strip's. */
+.bj-landing-more {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--bj-text-body);
+}
+
 .bj-landing-facts {
   display: flex;
   flex-direction: column;
@@ -701,52 +406,6 @@
 
   .bj-trail-example-claim {
     font-size: 22px;
-  }
-
-  .bj-landing-dossier {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .bj-landing-dossier-copy p:not(.bj-landing-eyebrow) {
-    font-size: 16.5px;
-  }
-
-  /* The card is in flow, so the picture is as tall as the card; the minimum only has to cover the
-     resume page behind it. */
-  .bj-dossier-art {
-    min-height: 540px;
-    padding-top: 0;
-  }
-
-  .bj-dossier-card {
-    width: min(330px, 86%);
-  }
-
-  .bj-dossier-role {
-    font-size: 27px;
-  }
-
-  .bj-resume-sheet {
-    top: 150px;
-    width: min(250px, 56%);
-    min-height: 360px;
-    padding: 24px 22px;
-  }
-
-  .bj-landing-chapters {
-    grid-template-columns: minmax(0, 1fr);
-    margin-top: 48px;
-  }
-
-  .bj-landing-chapter,
-  .bj-landing-chapter:first-child,
-  .bj-landing-chapter:last-child {
-    padding: 24px 0 8px;
-  }
-
-  .bj-landing-chapter + .bj-landing-chapter {
-    border-left: 0;
-    border-top: 1px solid var(--bj-border);
   }
 
   .bj-landing-intro {

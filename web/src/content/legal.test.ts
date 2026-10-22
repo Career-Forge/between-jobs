@@ -1500,9 +1500,10 @@ describe("the landing page's claims", () => {
   it("do not say the product is open source and standalone, which the engine service makes untrue", () => {
     const text = landingText().toLowerCase();
     expect(text).not.toMatch(/fully standalone|open-source and fully|self-contained/);
-    // It says plainly that the generation service is separate and not in the repository yet.
-    expect(LANDING.source.text).toContain("separate");
-    expect(LANDING.source.text).toContain("not in the repository yet");
+    // It says plainly that the larger engine service the hosted version uses is not in the repository,
+    // and that what is built in is a basic writer.
+    expect(LANDING.source.text).toContain("basic resume and cover-letter writer");
+    expect(LANDING.source.text).toContain("is not in the repository");
   });
 
   it("make no superlative or comparison", () => {
@@ -1549,10 +1550,6 @@ describe("the landing page's claims", () => {
     expect(apiModule("application_status_classifier")).toContain("AUTO_TRACK_THRESHOLD =");
     // And the reply text is what goes to the AI provider.
     expect(apiModule("application_status_classifier")).toContain("Reply text:");
-  });
-
-  it("describe the three chapters of what the product does, and nothing it does not", () => {
-    expect(LANDING.chapters.map((chapter) => chapter.title)).toEqual(["Discover", "Prepare", "Keep moving"]);
   });
 });
 
