@@ -283,16 +283,20 @@ describe("removing a key", () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
-  it("keeps the keyboard in the row after the key is removed, on the row's own button", async () => {
+  it("keeps the keyboard in the row after the key is removed and the list is re-read, on the row's own button", async () => {
     on("DELETE /credentials/search/brave", undefined);
-    const { container } = mount([saved("brave")]);
+    // The page re-reads the keys after a removal, and the confirmation that had focus unmounts with it.
+    function Page() {
+      const [credentials, setCredentials] = useState([saved("brave")]);
+      return <Harness credentials={credentials} hiringSignalsEnabled={false} now={NOW} onChanged={async () => setCredentials([])} />;
+    }
+    const { container } = render(<Page />);
     click(button(row(container, "brave"), "Remove key"));
     click(button(row(container, "brave"), "Remove key"));
     await settle();
     expect(callsTo("DELETE /credentials/search/brave")).toHaveLength(1);
-    const own = query<HTMLButtonElement>(row(container, "brave"), ".bj-set-extra-actions > button");
-    expect(document.activeElement).toBe(own);
-    expect(document.activeElement).not.toBe(document.body);
+    expect(button(row(container, "brave"), "Connect Brave Search")).toBeDefined();
+    expect(document.activeElement).toBe(button(row(container, "brave"), "Connect Brave Search"));
   });
 
   it("is offered for a saved key only", () => {
