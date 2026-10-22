@@ -1,6 +1,14 @@
 import { useId, useRef, useState } from "react";
 import { apiFetch } from "../../lib/api";
-import { SEARCH_PROVIDER_CARDS, cardNote, providerNotice, type SearchProviderCardSpec } from "../../lib/providerStatus";
+import {
+  HIRING_POSTS_TITLE,
+  SEARCH_GROUPS,
+  SEARCH_PROVIDER_CARDS,
+  cardNote,
+  hiringPostsLine,
+  providerNotice,
+  type SearchProviderCardSpec,
+} from "../../lib/providerStatus";
 import { formatTrailDate, mono } from "../../lib/trail";
 import type { CredentialSummary } from "../../lib/settings/credentials";
 import { settingsFailureMessage } from "../../lib/settings/settingsErrors";
@@ -9,19 +17,28 @@ import { KeyField } from "./KeyField";
 import { RemoveKey } from "./RemoveKey";
 import "../../styles/settings.css";
 
-// "Search and data keys": the optional keys for Discover's job search, contact enrichment and
-// company research. Each is a row with a state word, what the key is for (and what saving it
-// costs), whether the integration has ever been seen working against the real service, and, for a
-// key that is saved, one trail line: who checked it and when.
+// "Optional extras": the optional keys for live job search, finding people and, for those who have
+// it, hiring posts. ONE disclosure, closed until someone opens it (or arrives by a link that names it:
+// /settings#search-keys, or one key's row, #search-brave), so a person who needs none of them is not
+// shown seven.
+//
+// The rows are grouped by what the key is for (SEARCH_GROUPS in lib/providerStatus.ts, which says how
+// each provider was placed). A connected key is one quiet line with Replace key and Remove key and a
+// trail line (who checked it and when); a key that is not connected is its name and a Connect text
+// action that opens the form. The form says what the key is for and what saving it costs, whether the
+// integration has ever been seen working against the real service, and takes the key. There is no
+// count of connected keys anywhere: nothing here is part of setup, and nothing waits on it.
+//
+// The element keeps the id `search-keys` (and its heading `search-keys-h`) because the API and the
+// pages that send people here (Discover, Hiring signals) already link to /settings#search-keys.
 //
 // A key is not set, or it is connected; there is no third state and no half-way "configured". "Not
-// set" is the words alone: a key that was never saved produced nothing, so it has no trail and no
-// glyph. The rows are drawn from SEARCH_PROVIDER_CARDS (lib/providerStatus.ts), never typed out
-// per provider.
+// set" is the absence of the Connected words: a key that was never saved produced nothing, so it has
+// no trail and no glyph. The rows are drawn from SEARCH_PROVIDER_CARDS, never typed out per provider.
 //
-// The Brave and Serper notes mention hiring posts ONLY for a person Hiring signals is enabled for
-// (cardNote): for anyone else the server treats the feature as not existing, so the page must not
-// say their key is used for it.
+// The Brave, Serper, You.com and Firecrawl notes mention hiring posts ONLY for a person Hiring signals
+// is enabled for (cardNote), and so does the "Hiring posts" line: for anyone else the server treats
+// the feature as not existing, so the page must not say their key is used for it.
 
 export interface SearchKeyRowProps {
   card: SearchProviderCardSpec;
@@ -30,14 +47,16 @@ export interface SearchKeyRowProps {
   credential: CredentialSummary | null;
   now: Date;
   onChanged: () => Promise<void>;
+  /** Draw the key form from the start (a static render of the form has no click to open it). */
+  initiallyOpen?: boolean;
 }
 
-export function SearchKeyRow({ card, hiringSignalsEnabled, credential, now, onChanged }: SearchKeyRowProps) {
+export function SearchKeyRow({ card, hiringSignalsEnabled, credential, now, onChanged, initiallyOpen = false }: SearchKeyRowProps) {
   const { title, provider, placeholder } = card;
   const note = cardNote(card, hiringSignalsEnabled);
   // Whether this provider has had a successful run against the real service (lib/providerStatus.ts).
   const notice = providerNotice(provider);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(initiallyOpen);
   const [secret, setSecret] = useState("");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -77,48 +96,74 @@ export function SearchKeyRow({ card, hiringSignalsEnabled, credential, now, onCh
     }
   }
 
+  const connected = credential !== null;
+  const formId = useId();
   return (
-    <li className="bj-set-item" id={`search-${provider}`}>
-      <div className="bj-set-row">
-        <div className="bj-set-row-main">
-          <div className="bj-set-row-title">
-            <h3>{title}</h3>
-            {credential !== null ? <span className="bj-badge-emerald">{"✓"} Connected</span> : <span className="bj-badge-muted">Not set</span>}
-          </div>
-          <p className="bj-set-note">{note}</p>
-          {notice !== null && (
-            <p className="bj-set-hint">
-              <span className="bj-badge-muted">{notice.label}</span> {notice.detail}
-              {notice.help !== null && ` ${notice.help}`}
-            </p>
-          )}
-          {credential !== null && (
-            <StaticTrailLine trail={{ glyph: "code", actor: "Checked by code on save", basis: card.checkNote, when: when === null ? null : mono(when) }} />
-          )}
-        </div>
-        <div className="bj-set-row-actions">
-          <button ref={opener} type="button" aria-expanded={adding} onClick={() => setAdding((open) => !open)}>
-            {credential === null ? "Add key" : "Replace key"}
+    <li className="bj-set-extra" id={`search-${provider}`}>
+      <div className="bj-set-extra-line">
+        <h4 className="bj-set-extra-name">{title}</h4>
+        {connected && (
+          <span className="bj-set-extra-state">
+            <span className="bj-set-extra-glyph" aria-hidden="true">
+              {"✓"}
+            </span>{" "}
+            Connected
+          </span>
+        )}
+        <div className="bj-set-extra-actions">
+          <button
+            ref={opener}
+            type="button"
+            className="bj-quiet"
+            aria-expanded={adding}
+            aria-controls={adding ? formId : undefined}
+            onClick={() => setAdding((open) => !open)}
+          >
+            {connected ? (
+              "Replace key"
+            ) : (
+              <>
+                Connect<span className="bj-visually-hidden"> {title}</span>
+              </>
+            )}
           </button>
-          <a href={card.getKeyUrl} target="_blank" rel="noopener noreferrer">
-            {credential === null ? "Get a key" : "Open key page"}
-            <span className="bj-visually-hidden"> at {title} (opens in a new tab)</span>
-          </a>
-          {credential !== null && <RemoveKey what={`${title} key`} holder={title} busy={removing} onRemove={() => void remove()} />}
+          {connected && <RemoveKey what={`${title} key`} holder={title} busy={removing} onRemove={() => void remove()} />}
         </div>
       </div>
+      {connected && (
+        <StaticTrailLine trail={{ glyph: "code", actor: "Checked by code on save", basis: card.checkNote, when: when === null ? null : mono(when) }} />
+      )}
+      {connected && notice !== null && (
+        <p className="bj-set-hint">
+          <span className="bj-badge-muted">{notice.label}</span> {notice.detail}
+          {notice.help !== null && ` ${notice.help}`}
+        </p>
+      )}
       {adding && (
         <form
+          id={formId}
           className="bj-set-card bj-set-inline-form"
           method="post"
           noValidate
+          aria-label={connected ? `Replace your ${title} key` : `Connect ${title}`}
           onSubmit={(event) => {
             event.preventDefault();
             void save();
           }}
         >
+          <p className="bj-set-note">{note}</p>
+          {!connected && notice !== null && (
+            <p className="bj-set-hint">
+              <span className="bj-badge-muted">{notice.label}</span> {notice.detail}
+              {notice.help !== null && ` ${notice.help}`}
+            </p>
+          )}
+          <a className="bj-set-getkey" href={card.getKeyUrl} target="_blank" rel="noopener noreferrer">
+            Get a key at {title}
+            <span className="bj-visually-hidden"> (opens in a new tab)</span>
+          </a>
           <KeyField
-            label={credential === null ? `${title} API key` : `New ${title} API key`}
+            label={connected ? `New ${title} API key` : `${title} API key`}
             value={secret}
             onChange={setSecret}
             placeholder={placeholder}
@@ -136,6 +181,7 @@ export function SearchKeyRow({ card, hiringSignalsEnabled, credential, now, onCh
                 setAdding(false);
                 setSecret("");
                 setError(null);
+                opener.current?.focus();
               }}
             >
               Cancel
@@ -157,33 +203,56 @@ export interface SearchKeysSectionProps {
   hiringSignalsEnabled: boolean;
   now: Date;
   onChanged: () => Promise<void>;
+  /** Whether the disclosure is open. The page holds it so a link to a key inside can open it. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
-export function SearchKeysSection({ credentials, hiringSignalsEnabled, now, onChanged }: SearchKeysSectionProps) {
-  const rows = SEARCH_PROVIDER_CARDS.map((card) => ({
-    card,
-    credential: credentials.find((row) => row.service === "search" && row.provider === card.provider) ?? null,
-  }));
-  const connected = rows.filter((row) => row.credential !== null).length;
+export function SearchKeysSection({ credentials, hiringSignalsEnabled, now, onChanged, open, onOpenChange }: SearchKeysSectionProps) {
+  const bodyId = useId();
   return (
-    <section id="search-keys" className="bj-set-section" aria-labelledby="search-keys-h">
-      <div className="bj-set-section-head">
-        <h2 id="search-keys-h" tabIndex={-1}>
-          Search and data keys
-        </h2>
-        <p className="bj-set-count">
-          {connected} of {rows.length} connected
-        </p>
-      </div>
+    <section id="search-keys" className="bj-set-section bj-extras" aria-labelledby="search-keys-h">
+      <h2 id="search-keys-h" tabIndex={-1}>
+        <button type="button" className="bj-extras-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => onOpenChange(!open)}>
+          Optional extras
+          <span className="bj-extras-chevron" aria-hidden="true">
+            {"›"}
+          </span>
+        </button>
+      </h2>
       <p className="bj-set-lede">
-        Optional. Each key turns on a part of Discover or of contact research, and each note says what saving the key costs. Nothing here is used until
-        you save a key.
+        Discover works without these. They add {hiringSignalsEnabled ? "live job search, people lookup and hiring posts" : "live job search and people lookup"}.
       </p>
-      <ul className="bj-set-list" aria-label="Search and data keys">
-        {rows.map(({ card, credential }) => (
-          <SearchKeyRow key={card.provider} card={card} hiringSignalsEnabled={hiringSignalsEnabled} credential={credential} now={now} onChanged={onChanged} />
+      {/* Always drawn and hidden while closed, so a link to one key (or a form half-filled) is not lost by closing. */}
+      <div id={bodyId} className="bj-extras-body" hidden={!open}>
+        {SEARCH_GROUPS.map((group) => (
+          <section key={group.id} className="bj-set-group" aria-labelledby={`${bodyId}-${group.id}`}>
+            <h3 id={`${bodyId}-${group.id}`} className="bj-set-group-title">
+              {group.title}
+            </h3>
+            <ul className="bj-set-extras" aria-label={group.title}>
+              {SEARCH_PROVIDER_CARDS.filter((card) => card.group === group.id).map((card) => (
+                <SearchKeyRow
+                  key={card.provider}
+                  card={card}
+                  hiringSignalsEnabled={hiringSignalsEnabled}
+                  credential={credentials.find((row) => row.service === "search" && row.provider === card.provider) ?? null}
+                  now={now}
+                  onChanged={onChanged}
+                />
+              ))}
+            </ul>
+          </section>
         ))}
-      </ul>
+        {hiringSignalsEnabled && (
+          <section className="bj-set-group" aria-labelledby={`${bodyId}-hiring`}>
+            <h3 id={`${bodyId}-hiring`} className="bj-set-group-title">
+              {HIRING_POSTS_TITLE}
+            </h3>
+            <p className="bj-set-hint">{hiringPostsLine()}</p>
+          </section>
+        )}
+      </div>
     </section>
   );
 }

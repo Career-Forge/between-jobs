@@ -24,6 +24,9 @@
 // The band never sends a person to a particular provider unless OpenRouter is the answer: it is the
 // one provider with a one-click connection, and the page offers the others one chip below it.
 //
+// The optional search and data keys are not part of this page's next step and are not counted in any
+// `why` line: nothing waits on them, and a count of them read as a setup score.
+//
 // S3 is session-only: "chosen just now" is known only in the visit that chose the model, like the
 // workspace's "PDF downloaded this session". After a reload the page shows S4.
 
@@ -37,7 +40,6 @@ export type SettingsLlm =
 
 export interface SettingsFacts {
   llm: SettingsLlm;
-  search: { connected: number; total: number };
   /** The name of the provider whose model was chosen on this visit, or null. */
   chosenHere: string | null;
 }
@@ -46,13 +48,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isCount(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
-
 export function isSettingsFacts(value: unknown): value is SettingsFacts {
-  if (!isRecord(value) || !isRecord(value.llm) || !isRecord(value.search)) return false;
-  if (!isCount(value.search.connected) || !isCount(value.search.total)) return false;
+  if (!isRecord(value) || !isRecord(value.llm)) return false;
   if (value.chosenHere !== null && typeof value.chosenHere !== "string") return false;
   const llm = value.llm;
   switch (llm.state) {
@@ -127,7 +124,7 @@ const S3: NextStepRow<SettingsFacts> = {
     return {
       sentence: "Your model is set. Search for a role next.",
       action: { kind: "link", label: "Go to Discover", to: "/discover" },
-      why: [`${facts.chosenHere} model chosen this visit`, `${facts.search.connected} of ${facts.search.total} search keys connected`],
+      why: [`${facts.chosenHere} model chosen this visit`],
     };
   },
 };
@@ -157,7 +154,7 @@ const S4: NextStepRow<SettingsFacts> = {
     return {
       sentence: "Your model is set. Everything else here is optional.",
       action: null,
-      why: [readyWhy(facts.llm.names), `${facts.search.connected} of ${facts.search.total} search keys connected`],
+      why: [readyWhy(facts.llm.names)],
     };
   },
 };

@@ -22,6 +22,7 @@ import {
   type SearchProviderCardSpec,
 } from "./providerStatus";
 import { textOfMarkup } from "../testing/markup";
+import { SEARCH_KEY_PROVIDERS } from "./setupReads";
 
 // The real API client pulls in the Supabase client, which throws at import time without env
 // vars; nothing in a static render reaches a network anyway. The page also reads who is signed
@@ -144,7 +145,7 @@ describe("the cards of the page", () => {
   });
 
   it("are drawn by the page from the registry, not from a row typed out per provider", () => {
-    expect(searchKeysSource).toContain("SEARCH_PROVIDER_CARDS.map((card) => ({");
+    expect(searchKeysSource).toContain("SEARCH_PROVIDER_CARDS.filter((card) => card.group === group.id).map((card) => (");
     expect(searchKeysSource).not.toMatch(/<SearchKeyRow\s+title=/);
     expect(searchKeysSource).toContain("const notice = providerNotice(provider);");
   });
@@ -164,7 +165,7 @@ const NOW = new Date("2026-10-18T12:00:00Z");
 function renderCard(card: SearchProviderCardSpec, hiringSignalsEnabled = false): string {
   return renderToStaticMarkup(
     <ul>
-      <SearchKeyRow card={card} hiringSignalsEnabled={hiringSignalsEnabled} credential={null} now={NOW} onChanged={async () => {}} />
+      <SearchKeyRow card={card} hiringSignalsEnabled={hiringSignalsEnabled} credential={null} now={NOW} onChanged={async () => {}} initiallyOpen />
     </ul>,
   );
 }
@@ -183,9 +184,9 @@ describe("a provider's card", () => {
       expect(html).toContain(`<span class="bj-badge-muted">${NOT_VERIFIED_LIVE_LABEL}</span>`);
       expect(NOT_VERIFIED_LIVE_LABEL).toBe("Not yet verified live");
       expect(textOfMarkup(html)).toContain(NOT_VERIFIED_LIVE_DETAIL);
-      // still the row it was: the setup state is a word, and the key form opens from Add key
-      expect(html).toContain("Not set");
-      expect(html).toContain("Add key");
+      // not connected: no Connected words, and the form it opens from Connect is what is drawn here
+      expect(html).not.toContain("Connected");
+      expect(html).toContain("Connect");
     },
   );
 
@@ -209,6 +210,7 @@ describe("a provider's card", () => {
   it("draws a provider's own caveat under the general notice, when its card has one", () => {
     const html = renderCard({
       title: "JSearch",
+      group: "jobs",
       provider: "jsearch",
       placeholder: "x",
       note: "A note.",
@@ -251,7 +253,6 @@ describe("a provider's card", () => {
       </ul>,
     );
     expect(html).toContain("Connected");
-    expect(html).not.toContain("Not set");
     expect(html).toContain("Not yet verified live");
   });
 });
@@ -290,10 +291,8 @@ describe("the notes about hiring posts", () => {
     for (const card of SEARCH_PROVIDER_CARDS.filter((candidate) => candidate.hiringNote === undefined)) {
       expect(cardNote(card, true), card.provider).toBe(card.note);
     }
-    expect(SEARCH_PROVIDER_CARDS.filter((card) => card.hiringNote !== undefined).map((card) => card.provider)).toEqual([
-      "brave",
-      "serper",
-    ]);
+    // The four providers Hiring signals searches with (lib/setupReads.ts SEARCH_KEY_PROVIDERS).
+    expect(SEARCH_PROVIDER_CARDS.filter((card) => card.hiringNote !== undefined).map((card) => card.provider).sort()).toEqual([...SEARCH_KEY_PROVIDERS].sort());
   });
 
   it("is asked of the page's own reading of the person's status, once, and handed to every card", () => {

@@ -35,11 +35,41 @@
 //
 // Pure module: no React, no network.
 
-import { PROVIDER_NAMES } from "./providerNames";
+import { PROVIDER_NAMES, providerDisplayName } from "./providerNames";
+import { SEARCH_KEY_PROVIDERS } from "./setupReads";
+
+// What a key unlocks, as the Settings page groups its optional extras. A provider is drawn once, under
+// the first thing it is used for; its note names every use (a test reads the server's code for them).
+//
+//   jobs    Discover's live job search: `search_jobs` in search_providers.py asks every one of You.com,
+//           Firecrawl, Brave and Serper that has a key.
+//   people  contact enrichment and lookup: Apollo and Hunter (contact_research_routes.py) and Exa
+//           (contact_enrichment.py). They look a person up and run no job search.
+//
+// HIRING POSTS IS NOT A GROUP OF KEYS. Hiring signals searches with the same four providers as live job
+// search (hiring_signal_search.py), so no key is for hiring posts alone: it is a line under the groups,
+// shown only to a person Hiring signals is enabled for, that says which keys it uses.
+export type SearchGroupId = "jobs" | "people";
+
+export const SEARCH_GROUPS: readonly { id: SearchGroupId; title: string }[] = [
+  { id: "jobs", title: "Live job search" },
+  { id: "people", title: "Find people" },
+];
+
+export const HIRING_POSTS_TITLE = "Hiring posts";
+
+// What the "Hiring posts" line says, for a person Hiring signals is enabled for: which keys it runs on.
+// The names come from the same list Discover and Hiring signals count a search key by.
+export function hiringPostsLine(): string {
+  const names = SEARCH_KEY_PROVIDERS.map(providerDisplayName);
+  return `Hiring signals uses the live job search keys: any one of ${names.slice(0, -1).join(", ")} or ${names[names.length - 1]} is enough.`;
+}
 
 export interface SearchProviderCardSpec {
   // The card's heading, as the person sees it.
   title: string;
+  // Which group of the optional extras the row sits in.
+  group: SearchGroupId;
   // The server's name for the provider (credentials_routes.py): the key it is saved under.
   provider: string;
   placeholder: string;
@@ -66,6 +96,8 @@ export function cardNote(card: SearchProviderCardSpec, hiringSignalsEnabled: boo
   return hiringSignalsEnabled && card.hiringNote !== undefined ? card.hiringNote : card.note;
 }
 
+const YOU_VALIDATION = "Validating costs a small real charge (~$0.005) -- a live search call, since You.com has no free key-check endpoint.";
+const FIRECRAWL_VALIDATION = "Validated against your account's credit usage -- doesn't spend a search/scrape credit.";
 const BRAVE_VALIDATION = "Validating runs one tiny real search call -- Brave has no free key-check endpoint.";
 const SERPER_VALIDATION = "Validating runs one 1-credit search call -- Serper has no free key-check endpoint.";
 
@@ -75,22 +107,27 @@ const SERPER_VALIDATION = "Validating runs one 1-credit search call -- Serper ha
 export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
   {
     title: PROVIDER_NAMES.you_com,
+    group: "jobs",
     provider: "you_com",
     placeholder: "your-you-com-key",
     getKeyUrl: "https://you.com/platform/api-keys",
     checkNote: "one small search call",
-    note: "Validating costs a small real charge (~$0.005) -- a live search call, since You.com has no free key-check endpoint.",
+    note: `Used for job search on Discover, and to research companies and contacts. ${YOU_VALIDATION}`,
+    hiringNote: `Used for job search on Discover, to find hiring posts on an application, and to research companies and contacts. ${YOU_VALIDATION}`,
   },
   {
     title: PROVIDER_NAMES.firecrawl,
+    group: "jobs",
     provider: "firecrawl",
     placeholder: "fc-...",
     getKeyUrl: "https://www.firecrawl.dev/app/api-keys",
     checkNote: "a free credit-usage read",
-    note: "Validated against your account's credit usage -- doesn't spend a search/scrape credit.",
+    note: `Used for job search on Discover, and to research companies and contacts. ${FIRECRAWL_VALIDATION}`,
+    hiringNote: `Used for job search on Discover, to find hiring posts on an application, and to research companies and contacts. ${FIRECRAWL_VALIDATION}`,
   },
   {
     title: PROVIDER_NAMES.brave,
+    group: "jobs",
     provider: "brave",
     placeholder: "your-brave-key",
     getKeyUrl: "https://api-dashboard.search.brave.com/documentation/guides/authentication",
@@ -100,6 +137,7 @@ export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
   },
   {
     title: PROVIDER_NAMES.serper,
+    group: "jobs",
     provider: "serper",
     placeholder: "your-serper-key",
     getKeyUrl: "https://serper.dev/api-keys",
@@ -109,6 +147,7 @@ export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
   },
   {
     title: PROVIDER_NAMES.apollo,
+    group: "people",
     provider: "apollo",
     placeholder: "your-apollo-key",
     getKeyUrl: "https://docs.apollo.io/docs/create-api-key",
@@ -117,6 +156,7 @@ export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
   },
   {
     title: PROVIDER_NAMES.hunter,
+    group: "people",
     provider: "hunter",
     placeholder: "your-hunter-key",
     getKeyUrl: "https://hunter.io/api-keys",
@@ -125,6 +165,7 @@ export const SEARCH_PROVIDER_CARDS: readonly SearchProviderCardSpec[] = [
   },
   {
     title: PROVIDER_NAMES.exa,
+    group: "people",
     provider: "exa",
     placeholder: "your-exa-key",
     getKeyUrl: "https://dashboard.exa.ai/api-keys",

@@ -221,7 +221,7 @@ describe("the global and landing rows", () => {
       inApp({
         page: "settings",
         credentials: ready({}),
-        facts: { llm: { state: "none" }, search: { connected: 0, total: 7 }, chosenHere: null },
+        facts: { llm: { state: "none" }, chosenHere: null },
       }),
     );
     expect([today.rowId, settings.rowId]).toEqual(["G3", "S1"]);
