@@ -23,7 +23,7 @@ export const FORBIDDEN: [string, RegExp][] = [
   ["automation the product refuses", /\bauto-?appl\w*|\bone-click appl\w*|\bapplies for you\b|\bsubmits for you\b|\bsends for you\b/i],
   ["a platform the extension does not support", /\bworkday\b|\bicims\b|\blinkedin easy apply\b/i],
   ["the product called a studio (it is always 'Between Jobs')", /\bstudio\b/i],
-  ["a promise that every block or piece of work carries a provenance line, which only some pages draw", /every (?:block|result|piece|surface)\b[^.]*\b(?:trail|came from)|where each piece came from/i],
+  ["a promise that every block or piece of work carries a provenance line, which only some pages draw", /every (?:block|result|piece|surface)\b[^.]*\b(?:trail|came from)|where each piece came from|\b(?:in|at) every step\b[^.]*\b(?:line|trail|who made it)/i],
   ["every result rated, when only a batch is and none is without a model key", /\b(?:each|every) (?:result|listing)\b[^.]*\b(?:rated|scored|fits)\b/i],
   ["the brand dot, which is a mark and never copy", /\bred dot\b/i],
 ];

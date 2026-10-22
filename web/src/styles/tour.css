@@ -132,12 +132,19 @@ button.bj-tour-tab:focus-visible {
 }
 
 /* The panel's trail line: under both columns, the full width of the panel (the section's 680px measure is for prose). */
-.bj-landing-section .bj-tour p.bj-tour-trail {
+.bj-landing-section .bj-tour p.bj-tour-trail,
+.bj-landing-section .bj-tour p.bj-tour-not-checked {
   max-width: none;
+  margin: 0;
 }
 
-.bj-tour-trail {
+/* The panel's foot, under both columns: the trail line, then what nobody checked. */
+.bj-tour-foot {
   grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
   padding-top: 16px;
   border-top: 1px solid var(--bj-border);
 }
