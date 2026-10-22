@@ -317,6 +317,50 @@ describe("when the page cannot tell which model is the default", () => {
     expect(text(query(container, "#default-model"))).toContain("can't tell which one is your default");
   });
 
+  it("does not name a default for the last key standing after two removals from three: the first removal left two, so the API deleted the default", async () => {
+    describeAccount([
+      key("openai", { model: "g", setup_state: "ready" }),
+      key("openrouter", { model: "m", setup_state: "ready" }),
+      key("anthropic", { model: "c", setup_state: "ready" }),
+    ]);
+    const { container } = page();
+    await settle();
+    on("DELETE /credentials/llm/openai", undefined);
+    on("GET /credentials", [key("openrouter", { model: "m", setup_state: "ready" }), key("anthropic", { model: "c", setup_state: "ready" })]);
+    click(buttonIn(query(container, "#provider-openai"), "Remove key"));
+    click(buttonIn(query(container, "#provider-openai"), "Remove key"));
+    await settle();
+    on("DELETE /credentials/llm/anthropic", undefined);
+    on("GET /credentials", [key("openrouter", { model: "m", setup_state: "ready" })]);
+    click(buttonIn(query(container, "#provider-anthropic"), "Remove key"));
+    click(buttonIn(query(container, "#provider-anthropic"), "Remove key"));
+    await settle();
+    // One key is ready, but the server has no default preference: it must not be called the default.
+    expect(container.querySelector(".bj-set-default-tag")).toBeNull();
+    expect(text(band(container))).not.toContain(BAND_SET);
+    expect(text(query(container, "#default-model"))).toContain("can't tell whether it is your default");
+    // Choosing it says so: the page then knows.
+    on("PUT /credentials/llm/openrouter/model", key("openrouter", { model: "m", setup_state: "ready" }));
+    const { choose } = await import("../testing/forms");
+    choose(query<HTMLSelectElement>(query(container, "#default-model"), "select"), "openrouter");
+    click(buttonIn(query(container, "#default-model"), "Make default"));
+    await settle();
+    expect(text(query(query(container, "#openrouter"), ".bj-set-default-tag"))).toBe("Default");
+  });
+
+  it("still names the remaining key the default after one removal from two, which the API answers by repointing the default", async () => {
+    describeAccount([key("openai", { model: "g", setup_state: "ready" }), key("openrouter", { model: "m", setup_state: "ready" })]);
+    const { container } = page();
+    await settle();
+    on("DELETE /credentials/llm/openai", undefined);
+    on("GET /credentials", [key("openrouter", { model: "m", setup_state: "ready" })]);
+    click(buttonIn(query(container, "#provider-openai"), "Remove key"));
+    click(buttonIn(query(container, "#provider-openai"), "Remove key"));
+    await settle();
+    expect(text(query(query(container, "#openrouter"), ".bj-set-default-tag"))).toBe("Default");
+    expect(text(band(container))).toContain(BAND_SET);
+  });
+
   it("still says the model is set when it is the only key", async () => {
     describeAccount([key("openrouter", { model: "m", setup_state: "ready" })]);
     const { container } = page();

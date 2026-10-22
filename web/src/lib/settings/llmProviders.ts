@@ -165,8 +165,10 @@ export function llmRows(rows: readonly CredentialSummary[]): CredentialSummary[]
 //   - a single ready key is the default, the API repoints the default there when the other key is
 //     removed and a model choice always sets it, unless another key is waiting for a model: saving a
 //     key without one clears a default that named it, and the API does not repoint it there;
-//   - with several ready keys, or any reason to think the default was cleared (`defaultCleared`),
-//     it is not known, and nothing here guesses.
+//   - with several ready keys, or any reason to think the default was cleared (`defaultCleared`: a
+//     replaced key lost its model, or a ready key was removed while two or more others stayed ready,
+//     which the API answers by deleting the default, not repointing it), it is not known, and nothing
+//     here guesses.
 export function knownDefaultProvider(rows: readonly CredentialSummary[], chosenHere: string | null, defaultCleared: boolean): string | null {
   if (defaultCleared) return null;
   const ready = rows.filter((row) => row.service === "llm" && llmSetupState(row) === "ready" && row.model !== null);
