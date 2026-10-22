@@ -285,7 +285,7 @@ describe("Contacts: the lookups, one person at a time, on the person's own credi
     click(buttonNamed(container, "Find work email"));
     await settle();
     const link = query<HTMLAnchorElement>(row(container), ".bj-setup-notice a");
-    expect(link.getAttribute("href")).toBe("/settings");
+    expect(link.getAttribute("href")).toBe("/settings#search-keys");
     expect(text(link)).toBe("Add an Apollo or Hunter key in Settings");
     expect([...row(container).querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
   });
@@ -466,7 +466,7 @@ describe("Contacts: running", () => {
     await settle();
     click(buttonNamed(container, "Find contacts"));
     await settle();
-    expect(query<HTMLAnchorElement>(container, ".bj-setup-notice a").getAttribute("href")).toBe("/settings");
+    expect(query<HTMLAnchorElement>(container, ".bj-setup-notice a").getAttribute("href")).toBe("/settings#search-keys");
     expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
   });
 

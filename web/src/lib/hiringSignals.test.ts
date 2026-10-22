@@ -616,7 +616,7 @@ describe("classifyFailure", () => {
     ).toEqual({
       kind: "setup_required",
       message: "Add a search key.",
-      linkTo: "/settings",
+      linkTo: "/settings#search-keys",
       linkLabel: "Add a search key in Settings",
     });
     // A path that is not one of the app's own routes is dropped, not passed on.

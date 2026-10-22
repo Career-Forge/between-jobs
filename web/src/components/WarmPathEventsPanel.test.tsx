@@ -120,7 +120,7 @@ describe("Events", () => {
     await settle();
     click(buttonNamed(container, "Find events"));
     await settle();
-    expect(query<HTMLAnchorElement>(container, ".bj-setup-notice a").getAttribute("href")).toBe("/settings");
+    expect(query<HTMLAnchorElement>(container, ".bj-setup-notice a").getAttribute("href")).toBe("/settings#search-keys");
     expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
     expect(container.querySelector(".bj-trail")).toBeNull();
   });

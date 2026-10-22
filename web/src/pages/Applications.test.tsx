@@ -724,7 +724,7 @@ describe("tracking a job", () => {
     expect(text(notice)).toBe(
       "Add a Firecrawl key to fetch a job posting from a URL not already in the registry. You can also paste the posting instead.Missing:Add a Firecrawl key in Settings",
     );
-    expect(query(notice, "a").getAttribute("href")).toBe("/settings");
+    expect(query(notice, "a").getAttribute("href")).toBe("/settings#search-firecrawl");
     // Announced on arrival, like the failure beside it: the callout sits in an alert.
     expect(notice.closest("[role='alert']")).not.toBeNull();
     expect(form.querySelector(".bj-state--failure")).toBeNull();
