@@ -85,12 +85,157 @@ beforeEach(() => {
   reset();
 });
 
+describe("the card says what is connected and what is missing, in plain words", () => {
+  it("asks to connect an AI model when nothing is connected, with no technical word", () => {
+    const { container } = mount({ credentials: [] });
+    expect(text(query(container, ".bj-set-statusline"))).toContain("Connect an AI model");
+    expect(container.querySelector('ul[aria-label="Connected model providers"]')).toBeNull();
+    expect(text(container)).not.toMatch(/setup_state|needs_model|needs_key|\bLLM\b|model key set/);
+  });
+
+  it("is titled AI model, under the id the first-run link points at", () => {
+    const { container } = mount({ credentials: [] });
+    expect(text(query(container, "#ai-provider-h"))).toBe("AI model");
+    expect(query(container, "#ai-provider").getAttribute("aria-labelledby")).toBe("ai-provider-h");
+  });
+
+  it("shows every connected provider as one row, each saying its own state", () => {
+    const { container } = mount({
+      credentials: [row("openrouter", { model: "vendor/a", setup_state: "ready" }), row("openai", { setup_state: "needs_model" }), row("anthropic", { is_validated: false, setup_state: "needs_key" })],
+    });
+    const titles = [...container.querySelectorAll('ul[aria-label="Connected model providers"] > li h3')].map((h) => text(h));
+    expect(titles).toEqual(["OpenRouter, model chosen", "Choose a model for OpenAI", "Add a key for Anthropic"]);
+    expect(container.querySelector(".bj-set-statusline")).toBeNull();
+  });
+
+  it("marks the green check for a chosen model and the gold diamond for what is left, as decoration", () => {
+    const { container } = mount({ credentials: [row("openrouter", { model: "m", setup_state: "ready" }), row("openai", { setup_state: "needs_model" })] });
+    const glyphs = [...container.querySelectorAll(".bj-set-row-title .bj-set-status-glyph")];
+    expect(glyphs.map((g) => [g.textContent, g.getAttribute("aria-hidden")])).toEqual([["✓", "true"], ["◆", "true"]]);
+  });
+
+  it("says which provider is the default when the page can know it, and none when it cannot", () => {
+    const one = mount({ credentials: [row("openrouter", { model: "m", setup_state: "ready" })] });
+    expect(text(query(one.container, "#openrouter .bj-set-default-tag"))).toBe("Default");
+    one.unmount();
+    const several = mount({ credentials: [row("openrouter", { model: "m", setup_state: "ready" }), row("openai", { model: "n", setup_state: "ready" })] });
+    expect(several.container.querySelector(".bj-set-default-tag")).toBeNull();
+    several.unmount();
+    const chosen = mount({ credentials: [row("openrouter", { model: "m", setup_state: "ready" }), row("openai", { model: "n", setup_state: "ready" })], chosenHere: "openai" });
+    expect([...chosen.container.querySelectorAll(".bj-set-default-tag")].map((t) => t.closest("li")?.id)).toEqual(["provider-openai"]);
+  });
+
+  it("keeps Replace key and Remove key as quiet text buttons on the row", () => {
+    const { container } = mount({ credentials: [row("openai", { model: "m", setup_state: "ready" })] });
+    const item = query(container, "#provider-openai");
+    expect(button(item, "Replace key").classList.contains("bj-quiet")).toBe(true);
+    expect(button(item, "Remove key").classList.contains("bj-quiet")).toBe(true);
+  });
+});
+
+describe("a provider's data-location side-note", () => {
+  const QWEN = "Qwen Cloud runs on Alibaba Cloud. What you send goes to the region you pick, and some regions are in mainland China.";
+
+  it("is drawn under the Qwen Cloud form for the global region, as plain text and not an alert", () => {
+    const { container } = mount({ credentials: [] });
+    click(button(container.querySelector(".bj-set-chips") as Element, "Qwen Cloud"));
+    const note = query(container, "form .bj-set-sidenote");
+    expect(text(note)).toBe(`◆ Note ${QWEN}`);
+    expect(note.getAttribute("role")).toBeNull();
+    expect(note.closest('[role="alert"], [role="alertdialog"], [role="dialog"]')).toBeNull();
+    expect(query(note, ".bj-set-sidenote-label").textContent).toBe("Note");
+    expect(note.querySelector(".bj-trail-glyph--gold")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("is named by the key field, so a screen reader reads it with the field", () => {
+    const { container } = mount({ credentials: [] });
+    click(button(container.querySelector(".bj-set-chips") as Element, "Qwen Cloud"));
+    const note = query(container, "form .bj-set-sidenote");
+    const field = query<HTMLInputElement>(container, 'input[placeholder="Paste your key"]');
+    expect((field.getAttribute("aria-describedby") ?? "").split(" ")).toContain(note.id);
+    expect(note.id).not.toBe("");
+  });
+
+  it("follows the region picked: a region in mainland China is named as such, a region elsewhere gets the general note only", () => {
+    const withBeijing = parseProviderCatalog({
+      providers: [
+        {
+          id: "qwen",
+          name: "Qwen Cloud",
+          key_hint: "",
+          get_key_url: null,
+          manage_url: null,
+          model_list: "best_effort",
+          regions: [
+            { id: "qwencloud", name: "QwenCloud", needs_workspace: false, get_key_url: null },
+            { id: "cn-beijing", name: "Alibaba Cloud Model Studio, China (Beijing)", needs_workspace: true, get_key_url: null },
+            { id: "cn-hongkong", name: "Alibaba Cloud Model Studio, China (Hong Kong)", needs_workspace: true, get_key_url: null },
+            { id: "ap-southeast-1", name: "Alibaba Cloud Model Studio, Singapore", needs_workspace: true, get_key_url: null },
+          ],
+        },
+      ],
+    })!;
+    const { container } = mount({ credentials: [], catalog: { kind: "ready", providers: withBeijing } });
+    const note = () => text(query(container, "form .bj-set-sidenote"));
+    const region = query<HTMLSelectElement>(container, "form select");
+    expect(note()).toBe(`◆ Note ${QWEN}`);
+    choose(region, "cn-beijing");
+    expect(note()).toBe(`◆ Note ${QWEN} The one you picked is in mainland China.`);
+    choose(region, "cn-hongkong");
+    expect(note()).toBe(`◆ Note ${QWEN}`);
+    choose(region, "ap-southeast-1");
+    expect(note()).toBe(`◆ Note ${QWEN}`);
+    choose(region, "cn-beijing");
+    expect(note()).toContain("mainland China. The one you picked");
+  });
+
+  it("is drawn under DeepSeek's form and says where it is operated, as plain text", () => {
+    const withDeepSeek = parseProviderCatalog({
+      providers: [
+        { id: "openrouter", name: "OpenRouter", key_hint: "", get_key_url: null, manage_url: null, model_list: "live" },
+        { id: "deepseek", name: "DeepSeek", key_hint: "A key from the DeepSeek platform.", get_key_url: "https://platform.deepseek.com/api_keys", manage_url: null, model_list: "live" },
+      ],
+    })!;
+    const { container } = mount({ credentials: [], catalog: { kind: "ready", providers: withDeepSeek } });
+    click(button(container.querySelector(".bj-set-chips") as Element, "DeepSeek"));
+    const note = query(container, "form .bj-set-sidenote");
+    expect(text(note)).toContain("DeepSeek is operated by a company based in China.");
+    expect(text(note)).toContain("People's Republic of China");
+    expect(note.getAttribute("role")).toBeNull();
+  });
+
+  it.each(["openrouter", "openai", "anthropic"])("is absent for %s, on its form and on its row", (id) => {
+    const form = mount({ credentials: [] });
+    click(button(form.container.querySelector(".bj-set-chips") as Element, providers.find((p) => p.id === id)!.name));
+    expect(form.container.querySelector(".bj-set-sidenote")).toBeNull();
+    form.unmount();
+    const connected = mount({ credentials: [row(id, { model: "m", setup_state: "ready" })] });
+    expect(connected.container.querySelector(".bj-set-sidenote")).toBeNull();
+  });
+
+  it("sits under a connected Qwen row too, for the region the key was saved with, and moves into the form while it is being replaced", () => {
+    const saved = row("qwen", { model: "m", setup_state: "ready", base_url: "https://maas.qwencloudapi.com/compatible-mode/v1" });
+    const { container } = mount({ credentials: [saved] });
+    const item = query(container, "#provider-qwen");
+    expect(text(query(item, ".bj-set-sidenote"))).toContain(QWEN);
+    click(button(item, "Replace key"));
+    expect(item.querySelectorAll(".bj-set-sidenote")).toHaveLength(1);
+    expect(item.querySelector("form .bj-set-sidenote")).not.toBeNull();
+  });
+
+  it("is plain muted text: it carries no alert role and no checkbox to accept", () => {
+    const { container } = mount({ credentials: [row("qwen", { model: "m", setup_state: "ready", base_url: "https://maas.qwencloudapi.com/compatible-mode/v1" })] });
+    const note = query(container, ".bj-set-sidenote");
+    expect(note.querySelector('input, [role="alert"], [role="status"]')).toBeNull();
+    expect(note.tagName).toBe("P");
+  });
+});
+
 describe("what is connected", () => {
-  it("says a key with a model is validated, shows the model id as text, and when the key was checked", () => {
+  it("says a key with a model has its model chosen, shows the model id as text, and when the key was checked", () => {
     const { container } = mount({ credentials: [row("openai", { model: "gpt-5.5", setup_state: "ready" })] });
     const item = query(container, "#provider-openai");
-    expect(text(item)).toContain("OpenAI");
-    expect(text(item)).toContain("✓ Validated");
+    expect(text(query(item, "h3"))).toBe("OpenAI, model chosen");
     expect(query(item, ".bj-set-model-line").textContent).toBe("gpt-5.5");
     expect(text(item)).toContain("Checked by code on save");
     expect(text(item)).toContain("Oct 18");
@@ -102,9 +247,9 @@ describe("what is connected", () => {
   it("says a key with no model needs one, offers to choose it, and never shows a default model for it", () => {
     const { container } = mount({ credentials: [row("openai", { setup_state: "needs_model" })] });
     const item = query(container, "#provider-openai");
-    expect(text(item)).toContain("Needs a model");
+    expect(text(query(item, "h3"))).toBe("Choose a model for OpenAI");
     expect(text(item)).toContain("Your key is saved and checked. Choose a model to use it.");
-    expect(text(item)).not.toContain("Validated");
+    expect(text(item)).not.toContain("model chosen");
     expect(item.querySelector(".bj-set-model-line")).toBeNull();
     expect(button(item, "Choose a model")).toBeDefined();
     expect(container.querySelector("#default-model")).toBeNull();
@@ -113,7 +258,7 @@ describe("what is connected", () => {
   it("says a key that was not confirmed needs a key, offers only to replace it, and gives it no trail", () => {
     const { container } = mount({ credentials: [row("openai", { is_validated: false, model: "gpt-5.5", setup_state: "needs_key" })] });
     const item = query(container, "#provider-openai");
-    expect(text(item)).toContain("Needs a key");
+    expect(text(query(item, "h3"))).toBe("Add a key for OpenAI");
     expect(text(item)).toContain("isn't confirmed");
     expect(item.querySelector(".bj-trail")).toBeNull();
     expect(button(item, /Change model|Choose a model/)).toBeUndefined();
@@ -133,7 +278,11 @@ describe("what is connected", () => {
     expect(text(query(withHost.container, "#provider-custom"))).toContain("Host: Groq");
     withHost.unmount();
     const loading = mount({ credentials: [row("openai", { model: "m" })], catalog: { kind: "loading" } });
-    expect(text(query(loading.container, "#provider-openai h3"))).toBe("openai");
+    // the registry's own name for a provider the catalogue has not told about yet; an id it does not know is shown as sent
+    expect(text(query(loading.container, "#provider-openai h3"))).toBe("OpenAI, model chosen");
+    loading.unmount();
+    const unknown = mount({ credentials: [row("newhost", { model: "m" })], catalog: { kind: "loading" } });
+    expect(text(query(unknown.container, "#provider-newhost h3"))).toBe("newhost, model chosen");
   });
 
   it("opens the model picker for the row that was asked for, and closes it again", async () => {

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import type { CatalogState } from "../../lib/settings/useProviderCatalog";
 import type { CredentialSummary } from "../../lib/settings/credentials";
-import { OPENROUTER_ID, endpointForAddress, llmRows, providerName, regionForAddress, type LlmProvider } from "../../lib/settings/llmProviders";
+import { CONNECT_MODEL_WORDS } from "../../lib/modelKey";
+import { providerNote } from "../../lib/providerNotes";
+import { OPENROUTER_ID, endpointForAddress, knownDefaultProvider, llmRows, providerName, regionForAddress, type LlmProvider } from "../../lib/settings/llmProviders";
 import { FailureState, LoadingState } from "../paper/StateViews";
 import { ConnectedProviderRow } from "./ConnectedProviderRow";
 import { DefaultModel } from "./DefaultModel";
@@ -9,8 +11,8 @@ import { ModelPicker } from "./ModelPicker";
 import { ProviderConnectCard } from "./ProviderConnectCard";
 import "../../styles/settings.css";
 
-// "AI provider": which model providers the person has connected and where each stands, the default
-// model, and a way to add another. Everything the person does here is one of three steps, each its
+// "AI model": which model providers the person has connected and where each stands (each saved
+// provider is one quiet row that says it in plain words), the default model, and a way to add another. Everything the person does here is one of three steps, each its
 // own control: save a key (ProviderConnectCard), choose a model for it (ModelPicker), and, if more
 // than one is ready, say which is the default (DefaultModel).
 //
@@ -79,6 +81,8 @@ export function ModelProviderSection({
 }: ModelProviderSectionProps) {
   const providers = catalog.kind === "ready" ? catalog.providers : null;
   const connected = llmRows(credentials);
+  // Which key is the default, as far as the page can know; null when it cannot tell.
+  const defaultProvider = knownDefaultProvider(connected, chosenHere, defaultUnknown);
   const connectedIds = new Set(connected.map((row) => row.provider));
   const available = providers === null ? [] : providers.filter((provider) => !connectedIds.has(provider.id));
   const [chip, setChip] = useState<string | null>(null);
@@ -130,12 +134,21 @@ export function ModelProviderSection({
   return (
     <section id="ai-provider" className="bj-set-section" aria-labelledby="ai-provider-h">
       <h2 id="ai-provider-h" tabIndex={-1}>
-        AI provider
+        AI model
       </h2>
       <p className="bj-set-lede">
         Connect a provider once. Saving always sends one real request to it, so a key it refuses is never stored. Between Jobs has no model of its
         own and never runs on a shared key.
       </p>
+
+      {connected.length === 0 && (
+        <p className="bj-set-statusline">
+          <span className="bj-set-status-glyph bj-set-status-glyph--todo" aria-hidden="true">
+            {"◆"}
+          </span>{" "}
+          {CONNECT_MODEL_WORDS}
+        </p>
+      )}
 
       {connected.length > 0 && (
         <ul className="bj-set-list" aria-label="Connected model providers">
@@ -150,6 +163,8 @@ export function ModelProviderSection({
                 provider={provider}
                 hostName={hostNameOf(credential, provider)}
                 regionName={regionNameOf(credential, provider)}
+                isDefault={credential.provider === defaultProvider}
+                note={providerNote(credential.provider, regionForAddress(provider, credential.base_url)?.id ?? null)}
                 now={now}
                 panel={open}
                 onPanel={(next) => onPanel(next === null ? null : { provider: credential.provider, panel: next })}

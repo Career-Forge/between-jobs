@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // @vitest-environment-options {"url": "https://app.example/settings"}
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { connectStore } from "../lib/settings/openrouterOAuth";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
@@ -74,11 +74,7 @@ describe("the page", () => {
     const { container } = page();
     await settle();
     expect([...container.querySelectorAll("h1")].map((h) => h.textContent)).toEqual(["Settings"]);
-    expect([...container.querySelectorAll("section > h2, .bj-set-section-head > h2")].map((h) => h.textContent)).toEqual([
-      "AI provider",
-      "Search and data keys",
-      "Connections",
-    ]);
+    expect([...container.querySelectorAll("section > h2")].map((h) => h.textContent)).toEqual(["AI model", "Optional extras›", "Connections"]);
   });
 
   it("shows the band loading and placeholders while it reads, and lights nothing", async () => {
@@ -171,7 +167,7 @@ describe("with a key that has no model", () => {
     const { container } = page();
     await settle();
     expect(text(band(container))).toContain("Your OpenAI key is saved. Choose a model to finish.");
-    expect(text(query(container, "#provider-openai"))).toContain("Needs a model");
+    expect(text(query(container, "#provider-openai h3"))).toBe("Choose a model for OpenAI");
     click(buttonIn(band(container), "Choose a model"));
     await settle();
     expect(query(container, "#provider-openai .bj-set-picker")).toBeDefined();
@@ -195,7 +191,7 @@ describe("with a key that has no model", () => {
     expect(text(band(container))).toContain("Your model is set. Search for a role next.");
     expect(text(band(container))).toContain("OpenAI model chosen this visit");
     expect(container.querySelector(".bj-set-picker")).toBeNull();
-    expect(text(query(container, "#provider-openai"))).toContain("✓ Validated");
+    expect(text(query(container, "#provider-openai .bj-set-row-title h3"))).toBe("OpenAI, model chosen");
   });
 });
 
@@ -335,12 +331,12 @@ describe("with a model ready", () => {
     const { container } = page();
     await settle();
     expect(text(band(container))).toContain("Your model is set. Everything else here is optional.");
-    expect(text(band(container))).toContain("why: OpenRouter ready · 0 of 7 search keys connected");
+    expect(text(band(container))).toContain("why: OpenRouter ready");
     expect(container.querySelector(".bj-primary, .bj-button-link-primary")).toBeNull();
     expect(text(query(container, "#default-model"))).toContain("vendor/model-a on OpenRouter.");
   });
 
-  it("counts the search keys that are connected", async () => {
+  it("does not count the search keys anywhere: not in the band, not on the section", async () => {
     describeAccount([
       key("openrouter", { model: "m", setup_state: "ready" }),
       { ...key("brave"), service: "search" },
@@ -348,8 +344,9 @@ describe("with a model ready", () => {
     ]);
     const { container } = page();
     await settle();
-    expect(text(band(container))).toContain("2 of 7 search keys connected");
-    expect(text(query(container, ".bj-set-count"))).toBe("2 of 7 connected");
+    expect(text(band(container))).not.toMatch(/search key|\d of \d/);
+    expect(container.querySelector(".bj-set-count")).toBeNull();
+    expect(text(container)).not.toMatch(/\d+ of \d+ connected/);
   });
 });
 
@@ -425,7 +422,7 @@ describe("coming back from OpenRouter", () => {
     connectStore.receive({ kind: "ready", code: CODE, verifier: VERIFIER, expiresAt: Date.now() + 600_000 });
     const { container } = page();
     await settle(5);
-    expect(text(query(container, "#openrouter"))).toContain("Needs a model");
+    expect(text(query(container, "#openrouter .bj-set-row-title h3"))).toBe("Choose a model for OpenRouter");
     expect(query(container, "#openrouter .bj-set-picker")).toBeDefined();
     expect(text(band(container))).toContain("Your OpenRouter key is saved. Choose a model to finish.");
     expect(container.querySelector('p[role="status"]')?.textContent).toContain("OpenRouter is connected. Choose a model to finish.");
@@ -548,9 +545,172 @@ describe("a key typed into the page", () => {
     expect(JSON.stringify({ ...globalThis.localStorage, ...window.sessionStorage })).not.toContain(SECRET);
     for (const spy of spies) expect(JSON.stringify(spy.mock.calls)).not.toContain(SECRET);
     // and the model list is open for the key that was just stored
-    expect(text(query(container, "#provider-openai"))).toContain("Needs a model");
+    expect(text(query(container, "#provider-openai h3"))).toBe("Choose a model for OpenAI");
     expect(query(container, "#provider-openai .bj-set-picker")).toBeDefined();
     expect(calls.filter((c) => c.method === "GET" && c.path === "/credentials").length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+function at(hash: string) {
+  return render(
+    <MemoryRouter initialEntries={[`/settings${hash}`]}>
+      <Settings />
+    </MemoryRouter>,
+  );
+}
+
+const toggle = (root: ParentNode) => query<HTMLButtonElement>(root, "#search-keys-h button");
+const extrasOpen = (root: ParentNode) => toggle(root).getAttribute("aria-expanded") === "true";
+
+describe("the optional extras", () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = () => undefined;
+  });
+
+  it("are closed by default, even with a search key saved, and open by hand", async () => {
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" }), { ...key("brave"), service: "search" }]);
+    const { container } = page();
+    await settle();
+    expect(extrasOpen(container)).toBe(false);
+    expect(query(container, "#search-keys .bj-extras-body").hasAttribute("hidden")).toBe(true);
+    click(toggle(container));
+    expect(extrasOpen(container)).toBe(true);
+    expect(text(query(container, "#search-brave"))).toContain("Connected");
+  });
+
+  it("open themselves when the address names the section (the link Discover and Hiring signals use), and leave the keyboard on its heading", async () => {
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" })]);
+    const { container } = at("#search-keys");
+    await settle();
+    expect(extrasOpen(container)).toBe(true);
+    expect(document.activeElement).toBe(query(container, "#search-keys-h"));
+  });
+
+  it("open themselves for a link to one key's row", async () => {
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" })]);
+    const { container } = at("#search-exa");
+    await settle();
+    expect(extrasOpen(container)).toBe(true);
+  });
+
+  it("stay closed for a link to another part of the page", async () => {
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" })]);
+    const { container } = at("#saved-searches");
+    await settle();
+    expect(extrasOpen(container)).toBe(false);
+  });
+
+  it("open when the address changes to name them while the page is already showing", async () => {
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" })]);
+    function Jump() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" id="jump" onClick={() => navigate("/settings#search-keys")}>
+          jump
+        </button>
+      );
+    }
+    const { container } = render(
+      <MemoryRouter initialEntries={["/settings"]}>
+        <Jump />
+        <Settings />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(extrasOpen(container)).toBe(false);
+    click(query(container, "#jump"));
+    await settle();
+    expect(extrasOpen(container)).toBe(true);
+  });
+
+  it("keep every capability: connect with the cost note, replace and remove, from inside the disclosure", async () => {
+    describeAccount([{ ...key("brave"), service: "search" }]);
+    const { container } = at("#search-keys");
+    await settle();
+    const exa = query(container, "#search-exa");
+    click(buttonIn(exa, /^Connect Exa/));
+    expect(text(exa)).toContain("small real charge");
+    expect(buttonIn(query(container, "#search-brave"), "Replace key")).toBeDefined();
+    expect(buttonIn(query(container, "#search-brave"), "Remove key")).toBeDefined();
+  });
+});
+
+describe("the AI model card, in words", () => {
+  it.each([
+    ["no key", [], "Connect an AI model"],
+    ["a checked key with no model", [key("openai", { setup_state: "needs_model" })], "Choose a model for OpenAI"],
+    ["a key that was not confirmed", [key("openai", { is_validated: false, setup_state: "needs_key" })], "Add a key for OpenAI"],
+  ])("says %s as: %s", async (_name, credentials, words) => {
+    describeAccount(credentials);
+    const { container } = page();
+    await settle();
+    expect(text(query(container, "#ai-provider"))).toContain(words);
+    expect(text(query(container, "#ai-provider"))).not.toMatch(/setup_state|needs_model|needs_key|\bLLM\b|model key set/);
+  });
+
+  it("names the provider and the chosen model, and says which is the default", async () => {
+    describeAccount([key("openrouter", { model: "vendor/model-a", setup_state: "ready" })]);
+    const { container } = page();
+    await settle();
+    const rowEl = query(container, "#openrouter");
+    expect(text(query(rowEl, "h3"))).toBe("OpenRouter, model chosen");
+    expect(text(query(rowEl, ".bj-set-model-line"))).toBe("vendor/model-a");
+    expect(text(query(rowEl, ".bj-set-default-tag"))).toBe("Default");
+  });
+
+  it("shows two connected providers as two rows, and does not claim a default it cannot know", async () => {
+    describeAccount([key("openrouter", { model: "vendor/model-a", setup_state: "ready" }), key("openai", { model: "gpt-x", setup_state: "ready" })]);
+    const { container } = page();
+    await settle();
+    expect([...container.querySelectorAll("#ai-provider .bj-set-item h3")].map((h) => text(h))).toEqual(["OpenRouter, model chosen", "OpenAI, model chosen"]);
+    expect(container.querySelector(".bj-set-default-tag")).toBeNull();
+  });
+});
+
+describe("a provider's data-location side-note on the page", () => {
+  const CHINA_CATALOG = {
+    providers: [
+      ...CATALOG.providers,
+      { id: "deepseek", name: "DeepSeek", key_hint: "", get_key_url: null, manage_url: null, model_list: "live" },
+      {
+        id: "qwen",
+        name: "Qwen Cloud",
+        key_hint: "",
+        get_key_url: null,
+        manage_url: null,
+        model_list: "best_effort",
+        regions: [
+          { id: "qwencloud", name: "QwenCloud", needs_workspace: false, get_key_url: null },
+          { id: "cn-beijing", name: "Alibaba Cloud Model Studio, China (Beijing)", needs_workspace: true, get_key_url: null },
+        ],
+      },
+    ],
+  };
+
+  it("appears under the form when DeepSeek or Qwen Cloud is selected, as text and not as an alert, and not for OpenAI", async () => {
+    describeAccount([]);
+    on("GET /credentials/llm/providers", CHINA_CATALOG);
+    const { container } = page();
+    await settle();
+    const chips = container.querySelector(".bj-set-chips") as Element;
+    expect(container.querySelector(".bj-set-sidenote")).toBeNull();
+    click(buttonIn(chips, "DeepSeek"));
+    expect(text(query(container, ".bj-set-sidenote"))).toContain("operated by a company based in China");
+    click(buttonIn(chips, "Qwen Cloud"));
+    expect(text(query(container, ".bj-set-sidenote"))).toContain("some regions are in mainland China");
+    click(buttonIn(chips, "OpenAI"));
+    expect(container.querySelector(".bj-set-sidenote")).toBeNull();
+    expect(container.querySelector('.bj-set-sidenote[role="alert"]')).toBeNull();
+  });
+
+  it("is not read out as an alert or status while the page is used: it adds no live region of its own", async () => {
+    describeAccount([]);
+    on("GET /credentials/llm/providers", CHINA_CATALOG);
+    const { container } = page();
+    await settle();
+    click(buttonIn(container.querySelector(".bj-set-chips") as Element, "DeepSeek"));
+    const note = query(container, ".bj-set-sidenote");
+    expect(note.closest("[aria-live], [role=alert], [role=status]")).toBeNull();
   });
 });
 
@@ -560,10 +720,27 @@ describe("accessibility", () => {
     ["a key that needs a model", () => describeAccount([key("openai", { setup_state: "needs_model" })])],
     ["a model ready", () => describeAccount([key("openrouter", { model: "m", setup_state: "ready" }), { ...key("brave"), service: "search" }])],
     ["an unreadable account", () => describeAccount(new FakeApiError("down", undefined, undefined, 503))],
+    ["two providers and a search key", () => describeAccount([key("openrouter", { model: "m", setup_state: "ready" }), key("openai", { model: "n", setup_state: "ready" }), { ...key("brave"), service: "search" }])],
   ])("has no serious violation with %s", async (_name, setup) => {
     setup();
     const { container } = page();
     await settle();
+    await expectNoSeriousA11yViolations(container);
+  });
+});
+
+describe("accessibility of the optional extras and the side-note", () => {
+  it("has no serious violation with the extras open by link, a form open, and a side-note shown", async () => {
+    Element.prototype.scrollIntoView = () => undefined;
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" }), { ...key("brave"), service: "search" }]);
+    on("GET /credentials/llm/providers", {
+      providers: [...CATALOG.providers, { id: "deepseek", name: "DeepSeek", key_hint: "", get_key_url: null, manage_url: null, model_list: "live" }],
+    });
+    const { container } = at("#search-keys");
+    await settle();
+    click(buttonIn(query(container, "#search-exa"), /^Connect Exa/));
+    click(buttonIn(container.querySelector(".bj-set-chips") as Element, "DeepSeek"));
+    expect(container.querySelector(".bj-set-sidenote")).not.toBeNull();
     await expectNoSeriousA11yViolations(container);
   });
 });

@@ -415,6 +415,7 @@ describe("loadFirstRunFacts", () => {
       profile: ok(true),
       modelKey: ok(true),
       modelKeyNeedsModel: ok(false),
+      modelKeyDetail: { reading: "ready", providers: ["OpenRouter"] },
       savedSearches: ok(1),
       applications: ok({ count: 2, fromDiscover: 0, withResume: 1, resumeTargetId: "app-1" }),
     });
@@ -581,6 +582,7 @@ describe("loadFirstRunFacts", () => {
       profile: ok(true),
       modelKey: ok(true),
       modelKeyNeedsModel: ok(false),
+      modelKeyDetail: { reading: "ready", providers: ["OpenRouter"] },
       savedSearches: ok(1),
       applications: failed,
     });
@@ -975,6 +977,57 @@ describe("firstRunFactsOf", () => {
     expect(factsArrived(BRAND_NEW)).toBe(true);
     expect(factsArrived(ALL_FAILED)).toBe(true);
     expect(factsArrived({ ...BRAND_NEW, applications: loading })).toBe(false);
+  });
+});
+
+describe("what the model step says about which AI model is connected", () => {
+  const rows = (...list: Record<string, unknown>[]) => ({ ...GOOD, "/credentials": list });
+  const model = async (replies: Record<string, Reply>) => deriveFirstRun(firstRunFactsOf(await readAccount(fakeFetcher(replies).fetcher)), FRESH).steps[1];
+
+  it("names the provider and says the model is chosen once a key is ready, in the description line only", async () => {
+    const step = await model(rows({ service: "llm", provider: "openrouter", is_validated: true, model: "vendor/model" }));
+    expect(step).toMatchObject({ status: "done", label: "Add a model key", fact: { kind: "text", text: "AI model: OpenRouter, model chosen" } });
+  });
+
+  it("lists every ready provider and says models in the plural, and ignores the ones that are not ready", async () => {
+    const step = await model(
+      rows(
+        { service: "llm", provider: "openrouter", is_validated: true, model: "a/b" },
+        { service: "llm", provider: "anthropic", is_validated: true, model: "c" },
+        { service: "llm", provider: "openai", is_validated: true, model: null },
+      ),
+    );
+    expect(step.fact).toEqual({ kind: "text", text: "AI model: OpenRouter and Anthropic, models chosen" });
+  });
+
+  it("says Connect an AI model when there is no key at all, keeping the shared label", async () => {
+    const step = await model(rows());
+    expect(step).toMatchObject({ status: "todo", label: "Add a model key" });
+    expect(step.hint).toMatch(/^Connect an AI model\./);
+  });
+
+  it("says Choose a model for the provider whose key is saved and checked, keeping the shared label", async () => {
+    const step = await model(rows({ service: "llm", provider: "qwen", is_validated: true, model: null }));
+    expect(step).toMatchObject({ status: "todo", label: "Choose a model" });
+    expect(step.hint).toMatch(/^Choose a model for Qwen Cloud\./);
+  });
+
+  it("says Add a key for the provider whose key was never confirmed", async () => {
+    const step = await model(rows({ service: "llm", provider: "openai", is_validated: false, model: null }));
+    expect(step).toMatchObject({ status: "todo", label: "Add a model key" });
+    expect(step.hint).toMatch(/^Add a key for OpenAI\./);
+  });
+
+  it("uses no technical word", async () => {
+    for (const replies of [rows(), rows({ service: "llm", provider: "openai", is_validated: true, model: null }), rows({ service: "llm", provider: "openai", is_validated: false, model: null })]) {
+      const step = await model(replies);
+      expect(step.hint).not.toMatch(/setup_state|needs_model|needs_key|\bLLM\b|model key set/i);
+    }
+  });
+
+  it("falls back to the plain old line when the credentials could not be read", () => {
+    const step = deriveFirstRun({ ...EVERYTHING_DONE }, FRESH).steps[1];
+    expect(step.fact).toEqual({ kind: "text", text: "Key saved and checked" });
   });
 });
 

@@ -10,8 +10,8 @@ import { FailureState, LoadingState } from "../components/paper/StateViews";
 import { SavedSearchesCard } from "../components/SavedSearchesCard";
 import { nextStep } from "../lib/nextStep";
 import type { SettingsFacts, SettingsLlm } from "../lib/nextStep/pages/settings";
-import { SEARCH_PROVIDER_CARDS } from "../lib/providerStatus";
-import { knownDefaultProvider, llmRows, llmSetupState, providerName, searchRows } from "../lib/settings/llmProviders";
+import { opensOptionalExtras } from "../lib/settings/optionalExtras";
+import { knownDefaultProvider, llmRows, llmSetupState, providerName } from "../lib/settings/llmProviders";
 import { useOpenRouterConnect } from "../lib/settings/useOpenRouterConnect";
 import { useProviderCatalog } from "../lib/settings/useProviderCatalog";
 import { useSettingsData } from "../lib/settings/useSettingsData";
@@ -20,7 +20,7 @@ import { useHiringSignalsEnabled } from "../lib/useHiringSignalsStatus";
 import { useScrollToHash } from "../lib/useScrollToHash";
 import "../styles/settings.css";
 
-// Settings: the model provider, the search and data keys, and the accounts linked to this one. It is
+// Settings: the AI model, the optional extras (search and data keys), and the accounts linked to this one. It is
 // the page the API's setup errors send people to (it was the Integrations page at
 // /profile/integrations, which redirects here), and the screen every new person uses to connect the
 // model Between Jobs runs on. A person's own key is the only way anything here is paid for: nothing
@@ -32,9 +32,11 @@ import "../styles/settings.css";
 // lib/nextStep/pages/settings.ts, which also says why.
 //
 // SECTIONS (each a component under components/settings/):
-//   AI provider           connected providers with their state, choosing a model, the default model,
-//                         connecting another provider (OpenRouter in one click, or a pasted key)
-//   Search and data keys  the optional keys, as rows with Connected / Not set
+//   AI model              connected providers, each one quiet row that says in words what is connected
+//                         and what is missing, choosing a model, the default model, connecting another
+//                         provider (OpenRouter in one click, or a pasted key)
+//   Optional extras       one disclosure, closed by default: the optional keys grouped by what they are
+//                         for. It opens itself for a link that names it (/settings#search-keys)
 //   Connections           Telegram, Discord and Gmail
 //   Saved searches        pause or delete a search that keeps running in the background
 //
@@ -92,7 +94,22 @@ export default function Settings() {
     })();
   }, [connect, data, announce]);
 
-  useScrollToHash(rows !== null, location.hash);
+  // The optional extras are closed until someone opens them, or arrives by a link that names them or
+  // one of their keys. Opening happens before the scroll below, and again for a link followed while
+  // the page is already open (the hash changes without a remount).
+  const [extrasOpen, setExtrasOpen] = useState(() => opensOptionalExtras(location.hash));
+  useEffect(() => {
+    if (opensOptionalExtras(location.hash)) setExtrasOpen(true);
+  }, [location.hash]);
+
+  // The provider list arrives after the keys and adds the "connect a provider" form above everything
+  // below it, so a link to a section further down is scrolled to again, once, when that has happened.
+  const [catalogSettled, setCatalogSettled] = useState(false);
+  useEffect(() => {
+    if (catalog.kind !== "loading") setCatalogSettled(true);
+  }, [catalog.kind]);
+
+  useScrollToHash(rows !== null, location.hash, extrasOpen, catalogSettled);
 
   const facts = useMemo<SettingsFacts | null>(() => {
     if (rows === null) return null;
@@ -107,10 +124,8 @@ export default function Settings() {
       llmFacts = { state: "ready", names: ready.map((entry) => nameOf(entry.row.provider)), defaultKnown: knownDefaultProvider(llm, chosenHere, false) !== null };
     } else if (awaiting !== undefined) llmFacts = { state: awaiting.state === "needs_model" ? "needs_model" : "needs_key", providerName: nameOf(awaiting.row.provider) };
     else llmFacts = { state: "none" };
-    const connected = SEARCH_PROVIDER_CARDS.filter((card) => searchRows(rows).some((row) => row.provider === card.provider)).length;
     return {
       llm: llmFacts,
-      search: { connected, total: SEARCH_PROVIDER_CARDS.length },
       // Only while that provider is still ready: a key removed since is not a model chosen.
       chosenHere: chosenHere !== null && ready.some((entry) => entry.row.provider === chosenHere) ? nameOf(chosenHere) : null,
     };
@@ -152,7 +167,7 @@ export default function Settings() {
 
   return (
     <div className="bj-settings">
-      <PageHeader title="Settings" subtitle="The model Between Jobs runs on, the search keys you add, and the accounts you link. Everything here is read from what you've saved." />
+      <PageHeader title="Settings" subtitle="The model Between Jobs runs on, the optional extras you add, and the accounts you link. Everything here is read from what you've saved." />
       <NextStepBand outcome={outcome} onAction={onAction} pending={connect.busy ? { intent: "connect-openrouter", label: "Opening OpenRouter..." } : null} />
       <ConnectBanner result={connect.result} busy={connect.busy} onAgain={connect.start} onRetry={connect.retry} onDismiss={connect.dismiss} />
       <p className="bj-visually-hidden" role="status" aria-live="polite">
@@ -205,7 +220,14 @@ export default function Settings() {
             }}
             announce={announce}
           />
-          <SearchKeysSection credentials={rows} hiringSignalsEnabled={hiringSignalsEnabled} now={now} onChanged={data.reloadCredentials} />
+          <SearchKeysSection
+            credentials={rows}
+            hiringSignalsEnabled={hiringSignalsEnabled}
+            now={now}
+            onChanged={data.reloadCredentials}
+            open={extrasOpen}
+            onOpenChange={setExtrasOpen}
+          />
         </>
       )}
       <ConnectionsSection capabilities={capabilities} gmail={gmail} credentialsReady={rows !== null} onChanged={data.reloadCredentials} />

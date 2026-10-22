@@ -101,6 +101,45 @@ describe("settings.css", () => {
     }
   });
 
+  it("draws the side-note as quiet text: muted, no border, no fill, no red, in a mono label", () => {
+    const note = declarationsFor(base, ".bj-set-sidenote");
+    expect(note.color).toBe("var(--bj-text-muted)");
+    for (const property of ["border", "border-color", "background", "background-color"]) expect(note[property], property).toBeUndefined();
+    const label = declarationsFor(base, ".bj-set-sidenote-label");
+    expect(label["font-family"]).toBe("var(--bj-font-mono)");
+    expect(label["text-transform"]).toBe("uppercase");
+    // nothing that styles the note, its label or the default tag reaches for the failure color
+    for (const rule of rulesOf(settingsCss)) {
+      const selector = rule.selectors.join(", ");
+      if (/sidenote|default-tag|extras|set-group|set-extra/.test(selector)) {
+        for (const value of Object.values(rule.declarations)) expect(value, selector).not.toContain("--bj-danger");
+      }
+    }
+  });
+
+  it("draws the optional extras' toggle as the heading itself, 44px tall, with a chevron that turns and holds still under reduced motion", () => {
+    const toggle = declarationsFor(base, "button.bj-extras-toggle");
+    expect(toggle["min-height"]).toBe("44px");
+    expect(toggle.font).toBe("inherit");
+    expect(toggle["border-color"]).toBe("transparent");
+    expect(declarationsFor(base, 'button.bj-extras-toggle[aria-expanded="true"] .bj-extras-chevron').transform).toBe("rotate(90deg)");
+    expect(blockOf(settingsCss, "@media (prefers-reduced-motion: reduce)") ?? "").toContain("transition: none");
+    expect(declarationsFor(phone, "button.bj-extras-toggle")["min-height"]).toBe("44px");
+    expect(declarationsFor(phone, ".bj-set-extra-actions > button")["min-height"]).toBe("44px");
+  });
+
+  it("never sets display on the disclosure's body, so the hidden attribute still hides it", () => {
+    expect(declarationsFor(base, ".bj-extras-body").display).toBeUndefined();
+  });
+
+  it("lets the extras' rows shrink and wrap, so a long name cannot widen the page", () => {
+    for (const selector of [".bj-set-extra", ".bj-set-group", ".bj-extras-body", ".bj-set-extra-name"]) {
+      expect(declarationsFor(base, selector)["min-width"], selector).toBe("0");
+    }
+    expect(declarationsFor(base, ".bj-set-sidenote")["overflow-wrap"]).toBe("anywhere");
+    expect(declarationsFor(base, ".bj-set-extra-line")["flex-wrap"]).toBe("wrap");
+  });
+
   it("measures the page as a list: 880px at most", () => {
     expect(declarationsFor(base, ".bj-settings")["max-width"]).toBe("880px");
   });
