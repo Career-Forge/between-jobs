@@ -1616,8 +1616,10 @@ describe("the policy says where DeepSeek and Alibaba Cloud (Qwen) run, in the sa
   it("claims no more of DeepSeek than its privacy policy says: where it is operated and where it processes data, not what it does with it", () => {
     const text = detailOf("DeepSeek");
     expect(text).toContain("operated by a company based in China");
-    expect(text).toContain("its privacy policy says");
-    expect(text).toContain("does not say whether text sent through the API is covered");
+    expect(text).toContain("Its privacy policy says");
+    expect(text).toContain("does not cover personal data collected from people who use apps built on DeepSeek's platform");
+    expect(text).toContain("it is unclear what applies to text Between Jobs sends on your key");
+    expect(text).not.toMatch(/does not say whether|silent/i);
     expect(text).not.toMatch(/what you send goes/i);
     expect(text).not.toMatch(/government|censor|train|surveil/i);
   });

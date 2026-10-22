@@ -23,10 +23,10 @@ describe("the data-location side-notes", () => {
     }
   });
 
-  it("say, for DeepSeek, who operates it and what its own privacy policy says, and that the policy is silent on API requests, without saying that what you send is stored in China", () => {
+  it("say, for DeepSeek, who operates it and what its own privacy policy says, and that the policy excludes apps built on its platform, without saying that what you send is stored in China", () => {
     const note = providerNote("deepseek");
     expect(note).toBe(
-      "DeepSeek is operated by a company based in China, and its privacy policy says the personal data it collects is processed and stored in the People's Republic of China. That policy does not say whether text sent through the API is covered.",
+      "DeepSeek is operated by a company based in China. Its privacy policy says the personal data it collects is processed and stored in the People's Republic of China, and says it does not cover personal data collected from people who use apps built on DeepSeek's platform, so it is unclear what applies to text Between Jobs sends on your key.",
     );
     // a region means nothing to it
     expect(providerNote("deepseek", "cn-beijing")).toBe(note);
@@ -72,9 +72,12 @@ describe("the data-location side-notes", () => {
     }
   });
 
-  it("does not say the text you send is stored in China: DeepSeek's policy does not say it covers API requests, and the note says so", () => {
+  it("does not say the text you send is stored in China: DeepSeek's policy excludes apps built on its platform, and the note says it is unclear what applies", () => {
     const note = providerNote("deepseek") as string;
     expect(note).not.toMatch(/what you send/i);
-    expect(note).toContain("does not say whether text sent through the API is covered");
+    expect(note).toContain("does not cover personal data collected from people who use apps built on DeepSeek's platform");
+    expect(note).toContain("it is unclear what applies to text Between Jobs sends on your key");
+    // the superseded claim, that the policy is silent on the API, is not made
+    expect(note).not.toMatch(/does not say whether|silent/i);
   });
 });

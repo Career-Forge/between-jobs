@@ -29,10 +29,13 @@
 //               registered address in China, as the party that provides and controls the services, and
 //               says the personal data it collects is processed and stored in the People's Republic of
 //               China. Its stated scope is DeepSeek's apps, websites, software and related services,
-//               and it covers the platform's payment data; it does not say that text sent through the
-//               API is covered, so the sentence below says who operates DeepSeek and what the policy
-//               says, and says outright that the policy is silent on API requests. It does not say
-//               "what you send is stored in China".
+//               and it covers the platform's payment data. Its Introduction also says the processing
+//               rules for personal data collected from end users of downstream applications built on
+//               DeepSeek's open platform "are not covered" by it, and Between Jobs is such an
+//               application, so the policy is not silent on the API: it excludes the case. The sentence
+//               below says who operates DeepSeek, what the policy says about its own data, that it
+//               excludes apps built on the platform, and that it is therefore unclear what applies to
+//               text sent on your key. It does not say "what you send is stored in China".
 //
 // Pure module: no React, no network.
 
@@ -53,7 +56,7 @@ const NOTES: Readonly<Record<string, NoteSpec>> = {
     mainlandRegions: ["cn-beijing"],
   },
   deepseek: {
-    text: "DeepSeek is operated by a company based in China, and its privacy policy says the personal data it collects is processed and stored in the People's Republic of China. That policy does not say whether text sent through the API is covered.",
+    text: "DeepSeek is operated by a company based in China. Its privacy policy says the personal data it collects is processed and stored in the People's Republic of China, and says it does not cover personal data collected from people who use apps built on DeepSeek's platform, so it is unclear what applies to text Between Jobs sends on your key.",
   },
 };
 

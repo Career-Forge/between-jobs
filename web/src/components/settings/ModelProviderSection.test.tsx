@@ -200,9 +200,9 @@ describe("a provider's data-location side-note", () => {
     const { container } = mount({ credentials: [], catalog: { kind: "ready", providers: withDeepSeek } });
     click(button(container.querySelector(".bj-set-chips") as Element, "DeepSeek"));
     const note = query(container, "form .bj-set-sidenote");
-    expect(text(note)).toContain("DeepSeek is operated by a company based in China, and its privacy policy says");
+    expect(text(note)).toContain("DeepSeek is operated by a company based in China. Its privacy policy says");
     expect(text(note)).toContain("People's Republic of China");
-    expect(text(note)).toContain("does not say whether text sent through the API is covered");
+    expect(text(note)).toContain("it is unclear what applies to text Between Jobs sends on your key");
     expect(note.getAttribute("role")).toBeNull();
   });
 
