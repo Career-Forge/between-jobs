@@ -58,8 +58,10 @@
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
-  border-top: 1px solid var(--bj-border);
-  border-bottom: 1px solid var(--bj-border);
+  /* A group of selectable segments carries the group outline (tokens.css, .bj-segmented): the selected tab's
+     maroon fill is 1.7:1 against the canvas, so it is the outline, at 3:1, that bounds the strip and the fill. */
+  border: 1px solid var(--bj-outline);
+  border-radius: 8px;
 }
 
 button.bj-tour-tab {
