@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { MemoryRouter } from "react-router-dom";
+import { Link, MemoryRouter, useNavigate } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { SITE_TABS } from "../content/siteNav";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
-import { click, installViewport, keydown, query, render } from "../testing/render";
+import { buttonNamed, click, installViewport, keydown, query, render } from "../testing/render";
 import { PublicHeader } from "./PublicHeader";
 import { MAIN_CONTENT_ID } from "./SkipLink";
 
@@ -22,6 +22,20 @@ function open(path = "/", filled = true) {
       </main>
     </MemoryRouter>,
   ).container;
+}
+
+function BackAndForward() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button type="button" onClick={() => navigate(-1)}>
+        Back
+      </button>
+      <button type="button" onClick={() => navigate(1)}>
+        Forward
+      </button>
+    </>
+  );
 }
 
 const menuButton = (root: ParentNode) => query<HTMLButtonElement>(root, "button.bj-public-menu-button");
@@ -150,6 +164,51 @@ describe("the menu", () => {
     click(link);
     expect(panel(root)).toBeNull();
     expect(document.activeElement).toBe(query(root, `#${MAIN_CONTENT_ID}`));
+  });
+
+  it("closes when the person goes anywhere else: the wordmark, a link in the page, the same page again", () => {
+    const root = render(
+      <MemoryRouter initialEntries={["/privacy"]}>
+        <PublicHeader filled />
+        <main id={MAIN_CONTENT_ID} tabIndex={-1}>
+          <Link to="/open-source">In the page</Link>
+        </main>
+      </MemoryRouter>,
+    ).container;
+    const wordmark = query<HTMLAnchorElement>(root, "a.bj-public-wordmark");
+    const inPage = [...root.querySelectorAll("main a")].find((link) => text(link) === "In the page") as HTMLAnchorElement;
+
+    click(menuButton(root));
+    expect(panel(root)).not.toBeNull();
+    click(wordmark);
+    expect(panel(root)).toBeNull();
+    expect(menuButton(root).getAttribute("aria-expanded")).toBe("false");
+
+    click(menuButton(root));
+    click(inPage);
+    expect(panel(root)).toBeNull();
+
+    // The same page again is still a navigation, and closes it.
+    click(menuButton(root));
+    click(wordmark);
+    expect(panel(root)).toBeNull();
+  });
+
+  it("closes when the browser goes back or forward", () => {
+    const root = render(
+      <MemoryRouter initialEntries={["/privacy", "/open-source"]} initialIndex={1}>
+        <PublicHeader filled />
+        <BackAndForward />
+        <main id={MAIN_CONTENT_ID} tabIndex={-1} />
+      </MemoryRouter>,
+    ).container;
+    click(menuButton(root));
+    expect(panel(root)).not.toBeNull();
+    click(buttonNamed(root, "Back"));
+    expect(panel(root)).toBeNull();
+    click(menuButton(root));
+    click(buttonNamed(root, "Forward"));
+    expect(panel(root)).toBeNull();
   });
 
   it("closes when the window grows to the wide layout, which draws the links itself, and not before", () => {
