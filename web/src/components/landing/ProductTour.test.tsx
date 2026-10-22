@@ -192,25 +192,22 @@ describe("each drawing", () => {
     });
   });
 
-  it("Discover: the role card, the fit block with its parts, and the skills table with what is and is not in the profile", () => {
+  it("Discover: the role card and the fit block, drawn as a Discover result draws it: the ladder, the model's line, a bar per part, the lowest part", () => {
     const root = open();
     const panel = visiblePanel(root);
     expect(text(panel)).toContain(TOUR.role);
     expect(text(panel)).toContain(TOUR.company);
     expect(query(panel, '[role="img"]').getAttribute("aria-label")).toBe("Fit: Good");
+    expect(text(panel)).toContain(TOUR.discover.fitOneLiner);
     expect(text(panel)).toContain("Lowest part: Skills");
-    const rows = [...panel.querySelectorAll("tbody tr")].map((row) => text(row));
-    expect(rows).toEqual([
-      "Python◆ In your profile",
-      "Evals◆ In your profile",
-      "Retrieval◆ In your profile",
-      "Kubernetes○ Not in your profile",
-    ]);
-    expect(panel.querySelectorAll("table caption")).toHaveLength(1);
-    // The bars are a picture; the words beside them carry the meaning.
-    expect([...panel.querySelectorAll(".bj-tour-parts li")].map((item) => text(item))).toEqual(["SkillsMixed", "ExperienceGood", "LocationStrong"]);
+    // The parts carry only their names (a real bar's value is a number, which a sample never has), with the
+    // bar a picture beside each name.
+    expect([...panel.querySelectorAll(".bj-tour-parts li")].map((item) => text(item))).toEqual(["Skills", "Experience", "Location"]);
     expect(panel.querySelectorAll(".bj-segbar-cells")).toHaveLength(3);
     expect([...panel.querySelectorAll(".bj-segbar-cells")].every((cells) => cells.getAttribute("aria-hidden") === "true")).toBe(true);
+    // Nothing a Discover result does not have: no skills table, no per-skill "In your profile" column, no word per part.
+    expect(panel.querySelector("table, caption, th, td")).toBeNull();
+    expect(text(panel)).not.toMatch(/In your profile|Not in your profile|Skills the posting lists|Mixed|Strong/);
   });
 
   it("Prepare: a resume page with the flagged word marked, the flagged-claim row, and the three checks that are not checked", () => {

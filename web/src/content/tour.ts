@@ -1,8 +1,9 @@
 // The home page's product tour, as data: five tabs, each a drawing of one screen of the product built
 // from one fictional role, and the sample next step that rewrites for the tab in view. Every word here
 // was checked against what the product does today, the same way content/landing.ts is: Discover rates a
-// result from the model's sub-scores with code, and the skills table is the Tailor panel's coverage
-// read; the resume checklist keeps the checks code ran apart from the ones left to the person
+// result from the model's sub-scores with code and draws only what a Discover result draws (the ladder,
+// the model's one line, a bar per part, the lowest part; the skills read belongs to the Tailor panel in
+// an application's workspace and is not drawn); the resume checklist keeps the checks code ran apart from the ones left to the person
 // (api/export_checklist.py); outreach is drafted by the person's model and, with the optional Gmail
 // connection (a server may limit it to invited people), lands in their drafts; practice feedback is the
 // model's; the extension fills by plain code and never clicks Next or Submit.
@@ -101,22 +102,14 @@ export const TOUR = {
     fitLevel: "Good",
     fitOneLiner: "Matches Python, evals and retrieval. Kubernetes is not in your profile.",
     partsLabel: "Parts of the fit",
+    // The labels are the ones a real result draws (lib/discover.ts SUB_SCORE_LABELS), and a bar carries no word
+    // of its own here: a real one shows its value out of a hundred, and a sample never carries a number.
     parts: [
-      { label: "Skills", word: "Mixed", filled: 4 },
-      { label: "Experience", word: "Good", filled: 6 },
-      { label: "Location", word: "Strong", filled: 8 },
+      { label: "Skills", filled: 4 },
+      { label: "Experience", filled: 6 },
+      { label: "Location", filled: 8 },
     ],
     lowest: "Lowest part: Skills",
-    skillsCaption: "Skills the posting lists",
-    skillsHead: ["Skill", "Your profile"],
-    skills: [
-      { name: "Python", found: true },
-      { name: "Evals", found: true },
-      { name: "Retrieval", found: true },
-      { name: "Kubernetes", found: false },
-    ],
-    inProfile: "In your profile",
-    notInProfile: "Not in your profile",
   },
 
   prepare: {

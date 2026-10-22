@@ -7,9 +7,9 @@ import extensionListing from "../../../extension/store/LISTING.md?raw";
 import readmeRaw from "../../../README.md?raw";
 import fitBlock from "../components/discover/FitBlock.tsx?raw";
 import practicePanel from "../components/InterviewPracticePanel.tsx?raw";
+import { subScoreLabel } from "../lib/discover";
 import openrouterOAuth from "../lib/settings/openrouterOAuth.ts?raw";
 import profileTrails from "../lib/profileTrails.ts?raw";
-import tailorPanel from "../components/TailorPanel.tsx?raw";
 import workspaceTrails from "../lib/workspaceTrails.ts?raw";
 import { FORBIDDEN, strings } from "../testing/claims";
 import { findForbiddenWord } from "../lib/trail";
@@ -80,10 +80,14 @@ describe("what the tour says is true of the product", () => {
     expect(fitBlock).toContain("Not scored");
     expect(fitBlock).toContain("Lowest part");
     expect(TOUR.discover.lowest).toBe("Lowest part: Skills");
-    // The skills table is the Tailor panel's coverage read: clusters from a model, matched by code.
-    expect(tailorPanel).toContain("No matching evidence in your profile.");
-    expect(workspaceTrails).toContain("clusters extracted by a model");
-    expect(workspaceTrails).toContain("matched to your profile by code");
+    // What is drawn is what a Discover result draws: the ladder, the model's one line, a bar per part under the
+    // part's own label, and the lowest part. The skills read (clusters, found or not) is the Tailor panel's, in an
+    // application's workspace, and is not part of this drawing.
+    expect(fitBlock).toContain("oneLiner");
+    expect(fitBlock).toContain("SegmentedBar");
+    expect(TOUR.discover.parts.map((part) => part.label)).toEqual([subScoreLabel("skills"), subScoreLabel("experience"), subScoreLabel("location")]);
+    expect(TOUR.discover).not.toHaveProperty("skills");
+    expect(TOUR.discover.parts.every((part) => !("word" in part))).toBe(true);
   });
 
   it("Prepare: the three checks left to the person are checks the export checklist reports as not checked", () => {

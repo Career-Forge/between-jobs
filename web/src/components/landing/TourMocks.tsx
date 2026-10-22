@@ -68,35 +68,11 @@ export function DiscoverMock() {
           {copy.parts.map((part) => (
             <li key={part.label}>
               <span className="bj-tour-part-label">{part.label}</span>
-              <span className="bj-tour-part-word">{part.word}</span>
               <Cells filled={part.filled} total={8} />
             </li>
           ))}
         </ul>
         <p className="bj-tour-note">{copy.lowest}</p>
-
-        <table className="bj-tour-table">
-          <caption>{copy.skillsCaption}</caption>
-          <thead>
-            <tr>
-              {copy.skillsHead.map((head) => (
-                <th key={head} scope="col">
-                  {head}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {copy.skills.map((skill) => (
-              <tr key={skill.name}>
-                <th scope="row">{skill.name}</th>
-                <td>
-                  <GlyphMark name={skill.found ? "evidence" : "code"} /> {skill.found ? copy.inProfile : copy.notInProfile}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
       <PanelTrail id="discover" />
     </div>
