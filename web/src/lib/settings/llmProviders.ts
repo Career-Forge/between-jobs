@@ -180,9 +180,26 @@ export function searchRows(rows: readonly CredentialSummary[]): CredentialSummar
   return rows.filter((row) => row.service === "search");
 }
 
-// The name to show for a provider id the catalogue may not have (while it loads, or when it failed).
+// The names the API's catalogue gives the model providers (src/between_jobs/api/provider_registry.py;
+// a test holds the two together). They are what the page says while the catalogue is loading or when
+// it failed, and what Today says, which never reads the catalogue.
+export const MODEL_PROVIDER_NAMES: Readonly<Record<string, string>> = {
+  openrouter: "OpenRouter",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  gemini: "Google Gemini",
+  xai: "xAI",
+  deepseek: "DeepSeek",
+  qwen: "Qwen Cloud",
+  custom: "Other OpenAI-compatible provider",
+};
+
+// The name to show for a provider id: the catalogue's, else the one above, else the id as the server
+// sent it (nothing is guessed about a provider this page has not heard of).
 export function providerName(id: string, catalog: readonly LlmProvider[] | null): string {
-  return catalog?.find((provider) => provider.id === id)?.name ?? id;
+  const named = catalog?.find((provider) => provider.id === id)?.name;
+  if (named !== undefined) return named;
+  return Object.hasOwn(MODEL_PROVIDER_NAMES, id) ? MODEL_PROVIDER_NAMES[id] : id;
 }
 
 // ── models: POST /credentials/llm/models ─────────────────────────────────

@@ -80,6 +80,23 @@ describe("the open checklist", () => {
     expect(steps(container).map((step) => words(query(step, ".bj-setup-state")))).toEqual(Array(5).fill("✓Done"));
   });
 
+  it("says what is connected on the AI step, in plain words, under the shared label", () => {
+    const done = draw(deriveFirstRun({ ...FINISHED, modelKeyDetail: { reading: "ready", providers: ["OpenRouter"] } }, FLAGS));
+    click(query(done.container, "button.bj-setup-line"));
+    expect(words(query(steps(done.container)[1], ".bj-setup-note"))).toBe("AI model: OpenRouter, model chosen");
+    expect(words(query(steps(done.container)[1], ".bj-setup-link"))).toBe("Add a model key");
+    done.unmount();
+    const todo = draw(deriveFirstRun({ ...BRAND_NEW, modelKeyDetail: { reading: "none", providers: [] } }, FLAGS));
+    expect(words(query(steps(todo.container)[1], ".bj-setup-note"))).toMatch(/^Connect an AI model\./);
+    todo.unmount();
+    const waiting = draw(deriveFirstRun({ ...BRAND_NEW, modelKeyNeedsModel: ok(true), modelKeyDetail: { reading: "needs_model", providers: ["OpenAI"] } }, FLAGS));
+    expect(words(query(steps(waiting.container)[1], ".bj-setup-link"))).toBe("Choose a model");
+    expect(words(query(steps(waiting.container)[1], ".bj-setup-note"))).toMatch(/^Choose a model for OpenAI\./);
+    waiting.unmount();
+    const unconfirmed = draw(deriveFirstRun({ ...BRAND_NEW, modelKeyDetail: { reading: "needs_key", providers: ["Anthropic"] } }, FLAGS));
+    expect(words(query(steps(unconfirmed.container)[1], ".bj-setup-note"))).toMatch(/^Add a key for Anthropic\./);
+  });
+
   it("leaves a done step with no fact without a note, rather than inventing one", () => {
     const { container } = draw(deriveFirstRun({ ...FINISHED, profileActiveSince: undefined }, FLAGS));
     click(query(container, "button.bj-setup-line"));

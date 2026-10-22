@@ -3,6 +3,7 @@ import providerRegistry from "../../../../src/between_jobs/api/provider_registry
 import { parseCredentialRows } from "./credentials";
 import {
   MODEL_ID_PATTERN,
+  MODEL_PROVIDER_NAMES,
   MODEL_ROWS_SHOWN,
   endpointForAddress,
   filterModels,
@@ -93,11 +94,18 @@ describe("the provider catalogue", () => {
     expect(ids.sort()).toEqual(["anthropic", "custom", "deepseek", "gemini", "openai", "openrouter", "qwen", "xai"]);
   });
 
-  it("falls back to the id for a name the catalogue lacks", () => {
+  it("falls back to the registry's own name, then to the id, for a name the catalogue lacks", () => {
     const providers = parseProviderCatalog(catalogBody);
     expect(providerName("qwen", providers)).toBe("Qwen Cloud");
-    expect(providerName("openai", providers)).toBe("openai");
-    expect(providerName("openai", null)).toBe("openai");
+    expect(providerName("openai", providers)).toBe("OpenAI");
+    expect(providerName("openai", null)).toBe("OpenAI");
+    expect(providerName("newhost", providers)).toBe("newhost");
+    expect(providerName("toString", null)).toBe("toString");
+  });
+
+  it("keeps the fallback names equal to the names in the API registry", () => {
+    const named = [...providerRegistry.matchAll(/^    (?:"([a-z]+)"|(OPENROUTER|QWEN|CUSTOM)): ProviderSpec\(\s*(?:"[a-z]+"|[A-Z]+),\s*"([^"]+)"/gm)].map((m) => [m[1] ?? m[2].toLowerCase(), m[3]]);
+    expect(Object.fromEntries(named)).toEqual(MODEL_PROVIDER_NAMES);
   });
 });
 

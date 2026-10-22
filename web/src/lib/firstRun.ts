@@ -52,7 +52,7 @@
 // components/FirstRunChecklist.tsx.
 
 import { CROSS_NAV_HASH } from "./applicationsBoard";
-import { MODEL_CHOICE_LABEL, modelKeyOf } from "./modelKey";
+import { CONNECT_MODEL_WORDS, MODEL_CHOICE_LABEL, modelKeyDetailOf, modelKeyOf, modelStatusWords, type ModelKeyDetail } from "./modelKey";
 import { MODEL_PROVIDER_PATH } from "./settingsPaths";
 
 // ── the facts ──────────────────────────────────────────────────────────────
@@ -86,6 +86,10 @@ export interface FirstRunFacts {
   // A key is checked and saved with no model chosen, and no key is ready. Only read when modelKey is
   // false. Absent means no key is waiting for a model.
   modelKeyNeedsModel?: Fetched<boolean>;
+  // Which providers are behind the model key reading, from the same credentials rows. Only the words
+  // of the step's description line use it (the shared label and the chat's copy do not), and it is
+  // absent when the credentials were not read.
+  modelKeyDetail?: ModelKeyDetail;
   savedSearches: Fetched<number>;
   applications: Fetched<ApplicationFacts>;
 }
@@ -205,6 +209,7 @@ export function firstRunFactsOf(reads: AccountReads): FirstRunFacts {
     // finished step, and the step then says what is left.
     modelKey: mapFetched(reads.credentials, (rows) => modelKeyOf(rows) === "ready"),
     modelKeyNeedsModel: mapFetched(reads.credentials, (rows) => modelKeyOf(rows) === "needs_model"),
+    ...(reads.credentials.kind === "ok" ? { modelKeyDetail: modelKeyDetailOf(reads.credentials.value) } : {}),
     savedSearches: mapFetched(reads.savedSearches, (rows) => rows.length),
     applications: mapFetched(reads.applications, (rows) => {
       const withoutResume = rows.find((row) => row.resume_exists !== true && nonEmptyString(row.id));
@@ -318,6 +323,34 @@ function resumeLink(facts: FirstRunFacts): string {
   return "/applications";
 }
 
+// The model step's description line. The step's LABEL is the shared one ("Add a model key", "Choose a
+// model": the chat's copy and its tests pin it), so the plain words about what is connected live here,
+// in the web's own line. They come from the credentials rows already read, never from a new request.
+function listNames(names: readonly string[]): string {
+  return names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+function modelHint(facts: FirstRunFacts, awaitingModel: boolean): string {
+  const detail = facts.modelKeyDetail;
+  const who = detail !== undefined && detail.providers.length > 0 ? listNames(detail.providers) : null;
+  if (awaitingModel) {
+    return who === null
+      ? "Your key is saved and checked, but no model is chosen for it yet. Choose one to use it."
+      : `${modelStatusWords("needs_model", who)}. The key is saved and checked; a model is the last step.`;
+  }
+  if (detail?.reading === "needs_key" && who !== null) {
+    return `${modelStatusWords("needs_key", who)}. The saved key isn't confirmed, so it can't be used.`;
+  }
+  return `${CONNECT_MODEL_WORDS}. Paste your own key. This app never runs on a shared key.`;
+}
+
+function modelDoneFact(facts: FirstRunFacts): string {
+  const detail = facts.modelKeyDetail;
+  if (detail === undefined || detail.reading !== "ready" || detail.providers.length === 0) return "Key saved and checked";
+  const names = listNames(detail.providers);
+  return `AI model: ${names}, ${detail.providers.length === 1 ? "model" : "models"} chosen`;
+}
+
 export function deriveFirstRun(facts: FirstRunFacts, flags: FirstRunFlags): FirstRunView {
   const applications = facts.applications;
   // The key is there; the model is what is missing. Only claimed when both facts were read.
@@ -351,13 +384,11 @@ export function deriveFirstRun(facts: FirstRunFacts, flags: FirstRunFlags): Firs
     {
       id: "model_key",
       label: awaitingModel ? MODEL_CHOICE_LABEL : "Add a model key",
-      hint: awaitingModel
-        ? "Your key is saved and checked, but no model is chosen for it yet. Choose one to use it."
-        : "Paste your own model key. This app never runs on a shared key.",
+      hint: modelHint(facts, awaitingModel),
       to: MODEL_PROVIDER_PATH,
       status: modelKey,
       cause: causeOf(modelKey, facts.modelKey),
-      fact: modelKey === "done" ? { kind: "text", text: "Key saved and checked" } : null,
+      fact: modelKey === "done" ? { kind: "text", text: modelDoneFact(facts) } : null,
     },
     {
       id: "first_search",

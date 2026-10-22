@@ -5,7 +5,7 @@
 // A key is usable when it is checked AND has a model chosen: a checked key with no model is saved
 // and still fails every generation (the API's `needs_model`). So "has a key row" is never the test.
 
-import { llmSetupState } from "./settings/llmProviders";
+import { llmSetupState, providerName, type LlmSetupState } from "./settings/llmProviders";
 
 // What the action for a saved key with no model is called wherever it is offered: the setup checklist,
 // the band's "no usable key" row and the Settings page's band all say it in these words.
@@ -29,4 +29,42 @@ export function modelKeyOf(rows: readonly Record<string, unknown>[]): ModelKeyRe
   if (states.includes("needs_model")) return "needs_model";
   if (states.includes("needs_key")) return "needs_key";
   return "none";
+}
+
+// ── the words for it ─────────────────────────────────────────────────────
+
+// What a person reads about their AI model, the same on Settings (each saved provider's row) and on
+// Today's setup list, so the two never say it differently. No technical word: nothing here names a
+// key's stored state, only what is connected and what is missing.
+export const CONNECT_MODEL_WORDS = "Connect an AI model";
+
+export function modelStatusWords(state: LlmSetupState, name: string): string {
+  if (state === "ready") return `${name}, model chosen`;
+  if (state === "needs_model") return `Choose a model for ${name}`;
+  return `Add a key for ${name}`;
+}
+
+// The providers behind a reading, by name, for the one line Today's setup list adds. `providers` is
+// the ones in the state `reading` names: every ready one, or the ones still waiting for a model, or
+// the ones whose key is not confirmed. Empty for "none".
+export interface ModelKeyDetail {
+  reading: ModelKeyReading;
+  providers: readonly string[];
+}
+
+export function modelKeyDetailOf(rows: readonly Record<string, unknown>[]): ModelKeyDetail {
+  const reading = modelKeyOf(rows);
+  if (reading === "none") return { reading, providers: [] };
+  const providers: string[] = [];
+  for (const row of rows) {
+    if (row.service !== "llm" || typeof row.provider !== "string") continue;
+    const state = llmSetupState({
+      is_validated: row.is_validated === true,
+      model: typeof row.model === "string" && row.model !== "" ? row.model : null,
+      setup_state: row.setup_state,
+    });
+    const name = providerName(row.provider, null);
+    if (state === reading && !providers.includes(name)) providers.push(name);
+  }
+  return { reading, providers };
 }

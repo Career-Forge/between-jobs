@@ -17,28 +17,12 @@
   margin-top: var(--bj-space-7);
 }
 
-.bj-set-section > h2,
-.bj-set-section-head > h2 {
+.bj-set-section > h2 {
   margin: 0;
   font-family: var(--bj-font-display);
   font-size: 28px;
   font-weight: 500;
   line-height: 1.2;
-}
-
-.bj-set-section-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--bj-space-1) var(--bj-space-4);
-}
-
-.bj-set-count {
-  margin: 0;
-  font-family: var(--bj-font-mono);
-  font-size: 12.5px;
-  color: var(--bj-text-muted);
 }
 
 .bj-set-lede {
@@ -53,12 +37,76 @@
 
 .bj-set-add > h3,
 .bj-set-default > h3,
-.bj-set-card-head > h3,
-.bj-set-row-title > h3 {
+.bj-set-card-head > h3 {
   margin: 0;
   font-family: var(--bj-font-display);
   font-size: 20px;
   font-weight: 500;
+}
+
+/* A saved provider's title is its status in words ("OpenRouter, model chosen"): body face, so a list
+   of rows reads as quiet lines and not as a stack of headings. */
+.bj-set-row-title > h3 {
+  margin: 0;
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-body);
+  font-weight: 400;
+}
+
+.bj-set-status-name {
+  font-weight: 600;
+}
+
+.bj-set-status-glyph {
+  flex: none;
+  font-size: 13px;
+}
+
+.bj-set-status-glyph--done {
+  color: var(--bj-emerald);
+}
+
+.bj-set-status-glyph--todo {
+  color: var(--bj-gold);
+}
+
+/* The one line the card says before anything is connected. */
+.bj-set-statusline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--bj-space-2);
+  margin: 0 0 var(--bj-space-4);
+}
+
+.bj-set-default-tag {
+  padding: 1px 8px;
+  border: 1px solid var(--bj-border);
+  border-radius: 999px;
+  font-family: var(--bj-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+/* A side-note about a provider: quiet text, a gold diamond, a small mono label. Not a warning, so it
+   has no border, no fill and no red. */
+.bj-set-sidenote {
+  margin: var(--bj-space-2) 0 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-set-sidenote-label {
+  font-family: var(--bj-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bj-set-card > .bj-set-sidenote {
+  margin-top: 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -152,6 +200,141 @@
   font-family: var(--bj-font-mono);
   font-size: 12.5px;
   overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
+/* Optional extras: one disclosure, grouped quiet rows                  */
+/* ------------------------------------------------------------------ */
+
+/* The heading holds the toggle, so the whole title is the hit area and it is read as a heading that
+   opens. It is drawn as the heading, not as a button. */
+.bj-extras > h2 {
+  min-width: 0;
+}
+
+button.bj-extras-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--bj-space-3);
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.bj-extras-toggle:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--bj-text);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+/* A square box, so turning it a quarter does not swing it into the title beside it. */
+.bj-extras-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1em;
+  height: 1em;
+  line-height: 1;
+  color: var(--bj-text-muted);
+  transition: transform 150ms ease-out;
+}
+
+button.bj-extras-toggle[aria-expanded="true"] .bj-extras-chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bj-extras-chevron {
+    transition: none;
+  }
+}
+
+.bj-extras-body {
+  min-width: 0;
+}
+
+.bj-set-group {
+  min-width: 0;
+  margin-top: var(--bj-space-5);
+}
+
+.bj-set-group-title {
+  margin: 0 0 var(--bj-space-2);
+  font-family: var(--bj-font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+.bj-set-extras {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--bj-border);
+}
+
+.bj-set-extra {
+  min-width: 0;
+  padding: var(--bj-space-1) 0;
+  border-bottom: 1px solid var(--bj-border);
+  scroll-margin-top: var(--bj-space-5);
+}
+
+.bj-set-extra-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-1) var(--bj-space-4);
+  min-height: 44px;
+}
+
+.bj-set-extra-name {
+  flex: 1 1 10em;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-body);
+  font-weight: 500;
+}
+
+.bj-set-extra-state {
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-set-extra-glyph {
+  color: var(--bj-emerald);
+}
+
+.bj-set-extra-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--bj-space-1) var(--bj-space-3);
+}
+
+.bj-set-extra > .bj-set-hint,
+.bj-set-extra > .bj-trail,
+.bj-set-extra > .bj-set-error {
+  margin-bottom: var(--bj-space-2);
+}
+
+.bj-set-getkey {
+  align-self: flex-start;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
 }
 
 /* ------------------------------------------------------------------ */
@@ -464,8 +647,7 @@ button.bj-set-action {
     margin-top: var(--bj-space-6);
   }
 
-  .bj-set-section > h2,
-  .bj-set-section-head > h2 {
+  .bj-set-section > h2 {
     font-size: 24px;
   }
 
@@ -501,6 +683,16 @@ button.bj-set-action {
     min-height: 44px;
   }
 
+  .bj-set-extra-actions > button,
+  button.bj-extras-toggle {
+    min-height: 44px;
+  }
+
+  .bj-set-extra-actions {
+    justify-content: flex-start;
+  }
+
+  .bj-set-getkey,
   .bj-set-row-actions > a,
   .bj-set-card-head > a {
     display: inline-flex;
