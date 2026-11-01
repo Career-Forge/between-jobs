@@ -184,3 +184,37 @@ describe("a search that could not be saved from Discover", () => {
     expect(renderToStaticMarkup(<SavedSearchesCardView state={{ kind: "loading" }} actions={recorder().actions} createError={null} />)).toBe("");
   });
 });
+
+describe("without its own heading (the folded row on Discover draws one around it)", () => {
+  const headingless = (state: SavedSearchesState, createError: string | null = null) =>
+    renderToStaticMarkup(<SavedSearchesCardView state={state} actions={recorder().actions} createError={createError} headingless />);
+
+  it("leaves the heading out in every state the card is drawn in, and keeps everything else", () => {
+    const list = headingless(ready([search()]));
+    expect(list).not.toContain("<h2");
+    expect(textOfMarkup(list)).not.toContain("Saved searches");
+    expect(textOfMarkup(list)).toContain(SAVED_SEARCHES_NOTE);
+    expect(textOfMarkup(list)).toContain('"data analyst"');
+    expect(list).toContain("Pause");
+    const failed = headingless({ kind: "failed", message: "The service is down." });
+    expect(failed).not.toContain("<h2");
+    expect(textOfMarkup(failed)).toContain("The service is down.");
+    expect(failed).toContain("Try again");
+    const refused = headingless({ kind: "loading" }, "You can keep at most 25 saved searches.");
+    expect(refused).not.toContain("<h2");
+    expect(textOfMarkup(refused)).toContain("You can keep at most 25 saved searches.");
+  });
+
+  it("is the same card with its heading everywhere that does not ask for the change, as Settings does", () => {
+    for (const state of [ready([search()]), { kind: "failed", message: "x" } as SavedSearchesState]) {
+      const html = renderToStaticMarkup(<SavedSearchesCardView state={state} actions={recorder().actions} />);
+      expect(html).toContain('<h2 class="bj-ss-heading">Saved searches</h2>');
+    }
+    expect(renderToStaticMarkup(<SavedSearchesCardView state={{ kind: "loading" }} actions={recorder().actions} createError="no" />)).toContain("Saved searches");
+  });
+
+  it("still draws nothing for a person with none, with or without a heading", () => {
+    expect(headingless(ready([]))).toBe("");
+    expect(headingless({ kind: "loading" })).toBe("");
+  });
+});

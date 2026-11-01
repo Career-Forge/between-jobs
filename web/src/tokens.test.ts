@@ -268,6 +268,8 @@ const PAIRS: [label: string, foreground: string, background: string, minimum: nu
   ["group and secondary outline against the canvas", "--bj-outline", "--bj-bg", 3],
   ["group and secondary outline against a surface", "--bj-outline", "--bj-surface", 3],
   ["brand dot against the canvas", "--bj-brand-dot", "--bj-bg", 3],
+  ["Discover score numeral: gold on the lifted Strong row's surface", "--bj-gold", "--bj-surface", 4.5],
+  ["Discover score numeral: gold on the canvas", "--bj-gold", "--bj-bg", 4.5],
 ];
 
 describe("contrast", () => {

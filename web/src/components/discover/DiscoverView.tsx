@@ -1,13 +1,15 @@
 import { NextStepBand } from "../paper/NextStepBand";
 import { PageHeader } from "../paper/PageHeader";
 import { EmptyState, FailureState, LoadingState, SetupRequiredState, type StateLink } from "../paper/StateViews";
-import { SavedSearchesCardView, type SavedSearchesActions } from "../SavedSearchesCardView";
+import type { SavedSearchesActions } from "../SavedSearchesCardView";
 import type { DiscoverRequest } from "../../lib/discoverFacts";
 import type { DiscoverResponse, JobCard } from "../../lib/discoverTypes";
 import type { NextStepOutcome } from "../../lib/nextStep";
+import { bandHoldsSearch } from "../../lib/nextStep/pages/discover";
 import type { SavedSearchesState } from "../../lib/savedSearches";
 import { DiscoverForm } from "./DiscoverForm";
 import { ResultsView } from "./ResultsView";
+import { SavedSearchesFold } from "./SavedSearchesFold";
 import { SearchTimer } from "./SearchTimer";
 import "../../styles/discover.css";
 
@@ -81,11 +83,13 @@ export function DiscoverView(props: DiscoverViewProps) {
         searching={search.kind === "loading"}
         searched={search.kind === "ready" || search.kind === "error"}
         blockedReason={setup === null || setup.blocksSearch === false ? null : SETUP_BLOCKED_NOTE}
+        searchInBand={bandHoldsSearch(props.outcome)}
+        bandPending={props.outcome.status === "loading"}
         onSearch={props.onSearch}
         onSave={props.onSave}
         saving={props.saving}
       />
-      <SavedSearchesCardView state={props.saved.state} actions={props.saved.actions} now={now} createError={props.saved.createError} timeZone={props.timeZone} />
+      <SavedSearchesFold saved={props.saved} saving={props.saving} now={now} timeZone={props.timeZone} />
       {setup !== null ? (
         <SetupRequiredState message={setup.message} missing={setup.missing} />
       ) : (

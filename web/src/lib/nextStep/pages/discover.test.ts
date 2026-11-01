@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PAGES, nextStepWithRow } from "..";
 import type { NextStepInput, NextStepOutcome, ProfileFacts, SetupCheck } from "..";
 import { findForbiddenWord } from "../../trail";
-import { DISCOVER_FORM_ID, isDiscoverFacts, rules, type DiscoverFacts, type DiscoverResultsFact } from "./discover";
+import { DISCOVER_FORM_ID, bandHoldsSearch, isDiscoverFacts, rules, type DiscoverFacts, type DiscoverResultsFact } from "./discover";
 
 // Discover's rows, as a table: what the page has read in, which row decides, what the band says
 // out. The global rows (G0..F1) run before these, so the table also pins the cases they decide here.
@@ -249,6 +249,36 @@ describe("the table", () => {
       const entry = rows.find((candidate) => candidate.row === row);
       expect(entry?.action?.startsWith("submit:")).toBe(true);
     }
+  });
+});
+
+describe("whether the band holds the form's Search", () => {
+  const outcomeOf = (input: Partial<NextStepInput<DiscoverFacts>>) => ask(input).outcome;
+
+  it("is true for the rows whose button submits this form: D2 before a search, D4b when the scoring fell back", () => {
+    expect(bandHoldsSearch(outcomeOf({}))).toBe(true);
+    expect(bandHoldsSearch(outcomeOf({ facts: facts({ phase: "results", results: results({ fallback: true }) }) }))).toBe(true);
+  });
+
+  it("is false for a link (no key), a step with no button, a button that is not Search, and a failure", () => {
+    expect(bandHoldsSearch(outcomeOf({ facts: facts({ key: "none" }) }))).toBe(false);
+    expect(bandHoldsSearch(outcomeOf({ facts: facts({ phase: "searching" }) }))).toBe(false);
+    expect(bandHoldsSearch(outcomeOf({ facts: facts({ phase: "results", results: results() }) }))).toBe(false);
+    expect(bandHoldsSearch(outcomeOf({ facts: facts({ phase: "results", results: results({ scored: 0, more: 0, filtersSet: 2 }) }) }))).toBe(false);
+    expect(bandHoldsSearch(outcomeOf({ facts: facts({ phase: "results", results: results({ scored: 0, more: 0, filtersSet: 0 }) }) }))).toBe(false);
+    expect(bandHoldsSearch(outcomeOf({ pageFailure: { what: "Couldn't finish the search", call: "GET /discover", at: "09:14", intent: "retry" } }))).toBe(false);
+    expect(bandHoldsSearch(outcomeOf({ profile: NO_PROFILE }))).toBe(false);
+  });
+
+  it("is false while the band is loading or has nothing to say", () => {
+    expect(bandHoldsSearch({ status: "loading" })).toBe(false);
+    expect(bandHoldsSearch({ status: "none" })).toBe(false);
+    expect(bandHoldsSearch(outcomeOf({ facts: undefined }))).toBe(false);
+  });
+
+  it("is false for a submit that belongs to another form", () => {
+    const other: NextStepOutcome = { status: "ready", step: { sentence: "x", action: { kind: "submit", label: "Search", form: "another-form" }, why: [] } };
+    expect(bandHoldsSearch(other)).toBe(false);
   });
 });
 

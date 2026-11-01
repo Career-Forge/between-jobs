@@ -34,7 +34,9 @@ import { useSetupReads } from "../lib/useSetupReads";
 //
 // THE PAGE'S ONE CYAN BUTTON is the next-step band's (lib/nextStep/pages/discover.ts): "Search" when
 // the page is ready and nothing has been searched, "Search again" when the scoring fell back, "Clear
-// filters" when nothing matched. The form's own Search and every row's Track are outlined.
+// filters" when nothing matched. Before the first search the band's Search is the only one on the page
+// (the form draws none until a search has run, and Enter in a field still presses the band's); after
+// that the form's own "Search again" is outlined, and so is every row's Track.
 //
 // WHAT RUNS WHEN. Opening the page runs NO search: a search is a full discovery (provider calls,
 // liveness probes, a model call) and spends one slot of the per-user "discover" limit, so a search on

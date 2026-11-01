@@ -95,6 +95,12 @@ const band = (container: HTMLElement) => query(container, 'section[aria-label="N
 const form = (container: HTMLElement) => query<HTMLFormElement>(container, "form");
 const status = (container: HTMLElement) => words(query(container, ".bj-discover > .bj-visually-hidden[role='status']"));
 
+// The saved searches are one folded row on this page; their list is behind its button.
+const savedToggle = (container: HTMLElement) => query<HTMLButtonElement>(container, "button.bj-disc-saved-toggle");
+function openSaved(container: HTMLElement) {
+  if (savedToggle(container).getAttribute("aria-expanded") === "false") click(savedToggle(container));
+}
+
 function type(input: HTMLInputElement, value: string) {
   act(() => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -510,6 +516,25 @@ describe("Track", () => {
     expect(callsTo("GET /discover")).toHaveLength(1);
   });
 
+  it("tracks a row that a fit and a sort have brought forward, and keeps both choices and Open workspace on that row", async () => {
+    answer({ "/discover?": mixedResponse(), "POST /discover/track": { id: "app-3" } });
+    const { container } = await draw();
+    await search(container);
+    click(buttonNamed(query(container, '[aria-label="Show results by fit"]'), /^Good /));
+    click(buttonNamed(query(container, '[aria-label="Sort results"]'), "Best fit"));
+    click(buttonNamed(container, "Track Good 2 at Acme"));
+    await flush();
+    const post = api.apiFetch.mock.calls.find(([path]) => path === "/discover/track");
+    expect(JSON.parse(post![1].body).title).toBe("Good 2");
+    const rows = [...container.querySelectorAll("li.bj-disc-row")];
+    expect(rows).toHaveLength(6);
+    const open = [...rows[1].querySelectorAll<HTMLAnchorElement>("a")].find((link) => words(link) === "Open workspace");
+    expect(open?.getAttribute("href")).toBe("/applications/app-3");
+    expect(query(container, '[aria-label="Show results by fit"] [aria-pressed="true"]').textContent).toContain("Good");
+    expect(query(container, '[aria-label="Sort results"] [aria-pressed="true"]').textContent).toBe("Best fit");
+    expect(callsTo("GET /discover")).toHaveLength(1);
+  });
+
   it("is one request per job: a second press while it is out sends nothing", async () => {
     let release: (value: unknown) => void = () => undefined;
     answer({ "/discover?": response(), "POST /discover/track": () => new Promise((resolve) => (release = resolve)) });
@@ -596,9 +621,22 @@ describe("saved searches", () => {
   it("lists the person's searches above the results, with the last check, and no request beyond the one list", async () => {
     answer({ "/saved-searches": [SAVED] });
     const { container } = await draw();
+    expect(words(query(container, ".bj-disc-saved-hint"))).toBe("1 search, checked in the background");
+    expect(container.querySelector(".bj-ss")).toBeNull();
+    openSaved(container);
     expect(words(query(container, ".bj-ss-label"))).toBe('"analytics engineer"');
     expect(words(query(container, ".bj-ss-row .bj-trail"))).toBe("Checked Sep 22");
     expect(callsTo("GET /saved-searches")).toHaveLength(1);
+  });
+
+  it("opens first of everything before a search: the saved row comes before the results and is closed by default", async () => {
+    answer({ "/saved-searches": [SAVED], "/discover?": response() });
+    const { container } = await draw();
+    expect(savedToggle(container).getAttribute("aria-expanded")).toBe("false");
+    await search(container);
+    expect(savedToggle(container).getAttribute("aria-expanded")).toBe("false");
+    const row = query(container, ".bj-disc-saved");
+    expect(row.compareDocumentPosition(query(container, ".bj-disc-results")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("saves the form's filters as they have always been sent, and puts the new search on top", async () => {
@@ -614,6 +652,8 @@ describe("saved searches", () => {
     click(query(form(container), "input[type='checkbox']"));
     click(buttonNamed(form(container), "Save this search"));
     await flush();
+    expect(words(query(container, ".bj-disc-saved-hint"))).toBe("2 searches, checked in the background");
+    openSaved(container);
     const post = api.apiFetch.mock.calls.find(([path, init]) => path === "/saved-searches" && init?.method === "POST");
     expect(JSON.parse(post![1].body)).toEqual({ query: "data engineer", location: "Jersey City", companies: ["Acme", "Initech"], remote_only: true });
     const labels = [...container.querySelectorAll(".bj-ss-label")].map((label) => words(label));
@@ -638,7 +678,12 @@ describe("saved searches", () => {
     click(buttonNamed(form(container), "Save this search"));
     await flush();
     expect(words(query(container, ".bj-ss [role='alert']"))).toBe("You can keep at most 25 saved searches.");
+    expect(savedToggle(container).getAttribute("aria-expanded")).toBe("true");
     expect(query<HTMLInputElement>(form(container), "input[type='text']").value).toBe("kept");
+    // The person can put it away; the closed row still says what went wrong.
+    click(savedToggle(container));
+    expect(container.querySelector(".bj-ss")).toBeNull();
+    expect(words(query(container, ".bj-disc-saved-hint"))).toBe("A search couldn't be saved");
   });
 
   it("shows a refused save even when the saved list failed to load, and does not announce a save", async () => {
@@ -688,6 +733,7 @@ describe("saved searches", () => {
   it("pauses and resumes a search with a PATCH, and says Paused", async () => {
     answer({ "/saved-searches": [SAVED], "PATCH /saved-searches/ss-1": { ...SAVED, is_active: false } });
     const { container } = await draw();
+    openSaved(container);
     click(buttonNamed(container, /^Pause the saved search/));
     await flush();
     const patch = api.apiFetch.mock.calls.find(([, init]) => init?.method === "PATCH");
@@ -699,6 +745,7 @@ describe("saved searches", () => {
   it("deletes a search with a DELETE and takes it off the list", async () => {
     answer({ "/saved-searches": [SAVED], "DELETE /saved-searches/ss-1": null });
     const { container } = await draw();
+    openSaved(container);
     click(buttonNamed(container, /^Delete the saved search/));
     await flush();
     expect(callsTo("DELETE /saved-searches/ss-1")).toHaveLength(1);
@@ -708,9 +755,11 @@ describe("saved searches", () => {
   it("keeps the list and says why when an action fails", async () => {
     answer({ "/saved-searches": [SAVED], "DELETE /saved-searches/ss-1": new FakeApiError(500, "Server error.") });
     const { container } = await draw();
+    openSaved(container);
     click(buttonNamed(container, /^Delete the saved search/));
     await flush();
     expect(words(query(container, ".bj-ss [role='alert']"))).toBe("Server error.");
+    expect(words(query(container, ".bj-disc-saved-hint"))).toBe("An update didn't go through");
     expect(container.querySelectorAll(".bj-ss-row")).toHaveLength(1);
   });
 
@@ -724,8 +773,11 @@ describe("saved searches", () => {
       "/discover?": response(),
     });
     const { container } = await draw();
+    // A failed read opens the row by itself: nobody has to find it to learn the list is missing.
     const alert = query(container, ".bj-ss[role='alert']");
-    expect(words(alert)).toContain("Saved searches");
+    expect(savedToggle(container).getAttribute("aria-expanded")).toBe("true");
+    expect(words(query(container, ".bj-disc-saved-hint"))).toBe("Couldn't be read");
+    expect(words(alert)).toContain("down");
     await search(container);
     expect(container.querySelectorAll("li.bj-disc-row")).toHaveLength(1);
     click(buttonNamed(alert, "Try again"));

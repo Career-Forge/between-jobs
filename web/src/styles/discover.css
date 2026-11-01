@@ -1,6 +1,10 @@
-/* Discover: the filter form, the result rows and their fit blocks, and the notes around them
- * (pages/Discover.tsx, components/discover/). Tokens only -- no color is defined here -- and no rule
- * fills anything cyan: the page's one cyan fill is the next-step band's button.
+/* Discover: the filter form, the saved-searches row, the toolbar, the status block and the result rows
+ * with their fit blocks (pages/Discover.tsx, components/discover/). Tokens only -- no color is defined
+ * here -- and no rule fills anything cyan: the page's one cyan fill is the next-step band's button.
+ *
+ * Top to bottom the page is: the band, the filter form, one folded row for saved searches, then the
+ * results. In the results section the order is the status block (what the search itself said: failures,
+ * dropped listings, sources), the toolbar (a fit, a sort, a switch), and the rows.
  *
  * A result row is a grid of named areas with the score in a gutter on its left: the number out of 100
  * and the tier word, a ladder, then the identity, the posting's text, the model's line with one line of
@@ -11,8 +15,9 @@
  * is dimmed or recolored. The list takes the width of the shell's column, at most 880px, and bleeds
  * one row padding into the page so the text lines up with the page edge.
  *
- * Under 960px every control is at least 44px tall and the form's fields stack. Long unbroken strings
- * from a posting (a company, a snippet with a bare URL) wrap inside the row and never widen the page. */
+ * Under 960px every control is at least 44px tall, the form's fields stack, and a field's text is 16px
+ * so a phone does not zoom in when one is focused. Long unbroken strings from a posting (a company, a
+ * snippet with a bare URL) wrap inside the row and never widen the page. */
 
 .bj-discover {
   min-width: 0;
@@ -75,6 +80,70 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--bj-space-2);
+}
+
+/* Save this search is a quiet button. With no padding at its left it lines up with the fields above it
+   instead of looking indented, or orphaned when it wraps under another button. */
+.bj-disc-form-actions > .bj-quiet {
+  padding-inline: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* The saved searches, folded into one row                              */
+/* ------------------------------------------------------------------ */
+
+.bj-disc-saved {
+  min-width: 0;
+  margin: 0 0 var(--bj-space-5);
+}
+
+.bj-disc-saved-heading {
+  margin: 0;
+}
+
+/* The row is the heading and its button: the name at the left, one hint after it, a glyph at the right. */
+.bj-disc-saved-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--bj-space-3);
+  width: 100%;
+  padding: var(--bj-space-2) 0;
+  border: 0;
+  border-bottom: 1px solid var(--bj-border);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.bj-disc-saved-title {
+  flex: none;
+  font-family: var(--bj-font-display);
+  font-size: var(--bj-text-title);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--bj-text);
+}
+
+.bj-disc-saved-hint {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bj-disc-saved-glyph {
+  flex: none;
+  color: var(--bj-text-muted);
+}
+
+.bj-disc-saved-body {
+  min-width: 0;
+  padding-top: var(--bj-space-3);
+}
+
+.bj-disc-saved-body .bj-ss {
+  margin-bottom: 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -618,7 +687,8 @@
   .bj-disc-problem button,
   .bj-disc-tools .bj-segmented > button,
   .bj-disc-toggle,
-  .bj-fit-toggle {
+  .bj-fit-toggle,
+  .bj-disc-saved-toggle {
     min-height: 44px;
   }
 
@@ -645,5 +715,7 @@
 
   .bj-disc-form input[type="text"] {
     min-height: 44px;
+    /* 16px is the size below which a phone's browser zooms the page when a field takes focus. */
+    font-size: 16px;
   }
 }
