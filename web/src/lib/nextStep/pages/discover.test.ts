@@ -16,12 +16,6 @@ function results(overrides: Partial<DiscoverResultsFact> = {}): DiscoverResultsF
     scored: 30,
     more: 42,
     deadRemoved: 3,
-    providers: [
-      { provider: "registry", count: 24 },
-      { provider: "serper", count: 6 },
-    ],
-    failedProviders: [],
-    otherNotes: 0,
     fallback: false,
     filtersSet: 2,
     companiesSet: true,
@@ -139,44 +133,28 @@ describe("the table", () => {
       why: ["link checks can take about 20 seconds"],
     },
     {
-      name: "results, scored and more, with per-provider counts",
+      name: "results, scored and more: the short why, with no provider counts and no dropped count",
       input: { facts: facts({ phase: "results", results: results() }) },
       row: "D4",
       sentence: "Track the jobs worth a draft.",
       action: null,
-      why: ["30 scored", "42 more, unscored", "3 dropped -- no longer live", "registry 24", "serper 6"],
+      why: ["30 scored", "42 more, unscored"],
     },
     {
       name: "results, nothing unscored and nothing dropped",
-      input: { facts: facts({ phase: "results", results: results({ more: 0, deadRemoved: 0, providers: [{ provider: "registry", count: 30 }] }) }) },
+      input: { facts: facts({ phase: "results", results: results({ more: 0, deadRemoved: 0 }) }) },
       row: "D4",
       sentence: "Track the jobs worth a draft.",
       action: null,
-      why: ["30 scored", "registry 30"],
-    },
-    {
-      name: "results with a provider that failed: the gap is in the why line",
-      input: { facts: facts({ phase: "results", results: results({ failedProviders: ["brave"] }) }) },
-      row: "D4",
-      sentence: "Track the jobs worth a draft.",
-      action: null,
-      why: ["30 scored", "42 more, unscored", "3 dropped -- no longer live", "registry 24", "serper 6", "brave failed"],
-    },
-    {
-      name: "results with two failed providers and notes that name none",
-      input: { facts: facts({ phase: "results", results: results({ failedProviders: ["brave", "serper"], otherNotes: 2, deadRemoved: 0, more: 0 }) }) },
-      row: "D4",
-      sentence: "Track the jobs worth a draft.",
-      action: null,
-      why: ["30 scored", "registry 24", "serper 6", "brave failed", "serper failed", "2 search notes"],
+      why: ["30 scored"],
     },
     {
       name: "only unscored rows came back",
-      input: { facts: facts({ phase: "results", results: results({ scored: 0, more: 12, deadRemoved: 0, providers: [{ provider: "registry", count: 12 }] }) }) },
+      input: { facts: facts({ phase: "results", results: results({ scored: 0, more: 12, deadRemoved: 0 }) }) },
       row: "D4",
       sentence: "Track the jobs worth a draft.",
       action: null,
-      why: ["0 scored", "12 more, unscored", "registry 12"],
+      why: ["0 scored", "12 more, unscored"],
     },
     {
       name: "results scored by the neutral fallback",
@@ -187,16 +165,8 @@ describe("the table", () => {
       why: ["scoring fell back", "every bin shows Placeholder"],
     },
     {
-      name: "the fallback and a provider that failed: the gap stays",
-      input: { facts: facts({ phase: "results", results: results({ fallback: true, failedProviders: ["brave"] }) }) },
-      row: "D4b",
-      sentence: "Your model's reply couldn't be read. These scores are placeholders.",
-      action: `submit:Search again:${DISCOVER_FORM_ID}`,
-      why: ["scoring fell back", "every bin shows Placeholder", "brave failed"],
-    },
-    {
       name: "no results with filters set, Companies among them",
-      input: { facts: facts({ phase: "results", results: results({ scored: 0, more: 0, deadRemoved: 0, providers: [], filtersSet: 3 }) }) },
+      input: { facts: facts({ phase: "results", results: results({ scored: 0, more: 0, deadRemoved: 0, filtersSet: 3 }) }) },
       row: "D5",
       sentence: "No results. Widen your filters or clear Companies.",
       action: "button:Clear filters:clear-filters",
@@ -204,25 +174,23 @@ describe("the table", () => {
     },
     {
       name: "no results with filters set and no Companies filter",
-      input: { facts: facts({ phase: "results", results: results({ scored: 0, more: 0, deadRemoved: 0, providers: [], filtersSet: 1, companiesSet: false }) }) },
+      input: { facts: facts({ phase: "results", results: results({ scored: 0, more: 0, deadRemoved: 0, filtersSet: 1, companiesSet: false }) }) },
       row: "D5",
       sentence: "No results. Widen your filters.",
       action: "button:Clear filters:clear-filters",
       why: ["0 results", "filters: 1 set"],
     },
     {
-      name: "no results, with listings dropped as no longer live and a failed provider",
-      input: {
-        facts: facts({ phase: "results", results: results({ scored: 0, more: 0, deadRemoved: 4, providers: [], filtersSet: 2, failedProviders: ["serper"] }) }),
-      },
+      name: "no results, with listings dropped as no longer live: the drop is in the status block, not the why",
+      input: { facts: facts({ phase: "results", results: results({ scored: 0, more: 0, deadRemoved: 4, filtersSet: 2 }) }) },
       row: "D5",
       sentence: "No results. Widen your filters or clear Companies.",
       action: "button:Clear filters:clear-filters",
-      why: ["0 results", "filters: 2 set", "4 dropped -- no longer live", "serper failed"],
+      why: ["0 results", "filters: 2 set"],
     },
     {
       name: "no results and no filter set: nothing to clear, so unlit",
-      input: { facts: facts({ phase: "results", results: results({ scored: 0, more: 0, deadRemoved: 0, providers: [], filtersSet: 0, companiesSet: false }) }) },
+      input: { facts: facts({ phase: "results", results: results({ scored: 0, more: 0, deadRemoved: 0, filtersSet: 0, companiesSet: false }) }) },
       row: "D5",
       sentence: "No results, and no filters were set.",
       action: null,
@@ -258,6 +226,21 @@ describe("the table", () => {
       const decided = step(ask(entry.input).outcome);
       expect(findForbiddenWord([decided.sentence, ...decided.why].join(" "))).toBeNull();
       expect(decided.sentence).not.toContain("—");
+    }
+  });
+
+  it("never lists a provider, a failure or a dropped count in a why line, whatever the search returned", () => {
+    for (const scored of [0, 30]) {
+      for (const more of [0, 42]) {
+        for (const fallback of [false, true]) {
+          for (const deadRemoved of [0, 5]) {
+            const decided = step(ask({ facts: facts({ phase: "results", results: results({ scored, more, fallback, deadRemoved, filtersSet: 2 }) }) }).outcome);
+            const why = decided.why.join(" | ");
+            expect(why).not.toMatch(/registry|serper|brave|jsearch|failed|dropped|no longer live|search note/);
+            expect(decided.why.length).toBeLessThanOrEqual(2);
+          }
+        }
+      }
     }
   });
 
@@ -315,8 +298,8 @@ describe("facts the page rows cannot read", () => {
     ["an unknown key reading", { phase: "idle", key: "maybe", searchProviders: 1, results: null }],
     ["a negative provider count", { phase: "idle", key: "ready", searchProviders: -1, results: null }],
     ["a result with a fractional count", { phase: "results", key: "ready", searchProviders: 1, results: { ...results(), scored: 1.5 } }],
-    ["a result whose providers are not counted", { phase: "results", key: "ready", searchProviders: 1, results: { ...results(), providers: [{ provider: "x" }] } }],
-    ["a result whose failed providers are not text", { phase: "results", key: "ready", searchProviders: 1, results: { ...results(), failedProviders: [1] } }],
+    ["a result whose dropped count is not a count", { phase: "results", key: "ready", searchProviders: 1, results: { ...results(), deadRemoved: -1 } }],
+    ["a result with no fallback flag", { phase: "results", key: "ready", searchProviders: 1, results: { ...results(), fallback: "no" } }],
   ])("are refused (%s), and the band then shows nothing rather than a guess", (_name, value) => {
     expect(isDiscoverFacts(value)).toBe(false);
     expect(ask({ facts: value as DiscoverFacts }).outcome).toEqual({ status: "none" });

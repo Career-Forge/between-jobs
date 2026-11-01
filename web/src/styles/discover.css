@@ -131,6 +131,23 @@
   padding: var(--bj-space-1) 0;
 }
 
+/* What the search said about itself, apart from its rows: the failure lines, the dropped listings and
+   how many rows each source returned. Quiet, above the results. */
+.bj-disc-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-1);
+  min-width: 0;
+}
+
+.bj-disc-sources {
+  margin: 0;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-trail);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
 /* ------------------------------------------------------------------ */
 /* Result rows                                                          */
 /* ------------------------------------------------------------------ */

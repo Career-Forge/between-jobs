@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_REQUEST, discoverQuery, filtersSet, providerCounts, resultsFactOf, rowsOf, searchNotesOf, warningsOf } from "./discoverFacts";
+import { EMPTY_REQUEST, discoverQuery, filtersSet, providerCounts, resultsAnnouncement, resultsFactOf, rowsOf, searchNotesOf, warningsOf } from "./discoverFacts";
 import type { DiscoverResponse, JobCard } from "./discoverTypes";
 
 // The counts a finished search holds, and the request a search makes: pure, so each is a table.
@@ -52,28 +52,16 @@ describe("the facts of a finished search", () => {
     expect(fact).toMatchObject({ scored: 2, more: 1, deadRemoved: 3, fallback: false });
   });
 
-  it("counts rows per provider across scored and unscored rows, most first", () => {
-    const fact = resultsFactOf(
-      response({ scored: [card("serper"), card("registry"), card("registry", 2)], more: [card("registry", 3), card("brave")] }),
-      EMPTY_REQUEST,
-    );
-    expect(fact.providers).toEqual([
-      { provider: "registry", count: 3 },
-      { provider: "serper", count: 1 },
-      { provider: "brave", count: 1 },
-    ]);
-  });
-
-  it("names a provider that ran and failed, once, and counts the notes that name none", () => {
+  it("holds only what picked the step: no provider counts and no failures, which the status block prints from the search itself", () => {
     const fact = resultsFactOf(
       response({
-        scored: [card("registry")],
-        warnings: ["brave: request failed", "brave: and again", "serper: unexpected failure", "The job registry could not be searched just now."],
+        scored: [card("serper"), card("registry")],
+        more: [card("brave")],
+        warnings: ["brave: request failed", "The job registry could not be searched just now."],
       }),
       EMPTY_REQUEST,
     );
-    expect(fact.failedProviders).toEqual(["brave", "serper"]);
-    expect(fact.otherNotes).toBe(1);
+    expect(Object.keys(fact).sort()).toEqual(["companiesSet", "deadRemoved", "fallback", "filtersSet", "more", "scored"]);
   });
 
   it("reads the neutral fallback from the strategy and no other strategy as one", () => {
@@ -92,18 +80,13 @@ describe("the facts of a finished search", () => {
 
   it("survives a reply that is missing its lists, and a dropped count that is not a count", () => {
     const odd = { query: "", scored: undefined, more: null, dead_removed: "3", scoring_strategy: "direct", warnings: undefined } as unknown as DiscoverResponse;
-    expect(resultsFactOf(odd, EMPTY_REQUEST)).toMatchObject({ scored: 0, more: 0, deadRemoved: 0, otherNotes: 0, failedProviders: [] });
+    expect(resultsFactOf(odd, EMPTY_REQUEST)).toMatchObject({ scored: 0, more: 0, deadRemoved: 0 });
     expect(rowsOf("nope")).toEqual([]);
     expect(warningsOf(odd)).toEqual([]);
   });
 
   it("drops blank and non-text warnings", () => {
     expect(warningsOf(response({ warnings: ["brave: down", "  ", 4 as unknown as string] }))).toEqual(["brave: down"]);
-  });
-
-  it("caps a provider id so one strange value cannot make the line unreadable", () => {
-    const fact = resultsFactOf(response({ scored: [card("x".repeat(200))] }), EMPTY_REQUEST);
-    expect(fact.providers[0].provider).toHaveLength(40);
   });
 });
 
@@ -155,5 +138,23 @@ describe("what a finished search says about itself that is not a row", () => {
   it("survives a reply that is missing its lists", () => {
     const odd = { query: "", scored: "nope", more: null, dead_removed: undefined, scoring_strategy: "direct", warnings: { 0: "x" } } as unknown as DiscoverResponse;
     expect(searchNotesOf(odd)).toEqual({ sources: [], dropped: 0, warnings: [] });
+  });
+});
+
+describe("what a screen reader is told when a search answers", () => {
+  const announce = (result: DiscoverResponse) => resultsAnnouncement(resultsFactOf(result, EMPTY_REQUEST));
+
+  it("says how many rows were scored, how many were not, and how many listings were dropped", () => {
+    expect(announce(response({ scored: [card("registry"), card("registry", 2)], more: [card("serper")], dead_removed: 2 }))).toBe(
+      "The search finished: 2 scored, 1 more, unscored, 2 dropped as no longer live.",
+    );
+  });
+
+  it("leaves out the clauses with nothing in them", () => {
+    expect(announce(response({ scored: [card("registry")] }))).toBe("The search finished: 1 scored.");
+  });
+
+  it("says a search with no rows finished with no results, whatever else it holds", () => {
+    expect(announce(response({ dead_removed: 4, warnings: ["brave: down"] }))).toBe("The search finished with no results.");
   });
 });

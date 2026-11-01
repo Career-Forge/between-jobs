@@ -279,11 +279,13 @@ describe("loading: a search is running", () => {
 });
 
 describe("results", () => {
-  it("is unlit with 'Track the jobs worth a draft.', the counts in the why line, and no cyan fill on the page", () => {
+  it("is unlit with 'Track the jobs worth a draft.', the two counts in the why line, and no cyan fill on the page", () => {
     const { container } = draw(ready(response({ scored: [job()], more: [job({ apply_url: "https://jobs.example/acme/2", score: null })], dead_removed: 3 })));
     const text = words(bandOf(container));
     expect(text).toContain("Track the jobs worth a draft.");
-    expect(text).toContain("why: 1 scored · 1 more, unscored · 3 dropped -- no longer live · serper 2");
+    expect(text).toContain("why: 1 scored · 1 more, unscored");
+    expect(text).not.toContain("dropped");
+    expect(text).not.toContain("serper");
     expect(cyanFills(container)).toBe(0);
   });
 
@@ -557,21 +559,49 @@ describe("partial: what arrived renders, what did not is named", () => {
     expect(body.querySelector(".bj-disc-warnings")!.compareDocumentPosition(body.querySelector("ul.bj-disc-list")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("puts the gap in the band's why line, and the band stays unlit", () => {
+  it("keeps the gap out of the band's why line, which stays short and unlit", () => {
     const partial = response({ warnings: ["brave: down"] });
     const { container } = draw({ ...ready(partial), outcome: band({ phase: "results", results: resultsFactOf(partial, EMPTY_REQUEST) }) });
-    expect(words(bandOf(container))).toContain("brave failed");
+    expect(words(bandOf(container))).not.toContain("brave");
+    expect(words(bandOf(container))).toContain("why: 1 scored");
     expect(cyanFills(container)).toBe(0);
   });
 
-  it("says how many listings were dropped as no longer live", () => {
+  it("says how many listings were dropped as no longer live, in the status block", () => {
     const { container } = draw(ready(response({ dead_removed: 3 })));
-    expect(words(container)).toContain("3 dropped -- no longer live");
+    expect(words(query(container, ".bj-disc-status"))).toContain("3 dropped -- no longer live");
   });
 
   it("says nothing about dropped listings when none were", () => {
     const { container } = draw(ready());
     expect(words(container)).not.toContain("dropped");
+  });
+
+  it("prints where the rows came from in one Sources line, most first, in mono, in the status block", () => {
+    const result = response({
+      scored: [job({ provider: "registry" }), job({ provider: "registry", apply_url: "https://jobs.example/acme/2" }), job({ provider: "serper", apply_url: "https://jobs.example/acme/3" })],
+      more: [job({ provider: "jsearch", apply_url: "https://jobs.example/acme/4", score: null })],
+    });
+    const { container } = draw(ready(result));
+    const sources = query(container, ".bj-disc-status .bj-disc-sources");
+    expect(words(sources)).toBe("Sources: registry 2 · serper 1 · jsearch 1");
+    expect(words(bandOf(container))).not.toContain("registry 2");
+  });
+
+  it("puts the status block in a labelled group above the first list, with the failures, the drop and the sources in that order", () => {
+    const partial = response({ warnings: ["brave: request failed (429)"], dead_removed: 3 });
+    const { container } = draw({ ...ready(partial), outcome: band({ phase: "results", results: resultsFactOf(partial, EMPTY_REQUEST) }) });
+    const status = query(container, "div.bj-disc-status");
+    expect(status.getAttribute("role")).toBe("group");
+    expect(status.getAttribute("aria-label")).toBe("About this search");
+    expect([...status.children].map((child) => child.className)).toEqual(["bj-disc-warnings", "bj-disc-note", "bj-disc-sources"]);
+    expect(status.compareDocumentPosition(query(container, "ul.bj-disc-list")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelectorAll(".bj-disc-status")).toHaveLength(1);
+  });
+
+  it("draws no status block for a search with nothing to say beyond its rows, and no sources for a response with no rows", () => {
+    const quiet = draw(ready(response({ scored: [], more: [] })));
+    expect(quiet.container.querySelector(".bj-disc-status")).toBeNull();
   });
 });
 
@@ -590,10 +620,14 @@ describe("empty: nothing matched", () => {
     expect(cyanFills(container)).toBe(1);
   });
 
-  it("carries the warnings and the dropped count into the empty state", () => {
+  it("puts the warnings and the dropped count in the status block above the empty state", () => {
     const { container } = draw({ ...ready(empty({ warnings: ["serper: unexpected failure"], dead_removed: 4 })) });
-    expect(words(container)).toContain("✕ Serper couldn't complete that search · unexpected failure");
-    expect(words(container)).toContain("4 dropped -- no longer live");
+    const status = query(container, ".bj-disc-status");
+    expect(words(status)).toContain("✕ Serper couldn't complete that search · unexpected failure");
+    expect(words(status)).toContain("4 dropped -- no longer live");
+    expect(words(status)).not.toContain("Sources");
+    expect(status.compareDocumentPosition(query(container, ".bj-state--empty")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(words(query(container, ".bj-state--empty"))).not.toContain("dropped");
   });
 
   it("does not claim nothing matched when listings were dropped or a provider failed, and never says 'these filters'", () => {
@@ -831,6 +865,7 @@ describe("accessibility", () => {
     ["results with a fit block, a warning and unscored rows", ready(response({ warnings: ["brave: down"], more: [job({ apply_url: "https://jobs.example/acme/2", score: null })], dead_removed: 2 }))],
     ["a fallback", { ...ready(response({ scoring_strategy: "neutral_fallback" })) }],
     ["empty", ready(response({ scored: [], more: [] }))],
+    ["empty with a failure and a dropped listing in the status block", ready(response({ scored: [], more: [], warnings: ["brave: down"], dead_removed: 3 }))],
     ["setup", { setup: { message: "x", missing: [{ label: "Add a model key", to: "/settings#ai-provider" }] } }],
     ["failure", { search: { kind: "error", message: "x" }, outcome: band({}, { pageFailure: { what: "Couldn't finish the search", call: "GET /discover", at: "09:14" } }) }],
   ];

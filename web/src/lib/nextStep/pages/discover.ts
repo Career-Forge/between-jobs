@@ -14,13 +14,16 @@
 // the way Settings has its own rows for the same states.
 //
 // A search never runs on its own. D2 is "ready, nothing run", and its button submits the filter
-// form from outside (the form's own Search is drawn as an outlined button, because the band holds
-// the page's one cyan fill). The elapsed counter of D3 is not part of the sentence: the sentence
-// would change every second and be announced every second. The page draws the counter beside it.
+// form from outside; until a search has run the form draws no Search of its own, so the band's is the
+// only one (bandHoldsSearch tells the form). After that the form's own Search is outlined, because the
+// band holds the page's one cyan fill. The elapsed counter of D3 is not part of the sentence: the
+// sentence would change every second and be announced every second. The page draws the counter beside it.
 //
-// Every number in a why line is a count of what the response held. A provider that was not asked
-// (no key) leaves no warning, so none is named; a provider that ran and failed is named by the id
-// the server put in front of its message.
+// A why line lists the facts that picked the step, and every number in it is a count of what the
+// response held. For the results rows that is how many rows were scored and how many were not; which
+// provider returned how many rows, which providers failed and how many listings the link check dropped
+// did not pick "track the jobs worth a draft", so the page prints them in its status block above the
+// results (lib/discoverFacts.ts searchNotesOf) and not here.
 
 import { MODEL_CHOICE_LABEL, type ModelKeyReading } from "../../modelKey";
 import { MODEL_PROVIDER_PATH } from "../../settingsPaths";
@@ -31,23 +34,12 @@ export const DISCOVER_FORM_ID = "discover-form";
 
 export type DiscoverPhase = "idle" | "searching" | "results" | "setup";
 
-export interface ProviderCount {
-  provider: string;
-  count: number;
-}
-
 export interface DiscoverResultsFact {
   /** Rows the model scored, and rows past the scoring batch (shown unscored). */
   scored: number;
   more: number;
-  /** Live-search rows the link check dropped. */
+  /** Live-search rows the link check dropped (the page's announcement says so; no row here does). */
   deadRemoved: number;
-  /** Rows per `provider`, most first. */
-  providers: readonly ProviderCount[];
-  /** Providers that ran and failed, by the id in front of their warning. */
-  failedProviders: readonly string[];
-  /** Warnings that name no provider (the registry could not be searched, and so on). */
-  otherNotes: number;
   /** The scoring model's reply could not be read, so every score is a placeholder. */
   fallback: boolean;
   /** Filter boxes (search, location, companies, remote only) that held something for this search. */
@@ -80,14 +72,9 @@ function isResultsFact(value: unknown): value is DiscoverResultsFact {
     isCount(value.scored) &&
     isCount(value.more) &&
     isCount(value.deadRemoved) &&
-    isCount(value.otherNotes) &&
     isCount(value.filtersSet) &&
     typeof value.fallback === "boolean" &&
-    typeof value.companiesSet === "boolean" &&
-    Array.isArray(value.providers) &&
-    value.providers.every((entry) => isRecord(entry) && typeof entry.provider === "string" && isCount(entry.count)) &&
-    Array.isArray(value.failedProviders) &&
-    value.failedProviders.every((entry) => typeof entry === "string")
+    typeof value.companiesSet === "boolean"
   );
 }
 
@@ -178,22 +165,8 @@ const D3: NextStepRow<DiscoverFacts> = {
 
 // ── D4b, D4, D5 ────────────────────────────────────────────────────────────
 
-// The gap a partial result names: providers that failed, then a count of notes that name none.
-function gapOf(results: DiscoverResultsFact): string[] {
-  return [
-    ...results.failedProviders.map((provider) => `${provider} failed`),
-    ...(results.otherNotes > 0 ? [plural(results.otherNotes, "search note", "search notes")] : []),
-  ];
-}
-
 function countsOf(results: DiscoverResultsFact): string[] {
-  return [
-    `${results.scored} scored`,
-    ...(results.more > 0 ? [`${results.more} more, unscored`] : []),
-    ...(results.deadRemoved > 0 ? [`${results.deadRemoved} dropped -- no longer live`] : []),
-    ...results.providers.map((entry) => `${entry.provider} ${entry.count}`),
-    ...gapOf(results),
-  ];
+  return [`${results.scored} scored`, ...(results.more > 0 ? [`${results.more} more, unscored`] : [])];
 }
 
 const D4B: NextStepRow<DiscoverFacts> = {
@@ -205,7 +178,7 @@ const D4B: NextStepRow<DiscoverFacts> = {
     return {
       sentence: "Your model's reply couldn't be read. These scores are placeholders.",
       action: { kind: "submit", label: "Search again", form: DISCOVER_FORM_ID },
-      why: ["scoring fell back", "every bin shows Placeholder", ...gapOf(facts.results)],
+      why: ["scoring fell back", "every bin shows Placeholder"],
     };
   },
 };
@@ -229,12 +202,7 @@ const D5: NextStepRow<DiscoverFacts> = {
     if (facts?.phase !== "results" || facts.results === null) return null;
     const results = facts.results;
     if (results.scored + results.more > 0) return null;
-    const why = [
-      "0 results",
-      `filters: ${results.filtersSet} set`,
-      ...(results.deadRemoved > 0 ? [`${results.deadRemoved} dropped -- no longer live`] : []),
-      ...gapOf(results),
-    ];
+    const why = ["0 results", `filters: ${results.filtersSet} set`];
     // With no filter set there is nothing to widen or clear: the step is unlit and says so.
     if (results.filtersSet === 0) {
       return { sentence: "No results, and no filters were set.", action: null, why };
