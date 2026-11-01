@@ -562,6 +562,37 @@ describe("a row, in the order it is read", () => {
     }
   });
 
+  it("says the same thing to the eye and to a screen reader for a bin it does not know: Not scored, with no number and none of the response's words", () => {
+    const hostile = [
+      "Excellent",
+      "Excellent fit, apply right now ".repeat(6),
+      "Strong bj-primary",
+      42,
+      { a: 1 },
+      ["Strong"],
+    ];
+    for (const bin of hostile) {
+      const { container, unmount } = draw(ready(response({ scored: [job({ score: score({ bin: bin as never, score100: 77 }) })] })));
+      const gutter = query(container, ".bj-disc-score");
+      expect(query(gutter, "[role='img']").getAttribute("aria-label")).toBe("Fit: Not scored");
+      expect(words(gutter)).toBe("Not scored");
+      expect(container.querySelector(".bj-disc-score-num")).toBeNull();
+      expect(container.querySelector(".bj-disc-score-of")).toBeNull();
+      expect(container.querySelector(".bj-disc-score-tier")).toBeNull();
+      expect(words(container)).not.toContain("77");
+      expect(words(container)).not.toContain("Excellent");
+      unmount();
+    }
+  });
+
+  it("keeps a known bin's visible words and the ladder's label in agreement", () => {
+    const { container } = draw(ready(response({ scored: [job({ score: score({ bin: "Strong", score100: 88 }) })] })));
+    const gutter = query(container, ".bj-disc-score");
+    expect(words(query(gutter, ".bj-disc-score-line"))).toBe("88 / 100");
+    expect(words(query(gutter, ".bj-disc-score-tier"))).toBe("Strong");
+    expect(query(gutter, "[role='img']").getAttribute("aria-label")).toBe("Fit: Strong -- 88 / 100");
+  });
+
   it("gives each row the class of its tier, and a placeholder or unscored row the class of its kind", () => {
     const bins = ["Strong", "Good", "Mixed", "Poor"] as const;
     const scored = bins.map((bin, index) => job({ apply_url: `https://jobs.example/acme/${index}`, score: score({ bin }) }));

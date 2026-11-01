@@ -32,6 +32,16 @@ export function FitScore({ view }: { view: FitView }) {
       </div>
     );
   }
+  // The number and the tier word are printed only for a bin the ladder knows. Any other value (text the
+  // response made up, or something that is not text at all) is never drawn, and the ladder alone says
+  // "Not scored" in words, so what a sighted reader sees is what a screen reader is told.
+  if (!(FIT_LEVELS as readonly unknown[]).includes(view.level)) {
+    return (
+      <div className="bj-disc-score">
+        <FitLadder levels={FIT_LEVELS} level={null} className="bj-disc-ladder" />
+      </div>
+    );
+  }
   // A number that is not a real number is not printed: the tier word and the ladder stand alone.
   const hasNumber = typeof view.score100 === "number" && Number.isFinite(view.score100);
   return (

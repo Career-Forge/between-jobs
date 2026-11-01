@@ -177,7 +177,9 @@ function isScore(value: unknown): value is number {
 
 export function fitViewOf(job: JobCard, scoringStrategy: string): FitView {
   const score = job.score;
-  if (score === null) return { kind: "unscored" };
+  // A missing score is a score that was not made, whether the API sent null or left the field out; the
+  // arranging code (discoverArrange.ts) counts both as "Not scored" and the row must draw both that way.
+  if (score === null || score === undefined) return { kind: "unscored" };
   if (isFallback(scoringStrategy)) return { kind: "placeholder" };
   const dropped = Array.isArray(score.inapplicable_dims) ? score.inapplicable_dims : [];
   const subScores: Record<string, unknown> = typeof score.sub_scores === "object" && score.sub_scores !== null ? { ...score.sub_scores } : {};
@@ -260,7 +262,8 @@ function locationReceipt(job: JobCard, fallback: boolean): string {
 // What opens under the trail line: the fields as returned. Rows with no value are left out by the
 // receipt builder, and the scoring strategy is named only when it is the fallback.
 export function rowReceipt(job: JobCard, scoringStrategy: string): ReceiptRowInput[] {
-  const score = job.score;
+  // A score that is absent reads as one that was not made, as in fitViewOf.
+  const score = job.score ?? null;
   const fallback = isFallback(scoringStrategy);
   const dropped = score !== null && Array.isArray(score.inapplicable_dims) ? score.inapplicable_dims : [];
   const parts =
