@@ -182,6 +182,15 @@ describe("the fit block", () => {
     expect(view.bars.map((bar) => bar.key)).toEqual(["skills"]);
   });
 
+  it("reads a row whose score is missing, not only null, as not scored, in the view and in the receipt", () => {
+    // The API sends null, but the arranging code already counts an absent score as "Not scored", so the
+    // row must be drawn that way too rather than throw on it.
+    const absent = job({ score: undefined as unknown as null });
+    expect(fitViewOf(absent, "direct")).toEqual({ kind: "unscored" });
+    expect(() => rowReceipt(absent, "direct")).not.toThrow();
+    expect(() => rowReceipt(absent, "neutral_fallback")).not.toThrow();
+  });
+
   it("survives a score with no list of dropped dimensions", () => {
     const view = fitViewOf(job({ score: score({ inapplicable_dims: undefined as unknown as string[] }) }), "direct");
     expect(view.kind).toBe("scored");
