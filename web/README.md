@@ -173,7 +173,8 @@ ring or radar.
 `value`, `max?` (100), `from?` (draws "64 -> 72" only when it differs, and says "was 64, now 72" to a screen reader), `caption?` ("medium confidence"),
 `engine?` (the "engine ✦" mark, on by default), `children` (the bars), `footer?`. `FitLadder` is Discover's
 four-rung ladder: `levels` (lowest first), `level` (the rung's name, from the engine; there is no score-to-rung
-mapping here), `score?`, `max?`, `placeholder?` (hollow, no number, for a fallback). The "engine" caption is drawn only when a rung
+mapping here), `score?`, `max?`, `placeholder?` (hollow, no number, for a fallback), `showWords?` (the words beside
+the cells, on by default; Discover prints the number and tier itself, and the image's label still says all of it). The "engine" caption is drawn only when a rung
 was reached, never for "Not scored" or a placeholder. Use them only for a score
 that code computed; a model's judgement gets the model mark in its trail, not this.
 
@@ -296,21 +297,36 @@ their trail line, inline at every width. Neither makes a search when it opens.
   are the ones the page has always made.
 - **The band** (`lib/nextStep/pages/discover.ts`, rows D1 to D5; `hiring-signals.ts`, rows HS0 to HS3) holds the
   page's one cyan fill: Search when ready, Search again when the scoring fell back, Clear filters when nothing
-  matched, Save this search when Hiring signals results are on the page for a search that is not saved. The form's
-  own Search, every row's Track and Save are outlined. The elapsed counter of a running search is drawn beside the
+  matched, Save this search when Hiring signals results are on the page for a search that is not saved. Before a
+  search has run the band's Search is Discover's only one (the form draws none, and Enter in a field presses the
+  band's); after one, the form's own Search again is outlined. Every row's Track and Save are outlined, and
+  Discover's Save this search is a quiet button. The band's why line says what picked the step (how many rows were
+  scored and how many were not); which sources returned how many, what failed and what was dropped are in the status
+  block above the results. The elapsed counter of a running search is drawn beside the
   band (`role="timer"`, live region off), not in its sentence, so the sentence is announced once.
-- **A Discover row** (`lib/discoverRow.ts`, drawn by `components/discover/`) is built from returned fields only. Its
-  fit block is the four-cell ladder with "Good -- 61 / 100" and the "engine" mark, a bar out of 100 for each applied
-  part, what was not applied and why, the lowest part, and the model's three-way reading of the location. Rows
-  past the scoring batch say "Not scored"; when the scoring fell back every row says "Placeholder" with no rung
+- **A Discover row** (`lib/discoverRow.ts`, drawn by `components/discover/`) is built from returned fields only. It
+  leads with its score: the number out of 100, the tier word, the four-cell ladder and the "engine" mark sit in a
+  gutter at the left, and the Strong rows alone are on a lighter surface. Beside the text is the model's one line and
+  one line of what the score left out (the lowest part with its number, how many parts were not applied, a location
+  that does not match). A bar out of 100 for each applied part, what was not applied and why, the lowest part and the
+  model's three-way reading of the location are behind that row's "Why this score". Rows past the scoring batch are
+  one lighter band that says "Not scored"; when the scoring fell back every row says "Placeholder" with no rung
   and no number. The trail says `via registry` on the company's job board at the last poll for a registry row the
   database calls fresh, and only "not confirmed on the company's board recently" for one that is not;
   USAJobs' sponsorship line is worded as the provider's category fact ("by provider, no text read"), never a
   text match. A live-search row says "Link checked" for a live-search row the link check kept (it means not found closed, never "verified");
   a row that never reached the check says so. Only an http(s) address becomes a link.
+- **The results** (`components/discover/ResultsView.tsx`, `ResultsToolbar.tsx`, `lib/discoverArrange.ts`). From three
+  rows there is a toolbar: chips to keep one fit (a tier, or the rows that were not scored), each with its count, a
+  sort (as returned, best fit, newest) and a "Show score details" switch. A fit is offered only when at least two groups
+  hold rows and the scoring did not fall back, and "Best fit" only when two rows carry a number. A sort orders each
+  section on its own, so rows past the scoring batch stay below. The choices are held in memory only, start over with
+  each new answer, and a press is announced politely.
 - **Saved searches** (`components/SavedSearchesCardView.tsx`, shared with Settings through `lib/useSavedSearches.ts`)
   read "Checked 06:00" only when `last_matched_at` is later than `created_at`, otherwise "Not checked yet", and
-  "Paused" after either.
+  "Paused" after either. On Discover they are one folded row (`components/discover/SavedSearchesFold.tsx`): the name
+  and one hint, closed by default, opened by itself for a failed read, a refused save or an update that did not go
+  through, and always closable.
 - **Hiring signals** reads `GET /hiring-signals/status` once for the app, then (only when it is on) the two saved
   lists. The page also reads `GET /credentials` for the band (no profile: it needs none, so `profileNeeded: false` keeps the global profile rows off it). The model lives in the page
   (the band reads it) and the tab is mounted only when the feature is on. A failed status read, and a search that
