@@ -27,10 +27,19 @@
 
 import { MODEL_CHOICE_LABEL, type ModelKeyReading } from "../../modelKey";
 import { MODEL_PROVIDER_PATH } from "../../settingsPaths";
-import { definePage, type NextStep, type NextStepRow } from "../types";
+import { definePage, type NextStep, type NextStepOutcome, type NextStepRow } from "../types";
 
 // The id the filter form carries, so the band's button can submit it from outside.
 export const DISCOVER_FORM_ID = "discover-form";
+
+/**
+ * True when the band's step is the Search of this form: a ready step whose action submits it (D2 before a
+ * search, D4b after the scoring fell back). Until a search has run, the form then leaves its own Search
+ * out, because a second "Search" a few lines below the first would be two answers to one question.
+ */
+export function bandHoldsSearch(outcome: NextStepOutcome): boolean {
+  return outcome.status === "ready" && outcome.step.action?.kind === "submit" && outcome.step.action.form === DISCOVER_FORM_ID;
+}
 
 export type DiscoverPhase = "idle" | "searching" | "results" | "setup";
 

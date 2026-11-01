@@ -38,6 +38,7 @@ export function SavedSearchesCardView({
   now = new Date(),
   createError = null,
   timeZone,
+  headingless = false,
 }: {
   state: SavedSearchesState;
   actions: SavedSearchesActions;
@@ -46,7 +47,13 @@ export function SavedSearchesCardView({
   /** A "Save this search" that failed, in the server's words. */
   createError?: string | null;
   timeZone?: string;
+  /**
+   * Leave out the card's own "Saved searches" heading, for a caller that draws one around it (the
+   * folded row on Discover, whose button is that heading). Settings keeps it.
+   */
+  headingless?: boolean;
 }) {
+  const heading = headingless ? null : <h2 className="bj-ss-heading">{SAVED_SEARCHES_HEADING}</h2>;
   // Inside the failed-read card, which is itself the alert, the failure is a plain block of that
   // alert (a nested alert would be announced twice).
   const createFailure = (alert: boolean) =>
@@ -60,7 +67,7 @@ export function SavedSearchesCardView({
     if (createError === null) return null;
     return (
       <div className="bj-ss">
-        <h2 className="bj-ss-heading">{SAVED_SEARCHES_HEADING}</h2>
+        {heading}
         {createFailure(true)}
       </div>
     );
@@ -69,7 +76,7 @@ export function SavedSearchesCardView({
   if (state.kind === "failed") {
     return (
       <div className="bj-ss" role="alert">
-        <h2 className="bj-ss-heading">{SAVED_SEARCHES_HEADING}</h2>
+        {heading}
         {createFailure(false)}
         <p>{state.message}</p>
         <div className="bj-ss-actions">
@@ -85,7 +92,7 @@ export function SavedSearchesCardView({
 
   return (
     <div className="bj-ss">
-      <h2 className="bj-ss-heading">{SAVED_SEARCHES_HEADING}</h2>
+      {heading}
       <p className="bj-ss-note">{SAVED_SEARCHES_NOTE}</p>
       {createFailure(true)}
       {state.error !== null && (

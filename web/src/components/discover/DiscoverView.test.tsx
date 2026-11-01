@@ -107,11 +107,58 @@ describe("idle: nothing has been searched", () => {
     expect(container.querySelectorAll("li.bj-disc-row")).toHaveLength(0);
   });
 
-  it("is lit by one cyan Search, the band's, and the form's own Search is outlined", () => {
+  it("is lit by one cyan Search, the band's, and the form draws no Search of its own", () => {
     const { container } = draw();
     expect(cyanFills(container)).toBe(1);
-    expect(query(container, "form").querySelector("button.bj-primary")).toBeNull();
-    expect(words(buttonNamed(query(container, "form"), "Search"))).toBe("Search");
+    const form = query(container, "form");
+    expect(form.querySelector("button.bj-primary")).toBeNull();
+    expect(form.querySelector("button[type='submit']")).toBeNull();
+    const searches = [...container.querySelectorAll("button")].filter((button) => words(button) === "Search");
+    expect(searches).toHaveLength(1);
+    expect(bandOf(container).contains(searches[0])).toBe(true);
+    expect(searches[0].getAttribute("type")).toBe("submit");
+    expect(searches[0].getAttribute("form")).toBe("discover-form");
+  });
+
+  it("still searches on Enter in a field before the first search: the band's button is the form's default button", () => {
+    const onSearch = vi.fn();
+    const { container } = draw({ onSearch });
+    const form = query<HTMLFormElement>(container, "form");
+    const band = query<HTMLButtonElement>(bandOf(container), "button.bj-primary");
+    // A form's default button is the first submit button whose form owner is the form, wherever it is
+    // in the page; the owner of the band's button is that form, and it comes first in the document.
+    expect(band.form).toBe(form);
+    const submitters = [...container.querySelectorAll<HTMLButtonElement>("button[type='submit']")].filter((button) => button.form === form);
+    expect(submitters[0]).toBe(band);
+    act(() => form.requestSubmit(band));
+    expect(onSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws no Search in the form while the band is still loading, so it is not taken away a moment later", () => {
+    const loadingBand = nextStep({ page: "discover", signedIn: true, profile: { state: "loading" }, facts: undefined } as NextStepInput);
+    const { container } = draw({ outcome: loadingBand });
+    expect(loadingBand.status).toBe("loading");
+    expect(query(container, "form").querySelector("button[type='submit']")).toBeNull();
+    expect(words(query(container, "form"))).toContain("Save this search");
+  });
+
+  it("gives the form its own Search when the band is not its Search: a link, a failure or a step with no button", () => {
+    const noKey = draw({ outcome: band({ key: "none" }) });
+    expect(words(buttonNamed(query(noKey.container, "form"), "Search"))).toBe("Search");
+    const failed = draw({ outcome: band({}, { pageFailure: { what: "Couldn't finish the search", call: "GET /discover", at: "09:14" } }) });
+    expect(words(buttonNamed(query(failed.container, "form"), "Search"))).toBe("Search");
+    const none = draw({ outcome: nextStep({ page: "discover", signedIn: false, facts: undefined } as NextStepInput) });
+    expect(query(none.container, "form").querySelector("button[type='submit']")).not.toBeNull();
+  });
+
+  it("makes Save this search a quiet button, in every state", () => {
+    for (const overrides of [{}, ready(), { search: { kind: "loading", startedAt: 0 } as SearchView, outcome: band({ phase: "searching" }) }]) {
+      const { container, unmount } = draw(overrides);
+      const save = buttonNamed(query(container, "form"), /^(Save this search|Saving\.\.\.)$/);
+      expect(save.classList.contains("bj-quiet")).toBe(true);
+      expect(save.classList.contains("bj-primary")).toBe(false);
+      unmount();
+    }
   });
 
   it("has the filter fields, remote only and Save this search, each labelled", () => {
@@ -293,6 +340,45 @@ describe("results", () => {
     const { container } = draw(ready());
     const submit = buttonNamed(query(container, "form"), "Search again");
     expect(submit.classList.contains("bj-primary")).toBe(false);
+  });
+
+  it("keeps the form's 'Search again' under a band that is lit with its own, so the button a person pressed is never taken away", () => {
+    const fallback = response({ scoring_strategy: "neutral_fallback" });
+    const { container } = draw({ ...ready(fallback), outcome: band({ phase: "results", results: resultsFactOf(fallback, EMPTY_REQUEST) }) });
+    const again = [...container.querySelectorAll("button")].filter((button) => words(button) === "Search again");
+    expect(again).toHaveLength(2);
+    expect(again.filter((button) => button.classList.contains("bj-primary"))).toHaveLength(1);
+    expect(bandOf(container).contains(again.find((button) => button.classList.contains("bj-primary"))!)).toBe(true);
+    expect(query(container, "form").contains(again.find((button) => !button.classList.contains("bj-primary"))!)).toBe(true);
+    expect(cyanFills(container)).toBe(1);
+  });
+
+  it("keeps the form's 'Search again' when nothing matched and the band offers Clear filters", () => {
+    const result = response({ scored: [], more: [] });
+    const { container } = draw({ search: { kind: "ready", result }, outcome: band({ phase: "results", results: resultsFactOf(result, { ...EMPTY_REQUEST, q: "zzz" }) }) });
+    expect(words(query(bandOf(container), "button.bj-primary"))).toBe("Clear filters");
+    expect(words(buttonNamed(query(container, "form"), "Search again"))).toBe("Search again");
+  });
+
+  it("keeps the form's own Search through every step of a search, so focus has somewhere to stay", () => {
+    const view = draw();
+    const rerender = (overrides: Partial<DiscoverViewProps>) =>
+      view.rerender(
+        <MemoryRouter>
+          <DiscoverView {...props(overrides)} />
+        </MemoryRouter>,
+      );
+    expect(query(view.container, "form").querySelector("button[type='submit']")).toBeNull();
+    rerender({ search: { kind: "loading", startedAt: 0 }, outcome: band({ phase: "searching" }) });
+    const during = query<HTMLButtonElement>(view.container, "form button[type='submit']");
+    expect(words(during)).toBe("Searching...");
+    const fallback = response({ scoring_strategy: "neutral_fallback" });
+    rerender({ ...ready(fallback), outcome: band({ phase: "results", results: resultsFactOf(fallback, EMPTY_REQUEST) }) });
+    expect(words(query(view.container, "form button[type='submit']"))).toBe("Search again");
+    // The same node: nothing was removed and drawn again under a person who was holding focus on it.
+    expect(query(view.container, "form button[type='submit']")).toBe(during);
+    rerender({});
+    expect(query(view.container, "form").querySelector("button[type='submit']")).toBeNull();
   });
 
   it("lists scored rows under Results and rows past the batch under More results, as lists", () => {
@@ -1001,22 +1087,34 @@ describe("saved searches on the page", () => {
     saved: { state: { kind: "ready", searches, busyId: null, error: null, ...extra } as SavedSearchesState, actions: { toggle: vi.fn(), remove: vi.fn(), retry: vi.fn() }, createError },
   });
 
-  it("shows no card for a person with none, and the card above the results for one with some", () => {
-    expect(draw().container.querySelector(".bj-ss")).toBeNull();
+  // The saved searches are one folded row; their list is behind it.
+  const openRow = (container: HTMLElement) => click(query(container, "button.bj-disc-saved-toggle"));
+
+  it("shows no row for a person with none, and a closed row above the results for one with some", () => {
+    expect(draw().container.querySelector(".bj-disc-saved")).toBeNull();
     const { container } = draw({ ...ready(), ...withSearches([search()]) });
-    const card = query(container, ".bj-ss");
-    expect(card.compareDocumentPosition(query(container, ".bj-disc-results")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(words(card)).toContain('"data analyst"');
+    const row = query(container, ".bj-disc-saved");
+    expect(row.compareDocumentPosition(query(container, ".bj-disc-results")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(row.compareDocumentPosition(query(container, "form")) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    const toggle = query(row, "button");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(words(toggle)).toBe("Saved searches 1 search, not checked yet ›");
+    expect(container.querySelector(".bj-ss")).toBeNull();
+    openRow(container);
+    expect(words(query(container, ".bj-ss"))).toContain('"data analyst"');
   });
 
   it("reads 'Checked' with the real time when the matcher has run since the search was made, and 'Not checked yet' otherwise", () => {
     const { container } = draw(withSearches([search({ id: "a", last_matched_at: "2026-09-22T06:00:00Z" }), search({ id: "b", last_matched_at: "2026-09-01T00:00:00Z" })]));
+    openRow(container);
     const lines = [...container.querySelectorAll(".bj-ss-row .bj-trail")].map((line) => words(line));
     expect(lines).toEqual(["Checked 06:00", "○ Not checked yet"]);
   });
 
   it("reads Paused for a paused search, and offers Resume", () => {
     const { container } = draw(withSearches([search({ is_active: false })]));
+    expect(words(query(container, ".bj-disc-saved-hint"))).toBe("1 search, paused");
+    openRow(container);
     expect(words(query(container, ".bj-ss-row .bj-trail"))).toBe("○ Not checked yet · Paused");
     expect(words(buttonNamed(container, /^Resume/))).toBe("Resume");
   });
@@ -1024,6 +1122,7 @@ describe("saved searches on the page", () => {
   it("passes Pause, Resume and Delete to the page by search", () => {
     const handle = withSearches([search()]);
     const { container } = draw(handle);
+    openRow(container);
     click(buttonNamed(container, /^Pause the saved search/));
     click(buttonNamed(container, /^Delete the saved search/));
     expect(handle.saved.actions.toggle).toHaveBeenCalledWith("s-1", false);
@@ -1033,6 +1132,9 @@ describe("saved searches on the page", () => {
   it("shows a failed read as a callout with Retry inside the card, while the search itself works", () => {
     const retry = vi.fn();
     const { container } = draw({ ...ready(), saved: { state: { kind: "failed", message: "We could not load your saved searches." }, actions: { toggle: vi.fn(), remove: vi.fn(), retry }, createError: null } });
+    // A failed read opens the row on its own, and the row's own heading says so.
+    expect(query(container, "button.bj-disc-saved-toggle").getAttribute("aria-expanded")).toBe("true");
+    expect(words(query(container, ".bj-disc-saved-heading"))).toBe("Saved searches Couldn't be read ⌃");
     const alert = query(container, ".bj-ss[role='alert']");
     expect(words(alert)).toContain("We could not load your saved searches.");
     click(buttonNamed(alert, "Try again"));
@@ -1040,9 +1142,10 @@ describe("saved searches on the page", () => {
     expect(container.querySelectorAll("li.bj-disc-row")).toHaveLength(1);
   });
 
-  it("shows a failed save in the card, in the server's words", () => {
+  it("shows a failed save in the card, in the server's words, with the row open on its own", () => {
     const { container } = draw(withSearches([], {}, "You can keep at most 25 saved searches."));
     expect(words(query(container, ".bj-ss [role='alert']"))).toBe("You can keep at most 25 saved searches.");
+    expect(words(query(container, ".bj-disc-saved-hint"))).toBe("A search couldn't be saved");
   });
 
   it("reads Saving... on the form's Save this search while it is out, aria-disabled", () => {
@@ -1100,6 +1203,16 @@ describe("keyboard operation", () => {
     const first = (selector: string) => [...container.querySelectorAll("button, a[href], input")].indexOf(query(container, selector));
     expect(first("form input[type='text']")).toBeLessThan(first("form button[type='submit']"));
     expect(first("form button[type='submit']")).toBeLessThan(first("li.bj-disc-row a"));
+  });
+
+  it("before the first search, reaches the band's Search, then the fields, Remote only and Save this search, in that order", () => {
+    const { container } = draw(props({ saved: { state: { kind: "ready", searches: [], busyId: null, error: null }, actions: { toggle: vi.fn(), remove: vi.fn(), retry: vi.fn() }, createError: null } }));
+    const controls = [...container.querySelectorAll<HTMLElement>("button, a[href], input")].map((control) => {
+      if (control.tagName === "INPUT") return (control as HTMLInputElement).type === "checkbox" ? "checkbox" : "field";
+      return words(control);
+    });
+    expect(controls).toEqual(["Search", "field", "field", "field", "checkbox", "Save this search"]);
+    for (const control of container.querySelectorAll("button, input")) expect(control.getAttribute("tabindex")).toBeNull();
   });
 
   it("submits the form on Enter in a field: the form is a real form, so the browser does it", () => {

@@ -4,12 +4,17 @@ import type { DiscoverRequest } from "../../lib/discoverFacts";
 import "../../styles/discover.css";
 
 // The filter form: search words, location, companies and "remote only". It is a real <form>, so Enter in
-// any field searches, and the next-step band's Search submits it from outside (the band holds the
-// page's one cyan fill, so the form's own Search is drawn outlined, and reads "Search again" once a
-// search has run). Nothing here searches on its own.
+// any field searches. The next-step band's Search submits it from outside (the band holds the page's one
+// cyan fill), and until a search has run the band's is the only Search on the page: the form draws none
+// of its own, since two buttons that say Search a few lines apart read as two different things. Enter
+// still works, because a form's default button is the first submit button whose form owner is the form,
+// and a button attached by its `form` attribute counts. Once a search has run the form keeps its own
+// outlined "Search again" in every state, so the button a person pressed is never taken from under them.
+// Nothing here searches on its own.
 //
 // Busy controls are `aria-disabled`, not `disabled`, so focus stays where it is; the page's handlers
-// are the guard. Save this search keeps what the filters hold, for the background checks.
+// are the guard. Save this search keeps what the filters hold, for the background checks; it is a quiet
+// button, since saving is the lower-stakes action.
 
 // Roles the search box suggests in turn, so a first-time visitor sees the kinds of words that work.
 export const ROLE_PLACEHOLDERS: readonly string[] = ["Data Analyst", "Data Engineer", "Software Development Engineer", "Analytics Engineer", "ML Engineer"];
@@ -41,15 +46,23 @@ export interface DiscoverFormProps {
   searched: boolean;
   /** Setup is known to be missing: Search ignores presses, and the reason is said beside it. */
   blockedReason: string | null;
+  /** The next-step band's button is this form's Search (a submit that names it). */
+  searchInBand: boolean;
+  /** The band has not decided yet (it is loading), so the form does not draw a Search that it would take away a moment later. */
+  bandPending: boolean;
   onSearch: () => void;
   onSave: () => void;
   saving: boolean;
 }
 
-export function DiscoverForm({ values, onChange, searching, searched, blockedReason, onSearch, onSave, saving }: DiscoverFormProps) {
+export function DiscoverForm({ values, onChange, searching, searched, blockedReason, searchInBand, bandPending, onSearch, onSave, saving }: DiscoverFormProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const placeholder = useRolePlaceholder(values.q === "" && !searchFocused);
   const unavailable = searching || blockedReason !== null;
+  // The form's own Search is left out only before the first search of the visit, and only while the
+  // band holds it or has not yet said. The blocked note hangs on the form's button, so it is drawn
+  // whenever setup is blocked.
+  const showSubmit = searched || searching || blockedReason !== null || !(searchInBand || bandPending);
   return (
     <form
       id={DISCOVER_FORM_ID}
@@ -102,10 +115,12 @@ export function DiscoverForm({ values, onChange, searching, searched, blockedRea
         <span>Remote only</span>
       </label>
       <div className="bj-disc-form-actions">
-        <button type="submit" aria-disabled={unavailable ? true : undefined} aria-describedby={blockedReason !== null ? "bj-discover-blocked" : undefined}>
-          {searching ? "Searching..." : searched ? "Search again" : "Search"}
-        </button>
-        <button type="button" aria-disabled={saving ? true : undefined} onClick={() => !saving && onSave()}>
+        {showSubmit && (
+          <button type="submit" aria-disabled={unavailable ? true : undefined} aria-describedby={blockedReason !== null ? "bj-discover-blocked" : undefined}>
+            {searching ? "Searching..." : searched ? "Search again" : "Search"}
+          </button>
+        )}
+        <button type="button" className="bj-quiet" aria-disabled={saving ? true : undefined} onClick={() => !saving && onSave()}>
           {saving ? "Saving..." : "Save this search"}
         </button>
       </div>

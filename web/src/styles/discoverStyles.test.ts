@@ -8,6 +8,7 @@ import savedCss from "./saved-searches.css?raw";
 import discoverView from "../components/discover/DiscoverView.tsx?raw";
 import discoverForm from "../components/discover/DiscoverForm.tsx?raw";
 import resultRow from "../components/discover/ResultRow.tsx?raw";
+import savedFold from "../components/discover/SavedSearchesFold.tsx?raw";
 import resultsToolbar from "../components/discover/ResultsToolbar.tsx?raw";
 import resultsView from "../components/discover/ResultsView.tsx?raw";
 import fitBlock from "../components/discover/FitBlock.tsx?raw";
@@ -237,16 +238,24 @@ describe("the Discover rows", () => {
 describe("the score, the tiers and the clamps", () => {
   const base = withoutMedia(discoverCss);
   const wide = blocksOf(discoverCss, "@media (min-width: 960px)");
+  const phone = blocksOf(discoverCss, `@media ${PHONE_QUERY}`);
   const code = discoverCss.replace(/\/\*[\s\S]*?\*\//g, "");
 
-  it("set every font size from the type scale, apart from the literals the page already had", () => {
+  it("set every font size from the type scale, apart from the literals the page already had and the one a phone needs", () => {
     const sizes = rulesOf(discoverCss).flatMap((rule) => (rule.declarations["font-size"] === undefined ? [] : [{ selector: rule.selectors.join(", "), value: rule.declarations["font-size"] }]));
     const literals = sizes.filter((entry) => !/^var\(--bj-text-[a-z0-9-]+\)$/.test(entry.value));
     expect(literals).toEqual([
       { selector: ".bj-disc-heading", value: "24px" },
       { selector: ".bj-disc-title", value: "20px" },
       { selector: ".bj-fit-notes p", value: "12.5px" },
+      { selector: '.bj-disc-form input[type="text"]', value: "16px" },
     ]);
+  });
+
+  it("sets a field's text at 16px under 960px, the size below which a phone zooms the page when a field takes focus, and only there", () => {
+    expect(declarationsFor(phone, '.bj-disc-form input[type="text"]')["font-size"]).toBe("16px");
+    expect(declarationsFor(base, '.bj-disc-form input[type="text"]')["font-size"]).toBeUndefined();
+    expect(declarationsFor(wide, '.bj-disc-form input[type="text"]')["font-size"]).toBeUndefined();
   });
 
   it("uses no shadow, gradient, transition or animation, and no rule's own colour literal", () => {
@@ -391,6 +400,50 @@ describe("the toolbar", () => {
   });
 });
 
+describe("the saved-searches row and the form's actions", () => {
+  const base = withoutMedia(discoverCss);
+  const phone = blocksOf(discoverCss, `@media ${PHONE_QUERY}`);
+
+  it("draws the row as a full-width flex button with a hairline under it and no box, and a heading with no margin", () => {
+    expect(declarationsFor(base, ".bj-disc-saved-heading").margin).toBe("0");
+    const toggle = declarationsFor(base, ".bj-disc-saved-toggle");
+    expect(toggle.display).toBe("flex");
+    expect(toggle.width).toBe("100%");
+    expect(toggle["border-bottom"]).toBe("1px solid var(--bj-border)");
+    expect(toggle.border).toBe("0");
+    expect(toggle.background).toBe("transparent");
+    expect(declarationsFor(phone, ".bj-disc-saved-toggle")["min-height"]).toBe("44px");
+  });
+
+  it("sets its name in the display serif at the title size, and its hint muted, small and wrapping", () => {
+    const title = declarationsFor(base, ".bj-disc-saved-title");
+    expect(title["font-family"]).toBe("var(--bj-font-display)");
+    expect(title["font-size"]).toBe("var(--bj-text-title)");
+    expect(title["font-weight"]).toBe("500");
+    expect(title.flex).toBe("none");
+    const hint = declarationsFor(base, ".bj-disc-saved-hint");
+    expect(hint.color).toBe("var(--bj-text-muted)");
+    expect(hint["font-size"]).toBe("var(--bj-text-small)");
+    expect(hint["overflow-wrap"]).toBe("anywhere");
+    expect(hint["min-width"]).toBe("0");
+    expect(declarationsFor(base, ".bj-disc-saved")["min-width"]).toBe("0");
+  });
+
+  it("keeps the card inside it from adding a bottom margin of its own", () => {
+    expect(declarationsFor(base, ".bj-disc-saved-body .bj-ss")["margin-bottom"]).toBe("0");
+  });
+
+  it("takes the left padding off the quiet Save this search so it lines up with the fields", () => {
+    expect(declarationsFor(base, ".bj-disc-form-actions > .bj-quiet")["padding-inline"]).toBe("0");
+  });
+
+  it("uses no color but the muted and ordinary text colors, and no gold, cyan or maroon", () => {
+    for (const selector of [".bj-disc-saved-title", ".bj-disc-saved-hint", ".bj-disc-saved-glyph", ".bj-disc-saved-toggle"]) {
+      for (const value of Object.values(declarationsFor(base, selector))) expect(value, selector).not.toMatch(/--bj-(?:gold|cyan|maroon|violet|emerald|danger)/);
+    }
+  });
+});
+
 describe("the saved-searches card", () => {
   const base = withoutMedia(savedCss);
   const phone = blocksOf(savedCss, `@media ${PHONE_QUERY}`);
@@ -476,6 +529,7 @@ describe("the markup that uses them", () => {
     ["ResultsView", resultsView],
     ["ResultsToolbar", resultsToolbar],
     ["FitBlock", fitBlock],
+    ["SavedSearchesFold", savedFold],
     ["SearchStatus", searchStatus],
     ["SearchTimer", searchTimer],
     ["SavedSearchesCardView", savedView],
@@ -511,6 +565,7 @@ describe("what the results hold", () => {
     ["ResultsToolbar", resultsToolbar],
     ["ResultRow", resultRow],
     ["FitBlock", fitBlock],
+    ["SavedSearchesFold", savedFold],
     ["lib/discoverArrange.ts", arrangeSource],
   ];
 
