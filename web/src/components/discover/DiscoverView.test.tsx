@@ -309,22 +309,37 @@ describe("results", () => {
   });
 });
 
+// Opens "Why this score" on the first row, where the bars and notes are.
+function openDetails(container: HTMLElement, row = 0): Element {
+  const item = container.querySelectorAll("li.bj-disc-row")[row];
+  click(buttonNamed(item, /^Why this score for /));
+  return query(item, ".bj-fit-detail");
+}
+
 describe("a row's fit block", () => {
-  it("draws the ladder with the bin and number, engine mark, the one line and a bar for each applied part only", () => {
+  it("draws the ladder with the bin and number and the engine mark in the gutter, and the one line beside the text", () => {
     const { container } = draw(ready());
-    const fit = query(container, ".bj-fit");
-    expect(query(fit, "[role='img']").getAttribute("aria-label")).toBe("Fit: Good -- 61 / 100");
-    expect(fit.querySelectorAll(".bj-ladder-cell--filled")).toHaveLength(3);
-    expect(words(fit)).toContain("engine");
-    expect(words(fit)).toContain("Strong overlap on data pipelines.");
-    const meters = [...fit.querySelectorAll("[role='meter']")].map((meter) => meter.getAttribute("aria-valuetext"));
+    const gutter = query(container, ".bj-disc-score");
+    expect(query(gutter, "[role='img']").getAttribute("aria-label")).toBe("Fit: Good -- 61 / 100");
+    expect(gutter.querySelectorAll(".bj-ladder-cell--filled")).toHaveLength(3);
+    expect(words(gutter)).toContain("engine");
+    expect(words(query(container, ".bj-fit"))).toContain("Strong overlap on data pipelines.");
+    expect(container.querySelector(".bj-ladder-words")).toBeNull();
+  });
+
+  it("draws a bar for each applied part only, once the row's detail is opened", () => {
+    const { container } = draw(ready());
+    expect(container.querySelector("[role='meter']")).toBeNull();
+    const detail = openDetails(container);
+    const meters = [...detail.querySelectorAll("[role='meter']")].map((meter) => meter.getAttribute("aria-valuetext"));
     expect(meters).toEqual(["78 / 100", "52 / 100", "60 / 100", "100 / 100"]);
-    const labels = [...fit.querySelectorAll(".bj-segbar-label")].map((label) => words(label));
+    const labels = [...detail.querySelectorAll(".bj-segbar-label")].map((label) => words(label));
     expect(labels).toEqual(["Skills", "Experience", "Work Authorization", "Location"]);
   });
 
   it("names what was not applied and the lowest part, and never draws a dropped part as 0", () => {
     const { container } = draw(ready());
+    openDetails(container);
     const fit = words(query(container, ".bj-fit-notes"));
     expect(fit).toContain("Not applied: Company Health -- company isn't in the tier list");
     expect(fit).toContain("Not applied: Compensation -- no salary listed");
@@ -336,6 +351,7 @@ describe("a row's fit block", () => {
   it("says what Compensation is when it counts: a constant, not compared to expectations", () => {
     const priced = job({ salary_min: 120000, salary_max: 150000, salary_currency: "USD", score: score({ inapplicable_dims: ["company_health"] }) });
     const { container } = draw(ready(response({ scored: [priced] })));
+    openDetails(container);
     expect(words(query(container, ".bj-fit-bars"))).toContain("Salary listed; not compared to your expectations");
     expect(words(container)).toContain("USD 120,000-150,000");
   });
@@ -347,6 +363,7 @@ describe("a row's fit block", () => {
       ["unknown", "Location: can't tell -- the model read it as Austin, TX"],
     ] as const) {
       const { container, unmount } = draw(ready(response({ scored: [job({ score: score({ location_match: match, detected_location: "Austin, TX" }) })] })));
+      openDetails(container);
       expect(words(query(container, ".bj-fit-notes"))).toContain(expected);
       unmount();
     }
@@ -355,6 +372,7 @@ describe("a row's fit block", () => {
   it("leaves the lowest-part line out when none was named, and a dropped-part line out when none was dropped", () => {
     const whole = job({ score: score({ bottleneck: null, inapplicable_dims: [] }) });
     const { container } = draw(ready(response({ scored: [whole] })));
+    openDetails(container);
     const notes = words(query(container, ".bj-fit-notes"));
     expect(notes).not.toContain("Lowest part");
     expect(notes).not.toContain("Not applied");
@@ -407,6 +425,222 @@ describe("a row's fit block", () => {
     const lit = query<HTMLButtonElement>(bandOf(container), "button.bj-primary");
     expect(words(lit)).toBe("Search again");
     expect(lit.getAttribute("form")).toBe("discover-form");
+  });
+});
+
+describe("a row, in the order it is read", () => {
+  const rowsOf = (container: HTMLElement) => [...container.querySelectorAll("li.bj-disc-row")];
+  const classes = (row: Element) => [...row.classList];
+  // The class that names a child's area, whatever other classes (like the quiet button's) it carries.
+  const areaClass = (child: Element) => [...child.classList].find((name) => /^bj-(disc|fit)/.test(name));
+  const childClasses = (row: Element) => [...row.children].map(areaClass);
+  const unscored = (extra: Partial<ReturnType<typeof job>> = {}) => job({ score: null, apply_url: "https://jobs.example/acme/u", title: "Analyst", ...extra });
+
+  it("leads a scored row with its number out of 100 and its tier word, hidden from assistive technology, since the ladder says the same once", () => {
+    const strong = job({ score: score({ bin: "Strong", score100: 88 }) });
+    const { container } = draw(ready(response({ scored: [strong] })));
+    const text = query(container, ".bj-disc-score-text");
+    expect(text.getAttribute("aria-hidden")).toBe("true");
+    expect(words(query(text, ".bj-disc-score-line"))).toBe("88 / 100");
+    expect(words(query(text, ".bj-disc-score-tier"))).toBe("Strong");
+    expect(query(container, ".bj-disc-score [role='img']").getAttribute("aria-label")).toBe("Fit: Strong -- 88 / 100");
+    expect(words(query(container, ".bj-disc-score .bj-ladder-caption"))).toBe("engine ✦");
+  });
+
+  it("prints '/ 100' as visible text on every scored row", () => {
+    const rows = [job(), job({ apply_url: "https://jobs.example/acme/2", score: score({ bin: "Poor", score100: 12 }) }), job({ apply_url: "https://jobs.example/acme/3", score: score({ bin: "Mixed", score100: 100 }) })];
+    const { container } = draw(ready(response({ scored: rows })));
+    const gutters = [...container.querySelectorAll(".bj-disc-score-line")].map((line) => words(line));
+    expect(gutters).toEqual(["61 / 100", "12 / 100", "100 / 100"]);
+  });
+
+  it("draws no numeral and no tier word on a placeholder row, only the hollow ladder that says Placeholder", () => {
+    const fallback = response({ scoring_strategy: "neutral_fallback", scored: [job()] });
+    const { container } = draw({ ...ready(fallback), outcome: band({ phase: "results", results: resultsFactOf(fallback, EMPTY_REQUEST) }) });
+    expect(container.querySelector(".bj-disc-score-num")).toBeNull();
+    expect(container.querySelector(".bj-disc-score-of")).toBeNull();
+    expect(container.querySelector(".bj-disc-score-tier")).toBeNull();
+    expect(words(query(container, ".bj-disc-score"))).toBe("Placeholder");
+  });
+
+  it("prints no number it cannot read: a score that is not a number leaves the tier word and the ladder alone", () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, undefined as unknown as number]) {
+      const { container, unmount } = draw(ready(response({ scored: [job({ score: score({ score100: bad }) })] })));
+      const gutter = words(query(container, ".bj-disc-score"));
+      expect(gutter).not.toMatch(/NaN|Infinity|undefined/);
+      expect(container.querySelector(".bj-disc-score-num")).toBeNull();
+      expect(container.querySelector(".bj-disc-score-of")).toBeNull();
+      expect(words(query(container, ".bj-disc-score-tier"))).toBe("Good");
+      expect(query(container, ".bj-disc-score [role='img']").getAttribute("aria-label")).toBe("Fit: Good");
+      unmount();
+    }
+  });
+
+  it("gives each row the class of its tier, and a placeholder or unscored row the class of its kind", () => {
+    const bins = ["Strong", "Good", "Mixed", "Poor"] as const;
+    const scored = bins.map((bin, index) => job({ apply_url: `https://jobs.example/acme/${index}`, score: score({ bin }) }));
+    const { container } = draw(ready(response({ scored, more: [unscored()] })));
+    expect(rowsOf(container).map(classes)).toEqual([
+      ["bj-disc-row", "bj-disc-row--strong"],
+      ["bj-disc-row", "bj-disc-row--good"],
+      ["bj-disc-row", "bj-disc-row--mixed"],
+      ["bj-disc-row", "bj-disc-row--poor"],
+      ["bj-disc-row", "bj-disc-row--unscored"],
+    ]);
+  });
+
+  it("gives a fallback row only the placeholder class, never a tier", () => {
+    const fallback = response({ scoring_strategy: "neutral_fallback", scored: [job({ score: score({ bin: "Strong" }) })] });
+    const { container } = draw(ready(fallback));
+    expect(rowsOf(container).map(classes)).toEqual([["bj-disc-row", "bj-disc-row--placeholder"]]);
+  });
+
+  it("never lets the response's own text become a class: an unrecognised bin gets no tier class at all", () => {
+    const hostile = job({ score: score({ bin: "Strong bj-primary" as never }) });
+    const { container } = draw(ready(response({ scored: [hostile] })));
+    expect(rowsOf(container).map(classes)).toEqual([["bj-disc-row"]]);
+    expect(container.querySelector(".bj-primary")).toBeNull();
+    expect(container.innerHTML).not.toContain('class="bj-disc-row bj-primary');
+  });
+
+  it("shows the sponsorship line, the model's line and what the score left out with no interaction, on a scored and an unscored row", () => {
+    const yes = job({ sponsorship_signal: "explicit_yes" });
+    const { container } = draw(ready(response({ scored: [yes], more: [unscored({ sponsorship_signal: "explicit_no" })] })));
+    const [scoredRow, moreRow] = rowsOf(container);
+    expect(words(query(scoredRow, ".bj-disc-signal"))).toContain("The posting text mentions visa sponsorship");
+    expect(words(query(scoredRow, ".bj-fit-oneliner"))).toBe("Strong overlap on data pipelines.");
+    expect(words(query(scoredRow, ".bj-fit-preview"))).toBe("Lowest: Experience 52 -- 2 parts not applied");
+    expect(words(query(moreRow, ".bj-disc-signal"))).toContain("The posting text rules out visa sponsorship");
+  });
+
+  it("has no density control or display switch anywhere on the page", () => {
+    const { container } = draw(ready(response({ scored: [job()], more: [unscored()] })));
+    expect(words(container).toLowerCase()).not.toMatch(/density|compact|comfortable|\bdisplay\b/);
+    expect(container.querySelector("[role='radiogroup'], [role='switch']")).toBeNull();
+  });
+
+  it("says what the score left out in one line, and leaves the line out when there is nothing to say", () => {
+    const clean = job({ score: score({ bottleneck: null, inapplicable_dims: [] }) });
+    const { container } = draw(ready(response({ scored: [clean] })));
+    expect(container.querySelector(".bj-fit-preview")).toBeNull();
+    expect(words(query(container, ".bj-fit-oneliner"))).toBe("Strong overlap on data pipelines.");
+    const mismatch = job({ score: score({ location_match: "mismatch" }) });
+    const second = draw(ready(response({ scored: [mismatch] })));
+    expect(words(query(second.container, ".bj-fit-preview"))).toBe("Lowest: Experience 52 -- 2 parts not applied · Location doesn't match");
+  });
+
+  it("opens nothing by default: a closed row has no bars, no notes and no controls target", () => {
+    const { container } = draw(ready());
+    const toggle = buttonNamed(container, /^Why this score for /);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.hasAttribute("aria-controls")).toBe(false);
+    expect(container.querySelector("[role='meter']")).toBeNull();
+    expect(container.querySelector(".bj-fit-detail")).toBeNull();
+    expect(container.querySelector(".bj-fit-notes")).toBeNull();
+    expect(classes(rowsOf(container)[0])).not.toContain("bj-disc-row--open");
+  });
+
+  it("opens and closes one row's detail with a real button, names the region it controls, and keeps focus on the button", () => {
+    const { container } = draw(ready());
+    const toggle = buttonNamed(container, /^Why this score for /);
+    expect(toggle.tagName).toBe("BUTTON");
+    expect(toggle.getAttribute("type")).toBe("button");
+    expect(toggle.classList.contains("bj-quiet")).toBe(true);
+    act(() => toggle.focus());
+    click(toggle);
+    const detail = query(container, ".bj-fit-detail");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.getAttribute("aria-controls")).toBe(detail.id);
+    expect(detail.id).not.toBe("");
+    expect(detail.querySelectorAll("[role='meter']").length).toBeGreaterThan(0);
+    expect(detail.querySelector(".bj-fit-notes")).not.toBeNull();
+    expect(classes(rowsOf(container)[0])).toContain("bj-disc-row--open");
+    expect(document.activeElement).toBe(toggle);
+    click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector(".bj-fit-detail")).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it("opens each row on its own", () => {
+    const rows = [job(), job({ apply_url: "https://jobs.example/acme/2", title: "Analyst" })];
+    const { container } = draw(ready(response({ scored: rows })));
+    const [first, second] = rowsOf(container);
+    click(buttonNamed(second, /^Why this score for /));
+    expect(first.querySelector(".bj-fit-detail")).toBeNull();
+    expect(second.querySelector(".bj-fit-detail")).not.toBeNull();
+    click(buttonNamed(first, /^Why this score for /));
+    expect(first.querySelector(".bj-fit-detail")).not.toBeNull();
+    click(buttonNamed(second, /^Why this score for /));
+    expect(first.querySelector(".bj-fit-detail")).not.toBeNull();
+    expect(second.querySelector(".bj-fit-detail")).toBeNull();
+  });
+
+  it("names each toggle for its own job, leading with the visible words, so no two share a name", () => {
+    const rows = [job(), job({ apply_url: "https://jobs.example/acme/2", title: "Analyst", company: "Birch" }), job({ apply_url: "https://jobs.example/acme/3", company: null })];
+    const { container } = draw(ready(response({ scored: rows })));
+    const toggles = [...container.querySelectorAll("button.bj-fit-toggle")];
+    const names = toggles.map((toggle) => toggle.getAttribute("aria-label"));
+    expect(names).toEqual(["Why this score for Data Engineer at Acme", "Why this score for Analyst at Birch", "Why this score for Data Engineer at Unknown company"]);
+    expect(new Set(names).size).toBe(names.length);
+    for (const toggle of toggles) expect(toggle.getAttribute("aria-label")!.startsWith(words(toggle).replace(/\s*[›⌃]$/, ""))).toBe(true);
+  });
+
+  it("shows the posting text two lines at most until the row is opened: the whole text is always there", () => {
+    const long = "Build and run data pipelines. ".repeat(20).trim();
+    const { container } = draw(ready(response({ scored: [job({ snippet: long })] })));
+    expect(words(query(container, ".bj-disc-snippet"))).toBe(long);
+  });
+
+  it("draws a row past the scoring batch as one band: identity, a line of posting text, 'Not scored' and the actions, with no gutter, ladder or disclosure", () => {
+    const { container } = draw(ready(response({ scored: [], more: [unscored({ sponsorship_signal: "explicit_yes" })] })));
+    const [row] = rowsOf(container);
+    expect(childClasses(row)).toEqual(["bj-disc-main", "bj-disc-body", "bj-fit", "bj-disc-actions", "bj-disc-trail"]);
+    expect(words(query(row, ".bj-fit"))).toBe("Not scored");
+    expect(row.querySelector(".bj-disc-score, .bj-ladder, button.bj-fit-toggle, .bj-fit-detail")).toBeNull();
+    expect([...query(row, ".bj-disc-body").children].map((child) => child.classList[0])).toEqual(["bj-disc-signal", "bj-disc-snippet"]);
+    expect(row.lastElementChild!.classList.contains("bj-disc-trail")).toBe(true);
+    expect(classes(row)).toEqual(["bj-disc-row", "bj-disc-row--unscored"]);
+  });
+
+  it("leaves an unscored row's body out when it has neither text nor a sponsorship line", () => {
+    const { container } = draw(ready(response({ scored: [], more: [unscored({ snippet: "" })] })));
+    expect(childClasses(rowsOf(container)[0])).toEqual(["bj-disc-main", "bj-fit", "bj-disc-actions", "bj-disc-trail"]);
+  });
+
+  it("orders a scored row's parts as they are read: identity, score, text, the model's line, actions, the toggle, the detail, the trail", () => {
+    const { container } = draw(ready(response({ scored: [job({ sponsorship_signal: "explicit_yes" })] })));
+    const row = rowsOf(container)[0];
+    click(buttonNamed(row, /^Why this score for /));
+    expect(childClasses(row)).toEqual(["bj-disc-main", "bj-disc-score", "bj-disc-body", "bj-fit", "bj-disc-actions", "bj-fit-toggle", "bj-fit-detail", "bj-disc-trail"]);
+    expect([...query(row, ".bj-disc-body").children].map((child) => child.classList[0])).toEqual(["bj-disc-snippet", "bj-disc-signal"]);
+    expect([...query(row, ".bj-disc-main").children].map((child) => child.tagName)).toEqual(["H3", "P"]);
+  });
+
+  it("draws a placeholder row without a model's line, a toggle or a detail", () => {
+    const fallback = response({ scoring_strategy: "neutral_fallback", scored: [job({ sponsorship_signal: "explicit_no" })] });
+    const { container } = draw(ready(fallback));
+    expect(childClasses(rowsOf(container)[0])).toEqual(["bj-disc-main", "bj-disc-score", "bj-disc-body", "bj-disc-actions", "bj-disc-trail"]);
+  });
+
+  it("draws no body area when a scored row has no text and no sponsorship line", () => {
+    const { container } = draw(ready(response({ scored: [job({ snippet: "" })] })));
+    expect(container.querySelector(".bj-disc-body")).toBeNull();
+  });
+
+  it("still tracks an unscored row, and swaps Track for Open workspace on it", () => {
+    const onTrack = vi.fn();
+    const row = unscored();
+    const { container, rerender } = draw({ ...ready(response({ scored: [], more: [row] })), onTrack });
+    click(buttonNamed(container, /^Track /));
+    expect(onTrack.mock.calls[0][0].apply_url).toBe(row.apply_url);
+    rerender(
+      <MemoryRouter>
+        <DiscoverView {...props({ ...ready(response({ scored: [], more: [row] })), onTrack, tracked: { [row.apply_url]: "app-4" } })} />
+      </MemoryRouter>,
+    );
+    const open = [...container.querySelectorAll<HTMLAnchorElement>("li.bj-disc-row a")].find((link) => words(link) === "Open workspace");
+    expect(open?.getAttribute("href")).toBe("/applications/app-4");
   });
 });
 
@@ -872,6 +1106,13 @@ describe("accessibility", () => {
 
   it.each(cases)("%s has no serious or critical axe violation", async (_name, overrides) => {
     const { container } = draw(overrides);
+    await expectNoSeriousA11yViolations(container);
+  });
+
+  it("results with a detail open, a row past the scoring batch and a placeholder-free mix has no serious or critical axe violation", async () => {
+    const rows = [job({ score: score({ bin: "Strong", score100: 88 }) }), job({ apply_url: "https://jobs.example/acme/2", title: "Analyst", score: score({ bin: "Poor", score100: 20, location_match: "mismatch" }) })];
+    const { container } = draw(ready(response({ scored: rows, more: [job({ apply_url: "https://jobs.example/acme/3", score: null, sponsorship_signal: "explicit_no" })] })));
+    click(buttonNamed(container.querySelectorAll("li.bj-disc-row")[0], /^Why this score for /));
     await expectNoSeriousA11yViolations(container);
   });
 });

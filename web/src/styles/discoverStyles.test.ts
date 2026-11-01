@@ -10,12 +10,14 @@ import discoverForm from "../components/discover/DiscoverForm.tsx?raw";
 import resultRow from "../components/discover/ResultRow.tsx?raw";
 import resultsView from "../components/discover/ResultsView.tsx?raw";
 import fitBlock from "../components/discover/FitBlock.tsx?raw";
+import searchStatus from "../components/discover/SearchStatus.tsx?raw";
 import searchTimer from "../components/discover/SearchTimer.tsx?raw";
 import savedView from "../components/SavedSearchesCardView.tsx?raw";
 import hiringPage from "../components/HiringSignalsPageView.tsx?raw";
 import hiringTabView from "../components/HiringSignalsTabView.tsx?raw";
 import hiringForm from "../components/HiringSignalsTabForm.tsx?raw";
 import hiringResults from "../components/HiringSignalsTabResults.tsx?raw";
+import arrangeSource from "../lib/discoverArrange.ts?raw";
 
 // The Discover, saved-search and Hiring signals stylesheets are read as text (there is no layout engine
 // in the test run). What they pin is what the pages rest on: no colors of their own, no cyan fill, the
@@ -91,26 +93,115 @@ describe("the Discover rows", () => {
     expect(declarationsFor(withoutMedia(savedCss), ".bj-ss")["max-width"]).toBe("880px");
   });
 
-  it("are one column, and from 960px the identity on the left with a 300px fit block on the right", () => {
-    expect(declarationsFor(base, ".bj-disc-row")["grid-template-columns"]).toBe("minmax(0, 1fr)");
-    expect(declarationsFor(wide, ".bj-disc-row")["grid-template-columns"]).toBe("minmax(0, 1fr) 300px");
-    for (const selector of [".bj-disc-actions", ".bj-disc-trail"]) {
-      expect(wide.replace(/\s+/g, " ")).toContain(selector);
+  // Whitespace folded, so a template written over several lines reads as one string.
+  const flat = (value: string | undefined) => (value ?? "").replace(/\s+/g, " ").trim();
+  const templates = (css: string, selector: string) => ({
+    columns: flat(declarationsFor(css, selector)["grid-template-columns"]),
+    areas: flat(declarationsFor(css, selector)["grid-template-areas"]),
+  });
+
+  it("lay a scored row out as a gutter, then text, the model's line and the actions, on a phone", () => {
+    expect(templates(base, ".bj-disc-row")).toEqual({
+      columns: "64px minmax(0, 1fr) auto",
+      areas: '"score main main" "body body body" "fit fit fit" "actions actions why" "detail detail detail" "problem problem problem" "trail trail trail"',
+    });
+    expect(declarationsFor(base, ".bj-disc-row")["column-gap"]).toBe("var(--bj-space-3)");
+  });
+
+  it("lay a scored row out from 960px as gutter, text and the model's line, with the actions and the toggle under it", () => {
+    expect(templates(wide, ".bj-disc-row")).toEqual({
+      columns: "88px minmax(0, 1fr) 296px",
+      areas: '"score main fit" "score body fit" "score actions why" ". detail detail" ". problem problem" ". trail trail"',
+    });
+    expect(declarationsFor(wide, ".bj-disc-row")["column-gap"]).toBe("var(--bj-space-5)");
+  });
+
+  it("lay a placeholder row out with the hollow ladder in its gutter, and no areas for what it has no part of", () => {
+    expect(templates(base, ".bj-disc-row--placeholder")).toEqual({
+      columns: "80px minmax(0, 1fr)",
+      areas: '"score main" "body body" "actions actions" "problem problem" "trail trail"',
+    });
+    expect(templates(wide, ".bj-disc-row--placeholder")).toEqual({
+      columns: "88px minmax(0, 1fr)",
+      areas: '"score main" "score body" "score actions" ". problem" ". trail"',
+    });
+  });
+
+  it("lay a row past the scoring batch out as one band with no gutter", () => {
+    expect(templates(base, ".bj-disc-row--unscored")).toEqual({
+      columns: "minmax(0, 1fr) auto",
+      areas: '"main main" "body body" "fit actions" "problem problem" "trail trail"',
+    });
+    expect(templates(wide, ".bj-disc-row--unscored")).toEqual({
+      columns: "minmax(0, 1fr) auto auto",
+      areas: '"main fit actions" "body . ." "problem problem problem" "trail trail trail"',
+    });
+  });
+
+  it("give each part of a row the area its name says, and no part an area its row kind does not draw", () => {
+    const areas: Record<string, string> = {
+      ".bj-disc-main": "main",
+      ".bj-disc-score": "score",
+      ".bj-disc-body": "body",
+      ".bj-fit": "fit",
+      ".bj-disc-actions": "actions",
+      ".bj-fit-toggle": "why",
+      ".bj-fit-detail": "detail",
+      ".bj-disc-problem": "problem",
+      ".bj-disc-trail": "trail",
+    };
+    for (const [selector, area] of Object.entries(areas)) {
+      expect(declarationsFor(base, selector)["grid-area"], selector).toBe(area);
+      expect(declarationsFor(base, selector)["min-width"], selector).toBe("0");
     }
-    expect(declarationsFor(wide, ".bj-disc-trail")["grid-column"]).toBe("1 / -1");
+    const kinds = { score: templates(base, ".bj-disc-row").areas, placeholder: templates(base, ".bj-disc-row--placeholder").areas, unscored: templates(base, ".bj-disc-row--unscored").areas };
+    for (const area of ["score", "main", "body", "fit", "actions", "why", "detail", "problem", "trail"]) expect(kinds.score, area).toContain(area);
+    for (const area of ["score", "main", "body", "actions", "problem", "trail"]) expect(kinds.placeholder, area).toContain(area);
+    for (const area of ["main", "body", "fit", "actions", "problem", "trail"]) expect(kinds.unscored, area).toContain(area);
+  });
+
+  it("space a row's parts with margins on the parts, never a row-gap, which an empty optional area would still take", () => {
+    expect(declarationsFor(base, ".bj-disc-row")["row-gap"]).toBeUndefined();
+    expect(declarationsFor(base, ".bj-disc-row")["gap"]).toBeUndefined();
+    expect(declarationsFor(wide, ".bj-disc-row")["row-gap"]).toBeUndefined();
+    const margins: Record<string, string> = {
+      ".bj-disc-body": "var(--bj-space-2)",
+      ".bj-fit": "var(--bj-space-2)",
+      ".bj-disc-actions": "var(--bj-space-2)",
+      ".bj-fit-toggle": "var(--bj-space-2)",
+      ".bj-fit-detail": "var(--bj-space-3)",
+      ".bj-disc-problem": "var(--bj-space-3)",
+      ".bj-disc-trail": "var(--bj-space-2)",
+    };
+    for (const [selector, margin] of Object.entries(margins)) expect(declarationsFor(base, selector)["margin-top"], selector).toBe(margin);
+    expect(declarationsFor(wide, ".bj-fit")["margin-top"]).toBe("0");
+    expect(declarationsFor(base, ".bj-fit-preview").margin).toBe("var(--bj-space-1) 0 0");
+  });
+
+  it("use none of the layout tricks that would hide a row from assistive technology or need a newer engine", () => {
+    const code = discoverCss.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(code).not.toMatch(/display:\s*contents/);
+    expect(code).not.toContain(":has(");
+  });
+
+  it("let the list bleed one row padding into the page so the text lines up with the page edge", () => {
+    expect(declarationsFor(base, ".bj-disc-list").margin).toBe("0 calc(-1 * var(--bj-space-3))");
+    expect(declarationsFor(base, ".bj-disc-row").padding).toBe("var(--bj-space-4) var(--bj-space-3)");
+    expect(declarationsFor(base, ".bj-disc-row")["align-items"]).toBe("start");
+    expect(declarationsFor(base, ".bj-disc-row")["border-bottom"]).toBe("1px solid var(--bj-border)");
   });
 
   it("wrap a company, a snippet and a title that are one long string instead of widening the page", () => {
-    for (const selector of [".bj-disc-title", ".bj-disc-meta", ".bj-disc-snippet", ".bj-disc-signal", ".bj-fit-oneliner", ".bj-fit-notes p", ".bj-disc-note", ".bj-disc-fallback"]) {
+    for (const selector of [".bj-disc-title", ".bj-disc-meta", ".bj-disc-snippet", ".bj-disc-signal", ".bj-fit-oneliner", ".bj-fit-preview", ".bj-fit-notes p", ".bj-disc-note", ".bj-disc-fallback", ".bj-disc-sources", ".bj-disc-score"]) {
       expect(declarationsFor(base, selector)["overflow-wrap"], selector).toBe("anywhere");
     }
-    for (const selector of [".bj-disc-row", ".bj-disc-main", ".bj-fit", ".bj-disc-results"]) {
+    for (const selector of [".bj-disc-row", ".bj-disc-main", ".bj-fit", ".bj-disc-results", ".bj-disc-status", ".bj-disc-score-text"]) {
       expect(declarationsFor(base, selector)["min-width"], selector).toBe("0");
     }
   });
 
   it("make every control at least 44px tall on a phone", () => {
-    for (const selector of [".bj-disc-form-actions > button", ".bj-disc-actions > a", ".bj-disc-actions > button", ".bj-disc-problem button", ".bj-disc-remote"]) {
+    for (const selector of [".bj-disc-form-actions > button", ".bj-disc-actions > a", ".bj-disc-actions > button", ".bj-disc-problem button", ".bj-disc-remote", ".bj-fit-toggle"]) {
       expect(declarationsFor(phone, selector)["min-height"], selector).toBe("44px");
     }
     expect(declarationsFor(phone, '.bj-disc-form input[type="text"]')["min-height"]).toBe("44px");
@@ -136,9 +227,110 @@ describe("the Discover rows", () => {
     expect(resolve(declarationsFor(base, ".bj-disc-meta").color)).toBe(resolve("var(--bj-text-muted)"));
   });
 
-  it("put the sub-score bars in two columns on a tablet and one on a phone", () => {
+  it("put the sub-score bars in one column on a phone and two from 600px", () => {
     expect(declarationsFor(base, ".bj-fit-bars")["grid-template-columns"]).toBe("minmax(0, 1fr)");
-    expect(discoverCss).toMatch(/@media \(min-width: 600px\) and \(max-width: 959px\)/);
+    expect(declarationsFor(blocksOf(discoverCss, "@media (min-width: 600px)"), ".bj-fit-bars")["grid-template-columns"]).toBe("minmax(0, 1fr) minmax(0, 1fr)");
+  });
+});
+
+describe("the score, the tiers and the clamps", () => {
+  const base = withoutMedia(discoverCss);
+  const wide = blocksOf(discoverCss, "@media (min-width: 960px)");
+  const code = discoverCss.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("set every font size from the type scale, apart from the literals the page already had", () => {
+    const sizes = rulesOf(discoverCss).flatMap((rule) => (rule.declarations["font-size"] === undefined ? [] : [{ selector: rule.selectors.join(", "), value: rule.declarations["font-size"] }]));
+    const literals = sizes.filter((entry) => !/^var\(--bj-text-[a-z0-9-]+\)$/.test(entry.value));
+    expect(literals).toEqual([
+      { selector: ".bj-disc-heading", value: "24px" },
+      { selector: ".bj-disc-title", value: "20px" },
+      { selector: ".bj-fit-notes p", value: "12.5px" },
+    ]);
+  });
+
+  it("uses no shadow, gradient, transition or animation, and no rule's own colour literal", () => {
+    expect(code).not.toMatch(/box-shadow|gradient|transition|animation|@keyframes/);
+  });
+
+  it("lifts a Strong row onto the surface step and does nothing else to it", () => {
+    expect(declarationsFor(base, ".bj-disc-row--strong")).toEqual({ background: "var(--bj-surface)" });
+  });
+
+  it("does not dim, recolor, outline or lift any other tier or kind of row", () => {
+    for (const selector of [".bj-disc-row--good", ".bj-disc-row--mixed", ".bj-disc-row--poor", ".bj-disc-row--placeholder", ".bj-disc-row--unscored", ".bj-disc-row--open"]) {
+      for (const rule of rulesOf(discoverCss)) {
+        if (!rule.selectors.includes(selector)) continue;
+        for (const property of ["color", "background", "background-color", "opacity", "filter", "border", "border-color", "outline", "box-shadow"]) {
+          expect(rule.declarations[property], `${selector} ${property}`).toBeUndefined();
+        }
+      }
+    }
+    expect(code).not.toMatch(/\.bj-disc-row--(?:good|mixed|poor)[^{]*\{[^}]*(?:color|background|opacity)/);
+    expect(declarationsFor(base, ".bj-disc-row--unscored .bj-disc-title").color).toBeUndefined();
+    expect(declarationsFor(base, ".bj-disc-row--unscored .bj-disc-title")["font-size"]).toBe("var(--bj-text-body)");
+  });
+
+  it("sets the number in gold, in exactly one rule, and uses gold nowhere else but the fallback notice's outline", () => {
+    const gold = rulesOf(discoverCss).filter((rule) => Object.values(rule.declarations).some((value) => value.includes("--bj-gold")));
+    expect(gold.map((rule) => rule.selectors.join(", ")).sort()).toEqual([".bj-disc-fallback", ".bj-disc-score-num"]);
+    expect(declarationsFor(base, ".bj-disc-score-num").color).toBe("var(--bj-gold)");
+    expect(declarationsFor(base, ".bj-disc-fallback").border).toBe("1px solid var(--bj-gold)");
+  });
+
+  it("sets the number from the type scale only: the title size, and the page title size from 960px", () => {
+    expect(declarationsFor(base, ".bj-disc-score-num")["font-size"]).toBe("var(--bj-text-title)");
+    expect(declarationsFor(wide, ".bj-disc-score-num")["font-size"]).toBe("var(--bj-text-h1)");
+    expect(declarationsFor(base, ".bj-disc-score-num")["font-family"]).toBe("var(--bj-font-display)");
+    expect(declarationsFor(base, ".bj-disc-score-num")["font-variant-numeric"]).toBe("lining-nums tabular-nums");
+  });
+
+  it("sets '/ 100' muted and small, and the tier word in the text color, neither gold", () => {
+    expect(declarationsFor(base, ".bj-disc-score-of").color).toBe("var(--bj-text-muted)");
+    expect(declarationsFor(base, ".bj-disc-score-of")["font-size"]).toBe("var(--bj-text-trail)");
+    expect(declarationsFor(base, ".bj-disc-score-tier").color).toBe("var(--bj-text)");
+    expect(declarationsFor(base, ".bj-disc-score-tier")["font-size"]).toBe("var(--bj-text-small)");
+  });
+
+  it("narrows the ladder's cells so four fit the gutter", () => {
+    expect(declarationsFor(base, ".bj-disc-ladder .bj-ladder-cell").width).toBe("12px");
+  });
+
+  it("clamps the posting text and the model's line to two lines, three for the line from 960px, one for an unscored row's text, and none once a row is open", () => {
+    expect(declarationsFor(base, ".bj-disc-snippet")["-webkit-line-clamp"]).toBe("2");
+    expect(declarationsFor(base, ".bj-fit-oneliner")["-webkit-line-clamp"]).toBe("2");
+    expect(declarationsFor(wide, ".bj-fit-oneliner")["-webkit-line-clamp"]).toBe("3");
+    expect(declarationsFor(base, ".bj-disc-row--unscored .bj-disc-snippet")["-webkit-line-clamp"]).toBe("1");
+    for (const selector of [".bj-disc-row--open .bj-disc-snippet", ".bj-disc-row--open .bj-fit-oneliner"]) {
+      const open = declarationsFor(base, selector);
+      expect(open["-webkit-line-clamp"], selector).toBe("none");
+      expect(open.overflow, selector).toBe("visible");
+      expect(open.display, selector).toBe("block");
+    }
+    for (const selector of [".bj-disc-snippet", ".bj-fit-oneliner"]) {
+      expect(declarationsFor(base, selector).display, selector).toBe("-webkit-box");
+      expect(declarationsFor(base, selector)["-webkit-box-orient"], selector).toBe("vertical");
+      expect(declarationsFor(base, selector).overflow, selector).toBe("hidden");
+    }
+  });
+
+  it("sets the model's line at the body size, and at the control size from 960px", () => {
+    expect(declarationsFor(base, ".bj-fit-oneliner")["font-size"]).toBe("var(--bj-text-body)");
+    expect(declarationsFor(base, ".bj-fit-oneliner").color).toBe("var(--bj-text)");
+    expect(declarationsFor(wide, ".bj-fit-oneliner")["font-size"]).toBe("var(--bj-text-control)");
+    expect(declarationsFor(base, ".bj-fit-preview").color).toBe("var(--bj-text-muted)");
+    expect(declarationsFor(base, ".bj-fit-preview")["font-size"]).toBe("var(--bj-text-small)");
+  });
+
+  it("puts the toggle at the right of its row on a phone and the left from 960px, level with the actions", () => {
+    expect(declarationsFor(base, ".bj-fit-toggle")["justify-self"]).toBe("end");
+    expect(declarationsFor(wide, ".bj-fit-toggle")["justify-self"]).toBe("start");
+    expect(declarationsFor(base, ".bj-fit-toggle")["align-self"]).toBe("center");
+  });
+
+  it("sets 'Not scored' level with the actions on a row past the scoring batch, on a phone and from 960px", () => {
+    expect(declarationsFor(base, ".bj-disc-row--unscored .bj-fit")["align-self"]).toBe("center");
+    expect(declarationsFor(wide, ".bj-disc-row--unscored .bj-fit")["align-self"]).toBe("start");
+    expect(declarationsFor(wide, ".bj-disc-row--unscored .bj-disc-actions")["margin-top"]).toBe("0");
   });
 });
 
@@ -226,6 +418,7 @@ describe("the markup that uses them", () => {
     ["ResultRow", resultRow],
     ["ResultsView", resultsView],
     ["FitBlock", fitBlock],
+    ["SearchStatus", searchStatus],
     ["SearchTimer", searchTimer],
     ["SavedSearchesCardView", savedView],
     ["HiringSignalsPageView", hiringPage],
@@ -251,5 +444,19 @@ describe("the markup that uses them", () => {
       const code = source.replace(/\/\/.*$/gm, "");
       expect(code).not.toMatch(/bj-primary/);
     }
+  });
+});
+
+describe("what the results hold", () => {
+  const sources: Array<[string, string]> = [
+    ["ResultsView", resultsView],
+    ["ResultRow", resultRow],
+    ["FitBlock", fitBlock],
+    ["lib/discoverArrange.ts", arrangeSource],
+  ];
+
+  it.each(sources)("%s keeps a person's choices in memory only: no storage of any kind", (_name, source) => {
+    const code = source.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(code).not.toMatch(/localStorage|sessionStorage|indexedDB|document\.cookie|browserStorage/);
   });
 });

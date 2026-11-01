@@ -88,10 +88,15 @@ export interface FitLadderProps {
   placeholderLabel?: string;
   /** Draws the "engine ✦" micro-caption when a rung was reached (never for "Not scored"). On by default. */
   engine?: boolean;
+  /**
+   * Draws the words beside the cells ("Good -- 61 / 100", or "Placeholder"). On by default. A caller that
+   * prints the number and the name itself leaves them off; the image's label still says all of it.
+   */
+  showWords?: boolean;
   className?: string;
 }
 
-export function FitLadder({ levels, level, score, max = 100, placeholder = false, placeholderLabel = "Placeholder", engine = true, className }: FitLadderProps) {
+export function FitLadder({ levels, level, score, max = 100, placeholder = false, placeholderLabel = "Placeholder", engine = true, showWords = true, className }: FitLadderProps) {
   const rung = placeholder || level === null ? -1 : levels.indexOf(level);
   // A level the ladder does not have is drawn as no rung and no name rather than guessed at.
   const reached = rung === -1 ? 0 : rung + 1;
@@ -106,9 +111,11 @@ export function FitLadder({ levels, level, score, max = 100, placeholder = false
             <span key={name} className={index < reached ? "bj-ladder-cell bj-ladder-cell--filled" : "bj-ladder-cell"} />
           ))}
         </span>
-        <span className="bj-ladder-words" aria-hidden="true">
-          {words}
-        </span>
+        {showWords && (
+          <span className="bj-ladder-words" aria-hidden="true">
+            {words}
+          </span>
+        )}
       </div>
       {engine && !placeholder && rung !== -1 && (
         <p className="bj-ladder-caption">
