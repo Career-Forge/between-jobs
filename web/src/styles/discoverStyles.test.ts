@@ -8,6 +8,7 @@ import savedCss from "./saved-searches.css?raw";
 import discoverView from "../components/discover/DiscoverView.tsx?raw";
 import discoverForm from "../components/discover/DiscoverForm.tsx?raw";
 import resultRow from "../components/discover/ResultRow.tsx?raw";
+import resultsToolbar from "../components/discover/ResultsToolbar.tsx?raw";
 import resultsView from "../components/discover/ResultsView.tsx?raw";
 import fitBlock from "../components/discover/FitBlock.tsx?raw";
 import searchStatus from "../components/discover/SearchStatus.tsx?raw";
@@ -195,13 +196,13 @@ describe("the Discover rows", () => {
     for (const selector of [".bj-disc-title", ".bj-disc-meta", ".bj-disc-snippet", ".bj-disc-signal", ".bj-fit-oneliner", ".bj-fit-preview", ".bj-fit-notes p", ".bj-disc-note", ".bj-disc-fallback", ".bj-disc-sources", ".bj-disc-score"]) {
       expect(declarationsFor(base, selector)["overflow-wrap"], selector).toBe("anywhere");
     }
-    for (const selector of [".bj-disc-row", ".bj-disc-main", ".bj-fit", ".bj-disc-results", ".bj-disc-status", ".bj-disc-score-text"]) {
+    for (const selector of [".bj-disc-row", ".bj-disc-main", ".bj-fit", ".bj-disc-results", ".bj-disc-status", ".bj-disc-score-text", ".bj-disc-toolbar", ".bj-disc-tools", ".bj-disc-tool", ".bj-disc-chips", ".bj-disc-sort"]) {
       expect(declarationsFor(base, selector)["min-width"], selector).toBe("0");
     }
   });
 
   it("make every control at least 44px tall on a phone", () => {
-    for (const selector of [".bj-disc-form-actions > button", ".bj-disc-actions > a", ".bj-disc-actions > button", ".bj-disc-problem button", ".bj-disc-remote", ".bj-fit-toggle"]) {
+    for (const selector of [".bj-disc-form-actions > button", ".bj-disc-actions > a", ".bj-disc-actions > button", ".bj-disc-problem button", ".bj-disc-remote", ".bj-fit-toggle", ".bj-disc-tools .bj-segmented > button", ".bj-disc-toggle"]) {
       expect(declarationsFor(phone, selector)["min-height"], selector).toBe("44px");
     }
     expect(declarationsFor(phone, '.bj-disc-form input[type="text"]')["min-height"]).toBe("44px");
@@ -334,6 +335,62 @@ describe("the score, the tiers and the clamps", () => {
   });
 });
 
+describe("the toolbar", () => {
+  const base = withoutMedia(discoverCss);
+  const phone = blocksOf(discoverCss, `@media ${PHONE_QUERY}`);
+
+  it("lays its groups and its switch out in a wrapping flex row, so six chips and a sort never widen the page", () => {
+    const tools = declarationsFor(base, ".bj-disc-tools");
+    expect(tools.display).toBe("flex");
+    expect(tools["flex-wrap"]).toBe("wrap");
+    expect(tools["align-items"]).toBe("center");
+    expect(tools.gap).toMatch(/^var\(--bj-space-\d\) var\(--bj-space-5\)$/);
+    expect(declarationsFor(base, ".bj-disc-tool").display).toBe("flex");
+  });
+
+  it("sets a group's name in the plain sans, small and muted: not the mono capitals the band's eyebrow uses", () => {
+    const label = declarationsFor(base, ".bj-disc-tool-label");
+    expect(label["font-family"]).toBe("var(--bj-font-body)");
+    expect(label["font-size"]).toBe("var(--bj-text-small)");
+    expect(label.color).toBe("var(--bj-text-muted)");
+    for (const property of ["text-transform", "letter-spacing"]) expect(label[property]).toBeUndefined();
+  });
+
+  it("sets a chip's count in the mono face with tabular figures, and the count line muted and wrapping", () => {
+    expect(declarationsFor(base, ".bj-disc-chip-count")["font-family"]).toBe("var(--bj-font-mono)");
+    expect(declarationsFor(base, ".bj-disc-chip-count")["font-variant-numeric"]).toBe("tabular-nums");
+    const count = declarationsFor(base, ".bj-disc-count");
+    expect(count.color).toBe("var(--bj-text-muted)");
+    expect(count["overflow-wrap"]).toBe("anywhere");
+    expect(count.margin).toBe("var(--bj-space-1) 0 0");
+  });
+
+  it("mirrors the form's Remote only switch, in size, color and cursor", () => {
+    const remote = declarationsFor(base, ".bj-disc-remote");
+    const toggle = declarationsFor(base, ".bj-disc-toggle");
+    for (const property of ["display", "align-items", "gap", "font-size", "color", "cursor"]) expect(toggle[property], property).toBe(remote[property]);
+  });
+
+  it("narrows a chip's padding on a phone so more share a line, and keeps it 44px tall", () => {
+    const chip = declarationsFor(phone, ".bj-disc-tools .bj-segmented > button");
+    expect(chip.padding).toBe("6px 10px");
+    expect(chip["min-height"]).toBe("44px");
+  });
+
+  it("defines no selection style of its own: the chosen chip is the shared maroon fill", () => {
+    const code = discoverCss.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(code).not.toMatch(/aria-pressed|\.bj-selectable|--bj-maroon|--bj-selected/);
+  });
+
+  it("uses only the pattern the shared stylesheet defines for a group of choices", () => {
+    expect(resultsToolbar).toContain("bj-segmented");
+    expect(resultsToolbar).toContain("bj-selectable");
+    expect(resultsToolbar).not.toContain("bj-view-toggle");
+    expect(resultsToolbar).not.toContain("RadioSegments");
+    expect(resultsToolbar).not.toMatch(/onKeyDown|onKeyUp|addEventListener|tabIndex/);
+  });
+});
+
 describe("the saved-searches card", () => {
   const base = withoutMedia(savedCss);
   const phone = blocksOf(savedCss, `@media ${PHONE_QUERY}`);
@@ -417,6 +474,7 @@ describe("the markup that uses them", () => {
     ["DiscoverForm", discoverForm],
     ["ResultRow", resultRow],
     ["ResultsView", resultsView],
+    ["ResultsToolbar", resultsToolbar],
     ["FitBlock", fitBlock],
     ["SearchStatus", searchStatus],
     ["SearchTimer", searchTimer],
@@ -450,6 +508,7 @@ describe("the markup that uses them", () => {
 describe("what the results hold", () => {
   const sources: Array<[string, string]> = [
     ["ResultsView", resultsView],
+    ["ResultsToolbar", resultsToolbar],
     ["ResultRow", resultRow],
     ["FitBlock", fitBlock],
     ["lib/discoverArrange.ts", arrangeSource],

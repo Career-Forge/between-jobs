@@ -3,7 +3,7 @@ import { act } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
-import { job, response, score } from "../../testing/discoverFixtures";
+import { job, mixedResponse, response, score } from "../../testing/discoverFixtures";
 import { buttonNamed, click, installViewport, query, render } from "../../testing/render";
 import { EMPTY_REQUEST, resultsFactOf } from "../../lib/discoverFacts";
 import { findForbiddenWord } from "../../lib/trail";
@@ -641,6 +641,43 @@ describe("a row, in the order it is read", () => {
     );
     const open = [...container.querySelectorAll<HTMLAnchorElement>("li.bj-disc-row a")].find((link) => words(link) === "Open workspace");
     expect(open?.getAttribute("href")).toBe("/applications/app-4");
+  });
+});
+
+describe("the results' choices, across the page's states", () => {
+  const rowsIn = (container: HTMLElement) => container.querySelectorAll("li.bj-disc-row").length;
+  const redraw = (rendered: ReturnType<typeof draw>, overrides: Partial<DiscoverViewProps>) =>
+    rendered.rerender(
+      <MemoryRouter>
+        <DiscoverView {...props(overrides)} />
+      </MemoryRouter>,
+    );
+
+  it("forgets the fit, the sort and the open details while the next search runs, and starts the next answer from All", () => {
+    const first = mixedResponse();
+    const view = draw(ready(first));
+    click(buttonNamed(query(view.container, '[aria-label="Show results by fit"]'), /^Poor /));
+    click(buttonNamed(query(view.container, '[aria-label="Sort results"]'), "Newest"));
+    click(query(view.container, ".bj-disc-toggle input"));
+    expect(rowsIn(view.container)).toBe(3);
+    redraw(view, { search: { kind: "loading", startedAt: Date.now() }, outcome: band({ phase: "searching" }) });
+    expect(view.container.querySelector(".bj-disc-tools")).toBeNull();
+    redraw(view, ready(mixedResponse()));
+    expect(rowsIn(view.container)).toBe(25);
+    expect(query(view.container, '[aria-label="Show results by fit"] [aria-pressed="true"]').textContent).toContain("All");
+    expect(query(view.container, '[aria-label="Sort results"] [aria-pressed="true"]').textContent).toBe("As returned");
+    expect(view.container.querySelectorAll(".bj-fit-detail")).toHaveLength(0);
+  });
+
+  it("keeps the page's own announcement regions and adds one for the toolbar only while there is a toolbar", () => {
+    // The page's hidden announcement and the band's own live region are there in every state.
+    const regions = (container: HTMLElement) => [...container.querySelectorAll("[role='status']")];
+    expect(regions(draw().container)).toHaveLength(2);
+    expect(regions(draw(ready(response({ scored: [job(), job({ apply_url: "https://jobs.example/acme/2" })] }))).container)).toHaveLength(2);
+    const withToolbar = draw(ready(mixedResponse()));
+    expect(regions(withToolbar.container)).toHaveLength(3);
+    expect(withToolbar.container.querySelectorAll(".bj-discover > [role='status']")).toHaveLength(1);
+    expect(withToolbar.container.querySelectorAll("section.bj-disc-results [role='status']")).toHaveLength(1);
   });
 });
 
