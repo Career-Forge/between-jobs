@@ -2,11 +2,17 @@
  * (pages/Discover.tsx, components/discover/). Tokens only -- no color is defined here -- and no rule
  * fills anything cyan: the page's one cyan fill is the next-step band's button.
  *
- * Widths. Lists and rows are at most 880px (the shell's column is 960px with its padding). From 960px a
- * row has its identity and posting text on the left and its fit block on the right; under 960px (the
- * shell's phone breakpoint) the row is one column, every control is at least 44px tall and the form's
- * fields stack. Long unbroken strings from a posting (a company, a snippet with a bare URL) wrap inside
- * the row and never widen the page. */
+ * A result row is a grid of named areas with the score in a gutter on its left: the number out of 100
+ * and the tier word, a ladder, then the identity, the posting's text, the model's line with one line of
+ * what the score left out, the actions, and "Why this score" for the detail. A phone gets 64px of
+ * gutter and the rest below the identity; from 960px (the shell's phone breakpoint) the model's line
+ * moves to a column on the right. Rows past the scoring batch and rows whose score is a placeholder
+ * are lighter and use their own templates. The strongest tier alone sits on a lighter surface; no tier
+ * is dimmed or recolored. The list takes the width of the shell's column, at most 880px, and bleeds
+ * one row padding into the page so the text lines up with the page edge.
+ *
+ * Under 960px every control is at least 44px tall and the form's fields stack. Long unbroken strings
+ * from a posting (a company, a snippet with a bare URL) wrap inside the row and never widen the page. */
 
 .bj-discover {
   min-width: 0;
@@ -152,40 +158,164 @@
 /* Result rows                                                          */
 /* ------------------------------------------------------------------ */
 
+/* The list bleeds into the page padding by one row padding, so a row's text lines up with the page edge
+   while a lifted row's surface reaches past it. */
 .bj-disc-list {
-  margin: 0;
+  margin: 0 calc(-1 * var(--bj-space-3));
   padding: 0;
   list-style: none;
   border-top: 1px solid var(--bj-border);
 }
 
+/* A row is a grid of named areas. Each child sets its own area below, and each kind of row names the
+   areas it has. There is no row-gap: an empty named row still takes its gap, so the optional areas (the
+   posting text, the detail, a Track problem) would leave dead space. Vertical space is a top margin on
+   the child that needs it instead.
+     phone, scored    the score gutter beside the identity, then text, the model's line, the actions
+                      with "Why this score" at the right, the detail, a problem, the trail
+     960px, scored    gutter | identity and text | model's line, with the actions and "Why this score"
+                      under it
+   Placeholder and unscored rows leave out the areas they have nothing for. */
 .bj-disc-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--bj-space-3);
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "score main main"
+    "body body body"
+    "fit fit fit"
+    "actions actions why"
+    "detail detail detail"
+    "problem problem problem"
+    "trail trail trail";
+  column-gap: var(--bj-space-3);
+  align-items: start;
   min-width: 0;
-  padding: var(--bj-space-4) 0;
+  padding: var(--bj-space-4) var(--bj-space-3);
   border-bottom: 1px solid var(--bj-border);
+}
+
+.bj-disc-row--placeholder {
+  grid-template-columns: 80px minmax(0, 1fr);
+  grid-template-areas:
+    "score main"
+    "body body"
+    "actions actions"
+    "problem problem"
+    "trail trail";
+}
+
+.bj-disc-row--unscored {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "main main"
+    "body body"
+    "fit actions"
+    "problem problem"
+    "trail trail";
 }
 
 @media (min-width: 960px) {
   .bj-disc-row {
-    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-columns: 88px minmax(0, 1fr) 296px;
+    grid-template-areas:
+      "score main fit"
+      "score body fit"
+      "score actions why"
+      ". detail detail"
+      ". problem problem"
+      ". trail trail";
     column-gap: var(--bj-space-5);
   }
 
-  .bj-disc-actions,
-  .bj-disc-problem,
-  .bj-disc-trail {
-    grid-column: 1 / -1;
+  .bj-disc-row--placeholder {
+    grid-template-columns: 88px minmax(0, 1fr);
+    grid-template-areas:
+      "score main"
+      "score body"
+      "score actions"
+      ". problem"
+      ". trail";
+  }
+
+  .bj-disc-row--unscored {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "main fit actions"
+      "body . ."
+      "problem problem problem"
+      "trail trail trail";
   }
 }
 
+/* The strongest fits read as a group: one near-black step lighter than the page, and nothing else.
+   The other tiers carry their class only as a hook; they are not dimmed, recolored or outlined. */
+.bj-disc-row--strong {
+  background: var(--bj-surface);
+}
+
 .bj-disc-main {
+  grid-area: main;
   display: flex;
   flex-direction: column;
   gap: var(--bj-space-1);
   min-width: 0;
+}
+
+.bj-disc-score {
+  grid-area: score;
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bj-disc-body {
+  grid-area: body;
+  margin-top: var(--bj-space-2);
+  min-width: 0;
+}
+
+.bj-fit {
+  grid-area: fit;
+  margin-top: var(--bj-space-2);
+  min-width: 0;
+}
+
+.bj-disc-actions {
+  grid-area: actions;
+  margin-top: var(--bj-space-2);
+  min-width: 0;
+}
+
+.bj-fit-toggle {
+  grid-area: why;
+  margin-top: var(--bj-space-2);
+  min-width: 0;
+}
+
+.bj-fit-detail {
+  grid-area: detail;
+  margin-top: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-disc-problem {
+  grid-area: problem;
+  margin-top: var(--bj-space-3);
+  min-width: 0;
+}
+
+.bj-disc-trail {
+  grid-area: trail;
+  margin-top: var(--bj-space-2);
+  min-width: 0;
+}
+
+@media (min-width: 960px) {
+  .bj-fit {
+    margin-top: 0;
+  }
 }
 
 .bj-disc-title {
@@ -196,6 +326,12 @@
   line-height: 1.25;
   color: var(--bj-text);
   overflow-wrap: anywhere;
+}
+
+/* A row past the scoring batch is the lighter one, by size alone: a smaller title and no gutter. Its
+   color is not changed -- not scored is not the same as poor. */
+.bj-disc-row--unscored .bj-disc-title {
+  font-size: var(--bj-text-body);
 }
 
 .bj-disc-meta,
@@ -210,13 +346,34 @@
   color: var(--bj-text-muted);
 }
 
+/* The posting's own words, kept to two lines (one on a row past the scoring batch) until the row's
+   "Why this score" is opened. The whole text is always in the page. */
 .bj-disc-snippet {
-  margin-top: var(--bj-space-1);
   color: var(--bj-text);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.bj-disc-row--unscored .bj-disc-snippet {
+  color: var(--bj-text-muted);
+  -webkit-line-clamp: 1;
+}
+
+.bj-disc-row--open .bj-disc-snippet {
+  display: block;
+  -webkit-line-clamp: none;
+  overflow: visible;
 }
 
 .bj-disc-signal {
   color: var(--bj-text-muted);
+}
+
+.bj-disc-signal + .bj-disc-snippet,
+.bj-disc-snippet + .bj-disc-signal {
+  margin-top: var(--bj-space-1);
 }
 
 .bj-disc-signal-tag {
@@ -231,30 +388,110 @@
   gap: var(--bj-space-3);
 }
 
-.bj-disc-problem {
-  min-width: 0;
-}
-
-.bj-disc-trail {
-  min-width: 0;
-}
-
 /* ------------------------------------------------------------------ */
-/* The fit block                                                        */
+/* The score gutter                                                     */
 /* ------------------------------------------------------------------ */
 
-.bj-fit {
+.bj-disc-score-text {
   display: flex;
   flex-direction: column;
-  gap: var(--bj-space-3);
   min-width: 0;
 }
+
+.bj-disc-score-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--bj-space-1);
+}
+
+/* The number is the row's one gold figure; the tier word beside it is the reading. */
+.bj-disc-score-num {
+  color: var(--bj-gold);
+  font-family: var(--bj-font-display);
+  font-size: var(--bj-text-title);
+  font-weight: 500;
+  line-height: 1.1;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+@media (min-width: 960px) {
+  .bj-disc-score-num {
+    font-size: var(--bj-text-h1);
+  }
+}
+
+.bj-disc-score-of {
+  color: var(--bj-text-muted);
+  font-size: var(--bj-text-trail);
+}
+
+.bj-disc-score-tier {
+  color: var(--bj-text);
+  font-size: var(--bj-text-small);
+}
+
+/* Four cells fit the gutter. */
+.bj-disc-ladder .bj-ladder-cell {
+  width: 12px;
+}
+
+/* ------------------------------------------------------------------ */
+/* The fit reading and its detail                                       */
+/* ------------------------------------------------------------------ */
 
 .bj-fit-oneliner {
   margin: 0;
+  font-size: var(--bj-text-body);
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+@media (min-width: 960px) {
+  .bj-fit-oneliner {
+    font-size: var(--bj-text-control);
+    -webkit-line-clamp: 3;
+  }
+}
+
+.bj-disc-row--open .bj-fit-oneliner {
+  display: block;
+  -webkit-line-clamp: none;
+  overflow: visible;
+}
+
+/* What the score left out, on the row, so a number is never read as complete. */
+.bj-fit-preview {
+  margin: var(--bj-space-1) 0 0;
   font-size: var(--bj-text-small);
   color: var(--bj-text-muted);
   overflow-wrap: anywhere;
+}
+
+/* Centered against the actions it shares a line with. Its own padding is the hit area, so from 960px,
+   where it starts the column, it is pulled back by that padding and its words line up with the text above. */
+.bj-fit-toggle {
+  align-self: center;
+  justify-self: end;
+  padding: 0 var(--bj-space-2);
+  font-size: var(--bj-text-small);
+}
+
+@media (min-width: 960px) {
+  .bj-fit-toggle {
+    justify-self: start;
+    margin-left: calc(-1 * var(--bj-space-2));
+  }
+}
+
+.bj-fit-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
 }
 
 .bj-fit-bars {
@@ -263,7 +500,7 @@
   gap: var(--bj-space-3);
 }
 
-@media (min-width: 600px) and (max-width: 959px) {
+@media (min-width: 600px) {
   .bj-fit-bars {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
@@ -290,6 +527,23 @@
   color: var(--bj-text-muted);
 }
 
+/* On a row past the scoring batch the words sit level with the actions: centered against them on a
+   phone, and from 960px, where both start the row, offset to the middle of a button. */
+.bj-disc-row--unscored .bj-fit {
+  align-self: center;
+}
+
+@media (min-width: 960px) {
+  .bj-disc-row--unscored .bj-fit {
+    align-self: start;
+    margin-top: var(--bj-space-2);
+  }
+
+  .bj-disc-row--unscored .bj-disc-actions {
+    margin-top: 0;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Phones and tablets: under the shell's 960px breakpoint                */
 /* ------------------------------------------------------------------ */
@@ -298,7 +552,8 @@
   .bj-disc-form-actions > button,
   .bj-disc-actions > a,
   .bj-disc-actions > button,
-  .bj-disc-problem button {
+  .bj-disc-problem button,
+  .bj-fit-toggle {
     min-height: 44px;
   }
 

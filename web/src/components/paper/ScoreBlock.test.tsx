@@ -114,6 +114,26 @@ describe("FitLadder", () => {
     expect(filledCells(container)).toBe(2);
   });
 
+  it("can leave out the words, and keeps the image's label and the engine mark", () => {
+    const { container } = render(<FitLadder levels={LEVELS} level="Strong" score={88} showWords={false} className="bj-disc-ladder" />);
+    expect(container.querySelector(".bj-ladder-words")).toBeNull();
+    expect(query(container, '[role="img"]').getAttribute("aria-label")).toBe("Fit: Strong -- 88 / 100");
+    expect(filledCells(container)).toBe(4);
+    expect(text(query(container, ".bj-ladder-caption"))).toBe("engine ✦");
+    expect(query(container, ".bj-ladder").classList.contains("bj-disc-ladder")).toBe(true);
+  });
+
+  it("can leave out the words of a placeholder too, and still labels it", () => {
+    const { container } = render(<FitLadder levels={LEVELS} level={null} placeholder showWords={false} />);
+    expect(container.querySelector(".bj-ladder-words")).toBeNull();
+    expect(query(container, '[role="img"]').getAttribute("aria-label")).toBe("Fit: Placeholder");
+  });
+
+  it("draws the words by default", () => {
+    const { container } = render(<FitLadder levels={LEVELS} level="Good" score={61} />);
+    expect(container.querySelector(".bj-ladder-words")).not.toBeNull();
+  });
+
   it("can leave out the engine caption", () => {
     const { container } = render(<FitLadder levels={LEVELS} level="Good" score={61} engine={false} />);
     expect(container.querySelector(".bj-ladder-caption")).toBeNull();

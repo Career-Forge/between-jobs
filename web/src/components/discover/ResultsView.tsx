@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { rowsOf, searchNotesOf } from "../../lib/discoverFacts";
 import type { DiscoverResponse, JobCard } from "../../lib/discoverTypes";
 import { isFallback } from "../../lib/discoverRow";
@@ -38,6 +39,9 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
   const more = rowsOf(result.more);
   const notes = searchNotesOf(result);
   const strategy = typeof result.scoring_strategy === "string" ? result.scoring_strategy : "";
+  // Which rows have "Why this score" open. Held here, in memory only, and keyed by section as well as
+  // address: one posting can appear in both lists, and opening one must not open the other.
+  const [opened, setOpened] = useState<Readonly<Record<string, boolean>>>({});
 
   if (scored.length + more.length === 0) {
     return (
@@ -50,19 +54,24 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
     );
   }
 
-  const row = (job: JobCard) => (
-    <ResultRow
-      key={job.apply_url}
-      job={job}
-      scoringStrategy={strategy}
-      now={now}
-      trackedApplicationId={tracked[job.apply_url] ?? null}
-      tracking={tracking.has(job.apply_url)}
-      trackError={trackErrors[job.apply_url] ?? null}
-      onTrack={onTrack}
-      timeZone={timeZone}
-    />
-  );
+  const row = (section: "scored" | "more") => (job: JobCard) => {
+    const key = `${section}:${job.apply_url}`;
+    return (
+      <ResultRow
+        key={job.apply_url}
+        job={job}
+        scoringStrategy={strategy}
+        now={now}
+        trackedApplicationId={tracked[job.apply_url] ?? null}
+        tracking={tracking.has(job.apply_url)}
+        trackError={trackErrors[job.apply_url] ?? null}
+        onTrack={onTrack}
+        timeZone={timeZone}
+        detailsOpen={opened[key] ?? false}
+        onToggleDetails={() => setOpened((current) => ({ ...current, [key]: !(current[key] ?? false) }))}
+      />
+    );
+  };
 
   return (
     <section className="bj-disc-results" aria-labelledby={RESULTS_HEADING_ID}>
@@ -78,12 +87,12 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
         </p>
       )}
       <SearchStatus notes={notes} showSources />
-      {scored.length > 0 && <ul className="bj-disc-list">{scored.map(row)}</ul>}
+      {scored.length > 0 && <ul className="bj-disc-list">{scored.map(row("scored"))}</ul>}
       {more.length > 0 && (
         <>
           <h2 className="bj-disc-heading bj-disc-heading--more">More results</h2>
           <p className="bj-disc-note">Beyond this search's scoring batch {"--"} sorted by tier and recency, not fit.</p>
-          <ul className="bj-disc-list">{more.map(row)}</ul>
+          <ul className="bj-disc-list">{more.map(row("more"))}</ul>
         </>
       )}
     </section>
