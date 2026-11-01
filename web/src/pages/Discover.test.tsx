@@ -234,7 +234,10 @@ describe("a search", () => {
     await search(container);
     const text = words(band(container));
     expect(text).toContain("Track the jobs worth a draft.");
-    expect(text).toContain("why: 2 scored · 1 more, unscored · 2 dropped -- no longer live");
+    expect(text).toContain("why: 2 scored · 1 more, unscored");
+    expect(text).not.toContain("dropped");
+    expect(words(query(container, ".bj-disc-status"))).toContain("2 dropped -- no longer live");
+    expect(words(query(container, ".bj-disc-status"))).toContain("Sources: serper 2 · registry 1");
     expect(status(container)).toBe("The search finished: 2 scored, 1 more, unscored, 2 dropped as no longer live.");
     expect(container.querySelectorAll("button.bj-primary, a.bj-button-link-primary")).toHaveLength(0);
   });

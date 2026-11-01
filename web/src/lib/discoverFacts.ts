@@ -2,7 +2,6 @@
 // search ran with, how many were set, and the counts a finished search holds. Nothing here reads the
 // network or the clock. The rows that use these facts are lib/nextStep/pages/discover.ts.
 
-import { parseWarning } from "./discover";
 import type { DiscoverResponse, JobCard } from "./discoverTypes";
 import type { DiscoverResultsFact } from "./nextStep/pages/discover";
 
@@ -89,20 +88,10 @@ export function searchNotesOf(result: DiscoverResponse): SearchNotes {
 export function resultsFactOf(result: DiscoverResponse, request: DiscoverRequest): DiscoverResultsFact {
   const scored = rowsOf(result.scored);
   const more = rowsOf(result.more);
-  const failed: string[] = [];
-  let otherNotes = 0;
-  for (const warning of warningsOf(result)) {
-    const line = parseWarning(warning);
-    if (line.provider === null) otherNotes += 1;
-    else if (!failed.includes(line.provider)) failed.push(line.provider);
-  }
   return {
     scored: scored.length,
     more: more.length,
     deadRemoved: nonNegative(result.dead_removed),
-    providers: providerCounts([...scored, ...more]),
-    failedProviders: failed,
-    otherNotes,
     fallback: result.scoring_strategy === "neutral_fallback",
     filtersSet: filtersSet(request),
     companiesSet: held(request.companies),
