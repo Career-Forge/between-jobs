@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_REQUEST, discoverQuery, filtersSet, resultsFactOf, rowsOf, warningsOf } from "./discoverFacts";
+import { EMPTY_REQUEST, discoverQuery, filtersSet, providerCounts, resultsFactOf, rowsOf, searchNotesOf, warningsOf } from "./discoverFacts";
 import type { DiscoverResponse, JobCard } from "./discoverTypes";
 
 // The counts a finished search holds, and the request a search makes: pure, so each is a table.
@@ -104,5 +104,56 @@ describe("the facts of a finished search", () => {
   it("caps a provider id so one strange value cannot make the line unreadable", () => {
     const fact = resultsFactOf(response({ scored: [card("x".repeat(200))] }), EMPTY_REQUEST);
     expect(fact.providers[0].provider).toHaveLength(40);
+  });
+});
+
+describe("rows per provider", () => {
+  it("counts most first, with ties in the order the providers first appear", () => {
+    const rows = [card("serper"), card("brave"), card("registry"), card("registry", 2), card("brave", 2), card("jsearch")];
+    expect(providerCounts(rows)).toEqual([
+      { provider: "brave", count: 2 },
+      { provider: "registry", count: 2 },
+      { provider: "serper", count: 1 },
+      { provider: "jsearch", count: 1 },
+    ]);
+  });
+
+  it("is empty for no rows and skips a row with no provider id", () => {
+    expect(providerCounts([])).toEqual([]);
+    expect(providerCounts([{ ...card("x"), provider: "" }, { ...card("x"), provider: undefined as unknown as string }])).toEqual([]);
+  });
+
+  it("caps a provider id at forty characters, so two long ids with one prefix are one source", () => {
+    const counts = providerCounts([card("y".repeat(60), 1), card("y".repeat(90), 2)]);
+    expect(counts).toEqual([{ provider: "y".repeat(40), count: 2 }]);
+  });
+});
+
+describe("what a finished search says about itself that is not a row", () => {
+  it("counts the sources over scored and unscored rows, most first", () => {
+    const notes = searchNotesOf(response({ scored: [card("serper"), card("registry"), card("registry", 2)], more: [card("registry", 3), card("brave")] }));
+    expect(notes.sources).toEqual([
+      { provider: "registry", count: 3 },
+      { provider: "serper", count: 1 },
+      { provider: "brave", count: 1 },
+    ]);
+  });
+
+  it("carries the dropped count only when it is a non-negative whole number", () => {
+    expect(searchNotesOf(response({ dead_removed: 3 })).dropped).toBe(3);
+    expect(searchNotesOf(response({ dead_removed: 0 })).dropped).toBe(0);
+    for (const bad of [-1, 2.5, "3", null, undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(searchNotesOf(response({ dead_removed: bad as unknown as number })).dropped).toBe(0);
+    }
+  });
+
+  it("keeps the warnings trimmed and in order, drops blank and non-text ones, and keeps a repeat", () => {
+    const notes = searchNotesOf(response({ warnings: ["  brave: request failed (429) ", "", "   ", 7 as unknown as string, "brave: request failed (429)", "The job registry could not be searched just now."] }));
+    expect(notes.warnings).toEqual(["brave: request failed (429)", "brave: request failed (429)", "The job registry could not be searched just now."]);
+  });
+
+  it("survives a reply that is missing its lists", () => {
+    const odd = { query: "", scored: "nope", more: null, dead_removed: undefined, scoring_strategy: "direct", warnings: { 0: "x" } } as unknown as DiscoverResponse;
+    expect(searchNotesOf(odd)).toEqual({ sources: [], dropped: 0, warnings: [] });
   });
 });

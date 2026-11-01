@@ -149,8 +149,16 @@ export type FitView =
       notApplied: readonly string[];
       /** "Lowest part: Experience"; null when the response named none. */
       lowest: string | null;
+      /**
+       * The number of that lowest part, out of 100. Null when the response named no lowest part, when
+       * that part was not applied (a dropped part has no number to show) or when its sub-score is not
+       * a real number.
+       */
+      lowestValue: number | null;
       location: { state: LocationMatch; words: string };
     };
+
+export type ScoredFit = Extract<FitView, { kind: "scored" }>;
 
 export const COMPENSATION_DETAIL = "Salary listed; not compared to your expectations";
 
@@ -181,6 +189,8 @@ export function fitViewOf(job: JobCard, scoringStrategy: string): FitView {
       value: value as number,
       detail: key === "compensation" ? COMPENSATION_DETAIL : null,
     }));
+  const bottleneck = typeof score.bottleneck === "string" && score.bottleneck !== "" ? score.bottleneck : null;
+  const lowestNumber = bottleneck === null || dropped.includes(bottleneck) ? undefined : subScores[bottleneck];
   return {
     kind: "scored",
     level: score.bin,
@@ -191,9 +201,35 @@ export function fitViewOf(job: JobCard, scoringStrategy: string): FitView {
       const reason = notAppliedReason(key, job);
       return reason === null ? `Not applied: ${subScoreLabel(key)}` : `Not applied: ${subScoreLabel(key)} -- ${reason}`;
     }),
-    lowest: typeof score.bottleneck === "string" && score.bottleneck !== "" ? subScoreLabel(score.bottleneck) : null,
+    lowest: bottleneck === null ? null : subScoreLabel(bottleneck),
+    lowestValue: isScore(lowestNumber) ? lowestNumber : null,
     location: locationReading(score),
   };
+}
+
+// The one line a row says about what its score left out, so the number is never read as complete: the
+// lowest part with its number, how many parts were not applied, and a location the model could not
+// match or place. Clauses are joined by " · ". A clean score with nothing to say has no line (the omit
+// rule: no filler). Built from the same fields as the bars and notes it summarises, so it never says
+// more than they do, and it uses no word the trail refuses.
+export const PREVIEW_SEPARATOR = " · ";
+
+function partsNotApplied(count: number): string {
+  return `${count} ${count === 1 ? "part" : "parts"} not applied`;
+}
+
+export function fitPreviewOf(view: ScoredFit): string | null {
+  const clauses: string[] = [];
+  const dropped = view.notApplied.length > 0 ? partsNotApplied(view.notApplied.length) : null;
+  if (view.lowest !== null) {
+    const named = view.lowestValue === null ? `Lowest: ${view.lowest}` : `Lowest: ${view.lowest} ${view.lowestValue}`;
+    clauses.push(dropped === null ? named : `${named} -- ${dropped}`);
+  } else if (dropped !== null) {
+    clauses.push(dropped);
+  }
+  if (view.location.state === "mismatch") clauses.push("Location doesn't match");
+  else if (view.location.state === "unknown") clauses.push("Location: can't tell");
+  return clauses.length === 0 ? null : clauses.join(PREVIEW_SEPARATOR);
 }
 
 // ── the receipt ────────────────────────────────────────────────────────────

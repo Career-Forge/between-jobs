@@ -44,10 +44,15 @@ export function warningsOf(result: DiscoverResponse): string[] {
   return Array.isArray(result.warnings) ? result.warnings.filter((warning): warning is string => typeof warning === "string" && warning.trim() !== "") : [];
 }
 
+export interface ProviderCount {
+  provider: string;
+  count: number;
+}
+
 // Rows per provider, most first (ties in the order the providers first appear), over every row the
 // response returned, scored or not. A provider id is capped so one strange value cannot make the
-// band's line unreadable.
-function providerCounts(rows: readonly JobCard[]): { provider: string; count: number }[] {
+// line that prints it unreadable.
+export function providerCounts(rows: readonly JobCard[]): ProviderCount[] {
   const counts = new Map<string, number>();
   for (const row of rows) {
     const provider = typeof row.provider === "string" && row.provider !== "" ? row.provider.slice(0, 40) : null;
@@ -58,6 +63,27 @@ function providerCounts(rows: readonly JobCard[]): { provider: string; count: nu
 
 function nonNegative(value: unknown): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+// What a finished search says about itself that is not a row: where the rows came from, how many
+// listings the link check dropped, and the notes and failures providers left. The page draws these in
+// one status block above the results. They describe the search as it came back, never a filtered view
+// of it, and they are not what picked the next step, so the band does not list them.
+export interface SearchNotes {
+  /** Rows per provider id over scored and more, most first, ties in first-seen order. */
+  sources: readonly ProviderCount[];
+  /** Listings the link check dropped; 0 for anything that is not a non-negative integer. */
+  dropped: number;
+  /** The response's warnings: trimmed, non-empty strings, in order, duplicates kept. */
+  warnings: readonly string[];
+}
+
+export function searchNotesOf(result: DiscoverResponse): SearchNotes {
+  return {
+    sources: providerCounts([...rowsOf(result.scored), ...rowsOf(result.more)]),
+    dropped: nonNegative(result.dead_removed),
+    warnings: warningsOf(result).map((warning) => warning.trim()),
+  };
 }
 
 export function resultsFactOf(result: DiscoverResponse, request: DiscoverRequest): DiscoverResultsFact {
