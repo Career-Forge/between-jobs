@@ -155,6 +155,69 @@
 }
 
 /* ------------------------------------------------------------------ */
+/* The toolbar above the results                                        */
+/* ------------------------------------------------------------------ */
+
+/* Two groups and a switch that wrap, so six fit chips and the sort fall to a second line instead of
+   widening the page. The groups are the shared outlined segments (tokens.css); only their size is set
+   here. */
+.bj-disc-toolbar {
+  min-width: 0;
+}
+
+.bj-disc-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-2) var(--bj-space-5);
+  min-width: 0;
+}
+
+/* A group's name sits to the left of it, on the line of the group's first row; the chips wrap inside
+   their own outline rather than pushing the name onto a line above. */
+.bj-disc-tool {
+  display: flex;
+  align-items: baseline;
+  gap: var(--bj-space-2);
+  min-width: 0;
+}
+
+/* The words that name a group, in the plain sans: not a mono caps label. */
+.bj-disc-tool-label {
+  flex: none;
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+}
+
+.bj-disc-chips,
+.bj-disc-sort {
+  min-width: 0;
+}
+
+/* A count in a chip is machine-produced, so it is set in the mono face. */
+.bj-disc-chip-count {
+  font-family: var(--bj-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.bj-disc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bj-space-2);
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  cursor: pointer;
+}
+
+.bj-disc-count {
+  margin: var(--bj-space-1) 0 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
 /* Result rows                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -553,8 +616,16 @@
   .bj-disc-actions > a,
   .bj-disc-actions > button,
   .bj-disc-problem button,
+  .bj-disc-tools .bj-segmented > button,
+  .bj-disc-toggle,
   .bj-fit-toggle {
     min-height: 44px;
+  }
+
+  /* Six fit chips and the sort at a phone's width: the chips are 44px tall, and a narrower inner
+     padding lets more of them share a line. */
+  .bj-disc-tools .bj-segmented > button {
+    padding: 6px 10px;
   }
 
   .bj-disc-actions > a,

@@ -4,7 +4,7 @@ import { act } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
-import { job, response, score } from "../testing/discoverFixtures";
+import { job, mixedResponse, response, score } from "../testing/discoverFixtures";
 import { buttonNamed, click, installViewport, query, render } from "../testing/render";
 import Discover from "./Discover";
 
@@ -240,6 +240,24 @@ describe("a search", () => {
     expect(words(query(container, ".bj-disc-status"))).toContain("Sources: serper 2 · registry 1");
     expect(status(container)).toBe("The search finished: 2 scored, 1 more, unscored, 2 dropped as no longer live.");
     expect(container.querySelectorAll("button.bj-primary, a.bj-button-link-primary")).toHaveLength(0);
+  });
+
+  it("narrows, sorts and opens rows without a request and without storing a thing beyond the first-run flag", async () => {
+    answer({ "/discover?": mixedResponse() });
+    const { container } = await draw();
+    await search(container);
+    const before = calls().length;
+    const written = new Map(memory);
+    const fit = query(container, '[aria-label="Show results by fit"]');
+    click(buttonNamed(fit, /^Poor /));
+    click(buttonNamed(query(container, '[aria-label="Sort results"]'), "Best fit"));
+    click(query(container, ".bj-disc-toggle input"));
+    expect(container.querySelectorAll("li.bj-disc-row")).toHaveLength(3);
+    expect(container.querySelectorAll(".bj-fit-detail")).toHaveLength(3);
+    expect(calls().length).toBe(before);
+    expect([...memory.entries()]).toEqual([...written.entries()]);
+    expect([...memory.keys()]).toEqual(["between-jobs:first-run:searched:user-1"]);
+    expect(status(container)).toBe("The search finished: 18 scored, 7 more, unscored.");
   });
 
   it("can be run again, and the second answer replaces the first", async () => {
@@ -723,6 +741,17 @@ describe("accessibility of the whole page", () => {
     const { container } = await draw();
     await expectNoSeriousA11yViolations(container);
     await search(container);
+    await expectNoSeriousA11yViolations(container);
+  });
+
+  it("has no serious or critical axe violation with the toolbar, a tier chosen and every detail open", async () => {
+    answer({ "/discover?": mixedResponse({}, { warnings: ["brave: down"], dead_removed: 2 }), "/saved-searches": [SAVED] });
+    const { container } = await draw();
+    await search(container);
+    await expectNoSeriousA11yViolations(container);
+    click(query(container, ".bj-disc-toggle input"));
+    await expectNoSeriousA11yViolations(container);
+    click(buttonNamed(query(container, '[aria-label="Show results by fit"]'), /^Strong /));
     await expectNoSeriousA11yViolations(container);
   });
 
