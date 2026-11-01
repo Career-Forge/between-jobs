@@ -9,6 +9,7 @@ import {
   formatTrailTime,
   mono,
   notSet,
+  postedMillis,
   type Slot,
   type TrailGlyphName,
   type TrailInput,
@@ -330,5 +331,35 @@ describe("receipts", () => {
   it("is null when no row has a value, so nothing offers to open an empty receipt", () => {
     expect(buildReceipt([])).toBeNull();
     expect(buildReceipt([{ label: "run", value: undefined }, { note: "  " }])).toBeNull();
+  });
+});
+
+describe("the posting date as a sortable moment", () => {
+  const now = new Date("2026-10-18T12:00:00Z");
+
+  it("reads a date-only value as the start of that day in UTC, and an instant as itself", () => {
+    expect(postedMillis("2026-09-22")).toBe(Date.UTC(2026, 8, 22));
+    expect(postedMillis("2026-09-22T08:00:00Z")).toBe(Date.UTC(2026, 8, 22, 8));
+    expect(postedMillis(" 2026-09-22 ")).toBe(Date.UTC(2026, 8, 22));
+  });
+
+  it("applies an offset, so two spellings of one instant are one moment", () => {
+    expect(postedMillis("2026-09-22T10:00:00+02:00")).toBe(Date.UTC(2026, 8, 22, 8));
+    expect(postedMillis("2026-09-22T04:00:00-04:00")).toBe(Date.UTC(2026, 8, 22, 8));
+    expect(postedMillis("2026-09-22 08:00:00.500Z")).toBe(Date.UTC(2026, 8, 22, 8, 0, 0, 500));
+  });
+
+  it("refuses the dates the trail refuses, so a printed date is a sortable date and an omitted one is not", () => {
+    for (const bad of ["2026-02-31", "2026-02-31T10:00:00Z", "2025-02-29", "2026-13-01", "2026-09-22T24:00:00Z", "2026-09-22T06:00:00", "yesterday", "09/22/2026", "", null, undefined, 20260922, {}]) {
+      expect(postedMillis(bad)).toBeNull();
+      expect(formatTrailDate(bad, { now, timeZone: "UTC" })).toBeNull();
+    }
+  });
+
+  it("agrees with the trail on every value it can read", () => {
+    for (const good of ["2026-09-22", "2026-09-22T08:00:00Z", "2026-02-28T23:59:59-05:00", "2025-12-31"]) {
+      expect(postedMillis(good)).not.toBeNull();
+      expect(formatTrailDate(good, { now, timeZone: "UTC" })).not.toBeNull();
+    }
   });
 });

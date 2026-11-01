@@ -244,6 +244,25 @@ export function formatTrailDate(value: unknown, options: TrailDateOptions): stri
   }
 }
 
+// The moment a posting date names, in milliseconds since the epoch, read by the same two readers as
+// formatTrailDate: so a date a row prints is a date that can be sorted on, and one the row leaves out
+// (an impossible day, a bare local time, free text) is null and sorts as undated. A date-only value is
+// read as the start of that calendar day in UTC.
+export function postedMillis(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  const plain = DATE_ONLY.exec(text);
+  if (plain !== null) {
+    const [year, month, day] = [Number(plain[1]), Number(plain[2]), Number(plain[3])];
+    if (!isCalendarDay(year, month, day)) return null;
+    const date = new Date(0);
+    date.setUTCFullYear(year, month - 1, day);
+    return date.getTime();
+  }
+  const instant = readInstant(text);
+  return instant === null ? null : instant.getTime();
+}
+
 // "2026-09-22T06:00:00Z" -> "06:00" (24-hour). A date with no time in it has no time to show.
 export function formatTrailTime(value: unknown, options: TrailTimeOptions = {}): string | null {
   if (typeof value !== "string") return null;
