@@ -4,6 +4,7 @@ import {
   COMPENSATION_DETAIL,
   REGISTRY_BASIS,
   REGISTRY_STALE_BASIS,
+  fitPreviewOf,
   fitViewOf,
   hasSponsorshipSignal,
   sponsorshipTag,
@@ -15,6 +16,7 @@ import {
   rowTrail,
   sponsorshipWords,
   tierWords,
+  type ScoredFit,
 } from "./discoverRow";
 import { buildReceipt, buildTrail, findForbiddenWord } from "./trail";
 
@@ -183,6 +185,102 @@ describe("the fit block", () => {
   it("survives a score with no list of dropped dimensions", () => {
     const view = fitViewOf(job({ score: score({ inapplicable_dims: undefined as unknown as string[] }) }), "direct");
     expect(view.kind).toBe("scored");
+  });
+});
+
+describe("the number of the lowest part", () => {
+  const scored = (overrides: Partial<JobScore>): ScoredFit => {
+    const view = fitViewOf(job({ score: score(overrides) }), "direct");
+    if (view.kind !== "scored") throw new Error("expected a scored view");
+    return view;
+  };
+
+  it("is the sub-score of the part the response named, when that part was applied", () => {
+    expect(scored({}).lowestValue).toBe(52);
+    expect(scored({ bottleneck: "skills", sub_scores: { skills: 31, experience: 52, workauth: 60, location: 100, company_health: 60, compensation: 60 } }).lowestValue).toBe(31);
+  });
+
+  it("is a real zero, not a missing number", () => {
+    expect(scored({ bottleneck: "skills", sub_scores: { skills: 0, experience: 52, workauth: 60, location: 100, company_health: 60, compensation: 60 } }).lowestValue).toBe(0);
+  });
+
+  it("is null when the lowest part was itself not applied", () => {
+    const view = scored({ bottleneck: "compensation" });
+    expect(view.lowest).toBe("Compensation");
+    expect(view.lowestValue).toBeNull();
+  });
+
+  it("is null when no lowest part was named, whatever is in the sub-scores", () => {
+    expect(scored({ bottleneck: null }).lowestValue).toBeNull();
+    expect(scored({ bottleneck: "" }).lowestValue).toBeNull();
+  });
+
+  it("is null when the named part has no usable number", () => {
+    expect(scored({ bottleneck: "nonsense" }).lowestValue).toBeNull();
+    expect(scored({ bottleneck: "skills", sub_scores: { skills: Number.NaN } as unknown as JobScore["sub_scores"] }).lowestValue).toBeNull();
+    expect(scored({ bottleneck: "skills", sub_scores: { skills: "70" } as unknown as JobScore["sub_scores"] }).lowestValue).toBeNull();
+    expect(scored({ sub_scores: null as unknown as JobScore["sub_scores"] }).lowestValue).toBeNull();
+  });
+});
+
+describe("the one line a row says about what its score left out", () => {
+  const preview = (overrides: Partial<JobScore>): string | null => {
+    const view = fitViewOf(job({ score: score(overrides) }), "direct");
+    if (view.kind !== "scored") throw new Error("expected a scored view");
+    return fitPreviewOf(view);
+  };
+  const clean = { inapplicable_dims: [] as string[], location_match: "match" as const };
+
+  it("names the lowest part with its number and how many parts were not applied", () => {
+    expect(preview({})).toBe("Lowest: Experience 52 -- 2 parts not applied");
+  });
+
+  it("names the lowest part with its number alone when every part was applied and the location matches", () => {
+    expect(preview(clean)).toBe("Lowest: Experience 52");
+  });
+
+  it("says one part, not one parts", () => {
+    expect(preview({ ...clean, inapplicable_dims: ["compensation"] })).toBe("Lowest: Experience 52 -- 1 part not applied");
+    expect(preview({ ...clean, bottleneck: null, inapplicable_dims: ["compensation"] })).toBe("1 part not applied");
+  });
+
+  it("says only the dropped parts when no lowest part was named", () => {
+    expect(preview({ bottleneck: null })).toBe("2 parts not applied");
+  });
+
+  it("names a lowest part that was not applied without inventing a number for it", () => {
+    expect(preview({ ...clean, bottleneck: "compensation", inapplicable_dims: ["compensation"] })).toBe("Lowest: Compensation -- 1 part not applied");
+  });
+
+  it("adds a location that does not match, or that the model could not place, and adds nothing for a match", () => {
+    expect(preview({ ...clean, location_match: "mismatch" })).toBe("Lowest: Experience 52 · Location doesn't match");
+    expect(preview({ ...clean, location_match: "unknown" })).toBe("Lowest: Experience 52 · Location: can't tell");
+    expect(preview({ ...clean, location_match: "match" })).toBe("Lowest: Experience 52");
+    expect(preview({ ...clean, location_match: "maybe" as never })).toBe("Lowest: Experience 52 · Location: can't tell");
+  });
+
+  it("joins all three clauses with a middle dot", () => {
+    expect(preview({ location_match: "mismatch" })).toBe("Lowest: Experience 52 -- 2 parts not applied · Location doesn't match");
+  });
+
+  it("is a location clause alone when there is nothing else to say", () => {
+    expect(preview({ ...clean, bottleneck: null, location_match: "mismatch" })).toBe("Location doesn't match");
+  });
+
+  it("is null for a clean score with nothing to say, never a filler", () => {
+    expect(preview({ ...clean, bottleneck: null })).toBeNull();
+  });
+
+  it("does not repeat the place the model read the job to be, which the detail already says", () => {
+    expect(preview({ ...clean, location_match: "mismatch", detected_location: "London" })).not.toContain("London");
+  });
+
+  it("never says a word the trail refuses and never uses an em dash", () => {
+    for (const overrides of [{}, clean, { location_match: "mismatch" as const }, { location_match: "unknown" as const }, { bottleneck: null }]) {
+      const line = preview(overrides) ?? "";
+      expect(findForbiddenWord(line)).toBeNull();
+      expect(line).not.toContain("\u2014");
+    }
   });
 });
 
