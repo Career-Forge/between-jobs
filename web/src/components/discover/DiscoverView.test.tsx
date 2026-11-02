@@ -618,7 +618,7 @@ describe("a row, in the order it is read", () => {
     expect(query(gutter, "[role='img']").getAttribute("aria-label")).toBe("Fit: Strong -- 88 / 100");
   });
 
-  it("keeps the whole posting text on a row that has no Why this score, so nothing past a line or two is out of reach", () => {
+  it("keeps the whole posting text in a row that has no Why this score: the stylesheet caps what shows, and View posting is on the row", () => {
     const long = `${"Keep point-of-sale and warehouse systems running across every store. ".repeat(3)}Visa sponsorship is not available for this position.`;
     expect(long.length).toBeGreaterThan(200);
     const beyond = unscored({ snippet: long });
@@ -627,8 +627,9 @@ describe("a row, in the order it is read", () => {
       const { container, unmount } = draw(search);
       const row = rowsOf(container)[0];
       expect(words(query(row, ".bj-disc-snippet"))).toBe(long);
-      // No control is needed to read it, and nothing here is a toggle that would hide it again.
+      // Nothing here is a toggle that would release or hide it, and the way to the whole posting is on the row.
       expect(row.querySelector("button.bj-fit-toggle")).toBeNull();
+      expect(words(query(row, "a[href^='https://']"))).toBe("View posting");
       unmount();
     }
   });

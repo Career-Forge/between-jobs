@@ -488,8 +488,10 @@
 }
 
 /* The posting's own words, kept to two lines on a scored row until its "Why this score" is opened. A row
-   that has no "Why this score" to open (one past the scoring batch, or a placeholder) shows all of it:
-   there is nothing there to release a clamp, and the text is the only description of that job. */
+   that has no "Why this score" to open (one past the scoring batch, or a placeholder) keeps four lines and
+   has nothing to release them: the API passes up to 2,000 characters of a posting, and without a cap one
+   long text would fill a phone's screen and push the next rows out of reach. "View posting" is on every
+   row and is the way to the rest. */
 .bj-disc-snippet {
   color: var(--bj-text);
   display: -webkit-box;
@@ -502,12 +504,15 @@
   color: var(--bj-text-muted);
 }
 
-.bj-disc-row--open .bj-disc-snippet,
-.bj-disc-row--unscored .bj-disc-snippet,
-.bj-disc-row--placeholder .bj-disc-snippet {
+.bj-disc-row--open .bj-disc-snippet {
   display: block;
   -webkit-line-clamp: none;
   overflow: visible;
+}
+
+.bj-disc-row--unscored .bj-disc-snippet,
+.bj-disc-row--placeholder .bj-disc-snippet {
+  -webkit-line-clamp: 4;
 }
 
 .bj-disc-signal {
@@ -717,10 +722,14 @@
     align-items: center;
   }
 
-  /* On a very narrow row the actions wrap onto a second line. The toggle starts at the top with the first
-     of them rather than centered between the two, so the controls read in order. */
+  /* The toggle's hit area is its own padding, and on a phone every pixel of the actions' width counts: at
+     320px View posting and Track need 166.2px of a 166px area, and Open workspace in place of Track needs
+     more than 360px gives. A narrower side padding leaves them room (the button is still 44px tall and
+     wider than that). Where the actions still wrap onto a second line the toggle sits on the last line, level
+     with the last of them, so the controls read in the order they are tabbed: View posting, Track, then it. */
   .bj-fit-toggle {
-    align-self: start;
+    align-self: end;
+    padding: 0 var(--bj-space-1);
   }
 
   /* The place a missing key or profile is fixed: a link, so 44px as well. */
