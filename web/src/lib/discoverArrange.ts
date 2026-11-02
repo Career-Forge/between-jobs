@@ -23,6 +23,9 @@ import { postedDay, postedMillis } from "./trail";
 export type FitFilter = "all" | ScoreBin | "unscored";
 export type SortMode = "returned" | "fit" | "newest";
 
+/** The two lists a page of results is drawn in: the rows the model scored, then "More results". */
+export type Section = "scored" | "more";
+
 /** Tier chips in display order, best first (the ladder's FIT_LEVELS, reversed). */
 export const TIER_ORDER: readonly ScoreBin[] = ["Strong", "Good", "Mixed", "Poor"];
 
@@ -234,17 +237,34 @@ const SORT_SENTENCE: Readonly<Record<SortMode, string>> = {
   newest: "Sorted by newest first.",
 };
 
+// What is said of a section Newest left in the order the search gave it, in the words a person sees on the
+// page: the list under "More results", and the rows above that heading.
+const KEPT_ORDER_SENTENCE: Readonly<Record<Section, string>> = {
+  scored: "The rows above More results keep the search's order.",
+  more: "More results keep the search's order.",
+};
+
+// "Sorted by newest first." claims an order for every row on the page, so it is said whole only when each
+// non-empty section shown was put in date order. A section that kept the order it came in is named, and
+// when none moved nothing is claimed at all.
+function newestSentence(keptOrder: readonly Section[]): string {
+  if (keptOrder.length === 0) return SORT_SENTENCE.newest;
+  if (keptOrder.includes("scored") && keptOrder.includes("more")) return SORT_SENTENCE.returned;
+  return `${SORT_SENTENCE.newest} ${keptOrder.map((section) => KEPT_ORDER_SENTENCE[section]).join(" ")}`;
+}
+
 /**
  * The polite announcement after a press. A filter's carries `sort` only when the choice left the sort that
  * was shown off offer, so the order that took its place is said as well: a person never finds the rows in
- * an order nobody told them about.
+ * an order nobody told them about. A sort's carries, for Newest, the non-empty sections shown that it left
+ * in the order the search gave them (none by default: every section moved).
  */
 export function arrangeAnnouncement(
   change:
     | { kind: "filter"; filter: FitFilter; shown: number; total: number; hiddenUnscored: number; sort?: SortMode }
-    | { kind: "sort"; sort: SortMode },
+    | { kind: "sort"; sort: SortMode; keptOrder?: readonly Section[] },
 ): string {
-  if (change.kind === "sort") return SORT_SENTENCE[change.sort];
+  if (change.kind === "sort") return change.sort === "newest" ? newestSentence(change.keptOrder ?? []) : SORT_SENTENCE[change.sort];
   const summary = filterSummary(change.filter, change.shown, change.total, change.hiddenUnscored) ?? `Showing all ${change.total} ${resultsWord(change.total)}.`;
   return change.sort === undefined ? summary : `${summary} ${SORT_SENTENCE[change.sort]}`;
 }

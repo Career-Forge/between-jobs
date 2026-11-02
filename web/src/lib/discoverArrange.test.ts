@@ -539,11 +539,26 @@ describe("the sentences", () => {
     expect(arrangeAnnouncement({ kind: "sort", sort: "newest" })).toBe("Sorted by newest first.");
   });
 
+  it("names the section that kept its order when Newest did not move every section", () => {
+    const newest = (keptOrder: readonly ("scored" | "more")[]) => arrangeAnnouncement({ kind: "sort", sort: "newest", keptOrder });
+    expect(newest([])).toBe("Sorted by newest first.");
+    expect(newest(["more"])).toBe("Sorted by newest first. More results keep the search's order.");
+    expect(newest(["scored"])).toBe("Sorted by newest first. The rows above More results keep the search's order.");
+    // Nothing was moved, so no newest-first order is claimed at all.
+    expect(newest(["scored", "more"])).toBe("Sorted as the search returned them.");
+  });
+
+  it("says nothing about kept sections for a sort that is not Newest", () => {
+    expect(arrangeAnnouncement({ kind: "sort", sort: "fit", keptOrder: ["more"] })).toBe("Sorted by best fit first.");
+    expect(arrangeAnnouncement({ kind: "sort", sort: "returned", keptOrder: ["more"] })).toBe("Sorted as the search returned them.");
+  });
+
   it("uses no em dash and not the word verified", () => {
     const filters: FitFilter[] = ["all", "Strong", "Good", "Mixed", "Poor", "unscored"];
     const lines = [
       ...filters.map((filter) => arrangeAnnouncement({ kind: "filter", filter, shown: 2, total: 9, hiddenUnscored: 3 })),
       ...(["returned", "fit", "newest"] as const).map((sort) => arrangeAnnouncement({ kind: "sort", sort })),
+      ...([["more"], ["scored"], ["scored", "more"]] as const).map((keptOrder) => arrangeAnnouncement({ kind: "sort", sort: "newest", keptOrder })),
       ...Object.values(FILTER_LABEL),
       ...Object.values(SORT_LABEL),
     ];

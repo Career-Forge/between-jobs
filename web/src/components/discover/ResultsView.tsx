@@ -12,6 +12,7 @@ import {
   TOOLBAR_MIN_ROWS,
   type Arranged,
   type FitFilter,
+  type Section,
   type SortMode,
 } from "../../lib/discoverArrange";
 import { rowsOf, searchNotesOf } from "../../lib/discoverFacts";
@@ -41,7 +42,9 @@ import "../../styles/discover.css";
 // The words about order are said per section, from what that section did: "newest first" only for a section
 // that had at least two readable dates and so was put in date order (reordersByDate), and the returned-order
 // words for a section that kept the order it came in. Newest is on offer when either section can be reordered,
-// so one section's dates never speak for the other.
+// so one section's dates never speak for the other. The polite sentence after pressing Newest follows the same
+// rule: it says "newest first" for the whole page only when every shown section moved, and names the one that
+// kept its order otherwise.
 //
 // A person's choices -- the fit, the sort, which details are open and the sentence last announced --
 // are state of this view and live only in memory. They start fresh whenever a different search answer
@@ -65,8 +68,6 @@ const MORE_NOTE_NEWEST = "Beyond this search's scoring batch -- not scored, newe
 // fallback.
 const FALLBACK_ORDER_RETURNED = "Rows are listed by source quality, not by fit.";
 const FALLBACK_ORDER_NEWEST = "Rows are listed newest first, not by fit.";
-
-type Section = "scored" | "more";
 
 export interface ResultsViewProps {
   result: DiscoverResponse;
@@ -133,8 +134,10 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
   const shown = arranged.scored.length + arranged.more.length;
   // Each section's order, said from what it did: Newest puts a section in date order only when it holds two
   // readable dates, and a section that kept its order keeps the returned-order words.
-  const scoredByDate = activeSort === "newest" && reordersByDate(kept.scored, timeZone, now);
-  const moreByDate = activeSort === "newest" && reordersByDate(kept.more, timeZone, now);
+  const scoredDated = reordersByDate(kept.scored, timeZone, now);
+  const moreDated = reordersByDate(kept.more, timeZone, now);
+  const scoredByDate = activeSort === "newest" && scoredDated;
+  const moreByDate = activeSort === "newest" && moreDated;
   // A tier choice leaves the unscored rows out; the count line says how many.
   const hiddenUnscored = activeFilter !== "all" && activeFilter !== "unscored" ? counts.unscored : 0;
   const showDetailsSwitch = [...arranged.scored, ...arranged.more].some((job) => fitViewOf(job, strategy).kind === "scored");
@@ -163,9 +166,12 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
       }),
     );
   };
+  // The announcement of Newest names each shown section that has too few readable dates to be put in date
+  // order, by the same rule that decides what the notices say.
+  const keptOrder: Section[] = [...(kept.scored.length > 0 && !scoredDated ? (["scored"] as const) : []), ...(kept.more.length > 0 && !moreDated ? (["more"] as const) : [])];
   const chooseSort = (next: SortMode) => {
     if (next !== sort) setSort(next);
-    if (next !== activeSort) setAnnouncement(arrangeAnnouncement({ kind: "sort", sort: next }));
+    if (next !== activeSort) setAnnouncement(arrangeAnnouncement({ kind: "sort", sort: next, keptOrder }));
   };
   const chooseAllOpen = (open: boolean) => {
     setAllOpen(open);
