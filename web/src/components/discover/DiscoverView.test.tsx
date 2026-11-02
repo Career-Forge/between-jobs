@@ -593,6 +593,21 @@ describe("a row, in the order it is read", () => {
     expect(query(gutter, "[role='img']").getAttribute("aria-label")).toBe("Fit: Strong -- 88 / 100");
   });
 
+  it("keeps the whole posting text on a row that has no Why this score, so nothing past a line or two is out of reach", () => {
+    const long = `${"Keep point-of-sale and warehouse systems running across every store. ".repeat(3)}Visa sponsorship is not available for this position.`;
+    expect(long.length).toBeGreaterThan(200);
+    const beyond = unscored({ snippet: long });
+    const fallback = response({ scoring_strategy: "neutral_fallback", scored: [job({ snippet: long })] });
+    for (const search of [ready(response({ scored: [], more: [beyond] })), ready(fallback)]) {
+      const { container, unmount } = draw(search);
+      const row = rowsOf(container)[0];
+      expect(words(query(row, ".bj-disc-snippet"))).toBe(long);
+      // No control is needed to read it, and nothing here is a toggle that would hide it again.
+      expect(row.querySelector("button.bj-fit-toggle")).toBeNull();
+      unmount();
+    }
+  });
+
   it("gives each row the class of its tier, and a placeholder or unscored row the class of its kind", () => {
     const bins = ["Strong", "Good", "Mixed", "Poor"] as const;
     const scored = bins.map((bin, index) => job({ apply_url: `https://jobs.example/acme/${index}`, score: score({ bin }) }));
