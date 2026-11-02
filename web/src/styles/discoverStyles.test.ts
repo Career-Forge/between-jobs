@@ -323,12 +323,21 @@ describe("the score, the tiers and the clamps", () => {
     }
   });
 
-  it("never clamps the posting text of a row that has no Why this score to release it: a row past the batch and a placeholder row", () => {
+  it("clamps the posting text of a row that has no Why this score to four lines, and gives it nothing to release them: a row past the batch and a placeholder row", () => {
     for (const selector of [".bj-disc-row--unscored .bj-disc-snippet", ".bj-disc-row--placeholder .bj-disc-snippet"]) {
-      const free = declarationsFor(base, selector);
-      expect(free["-webkit-line-clamp"], selector).toBe("none");
-      expect(free.overflow, selector).toBe("visible");
-      expect(free.display, selector).toBe("block");
+      const capped = declarationsFor(base, selector);
+      expect(capped["-webkit-line-clamp"], selector).toBe("4");
+      // The box, its orientation and the hidden overflow are the base rule's: nothing here lets the text out.
+      expect(capped.display, selector).toBeUndefined();
+      expect(capped.overflow, selector).toBeUndefined();
+      expect(wide.includes(selector), selector).toBe(false);
+    }
+    // The release belongs to the open scored row alone: no rule that names an unscored or a placeholder row sets "none".
+    for (const rule of rulesOf(base)) {
+      if (rule.selectors.some((selector) => /--(unscored|placeholder)/.test(selector) && selector.includes(".bj-disc-snippet"))) {
+        expect(rule.declarations["-webkit-line-clamp"], rule.selectors.join(", ")).not.toBe("none");
+        expect(rule.declarations.overflow, rule.selectors.join(", ")).not.toBe("visible");
+      }
     }
   });
 
@@ -346,8 +355,18 @@ describe("the score, the tiers and the clamps", () => {
     expect(declarationsFor(base, ".bj-fit-toggle")["align-self"]).toBe("center");
   });
 
-  it("starts the toggle on the first line of the row's controls on a phone, so a narrow row that wraps its actions still reads in order", () => {
-    expect(declarationsFor(phone, ".bj-fit-toggle")["align-self"]).toBe("start");
+  it("puts the toggle on the last line of the row's controls on a phone, so a narrow row that wraps its actions still reads in the order it is tabbed", () => {
+    expect(declarationsFor(phone, ".bj-fit-toggle")["align-self"]).toBe("end");
+  });
+
+  it("gives the toggle a narrower side padding on a phone, so View posting and Track (and Open workspace at 360px) fit beside it, and keeps the wider one from 960px", () => {
+    expect(declarationsFor(phone, ".bj-fit-toggle").padding).toBe("0 var(--bj-space-1)");
+    expect(declarationsFor(base, ".bj-fit-toggle").padding).toBe("0 var(--bj-space-2)");
+    // From 960px the toggle starts the column and is pulled back by its own padding, which is the wider one there.
+    expect(declarationsFor(wide, ".bj-fit-toggle")["margin-left"]).toBe("calc(-1 * var(--bj-space-2))");
+    expect(declarationsFor(wide, ".bj-fit-toggle").padding).toBeUndefined();
+    // Its hit area stays 44px tall.
+    expect(declarationsFor(phone, ".bj-fit-toggle")["min-height"]).toBe("44px");
   });
 
   it("sits the score and the identity on one baseline from 960px, on every kind of row that has a number", () => {
