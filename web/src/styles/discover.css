@@ -8,9 +8,10 @@
  *
  * A result row is a grid of named areas with the score in a gutter on its left: the number out of 100
  * and the tier word, a ladder, then the identity, the posting's text, the model's line with one line of
- * what the score left out, the actions, and "Why this score" for the detail. A phone gets 64px of
- * gutter and the rest below the identity; from 960px (the shell's phone breakpoint) the model's line
- * moves to a column on the right. Rows past the scoring batch and rows whose score is a placeholder
+ * what the score left out, the actions, and "Why this score" for the detail. The gutter is wide enough
+ * for "100 / 100" on one line (76px on a phone, 100px from 960px) and, on a placeholder row, for the
+ * word "Placeholder" (96px). A phone puts the rest below the identity; from 960px (the shell's phone
+ * breakpoint) the model's line moves to a column on the right. Rows past the scoring batch and rows whose score is a placeholder
  * are lighter and use their own templates. The strongest tier alone sits on a lighter surface; no tier
  * is dimmed or recolored. The list takes the width of the shell's column, at most 880px, and bleeds
  * one row padding into the page so the text lines up with the page edge.
@@ -176,7 +177,7 @@
 .bj-disc-heading {
   margin: 0;
   font-family: var(--bj-font-display);
-  font-size: 24px;
+  font-size: var(--bj-text-title);
   font-weight: 500;
   line-height: 1.2;
   color: var(--bj-text);
@@ -310,7 +311,7 @@
    Placeholder and unscored rows leave out the areas they have nothing for. */
 .bj-disc-row {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
   grid-template-areas:
     "score main main"
     "body body body"
@@ -327,7 +328,7 @@
 }
 
 .bj-disc-row--placeholder {
-  grid-template-columns: 80px minmax(0, 1fr);
+  grid-template-columns: 96px minmax(0, 1fr);
   grid-template-areas:
     "score main"
     "body body"
@@ -348,7 +349,7 @@
 
 @media (min-width: 960px) {
   .bj-disc-row {
-    grid-template-columns: 88px minmax(0, 1fr) 296px;
+    grid-template-columns: 100px minmax(0, 1fr) 296px;
     grid-template-areas:
       "score main fit"
       "score body fit"
@@ -360,7 +361,7 @@
   }
 
   .bj-disc-row--placeholder {
-    grid-template-columns: 88px minmax(0, 1fr);
+    grid-template-columns: 96px minmax(0, 1fr);
     grid-template-areas:
       "score main"
       "score body"
@@ -448,6 +449,14 @@
   .bj-fit {
     margin-top: 0;
   }
+
+  /* The number is larger than the title, so top-aligned they sit nine pixels apart. The first lines of the
+     gutter and of the identity share a baseline instead, and read as one line. A placeholder row has no
+     number to line up. */
+  .bj-disc-row:not(.bj-disc-row--placeholder) .bj-disc-score,
+  .bj-disc-row:not(.bj-disc-row--placeholder) .bj-disc-main {
+    align-self: baseline;
+  }
 }
 
 .bj-disc-title {
@@ -478,8 +487,9 @@
   color: var(--bj-text-muted);
 }
 
-/* The posting's own words, kept to two lines (one on a row past the scoring batch) until the row's
-   "Why this score" is opened. The whole text is always in the page. */
+/* The posting's own words, kept to two lines on a scored row until its "Why this score" is opened. A row
+   that has no "Why this score" to open (one past the scoring batch, or a placeholder) shows all of it:
+   there is nothing there to release a clamp, and the text is the only description of that job. */
 .bj-disc-snippet {
   color: var(--bj-text);
   display: -webkit-box;
@@ -490,10 +500,11 @@
 
 .bj-disc-row--unscored .bj-disc-snippet {
   color: var(--bj-text-muted);
-  -webkit-line-clamp: 1;
 }
 
-.bj-disc-row--open .bj-disc-snippet {
+.bj-disc-row--open .bj-disc-snippet,
+.bj-disc-row--unscored .bj-disc-snippet,
+.bj-disc-row--placeholder .bj-disc-snippet {
   display: block;
   -webkit-line-clamp: none;
   overflow: visible;
@@ -572,6 +583,9 @@
 /* The fit reading and its detail                                       */
 /* ------------------------------------------------------------------ */
 
+/* Three lines hold the whole of it: the API keeps the model's line to 100 characters, and 100 characters
+   of the body size take three lines even at 320px. The clamp guards against a longer string; it does not
+   cut a real answer. */
 .bj-fit-oneliner {
   margin: 0;
   font-size: var(--bj-text-body);
@@ -579,14 +593,13 @@
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   overflow: hidden;
 }
 
 @media (min-width: 960px) {
   .bj-fit-oneliner {
     font-size: var(--bj-text-control);
-    -webkit-line-clamp: 3;
   }
 }
 
@@ -702,6 +715,12 @@
   .bj-discover .bj-state-missing a {
     display: inline-flex;
     align-items: center;
+  }
+
+  /* On a very narrow row the actions wrap onto a second line. The toggle starts at the top with the first
+     of them rather than centered between the two, so the controls read in order. */
+  .bj-fit-toggle {
+    align-self: start;
   }
 
   /* The place a missing key or profile is fixed: a link, so 44px as well. */

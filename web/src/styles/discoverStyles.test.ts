@@ -104,7 +104,7 @@ describe("the Discover rows", () => {
 
   it("lay a scored row out as a gutter, then text, the model's line and the actions, on a phone", () => {
     expect(templates(base, ".bj-disc-row")).toEqual({
-      columns: "64px minmax(0, 1fr) auto",
+      columns: "76px minmax(0, 1fr) auto",
       areas: '"score main main" "body body body" "fit fit fit" "actions actions why" "detail detail detail" "problem problem problem" "trail trail trail"',
     });
     expect(declarationsFor(base, ".bj-disc-row")["column-gap"]).toBe("var(--bj-space-3)");
@@ -112,7 +112,7 @@ describe("the Discover rows", () => {
 
   it("lay a scored row out from 960px as gutter, text and the model's line, with the actions and the toggle under it", () => {
     expect(templates(wide, ".bj-disc-row")).toEqual({
-      columns: "88px minmax(0, 1fr) 296px",
+      columns: "100px minmax(0, 1fr) 296px",
       areas: '"score main fit" "score body fit" "score actions why" ". detail detail" ". problem problem" ". trail trail"',
     });
     expect(declarationsFor(wide, ".bj-disc-row")["column-gap"]).toBe("var(--bj-space-5)");
@@ -120,11 +120,11 @@ describe("the Discover rows", () => {
 
   it("lay a placeholder row out with the hollow ladder in its gutter, and no areas for what it has no part of", () => {
     expect(templates(base, ".bj-disc-row--placeholder")).toEqual({
-      columns: "80px minmax(0, 1fr)",
+      columns: "96px minmax(0, 1fr)",
       areas: '"score main" "body body" "actions actions" "problem problem" "trail trail"',
     });
     expect(templates(wide, ".bj-disc-row--placeholder")).toEqual({
-      columns: "88px minmax(0, 1fr)",
+      columns: "96px minmax(0, 1fr)",
       areas: '"score main" "score body" "score actions" ". problem" ". trail"',
     });
   });
@@ -245,7 +245,6 @@ describe("the score, the tiers and the clamps", () => {
     const sizes = rulesOf(discoverCss).flatMap((rule) => (rule.declarations["font-size"] === undefined ? [] : [{ selector: rule.selectors.join(", "), value: rule.declarations["font-size"] }]));
     const literals = sizes.filter((entry) => !/^var\(--bj-text-[a-z0-9-]+\)$/.test(entry.value));
     expect(literals).toEqual([
-      { selector: ".bj-disc-heading", value: "24px" },
       { selector: ".bj-disc-title", value: "20px" },
       { selector: ".bj-fit-notes p", value: "12.5px" },
       { selector: '.bj-disc-form input[type="text"]', value: "16px" },
@@ -305,11 +304,12 @@ describe("the score, the tiers and the clamps", () => {
     expect(declarationsFor(base, ".bj-disc-ladder .bj-ladder-cell").width).toBe("12px");
   });
 
-  it("clamps the posting text and the model's line to two lines, three for the line from 960px, one for an unscored row's text, and none once a row is open", () => {
+  it("clamps the posting text of a scored row to two lines and the model's line to three, and releases both once the row is open", () => {
     expect(declarationsFor(base, ".bj-disc-snippet")["-webkit-line-clamp"]).toBe("2");
-    expect(declarationsFor(base, ".bj-fit-oneliner")["-webkit-line-clamp"]).toBe("2");
-    expect(declarationsFor(wide, ".bj-fit-oneliner")["-webkit-line-clamp"]).toBe("3");
-    expect(declarationsFor(base, ".bj-disc-row--unscored .bj-disc-snippet")["-webkit-line-clamp"]).toBe("1");
+    expect(declarationsFor(base, ".bj-fit-oneliner")["-webkit-line-clamp"]).toBe("3");
+    // The API holds the model's line to 100 characters, which is three lines of the body size down to 320px: the clamp
+    // is a guard against a longer string, and the line is never cut for any real answer.
+    expect(declarationsFor(wide, ".bj-fit-oneliner")["-webkit-line-clamp"]).toBeUndefined();
     for (const selector of [".bj-disc-row--open .bj-disc-snippet", ".bj-disc-row--open .bj-fit-oneliner"]) {
       const open = declarationsFor(base, selector);
       expect(open["-webkit-line-clamp"], selector).toBe("none");
@@ -320,6 +320,15 @@ describe("the score, the tiers and the clamps", () => {
       expect(declarationsFor(base, selector).display, selector).toBe("-webkit-box");
       expect(declarationsFor(base, selector)["-webkit-box-orient"], selector).toBe("vertical");
       expect(declarationsFor(base, selector).overflow, selector).toBe("hidden");
+    }
+  });
+
+  it("never clamps the posting text of a row that has no Why this score to release it: a row past the batch and a placeholder row", () => {
+    for (const selector of [".bj-disc-row--unscored .bj-disc-snippet", ".bj-disc-row--placeholder .bj-disc-snippet"]) {
+      const free = declarationsFor(base, selector);
+      expect(free["-webkit-line-clamp"], selector).toBe("none");
+      expect(free.overflow, selector).toBe("visible");
+      expect(free.display, selector).toBe("block");
     }
   });
 
@@ -335,6 +344,26 @@ describe("the score, the tiers and the clamps", () => {
     expect(declarationsFor(base, ".bj-fit-toggle")["justify-self"]).toBe("end");
     expect(declarationsFor(wide, ".bj-fit-toggle")["justify-self"]).toBe("start");
     expect(declarationsFor(base, ".bj-fit-toggle")["align-self"]).toBe("center");
+  });
+
+  it("starts the toggle on the first line of the row's controls on a phone, so a narrow row that wraps its actions still reads in order", () => {
+    expect(declarationsFor(phone, ".bj-fit-toggle")["align-self"]).toBe("start");
+  });
+
+  it("sits the score and the identity on one baseline from 960px, on every kind of row that has a number", () => {
+    for (const selector of [".bj-disc-row:not(.bj-disc-row--placeholder) .bj-disc-score", ".bj-disc-row:not(.bj-disc-row--placeholder) .bj-disc-main"]) {
+      expect(declarationsFor(wide, selector)["align-self"], selector).toBe("baseline");
+      expect(declarationsFor(base, selector)["align-self"], selector).toBeUndefined();
+    }
+  });
+
+  it("sets the results heading and the saved-searches title from the same step of the type scale", () => {
+    const heading = declarationsFor(base, ".bj-disc-heading");
+    const title = declarationsFor(base, ".bj-disc-saved-title");
+    expect(heading["font-size"]).toBe("var(--bj-text-title)");
+    expect(title["font-size"]).toBe(heading["font-size"]);
+    expect(title["font-weight"]).toBe(heading["font-weight"]);
+    expect(title["font-family"]).toBe(heading["font-family"]);
   });
 
   it("sets 'Not scored' level with the actions on a row past the scoring batch, on a phone and from 960px", () => {
