@@ -280,6 +280,34 @@ describe("sorting", () => {
   });
 });
 
+describe("a row that reads Not scored has no rank", () => {
+  // A bin outside Strong, Good, Mixed and Poor makes the row read Not scored, so the number it carries is
+  // never a place in Best fit and never a reason to offer it.
+  const unreadable = (n: number, score100: number) =>
+    job({ apply_url: `https://jobs.example/odd/${n}`, title: `Odd ${n}`, score: score({ bin: "Excellent" as ScoreBin, score100 }) });
+  const scored = (title: string, bin: ScoreBin, score100: number) =>
+    job({ apply_url: `https://jobs.example/s/${title}`, title, score: score({ bin, score100 }) });
+
+  it("puts it after every scored row under Best fit, and the live region still says best fit first", () => {
+    const { container } = draw(response({ scored: [unreadable(1, 95), scored("Strong 80", "Strong", 80), scored("Good 60", "Good", 60)] }));
+    expect(titles(container)).toEqual(["Odd 1", "Strong 80", "Good 60"]);
+    click(sortButton(container, "Best fit"));
+    expect(titles(container)).toEqual(["Strong 80", "Good 60", "Odd 1"]);
+    expect(live(container).textContent).toBe("Sorted by best fit first.");
+    expect(words(rowsOf(container)[2])).toContain("Not scored");
+  });
+
+  it("does not offer Best fit over rows that read Not scored, which the Not scored chip leaves on screen", () => {
+    const { container } = draw(response({ scored: [unreadable(1, 95), unreadable(2, 90), scored("Strong 80", "Strong", 80)] }));
+    // Under All, one scored row is nothing to rank.
+    expect(sortNames(container)).toEqual(["As returned", "Newest"]);
+    click(chip(container, "Not scored"));
+    expect(titles(container)).toEqual(["Odd 1", "Odd 2"]);
+    expect(sortNames(container)).toEqual(["As returned", "Newest"]);
+    expect(words(container)).not.toContain("Best fit");
+  });
+});
+
 describe("what is drawn when there is nothing to choose between", () => {
   it("draws no fit group, no details switch and only two sorts under the scoring fallback, and no tier class", () => {
     const { container } = draw(mixedResponse({}, { scoring_strategy: "neutral_fallback" }));

@@ -99,9 +99,12 @@ export function resolveFilter(filter: FitFilter, offered: readonly FitFilter[]):
   return offered.includes(filter) ? filter : "all";
 }
 
-// A score100 that is a real score, 0 to 100. NaN, Infinity, anything that is not a number and a number
-// outside the scale are no score at all, here and wherever a number would be drawn (scoreRange.ts).
+// The number a row is ranked by: its score100 when the row reads as scored (it has a tier) and that number
+// is a real score, 0 to 100. A row that reads "Not scored" has no rank key whatever number it carries, and
+// NaN, Infinity, anything that is not a number and a number outside the scale are no score at all, here and
+// wherever a number would be drawn (scoreRange.ts).
 function fitOf(job: JobCard): number | null {
+  if (isUnscored(job)) return null;
   const value: unknown = job.score?.score100;
   return isScoreWithin(value) ? value : null;
 }
@@ -117,9 +120,10 @@ export function reordersByDate(rows: readonly JobCard[], timeZone?: string, now?
 
 /**
  * ["returned", "fit"?, "newest"?]. "fit" only when tiers are meaningful and at least two of `scoredRows`
- * have a score from 0 to 100. "newest" only when some section has at least two rows whose posting date the
- * trail can read: a sort that cannot move anything is not offered, and so is never announced. Pass the
- * rows the fit choice currently keeps, so a control that would do nothing to what is shown is left out.
+ * read as scored and have a score from 0 to 100. "newest" only when some section has at least two rows
+ * whose posting date the trail can read: a sort that cannot move anything is not offered, and so is never
+ * announced. Pass the rows the fit choice currently keeps, so a control that would do nothing to what is
+ * shown is left out.
  */
 export function offeredSorts(input: {
   tiersMeaningful: boolean;
@@ -146,10 +150,10 @@ type SortKey = readonly [number, number];
 
 /**
  * A new array; stable; never mutates `rows`. "fit" puts the highest score100 first and rows with no real
- * score (none, or one outside 0 to 100) last. "newest" puts the latest printed day first (read in
- * `timeZone`, the viewer's own when it is omitted, against `now`, exactly as the row's trail prints it),
- * the later instant first within a day, and rows whose date the trail cannot read last. Equal keys keep
- * the order the search returned.
+ * score last: none, one outside 0 to 100, or a row that reads "Not scored" whatever number it carries.
+ * "newest" puts the latest printed day first (read in `timeZone`, the viewer's own when it is omitted,
+ * against `now`, exactly as the row's trail prints it), the later instant first within a day, and rows
+ * whose date the trail cannot read last. Equal keys keep the order the search returned.
  */
 export function sortRows(rows: readonly JobCard[], sort: SortMode, timeZone?: string, now?: Date): JobCard[] {
   if (sort === "returned") return [...rows];

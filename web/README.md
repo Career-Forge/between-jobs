@@ -331,8 +331,9 @@ their trail line, inline at every width. Neither makes a search when it opens.
   or the rows that were not scored), each with its count, a sort (as returned, best fit, newest) and a "Show score
   details" switch. A fit is offered only when at least two groups hold rows and the scoring did not fall back; a
   bin the ladder does not know counts as not scored, so the chips add up to All. The sorts are offered from the rows
-  the fit choice keeps: "Best fit" only when two of them carry a score from 0 to 100, "Newest" only when a section
-  holds two rows with a posting date the trail can read. The Sort group is drawn only when at least two sorts are
+  the fit choice keeps: "Best fit" only when two of them read as scored and carry a score from 0 to 100 (a row that
+  reads "Not scored" has no rank and sorts last), "Newest" only when a section holds two rows with a posting date
+  the trail can read. The Sort group is drawn only when at least two sorts are
   on offer ("As returned" alone is nothing to choose), and with no fit group, no sort and no switch left no toolbar
   is drawn at all; the notices stay. "Newest" orders by the day each row prints (read in the viewer's zone), then by
   the later time within a day. A sort orders each section on its own, so rows past the scoring batch stay below,
