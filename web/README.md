@@ -327,8 +327,8 @@ their trail line, inline at every width. Neither makes a search when it opens.
   The trail says `via registry` on the company's job board at the last poll for a registry row the
   database calls fresh, and only "not confirmed on the company's board recently" for one that is not;
   USAJobs' sponsorship line is worded as the provider's category fact ("by provider, no text read"), never a
-  text match. A live-search row says "Link checked" for a live-search row the link check kept (it means not found closed, never "verified");
-  a row that never reached the check says so. Only an http(s) address becomes a link.
+  text match. A live-search row says "Link not found closed" when the link check kept it (never "verified"), and
+  "Link not checked yet" when it never reached the check. Only an http(s) address becomes a link.
 - **The results** (`components/discover/ResultsView.tsx`, `ResultsToolbar.tsx`, `lib/discoverArrange.ts`). From three
   rows there is a toolbar, and it draws only the tools that have something to offer: chips to keep one fit (a tier,
   or the rows that were not scored), each with its count, a sort (as returned, best fit, newest) and a "Show score

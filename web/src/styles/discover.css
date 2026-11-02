@@ -491,7 +491,7 @@
    that has no "Why this score" to open (one past the scoring batch, or a placeholder) keeps four lines and
    has nothing to release them: the API passes up to 2,000 characters of a posting, and without a cap one
    long text would fill a phone's screen and push the next rows out of reach. "View posting" is on every
-   row and is the way to the rest. */
+   row with an http(s) address and is the way to the rest. */
 .bj-disc-snippet {
   color: var(--bj-text);
   display: -webkit-box;
