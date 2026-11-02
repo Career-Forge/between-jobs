@@ -36,6 +36,11 @@ function row(title: string, bin: ScoreBin | null, score100 = 50, extra: Partial<
 
 const titles = (rows: readonly JobCard[]) => rows.map((entry) => entry.title);
 
+// A row whose bin nobody can read but which carries a number: it reads "Not scored", whatever the number.
+function unreadable(title: string, score100 = 95, extra: Partial<JobCard> = {}): JobCard {
+  return job({ title, apply_url: `https://jobs.example/${encodeURIComponent(title)}`, score: score({ bin: "Excellent" as ScoreBin, score100 }), ...extra });
+}
+
 describe("tiers and counts", () => {
   it("lists the tiers best first, which is the ladder reversed", () => {
     expect(TIER_ORDER).toEqual(["Strong", "Good", "Mixed", "Poor"]);
@@ -166,6 +171,13 @@ describe("which sorts are offered", () => {
     expect(offeredSorts({ tiersMeaningful: true, scoredRows: [row("a", "Poor", 0), row("b", "Strong", 100)] })).toEqual(["returned", "fit", "newest"]);
   });
 
+  it("does not count a number on a row whose bin nobody can read: that row reads Not scored and has no rank", () => {
+    const two = [row("a", "Strong", 80), unreadable("u")];
+    expect(offeredSorts({ tiersMeaningful: true, scoredRows: two })).toEqual(["returned", "newest"]);
+    expect(offeredSorts({ tiersMeaningful: true, scoredRows: [unreadable("u1"), unreadable("u2", 90)] })).toEqual(["returned", "newest"]);
+    expect(offeredSorts({ tiersMeaningful: true, scoredRows: [...two, row("b", "Good", 60)] })).toEqual(["returned", "fit", "newest"]);
+  });
+
   it("offers no Newest when the clock the rows print against is not a date, since no row then prints one", () => {
     const rows = [row("a", "Good", 70, { posted_at: "2026-09-01" }), row("b", "Good", 60, { posted_at: "2026-09-02" })];
     const base = { tiersMeaningful: false, scoredRows: rows, timeZone: "UTC" };
@@ -238,6 +250,11 @@ describe("sorting one section", () => {
   it("puts rows with no real score last under Best fit, in the order returned", () => {
     const rows = [row("u1", null), row("a", "Good", 50), row("n1", "Good", Number.NaN), row("b", "Good", 70), row("u2", null), row("i1", "Good", Number.POSITIVE_INFINITY)];
     expect(titles(sortRows(rows, "fit"))).toEqual(["b", "a", "u1", "n1", "u2", "i1"]);
+  });
+
+  it("puts a row whose bin nobody can read after every scored row, whatever number it carries", () => {
+    const rows = [unreadable("u1", 95), row("a", "Strong", 80), unreadable("u2", 99), row("b", "Good", 60), row("none", null)];
+    expect(titles(sortRows(rows, "fit"))).toEqual(["a", "b", "u1", "u2", "none"]);
   });
 
   it("treats a tie of every row as no reordering", () => {
@@ -419,6 +436,11 @@ describe("arranging both sections", () => {
     const rows = [row("high", "Strong", 150), row("ok", "Good", 60), row("low", "Poor", -5), row("top", "Strong", 100), row("zero", "Poor", 0)];
     expect(titles(sortRows(rows, "fit"))).toEqual(["top", "ok", "zero", "high", "low"]);
     expect(titles(arrange({ scored: rows, more: [], filter: "all", sort: "fit" }).scored)).toEqual(["top", "ok", "zero", "high", "low"]);
+  });
+
+  it("ranks no row that reads Not scored: Best fit puts a row with an unreadable bin after the scored ones", () => {
+    const rows = [unreadable("u", 95), row("a", "Strong", 80), row("b", "Good", 60)];
+    expect(titles(arrange({ scored: rows, more: [], filter: "all", sort: "fit" }).scored)).toEqual(["a", "b", "u"]);
   });
 
   it("sorts the sections apart: Best fit orders scored rows and leaves More results as returned", () => {
