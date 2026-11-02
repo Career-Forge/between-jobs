@@ -11,8 +11,13 @@
 //
 // A tier is only a group worth choosing when the bins mean something. Under the scoring fallback every
 // bin is a placeholder, so no tier is offered and "Best fit" is not a sort.
+//
+// A row is scored when its bin is one of the four the ladder knows, and unscored otherwise: with no
+// score at all, or with a bin nobody can read. One rule (tierOf), used by the row, the counts, the chips
+// and the filter alike, so a row that reads "Not scored" is counted, filtered and drawn as one.
 
 import type { JobCard, ScoreBin } from "./discoverTypes";
+import { isScoreWithin } from "./scoreRange";
 import { postedDay, postedMillis } from "./trail";
 
 export type FitFilter = "all" | ScoreBin | "unscored";
@@ -51,19 +56,22 @@ export function tierOf(job: JobCard): ScoreBin | null {
   return TIER_ORDER.find((tier) => tier === bin) ?? null;
 }
 
-/** True when the row has no score object (null or undefined). */
+/**
+ * True when the row has no tier: no score object (null or undefined), or a bin the ladder does not know.
+ * It reads "Not scored", and is counted and filtered as not scored, whatever else its score object holds.
+ */
 export function isUnscored(job: JobCard): boolean {
-  return job.score === null || job.score === undefined;
+  return tierOf(job) === null;
 }
 
-/** Counts over every row (scored then more). A row with an unrecognised bin counts in `all` only. */
+/** Counts over every row (scored then more): each row is in exactly one tier or in `unscored`. */
 export function fitCounts(rows: readonly JobCard[]): FitCounts {
   const tiers: Record<ScoreBin, number> = { Strong: 0, Good: 0, Mixed: 0, Poor: 0 };
   let unscored = 0;
   for (const row of rows) {
     const tier = tierOf(row);
-    if (tier !== null) tiers[tier] += 1;
-    else if (isUnscored(row)) unscored += 1;
+    if (tier === null) unscored += 1;
+    else tiers[tier] += 1;
   }
   return { all: rows.length, tiers, unscored };
 }
@@ -91,20 +99,25 @@ export function resolveFilter(filter: FitFilter, offered: readonly FitFilter[]):
   return offered.includes(filter) ? filter : "all";
 }
 
-// A score100 that is a real number. NaN, Infinity and anything that is not a number are no score at
-// all, here and wherever a number would be drawn.
+// A score100 that is a real score, 0 to 100. NaN, Infinity, anything that is not a number and a number
+// outside the scale are no score at all, here and wherever a number would be drawn (scoreRange.ts).
 function fitOf(job: JobCard): number | null {
   const value: unknown = job.score?.score100;
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  return isScoreWithin(value) ? value : null;
 }
 
-function datedCount(rows: readonly JobCard[], timeZone: string | undefined): number {
-  return rows.filter((row) => postedDay(row.posted_at, timeZone) !== null).length;
+/**
+ * True when `rows` hold at least two whose posting date the trail can read, in `timeZone` and against the
+ * `now` the rows print with (both as the trail reads them). A section is put in date order by "Newest"
+ * only then, so this is also whether its notice may say "newest first".
+ */
+export function reordersByDate(rows: readonly JobCard[], timeZone?: string, now?: Date): boolean {
+  return rows.filter((row) => postedDay(row.posted_at, timeZone, now) !== null).length >= 2;
 }
 
 /**
  * ["returned", "fit"?, "newest"?]. "fit" only when tiers are meaningful and at least two of `scoredRows`
- * have a finite score100. "newest" only when some section has at least two rows whose posting date the
+ * have a score from 0 to 100. "newest" only when some section has at least two rows whose posting date the
  * trail can read: a sort that cannot move anything is not offered, and so is never announced. Pass the
  * rows the fit choice currently keeps, so a control that would do nothing to what is shown is left out.
  */
@@ -113,9 +126,10 @@ export function offeredSorts(input: {
   scoredRows: readonly JobCard[];
   moreRows?: readonly JobCard[];
   timeZone?: string;
+  now?: Date;
 }): readonly SortMode[] {
   const rankable = input.tiersMeaningful && input.scoredRows.filter((row) => fitOf(row) !== null).length >= 2;
-  const datable = datedCount(input.scoredRows, input.timeZone) >= 2 || datedCount(input.moreRows ?? [], input.timeZone) >= 2;
+  const datable = reordersByDate(input.scoredRows, input.timeZone, input.now) || reordersByDate(input.moreRows ?? [], input.timeZone, input.now);
   return [
     "returned" as const,
     ...(rankable ? ["fit" as const] : []),
@@ -132,18 +146,19 @@ type SortKey = readonly [number, number];
 
 /**
  * A new array; stable; never mutates `rows`. "fit" puts the highest score100 first and rows with no real
- * score last. "newest" puts the latest printed day first (read in `timeZone`, the viewer's own when it is
- * omitted, exactly as the row's trail prints it), the later instant first within a day, and rows whose
- * date the trail cannot read last. Equal keys keep the order the search returned.
+ * score (none, or one outside 0 to 100) last. "newest" puts the latest printed day first (read in
+ * `timeZone`, the viewer's own when it is omitted, against `now`, exactly as the row's trail prints it),
+ * the later instant first within a day, and rows whose date the trail cannot read last. Equal keys keep
+ * the order the search returned.
  */
-export function sortRows(rows: readonly JobCard[], sort: SortMode, timeZone?: string): JobCard[] {
+export function sortRows(rows: readonly JobCard[], sort: SortMode, timeZone?: string, now?: Date): JobCard[] {
   if (sort === "returned") return [...rows];
   const key = (job: JobCard): SortKey | null => {
     if (sort === "fit") {
       const value = fitOf(job);
       return value === null ? null : [value, 0];
     }
-    const day = postedDay(job.posted_at, timeZone);
+    const day = postedDay(job.posted_at, timeZone, now);
     return day === null ? null : [day, postedMillis(job.posted_at) ?? 0];
   };
   return rows
@@ -164,6 +179,8 @@ export interface ArrangeInput {
   sort: SortMode;
   /** The zone dates are read in for Newest; the viewer's own when omitted. */
   timeZone?: string;
+  /** The clock the rows print their dates against; when it is not a real date no row prints one. */
+  now?: Date;
 }
 
 export interface Arranged {
@@ -179,13 +196,18 @@ function keeps(filter: FitFilter, job: JobCard): boolean {
 
 /**
  * The two sections after a fit choice and a sort. Rows past the scoring batch have no fit, so they keep
- * the order they came in under "Best fit" and are only reordered by "Newest".
+ * the order they came in under "Best fit". Under "Newest" a section is put in date order only when it has
+ * at least two readable dates (reordersByDate); a section with fewer keeps the order it came in, so what a
+ * section's notice says about its order is exactly what happened to it.
  */
 export function arrange(input: ArrangeInput): Arranged {
-  const { filter, sort, timeZone } = input;
+  const { filter, sort, timeZone, now } = input;
+  const scored = input.scored.filter((job) => keeps(filter, job));
+  const more = input.more.filter((job) => keeps(filter, job));
+  const byDate = (rows: readonly JobCard[]): SortMode => (reordersByDate(rows, timeZone, now) ? "newest" : "returned");
   return {
-    scored: sortRows(input.scored.filter((job) => keeps(filter, job)), sort, timeZone),
-    more: sortRows(input.more.filter((job) => keeps(filter, job)), sort === "fit" ? "returned" : sort, timeZone),
+    scored: sortRows(scored, sort === "newest" ? byDate(scored) : sort, timeZone, now),
+    more: sortRows(more, sort === "newest" ? byDate(more) : "returned", timeZone, now),
   };
 }
 

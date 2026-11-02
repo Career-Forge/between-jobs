@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isUnscored } from "./discoverArrange";
 import type { JobCard, JobScore } from "./discoverTypes";
 import {
   COMPENSATION_DETAIL,
@@ -194,6 +195,31 @@ describe("the fit block", () => {
   it("survives a score with no list of dropped dimensions", () => {
     const view = fitViewOf(job({ score: score({ inapplicable_dims: undefined as unknown as string[] }) }), "direct");
     expect(view.kind).toBe("scored");
+  });
+
+  it("is nothing at all for a bin the ladder does not know: the row is unscored, whatever else its score holds", () => {
+    const bins = ["Excellent", "strong", " Strong", "Strong bj-primary", "", "constructor", "__proto__", "toString", null, undefined, 3, {}, ["Strong"]];
+    for (const bin of bins) {
+      const odd = job({ score: score({ bin: bin as never, score100: 77, one_liner: "A model line." }) });
+      expect(fitViewOf(odd, "direct"), JSON.stringify(bin)).toEqual({ kind: "unscored" });
+    }
+  });
+
+  it("agrees with the arranging code about every row: unscored exactly when the row has no tier", () => {
+    const rows = [job({ score: null }), job({ score: undefined as unknown as null }), job({ score: score({ bin: "odd" as never }) }), job(), job({ score: score({ bin: "Poor" }) })];
+    for (const row of rows) expect(fitViewOf(row, "direct").kind === "unscored", JSON.stringify(row.score?.bin)).toBe(isUnscored(row));
+  });
+
+  it("keeps a placeholder a placeholder under the fallback for a bin it knows, and calls an unreadable bin unscored there too", () => {
+    expect(fitViewOf(job({ score: score({ bin: "Strong" }) }), "neutral_fallback")).toEqual({ kind: "placeholder" });
+    expect(fitViewOf(job({ score: score({ bin: "Excellent" as never }) }), "neutral_fallback")).toEqual({ kind: "unscored" });
+  });
+
+  it("keeps a score outside 0 to 100 on a scored row, as the number alone is what is left out when it is drawn", () => {
+    for (const score100 of [150, -5, Number.NaN]) {
+      const view = fitViewOf(job({ score: score({ score100 }) }), "direct");
+      expect(view.kind, String(score100)).toBe("scored");
+    }
   });
 });
 
@@ -399,6 +425,14 @@ describe("the receipt", () => {
     expect(value(unscored, "scoring", "neutral_fallback")).toBeNull();
     expect(value(unscored, "provider")).toBe("serper");
     expect(value(unscored, "location")).toBe("New York, NY, not marked remote");
+  });
+
+  it("holds no score rows for a bin it cannot read either: that row is unscored, and quotes none of its reading", () => {
+    const odd = job({ score: score({ bin: "Excellent" as never }) });
+    for (const label of ["sub-scores", "not applied", "lowest part"]) expect(value(odd, label), label).toBeNull();
+    expect(value(odd, "scoring", "neutral_fallback")).toBeNull();
+    expect(value(odd, "location")).toBe("New York, NY, not marked remote");
+    expect(value(odd, "provider")).toBe("serper");
   });
 
   it("says a location is not given rather than leave a gap", () => {

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { isScoreWithin } from "../../lib/scoreRange";
 import { GlyphMark } from "./TrailLine";
 import "../../styles/paper-doc.css";
 
@@ -80,7 +81,7 @@ export interface FitLadderProps {
   levels: readonly string[];
   /** The rung reached, by name; null for no rung. */
   level: string | null;
-  /** The number beside the name; left out of the words when null or missing. */
+  /** The number beside the name; left out of the words when null, missing or outside 0 to `max`. */
   score?: number | null;
   max?: number;
   /** Nothing was scored (a fallback): hollow cells, no number, `placeholderLabel` as the words. */
@@ -100,7 +101,7 @@ export function FitLadder({ levels, level, score, max = 100, placeholder = false
   const rung = placeholder || level === null ? -1 : levels.indexOf(level);
   // A level the ladder does not have is drawn as no rung and no name rather than guessed at.
   const reached = rung === -1 ? 0 : rung + 1;
-  const hasScore = !placeholder && rung !== -1 && typeof score === "number" && Number.isFinite(score);
+  const hasScore = !placeholder && rung !== -1 && isScoreWithin(score, max);
   const words = placeholder ? placeholderLabel : rung === -1 ? "Not scored" : hasScore ? `${level} -- ${score} / ${max}` : String(level);
   const label = `Fit: ${words}`;
   return (

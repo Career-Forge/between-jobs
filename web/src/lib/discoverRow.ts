@@ -18,6 +18,7 @@
 // The word the trail never says is not in this file (lib/trail.ts refuses it as well).
 
 import { subScoreLabel } from "./discover";
+import { isUnscored, tierOf } from "./discoverArrange";
 import type { JobCard, JobScore, LocationMatch, ScoreBin } from "./discoverTypes";
 import { formatTrailDate, type ReceiptRowInput, type TrailInput } from "./trail";
 
@@ -176,10 +177,13 @@ function isScore(value: unknown): value is number {
 }
 
 export function fitViewOf(job: JobCard, scoringStrategy: string): FitView {
+  // A row with no score object (null, or the field left out) or with a bin the ladder does not know has no
+  // score it can show. The arranging code (discoverArrange.ts isUnscored) counts, filters and labels it
+  // "Not scored" by the same rule, so the row draws that way too, and carries nothing of the response's own
+  // reading: no number, no model line, no preview and no detail.
+  const level = tierOf(job);
   const score = job.score;
-  // A missing score is a score that was not made, whether the API sent null or left the field out; the
-  // arranging code (discoverArrange.ts) counts both as "Not scored" and the row must draw both that way.
-  if (score === null || score === undefined) return { kind: "unscored" };
+  if (level === null || score === null || score === undefined) return { kind: "unscored" };
   if (isFallback(scoringStrategy)) return { kind: "placeholder" };
   const dropped = Array.isArray(score.inapplicable_dims) ? score.inapplicable_dims : [];
   const subScores: Record<string, unknown> = typeof score.sub_scores === "object" && score.sub_scores !== null ? { ...score.sub_scores } : {};
@@ -195,7 +199,7 @@ export function fitViewOf(job: JobCard, scoringStrategy: string): FitView {
   const lowestNumber = bottleneck === null || dropped.includes(bottleneck) ? undefined : subScores[bottleneck];
   return {
     kind: "scored",
-    level: score.bin,
+    level,
     score100: score.score100,
     oneLiner: typeof score.one_liner === "string" ? score.one_liner.trim() : "",
     bars,
@@ -253,8 +257,9 @@ function locationReceipt(job: JobCard, fallback: boolean): string {
   if (job.remote === true) parts.push("remote");
   else if (job.remote === false) parts.push("not marked remote");
   const given = parts.length > 0 ? parts.join(", ") : "none given";
-  // Under the fallback the model's reading was never made, so there is no reading to quote.
-  if (job.score === null || job.score === undefined || fallback) return given;
+  // Under the fallback the model's reading was never made, so there is no reading to quote; and a row
+  // that reads "Not scored" quotes none either.
+  if (isUnscored(job) || job.score === null || job.score === undefined || fallback) return given;
   const reading = locationReading(job.score);
   return `${given}. ${reading.words}`;
 }
@@ -262,8 +267,8 @@ function locationReceipt(job: JobCard, fallback: boolean): string {
 // What opens under the trail line: the fields as returned. Rows with no value are left out by the
 // receipt builder, and the scoring strategy is named only when it is the fallback.
 export function rowReceipt(job: JobCard, scoringStrategy: string): ReceiptRowInput[] {
-  // A score that is absent reads as one that was not made, as in fitViewOf.
-  const score = job.score ?? null;
+  // A score that is absent, or has a bin nobody can read, reads as one that was not made, as in fitViewOf.
+  const score = isUnscored(job) ? null : (job.score ?? null);
   const fallback = isFallback(scoringStrategy);
   const dropped = score !== null && Array.isArray(score.inapplicable_dims) ? score.inapplicable_dims : [];
   const parts =

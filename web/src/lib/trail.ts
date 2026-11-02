@@ -212,10 +212,22 @@ export interface TrailDateOptions extends TrailTimeOptions {
 
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
+// The formatter every printed day goes through. It throws a RangeError for a time zone the runtime does not
+// know, which is how a day is refused for one: postedDay builds it too, so a day is never read where the
+// trail would print none.
+function yearFormatter(timeZone: string | undefined): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone });
+}
+
 function dayWords(year: number, monthIndex: number, day: number, options: TrailDateOptions): string {
   const words = `${MONTHS[monthIndex]} ${day}`;
-  const nowYear = Number(new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: options.timeZone }).format(options.now));
+  const nowYear = Number(yearFormatter(options.timeZone).format(options.now));
   return nowYear === year ? words : `${words}, ${year}`;
+}
+
+// A clock the trail can print against: a real Date. formatTrailDate prints nothing without one.
+function isClock(value: unknown): value is Date {
+  return value instanceof Date && !Number.isNaN(value.getTime());
 }
 
 // "2026-09-22" -> "Sep 22"; "2026-09-22T14:00:00Z" -> "Sep 22" in the zone asked for; a year other
@@ -225,7 +237,7 @@ function dayWords(year: number, monthIndex: number, day: number, options: TrailD
 export function formatTrailDate(value: unknown, options: TrailDateOptions): string | null {
   // `options?.` because an untyped caller can still leave the whole argument out.
   const now: unknown = options?.now;
-  if (typeof value !== "string" || !(now instanceof Date) || Number.isNaN(now.getTime())) return null;
+  if (typeof value !== "string" || !isClock(now)) return null;
   try {
     const text = value.trim();
     const plain = DATE_ONLY.exec(text);
@@ -265,16 +277,21 @@ export function postedMillis(value: unknown): number | null {
 
 // The calendar day formatTrailDate prints, as a number that sorts (2026-09-22 -> 20260922): a date-only
 // value is its own day, and an instant is the day it falls on in `timeZone`. It is read by the same two
-// readers, so a row that prints "Sep 21" has day 20260921 and one the trail leaves out has none. This
-// is what "newest first" orders by, with postedMillis breaking a tie within a day; ordering by the
-// instant alone would put "Sep 21" above "Sep 22" whenever a zone's midnight falls between them.
-export function postedDay(value: unknown, timeZone?: string): number | null {
+// readers and refused for the same reasons, so a row that prints "Sep 21" has day 20260921 and one the
+// trail leaves out has none: an impossible day, a bare local time, a zone the runtime does not know, and,
+// when the caller passes the `now` its trail prints against, one that is not a real date. This is what
+// "newest first" orders by, with postedMillis breaking a tie within a day; ordering by the instant alone
+// would put "Sep 21" above "Sep 22" whenever a zone's midnight falls between them.
+export function postedDay(value: unknown, timeZone?: string, now?: Date): number | null {
   if (typeof value !== "string") return null;
+  if (now !== undefined && !isClock(now)) return null;
   try {
     const text = value.trim();
     const plain = DATE_ONLY.exec(text);
     if (plain !== null) {
       const [year, month, day] = [Number(plain[1]), Number(plain[2]), Number(plain[3])];
+      // A date-only value is never shifted by a zone, but the trail still prints nothing in one it cannot build.
+      yearFormatter(timeZone);
       return isCalendarDay(year, month, day) ? year * 10000 + month * 100 + day : null;
     }
     const instant = readInstant(text);

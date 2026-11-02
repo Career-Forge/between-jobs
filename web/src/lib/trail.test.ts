@@ -354,6 +354,36 @@ describe("the posting date as the calendar day a row prints", () => {
     expect(postedDay("2026-09-22T08:00:00Z", "Not/AZone")).toBeNull();
     expect(formatTrailDate("2026-09-22T08:00:00Z", { now, timeZone: "Not/AZone" })).toBeNull();
   });
+
+  it("reads no day from a date-only value in a zone the runtime does not know, as the trail prints none", () => {
+    for (const timeZone of ["Not/AZone", "", "GMT+5", "America/Nowhere"]) {
+      for (const value of ["2026-09-22", "  2026-09-22  ", "\t2026-09-22\n"]) {
+        expect(formatTrailDate(value, { now, timeZone }), `${JSON.stringify(value)} in ${JSON.stringify(timeZone)}`).toBeNull();
+        expect(postedDay(value, timeZone), `${JSON.stringify(value)} in ${JSON.stringify(timeZone)}`).toBeNull();
+      }
+    }
+  });
+
+  it("reads a date-only value, padded or not, in a zone it does know, or in no zone at all", () => {
+    for (const timeZone of ["UTC", "Asia/Tokyo", "America/Los_Angeles", undefined]) {
+      expect(postedDay("2026-09-22", timeZone), String(timeZone)).toBe(20260922);
+      expect(postedDay("  2026-09-22  ", timeZone), String(timeZone)).toBe(20260922);
+      expect(formatTrailDate("  2026-09-22  ", { now, timeZone })).toBe("Sep 22");
+    }
+  });
+
+  it("reads no day when the clock it is given is not a date, because then the trail prints none", () => {
+    const broken = [new Date(Number.NaN), new Date("not a date"), "2026-10-18", 0, null] as unknown as Date[];
+    for (const clock of broken) {
+      for (const value of ["2026-09-22", " 2026-09-22 ", "2026-09-22T08:00:00Z"]) {
+        expect(formatTrailDate(value, { now: clock, timeZone: "UTC" }), `${JSON.stringify(value)} with ${String(clock)}`).toBeNull();
+        expect(postedDay(value, "UTC", clock), `${JSON.stringify(value)} with ${String(clock)}`).toBeNull();
+      }
+    }
+    // Left out, there is no clock to be wrong: the day is the day.
+    expect(postedDay("2026-09-22", "UTC")).toBe(20260922);
+    expect(postedDay("2026-09-22", "UTC", now)).toBe(20260922);
+  });
 });
 
 describe("the posting date as a sortable moment", () => {
