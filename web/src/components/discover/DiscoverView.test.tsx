@@ -336,6 +336,15 @@ describe("results", () => {
     expect(cyanFills(container)).toBe(0);
   });
 
+  it("counts rows the way the Not scored chip does: a scored-list row with a bin nobody can read is not scored, in the band as in the chips", () => {
+    const odd = job({ apply_url: "https://jobs.example/acme/odd", title: "Odd", score: score({ bin: "Excellent" as never, score100: 95 }) });
+    const rows = [job({ apply_url: "https://jobs.example/acme/a", title: "A" }), job({ apply_url: "https://jobs.example/acme/b", title: "B", score: score({ bin: "Poor", score100: 20 }) }), odd];
+    const { container } = draw(ready(response({ scored: rows, more: [job({ apply_url: "https://jobs.example/acme/m", title: "M", score: null })] })));
+    expect(words(bandOf(container))).toContain("why: 2 scored · 2 more, unscored");
+    const chips = [...container.querySelectorAll('[aria-label="Show results by fit"] button')].map((button) => words(button));
+    expect(chips).toContain("Not scored 2 results");
+  });
+
   it("turns the form's submit into 'Search again', outlined", () => {
     const { container } = draw(ready());
     const submit = buttonNamed(query(container, "form"), "Search again");

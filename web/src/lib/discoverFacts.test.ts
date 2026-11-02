@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_REQUEST, discoverQuery, filtersSet, providerCounts, resultsAnnouncement, resultsFactOf, rowsOf, searchNotesOf, warningsOf } from "./discoverFacts";
+import { fitCounts } from "./discoverArrange";
 import type { DiscoverResponse, JobCard } from "./discoverTypes";
 
 // The counts a finished search holds, and the request a search makes: pure, so each is a table.
@@ -25,6 +26,30 @@ function card(provider: string, n = 1): JobCard {
   };
 }
 
+// A row that reads as scored: its bin is one the ladder knows.
+function scoredCard(provider: string, n = 1): JobCard {
+  return {
+    ...card(provider, n),
+    score: {
+      fit_score: 7,
+      one_liner: "",
+      score100: 61,
+      bin: "Good",
+      bottleneck: null,
+      sub_scores: { skills: 70, experience: 70, workauth: 70, location: 70, company_health: 70, compensation: 70 },
+      inapplicable_dims: [],
+      detected_location: null,
+      location_match: "unknown",
+    },
+  };
+}
+
+// A row with a number but a bin nobody can read: it reads "Not scored".
+function unreadableCard(provider: string, n = 1): JobCard {
+  const row = scoredCard(provider, n);
+  return { ...row, score: { ...row.score!, bin: "Excellent" as never, score100: 95 } };
+}
+
 function response(overrides: Partial<DiscoverResponse> = {}): DiscoverResponse {
   return { query: "", scored: [], more: [], dead_removed: 0, scoring_strategy: "direct", warnings: [], ...overrides };
 }
@@ -48,8 +73,35 @@ describe("the request", () => {
 
 describe("the facts of a finished search", () => {
   it("counts scored rows, rows past the batch and the listings the link check dropped", () => {
-    const fact = resultsFactOf(response({ scored: [card("registry"), card("registry", 2)], more: [card("serper")], dead_removed: 3 }), EMPTY_REQUEST);
+    const fact = resultsFactOf(response({ scored: [scoredCard("registry"), scoredCard("registry", 2)], more: [card("serper")], dead_removed: 3 }), EMPTY_REQUEST);
     expect(fact).toMatchObject({ scored: 2, more: 1, deadRemoved: 3, fallback: false });
+  });
+
+  it("counts a row as scored only when its bin is readable, whichever list the response put it in", () => {
+    // Scored list: a readable row, a row with a bin nobody can read (it has a number, but reads Not scored)
+    // and one with no score at all. More results: a row that carries a readable bin, and one with none.
+    const fact = resultsFactOf(
+      response({
+        scored: [scoredCard("registry"), unreadableCard("registry", 2), card("registry", 3)],
+        more: [scoredCard("serper", 4), card("serper", 5)],
+      }),
+      EMPTY_REQUEST,
+    );
+    expect(fact).toMatchObject({ scored: 2, more: 3 });
+    expect(fact.scored + fact.more).toBe(5);
+  });
+
+  it("counts every row of a scored list that reads Not scored as not scored, and none as scored", () => {
+    const fact = resultsFactOf(response({ scored: [unreadableCard("registry"), unreadableCard("registry", 2), card("registry", 3)] }), EMPTY_REQUEST);
+    expect(fact).toMatchObject({ scored: 0, more: 3 });
+  });
+
+  it("agrees with the chips: the unscored count is the Not scored chip's, and scored is the tiers added up", () => {
+    const rows = [scoredCard("a", 1), unreadableCard("a", 2), card("a", 3), scoredCard("b", 4), card("b", 5)];
+    const counts = fitCounts(rows);
+    const fact = resultsFactOf(response({ scored: rows.slice(0, 3), more: rows.slice(3) }), EMPTY_REQUEST);
+    expect(fact.more).toBe(counts.unscored);
+    expect(fact.scored).toBe(counts.all - counts.unscored);
   });
 
   it("holds only what picked the step: no provider counts and no failures, which the status block prints from the search itself", () => {
@@ -145,13 +197,19 @@ describe("what a screen reader is told when a search answers", () => {
   const announce = (result: DiscoverResponse) => resultsAnnouncement(resultsFactOf(result, EMPTY_REQUEST));
 
   it("says how many rows were scored, how many were not, and how many listings were dropped", () => {
-    expect(announce(response({ scored: [card("registry"), card("registry", 2)], more: [card("serper")], dead_removed: 2 }))).toBe(
+    expect(announce(response({ scored: [scoredCard("registry"), scoredCard("registry", 2)], more: [card("serper")], dead_removed: 2 }))).toBe(
       "The search finished: 2 scored, 1 more, unscored, 2 dropped as no longer live.",
     );
   });
 
+  it("counts a row that reads Not scored among the unscored, wherever it sits, so the sentence agrees with the chips", () => {
+    expect(announce(response({ scored: [scoredCard("registry"), unreadableCard("registry", 2)], more: [card("serper")] }))).toBe(
+      "The search finished: 1 scored, 2 more, unscored.",
+    );
+  });
+
   it("leaves out the clauses with nothing in them", () => {
-    expect(announce(response({ scored: [card("registry")] }))).toBe("The search finished: 1 scored.");
+    expect(announce(response({ scored: [scoredCard("registry")] }))).toBe("The search finished: 1 scored.");
   });
 
   it("says a search with no rows finished with no results, whatever else it holds", () => {

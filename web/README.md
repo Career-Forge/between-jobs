@@ -301,8 +301,9 @@ their trail line, inline at every width. Neither makes a search when it opens.
   matched, Save this search when Hiring signals results are on the page for a search that is not saved. Before a
   search has run the band's Search is Discover's only one (the form draws none, and Enter in a field presses the
   band's); after one, the form's own Search again is outlined. Every row's Track and Save are outlined, and
-  Discover's Save this search is a quiet button. The band's why line says what picked the step (how many rows were
-  scored and how many were not); which sources returned how many, what failed and what was dropped are in the status
+  Discover's Save this search is a quiet button. The band's why line says what picked the step (how many rows read
+  as scored and how many read "Not scored", whichever list the response put them in, the same count the Not scored
+  chip carries); which sources returned how many, what failed and what was dropped are in the status
   block above the results. The elapsed counter of a running search is drawn beside the
   band (`role="timer"`, live region off), not in its sentence, so the sentence is announced once.
 - **A Discover row** (`lib/discoverRow.ts`, drawn by `components/discover/`) is built from returned fields only. It
@@ -337,8 +338,10 @@ their trail line, inline at every width. Neither makes a search when it opens.
   reads "Not scored" has no rank and sorts last), "Newest" only when a section holds two rows with a posting date
   the trail can read. The Sort group is drawn only when at least two sorts are
   on offer ("As returned" alone is nothing to choose), and with no fit group, no sort and no switch left no toolbar
-  is drawn at all; the notices stay. "Newest" orders by the day each row prints (read in the viewer's zone), then by
-  the later time within a day. A sort orders each section on its own, so rows past the scoring batch stay below,
+  is drawn at all; the notices stay. When every row reads "Not scored" (and the scoring did not fall back) one note
+  above the first list says so, and when the scoring fell back the gold notice is drawn only while some row is a
+  placeholder, never over rows that all read "Not scored". "Newest" orders by the day each row prints (read in the
+  viewer's zone), then by the later time within a day. A sort orders each section on its own, so rows past the scoring batch stay below,
   and "Newest" reorders a section only when that section holds two readable dates. What the notices say about the
   order is decided per section from what that section did: the gold fallback notice for the scored rows and the
   More results note say "newest first" only for a section that was reordered, and keep their returned-order words

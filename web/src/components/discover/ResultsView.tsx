@@ -4,6 +4,7 @@ import {
   arrangeAnnouncement,
   filterSummary,
   fitCounts,
+  isUnscored,
   offeredFilters,
   offeredSorts,
   reordersByDate,
@@ -29,9 +30,13 @@ import "../../styles/discover.css";
 // never a silent one.
 //
 //   rows          the scored rows, then "More results": rows past the scoring batch, which have no
-//                 score block at all and read "Not scored"
-//   fallback      one gold notice above every row when the scoring model's reply could not be read:
-//                 every bin reads "Placeholder" and no number is drawn
+//                 score block at all and read "Not scored". A row is scored only when its bin is one the
+//                 ladder knows, whichever list it sits in
+//   fallback      one gold notice above the rows when the scoring model's reply could not be read: every
+//                 bin reads "Placeholder" and no number is drawn. It is drawn only while some row is a
+//                 placeholder, never over rows that all read "Not scored"
+//   none scored   when every row reads "Not scored" (and the scoring did not fall back), one note above
+//                 the first list says there is no fit to filter or sort by
 //   status        the failures, the dropped listings and the sources, above the rows
 //   toolbar       from three rows, and only while it has something to offer: keep one fit, sort (when two
 //                 sorts are on offer) and open every row's detail (ResultsToolbar.tsx)
@@ -138,6 +143,12 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
   const moreDated = reordersByDate(kept.more, timeZone, now);
   const scoredByDate = activeSort === "newest" && scoredDated;
   const moreByDate = activeSort === "newest" && moreDated;
+  // A row is a placeholder when the scoring fell back and its bin is one the ladder reads; a row that reads
+  // Not scored is never one. The fallback notice speaks for the lists that hold placeholders, and says
+  // "newest first" only when every one of them was put in date order.
+  const holdsPlaceholder = (rows: readonly JobCard[]) => isFallback(strategy) && rows.some((job) => !isUnscored(job));
+  const placeholderRows = holdsPlaceholder(kept.scored) || holdsPlaceholder(kept.more);
+  const placeholdersByDate = (!holdsPlaceholder(kept.scored) || scoredByDate) && (!holdsPlaceholder(kept.more) || moreByDate);
   // A tier choice leaves the unscored rows out; the count line says how many.
   const hiddenUnscored = activeFilter !== "all" && activeFilter !== "unscored" ? counts.unscored : 0;
   const showDetailsSwitch = [...arranged.scored, ...arranged.more].some((job) => fitViewOf(job, strategy).kind === "scored");
@@ -203,12 +214,12 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
       <h2 className="bj-disc-heading" id={RESULTS_HEADING_ID} tabIndex={-1}>
         Results
       </h2>
-      {isFallback(strategy) && scored.length > 0 && (
+      {placeholderRows && (
         <p className="bj-disc-fallback">
           <span className="bj-trail-glyph bj-trail-glyph--gold" aria-hidden="true">
             {"◆"}
           </span>{" "}
-          Your model's reply couldn't be read, so these scores are placeholders. {scoredByDate ? FALLBACK_ORDER_NEWEST : FALLBACK_ORDER_RETURNED}
+          Your model's reply couldn't be read, so these scores are placeholders. {placeholdersByDate ? FALLBACK_ORDER_NEWEST : FALLBACK_ORDER_RETURNED}
         </p>
       )}
       <SearchStatus notes={notes} showSources />
@@ -228,7 +239,7 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
           announcement={announcement}
         />
       )}
-      {scored.length === 0 && more.length > 0 && !isFallback(strategy) && <p className="bj-disc-note">{NONE_SCORED_NOTE}</p>}
+      {counts.unscored === counts.all && !isFallback(strategy) && <p className="bj-disc-note">{NONE_SCORED_NOTE}</p>}
       {arranged.scored.length > 0 && <ul className="bj-disc-list">{arranged.scored.map(row("scored"))}</ul>}
       {arranged.more.length > 0 && (
         <>

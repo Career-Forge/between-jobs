@@ -248,6 +248,21 @@ describe("a search", () => {
     expect(container.querySelectorAll("button.bj-primary, a.bj-button-link-primary")).toHaveLength(0);
   });
 
+  it("says the same count in the band and the announcement as the Not scored chip when a scored-list row has a bin nobody can read", async () => {
+    answer({
+      "/discover?": response({
+        scored: [job(), job({ apply_url: "https://jobs.example/acme/2", score: score({ bin: "Excellent" as never, score100: 95 }) }), job({ apply_url: "https://jobs.example/acme/3", score: score({ bin: "Poor", score100: 20 }) })],
+        more: [job({ apply_url: "https://jobs.example/acme/4", score: null })],
+      }),
+    });
+    const { container } = await draw();
+    await search(container);
+    expect(words(band(container))).toContain("why: 2 scored · 2 more, unscored");
+    expect(status(container)).toBe("The search finished: 2 scored, 2 more, unscored.");
+    const chips = [...container.querySelectorAll('[aria-label="Show results by fit"] button')].map((button) => words(button));
+    expect(chips).toContain("Not scored 2 results");
+  });
+
   it("narrows, sorts and opens rows without a request and without storing a thing beyond the first-run flag", async () => {
     answer({ "/discover?": mixedResponse() });
     const { container } = await draw();

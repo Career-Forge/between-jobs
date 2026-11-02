@@ -2,6 +2,7 @@
 // search ran with, how many were set, and the counts a finished search holds. Nothing here reads the
 // network or the clock. The rows that use these facts are lib/nextStep/pages/discover.ts.
 
+import { isUnscored } from "./discoverArrange";
 import type { DiscoverResponse, JobCard } from "./discoverTypes";
 import type { DiscoverResultsFact } from "./nextStep/pages/discover";
 
@@ -85,12 +86,15 @@ export function searchNotesOf(result: DiscoverResponse): SearchNotes {
   };
 }
 
+// How many rows the response held, counted the way the page reads them: a row is scored only when its bin
+// is one the ladder knows (discoverArrange.ts isUnscored), whichever list the response put it in, and every
+// other row reads "Not scored". The band, the status sentence and the Not scored chip then agree.
 export function resultsFactOf(result: DiscoverResponse, request: DiscoverRequest): DiscoverResultsFact {
-  const scored = rowsOf(result.scored);
-  const more = rowsOf(result.more);
+  const rows = [...rowsOf(result.scored), ...rowsOf(result.more)];
+  const unscored = rows.filter(isUnscored).length;
   return {
-    scored: scored.length,
-    more: more.length,
+    scored: rows.length - unscored,
+    more: unscored,
     deadRemoved: nonNegative(result.dead_removed),
     fallback: result.scoring_strategy === "neutral_fallback",
     filtersSet: filtersSet(request),
