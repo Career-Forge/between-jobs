@@ -13,7 +13,7 @@
 // bin is a placeholder, so no tier is offered and "Best fit" is not a sort.
 
 import type { JobCard, ScoreBin } from "./discoverTypes";
-import { postedMillis } from "./trail";
+import { postedDay, postedMillis } from "./trail";
 
 export type FitFilter = "all" | ScoreBin | "unscored";
 export type SortMode = "returned" | "fit" | "newest";
@@ -98,31 +98,61 @@ function fitOf(job: JobCard): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-/** ["returned", "fit"?, "newest"]. "fit" only when tiers are meaningful and at least two rows have a finite score100. */
-export function offeredSorts(input: { tiersMeaningful: boolean; scoredRows: readonly JobCard[] }): readonly SortMode[] {
+function datedCount(rows: readonly JobCard[], timeZone: string | undefined): number {
+  return rows.filter((row) => postedDay(row.posted_at, timeZone) !== null).length;
+}
+
+/**
+ * ["returned", "fit"?, "newest"?]. "fit" only when tiers are meaningful and at least two of `scoredRows`
+ * have a finite score100. "newest" only when some section has at least two rows whose posting date the
+ * trail can read: a sort that cannot move anything is not offered, and so is never announced. Pass the
+ * rows the fit choice currently keeps, so a control that would do nothing to what is shown is left out.
+ */
+export function offeredSorts(input: {
+  tiersMeaningful: boolean;
+  scoredRows: readonly JobCard[];
+  moreRows?: readonly JobCard[];
+  timeZone?: string;
+}): readonly SortMode[] {
   const rankable = input.tiersMeaningful && input.scoredRows.filter((row) => fitOf(row) !== null).length >= 2;
-  return rankable ? ["returned", "fit", "newest"] : ["returned", "newest"];
+  const datable = datedCount(input.scoredRows, input.timeZone) >= 2 || datedCount(input.moreRows ?? [], input.timeZone) >= 2;
+  return [
+    "returned" as const,
+    ...(rankable ? ["fit" as const] : []),
+    ...(datable ? ["newest" as const] : []),
+  ];
 }
 
 export function resolveSort(sort: SortMode, offered: readonly SortMode[]): SortMode {
   return offered.includes(sort) ? sort : "returned";
 }
 
+// A sort key is a pair compared largest first: a score, or the day a row prints and then its instant.
+type SortKey = readonly [number, number];
+
 /**
  * A new array; stable; never mutates `rows`. "fit" puts the highest score100 first and rows with no real
- * score last; "newest" puts the latest posting date first and rows whose date the trail cannot read last.
- * Equal keys keep the order the search returned.
+ * score last. "newest" puts the latest printed day first (read in `timeZone`, the viewer's own when it is
+ * omitted, exactly as the row's trail prints it), the later instant first within a day, and rows whose
+ * date the trail cannot read last. Equal keys keep the order the search returned.
  */
-export function sortRows(rows: readonly JobCard[], sort: SortMode): JobCard[] {
+export function sortRows(rows: readonly JobCard[], sort: SortMode, timeZone?: string): JobCard[] {
   if (sort === "returned") return [...rows];
-  const key = sort === "fit" ? fitOf : (job: JobCard) => postedMillis(job.posted_at);
+  const key = (job: JobCard): SortKey | null => {
+    if (sort === "fit") {
+      const value = fitOf(job);
+      return value === null ? null : [value, 0];
+    }
+    const day = postedDay(job.posted_at, timeZone);
+    return day === null ? null : [day, postedMillis(job.posted_at) ?? 0];
+  };
   return rows
     .map((row, index) => ({ row, index, value: key(row) }))
     .sort((a, b) => {
       if (a.value === null && b.value === null) return a.index - b.index;
       if (a.value === null) return 1;
       if (b.value === null) return -1;
-      return b.value - a.value || a.index - b.index;
+      return b.value[0] - a.value[0] || b.value[1] - a.value[1] || a.index - b.index;
     })
     .map((entry) => entry.row);
 }
@@ -132,6 +162,8 @@ export interface ArrangeInput {
   more: readonly JobCard[];
   filter: FitFilter;
   sort: SortMode;
+  /** The zone dates are read in for Newest; the viewer's own when omitted. */
+  timeZone?: string;
 }
 
 export interface Arranged {
@@ -150,10 +182,10 @@ function keeps(filter: FitFilter, job: JobCard): boolean {
  * the order they came in under "Best fit" and are only reordered by "Newest".
  */
 export function arrange(input: ArrangeInput): Arranged {
-  const { filter, sort } = input;
+  const { filter, sort, timeZone } = input;
   return {
-    scored: sortRows(input.scored.filter((job) => keeps(filter, job)), sort),
-    more: sortRows(input.more.filter((job) => keeps(filter, job)), sort === "fit" ? "returned" : sort),
+    scored: sortRows(input.scored.filter((job) => keeps(filter, job)), sort, timeZone),
+    more: sortRows(input.more.filter((job) => keeps(filter, job)), sort === "fit" ? "returned" : sort, timeZone),
   };
 }
 

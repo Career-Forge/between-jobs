@@ -53,6 +53,14 @@ const MORE_NOTE: Readonly<Record<SortMode, string>> = {
   newest: "Beyond this search's scoring batch -- not scored, newest first.",
 };
 
+// What the fallback notice says about the order, which is the person's to change: the search's own order
+// ("by source quality") only while it is the one shown. Best fit is never offered under the fallback.
+const FALLBACK_ORDER: Readonly<Record<SortMode, string>> = {
+  returned: "Rows are listed by source quality, not by fit.",
+  fit: "Rows are listed by source quality, not by fit.",
+  newest: "Rows are listed newest first, not by fit.",
+};
+
 type Section = "scored" | "more";
 
 export interface ResultsViewProps {
@@ -106,24 +114,27 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
   const tiersMeaningful = !isFallback(strategy);
   const counts = fitCounts([...scored, ...more]);
   const filters = offeredFilters(counts, tiersMeaningful);
-  const sorts = offeredSorts({ tiersMeaningful, scoredRows: scored });
   // A choice that is not on offer is All or As returned, whatever was chosen before.
   const activeFilter = resolveFilter(filter, filters);
+  // The sorts on offer are those that could change the rows now shown: with only unscored rows kept there
+  // is nothing for Best fit to rank, and with fewer than two dated rows Newest could not move anything.
+  const kept = arrange({ scored, more, filter: activeFilter, sort: "returned", timeZone });
+  const sorts = offeredSorts({ tiersMeaningful, scoredRows: kept.scored, moreRows: kept.more, timeZone });
   const activeSort = resolveSort(sort, sorts);
-  const arranged = arrange({ scored, more, filter: activeFilter, sort: activeSort });
+  const arranged = arrange({ scored, more, filter: activeFilter, sort: activeSort, timeZone });
   const shown = arranged.scored.length + arranged.more.length;
   // A tier choice leaves the unscored rows out; the count line says how many.
   const hiddenUnscored = activeFilter !== "all" && activeFilter !== "unscored" ? counts.unscored : 0;
   const showDetailsSwitch = [...arranged.scored, ...arranged.more].some((job) => fitViewOf(job, strategy).kind === "scored");
 
   const chooseFilter = (next: FitFilter) => {
-    const kept = arrange({ scored, more, filter: next, sort: activeSort });
+    const keptByNext = arrange({ scored, more, filter: next, sort: "returned" });
     setFilter(next);
     setAnnouncement(
       arrangeAnnouncement({
         kind: "filter",
         filter: next,
-        shown: kept.scored.length + kept.more.length,
+        shown: keptByNext.scored.length + keptByNext.more.length,
         total,
         hiddenUnscored: next !== "all" && next !== "unscored" ? counts.unscored : 0,
       }),
@@ -168,7 +179,7 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
           <span className="bj-trail-glyph bj-trail-glyph--gold" aria-hidden="true">
             {"◆"}
           </span>{" "}
-          Your model's reply couldn't be read, so these scores are placeholders. Rows are listed by source quality, not by fit.
+          Your model's reply couldn't be read, so these scores are placeholders. {FALLBACK_ORDER[activeSort]}
         </p>
       )}
       <SearchStatus notes={notes} showSources />

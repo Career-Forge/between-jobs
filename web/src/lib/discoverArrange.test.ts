@@ -121,8 +121,25 @@ describe("which sorts are offered", () => {
     const two = [row("a", "Good", 70), row("b", "Poor", 20)];
     expect(offeredSorts({ tiersMeaningful: true, scoredRows: two })).toEqual(["returned", "fit", "newest"]);
     expect(offeredSorts({ tiersMeaningful: false, scoredRows: two })).toEqual(["returned", "newest"]);
-    expect(offeredSorts({ tiersMeaningful: true, scoredRows: [row("a", "Good", 70)] })).toEqual(["returned", "newest"]);
-    expect(offeredSorts({ tiersMeaningful: true, scoredRows: [] })).toEqual(["returned", "newest"]);
+    // One row, or none, has nothing to be put before or after: neither Best fit nor Newest is on offer.
+    expect(offeredSorts({ tiersMeaningful: true, scoredRows: [row("a", "Good", 70)] })).toEqual(["returned"]);
+    expect(offeredSorts({ tiersMeaningful: true, scoredRows: [] })).toEqual(["returned"]);
+  });
+
+  it("offers Newest only when some section holds two rows with a date the trail can read", () => {
+    const dated = (title: string, at: string | null) => row(title, "Good", 50, { posted_at: at });
+    const none = [dated("a", null), dated("b", "not a date"), dated("c", "2026-02-31")];
+    const one = [dated("a", "2026-09-01"), dated("b", null)];
+    const two = [dated("a", "2026-09-01"), dated("b", "2026-09-02T08:00:00Z")];
+    // Tiers are left out of meaning here so that Best fit is not on offer and only Newest is in question.
+    const base = { tiersMeaningful: false, timeZone: "UTC" };
+    expect(offeredSorts({ ...base, scoredRows: none })).toEqual(["returned"]);
+    expect(offeredSorts({ ...base, scoredRows: one })).toEqual(["returned"]);
+    expect(offeredSorts({ ...base, scoredRows: two })).toEqual(["returned", "newest"]);
+    // One dated row in each section reorders neither section, so it is not enough.
+    expect(offeredSorts({ ...base, scoredRows: one, moreRows: one })).toEqual(["returned"]);
+    expect(offeredSorts({ ...base, scoredRows: none, moreRows: two })).toEqual(["returned", "newest"]);
+    expect(offeredSorts({ ...base, scoredRows: [], moreRows: [] })).toEqual(["returned"]);
   });
 
   it("does not count a score that is not a real number", () => {
@@ -173,7 +190,28 @@ describe("sorting one section", () => {
       row("dateonly", "Good", 50, { posted_at: "2026-09-22" }),
       row("offset", "Good", 50, { posted_at: "2026-09-22T12:00:00+02:00" }),
     ];
-    expect(titles(sortRows(rows, "newest"))).toEqual(["offset", "new", "dateonly", "old"]);
+    expect(titles(sortRows(rows, "newest", "UTC"))).toEqual(["offset", "new", "dateonly", "old"]);
+  });
+
+  it("orders by the day the row prints before the instant, so Sep 22 never sits below Sep 21 west of UTC", () => {
+    const rows = [
+      row("Older", "Good", 50, { posted_at: "2026-09-20" }),
+      // 02:00 UTC on the 22nd is 22:00 on the 21st in New York, where the trail prints "Sep 21".
+      row("Instant", "Good", 50, { posted_at: "2026-09-22T02:00:00Z" }),
+      row("DateOnly", "Good", 50, { posted_at: "2026-09-22" }),
+    ];
+    expect(titles(sortRows(rows, "newest", "America/New_York"))).toEqual(["DateOnly", "Instant", "Older"]);
+    // In UTC both print Sep 22, and the later instant leads within the day.
+    expect(titles(sortRows(rows, "newest", "UTC"))).toEqual(["Instant", "DateOnly", "Older"]);
+  });
+
+  it("breaks a tie within one printed day by the later instant, then by the order returned", () => {
+    const rows = [
+      row("early", "Good", 50, { posted_at: "2026-09-22T09:00:00Z" }),
+      row("late", "Good", 50, { posted_at: "2026-09-22T20:00:00Z" }),
+      row("same", "Good", 50, { posted_at: "2026-09-22T20:00:00Z" }),
+    ];
+    expect(titles(sortRows(rows, "newest", "UTC"))).toEqual(["late", "same", "early"]);
   });
 
   it("puts a missing, empty or unreadable date last, in the order returned", () => {
@@ -248,6 +286,19 @@ describe("arranging both sections", () => {
     expect(titles(out.more)).toEqual(titles(more));
     expect(out.scored).not.toBe(scored);
     expect(out.more).not.toBe(more);
+  });
+
+  it("leaves a More results row where it was returned under Best fit, even one that carries a score", () => {
+    const withScores = [row("m1", "Poor", 10), row("m2", "Strong", 95), row("m3", "Good", 60)];
+    const out = arrange({ scored, more: withScores, filter: "all", sort: "fit" });
+    expect(titles(out.more)).toEqual(["m1", "m2", "m3"]);
+    expect(titles(out.scored)).toEqual(["s1", "s2", "g1", "m1", "p1"]);
+  });
+
+  it("orders each section by the printed day for Newest when given a zone", () => {
+    const rows = [row("a", null, 0, { posted_at: "2026-09-22T02:00:00Z" }), row("b", null, 0, { posted_at: "2026-09-22" })];
+    expect(titles(arrange({ scored: [], more: rows, filter: "all", sort: "newest", timeZone: "America/New_York" }).more)).toEqual(["b", "a"]);
+    expect(titles(arrange({ scored: [], more: rows, filter: "all", sort: "newest", timeZone: "UTC" }).more)).toEqual(["a", "b"]);
   });
 
   it("returns empty sections for no rows", () => {

@@ -263,6 +263,30 @@ export function postedMillis(value: unknown): number | null {
   return instant === null ? null : instant.getTime();
 }
 
+// The calendar day formatTrailDate prints, as a number that sorts (2026-09-22 -> 20260922): a date-only
+// value is its own day, and an instant is the day it falls on in `timeZone`. It is read by the same two
+// readers, so a row that prints "Sep 21" has day 20260921 and one the trail leaves out has none. This
+// is what "newest first" orders by, with postedMillis breaking a tie within a day; ordering by the
+// instant alone would put "Sep 21" above "Sep 22" whenever a zone's midnight falls between them.
+export function postedDay(value: unknown, timeZone?: string): number | null {
+  if (typeof value !== "string") return null;
+  try {
+    const text = value.trim();
+    const plain = DATE_ONLY.exec(text);
+    if (plain !== null) {
+      const [year, month, day] = [Number(plain[1]), Number(plain[2]), Number(plain[3])];
+      return isCalendarDay(year, month, day) ? year * 10000 + month * 100 + day : null;
+    }
+    const instant = readInstant(text);
+    if (instant === null) return null;
+    const parts = zonedParts(instant, timeZone);
+    return parts.year * 10000 + parts.month * 100 + parts.day;
+  } catch {
+    // Intl throws a RangeError for a time zone it does not know, and formatTrailDate prints nothing then.
+    return null;
+  }
+}
+
 // "2026-09-22T06:00:00Z" -> "06:00" (24-hour). A date with no time in it has no time to show.
 export function formatTrailTime(value: unknown, options: TrailTimeOptions = {}): string | null {
   if (typeof value !== "string") return null;

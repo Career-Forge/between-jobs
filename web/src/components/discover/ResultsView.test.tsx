@@ -537,6 +537,114 @@ describe("what it keeps", () => {
   });
 });
 
+const sortNames = (container: HTMLElement) => [...sortGroup(container).querySelectorAll("button")].map((button) => words(button));
+const printedDays = (container: HTMLElement) => [...container.querySelectorAll(".bj-disc-trail")].map((trail) => /Posted ([A-Z][a-z]{2} \d+)/.exec(words(trail))?.[1] ?? null);
+
+describe("what Newest promises", () => {
+  const three = (posted: Array<string | null>) =>
+    response({ scored: posted.map((posted_at, index) => job({ apply_url: `https://jobs.example/dated/${index}`, title: `Dated ${index + 1}`, posted_at })) });
+
+  it("is not offered when no row prints a date, so no order is announced that was not made", () => {
+    const { container } = draw(three([null, "not a date", "2026-02-31"]));
+    expect(sortNames(container)).toEqual(["As returned", "Best fit"]);
+    expect(words(container)).not.toContain("Newest");
+  });
+
+  it("is not offered for a single dated row, and is for two", () => {
+    expect(sortNames(draw(three(["2026-09-01", null, null])).container)).toEqual(["As returned", "Best fit"]);
+    expect(sortNames(draw(three(["2026-09-01", "2026-09-02", null])).container)).toEqual(["As returned", "Best fit", "Newest"]);
+  });
+
+  it("orders rows by the day each prints in the viewer's zone, so a later printed day is never listed below an earlier one", () => {
+    const result = response({
+      scored: [
+        job({ apply_url: "https://jobs.example/z/older", title: "Older", posted_at: "2026-09-20" }),
+        job({ apply_url: "https://jobs.example/z/instant", title: "Instant", posted_at: "2026-09-22T02:00:00Z" }),
+        job({ apply_url: "https://jobs.example/z/dateonly", title: "DateOnly", posted_at: "2026-09-22" }),
+      ],
+    });
+    const { container } = draw(result, { timeZone: "America/New_York" });
+    click(sortButton(container, "Newest"));
+    expect(titles(container)).toEqual(["DateOnly", "Instant", "Older"]);
+    expect(printedDays(container)).toEqual(["Sep 22", "Sep 21", "Sep 20"]);
+  });
+});
+
+describe("the fallback notice and the order", () => {
+  const notice = (container: HTMLElement) => words(container.querySelector(".bj-disc-fallback"));
+
+  it("says rows are listed by source quality only while that is the order shown", () => {
+    const { container } = draw(mixedResponse({}, { scoring_strategy: "neutral_fallback" }));
+    expect(notice(container)).toContain("Rows are listed by source quality, not by fit.");
+    click(sortButton(container, "Newest"));
+    expect(notice(container)).toContain("these scores are placeholders");
+    expect(notice(container)).toContain("Rows are listed newest first, not by fit.");
+    expect(notice(container)).not.toContain("source quality");
+    click(sortButton(container, "As returned"));
+    expect(notice(container)).toContain("Rows are listed by source quality, not by fit.");
+  });
+
+  it("draws no placeholder notice, and no sentence about nothing being scored, when the fallback left nothing in the scored list", () => {
+    const rows = [1, 2, 3].map((n) => job({ apply_url: `https://jobs.example/past/${n}`, title: `Past ${n}`, score: null }));
+    const { container } = draw(response({ scoring_strategy: "neutral_fallback", scored: [], more: rows }));
+    expect(container.querySelector(".bj-disc-fallback")).toBeNull();
+    expect(words(container)).not.toContain(NONE_SCORED_NOTE);
+    expect(words(container)).not.toContain("placeholders");
+    expect(titles(container)).toEqual(["Past 1", "Past 2", "Past 3"]);
+  });
+});
+
+describe("the sorts follow the rows that are shown", () => {
+  it("leaves Best fit out while only unscored rows are shown and brings it back, chosen, with All", () => {
+    const { container } = draw(MIXED());
+    expect(sortNames(container)).toEqual(["As returned", "Best fit", "Newest"]);
+    click(sortButton(container, "Best fit"));
+    expect(pressed(sortGroup(container))).toEqual(["Best fit"]);
+    click(chip(container, "Not scored"));
+    expect(sortNames(container)).toEqual(["As returned", "Newest"]);
+    expect(pressed(sortGroup(container))).toEqual(["As returned"]);
+    expect(titles(container)).toEqual(ALL_TITLES(MIXED()).filter((title) => title.startsWith("Unscored")));
+    click(chip(container, "All"));
+    expect(sortNames(container)).toEqual(["As returned", "Best fit", "Newest"]);
+    expect(pressed(sortGroup(container))).toEqual(["Best fit"]);
+  });
+
+  it("leaves Best fit out for a tier that holds one row", () => {
+    const { container } = draw(mixedResponse({ Strong: 3, Good: 3, Mixed: 1, Poor: 0, unscored: 0 }));
+    click(chip(container, "Mixed"));
+    expect(sortNames(container)).not.toContain("Best fit");
+    click(chip(container, "Strong"));
+    expect(sortNames(container)).toContain("Best fit");
+  });
+});
+
+describe("a choice that no longer exists in an answer that was changed under it", () => {
+  it("falls back to All when the chosen tier has no rows left, and shows every row with no count line", () => {
+    const result = mixedResponse();
+    const view = draw(result);
+    click(chip(view.container, "Poor"));
+    expect(pressed(fitGroup(view.container))).toEqual(["Poor 3 results"]);
+    expect(rowsOf(view.container)).toHaveLength(3);
+    // The same answer object, edited: the view is not told it is a new search.
+    result.scored = result.scored.filter((entry) => entry.score?.bin !== "Poor");
+    view.again(result);
+    expect(pressed(fitGroup(view.container))).toEqual(["All 22 results"]);
+    expect(rowsOf(view.container)).toHaveLength(22);
+    expect(countLine(view.container)).toBeNull();
+  });
+
+  it("falls back to As returned when the chosen sort is no longer on offer", () => {
+    const result = mixedResponse();
+    const view = draw(result);
+    click(sortButton(view.container, "Best fit"));
+    expect(pressed(sortGroup(view.container))).toEqual(["Best fit"]);
+    result.scored = result.scored.slice(0, 1);
+    view.again(result);
+    expect(pressed(sortGroup(view.container))).toEqual(["As returned"]);
+    expect(sortNames(view.container)).not.toContain("Best fit");
+  });
+});
+
 describe("accessibility", () => {
   const states: Array<[string, () => DiscoverResponse, (container: HTMLElement) => void]> = [
     ["the toolbar with every detail closed", MIXED, () => undefined],
