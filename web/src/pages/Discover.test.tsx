@@ -652,7 +652,8 @@ describe("saved searches", () => {
     click(query(form(container), "input[type='checkbox']"));
     click(buttonNamed(form(container), "Save this search"));
     await flush();
-    expect(words(query(container, ".bj-disc-saved-hint"))).toBe("2 searches, checked in the background");
+    // The row is closed, so its hint is where a person sees that the save worked.
+    expect(words(query(container, ".bj-disc-saved-hint"))).toBe("Search saved -- 2 searches, checked in the background");
     openSaved(container);
     const post = api.apiFetch.mock.calls.find(([path, init]) => path === "/saved-searches" && init?.method === "POST");
     expect(JSON.parse(post![1].body)).toEqual({ query: "data engineer", location: "Jersey City", companies: ["Acme", "Initech"], remote_only: true });
