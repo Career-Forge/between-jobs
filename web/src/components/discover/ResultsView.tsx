@@ -141,14 +141,16 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
 
   // What is stored is what is shown. A press stores the choice even when it is the one already showing, so
   // a choice the page had quietly set aside is never left behind to come back unchosen later; the press is
-  // announced only when it changed what is shown.
+  // announced only when it changed what is shown. A choice is stored only when it differs from what is
+  // stored: a press that stores nothing new sets nothing, so repeated presses leave no queued updates behind
+  // to outlive the answer they were made on.
   const chooseFilter = (next: FitFilter) => {
     const keptByNext = keptBy(next);
     // The sort that stays when this fit is chosen: the one shown, or As returned when the fit leaves it off
     // offer. It is stored now, so a sort the fit hid is not brought back unchosen by the next fit.
     const nextSort = resolveSort(activeSort, sortsOf(keptByNext));
-    setFilter(next);
-    setSort(nextSort);
+    if (next !== filter) setFilter(next);
+    if (nextSort !== sort) setSort(nextSort);
     if (next === activeFilter && nextSort === activeSort) return;
     setAnnouncement(
       arrangeAnnouncement({
@@ -162,7 +164,7 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
     );
   };
   const chooseSort = (next: SortMode) => {
-    setSort(next);
+    if (next !== sort) setSort(next);
     if (next !== activeSort) setAnnouncement(arrangeAnnouncement({ kind: "sort", sort: next }));
   };
   const chooseAllOpen = (open: boolean) => {
