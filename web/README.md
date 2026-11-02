@@ -311,7 +311,9 @@ their trail line, inline at every width. Neither makes a search when it opens.
   that does not match). A bar out of 100 for each applied part, what was not applied and why, the lowest part and the
   model's three-way reading of the location are behind that row's "Why this score". Rows past the scoring batch are
   one lighter band that says "Not scored"; when the scoring fell back every row says "Placeholder" with no rung
-  and no number. The trail says `via registry` on the company's job board at the last poll for a registry row the
+  and no number. Those two kinds of row show the whole posting text, since they have no "Why this score" to open
+  it; a scored row shows two lines of it. A bin the ladder does not know (anything but Strong, Good, Mixed or Poor)
+  is never printed or turned into a class: the row reads "Not scored" to the eye and to a screen reader alike. The trail says `via registry` on the company's job board at the last poll for a registry row the
   database calls fresh, and only "not confirmed on the company's board recently" for one that is not;
   USAJobs' sponsorship line is worded as the provider's category fact ("by provider, no text read"), never a
   text match. A live-search row says "Link checked" for a live-search row the link check kept (it means not found closed, never "verified");
@@ -319,14 +321,18 @@ their trail line, inline at every width. Neither makes a search when it opens.
 - **The results** (`components/discover/ResultsView.tsx`, `ResultsToolbar.tsx`, `lib/discoverArrange.ts`). From three
   rows there is a toolbar: chips to keep one fit (a tier, or the rows that were not scored), each with its count, a
   sort (as returned, best fit, newest) and a "Show score details" switch. A fit is offered only when at least two groups
-  hold rows and the scoring did not fall back, and "Best fit" only when two rows carry a number. A sort orders each
-  section on its own, so rows past the scoring batch stay below. The choices are held in memory only, start over with
+  hold rows and the scoring did not fall back. The sorts are offered from the rows the fit choice keeps: "Best fit"
+  only when two of them carry a number, "Newest" only when a section holds two rows with a posting date the trail
+  can read, so neither is left on screen with nothing to do. "Newest" orders by the day each row prints (read in the
+  viewer's zone), then by the later time within a day. A sort orders each section on its own, so rows past the
+  scoring batch stay below. The choices are held in memory only, start over with
   each new answer, and a press is announced politely.
 - **Saved searches** (`components/SavedSearchesCardView.tsx`, shared with Settings through `lib/useSavedSearches.ts`)
   read "Checked 06:00" only when `last_matched_at` is later than `created_at`, otherwise "Not checked yet", and
   "Paused" after either. On Discover they are one folded row (`components/discover/SavedSearchesFold.tsx`): the name
   and one hint, closed by default, opened by itself for a failed read, a refused save or an update that did not go
-  through, and always closable.
+  through, and always closable. After a save lands the hint leads with "Search saved" until the row is opened or
+  closed, since the new search is not on screen while the row is closed.
 - **Hiring signals** reads `GET /hiring-signals/status` once for the app, then (only when it is on) the two saved
   lists. The page also reads `GET /credentials` for the band (no profile: it needs none, so `profileNeeded: false` keeps the global profile rows off it). The model lives in the page
   (the band reads it) and the tab is mounted only when the feature is on. A failed status read, and a search that
