@@ -1095,6 +1095,21 @@ describe("a choice that no longer exists in an answer that was changed under it"
     expect(rowsOf(view.container)).toHaveLength(25);
   });
 
+  it("stores a sort that was set aside when a fit is pressed too, so it does not return unchosen", () => {
+    const result = mixedResponse();
+    const all = result.scored;
+    const view = draw(result);
+    click(sortButton(view.container, "Best fit"));
+    result.scored = all.slice(0, 1);
+    view.again(result);
+    expect(pressed(sortGroup(view.container))).toEqual(["As returned"]);
+    click(chip(view.container, "Good"));
+    result.scored = all;
+    view.again(result);
+    expect(sortNames(view.container)).toContain("Best fit");
+    expect(pressed(sortGroup(view.container))).toEqual(["As returned"]);
+  });
+
   it("falls back to As returned when the chosen sort is no longer on offer", () => {
     const result = mixedResponse();
     const view = draw(result);
