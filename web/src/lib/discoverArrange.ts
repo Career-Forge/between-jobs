@@ -230,10 +230,17 @@ const SORT_SENTENCE: Readonly<Record<SortMode, string>> = {
   newest: "Sorted by newest first.",
 };
 
-/** The polite announcement after a press. */
+/**
+ * The polite announcement after a press. A filter's carries `sort` only when the choice left the sort that
+ * was shown off offer, so the order that took its place is said as well: a person never finds the rows in
+ * an order nobody told them about.
+ */
 export function arrangeAnnouncement(
-  change: { kind: "filter"; filter: FitFilter; shown: number; total: number; hiddenUnscored: number } | { kind: "sort"; sort: SortMode },
+  change:
+    | { kind: "filter"; filter: FitFilter; shown: number; total: number; hiddenUnscored: number; sort?: SortMode }
+    | { kind: "sort"; sort: SortMode },
 ): string {
   if (change.kind === "sort") return SORT_SENTENCE[change.sort];
-  return filterSummary(change.filter, change.shown, change.total, change.hiddenUnscored) ?? `Showing all ${change.total} ${resultsWord(change.total)}.`;
+  const summary = filterSummary(change.filter, change.shown, change.total, change.hiddenUnscored) ?? `Showing all ${change.total} ${resultsWord(change.total)}.`;
+  return change.sort === undefined ? summary : `${summary} ${SORT_SENTENCE[change.sort]}`;
 }

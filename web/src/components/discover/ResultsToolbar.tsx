@@ -4,9 +4,10 @@ import "../../styles/discover.css";
 
 // What a person can do to a page of results: keep one fit (a tier, or the rows that were not scored),
 // order them, and open "Why this score" on every row at once. It draws only what the results make
-// meaningful -- a fit group when at least two groups hold rows, "Best fit" when two rows carry a number,
-// the switch when some shown row has a detail -- and holds no state: ResultsView owns the choices and
-// the words said about them.
+// meaningful -- a fit group when at least two groups hold rows, a sort group when at least two sorts are
+// on offer ("As returned" alone is nothing to choose), the switch when some shown row has a detail -- and
+// when none of those remains it draws nothing at all, not even an empty frame. It holds no state:
+// ResultsView owns the choices and the words said about them.
 //
 // The groups are the app's own pattern for choosing one of a few things: a labelled group of buttons
 // with aria-pressed, on the shared outlined segments, as the "How recent" choice on Hiring signals is
@@ -15,7 +16,8 @@ import "../../styles/discover.css";
 // accessible name adds the word "results", so the visible label is part of the name.
 //
 // A press changes the list under the control, so what it did is said once in a polite live region, and
-// the visible count line says how many are shown when a fit other than All is chosen.
+// the visible count line says how many are shown when a fit other than All is chosen. Pressing the chip
+// that is already pressed is passed on all the same: the view decides whether anything changed.
 
 export interface ResultsToolbarProps {
   counts: FitCounts;
@@ -38,10 +40,14 @@ export interface ResultsToolbarProps {
 export function ResultsToolbar(props: ResultsToolbarProps) {
   const { counts, offeredFilters, filter, onFilter, offeredSorts, sort, onSort, allOpen, onAllOpen, showDetailsSwitch, countLine, announcement } = props;
   const switchNote = useId();
+  const showFit = offeredFilters.length > 0;
+  // One sort on offer is "As returned": a group with a single button that is already pressed.
+  const showSort = offeredSorts.length >= 2;
+  if (!showFit && !showSort && !showDetailsSwitch) return null;
   return (
     <div className="bj-disc-toolbar">
       <div className="bj-disc-tools">
-        {offeredFilters.length > 0 && (
+        {showFit && (
           <div className="bj-disc-tool">
             <span className="bj-disc-tool-label" aria-hidden="true">
               Fit
@@ -50,7 +56,7 @@ export function ResultsToolbar(props: ResultsToolbarProps) {
               {offeredFilters.map((choice) => {
                 const count = countFor(counts, choice);
                 return (
-                  <button key={choice} type="button" className="bj-selectable" aria-pressed={choice === filter} onClick={() => choice !== filter && onFilter(choice)}>
+                  <button key={choice} type="button" className="bj-selectable" aria-pressed={choice === filter} onClick={() => onFilter(choice)}>
                     {FILTER_LABEL[choice]} <span className="bj-disc-chip-count">{count}</span>
                     <span className="bj-visually-hidden"> {count === 1 ? "result" : "results"}</span>
                   </button>
@@ -59,18 +65,20 @@ export function ResultsToolbar(props: ResultsToolbarProps) {
             </div>
           </div>
         )}
-        <div className="bj-disc-tool">
-          <span className="bj-disc-tool-label" aria-hidden="true">
-            Sort
-          </span>
-          <div className="bj-segmented bj-disc-sort" role="group" aria-label="Sort results">
-            {offeredSorts.map((choice) => (
-              <button key={choice} type="button" className="bj-selectable" aria-pressed={choice === sort} onClick={() => choice !== sort && onSort(choice)}>
-                {SORT_LABEL[choice]}
-              </button>
-            ))}
+        {showSort && (
+          <div className="bj-disc-tool">
+            <span className="bj-disc-tool-label" aria-hidden="true">
+              Sort
+            </span>
+            <div className="bj-segmented bj-disc-sort" role="group" aria-label="Sort results">
+              {offeredSorts.map((choice) => (
+                <button key={choice} type="button" className="bj-selectable" aria-pressed={choice === sort} onClick={() => onSort(choice)}>
+                  {SORT_LABEL[choice]}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         {showDetailsSwitch && (
           <>
             <label className="bj-disc-toggle">

@@ -6,9 +6,11 @@ import {
   fitCounts,
   offeredFilters,
   offeredSorts,
+  reordersByDate,
   resolveFilter,
   resolveSort,
   TOOLBAR_MIN_ROWS,
+  type Arranged,
   type FitFilter,
   type SortMode,
 } from "../../lib/discoverArrange";
@@ -30,10 +32,16 @@ import "../../styles/discover.css";
 //   fallback      one gold notice above every row when the scoring model's reply could not be read:
 //                 every bin reads "Placeholder" and no number is drawn
 //   status        the failures, the dropped listings and the sources, above the rows
-//   toolbar       from three rows: keep one fit, sort, and open every row's detail (ResultsToolbar.tsx)
+//   toolbar       from three rows, and only while it has something to offer: keep one fit, sort (when two
+//                 sorts are on offer) and open every row's detail (ResultsToolbar.tsx)
 //   no rows       the status block, then "No results". "Nothing matched this search" is said only when
 //                 every provider answered and none of its listings was dropped; otherwise the body says
 //                 only that no listings are left, and the status block says why
+//
+// The words about order are said per section, from what that section did: "newest first" only for a section
+// that had at least two readable dates and so was put in date order (reordersByDate), and the returned-order
+// words for a section that kept the order it came in. Newest is on offer when either section can be reordered,
+// so one section's dates never speak for the other.
 //
 // A person's choices -- the fit, the sort, which details are open and the sentence last announced --
 // are state of this view and live only in memory. They start fresh whenever a different search answer
@@ -47,19 +55,16 @@ export const RESULTS_HEADING_ID = "bj-discover-results";
 
 export const NONE_SCORED_NOTE = "None of these results were scored, so there is no fit to filter or sort by.";
 
-const MORE_NOTE: Readonly<Record<SortMode, string>> = {
-  returned: "Beyond this search's scoring batch -- sorted by tier and recency, not fit.",
-  fit: "Beyond this search's scoring batch -- sorted by tier and recency, not fit.",
-  newest: "Beyond this search's scoring batch -- not scored, newest first.",
-};
+// What the More results note says about its section's order: the search's own ("tier and recency") unless
+// that section was put in date order.
+const MORE_NOTE_RETURNED = "Beyond this search's scoring batch -- sorted by tier and recency, not fit.";
+const MORE_NOTE_NEWEST = "Beyond this search's scoring batch -- not scored, newest first.";
 
-// What the fallback notice says about the order, which is the person's to change: the search's own order
-// ("by source quality") only while it is the one shown. Best fit is never offered under the fallback.
-const FALLBACK_ORDER: Readonly<Record<SortMode, string>> = {
-  returned: "Rows are listed by source quality, not by fit.",
-  fit: "Rows are listed by source quality, not by fit.",
-  newest: "Rows are listed newest first, not by fit.",
-};
+// What the fallback notice says about the order of the rows it speaks for (the scored section): the search's
+// own ("by source quality") unless that section was put in date order. Best fit is never offered under the
+// fallback.
+const FALLBACK_ORDER_RETURNED = "Rows are listed by source quality, not by fit.";
+const FALLBACK_ORDER_NEWEST = "Rows are listed newest first, not by fit.";
 
 type Section = "scored" | "more";
 
@@ -116,20 +121,35 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
   const filters = offeredFilters(counts, tiersMeaningful);
   // A choice that is not on offer is All or As returned, whatever was chosen before.
   const activeFilter = resolveFilter(filter, filters);
-  // The sorts on offer are those that could change the rows now shown: with only unscored rows kept there
-  // is nothing for Best fit to rank, and with fewer than two dated rows Newest could not move anything.
-  const kept = arrange({ scored, more, filter: activeFilter, sort: "returned", timeZone });
-  const sorts = offeredSorts({ tiersMeaningful, scoredRows: kept.scored, moreRows: kept.more, timeZone });
+  // The sorts on offer are those that could change the rows a fit choice keeps: with only unscored rows kept
+  // there is nothing for Best fit to rank, and with fewer than two dated rows in a section Newest could not
+  // move anything in it.
+  const keptBy = (choice: FitFilter) => arrange({ scored, more, filter: choice, sort: "returned", timeZone, now });
+  const sortsOf = (kept: Arranged) => offeredSorts({ tiersMeaningful, scoredRows: kept.scored, moreRows: kept.more, timeZone, now });
+  const kept = keptBy(activeFilter);
+  const sorts = sortsOf(kept);
   const activeSort = resolveSort(sort, sorts);
-  const arranged = arrange({ scored, more, filter: activeFilter, sort: activeSort, timeZone });
+  const arranged = arrange({ scored, more, filter: activeFilter, sort: activeSort, timeZone, now });
   const shown = arranged.scored.length + arranged.more.length;
+  // Each section's order, said from what it did: Newest puts a section in date order only when it holds two
+  // readable dates, and a section that kept its order keeps the returned-order words.
+  const scoredByDate = activeSort === "newest" && reordersByDate(kept.scored, timeZone, now);
+  const moreByDate = activeSort === "newest" && reordersByDate(kept.more, timeZone, now);
   // A tier choice leaves the unscored rows out; the count line says how many.
   const hiddenUnscored = activeFilter !== "all" && activeFilter !== "unscored" ? counts.unscored : 0;
   const showDetailsSwitch = [...arranged.scored, ...arranged.more].some((job) => fitViewOf(job, strategy).kind === "scored");
 
+  // What is stored is what is shown. A press stores the choice even when it is the one already showing, so
+  // a choice the page had quietly set aside is never left behind to come back unchosen later; the press is
+  // announced only when it changed what is shown.
   const chooseFilter = (next: FitFilter) => {
-    const keptByNext = arrange({ scored, more, filter: next, sort: "returned" });
+    const keptByNext = keptBy(next);
+    // The sort that stays when this fit is chosen: the one shown, or As returned when the fit leaves it off
+    // offer. It is stored now, so a sort the fit hid is not brought back unchosen by the next fit.
+    const nextSort = resolveSort(activeSort, sortsOf(keptByNext));
     setFilter(next);
+    setSort(nextSort);
+    if (next === activeFilter && nextSort === activeSort) return;
     setAnnouncement(
       arrangeAnnouncement({
         kind: "filter",
@@ -137,12 +157,13 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
         shown: keptByNext.scored.length + keptByNext.more.length,
         total,
         hiddenUnscored: next !== "all" && next !== "unscored" ? counts.unscored : 0,
+        sort: nextSort === activeSort ? undefined : nextSort,
       }),
     );
   };
   const chooseSort = (next: SortMode) => {
     setSort(next);
-    setAnnouncement(arrangeAnnouncement({ kind: "sort", sort: next }));
+    if (next !== activeSort) setAnnouncement(arrangeAnnouncement({ kind: "sort", sort: next }));
   };
   const chooseAllOpen = (open: boolean) => {
     setAllOpen(open);
@@ -179,7 +200,7 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
           <span className="bj-trail-glyph bj-trail-glyph--gold" aria-hidden="true">
             {"◆"}
           </span>{" "}
-          Your model's reply couldn't be read, so these scores are placeholders. {FALLBACK_ORDER[activeSort]}
+          Your model's reply couldn't be read, so these scores are placeholders. {scoredByDate ? FALLBACK_ORDER_NEWEST : FALLBACK_ORDER_RETURNED}
         </p>
       )}
       <SearchStatus notes={notes} showSources />
@@ -204,7 +225,7 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
       {arranged.more.length > 0 && (
         <>
           <h2 className="bj-disc-heading bj-disc-heading--more">More results</h2>
-          <p className="bj-disc-note">{MORE_NOTE[activeSort]}</p>
+          <p className="bj-disc-note">{moreByDate ? MORE_NOTE_NEWEST : MORE_NOTE_RETURNED}</p>
           <ul className="bj-disc-list">{arranged.more.map(row("more"))}</ul>
         </>
       )}
