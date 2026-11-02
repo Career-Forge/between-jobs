@@ -539,6 +539,55 @@ describe("a new answer starts over", () => {
   });
 });
 
+describe("a new answer starts over after a choice was pressed again and again", () => {
+  // The same choice pressed over and over must not leave anything behind that outlives the answer it was
+  // pressed on: a new answer in place of this one is always All and As returned.
+  it.each([1, 2, 3, 4, 5, 6])("returns to As returned after Best fit was pressed %i times and a different answer arrives", (presses) => {
+    const view = draw(MIXED());
+    for (let press = 0; press < presses; press++) click(sortButton(view.container, "Best fit"));
+    expect(pressed(sortGroup(view.container))).toEqual(["Best fit"]);
+    const next = mixedResponse({ Poor: 2 });
+    view.again(next);
+    expect(pressed(sortGroup(view.container))).toEqual(["As returned"]);
+    expect(titles(view.container)).toEqual(ALL_TITLES(next));
+    expect(live(view.container).textContent).toBe("");
+  });
+
+  it.each([1, 2, 3, 4, 5, 6])("returns to As returned after Newest was pressed %i times and a different answer arrives", (presses) => {
+    const view = draw(MIXED());
+    for (let press = 0; press < presses; press++) click(sortButton(view.container, "Newest"));
+    expect(pressed(sortGroup(view.container))).toEqual(["Newest"]);
+    const next = mixedResponse({ Poor: 2 });
+    view.again(next);
+    expect(pressed(sortGroup(view.container))).toEqual(["As returned"]);
+    expect(titles(view.container)).toEqual(ALL_TITLES(next));
+  });
+
+  it.each([1, 2, 3, 4, 5, 6])("returns to All after a fit chip was pressed %i times and a different answer arrives", (presses) => {
+    const view = draw(MIXED());
+    for (let press = 0; press < presses; press++) click(chip(view.container, "Good"));
+    expect(pressed(fitGroup(view.container))).toEqual(["Good 6 results"]);
+    const next = mixedResponse({ Poor: 2 });
+    view.again(next);
+    expect(pressed(fitGroup(view.container))).toEqual(["All 24 results"]);
+    expect(titles(view.container)).toEqual(ALL_TITLES(next));
+    expect(countLine(view.container)).toBeNull();
+  });
+
+  it.each([1, 2, 3, 4, 5, 6])("returns to All and As returned after a chip and a sort were each pressed %i times and a different answer arrives", (presses) => {
+    const view = draw(MIXED());
+    for (let press = 0; press < presses; press++) {
+      click(chip(view.container, "Strong"));
+      click(sortButton(view.container, "Best fit"));
+    }
+    const next = mixedResponse({ Poor: 2 });
+    view.again(next);
+    expect(pressed(fitGroup(view.container))).toEqual(["All 24 results"]);
+    expect(pressed(sortGroup(view.container))).toEqual(["As returned"]);
+    expect(titles(view.container)).toEqual(ALL_TITLES(next));
+  });
+});
+
 describe("what it keeps", () => {
   it("writes nothing to any storage while every control is used", () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem");
