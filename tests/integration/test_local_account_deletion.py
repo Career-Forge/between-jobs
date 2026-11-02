@@ -53,7 +53,11 @@ class _Recorder:
 
 
 @pytest.fixture
-def recorder(monkeypatch: pytest.MonkeyPatch, tenant_client: httpx.AsyncClient) -> _Recorder:
+def recorder(
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+    tenant_client: httpx.AsyncClient,
+) -> _Recorder:
     from between_jobs.api.app import app
 
     rec = _Recorder()
@@ -62,7 +66,12 @@ def recorder(monkeypatch: pytest.MonkeyPatch, tenant_client: httpx.AsyncClient) 
         rec.events.append(("revoke", str(request.url), request.content.decode()))
         return httpx.Response(200)
 
-    monkeypatch.setattr(app.state, "http", httpx.AsyncClient(transport=httpx.MockTransport(google)))
+    # Not monkeypatch.setattr: Starlette's State keeps its attributes in an inner dict, so from
+    # pytest 9.2 monkeypatch records the client as absent and deletes it on undo, and every later
+    # test in the module would run without app.state.http.
+    real_http = app.state.http
+    app.state.http = httpx.AsyncClient(transport=httpx.MockTransport(google))
+    request.addfinalizer(lambda: setattr(app.state, "http", real_http))
 
     supabase = app.state.supabase
     real_delete_user = supabase.auth.admin.delete_user
