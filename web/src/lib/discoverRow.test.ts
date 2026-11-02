@@ -183,6 +183,13 @@ describe("the fit block", () => {
     expect(view.bars.map((bar) => bar.key)).toEqual(["skills"]);
   });
 
+  it("skips a sub-score outside 0 to 100 as it skips a missing one, and keeps the ends and a fraction", () => {
+    const parts = { skills: 150, experience: -20, workauth: 0, location: 100, company_health: 33.5, compensation: Number.POSITIVE_INFINITY };
+    const view = fitViewOf(job({ score: score({ sub_scores: parts as unknown as JobScore["sub_scores"], inapplicable_dims: [] }) }), "direct");
+    if (view.kind !== "scored") throw new Error("expected a scored view");
+    expect(view.bars.map((bar) => [bar.key, bar.value])).toEqual([["workauth", 0], ["location", 100], ["company_health", 33.5]]);
+  });
+
   it("reads a row whose score is missing, not only null, as not scored, in the view and in the receipt", () => {
     // The API sends null, but the arranging code already counts an absent score as "Not scored", so the
     // row must be drawn that way too rather than throw on it.
@@ -250,6 +257,17 @@ describe("the number of the lowest part", () => {
     expect(scored({ bottleneck: "" }).lowestValue).toBeNull();
   });
 
+  it("is null when the named part is outside 0 to 100, as for a part that is missing, and a real 100 or fraction stays", () => {
+    const parts = (skills: number) => ({ skills, experience: 52, workauth: 60, location: 100, company_health: 60, compensation: 60 });
+    for (const bad of [150, -20, 100.01, -0.5]) {
+      const view = scored({ bottleneck: "skills", sub_scores: parts(bad) });
+      expect(view.lowest, String(bad)).toBe("Skills");
+      expect(view.lowestValue, String(bad)).toBeNull();
+    }
+    expect(scored({ bottleneck: "skills", sub_scores: parts(100) }).lowestValue).toBe(100);
+    expect(scored({ bottleneck: "skills", sub_scores: parts(41.5) }).lowestValue).toBe(41.5);
+  });
+
   it("is null when the named part has no usable number", () => {
     expect(scored({ bottleneck: "nonsense" }).lowestValue).toBeNull();
     expect(scored({ bottleneck: "skills", sub_scores: { skills: Number.NaN } as unknown as JobScore["sub_scores"] }).lowestValue).toBeNull();
@@ -285,6 +303,15 @@ describe("the one line a row says about what its score left out", () => {
 
   it("names a lowest part that was not applied without inventing a number for it", () => {
     expect(preview({ ...clean, bottleneck: "compensation", inapplicable_dims: ["compensation"] })).toBe("Lowest: Compensation -- 1 part not applied");
+  });
+
+  it("names a lowest part whose number is outside 0 to 100 without printing the number, as for a missing one", () => {
+    const parts = (skills: number) => ({ skills, experience: 52, workauth: 60, location: 100, company_health: 60, compensation: 60 });
+    expect(preview({ ...clean, bottleneck: "skills", sub_scores: parts(150) })).toBe("Lowest: Skills");
+    expect(preview({ ...clean, bottleneck: "skills", sub_scores: parts(-20) })).toBe("Lowest: Skills");
+    expect(preview({ bottleneck: "skills", sub_scores: parts(150) })).toBe("Lowest: Skills -- 2 parts not applied");
+    expect(preview({ ...clean, bottleneck: "skills", sub_scores: parts(150), location_match: "mismatch" })).toBe("Lowest: Skills · Location doesn't match");
+    expect(preview({ ...clean, bottleneck: "skills", sub_scores: parts(100) })).toBe("Lowest: Skills 100");
   });
 
   it("adds a location that does not match, or that the model could not place, and adds nothing for a match", () => {
@@ -404,6 +431,12 @@ describe("the receipt", () => {
     expect(value(job(), "sub-scores")).toBe("Skills 78 · Experience 52 · Work Authorization 60 · Location 100");
     expect(value(job(), "not applied")).toBe("Company Health, Compensation");
     expect(value(job(), "lowest part")).toBe("Experience");
+  });
+
+  it("leaves a sub-score outside 0 to 100 out of the receipt, as a missing one, and keeps the ends", () => {
+    const parts = { skills: 150, experience: -20, workauth: 0, location: 100, company_health: 60, compensation: 60 };
+    const card = job({ score: score({ sub_scores: parts as unknown as JobScore["sub_scores"], inapplicable_dims: [] }) });
+    expect(value(card, "sub-scores")).toBe("Work Authorization 0 · Location 100 · Company Health 60 · Compensation 60");
   });
 
   it("names the scoring strategy only when it is the neutral fallback", () => {

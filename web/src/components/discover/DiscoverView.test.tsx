@@ -562,6 +562,20 @@ describe("a row, in the order it is read", () => {
     }
   });
 
+  it("prints no part score outside 0 to 100 anywhere on the row: not in the preview, the bars or the receipt", () => {
+    const parts = { skills: 150, experience: -20, workauth: 60, location: 100, company_health: 60, compensation: 60 };
+    const odd = job({ score: score({ bottleneck: "skills", sub_scores: parts, inapplicable_dims: [] }) });
+    const { container } = draw(ready(response({ scored: [odd] })));
+    expect(words(query(container, ".bj-fit-preview"))).toBe("Lowest: Skills");
+    const detail = openDetails(container);
+    expect([...detail.querySelectorAll("[role='meter']")].map((meter) => meter.getAttribute("aria-valuetext"))).toEqual(["60 / 100", "100 / 100", "60 / 100", "60 / 100"]);
+    expect([...detail.querySelectorAll(".bj-segbar-label")].map((label) => words(label))).toEqual(["Work Authorization", "Location", "Company Health", "Compensation"]);
+    expect(words(detail)).toContain("Lowest part: Skills");
+    click(query(container, "li.bj-disc-row .bj-trail-trigger"));
+    expect(words(query(container, ".bj-receipt"))).toContain("Work Authorization 60 · Location 100");
+    expect(words(container)).not.toMatch(/150|-20/);
+  });
+
   it("prints a score inside the scale as it came, ends and fractions included", () => {
     for (const [value, printed] of [[0, "0 / 100"], [100, "100 / 100"], [88.5, "88.5 / 100"], [12, "12 / 100"]] as const) {
       const { container, unmount } = draw(ready(response({ scored: [job({ score: score({ bin: "Strong", score100: value }) })] })));

@@ -319,7 +319,9 @@ their trail line, inline at every width. Neither makes a search when it opens.
   Poor) makes the row unscored throughout: it is the same one band that reads "Not scored", with no number, model
   line, preview or detail, it is counted and filtered as not scored, and the response's own words are never printed
   or turned into a class. A score that is not a number from 0 to 100 (NaN, text, 150, -5) is never printed or
-  ranked: the tier word and the ladder stand alone. A fraction inside the scale is printed as it came.
+  ranked: the tier word and the ladder stand alone. A part of the score that is not one is treated as a part that is
+  missing: no bar, no number beside the lowest part and no line in the receipt. A fraction inside the scale is
+  printed as it came.
 
   The trail says `via registry` on the company's job board at the last poll for a registry row the
   database calls fresh, and only "not confirmed on the company's board recently" for one that is not;

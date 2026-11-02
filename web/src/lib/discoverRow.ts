@@ -5,7 +5,8 @@
 // THE OMIT RULE. A slot whose field was not returned is left out, never guessed: a posting with no
 // `posted_at` has no "when", a score with no bottleneck has no "Lowest part", a salary that was not
 // listed has no salary line. "Unknown" is said as unknown (a location the model could not place
-// reads "can't tell"), never as a no.
+// reads "can't tell"), never as a no. A part score that is not a number from 0 to 100 is a missing one:
+// no bar, no number beside the lowest part, no line in the receipt (scoreRange.ts).
 //
 // LINK WORDS. On a registry row `link_checked` is the database's freshness answer (seen within 3
 // days, its company polled within 48 hours, no consecutive failures), not a probe; on a live-search
@@ -20,6 +21,7 @@
 import { subScoreLabel } from "./discover";
 import { isUnscored, tierOf } from "./discoverArrange";
 import type { JobCard, JobScore, LocationMatch, ScoreBin } from "./discoverTypes";
+import { isScoreWithin } from "./scoreRange";
 import { formatTrailDate, type ReceiptRowInput, type TrailInput } from "./trail";
 
 // The ladder's rungs, lowest first, as the engine names its bins.
@@ -153,7 +155,7 @@ export type FitView =
       /**
        * The number of that lowest part, out of 100. Null when the response named no lowest part, when
        * that part was not applied (a dropped part has no number to show) or when its sub-score is not
-       * a real number.
+       * a real number from 0 to 100, which is a part with no number as a missing one is.
        */
       lowestValue: number | null;
       location: { state: LocationMatch; words: string };
@@ -172,10 +174,6 @@ function notAppliedReason(key: string, job: JobCard): string | null {
   return null;
 }
 
-function isScore(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
 export function fitViewOf(job: JobCard, scoringStrategy: string): FitView {
   // A row with no score object (null, or the field left out) or with a bin the ladder does not know has no
   // score it can show. The arranging code (discoverArrange.ts isUnscored) counts, filters and labels it
@@ -188,7 +186,7 @@ export function fitViewOf(job: JobCard, scoringStrategy: string): FitView {
   const dropped = Array.isArray(score.inapplicable_dims) ? score.inapplicable_dims : [];
   const subScores: Record<string, unknown> = typeof score.sub_scores === "object" && score.sub_scores !== null ? { ...score.sub_scores } : {};
   const bars: FitBar[] = Object.entries(subScores)
-    .filter(([key, value]) => !dropped.includes(key) && isScore(value))
+    .filter(([key, value]) => !dropped.includes(key) && isScoreWithin(value))
     .map(([key, value]) => ({
       key,
       label: subScoreLabel(key),
@@ -208,7 +206,7 @@ export function fitViewOf(job: JobCard, scoringStrategy: string): FitView {
       return reason === null ? `Not applied: ${subScoreLabel(key)}` : `Not applied: ${subScoreLabel(key)} -- ${reason}`;
     }),
     lowest: bottleneck === null ? null : subScoreLabel(bottleneck),
-    lowestValue: isScore(lowestNumber) ? lowestNumber : null,
+    lowestValue: isScoreWithin(lowestNumber) ? lowestNumber : null,
     location: locationReading(score),
   };
 }
@@ -274,7 +272,7 @@ export function rowReceipt(job: JobCard, scoringStrategy: string): ReceiptRowInp
   const parts =
     score !== null && !fallback && typeof score.sub_scores === "object" && score.sub_scores !== null
       ? Object.entries(score.sub_scores as unknown as Record<string, unknown>)
-          .filter(([key, value]) => !dropped.includes(key) && isScore(value))
+          .filter(([key, value]) => !dropped.includes(key) && isScoreWithin(value))
           .map(([key, value]) => `${subScoreLabel(key)} ${value}`)
           .join(" · ")
       : null;
