@@ -308,6 +308,50 @@ describe("a row that reads Not scored has no rank", () => {
   });
 });
 
+describe("when no row reads as scored", () => {
+  // One rule for "scored": a row has a bin the ladder knows. A scored list that holds only rows that read
+  // Not scored is a search where nothing was scored, and the page says so above the rows it draws.
+  const unreadable = (n: number) => job({ apply_url: `https://jobs.example/odd/${n}`, title: `Odd ${n}`, score: score({ bin: "Excellent" as ScoreBin, score100: 90 - n }) });
+  const bare = (n: number) => job({ apply_url: `https://jobs.example/bare/${n}`, title: `Bare ${n}`, score: null });
+  const firstList = (container: HTMLElement) => query(container, "ul.bj-disc-list");
+  const noteAboveRows = (container: HTMLElement) => {
+    const note = [...container.querySelectorAll(".bj-disc-note")].find((entry) => words(entry) === NONE_SCORED_NOTE);
+    expect(note, "the note").toBeDefined();
+    expect(note!.compareDocumentPosition(firstList(container)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  };
+
+  it("says nothing was scored, above the list, when the scored list holds only rows with a bin nobody can read", () => {
+    const { container } = draw(response({ scored: [unreadable(1), unreadable(2), unreadable(3)] }));
+    expect(titles(container)).toEqual(["Odd 1", "Odd 2", "Odd 3"]);
+    noteAboveRows(container);
+    expect(container.querySelector('[aria-label="Show results by fit"]')).toBeNull();
+    expect(container.querySelectorAll(".bj-disc-row--unscored")).toHaveLength(3);
+  });
+
+  it("says it for a scored list of rows with no score, and for hostile rows in both lists", () => {
+    noteAboveRows(draw(response({ scored: [bare(1), bare(2), bare(3)] })).container);
+    noteAboveRows(draw(response({ scored: [unreadable(1), bare(2)], more: [bare(3), unreadable(4)] })).container);
+    noteAboveRows(draw(response({ scored: [], more: [bare(1), bare(2), bare(3)] })).container);
+  });
+
+  it("places it above whichever list is drawn first: the scored list when that holds rows, else More results", () => {
+    const both = draw(response({ scored: [unreadable(1), unreadable(2)], more: [bare(3)] })).container;
+    const note = query(both, ".bj-disc-note");
+    expect(words(note)).toBe(NONE_SCORED_NOTE);
+    expect(note.nextElementSibling).toBe(firstList(both));
+    const moreOnly = draw(response({ scored: [], more: [bare(1), bare(2)] })).container;
+    const moreNote = query(moreOnly, ".bj-disc-note");
+    expect(words(moreNote)).toBe(NONE_SCORED_NOTE);
+    expect(moreNote.nextElementSibling?.classList.contains("bj-disc-heading--more")).toBe(true);
+  });
+
+  it("does not say it when any row reads a tier, wherever that row sits", () => {
+    const strong = job({ apply_url: "https://jobs.example/s/1", title: "Strong 1", score: score({ bin: "Strong", score100: 88 }) });
+    expect(words(draw(response({ scored: [unreadable(1), unreadable(2), unreadable(3)], more: [strong] })).container)).not.toContain(NONE_SCORED_NOTE);
+    expect(words(draw(response({ scored: [strong, unreadable(2), unreadable(3)] })).container)).not.toContain(NONE_SCORED_NOTE);
+  });
+});
+
 describe("what is drawn when there is nothing to choose between", () => {
   it("draws no fit group, no details switch and only two sorts under the scoring fallback, and no tier class", () => {
     const { container } = draw(mixedResponse({}, { scoring_strategy: "neutral_fallback" }));
@@ -668,6 +712,45 @@ describe("the fallback notice and the order", () => {
     expect(words(container)).not.toContain(NONE_SCORED_NOTE);
     expect(words(container)).not.toContain("placeholders");
     expect(titles(container)).toEqual(["Past 1", "Past 2", "Past 3"]);
+  });
+});
+
+describe("the fallback notice follows the rows that are placeholders", () => {
+  const unreadable = (n: number) => job({ apply_url: `https://jobs.example/odd/${n}`, title: `Odd ${n}`, score: score({ bin: "Excellent" as ScoreBin }) });
+  const placeholder = (n: number, posted_at: string | null = null) => job({ apply_url: `https://jobs.example/ph/${n}`, title: `Placeholder ${n}`, posted_at });
+  const noticeOf = (container: HTMLElement) => container.querySelector(".bj-disc-fallback");
+
+  it("draws none when every row reads Not scored: nothing on the page is a placeholder", () => {
+    const { container } = draw(response({ scoring_strategy: "neutral_fallback", scored: [unreadable(1), unreadable(2), unreadable(3)] }));
+    expect(noticeOf(container)).toBeNull();
+    expect(words(container)).not.toContain("placeholders");
+    expect(container.querySelectorAll(".bj-disc-row--placeholder")).toHaveLength(0);
+    expect(container.querySelectorAll(".bj-disc-row--unscored")).toHaveLength(3);
+  });
+
+  it("draws it when some row is a placeholder, whatever else the list holds", () => {
+    const { container } = draw(response({ scoring_strategy: "neutral_fallback", scored: [unreadable(1), placeholder(2), placeholder(3)] }));
+    expect(words(noticeOf(container))).toContain("these scores are placeholders");
+    expect(container.querySelectorAll(".bj-disc-row--placeholder")).toHaveLength(2);
+  });
+
+  it("draws it for a placeholder row in More results even when the scored list holds none, and speaks for that list's order", () => {
+    const rows = [placeholder(1, "2026-09-01"), placeholder(2, "2026-09-05"), placeholder(3, "2026-09-03")];
+    const { container } = draw(response({ scoring_strategy: "neutral_fallback", scored: [unreadable(9)], more: rows }));
+    expect(words(noticeOf(container))).toContain("Rows are listed by source quality, not by fit.");
+    click(sortButton(container, "Newest"));
+    expect(titles(container)).toEqual(["Odd 9", "Placeholder 2", "Placeholder 3", "Placeholder 1"]);
+    expect(words(noticeOf(container))).toContain("Rows are listed newest first, not by fit.");
+  });
+
+  it("says newest first only when every list that holds placeholders was reordered", () => {
+    const dated = [placeholder(1, "2026-09-01"), placeholder(2, "2026-09-05")];
+    const more = [placeholder(3), placeholder(4)];
+    const { container } = draw(response({ scoring_strategy: "neutral_fallback", scored: dated, more }));
+    click(sortButton(container, "Newest"));
+    expect(titles(container)).toEqual(["Placeholder 2", "Placeholder 1", "Placeholder 3", "Placeholder 4"]);
+    expect(words(noticeOf(container))).toContain("Rows are listed by source quality, not by fit.");
+    expect(words(noticeOf(container))).not.toContain("newest first");
   });
 });
 

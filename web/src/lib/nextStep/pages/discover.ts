@@ -20,10 +20,11 @@
 // sentence would change every second and be announced every second. The page draws the counter beside it.
 //
 // A why line lists the facts that picked the step, and every number in it is a count of what the
-// response held. For the results rows that is how many rows were scored and how many were not; which
-// provider returned how many rows, which providers failed and how many listings the link check dropped
-// did not pick "track the jobs worth a draft", so the page prints them in its status block above the
-// results (lib/discoverFacts.ts searchNotesOf) and not here.
+// response held. For the results rows that is how many rows read as scored (a bin the ladder knows) and
+// how many read "Not scored", whichever list the response put them in, so the line agrees with the page's
+// Not scored chip; which provider returned how many rows, which providers failed and how many listings the
+// link check dropped did not pick "track the jobs worth a draft", so the page prints them in its status
+// block above the results (lib/discoverFacts.ts searchNotesOf) and not here.
 
 import { MODEL_CHOICE_LABEL, type ModelKeyReading } from "../../modelKey";
 import { MODEL_PROVIDER_PATH } from "../../settingsPaths";
@@ -44,7 +45,11 @@ export function bandHoldsSearch(outcome: NextStepOutcome): boolean {
 export type DiscoverPhase = "idle" | "searching" | "results" | "setup";
 
 export interface DiscoverResultsFact {
-  /** Rows the model scored, and rows past the scoring batch (shown unscored). */
+  /**
+   * Rows that read as scored (a bin the ladder knows), and the rest, which read "Not scored": normally the
+   * rows past the scoring batch, and any row of the scored list whose bin nobody can read. Together they
+   * are every row the response held.
+   */
   scored: number;
   more: number;
   /** Live-search rows the link check dropped (the page's announcement says so; no row here does). */
