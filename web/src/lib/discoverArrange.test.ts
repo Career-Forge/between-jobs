@@ -501,6 +501,16 @@ describe("the sentences", () => {
     expect(arrangeAnnouncement({ kind: "filter", filter: "all", shown: 1, total: 1, hiddenUnscored: 0 })).toBe("Showing all 1 result.");
   });
 
+  it("adds the sort that replaced the one shown to a filter's announcement, and only then", () => {
+    const base = { kind: "filter" as const, filter: "unscored" as const, shown: 7, total: 25, hiddenUnscored: 0 };
+    expect(arrangeAnnouncement({ ...base, sort: "returned" })).toBe("Showing 7 of 25 results, not scored only. Sorted as the search returned them.");
+    expect(arrangeAnnouncement({ ...base, sort: "newest" })).toBe("Showing 7 of 25 results, not scored only. Sorted by newest first.");
+    expect(arrangeAnnouncement({ kind: "filter", filter: "all", shown: 25, total: 25, hiddenUnscored: 0, sort: "returned" })).toBe(
+      "Showing all 25 results. Sorted as the search returned them.",
+    );
+    expect(arrangeAnnouncement(base)).toBe("Showing 7 of 25 results, not scored only.");
+  });
+
   it("announces each sort", () => {
     expect(arrangeAnnouncement({ kind: "sort", sort: "returned" })).toBe("Sorted as the search returned them.");
     expect(arrangeAnnouncement({ kind: "sort", sort: "fit" })).toBe("Sorted by best fit first.");

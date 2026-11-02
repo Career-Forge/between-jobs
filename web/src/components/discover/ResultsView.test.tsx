@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
 import { job, mixedResponse, response, score } from "../../testing/discoverFixtures";
 import { buttonNamed, click, installViewport, keydown, query, render } from "../../testing/render";
-import type { DiscoverResponse, ScoreBin } from "../../lib/discoverTypes";
+import type { DiscoverResponse, JobCard, ScoreBin } from "../../lib/discoverTypes";
 import { NONE_SCORED_NOTE, ResultsView, type ResultsViewProps } from "./ResultsView";
 
 // A finished search as ResultsView draws it: what a person's choices do to the rows. The page states
@@ -595,7 +595,7 @@ describe("the fallback notice and the order", () => {
 });
 
 describe("the sorts follow the rows that are shown", () => {
-  it("leaves Best fit out while only unscored rows are shown and brings it back, chosen, with All", () => {
+  it("leaves Best fit out while only unscored rows are shown, and does not bring it back unchosen with All", () => {
     const { container } = draw(MIXED());
     expect(sortNames(container)).toEqual(["As returned", "Best fit", "Newest"]);
     click(sortButton(container, "Best fit"));
@@ -606,15 +606,218 @@ describe("the sorts follow the rows that are shown", () => {
     expect(titles(container)).toEqual(ALL_TITLES(MIXED()).filter((title) => title.startsWith("Unscored")));
     click(chip(container, "All"));
     expect(sortNames(container)).toEqual(["As returned", "Best fit", "Newest"]);
-    expect(pressed(sortGroup(container))).toEqual(["Best fit"]);
+    expect(pressed(sortGroup(container))).toEqual(["As returned"]);
+    expect(titles(container)).toEqual(ALL_TITLES(MIXED()));
   });
 
   it("leaves Best fit out for a tier that holds one row", () => {
     const { container } = draw(mixedResponse({ Strong: 3, Good: 3, Mixed: 1, Poor: 0, unscored: 0 }));
     click(chip(container, "Mixed"));
-    expect(sortNames(container)).not.toContain("Best fit");
+    // One row has nothing to rank or to put before another, so no sort is left to draw.
+    expect(container.querySelector('[aria-label="Sort results"]')).toBeNull();
+    expect(words(container)).not.toContain("Best fit");
     click(chip(container, "Strong"));
     expect(sortNames(container)).toContain("Best fit");
+  });
+});
+
+describe("what each section's notice says about its order", () => {
+  const FALLBACK_SOURCE = "Rows are listed by source quality, not by fit.";
+  const FALLBACK_NEWEST = "Rows are listed newest first, not by fit.";
+  const MORE_RETURNED = "Beyond this search's scoring batch -- sorted by tier and recency, not fit.";
+  const MORE_NEWEST = "Beyond this search's scoring batch -- not scored, newest first.";
+  const DATED = ["2026-09-01", "2026-09-05", "2026-09-03"];
+  const UNDATED: Array<string | null> = [null, "not a date", null];
+  const section = (prefix: string, posted: Array<string | null>, extra: Partial<JobCard> = {}) =>
+    posted.map((posted_at, index) => job({ apply_url: `https://jobs.example/${prefix.toLowerCase()}/${index}`, title: `${prefix} ${index + 1}`, posted_at, ...extra }));
+  const notice = (container: HTMLElement) => words(container.querySelector(".bj-disc-fallback"));
+  const moreNote = (container: HTMLElement) => words(query(container, "h2.bj-disc-heading--more").nextElementSibling);
+
+  it("under the fallback with undated placeholder rows and dated More results: Newest orders More results, and the notice does not claim the placeholder rows moved", () => {
+    const result = response({ scoring_strategy: "neutral_fallback", scored: section("Placeholder", UNDATED), more: section("More", DATED, { score: null }) });
+    const { container } = draw(result);
+    expect(sortNames(container)).toEqual(["As returned", "Newest"]);
+    expect(notice(container)).toContain(FALLBACK_SOURCE);
+    click(sortButton(container, "Newest"));
+    expect(titles(container)).toEqual(["Placeholder 1", "Placeholder 2", "Placeholder 3", "More 2", "More 3", "More 1"]);
+    expect(notice(container)).toContain(FALLBACK_SOURCE);
+    expect(notice(container)).not.toContain("newest first");
+    expect(moreNote(container)).toBe(MORE_NEWEST);
+    click(sortButton(container, "As returned"));
+    expect(notice(container)).toContain(FALLBACK_SOURCE);
+    expect(moreNote(container)).toBe(MORE_RETURNED);
+  });
+
+  it("in a normal search with undated More results and dated scored rows: Newest orders the scored rows, and the More note keeps the returned-order words", () => {
+    const result = response({ scored: section("Scored", DATED), more: section("More", UNDATED, { score: null }) });
+    const { container } = draw(result);
+    click(sortButton(container, "Newest"));
+    expect(titles(container)).toEqual(["Scored 2", "Scored 3", "Scored 1", "More 1", "More 2", "More 3"]);
+    expect(moreNote(container)).toBe(MORE_RETURNED);
+    expect(moreNote(container)).not.toContain("newest first");
+  });
+
+  it("with both sections dated: both notices say newest first, and each says it only while Newest is the sort shown", () => {
+    const result = response({ scoring_strategy: "neutral_fallback", scored: section("Placeholder", DATED), more: section("More", DATED, { score: null }) });
+    const { container } = draw(result);
+    expect(notice(container)).toContain(FALLBACK_SOURCE);
+    expect(moreNote(container)).toBe(MORE_RETURNED);
+    click(sortButton(container, "Newest"));
+    expect(titles(container)).toEqual(["Placeholder 2", "Placeholder 3", "Placeholder 1", "More 2", "More 3", "More 1"]);
+    expect(notice(container)).toContain(FALLBACK_NEWEST);
+    expect(notice(container)).not.toContain("source quality");
+    expect(moreNote(container)).toBe(MORE_NEWEST);
+  });
+
+  it("with neither section dated: Newest is not offered, and the notices keep the returned-order words", () => {
+    const result = response({ scoring_strategy: "neutral_fallback", scored: section("Placeholder", UNDATED), more: section("More", UNDATED, { score: null }) });
+    const { container } = draw(result);
+    expect(words(container)).not.toContain("Newest");
+    expect(notice(container)).toContain(FALLBACK_SOURCE);
+    expect(moreNote(container)).toBe(MORE_RETURNED);
+    const normal = draw(response({ scored: section("Scored", UNDATED), more: section("More", UNDATED, { score: null }) }));
+    expect(sortNames(normal.container)).toEqual(["As returned", "Best fit"]);
+    expect(moreNote(normal.container)).toBe(MORE_RETURNED);
+  });
+
+  it("with one dated row in a section: that section is not reordered and says nothing about newest", () => {
+    const result = response({ scored: section("Scored", ["2026-09-01", null, null]), more: section("More", DATED, { score: null }) });
+    const { container } = draw(result);
+    click(sortButton(container, "Newest"));
+    expect(titles(container)).toEqual(["Scored 1", "Scored 2", "Scored 3", "More 2", "More 3", "More 1"]);
+    expect(moreNote(container)).toBe(MORE_NEWEST);
+  });
+
+  it("decides a section by the rows its fit choice keeps: under a tier, More results are gone and the sections that remain speak for themselves", () => {
+    const { container } = draw(MIXED());
+    click(sortButton(container, "Newest"));
+    expect(moreNote(container)).toBe(MORE_NEWEST);
+    click(chip(container, "Not scored"));
+    expect(moreNote(container)).toBe(MORE_NEWEST);
+    click(chip(container, "Strong"));
+    expect(container.querySelector("h2.bj-disc-heading--more")).toBeNull();
+  });
+});
+
+describe("what the toolbar draws when there is little to choose", () => {
+  const unscoredRows = (posted: Array<string | null>) =>
+    posted.map((posted_at, index) => job({ apply_url: `https://jobs.example/u/${index}`, title: `Past ${index + 1}`, posted_at, score: null }));
+  const toolbar = (container: HTMLElement) => container.querySelector(".bj-disc-toolbar");
+  const sortTool = (container: HTMLElement) => container.querySelector('[role="group"][aria-label="Sort results"]');
+
+  it("draws no Sort group for a tier of one row, and still draws the fit group, the switch and the count line", () => {
+    const { container } = draw(mixedResponse({ Strong: 3, Good: 3, Mixed: 1, Poor: 0, unscored: 0 }));
+    expect(sortTool(container)).not.toBeNull();
+    click(chip(container, "Mixed"));
+    expect(titles(container)).toEqual(["Mixed 1"]);
+    expect(sortTool(container)).toBeNull();
+    expect(words(container)).not.toContain("As returned");
+    expect(fitGroup(container)).not.toBeNull();
+    expect(switchBox(container)).not.toBeNull();
+    expect(countLine(container)).toBe("Showing 1 of 7 results, Mixed fit only.");
+    click(chip(container, "Strong"));
+    expect(sortTool(container)).not.toBeNull();
+  });
+
+  it("draws no toolbar at all for unscored rows with no readable date: nothing to keep, order or open", () => {
+    const { container } = draw(response({ scored: [], more: unscoredRows([null, null, "no date"]) }));
+    expect(toolbar(container)).toBeNull();
+    expect(container.querySelector("[role='status']")).toBeNull();
+    expect(container.querySelector(".bj-disc-tools")).toBeNull();
+    expect(words(container)).toContain(NONE_SCORED_NOTE);
+    expect(titles(container)).toEqual(["Past 1", "Past 2", "Past 3"]);
+  });
+
+  it("draws the toolbar, with a Sort group of two, once those unscored rows carry two dates", () => {
+    const { container } = draw(response({ scored: [], more: unscoredRows(["2026-09-01", "2026-09-02", null]) }));
+    expect(toolbar(container)).not.toBeNull();
+    expect(sortNames(container)).toEqual(["As returned", "Newest"]);
+    expect(words(container)).toContain(NONE_SCORED_NOTE);
+  });
+
+  it("draws no toolbar for placeholder rows with no readable date, and keeps the notice that says they are placeholders", () => {
+    const scoredRows = [1, 2, 3].map((n) => job({ apply_url: `https://jobs.example/p/${n}`, title: `Placeholder ${n}`, posted_at: null }));
+    const { container } = draw(response({ scoring_strategy: "neutral_fallback", scored: scoredRows }));
+    expect(toolbar(container)).toBeNull();
+    expect(container.querySelector("[role='status']")).toBeNull();
+    expect(words(query(container, ".bj-disc-fallback"))).toContain("these scores are placeholders");
+    expect(rowsOf(container)).toHaveLength(3);
+  });
+
+  it("draws the toolbar for placeholder rows when two of them carry a date, with Sort as As returned and Newest", () => {
+    const scoredRows = [1, 2, 3].map((n) => job({ apply_url: `https://jobs.example/p/${n}`, title: `Placeholder ${n}`, posted_at: n === 3 ? null : `2026-09-0${n}` }));
+    const { container } = draw(response({ scoring_strategy: "neutral_fallback", scored: scoredRows }));
+    expect(sortNames(container)).toEqual(["As returned", "Newest"]);
+  });
+
+  it("draws the toolbar for undated scored rows of one tier, for the details switch and Best fit that remain", () => {
+    const scoredRows = [1, 2, 3].map((n) => job({ apply_url: `https://jobs.example/s/${n}`, title: `Scored ${n}`, posted_at: null }));
+    const { container } = draw(response({ scored: scoredRows }));
+    expect(sortNames(container)).toEqual(["As returned", "Best fit"]);
+    expect(switchBox(container)).not.toBeNull();
+  });
+
+  it("draws only the details switch when no fit group and no sort has anything to offer", () => {
+    const scoredRows = [1, 2, 3].map((n) => job({ apply_url: `https://jobs.example/s/${n}`, title: `Scored ${n}`, posted_at: null, score: score({ score100: Number.NaN }) }));
+    const { container } = draw(response({ scored: scoredRows }));
+    expect(toolbar(container)).not.toBeNull();
+    expect(container.querySelector('[aria-label="Show results by fit"]')).toBeNull();
+    expect(sortTool(container)).toBeNull();
+    expect(switchBox(container)).not.toBeNull();
+  });
+});
+
+describe("a sort that a fit choice left off does not come back unchosen", () => {
+  it("walks Best fit, Not scored, As returned, All: the rows stay as returned, the chip stays as returned, and each press says what it did", () => {
+    const { container } = draw(MIXED());
+    click(sortButton(container, "Best fit"));
+    expect(live(container).textContent).toBe("Sorted by best fit first.");
+    click(chip(container, "Not scored"));
+    expect(pressed(sortGroup(container))).toEqual(["As returned"]);
+    expect(live(container).textContent).toBe("Showing 7 of 25 results, not scored only. Sorted as the search returned them.");
+    click(sortButton(container, "As returned"));
+    expect(live(container).textContent).toBe("Showing 7 of 25 results, not scored only. Sorted as the search returned them.");
+    click(chip(container, "All"));
+    expect(live(container).textContent).toBe("Showing all 25 results.");
+    expect(pressed(sortGroup(container))).toEqual(["As returned"]);
+    expect(titles(container)).toEqual(ALL_TITLES(MIXED()));
+  });
+
+  it("says nothing about the sort when a fit choice leaves the one shown on offer", () => {
+    const { container } = draw(MIXED());
+    click(sortButton(container, "Best fit"));
+    click(chip(container, "Good"));
+    expect(live(container).textContent).toBe("Showing 6 of 25 results, Good fit only. 7 not scored are not shown.");
+    expect(pressed(sortGroup(container))).toEqual(["Best fit"]);
+    click(chip(container, "All"));
+    expect(live(container).textContent).toBe("Showing all 25 results.");
+    expect(pressed(sortGroup(container))).toEqual(["Best fit"]);
+  });
+
+  it("does the same for Newest left off by a tier whose rows have fewer than two dates", () => {
+    const scoredRows = [
+      ...["2026-09-01", "2026-09-02", "2026-09-03"].map((day, index) => job({ apply_url: `https://jobs.example/g/${index}`, title: `Good ${index + 1}`, posted_at: day, score: score({ bin: "Good", score100: 70 - index }) })),
+      ...[null, "2026-09-09", null].map((day, index) => job({ apply_url: `https://jobs.example/p/${index}`, title: `Poor ${index + 1}`, posted_at: day, score: score({ bin: "Poor", score100: 20 - index }) })),
+    ];
+    const { container } = draw(response({ scored: scoredRows }));
+    click(sortButton(container, "Newest"));
+    expect(titles(container)).toEqual(["Poor 2", "Good 3", "Good 2", "Good 1", "Poor 1", "Poor 3"]);
+    click(chip(container, "Poor"));
+    expect(titles(container)).toEqual(["Poor 1", "Poor 2", "Poor 3"]);
+    expect(live(container).textContent).toBe("Showing 3 of 6 results, Poor fit only. Sorted as the search returned them.");
+    click(chip(container, "All"));
+    expect(pressed(sortGroup(container))).toEqual(["As returned"]);
+    expect(titles(container)).toEqual(scoredRows.map((entry) => entry.title));
+  });
+
+  it("lets a person choose the sort again once it is back on offer", () => {
+    const { container } = draw(MIXED());
+    click(sortButton(container, "Best fit"));
+    click(chip(container, "Not scored"));
+    click(chip(container, "All"));
+    click(sortButton(container, "Best fit"));
+    expect(pressed(sortGroup(container))).toEqual(["Best fit"]);
+    expect(live(container).textContent).toBe("Sorted by best fit first.");
   });
 });
 
