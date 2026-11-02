@@ -776,6 +776,73 @@ describe("what each section's notice says about its order", () => {
   });
 });
 
+describe("what Newest announces, section by section", () => {
+  const WHOLE = "Sorted by newest first.";
+  const MORE_KEPT = "Sorted by newest first. More results keep the search's order.";
+  const SCORED_KEPT = "Sorted by newest first. The rows above More results keep the search's order.";
+  const DATED = ["2026-09-01", "2026-09-05", "2026-09-03"];
+  const UNDATED: Array<string | null> = [null, "not a date", null];
+  const ONE_DATED: Array<string | null> = ["2026-09-01", null, null];
+  const section = (prefix: string, posted: Array<string | null>, extra: Partial<JobCard> = {}) =>
+    posted.map((posted_at, index) => job({ apply_url: `https://jobs.example/${prefix.toLowerCase()}/${index}`, title: `${prefix} ${index + 1}`, posted_at, ...extra }));
+  const announced = (result: DiscoverResponse) => {
+    const { container } = draw(result);
+    click(sortButton(container, "Newest"));
+    return live(container).textContent;
+  };
+
+  const strategies: Array<[string, Partial<DiscoverResponse>]> = [
+    ["a normal search", {}],
+    ["the scoring fallback", { scoring_strategy: "neutral_fallback" }],
+  ];
+
+  describe.each(strategies)("in %s", (_name, strategy) => {
+    const build = (scoredAt: Array<string | null>, moreAt: Array<string | null>) =>
+      response({ ...strategy, scored: section("Scored", scoredAt), more: section("More", moreAt, { score: null }) });
+
+    it("says Newest whole when both sections hold two readable dates", () => {
+      expect(announced(build(DATED, DATED))).toBe(WHOLE);
+    });
+
+    it("names More results as the one that kept its order when only the scored rows had dates", () => {
+      expect(announced(build(DATED, UNDATED))).toBe(MORE_KEPT);
+      expect(announced(build(DATED, ONE_DATED))).toBe(MORE_KEPT);
+    });
+
+    it("names the rows above More results as the ones that kept their order when only More results had dates", () => {
+      expect(announced(build(UNDATED, DATED))).toBe(SCORED_KEPT);
+      expect(announced(build(ONE_DATED, DATED))).toBe(SCORED_KEPT);
+    });
+
+    it("offers no Newest, so announces none, when neither section holds two readable dates", () => {
+      const { container } = draw(build(UNDATED, ONE_DATED));
+      expect(words(container)).not.toContain("Newest");
+    });
+
+    it("says Newest whole for a section that is alone on the page", () => {
+      expect(announced(response({ ...strategy, scored: section("Scored", DATED), more: [] }))).toBe(WHOLE);
+      expect(announced(response({ ...strategy, scored: [], more: section("More", DATED, { score: null }) }))).toBe(WHOLE);
+    });
+  });
+
+  it("decides by the rows the fit choice keeps: a tier leaves out More results, so the scored rows speak alone", () => {
+    const { container } = draw(response({ scored: section("Scored", DATED), more: section("More", UNDATED, { score: null }) }));
+    click(sortButton(container, "Newest"));
+    expect(live(container).textContent).toBe(MORE_KEPT);
+    click(chip(container, "Good"));
+    click(sortButton(container, "As returned"));
+    click(sortButton(container, "Newest"));
+    expect(live(container).textContent).toBe(WHOLE);
+  });
+
+  it("says Newest whole when the fit choice leaves only the section that was reordered", () => {
+    const { container } = draw(response({ scored: section("Scored", UNDATED), more: section("More", DATED, { score: null }) }));
+    click(chip(container, "Not scored"));
+    click(sortButton(container, "Newest"));
+    expect(live(container).textContent).toBe(WHOLE);
+  });
+});
+
 describe("what the toolbar draws when there is little to choose", () => {
   const unscoredRows = (posted: Array<string | null>) =>
     posted.map((posted_at, index) => job({ apply_url: `https://jobs.example/u/${index}`, title: `Past ${index + 1}`, posted_at, score: null }));

@@ -340,7 +340,8 @@ their trail line, inline at every width. Neither makes a search when it opens.
   and "Newest" reorders a section only when that section holds two readable dates. What the notices say about the
   order is decided per section from what that section did: the gold fallback notice for the scored rows and the
   More results note say "newest first" only for a section that was reordered, and keep their returned-order words
-  for one that was not. A fit choice stores the sort that stays on offer, so a sort it hid is not brought back
+  for one that was not; the polite sentence after pressing Newest says it for the whole page only when every shown
+  section was reordered, and otherwise names the one that kept the search's order. A fit choice stores the sort that stays on offer, so a sort it hid is not brought back
   unchosen by the next choice, and its announcement names the new sort when it changed. The choices are held in
   memory only, start over with each new answer, and a press is announced politely.
 - **Saved searches** (`components/SavedSearchesCardView.tsx`, shared with Settings through `lib/useSavedSearches.ts`)
