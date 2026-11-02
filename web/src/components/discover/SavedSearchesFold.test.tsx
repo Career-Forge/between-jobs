@@ -103,6 +103,58 @@ describe("the closed row", () => {
   });
 });
 
+describe("a save that lands while the row is closed", () => {
+  it("says so in the closed row's hint, since the new search is not on screen, and opens nothing", () => {
+    const view = draw(props(ready([search("a", CHECKED), search("b")]), { saving: true }));
+    expect(hint(view.container)).toBe("Saving...");
+    view.again(props(ready([search("a", CHECKED), search("b"), search("c")])));
+    expect(hint(view.container)).toBe("Search saved -- 3 searches, checked in the background");
+    expect(expanded(view.container)).toBe("false");
+  });
+
+  it("brings the row in saying so for a person's first saved search", () => {
+    const view = draw(props(ready([]), { saving: true }));
+    expect(view.container.innerHTML).toBe("");
+    view.again(props(ready([search("a")])));
+    expect(hint(view.container)).toBe("Search saved -- 1 search, not checked yet");
+    expect(expanded(view.container)).toBe("false");
+  });
+
+  it("says nothing of a save that was refused", () => {
+    const view = draw(props(ready([search("a")]), { saving: true }));
+    view.again(props(ready([search("a")]), { createError: "We could not save that search." }));
+    expect(hint(view.container)).toBe("A search couldn't be saved");
+    expect(words(view.container)).not.toContain("Search saved");
+  });
+
+  it("stops saying it once the person opens the row, and does not say it again when they close it", () => {
+    const view = draw(props(ready([search("a")]), { saving: true }));
+    view.again(props(ready([search("a"), search("b")])));
+    expect(hint(view.container)).toContain("Search saved");
+    click(toggle(view.container));
+    expect(hint(view.container)).toBe("2 searches, not checked yet");
+    click(toggle(view.container));
+    expect(hint(view.container)).toBe("2 searches, not checked yet");
+  });
+
+  it("stops saying it when the next save starts", () => {
+    const view = draw(props(ready([search("a")]), { saving: true }));
+    view.again(props(ready([search("a"), search("b")])));
+    expect(hint(view.container)).toContain("Search saved");
+    view.again(props(ready([search("a"), search("b")]), { saving: true }));
+    expect(hint(view.container)).toBe("Saving...");
+    view.again(props(ready([search("a"), search("b"), search("c")])));
+    expect(hint(view.container)).toBe("Search saved -- 3 searches, not checked yet");
+  });
+
+  it("does not say it on first draw, or for a list that was only read again", () => {
+    const view = draw(props(ready([search("a")])));
+    expect(hint(view.container)).toBe("1 search, not checked yet");
+    view.again(props(ready([search("a"), search("b")])));
+    expect(hint(view.container)).toBe("2 searches, not checked yet");
+  });
+});
+
 describe("opening and closing it", () => {
   it("opens with a press, names the region it controls, and shows the list under one heading", () => {
     const { container } = draw(props(ready([search("a", CHECKED), search("b")])));

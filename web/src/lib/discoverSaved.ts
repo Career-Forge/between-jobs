@@ -21,9 +21,13 @@ function searches(count: number): string {
   return `${count} ${count === 1 ? "search" : "searches"}`;
 }
 
-/** null means no row at all: with no searches, or none known yet, there is nothing to fold away. */
-export function savedSearchesSummary(input: { state: SavedSearchesState; createError: string | null; saving: boolean }): SavedSummary | null {
-  const { state, createError, saving } = input;
+/**
+ * null means no row at all: with no searches, or none known yet, there is nothing to fold away.
+ * `justSaved` is a save that has just landed; a healthy list then leads its hint with that news, because
+ * a closed row is the only place a person who did not open it would see that the save worked.
+ */
+export function savedSearchesSummary(input: { state: SavedSearchesState; createError: string | null; saving: boolean; justSaved?: boolean }): SavedSummary | null {
+  const { state, createError, saving, justSaved = false } = input;
   const count = state.kind === "ready" ? state.searches.length : 0;
   if (state.kind === "failed") return { count, hint: "Couldn't be read", attention: true };
   if (createError !== null) return { count, hint: "A search couldn't be saved", attention: true };
@@ -32,11 +36,12 @@ export function savedSearchesSummary(input: { state: SavedSearchesState; createE
   if (state.busyId !== null) return { count, hint: "Updating...", attention: false };
   if (saving && count > 0) return { count, hint: "Saving...", attention: false };
   if (count === 0) return null;
+  const lead = justSaved ? "Search saved -- " : "";
   const active = state.searches.filter((search) => search.is_active).length;
-  if (active === 0) return { count, hint: count === 1 ? "1 search, paused" : `${searches(count)}, all paused`, attention: false };
-  if (active < count) return { count, hint: `${searches(count)}, ${active} active`, attention: false };
+  if (active === 0) return { count, hint: `${lead}${count === 1 ? "1 search, paused" : `${searches(count)}, all paused`}`, attention: false };
+  if (active < count) return { count, hint: `${lead}${searches(count)}, ${active} active`, attention: false };
   // All are running. "Checked" is said only for a list in which the background matcher has really run
   // over at least one search; a search saved a moment ago has not been looked at yet.
   const checked = state.searches.some(isChecked);
-  return { count, hint: `${searches(count)}, ${checked ? "checked in the background" : "not checked yet"}`, attention: false };
+  return { count, hint: `${lead}${searches(count)}, ${checked ? "checked in the background" : "not checked yet"}`, attention: false };
 }

@@ -66,6 +66,31 @@ describe("work under way is a hint, not a reason to open", () => {
   });
 });
 
+describe("a save that has just landed", () => {
+  const saved = (state: SavedSearchesState) => savedSearchesSummary({ state, createError: null, saving: false, justSaved: true });
+
+  it("leads the hint with the news, over the counts, so a closed row says it", () => {
+    expect(saved(ready([search("a"), search("b")]))).toEqual({ count: 2, hint: "Search saved -- 2 searches, not checked yet", attention: false });
+    expect(saved(ready([search("a", CHECKED), search("b")]))).toMatchObject({ hint: "Search saved -- 2 searches, checked in the background" });
+    expect(saved(ready([search("a", { is_active: false })]))).toMatchObject({ hint: "Search saved -- 1 search, paused" });
+    expect(saved(ready([search("a"), search("b", { is_active: false })]))).toMatchObject({ hint: "Search saved -- 2 searches, 1 active" });
+  });
+
+  it("is said by nothing that is not a healthy list: a failure, an update under way or no searches at all", () => {
+    expect(savedSearchesSummary({ state: ready([search("a")]), createError: "no", saving: false, justSaved: true })).toMatchObject({ hint: "A search couldn't be saved" });
+    expect(saved({ kind: "failed", message: "x" })).toMatchObject({ hint: "Couldn't be read" });
+    expect(saved(ready([search("a")], { busyId: "a" }))).toMatchObject({ hint: "Updating..." });
+    expect(saved(ready([search("a")], { error: "bad" }))).toMatchObject({ hint: "An update didn't go through" });
+    expect(saved(ready([]))).toBeNull();
+    expect(saved({ kind: "loading" })).toBeNull();
+  });
+
+  it("is not said unless asked for, and is said in plain words with no em dash", () => {
+    expect(summary(ready([search("a")]))).toMatchObject({ hint: "1 search, not checked yet" });
+    expect(saved(ready([search("a")]))?.hint).not.toMatch(/\u2014|verified/i);
+  });
+});
+
 describe("the counts", () => {
   it("says a search that is running has not been checked yet until the background matcher has run over one", () => {
     expect(summary(ready([search("a")]))).toEqual({ count: 1, hint: "1 search, not checked yet", attention: false });

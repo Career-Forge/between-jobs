@@ -14,7 +14,8 @@ import "../../styles/discover.css";
 // through opens the row on its own (on the first draw, with no flash of the closed row, and whenever
 // one turns up later), and the closed row's hint names the failure as well. After that the row is the
 // person's: the button always works, and what they closed stays closed. A request that is merely under
-// way ("Updating...", "Saving...") shows in the hint and opens nothing.
+// way ("Updating...", "Saving...") shows in the hint and opens nothing, and so does a save that has
+// landed: the new search is not on screen while the row is closed, so the hint says "Search saved".
 //
 // With no saved searches, or none known yet, there is no row, since there is nothing to fold away.
 // A new visit starts closed.
@@ -28,7 +29,16 @@ export interface SavedSearchesFoldProps {
 }
 
 export function SavedSearchesFold({ saved, saving, now, timeZone }: SavedSearchesFoldProps) {
-  const summary = savedSearchesSummary({ state: saved.state, createError: saved.createError, saving });
+  // A save that ends without an error has worked, and a closed row is the only place a person who did not
+  // open it can see that. Derived while rendering, so the news is there on the first draw after the save.
+  // It lasts until the person opens or closes the row, or the next save starts.
+  const [wasSaving, setWasSaving] = useState(saving);
+  const [justSaved, setJustSaved] = useState(false);
+  if (saving !== wasSaving) {
+    setWasSaving(saving);
+    setJustSaved(!saving && saved.createError === null);
+  }
+  const summary = savedSearchesSummary({ state: saved.state, createError: saved.createError, saving, justSaved });
   const attention = summary?.attention === true;
   const [open, setOpen] = useState(attention);
   // Derived while rendering, so the row is never drawn closed over a failure that has just appeared:
@@ -45,7 +55,16 @@ export function SavedSearchesFold({ saved, saving, now, timeZone }: SavedSearche
   return (
     <div className="bj-disc-saved">
       <h2 className="bj-disc-saved-heading">
-        <button type="button" className="bj-disc-saved-toggle" aria-expanded={open} aria-controls={open ? bodyId : undefined} onClick={() => setOpen(!open)}>
+        <button
+          type="button"
+          className="bj-disc-saved-toggle"
+          aria-expanded={open}
+          aria-controls={open ? bodyId : undefined}
+          onClick={() => {
+            setOpen(!open);
+            setJustSaved(false);
+          }}
+        >
           <span className="bj-disc-saved-title">{SAVED_SEARCHES_HEADING}</span>{" "}
           <span className="bj-disc-saved-hint">{summary.hint}</span>{" "}
           <span className="bj-disc-saved-glyph" aria-hidden="true">
