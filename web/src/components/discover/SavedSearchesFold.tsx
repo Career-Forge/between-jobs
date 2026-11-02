@@ -17,7 +17,8 @@ import "../../styles/discover.css";
 // way ("Updating...", "Saving...") shows in the hint and opens nothing, and so does a save that has
 // landed while the row is closed: the new search is not on screen, so the hint says "Search saved". A row
 // that was open as the save landed shows the new search itself and says nothing of it, and the news ends
-// as soon as anything else happens to the list (a search is being updated, or an update failed).
+// as soon as anything else happens to the list (its read fails or comes back, a search is being updated, or
+// an update failed).
 //
 // With no saved searches, or none known yet, there is no row, since there is nothing to fold away.
 // A new visit starts closed.
@@ -37,15 +38,16 @@ export function SavedSearchesFold({ saved, saving, now, timeZone }: SavedSearche
   // A save that ends without an error has worked, and a closed row is the only place a person who did not
   // open it can see that: an open row shows the new search itself. Derived while rendering, so the news is
   // there on the first draw after the save. It lasts until the person opens or closes the row, the next
-  // save starts, or something else happens to the list: a search going busy or idle, or an update's error
-  // turning up or being cleared.
+  // save starts, or something else happens to the list: its read failing or recovering, a search going busy
+  // or idle, or an update's error turning up or being cleared.
   const [wasSaving, setWasSaving] = useState(saving);
   const [justSaved, setJustSaved] = useState(false);
+  const kind = saved.state.kind;
   const busyId = saved.state.kind === "ready" ? saved.state.busyId : null;
   const updateError = saved.state.kind === "ready" ? saved.state.error : null;
-  const [seen, setSeen] = useState({ busyId, updateError });
-  if (seen.busyId !== busyId || seen.updateError !== updateError) {
-    setSeen({ busyId, updateError });
+  const [seen, setSeen] = useState({ kind, busyId, updateError });
+  if (seen.kind !== kind || seen.busyId !== busyId || seen.updateError !== updateError) {
+    setSeen({ kind, busyId, updateError });
     setJustSaved(false);
   }
   if (saving !== wasSaving) {

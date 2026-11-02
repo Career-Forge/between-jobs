@@ -351,8 +351,8 @@ their trail line, inline at every width. Neither makes a search when it opens.
   "Paused" after either. On Discover they are one folded row (`components/discover/SavedSearchesFold.tsx`): the name
   and one hint, closed by default, opened by itself for a failed read, a refused save or an update that did not go
   through, and always closable. After a save lands while the row is closed the hint leads with "Search saved",
-  since the new search is not on screen, until the row is opened or closed, the next save starts, or a search goes
-  busy or an update's error changes. A row that was open as the save landed shows the new search itself and leads
+  since the new search is not on screen, until the row is opened or closed, the next save starts, the list's read
+  fails or comes back, or a search goes busy or an update's error changes. A row that was open as the save landed shows the new search itself and leads
   with nothing.
 - **Hiring signals** reads `GET /hiring-signals/status` once for the app, then (only when it is on) the two saved
   lists. The page also reads `GET /credentials` for the band (no profile: it needs none, so `profileNeeded: false` keeps the global profile rows off it). The model lives in the page
