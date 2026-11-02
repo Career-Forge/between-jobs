@@ -836,6 +836,38 @@ describe("a choice that no longer exists in an answer that was changed under it"
     expect(countLine(view.container)).toBeNull();
   });
 
+  it("stores the choice shown when it is pressed, so a choice that was set aside under it does not return when it can be offered again", () => {
+    const result = mixedResponse();
+    const all = result.scored;
+    const view = draw(result);
+    click(sortButton(view.container, "Best fit"));
+    result.scored = all.slice(0, 1);
+    view.again(result);
+    expect(pressed(sortGroup(view.container))).toEqual(["As returned"]);
+    const said = live(view.container).textContent;
+    click(sortButton(view.container, "As returned"));
+    expect(live(view.container).textContent).toBe(said);
+    result.scored = all;
+    view.again(result);
+    expect(sortNames(view.container)).toContain("Best fit");
+    expect(pressed(sortGroup(view.container))).toEqual(["As returned"]);
+  });
+
+  it("does the same for a fit: pressing the one that is shown stores it, so a tier set aside does not return", () => {
+    const result = mixedResponse();
+    const all = result.scored;
+    const view = draw(result);
+    click(chip(view.container, "Poor"));
+    result.scored = all.filter((entry) => entry.score?.bin !== "Poor");
+    view.again(result);
+    expect(pressed(fitGroup(view.container))).toEqual(["All 22 results"]);
+    click(chip(view.container, "All"));
+    result.scored = all;
+    view.again(result);
+    expect(pressed(fitGroup(view.container))).toEqual(["All 25 results"]);
+    expect(rowsOf(view.container)).toHaveLength(25);
+  });
+
   it("falls back to As returned when the chosen sort is no longer on offer", () => {
     const result = mixedResponse();
     const view = draw(result);

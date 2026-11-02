@@ -176,6 +176,18 @@ describe("a save that lands while the row is closed", () => {
     expect(words(view.container)).not.toContain("Search saved");
   });
 
+  it("does not say it again once a search has been busy and is idle again, with no error between", () => {
+    const view = draw(props(ready([search("a", CHECKED)]), { saving: true }));
+    view.again(props(ready([search("a", CHECKED), search("b")])));
+    expect(hint(view.container)).toBe("Search saved -- 2 searches, checked in the background");
+    expect(expanded(view.container)).toBe("false");
+    view.again(props(ready([search("a", CHECKED), search("b")], { busyId: "b" })));
+    expect(hint(view.container)).toBe("Updating...");
+    view.again(props(ready([search("a", CHECKED), search("b")])));
+    expect(hint(view.container)).toBe("2 searches, checked in the background");
+    expect(words(view.container)).not.toContain("Search saved");
+  });
+
   it("does not say it for a refused save whose error is later cleared", () => {
     const view = draw(props(ready([search("a")]), { saving: true }));
     view.again(props(ready([search("a")]), { createError: "We could not save that search." }));
