@@ -102,7 +102,7 @@ export function ResultRow({ job, scoringStrategy, now, trackedApplicationId, tra
     </p>
   ) : null;
   // The posting text and the sponsorship line share one area. On a row past the scoring batch the
-  // sponsorship line leads, and the text under it is a single muted line.
+  // sponsorship line leads, and the text under it is muted and kept to four lines.
   const body =
     fit.kind === "unscored" ? (
       <>
