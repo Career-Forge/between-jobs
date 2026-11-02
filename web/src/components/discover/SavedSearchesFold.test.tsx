@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { StrictMode, act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -202,6 +202,67 @@ describe("a save that lands while the row is closed", () => {
     expect(hint(view.container)).toBe("1 search, not checked yet");
     view.again(props(ready([search("a"), search("b")])));
     expect(hint(view.container)).toBe("2 searches, not checked yet");
+  });
+});
+
+describe.each([
+  ["plain", false],
+  ["StrictMode", true],
+])("a save, then a list that cannot be read, then one that can (%s)", (_mode, strict) => {
+  const failed: SavedSearchesState = { kind: "failed", message: "We could not load your saved searches." };
+
+  function drawIn(input: SavedSearchesFoldProps) {
+    installViewport(1000);
+    const tree = (next: SavedSearchesFoldProps) => {
+      const body = (
+        <MemoryRouter>
+          <SavedSearchesFold {...next} />
+        </MemoryRouter>
+      );
+      return strict ? <StrictMode>{body}</StrictMode> : body;
+    };
+    const view = render(tree(input));
+    return { ...view, again: (next: SavedSearchesFoldProps) => view.rerender(tree(next)) };
+  }
+
+  it("ends the lead when the read fails, so it does not come back over the open row once the read recovers", () => {
+    const view = drawIn(props(ready([search("a", CHECKED), search("b")]), { saving: true }));
+    view.again(props(ready([search("a", CHECKED), search("b"), search("c")])));
+    expect(hint(view.container)).toBe("Search saved -- 3 searches, checked in the background");
+    expect(expanded(view.container)).toBe("false");
+    view.again(props(failed));
+    expect(expanded(view.container)).toBe("true");
+    expect(hint(view.container)).toBe("Couldn't be read");
+    view.again(props(ready([search("a", CHECKED), search("b"), search("c")])));
+    expect(expanded(view.container)).toBe("true");
+    expect(hint(view.container)).toBe("3 searches, checked in the background");
+    expect(words(view.container)).not.toContain("Search saved");
+  });
+
+  it("leaves a closed row after the recovery without the lead too", () => {
+    const view = drawIn(props(ready([search("a")]), { saving: true }));
+    view.again(props(ready([search("a"), search("b")])));
+    view.again(props(failed));
+    click(toggle(view.container));
+    expect(expanded(view.container)).toBe("false");
+    view.again(props(ready([search("a"), search("b")])));
+    expect(expanded(view.container)).toBe("false");
+    expect(hint(view.container)).toBe("2 searches, not checked yet");
+  });
+
+  it("still leads after a later save lands on the recovered list", () => {
+    const view = drawIn(props(ready([search("a")]), { saving: true }));
+    view.again(props(ready([search("a"), search("b")])));
+    view.again(props(failed));
+    view.again(props(ready([search("a"), search("b")])));
+    // The failed read opened the row; the person closes it, and the next save lands on a closed row.
+    expect(expanded(view.container)).toBe("true");
+    click(toggle(view.container));
+    view.again(props(ready([search("a"), search("b")]), { saving: true }));
+    expect(hint(view.container)).toBe("Saving...");
+    view.again(props(ready([search("a"), search("b"), search("c")])));
+    expect(expanded(view.container)).toBe("false");
+    expect(hint(view.container)).toBe("Search saved -- 3 searches, not checked yet");
   });
 });
 
