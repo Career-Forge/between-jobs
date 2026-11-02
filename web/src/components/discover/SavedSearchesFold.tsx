@@ -15,7 +15,9 @@ import "../../styles/discover.css";
 // one turns up later), and the closed row's hint names the failure as well. After that the row is the
 // person's: the button always works, and what they closed stays closed. A request that is merely under
 // way ("Updating...", "Saving...") shows in the hint and opens nothing, and so does a save that has
-// landed: the new search is not on screen while the row is closed, so the hint says "Search saved".
+// landed while the row is closed: the new search is not on screen, so the hint says "Search saved". A row
+// that was open as the save landed shows the new search itself and says nothing of it, and the news ends
+// as soon as anything else happens to the list (a search is being updated, or an update failed).
 //
 // With no saved searches, or none known yet, there is no row, since there is nothing to fold away.
 // A new visit starts closed.
@@ -29,18 +31,29 @@ export interface SavedSearchesFoldProps {
 }
 
 export function SavedSearchesFold({ saved, saving, now, timeZone }: SavedSearchesFoldProps) {
+  // Whether the row is open is decided first, because the news of a save depends on it. Whether a failure
+  // needs a person's eye does not depend on that news, so it is read before the news is known.
+  const [open, setOpen] = useState(() => savedSearchesSummary({ state: saved.state, createError: saved.createError, saving })?.attention === true);
   // A save that ends without an error has worked, and a closed row is the only place a person who did not
-  // open it can see that. Derived while rendering, so the news is there on the first draw after the save.
-  // It lasts until the person opens or closes the row, or the next save starts.
+  // open it can see that: an open row shows the new search itself. Derived while rendering, so the news is
+  // there on the first draw after the save. It lasts until the person opens or closes the row, the next
+  // save starts, or something else happens to the list: a search going busy or idle, or an update's error
+  // turning up or being cleared.
   const [wasSaving, setWasSaving] = useState(saving);
   const [justSaved, setJustSaved] = useState(false);
+  const busyId = saved.state.kind === "ready" ? saved.state.busyId : null;
+  const updateError = saved.state.kind === "ready" ? saved.state.error : null;
+  const [seen, setSeen] = useState({ busyId, updateError });
+  if (seen.busyId !== busyId || seen.updateError !== updateError) {
+    setSeen({ busyId, updateError });
+    setJustSaved(false);
+  }
   if (saving !== wasSaving) {
     setWasSaving(saving);
-    setJustSaved(!saving && saved.createError === null);
+    setJustSaved(!saving && !open && saved.createError === null);
   }
   const summary = savedSearchesSummary({ state: saved.state, createError: saved.createError, saving, justSaved });
   const attention = summary?.attention === true;
-  const [open, setOpen] = useState(attention);
   // Derived while rendering, so the row is never drawn closed over a failure that has just appeared:
   // attention turning on opens it. A list known to be empty (every search deleted) has no row, and a
   // row that comes back later starts closed; a list that is only being read again keeps what it was.

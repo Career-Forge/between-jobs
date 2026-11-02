@@ -147,6 +147,44 @@ describe("a save that lands while the row is closed", () => {
     expect(hint(view.container)).toBe("Search saved -- 3 searches, not checked yet");
   });
 
+  it("does not say it when the row is already open as the save lands, nor for what happens to the list after", () => {
+    const view = draw(props(ready([search("a", CHECKED), search("b")])));
+    click(toggle(view.container));
+    expect(expanded(view.container)).toBe("true");
+    view.again(props(ready([search("a", CHECKED), search("b")]), { saving: true }));
+    expect(hint(view.container)).toBe("Saving...");
+    view.again(props(ready([search("a", CHECKED), search("b"), search("c")])));
+    expect(hint(view.container)).toBe("3 searches, checked in the background");
+    expect(expanded(view.container)).toBe("true");
+    // A pause out for the new search, and then done: the header says what the list is, never that a save happened.
+    view.again(props(ready([search("a", CHECKED), search("b"), search("c")], { busyId: "c" })));
+    expect(hint(view.container)).toBe("Updating...");
+    view.again(props(ready([search("a", CHECKED), search("b"), search("c", { is_active: false })])));
+    expect(hint(view.container)).toBe("3 searches, 2 active");
+    expect(words(view.container)).not.toContain("Search saved");
+  });
+
+  it("does not say it again once an update has gone wrong and been put right", () => {
+    const view = draw(props(ready([search("a", CHECKED)]), { saving: true }));
+    view.again(props(ready([search("a", CHECKED), search("b")])));
+    expect(hint(view.container)).toBe("Search saved -- 2 searches, checked in the background");
+    view.again(props(ready([search("a", CHECKED), search("b")], { error: "That did not go through." })));
+    expect(hint(view.container)).toBe("An update didn't go through");
+    expect(expanded(view.container)).toBe("true");
+    view.again(props(ready([search("a", CHECKED), search("b", { is_active: false })])));
+    expect(hint(view.container)).toBe("2 searches, 1 active");
+    expect(words(view.container)).not.toContain("Search saved");
+  });
+
+  it("does not say it for a refused save whose error is later cleared", () => {
+    const view = draw(props(ready([search("a")]), { saving: true }));
+    view.again(props(ready([search("a")]), { createError: "We could not save that search." }));
+    expect(hint(view.container)).toBe("A search couldn't be saved");
+    view.again(props(ready([search("a")]), { createError: null }));
+    expect(hint(view.container)).toBe("1 search, not checked yet");
+    expect(words(view.container)).not.toContain("Search saved");
+  });
+
   it("does not say it on first draw, or for a list that was only read again", () => {
     const view = draw(props(ready([search("a")])));
     expect(hint(view.container)).toBe("1 search, not checked yet");
