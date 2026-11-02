@@ -797,13 +797,30 @@ describe("accessibility of the whole page", () => {
     await expectNoSeriousA11yViolations(container);
   });
 
-  it("has no serious or critical axe violation with the toolbar, a tier chosen and every detail open", async () => {
+  // axe walks all 25 rows, so each of these runs for a few seconds on a shared CI runner: one pass
+  // per test, with a timeout well past the default 5 s, instead of three passes in one.
+  const SLOW_AXE = { timeout: 30_000 };
+
+  it("has no serious or critical axe violation with the toolbar after a search", SLOW_AXE, async () => {
     answer({ "/discover?": mixedResponse({}, { warnings: ["brave: down"], dead_removed: 2 }), "/saved-searches": [SAVED] });
     const { container } = await draw();
     await search(container);
     await expectNoSeriousA11yViolations(container);
+  });
+
+  it("has no serious or critical axe violation with every detail open", SLOW_AXE, async () => {
+    answer({ "/discover?": mixedResponse({}, { warnings: ["brave: down"], dead_removed: 2 }), "/saved-searches": [SAVED] });
+    const { container } = await draw();
+    await search(container);
     click(query(container, ".bj-disc-toggle input"));
     await expectNoSeriousA11yViolations(container);
+  });
+
+  it("has no serious or critical axe violation with a tier chosen and every detail open", SLOW_AXE, async () => {
+    answer({ "/discover?": mixedResponse({}, { warnings: ["brave: down"], dead_removed: 2 }), "/saved-searches": [SAVED] });
+    const { container } = await draw();
+    await search(container);
+    click(query(container, ".bj-disc-toggle input"));
     click(buttonNamed(query(container, '[aria-label="Show results by fit"]'), /^Strong /));
     await expectNoSeriousA11yViolations(container);
   });
