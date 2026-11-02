@@ -549,11 +549,11 @@ describe("a row, in the order it is read", () => {
     expect(words(query(container, ".bj-disc-score"))).toBe("Placeholder");
   });
 
-  it("prints no number it cannot read: a score that is not a number leaves the tier word and the ladder alone", () => {
-    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, undefined as unknown as number]) {
+  it("prints no number it cannot read: a score that is not a number, or is outside 0 to 100, leaves the tier word and the ladder alone", () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, undefined as unknown as number, 150, -5, 100.01, Number.NEGATIVE_INFINITY]) {
       const { container, unmount } = draw(ready(response({ scored: [job({ score: score({ score100: bad }) })] })));
       const gutter = words(query(container, ".bj-disc-score"));
-      expect(gutter).not.toMatch(/NaN|Infinity|undefined/);
+      expect(gutter).not.toMatch(/NaN|Infinity|undefined|150|-5|100\.01/);
       expect(container.querySelector(".bj-disc-score-num")).toBeNull();
       expect(container.querySelector(".bj-disc-score-of")).toBeNull();
       expect(words(query(container, ".bj-disc-score-tier"))).toBe("Good");
@@ -562,7 +562,16 @@ describe("a row, in the order it is read", () => {
     }
   });
 
-  it("says the same thing to the eye and to a screen reader for a bin it does not know: Not scored, with no number and none of the response's words", () => {
+  it("prints a score inside the scale as it came, ends and fractions included", () => {
+    for (const [value, printed] of [[0, "0 / 100"], [100, "100 / 100"], [88.5, "88.5 / 100"], [12, "12 / 100"]] as const) {
+      const { container, unmount } = draw(ready(response({ scored: [job({ score: score({ bin: "Strong", score100: value }) })] })));
+      expect(words(query(container, ".bj-disc-score-line"))).toBe(printed);
+      expect(query(container, ".bj-disc-score [role='img']").getAttribute("aria-label")).toBe(`Fit: Strong -- ${printed}`);
+      unmount();
+    }
+  });
+
+  it("reads a bin it does not know as a row that was not scored, throughout: one band, no gutter, no number, no model line, no preview and no detail", () => {
     const hostile = [
       "Excellent",
       "Excellent fit, apply right now ".repeat(6),
@@ -572,17 +581,33 @@ describe("a row, in the order it is read", () => {
       ["Strong"],
     ];
     for (const bin of hostile) {
-      const { container, unmount } = draw(ready(response({ scored: [job({ score: score({ bin: bin as never, score100: 77 }) })] })));
-      const gutter = query(container, ".bj-disc-score");
-      expect(query(gutter, "[role='img']").getAttribute("aria-label")).toBe("Fit: Not scored");
-      expect(words(gutter)).toBe("Not scored");
-      expect(container.querySelector(".bj-disc-score-num")).toBeNull();
-      expect(container.querySelector(".bj-disc-score-of")).toBeNull();
-      expect(container.querySelector(".bj-disc-score-tier")).toBeNull();
+      const odd = job({ score: score({ bin: bin as never, score100: 77, one_liner: "The model's own line." }) });
+      const { container, unmount } = draw(ready(response({ scored: [odd] })));
+      const row = rowsOf(container)[0];
+      expect(classes(row)).toEqual(["bj-disc-row", "bj-disc-row--unscored"]);
+      expect(row.querySelector(".bj-disc-score")).toBeNull();
+      expect(words(query(row, ".bj-fit-unscored"))).toBe("Not scored");
+      expect(row.querySelector(".bj-fit-oneliner, .bj-fit-preview, .bj-disc-score-num, .bj-disc-score-of, .bj-disc-score-tier, [role='img']")).toBeNull();
+      expect(row.querySelector("button.bj-fit-toggle, .bj-fit-detail")).toBeNull();
       expect(words(container)).not.toContain("77");
       expect(words(container)).not.toContain("Excellent");
+      expect(words(container)).not.toContain("The model's own line.");
+      expect(container.querySelector(".bj-primary")).toBeNull();
       unmount();
     }
+  });
+
+  it("counts a row with a bin it does not know as not scored in the chips, so the chips add up to All, and the Not scored chip shows it", () => {
+    const odd = job({ apply_url: "https://jobs.example/acme/odd", title: "Odd", score: score({ bin: "Excellent" as never }) });
+    const rows = [job({ title: "A", apply_url: "https://jobs.example/acme/a" }), job({ title: "B", apply_url: "https://jobs.example/acme/b", score: score({ bin: "Poor", score100: 20 }) }), odd];
+    const { container } = draw(ready(response({ scored: rows, more: [unscored()] })));
+    const counts = [...container.querySelectorAll('[aria-label="Show results by fit"] .bj-disc-chip-count')].map((count) => Number(words(count)));
+    const names = [...container.querySelectorAll('[aria-label="Show results by fit"] button')].map((button) => words(button).replace(/ \d+ results?$/, ""));
+    expect(names).toEqual(["All", "Good", "Poor", "Not scored"]);
+    expect(counts).toEqual([4, 1, 1, 2]);
+    expect(counts[0]).toBe(counts.slice(1).reduce((sum, n) => sum + n, 0));
+    click(buttonNamed(query(container, '[aria-label="Show results by fit"]'), /^Not scored /));
+    expect(rowsOf(container).map((row) => words(query(row, "h3")))).toEqual(["Odd", "Analyst"]);
   });
 
   it("keeps a known bin's visible words and the ladder's label in agreement", () => {
@@ -630,7 +655,7 @@ describe("a row, in the order it is read", () => {
   it("never lets the response's own text become a class: an unrecognised bin gets no tier class at all", () => {
     const hostile = job({ score: score({ bin: "Strong bj-primary" as never }) });
     const { container } = draw(ready(response({ scored: [hostile] })));
-    expect(rowsOf(container).map(classes)).toEqual([["bj-disc-row"]]);
+    expect(rowsOf(container).map(classes)).toEqual([["bj-disc-row", "bj-disc-row--unscored"]]);
     expect(container.querySelector(".bj-primary")).toBeNull();
     expect(container.innerHTML).not.toContain('class="bj-disc-row bj-primary');
   });

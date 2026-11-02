@@ -114,6 +114,26 @@ describe("FitLadder", () => {
     expect(filledCells(container)).toBe(2);
   });
 
+  it("leaves the number out of the words and of the label when it is outside the scale, and keeps the rung", () => {
+    for (const score of [150, -5, 100.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const { container, unmount } = render(<FitLadder levels={LEVELS} level="Strong" score={score} />);
+      expect(query(container, '[role="img"]').getAttribute("aria-label"), String(score)).toBe("Fit: Strong");
+      expect(text(query(container, ".bj-ladder-words")), String(score)).toBe("Strong");
+      expect(filledCells(container)).toBe(4);
+      unmount();
+    }
+  });
+
+  it("says a score at either end of the scale, and one measured against a different top", () => {
+    for (const [score, words] of [[0, "Poor -- 0 / 100"], [100, "Poor -- 100 / 100"], [61.5, "Poor -- 61.5 / 100"]] as const) {
+      const { container, unmount } = render(<FitLadder levels={LEVELS} level="Poor" score={score} />);
+      expect(query(container, '[role="img"]').getAttribute("aria-label")).toBe(`Fit: ${words}`);
+      unmount();
+    }
+    const { container } = render(<FitLadder levels={LEVELS} level="Good" score={36} max={35} />);
+    expect(query(container, '[role="img"]').getAttribute("aria-label")).toBe("Fit: Good");
+  });
+
   it("can leave out the words, and keeps the image's label and the engine mark", () => {
     const { container } = render(<FitLadder levels={LEVELS} level="Strong" score={88} showWords={false} className="bj-disc-ladder" />);
     expect(container.querySelector(".bj-ladder-words")).toBeNull();

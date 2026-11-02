@@ -13,6 +13,7 @@ import {
   isUnscored,
   offeredFilters,
   offeredSorts,
+  reordersByDate,
   resolveFilter,
   resolveSort,
   sortRows,
@@ -51,11 +52,18 @@ describe("tiers and counts", () => {
     expect(tierOf(job({ score: score({ bin: "strong" as ScoreBin }) }))).toBeNull();
   });
 
-  it("calls a row unscored only when it has no score object", () => {
+  it("calls a row unscored when it has no score object, or a bin the ladder does not know", () => {
     expect(isUnscored(row("a", null))).toBe(true);
     expect(isUnscored(job({ score: undefined as unknown as null }))).toBe(true);
     expect(isUnscored(row("a", "Poor"))).toBe(false);
-    expect(isUnscored(job({ score: score({ bin: "odd" as ScoreBin }) }))).toBe(false);
+    for (const bin of ["odd", "strong", " Strong", "", "constructor", "__proto__", "toString", null, 3, {}, ["Strong"]]) {
+      expect(isUnscored(job({ score: score({ bin: bin as unknown as ScoreBin }) })), JSON.stringify(bin)).toBe(true);
+    }
+  });
+
+  it("agrees with the tier on every row: a row is unscored exactly when it has no tier", () => {
+    const rows = [row("a", "Strong"), row("b", null), job({ score: score({ bin: "odd" as ScoreBin }) }), job({ score: undefined as unknown as null })];
+    expect(rows.map((entry) => isUnscored(entry))).toEqual(rows.map((entry) => tierOf(entry) === null));
   });
 
   it("counts every row once under All, once under its tier, and unscored rows apart", () => {
@@ -67,11 +75,14 @@ describe("tiers and counts", () => {
     expect(countFor(counts, "unscored")).toBe(3);
   });
 
-  it("counts a row with an unrecognised bin in All only, so the groups need not add up to All", () => {
+  it("counts a row with an unrecognised bin as not scored, so the groups always add up to All", () => {
     const counts = fitCounts([row("a", "Good"), job({ title: "odd", score: score({ bin: "Excellent" as ScoreBin }) }), row("c", null)]);
     expect(counts.all).toBe(3);
     expect(counts.tiers).toEqual({ Strong: 0, Good: 1, Mixed: 0, Poor: 0 });
-    expect(counts.unscored).toBe(1);
+    expect(counts.unscored).toBe(2);
+    const rows = [row("a", "Good"), row("b", "Poor"), row("c", null), job({ title: "x", score: score({ bin: "?" as ScoreBin }) }), job({ title: "y", score: score({ bin: 7 as unknown as ScoreBin }) })];
+    const all = fitCounts(rows);
+    expect(Object.values(all.tiers).reduce((sum, n) => sum + n, 0) + all.unscored).toBe(all.all);
   });
 
   it("counts nothing for no rows", () => {
@@ -148,10 +159,63 @@ describe("which sorts are offered", () => {
     expect(offeredSorts({ tiersMeaningful: true, scoredRows: [...rows, row("e", "Good", 10)] })).toEqual(["returned", "fit", "newest"]);
   });
 
+  it("does not count a score outside 0 to 100, which is no score, and counts the ends", () => {
+    const rows = [row("a", "Strong", 70), row("b", "Strong", 150), row("c", "Poor", -5), row("d", "Poor", 100.5)];
+    expect(offeredSorts({ tiersMeaningful: true, scoredRows: rows })).toEqual(["returned", "newest"]);
+    expect(offeredSorts({ tiersMeaningful: true, scoredRows: [...rows, row("e", "Poor", 0)] })).toEqual(["returned", "fit", "newest"]);
+    expect(offeredSorts({ tiersMeaningful: true, scoredRows: [row("a", "Poor", 0), row("b", "Strong", 100)] })).toEqual(["returned", "fit", "newest"]);
+  });
+
+  it("offers no Newest when the clock the rows print against is not a date, since no row then prints one", () => {
+    const rows = [row("a", "Good", 70, { posted_at: "2026-09-01" }), row("b", "Good", 60, { posted_at: "2026-09-02" })];
+    const base = { tiersMeaningful: false, scoredRows: rows, timeZone: "UTC" };
+    expect(offeredSorts(base)).toEqual(["returned", "newest"]);
+    expect(offeredSorts({ ...base, now: new Date("2026-10-18T12:00:00Z") })).toEqual(["returned", "newest"]);
+    expect(offeredSorts({ ...base, now: new Date(Number.NaN) })).toEqual(["returned"]);
+    expect(offeredSorts({ ...base, timeZone: "Not/AZone" })).toEqual(["returned"]);
+  });
+
   it("falls back to As returned for a sort that is not offered", () => {
     expect(resolveSort("fit", ["returned", "newest"])).toBe("returned");
     expect(resolveSort("newest", ["returned", "newest"])).toBe("newest");
     expect(resolveSort("fit", [])).toBe("returned");
+  });
+});
+
+describe("which section Newest reorders", () => {
+  const dated = (title: string, at: string | null) => row(title, "Good", 50, { posted_at: at });
+
+  it("is a section with at least two rows whose date the trail can read, and no other", () => {
+    expect(reordersByDate([], "UTC")).toBe(false);
+    expect(reordersByDate([dated("a", "2026-09-01")], "UTC")).toBe(false);
+    expect(reordersByDate([dated("a", "2026-09-01"), dated("b", null), dated("c", "not a date"), dated("d", "2026-02-31")], "UTC")).toBe(false);
+    expect(reordersByDate([dated("a", "2026-09-01"), dated("b", "2026-09-02")], "UTC")).toBe(true);
+    expect(reordersByDate([dated("a", "2026-09-01"), dated("b", null), dated("c", "2026-09-03T08:00:00Z")], "UTC")).toBe(true);
+  });
+
+  it("reads each date as the trail does: not in a zone it does not know, and not against a clock that is not a date", () => {
+    const two = [dated("a", "2026-09-01"), dated("b", "2026-09-02")];
+    expect(reordersByDate(two, "Not/AZone")).toBe(false);
+    expect(reordersByDate(two, "UTC", new Date(Number.NaN))).toBe(false);
+    expect(reordersByDate(two, "UTC", new Date("2026-10-18T12:00:00Z"))).toBe(true);
+  });
+
+  it("is what arrange does: a section with fewer than two readable dates keeps the order it came in under Newest", () => {
+    const one = [dated("a", null), dated("b", "2026-09-05"), dated("c", null)];
+    const two = [dated("x", null), dated("y", "2026-09-01"), dated("z", "2026-09-09")];
+    const out = arrange({ scored: one, more: two, filter: "all", sort: "newest", timeZone: "UTC" });
+    expect(titles(out.scored)).toEqual(["a", "b", "c"]);
+    expect(titles(out.more)).toEqual(["z", "y", "x"]);
+    const swapped = arrange({ scored: two, more: one, filter: "all", sort: "newest", timeZone: "UTC" });
+    expect(titles(swapped.scored)).toEqual(["z", "y", "x"]);
+    expect(titles(swapped.more)).toEqual(["a", "b", "c"]);
+  });
+
+  it("leaves both sections as returned when neither has two readable dates", () => {
+    const one = [dated("a", null), dated("b", "2026-09-05")];
+    const out = arrange({ scored: one, more: [dated("c", "2026-09-09"), dated("d", null)], filter: "all", sort: "newest", timeZone: "UTC" });
+    expect(titles(out.scored)).toEqual(["a", "b"]);
+    expect(titles(out.more)).toEqual(["c", "d"]);
   });
 });
 
@@ -330,13 +394,31 @@ describe("arranging both sections", () => {
     expect(arrange({ scored: [row("a", "Good")], more: [], filter: "Poor", sort: "returned" })).toEqual({ scored: [], more: [] });
   });
 
-  it("shows a row with an unrecognised bin under All only", () => {
+  it("shows a row with an unrecognised bin under All and under Not scored, and under no tier", () => {
     const odd = job({ title: "odd", apply_url: "https://jobs.example/odd", score: score({ bin: "Excellent" as ScoreBin }) });
     const rows = [row("a", "Good"), odd];
     expect(titles(arrange({ scored: rows, more: [], filter: "all", sort: "returned" }).scored)).toEqual(["a", "odd"]);
-    for (const filter of [...TIER_ORDER, "unscored"] as const) {
+    expect(titles(arrange({ scored: rows, more: [], filter: "unscored", sort: "returned" }).scored)).toEqual(["odd"]);
+    for (const filter of TIER_ORDER) {
       expect(titles(arrange({ scored: rows, more: [], filter, sort: "returned" }).scored)).not.toContain("odd");
     }
+  });
+
+  it("keeps each chip's count and the rows its filter keeps the same number, for rows that all read one way or another", () => {
+    const odd = job({ title: "odd", apply_url: "https://jobs.example/odd", score: score({ bin: "Excellent" as ScoreBin }) });
+    const scoredRows = [row("a", "Good"), row("b", "Strong"), odd];
+    const moreRows = [row("u1", null), job({ title: "odd2", apply_url: "https://jobs.example/odd2", score: score({ bin: 9 as unknown as ScoreBin }) })];
+    const counts = fitCounts([...scoredRows, ...moreRows]);
+    for (const filter of ["all", ...TIER_ORDER, "unscored"] as const) {
+      const out = arrange({ scored: scoredRows, more: moreRows, filter, sort: "returned" });
+      expect(out.scored.length + out.more.length, filter).toBe(countFor(counts, filter));
+    }
+  });
+
+  it("ranks no row by a score outside 0 to 100: Best fit puts it with the rows that have none", () => {
+    const rows = [row("high", "Strong", 150), row("ok", "Good", 60), row("low", "Poor", -5), row("top", "Strong", 100), row("zero", "Poor", 0)];
+    expect(titles(sortRows(rows, "fit"))).toEqual(["top", "ok", "zero", "high", "low"]);
+    expect(titles(arrange({ scored: rows, more: [], filter: "all", sort: "fit" }).scored)).toEqual(["top", "ok", "zero", "high", "low"]);
   });
 
   it("sorts the sections apart: Best fit orders scored rows and leaves More results as returned", () => {

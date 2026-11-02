@@ -1,6 +1,7 @@
 import { SegmentedBar } from "../paper/SegmentedBar";
 import { FitLadder } from "../paper/ScoreBlock";
 import { FIT_LEVELS, fitPreviewOf, type FitView, type ScoredFit } from "../../lib/discoverRow";
+import { isScoreWithin } from "../../lib/scoreRange";
 import "../../styles/discover.css";
 
 // The parts of one Discover row's fit (what the engine made of the model's reading of the posting). A row
@@ -9,11 +10,12 @@ import "../../styles/discover.css";
 //
 //   FitScore     the gutter: the number out of 100 and the tier word, the four-cell ladder and the
 //                "engine" mark. A placeholder row (the scoring model's reply could not be read) has the
-//                hollow ladder that says "Placeholder" and no number; a row past the scoring batch has
-//                no gutter at all
+//                hollow ladder that says "Placeholder" and no number; a row past the scoring batch, or
+//                one whose bin the ladder does not know, has no gutter at all
 //   FitReading   the model's one line, and one line of what the score left out (the lowest part with
 //                its number, how many parts were not applied, a location that does not match), so a
-//                closed row never reads as complete. A row past the scoring batch says only "Not scored"
+//                closed row never reads as complete. A row past the scoring batch (or one whose bin the
+//                ladder does not know) says only "Not scored"
 //   FitToggle    "Why this score": opens the detail of that row
 //   FitDetail    a bar out of 100 for every part that was applied, what was not applied and why, the
 //                lowest part, and where the model read the job to be (a match, a mismatch or "can't
@@ -32,18 +34,11 @@ export function FitScore({ view }: { view: FitView }) {
       </div>
     );
   }
-  // The number and the tier word are printed only for a bin the ladder knows. Any other value (text the
-  // response made up, or something that is not text at all) is never drawn, and the ladder alone says
-  // "Not scored" in words, so what a sighted reader sees is what a screen reader is told.
-  if (!(FIT_LEVELS as readonly unknown[]).includes(view.level)) {
-    return (
-      <div className="bj-disc-score">
-        <FitLadder levels={FIT_LEVELS} level={null} className="bj-disc-ladder" />
-      </div>
-    );
-  }
-  // A number that is not a real number is not printed: the tier word and the ladder stand alone.
-  const hasNumber = typeof view.score100 === "number" && Number.isFinite(view.score100);
+  // A scored view always has a bin the ladder knows (fitViewOf makes any other bin an unscored row, which
+  // has no gutter). A number that is not a score from 0 to 100 is not printed, here or in the ladder's
+  // label: the tier word and the ladder stand alone, so what a sighted reader sees is what a screen
+  // reader is told.
+  const hasNumber = isScoreWithin(view.score100);
   return (
     <div className="bj-disc-score">
       <div className="bj-disc-score-text" aria-hidden="true">

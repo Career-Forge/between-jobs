@@ -19,8 +19,8 @@ import "../../styles/discover.css";
 //   scored        the gutter, the posting text, the model's line, "Why this score" and its detail
 //   placeholder   the scoring model's reply could not be read: a hollow ladder that says "Placeholder",
 //                 the posting text and the actions, with no number and nothing to open
-//   unscored      past the scoring batch: one band -- identity and the words "Not scored" with the
-//                 actions -- with no gutter and no detail
+//   unscored      past the scoring batch, or with a bin the ladder does not know: one band -- identity
+//                 and the words "Not scored" with the actions -- with no gutter, no model line and no detail
 //
 // The Strong rows are lifted onto a slightly lighter surface; the other tiers carry only a class so a
 // later rule can find them. A tier class comes from a fixed table, never from the response's own text.
