@@ -656,7 +656,9 @@ describe("accessibility", () => {
     ["the scoring fallback with Sort only", () => mixedResponse({}, { scoring_strategy: "neutral_fallback" }), () => undefined],
   ];
 
-  it.each(states)("%s has no serious or critical axe violation", async (_name, build, step) => {
+  // axe walks all 25 rows, so one pass can take a few seconds on a shared CI runner: one pass per test, with
+  // a timeout well past the default 5 s, so a slow pass fails alone instead of leaving axe running under the next.
+  it.each(states)("%s has no serious or critical axe violation", { timeout: 30_000 }, async (_name, build, step) => {
     const { container } = draw(response({ ...build(), warnings: ["brave: down"], dead_removed: 2 }));
     step(container);
     await expectNoSeriousA11yViolations(container);
