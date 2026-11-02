@@ -9,6 +9,7 @@ import {
   formatTrailTime,
   mono,
   notSet,
+  postedDay,
   postedMillis,
   type Slot,
   type TrailGlyphName,
@@ -331,6 +332,27 @@ describe("receipts", () => {
   it("is null when no row has a value, so nothing offers to open an empty receipt", () => {
     expect(buildReceipt([])).toBeNull();
     expect(buildReceipt([{ label: "run", value: undefined }, { note: "  " }])).toBeNull();
+  });
+});
+
+describe("the posting date as the calendar day a row prints", () => {
+  const now = new Date("2026-10-18T12:00:00Z");
+
+  it("is the day formatTrailDate prints, in the zone asked for", () => {
+    expect(postedDay("2026-09-22", "America/New_York")).toBe(20260922);
+    // 02:00 UTC is 22:00 the evening before in New York, and the trail prints that earlier day.
+    expect(postedDay("2026-09-22T02:00:00Z", "America/New_York")).toBe(20260921);
+    expect(formatTrailDate("2026-09-22T02:00:00Z", { now, timeZone: "America/New_York" })).toBe("Sep 21");
+    expect(postedDay("2026-09-22T02:00:00Z", "UTC")).toBe(20260922);
+    expect(postedDay("2026-09-22T22:00:00-04:00", "UTC")).toBe(20260923);
+  });
+
+  it("is null for everything the trail leaves out, including a zone the runtime does not know", () => {
+    for (const bad of ["2026-02-31", "2026-02-31T10:00:00Z", "2026-09-22T06:00:00", "yesterday", "", null, undefined, 20260922, {}]) {
+      expect(postedDay(bad, "UTC")).toBeNull();
+    }
+    expect(postedDay("2026-09-22T08:00:00Z", "Not/AZone")).toBeNull();
+    expect(formatTrailDate("2026-09-22T08:00:00Z", { now, timeZone: "Not/AZone" })).toBeNull();
   });
 });
 
