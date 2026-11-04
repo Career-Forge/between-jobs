@@ -686,6 +686,35 @@ async def test_workday_a_posting_that_can_no_longer_be_applied_to_is_gone() -> N
 
 
 @pytest.mark.parametrize(
+    "can_apply", [pytest.param(None, id="null"), 0, "false", "no", [], {}, 1, "true", True]
+)
+async def test_workday_only_the_json_false_closes_a_posting(can_apply: Any) -> None:
+    """`canApply` that is null or anything but the literal false says nothing about a closure; the
+    real fixture with that one field changed."""
+    detail = fixture("workday_detail_200")["body"]
+    detail["jobPostingInfo"]["canApply"] = can_apply
+    web = FakeWeb()
+    web.on("GET", _NVIDIA_DETAIL, status=200, json_body=detail)
+
+    result = await make_checker(web).check(_NVIDIA_LINK)
+
+    assert (result.state, result.reason) == ("still_listed", "still_listed")
+
+
+async def test_workday_a_posting_that_does_not_say_whether_it_can_be_applied_to_is_not_closed() -> (
+    None
+):
+    detail = fixture("workday_detail_200")["body"]
+    del detail["jobPostingInfo"]["canApply"]
+    web = FakeWeb()
+    web.on("GET", _NVIDIA_DETAIL, status=200, json_body=detail)
+
+    result = await make_checker(web).check(_NVIDIA_LINK)
+
+    assert (result.state, result.reason) == ("still_listed", "still_listed")
+
+
+@pytest.mark.parametrize(
     "info",
     [
         {},
@@ -759,6 +788,15 @@ async def test_workday_the_permission_denied_error_of_a_closed_posting_is_gone()
 
     assert (result.state, result.reason) == ("gone", "gone")
     assert web.urls() == [f"GET {_NTT_DETAIL}"]
+
+
+async def test_workday_the_error_code_alone_is_enough_to_be_gone() -> None:
+    web = FakeWeb()
+    web.on("GET", _NTT_DETAIL, status=403, json_body={"errorCode": "S22", "message": "x"})
+
+    result = await make_checker(web).check(_NTT_LINK)
+
+    assert (result.state, result.reason) == ("gone", "gone")
 
 
 async def test_workday_permission_denied_in_words_without_the_error_code_is_gone_too() -> None:
