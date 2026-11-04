@@ -316,7 +316,9 @@ class PoliteFetcher:
     def _cool_down(self, host: str) -> None:
         self._cooldowns[host] = self._clock() + HOST_COOLDOWN_SECONDS
         self._forget_beyond_the_limit(self._cooldowns)
-        logger.warning("job board asked us to slow down", extra={"ctx": {"host": host}})
+        # A Workday tenant's host is the employer's name; only the fixed hosts are named.
+        named = host if host in STATIC_HOSTS else "workday-tenant"
+        logger.warning("job board asked us to slow down", extra={"ctx": {"host": named}})
 
     @staticmethod
     def _forget_beyond_the_limit(remembered: dict[str, Any]) -> None:

@@ -1122,6 +1122,25 @@ async def test_no_page_text_reaches_the_log_even_when_the_answer_is_unreadable(
     )
 
 
+async def test_a_host_that_asks_us_to_slow_down_is_logged_without_naming_the_employer(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A Workday tenant's host is the employer's name, which says whose posting a person is
+    checking; the cool-down's line says only that a tenant asked."""
+    web = FakeWeb()
+    web.on("GET", _NVIDIA_DETAIL, status=429, text="slow down")
+
+    with caplog.at_level(logging.DEBUG, logger="between_jobs"):
+        result = await make_checker(web).check(_NVIDIA_LINK)
+
+    assert result.reason == "rate_limited"
+    warned = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warned) == 1
+    text = rendered(r for r in caplog.records if r.name.startswith("between_jobs"))
+    for leaked in ("nvidia", "NVIDIA", "myworkdayjobs", "JR2017895"):
+        assert leaked not in text
+
+
 # -- the kill switch ---------------------------------------------------------------------------
 
 
