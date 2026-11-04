@@ -1092,7 +1092,7 @@ async def test_a_check_logs_the_platform_the_state_the_reason_and_the_time_and_n
     web = _greenhouse_web()
     secret = "https://boards.greenhouse.io/stripe/jobs/" + _GH_ID + "?token=SECRET-QUERY&gh_src=abc"
 
-    with caplog.at_level(logging.DEBUG):
+    with caplog.at_level(logging.DEBUG, logger="between_jobs"):
         await make_checker(web).check(secret)
         await make_checker(FakeWeb()).check(
             "https://careers.example.com/jobs?gh_jid=1&private=SECRET-QUERY"
@@ -1114,7 +1114,7 @@ async def test_no_page_text_reaches_the_log_even_when_the_answer_is_unreadable(
     web = _greenhouse_web()
     web.on("GET", GH, status=200, text="<html>PAGE-TEXT-FROM-THE-EMPLOYER</html>")
 
-    with caplog.at_level(logging.DEBUG):
+    with caplog.at_level(logging.DEBUG, logger="between_jobs"):
         await make_checker(web).check(_GH_LINK)
 
     assert "PAGE-TEXT-FROM-THE-EMPLOYER" not in rendered(

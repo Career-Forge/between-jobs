@@ -336,7 +336,10 @@ def test_the_log_has_the_platform_the_state_the_reason_and_nothing_of_the_link_o
         source_url=f"{_GH_LINK}?gh_src=SECRET-QUERY&token=SECRET-TOKEN", canonical_url=None
     )
 
-    with caplog.at_level(logging.DEBUG), _client(supabase, make_checker(web)) as client:
+    with (
+        caplog.at_level(logging.DEBUG, logger="between_jobs"),
+        _client(supabase, make_checker(web)) as client,
+    ):
         client.post(_PATH)
 
     ours = [r for r in caplog.records if r.name == "between_jobs.api.link_check"]
