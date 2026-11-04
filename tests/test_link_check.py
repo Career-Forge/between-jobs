@@ -9,6 +9,8 @@ import ast
 import asyncio
 import logging
 import re
+from collections.abc import AsyncIterator
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,7 @@ from link_check_fakes import (
     FakeWeb,
     fixture,
     make_checker,
+    make_fetcher,
 )
 from rendered_logs import rendered
 
@@ -481,6 +484,16 @@ async def test_lever_a_posting_on_the_list_is_still_listed_whatever_the_case_of_
     assert web.urls() == [f"GET {LEVER}"]
 
 
+async def test_lever_the_case_of_the_ids_on_the_list_does_not_matter_either() -> None:
+    web = FakeWeb()
+    web.on("GET", LEVER, status=200, json_body=[{"id": _LEVER_ID.upper(), "text": "x"}])
+
+    result = await make_checker(web).check(_LEVER_LINK)
+
+    assert (result.state, result.reason) == ("still_listed", "still_listed")
+    assert web.urls() == [f"GET {LEVER}"]
+
+
 async def test_lever_absent_from_the_list_and_the_single_posting_404s_is_gone() -> None:
     web = _lever_web()
     single = f"https://api.lever.co/v0/postings/leverdemo/{ZERO_UUID}?mode=json"
@@ -608,6 +621,34 @@ async def test_ashby_a_job_that_is_on_the_board_but_not_listed_is_reachable_by_l
 
     assert (result.state, result.reason) == ("cant_tell", "unlisted_direct_link")
     assert web.urls() == [f"GET {ASHBY}"]
+
+
+@pytest.mark.parametrize("listed", [pytest.param(None, id="null"), "absent", True])
+async def test_ashby_a_job_is_unlisted_only_when_the_board_says_isListed_is_false(
+    listed: Any,
+) -> None:
+    board = fixture("ashby_job_board")["body"]
+    if listed == "absent":
+        del board["jobs"][0]["isListed"]
+    else:
+        board["jobs"][0]["isListed"] = listed
+    web = FakeWeb()
+    web.on("GET", ASHBY, status=200, json_body=board)
+
+    result = await make_checker(web).check(_ASHBY_LINK)
+
+    assert (result.state, result.reason) == ("still_listed", "still_listed")
+
+
+async def test_ashby_the_case_of_the_ids_on_the_board_does_not_matter() -> None:
+    board = fixture("ashby_job_board")["body"]
+    board["jobs"][0]["id"] = _ASHBY_ID.upper()
+    web = FakeWeb()
+    web.on("GET", ASHBY, status=200, json_body=board)
+
+    result = await make_checker(web).check(_ASHBY_LINK)
+
+    assert (result.state, result.reason) == ("still_listed", "still_listed")
 
 
 async def test_ashby_absent_from_the_board_and_the_hosted_page_404s_is_gone() -> None:
@@ -1063,6 +1104,60 @@ async def test_an_empty_or_failed_list_is_not_remembered() -> None:
 
     assert reasons == ["empty_listing", "status_500", "still_listed"]
     assert web.urls() == [f"GET {GH}"] * 3
+
+
+@pytest.mark.parametrize(
+    ("link", "list_url", "single_url"),
+    [
+        (
+            f"https://boards.greenhouse.io/stripe/jobs/{_GH_ID}0",
+            GH,
+            f"{GH}/{_GH_ID}0",
+        ),
+        (
+            f"https://jobs.lever.co/leverdemo/{ZERO_UUID}",
+            LEVER,
+            f"https://api.lever.co/v0/postings/leverdemo/{ZERO_UUID}?mode=json",
+        ),
+        (
+            f"https://jobs.ashbyhq.com/ashby/{ZERO_UUID}",
+            ASHBY,
+            f"https://jobs.ashbyhq.com/ashby/{ZERO_UUID}",
+        ),
+    ],
+)
+async def test_the_page_that_corroborates_a_closure_is_never_read(
+    link: str, list_url: str, single_url: str
+) -> None:
+    """Only the status of the second request is used, so a 404 page of any size is not read."""
+    read = False
+
+    async def body() -> AsyncIterator[bytes]:
+        nonlocal read
+        read = True
+        yield b"a whole page"
+
+    web = FakeWeb()
+    list_fixture = {GH: "greenhouse_board_list", LEVER: "lever_postings_list"}.get(
+        list_url, "ashby_job_board"
+    )
+    web.on("GET", list_url, list_fixture)
+    web.on("GET", single_url, lambda _: httpx.Response(404, content=body()))
+
+    result = await make_checker(web).check(link)
+
+    assert (result.state, result.reason) == ("gone", "gone")
+    assert read is False
+
+
+async def test_the_time_of_a_check_is_utc_with_its_offset() -> None:
+    fetcher, clock = make_fetcher(_greenhouse_web())
+
+    result = await LinkChecker(fetcher, clock=clock).check(_GH_LINK)
+
+    moment = datetime.fromisoformat(result.checked_at)
+    assert moment.utcoffset() == timedelta(0)
+    assert result.checked_at.endswith("+00:00")
 
 
 async def test_a_check_asks_at_most_two_lists_and_one_more_request() -> None:

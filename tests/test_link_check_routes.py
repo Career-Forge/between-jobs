@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from link_check_fakes import GH, LEVER, NOW, FakeWeb, fixture, make_checker
+from link_check_fakes import GH, LEVER, NOW, FakeWeb, fixture, make_checker, make_fetcher
 from rendered_logs import rendered
 
 from between_jobs.api import rate_limits
@@ -371,6 +371,56 @@ def test_the_log_has_the_platform_the_state_the_reason_and_nothing_of_the_link_o
     text = rendered(r for r in caplog.records if r.name.startswith("between_jobs"))
     for leaked in ("SECRET-QUERY", "SECRET-TOKEN", "gh_src", _GH_ID, "stripe"):
         assert leaked not in text
+
+
+def test_every_request_is_answered_by_the_one_checker_the_app_holds() -> None:
+    """No `get_link_checker` override here: the route gets the checker from `app.state`. One
+    memory of boards and cool-downs only means anything if every request shares it."""
+    web = _greenhouse_web()
+    supabase = FakeSupabase(source_url=_GH_LINK, canonical_url=None)
+    app.dependency_overrides[get_supabase] = lambda: supabase
+    app.dependency_overrides[require_user_id] = lambda: _USER
+
+    with TestClient(app) as client:
+        built = app.state.link_checker
+        app.state.link_checker = make_checker(web)
+        try:
+            first = client.post(_PATH)
+            second = client.post(_PATH)
+        finally:
+            app.state.link_checker = built
+
+    assert (first.status_code, second.status_code) == (200, 200)
+    assert web.urls() == [f"GET {GH}"]  # the second check was answered from the first one's list
+
+
+def test_a_host_that_asked_us_to_stop_is_left_alone_by_every_later_request() -> None:
+    web = _greenhouse_web()
+    web.on("GET", GH, status=429, text="slow down")
+    supabase = FakeSupabase(source_url=_GH_LINK, canonical_url=None)
+    app.dependency_overrides[get_supabase] = lambda: supabase
+    app.dependency_overrides[require_user_id] = lambda: _USER
+
+    with TestClient(app) as client:
+        built = app.state.link_checker
+        app.state.link_checker = make_checker(web)
+        try:
+            answers = [client.post(_PATH).json()["reason"] for _ in range(3)]
+        finally:
+            app.state.link_checker = built
+
+    assert answers == ["rate_limited"] * 3
+    assert web.urls() == [f"GET {GH}"]
+
+
+def test_the_time_of_a_check_is_utc_with_its_offset_in_the_reply() -> None:
+    fetcher, clock = make_fetcher(_greenhouse_web())
+    supabase = FakeSupabase(source_url=_GH_LINK, canonical_url=None)
+
+    with _client(supabase, LinkChecker(fetcher, clock=clock)) as client:
+        checked_at = client.post(_PATH).json()["checked_at"]
+
+    assert checked_at.endswith("+00:00")
 
 
 # -- how the app builds it ---------------------------------------------------------------------
