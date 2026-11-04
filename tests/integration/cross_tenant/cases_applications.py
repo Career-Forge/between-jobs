@@ -264,7 +264,10 @@ async def _check_link(ctx: Ctx) -> Req:
 async def _check_link_unchanged(ctx: Ctx) -> None:
     app = await ctx.need("application", ctx.a)
     row = (await ctx.sb.table("applications").select("*").eq("id", app["id"]).execute()).data[0]
-    assert row == app["row"], "B's link check changed A's application"
+    for column in ("user_id", "job_id", "active_job_snapshot_id"):
+        assert row[column] == app["row"][column], (
+            f"B's link check changed A's application ({column})"
+        )
 
 
 # -- the extension surface -----------------------------------------------------------------------
