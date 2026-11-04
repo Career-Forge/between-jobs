@@ -362,8 +362,8 @@ class LinkChecker:
         self._clock = clock
         self._now = now
         self._slots = asyncio.Semaphore(MAX_CONCURRENT_CHECKS)
-        self._boards: OrderedDict[tuple[str, str], _CachedBoard] = OrderedDict()
-        self._board_locks: weakref.WeakValueDictionary[tuple[str, str], asyncio.Lock] = (
+        self._boards: OrderedDict[tuple[str, str, str], _CachedBoard] = OrderedDict()
+        self._board_locks: weakref.WeakValueDictionary[tuple[str, str, str], asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
 
@@ -417,7 +417,9 @@ class LinkChecker:
         """The board's parsed ids: from the five-minute memory when it has them, else `load`.
         Only a non-empty list is remembered, so a board caught empty for a moment is not called
         empty for five minutes. Checks racing for one board wait for the first one's answer."""
-        key = (target.ats, target.board)
+        # Lever's regions are separate worlds that can share a site name, so the link's host is
+        # part of the key there.
+        key = (target.ats, target.board, target.host if target.ats == "lever" else "")
         lock = self._board_locks.setdefault(key, asyncio.Lock())
         async with lock:
             cached = self._boards.get(key)

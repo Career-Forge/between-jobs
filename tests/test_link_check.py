@@ -851,6 +851,39 @@ async def test_a_board_is_listed_once_for_five_checks_in_five_minutes() -> None:
     assert web.urls() == [f"GET {GH}", f"GET {GH}/1", f"GET {GH}"]
 
 
+async def test_two_platforms_sharing_a_board_name_do_not_share_a_remembered_list() -> None:
+    """`ashby` is also a plausible Greenhouse board token: each platform's check reads its own
+    platform's list."""
+    gh_list = "https://boards-api.greenhouse.io/v1/boards/ashby/jobs"
+    web = FakeWeb()
+    web.on("GET", gh_list, "greenhouse_board_list")
+    web.on("GET", ASHBY, "ashby_job_board")
+    checker = make_checker(web)
+
+    greenhouse = await checker.check(f"https://boards.greenhouse.io/ashby/jobs/{_GH_ID}")
+    ashby = await checker.check(_ASHBY_LINK)
+
+    assert (greenhouse.state, ashby.state) == ("still_listed", "still_listed")
+    assert web.urls() == [f"GET {gh_list}", f"GET {ASHBY}"]
+
+
+async def test_a_lever_site_name_on_one_region_is_not_the_same_site_on_the_other() -> None:
+    """Two companies can use one site name, one in each region. A list loaded for the EU region's
+    `leverdemo` says nothing about the global region's, and the single posting is asked of the
+    region the list came from."""
+    other = [{"id": ZERO_UUID}]
+    web = FakeWeb()
+    web.on("GET", LEVER_EU, status=200, json_body=other)
+    web.on("GET", LEVER, "lever_postings_list")
+    checker = make_checker(web)
+
+    eu = await checker.check(f"https://jobs.eu.lever.co/leverdemo/{ZERO_UUID}")
+    global_ = await checker.check(_LEVER_LINK)
+
+    assert (eu.state, global_.state) == ("still_listed", "still_listed")
+    assert web.urls() == [f"GET {LEVER_EU}", f"GET {LEVER}"]
+
+
 async def test_checks_racing_for_one_board_share_one_list_request() -> None:
     web = _greenhouse_web()
     checker = make_checker(web)
