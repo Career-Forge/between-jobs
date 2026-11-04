@@ -1,5 +1,5 @@
-"""POST /applications/{id}/check-link (applications_routes.py): ownership first, the kill switch, the
-per-user limit, which link is read, and that the whole thing writes nothing anywhere.
+"""POST /applications/{id}/check-link (applications_routes.py): ownership first, the kill switch,
+the per-user limit, which link is read, and that the whole thing writes nothing anywhere.
 
 The route is exercised through the real app (TestClient), with a Supabase fake that RECORDS every
 write and every table read, and a link checker built on `FakeWeb` (no network)."""
@@ -367,7 +367,7 @@ def test_the_app_builds_the_checker_with_its_own_allowlisted_client_and_closes_i
 
 def test_nothing_is_started_by_the_app_for_the_check() -> None:
     """The check is not a worker: no loop, no task, nothing on a schedule. `DISABLE_LINK_CHECK` is
-    read per request by the route, so the registry the health check reports on has no entry for it."""
+    read per request by the route, so the registry /health reports on has no entry for it."""
     with TestClient(app):
         registered = set(app.state.workers.workers)
 

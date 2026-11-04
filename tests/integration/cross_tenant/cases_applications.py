@@ -256,6 +256,17 @@ async def _extension_payload(ctx: Ctx) -> Req:
     return Req("GET", f"/applications/{event['application_id']}/extension-payload")
 
 
+async def _check_link(ctx: Ctx) -> Req:
+    app = await ctx.need("application", ctx.a)
+    return Req("POST", f"/applications/{app['id']}/check-link")
+
+
+async def _check_link_unchanged(ctx: Ctx) -> None:
+    app = await ctx.need("application", ctx.a)
+    row = (await ctx.sb.table("applications").select("*").eq("id", app["id"]).execute()).data[0]
+    assert row == app["row"], "B's link check changed A's application"
+
+
 # -- the extension surface -----------------------------------------------------------------------
 
 
@@ -455,6 +466,14 @@ CASES = [
         note="The real contract is a 200 {'result': null} for a stranger (the read is scoped "
         "by user_id and does not check the application separately), the same answer as for an "
         "id that does not exist, so it is not an existence oracle.",
+    ),
+    Case(
+        "POST /applications/{application_id}/check-link",
+        _check_link,
+        unchanged=_check_link_unchanged,
+        note="The seeded job's link is on example.com, a company page, so the owner's own check "
+        "is a 200 `cant_tell: company_page` and no request leaves the machine. B gets the "
+        "same 404 as for an id that does not exist, before the link is even looked up.",
     ),
     Case("GET /applications/{application_id}/extension-payload", _extension_payload),
     Case(

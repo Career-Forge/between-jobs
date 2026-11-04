@@ -1,6 +1,7 @@
-"""The link check's decisions (api/link_check.py): what a saved link means, and what each platform's
-answers add up to. Everything runs against `FakeWeb` (httpx.MockTransport, no network) with the real
-answers captured on 2026-11-04 (tests/fixtures/link_check/README.md says how, and what is not real)."""
+"""The link check's decisions (api/link_check.py): what a saved link means, and what each
+platform's answers add up to. Everything runs against `FakeWeb` (httpx.MockTransport, no network)
+with the real answers captured on 2026-11-04 (tests/fixtures/link_check/README.md says how, and
+what is not real)."""
 
 from __future__ import annotations
 
@@ -747,7 +748,7 @@ async def test_workday_a_404_is_gone_only_when_the_tenants_own_search_has_no_mat
 
     assert (result.state, result.reason) == ("gone", "gone")
     assert web.urls() == [f"GET {NVIDIA_BASE}/job/{_NOTHING_SLUG}", f"POST {NVIDIA_BASE}/jobs"]
-    search = [r for r in web.requests if r.method == "POST"][0]
+    search = next(r for r in web.requests if r.method == "POST")
     assert search.headers["content-type"] == "application/json"
     assert search.read() == (b'{"appliedFacets":{},"limit":20,"offset":0,"searchText":"JR0000000"}')
 

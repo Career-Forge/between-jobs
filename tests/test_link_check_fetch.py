@@ -1,7 +1,7 @@
 """The link check's manners (api/link_fetch.py): the closed host list and the request hook that
 enforces it, robots.txt (RFC 9309), the one-request-a-second pacer, the ten-minute cool-down, the
-bounds on time and size, and the identifying User-Agent. No network: httpx.MockTransport, and a clock
-that sleeps without waiting."""
+bounds on time and size, and the identifying User-Agent. No network: httpx.MockTransport, and a
+clock that sleeps without waiting."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import asyncio
 import gzip
 import logging
 from collections.abc import AsyncIterator
+from itertools import pairwise
 from typing import Any
 
 import httpx
@@ -82,7 +83,7 @@ def test_the_allowed_hosts(host: str) -> None:
         "-acme.wd5.myworkdayjobs.com",
         "acme.evil.wd5.myworkdayjobs.com",
         "ACME.wd5.myworkdayjobs.com",
-        "acme.wd٥.myworkdayjobs.com",
+        "acme.wd" + chr(0x665) + ".myworkdayjobs.com",
     ],
 )
 def test_every_other_host_is_refused(host: str) -> None:
@@ -244,7 +245,8 @@ async def test_a_redirect_is_an_answer_and_is_never_followed() -> None:
         ("User-agent: Googlebot\nDisallow: /", "/x", True),
         # two groups for this crawler are one group; so are two agent lines over one list
         (
-            "User-agent: BetweenJobsLinkCheck\nDisallow: /a\n\nUser-agent: BetweenJobsLinkCheck\nDisallow: /b",
+            "User-agent: BetweenJobsLinkCheck\nDisallow: /a\n\n"
+            "User-agent: BetweenJobsLinkCheck\nDisallow: /b",
             "/b",
             False,
         ),
@@ -479,7 +481,7 @@ async def test_checks_racing_for_one_host_queue_up_a_second_apart() -> None:
     await asyncio.gather(*(fetcher.fetch("GET", f"{LIST_URL}/{n}") for n in range(4)))
 
     gaps = sorted(t - start for t in web.times)
-    assert all(later - earlier >= 1.0 for earlier, later in zip(gaps, gaps[1:], strict=False))
+    assert all(later - earlier >= 1.0 for earlier, later in pairwise(gaps))
 
 
 # -- a host that asks us to stop ---------------------------------------------------------------

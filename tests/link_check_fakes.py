@@ -86,6 +86,7 @@ class FakeWeb:
     ) -> None:
         """Answers `method url`. `answer` is a fixture name, or a function from the request to a
         response; without it the answer is built from `status`, `json_body`/`text` and `headers`."""
+        responder: Responder
         if isinstance(answer, str):
             name = answer
 
