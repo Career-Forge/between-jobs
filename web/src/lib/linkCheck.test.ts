@@ -19,11 +19,11 @@ import {
 } from "./linkCheck";
 import { findForbiddenWord, formatTrailTime } from "./trail";
 
-// The words are the spec's, typed out here rather than imported, so that a change to one is a change to a test.
+// The words each reason is shown with, typed out here rather than imported, so that a change to one is a change to a test.
 
 const ROBOTS = "We don't check this site because its rules ask automated tools to stay out";
 const NO_ANSWER = "The company's site did not answer in time";
-const SPEC_REASON_WORDS: ReadonlyArray<readonly [string, string]> = [
+const EXPECTED_REASON_WORDS: ReadonlyArray<readonly [string, string]> = [
   ["board_missing_or_moved", "The company's board is not where we expected it, so we can't say about this job"],
   ["empty_listing", "The company's board returned no jobs right now"],
   ["signals_disagree", "The company's board and the job page disagree, so we won't guess"],
@@ -66,12 +66,12 @@ describe("the three answers", () => {
 });
 
 describe("the reasons a check can't tell", () => {
-  it.each(SPEC_REASON_WORDS)("words %s as its spec sentence, then the suggestion", (reason, words) => {
+  it.each(EXPECTED_REASON_WORDS)("words %s as its own sentence, then the suggestion", (reason, words) => {
     expect(cantTellWords(reason)).toBe(`${words}. ${SUGGESTION}`);
   });
 
-  it("has words for exactly the reasons the spec names, no more and no fewer", () => {
-    expect([...CANT_TELL_REASON_WORDS.keys()].sort()).toEqual(SPEC_REASON_WORDS.map(([reason]) => reason).sort());
+  it("has words for exactly the reasons listed above, no more and no fewer", () => {
+    expect([...CANT_TELL_REASON_WORDS.keys()].sort()).toEqual(EXPECTED_REASON_WORDS.map(([reason]) => reason).sort());
   });
 
   it("says a reason it does not know as one it cannot use, without repeating the code", () => {
