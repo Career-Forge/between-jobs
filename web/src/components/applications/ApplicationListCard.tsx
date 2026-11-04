@@ -1,4 +1,6 @@
 import type { Application, ApplicationStatus } from "../../lib/applicationsTypes";
+import type { LinkCheckEntry } from "../../lib/linkCheck";
+import { LinkCheck } from "./LinkCheck";
 import {
   CardActions,
   CardIdentity,
@@ -20,11 +22,13 @@ export interface ApplicationListCardProps {
   now: Date;
   busy: boolean;
   problem: MoveProblem | undefined;
+  linkCheck: LinkCheckEntry | undefined;
   onChangeStatus: (status: ApplicationStatus) => void;
   onRetry: () => void;
+  onCheckLink: () => void;
 }
 
-export function ApplicationListCard({ application, now, busy, problem, onChangeStatus, onRetry }: ApplicationListCardProps) {
+export function ApplicationListCard({ application, now, busy, problem, linkCheck, onChangeStatus, onRetry, onCheckLink }: ApplicationListCardProps) {
   const posting = application.snapshot?.source_url;
   return (
     <li className="bj-app-card" data-app-id={application.id} aria-busy={busy ? true : undefined}>
@@ -41,6 +45,7 @@ export function ApplicationListCard({ application, now, busy, problem, onChangeS
         )}
         <OpenLink application={application} label="Open workspace" />
         <CardActions application={application} />
+        <LinkCheck application={application} entry={linkCheck} onCheck={onCheckLink} />
       </div>
       <CardTrail application={application} now={now} />
     </li>
