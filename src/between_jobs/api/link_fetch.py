@@ -28,8 +28,11 @@ is where every promise about manners is kept, in one place:
   stops every request to that host for ten minutes and answers `rate_limited` without a request.
   Nothing is retried, ever.
 - EVERYTHING IS BOUNDED. 15 seconds for a request, in total and not per read; the body is read as a
-  stream and abandoned at 16 MiB (`provider_http._read_bounded`, so a compressed bomb is stopped
-  too); a status that is all a caller needs is read without reading the body at all.
+  stream and abandoned at 16 MiB (`provider_http._read_bounded`, which counts decoded bytes, so a
+  compressed bomb is stopped too); a status that is all a caller needs is read without reading the
+  body at all. The count is per decoded chunk, so a hostile host that compresses anyway can make
+  one chunk overshoot the cap by its compression ratio; every request asks for an uncompressed
+  body (`Accept-Encoding: identity`), which an honest job board honors.
 - IT SAYS WHO IT IS. One User-Agent, with an address a site operator can write to.
 - IT KEEPS NO COOKIES. The client is shared by every person's checks, so a cookie a site sets
   is dropped and never sent back.
@@ -121,7 +124,11 @@ def build_link_check_client(transport: httpx.AsyncBaseTransport | None = None) -
     shared one, which legitimately talks to many other hosts. `transport` is for tests."""
     client = httpx.AsyncClient(
         transport=transport,
-        headers={"User-Agent": USER_AGENT, "Accept": "application/json, text/html;q=0.8"},
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json, text/html;q=0.8",
+            "Accept-Encoding": "identity",
+        },
         timeout=httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS),
         follow_redirects=False,
         event_hooks={"request": [refuse_hosts_outside_allowlist]},

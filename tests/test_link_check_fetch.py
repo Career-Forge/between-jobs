@@ -191,6 +191,18 @@ async def test_every_request_says_who_is_asking_robots_txt_included() -> None:
         )
 
 
+async def test_every_request_asks_for_an_uncompressed_body() -> None:
+    """The cap on a body is checked per decoded chunk, so a compressed answer can overshoot it
+    by its compression ratio; asking for the plain body keeps an honest site from sending one."""
+    web = FakeWeb()
+    web.on("GET", LIST_URL, status=200, json_body={})
+    fetcher, _ = make_fetcher(web)
+
+    await fetcher.fetch("GET", LIST_URL)
+
+    assert [r.headers["accept-encoding"] for r in web.requests] == ["identity", "identity"]
+
+
 async def test_a_cookie_an_employer_sets_is_not_kept_or_sent_back_to_anyone() -> None:
     """The client is shared by every person's checks; what a site hands it must not change what
     that site answers the next person."""
