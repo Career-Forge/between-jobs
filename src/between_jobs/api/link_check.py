@@ -160,6 +160,10 @@ def _segments(path: str) -> list[str] | None:
 
 
 def _on_domain(host: str, domains: tuple[str, ...]) -> bool:
+    """`host` is the domain or a subdomain of one of `domains`. A trailing dot (a fully qualified
+    name) is the same site, so it is ignored here; the exact-host checks for the platforms we read
+    stay strict about it."""
+    host = host.removesuffix(".")
     return any(host == domain or host.endswith(f".{domain}") for domain in domains)
 
 
