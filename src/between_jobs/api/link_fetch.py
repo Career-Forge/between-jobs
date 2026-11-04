@@ -31,6 +31,8 @@ is where every promise about manners is kept, in one place:
   stream and abandoned at 16 MiB (`provider_http._read_bounded`, so a compressed bomb is stopped
   too); a status that is all a caller needs is read without reading the body at all.
 - IT SAYS WHO IT IS. One User-Agent, with an address a site operator can write to.
+- IT KEEPS NO COOKIES. The client is shared by every person's checks, so a cookie a site sets
+  is dropped and never sent back.
 
 Nothing here keeps anything of an answer: the robots rules and the cool-downs are the only state,
 and both are in memory.
@@ -49,6 +51,7 @@ import time
 import weakref
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from http.cookiejar import DefaultCookiePolicy
 from typing import Any
 
 import httpx
@@ -116,13 +119,17 @@ def build_link_check_client(transport: httpx.AsyncBaseTransport | None = None) -
     """The one client the check uses: allowlisted by `refuse_hosts_outside_allowlist`, never
     following a redirect, and always sending its User-Agent. A separate client from the app's
     shared one, which legitimately talks to many other hosts. `transport` is for tests."""
-    return httpx.AsyncClient(
+    client = httpx.AsyncClient(
         transport=transport,
         headers={"User-Agent": USER_AGENT, "Accept": "application/json, text/html;q=0.8"},
         timeout=httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS),
         follow_redirects=False,
         event_hooks={"request": [refuse_hosts_outside_allowlist]},
     )
+    # One client serves everyone's checks: a cookie a site sets must not come back on the next
+    # person's request. An empty allow-list accepts and returns none.
+    client.cookies.jar.set_policy(DefaultCookiePolicy(allowed_domains=[]))
+    return client
 
 
 class Undecided(Exception):

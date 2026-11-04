@@ -191,6 +191,24 @@ async def test_every_request_says_who_is_asking_robots_txt_included() -> None:
         )
 
 
+async def test_a_cookie_an_employer_sets_is_not_kept_or_sent_back_to_anyone() -> None:
+    """The client is shared by every person's checks; what a site hands it must not change what
+    that site answers the next person."""
+    web = FakeWeb()
+    web.on(
+        "GET", ROBOTS_URL, status=404, text="", headers={"Set-Cookie": "wd-browser-id=abc; Path=/"}
+    )
+    web.on("GET", LIST_URL, status=200, json_body={}, headers={"Set-Cookie": "session=xyz"})
+    web.on("GET", f"{LIST_URL}/1", status=404, text="")
+    fetcher, _ = make_fetcher(web)
+
+    await fetcher.fetch("GET", LIST_URL)
+    await fetcher.fetch("GET", f"{LIST_URL}/1")
+
+    assert all("cookie" not in request.headers for request in web.requests)
+    assert len(fetcher.http.cookies.jar) == 0
+
+
 async def test_a_redirect_is_an_answer_and_is_never_followed() -> None:
     web = FakeWeb()
     web.on("GET", LIST_URL, status=301, headers={"location": "https://stripe.com/jobs"})
