@@ -1,0 +1,9 @@
+{
+  "captured": "2026-11-04",
+  "request": "GET https://api.lever.co/v0/postings/leverdemo/00000000-0000-0000-0000-000000000000?mode=json",
+  "status": 404,
+  "body": {
+    "ok": false,
+    "error": "Document not found"
+  }
+}

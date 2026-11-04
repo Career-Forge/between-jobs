@@ -1,0 +1,24 @@
+{
+  "captured": "2026-11-04",
+  "request": "GET https://boards-api.greenhouse.io/v1/boards/stripe/jobs",
+  "status": 200,
+  "body": {
+    "jobs": [
+      {
+        "id": 8172510,
+        "absolute_url": "https://stripe.com/jobs/search?gh_jid=8172510"
+      },
+      {
+        "id": 8172487,
+        "absolute_url": "https://stripe.com/jobs/search?gh_jid=8172487"
+      },
+      {
+        "id": 8172508,
+        "absolute_url": "https://stripe.com/jobs/search?gh_jid=8172508"
+      }
+    ],
+    "meta": {
+      "total": 3
+    }
+  }
+}

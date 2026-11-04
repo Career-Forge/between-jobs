@@ -1,0 +1,12 @@
+{
+  "captured": "2026-11-04",
+  "request": "GET https://nttlimited.wd3.myworkdayjobs.com/wday/cxs/nttlimited/NTT_Careers/job/Bangalore-India/AI-Engineer_R-151594",
+  "status": 403,
+  "body": {
+    "errorCode": "S22",
+    "errorCaseId": "50621FMW22TZJ0",
+    "httpStatus": 403,
+    "message": "permission denied",
+    "messageParams": {}
+  }
+}

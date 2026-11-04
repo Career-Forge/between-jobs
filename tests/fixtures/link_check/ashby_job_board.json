@@ -1,0 +1,22 @@
+{
+  "captured": "2026-11-04",
+  "request": "GET https://api.ashbyhq.com/posting-api/job-board/ashby",
+  "status": 200,
+  "body": {
+    "apiVersion": "1",
+    "jobs": [
+      {
+        "id": "7458d4e9-da2e-47bd-98cb-adfda43d42b2",
+        "isListed": true
+      },
+      {
+        "id": "86a60834-ba64-484d-9658-afa1bc97a957",
+        "isListed": true
+      },
+      {
+        "id": "f40ef345-82a8-4956-9150-193b4fdf8183",
+        "isListed": true
+      }
+    ]
+  }
+}
