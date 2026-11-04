@@ -59,7 +59,10 @@ web/src/lib/linkCheck.ts):
 POLITENESS (robots.txt, one request a second, cool-downs, the User-Agent, bounds) lives in
 link_fetch.py. What this module adds: at most two requests for a board's list and one more to
 corroborate, a five-minute memory of a board's parsed ids (so five cards at one company do one
-list fetch), three checks at a time, and twenty-five seconds for the whole check.
+list fetch), three checks at a time, and twenty-five seconds for the whole check once it has a
+slot. A check that cannot get a slot within five seconds is not a `cant_tell` (nothing was asked of
+the company, so nothing can be said about its site): `check` raises `Busy` and the route answers
+503 `link_check_busy`.
 """
 
 from __future__ import annotations
@@ -88,8 +91,12 @@ State = Literal["still_listed", "gone", "cant_tell"]
 Ats = Literal["greenhouse", "lever", "ashby", "workday", "other"]
 
 LINK_CHECK_DISABLED = "link_check_disabled"
+LINK_CHECK_BUSY = "link_check_busy"
 
 MAX_CONCURRENT_CHECKS = 3
+SLOT_WAIT_SECONDS = 5.0
+"""How long a check waits for one of the MAX_CONCURRENT_CHECKS slots before it is turned away as
+busy. The wait is not part of the check's own budget: nothing has been asked of an employer yet."""
 CHECK_BUDGET_SECONDS = 25.0
 BOARD_CACHE_SECONDS = 300.0
 BOARD_CACHE_MAX_ENTRIES = 64
@@ -313,6 +320,21 @@ def disabled_error() -> ApiError:
     )
 
 
+class Busy(Exception):
+    """Every slot stayed taken for SLOT_WAIT_SECONDS, so nothing was asked of any employer. Not an
+    answer about a posting: the route turns it into a 503 (`busy_error`)."""
+
+
+def busy_error() -> ApiError:
+    """The 503 the route answers with when the check is turned away; `details.reason` tells it from
+    the switch and from an outage, and the message is what the web app shows."""
+    return ApiError(
+        "PROVIDER_UNAVAILABLE",
+        "Too many postings are being checked right now. Try again in a moment.",
+        details={"reason": LINK_CHECK_BUSY},
+    )
+
+
 def _status_reason(status: int) -> str:
     if status in (401, 403):
         return "blocked"
@@ -382,7 +404,19 @@ class LinkChecker:
             decision = Decision("cant_tell", target.reason)
         else:
             ats = target.ats
-            decision = await self._decide(target)
+            try:
+                decision = await self._decide(target)
+            except Busy:
+                logger.info(
+                    "link check busy",
+                    extra={
+                        "ctx": {
+                            "ats": ats,
+                            "duration_ms": int((self._clock() - started) * 1000),
+                        }
+                    },
+                )
+                raise
         result = LinkCheckResult(
             decision.state, decision.reason, ats, self._now().isoformat(timespec="seconds")
         )
@@ -402,7 +436,12 @@ class LinkChecker:
 
     async def _decide(self, target: Target) -> Decision:
         try:
-            async with asyncio.timeout(CHECK_BUDGET_SECONDS), self._slots:
+            async with asyncio.timeout(SLOT_WAIT_SECONDS):
+                await self._slots.acquire()
+        except TimeoutError:
+            raise Busy from None
+        try:
+            async with asyncio.timeout(CHECK_BUDGET_SECONDS):
                 if target.ats == "greenhouse":
                     return await self._greenhouse(target)
                 if target.ats == "lever":
@@ -414,6 +453,8 @@ class LinkChecker:
             return Decision("cant_tell", e.reason)
         except TimeoutError:
             return Decision("cant_tell", "timeout")
+        finally:
+            self._slots.release()
 
     # -- the boards' lists
 

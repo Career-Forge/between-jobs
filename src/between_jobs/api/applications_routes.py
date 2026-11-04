@@ -45,7 +45,7 @@ from .jobs_store import (
     guess_company_name_from_url,
     lookup_registry_posting,
 )
-from .link_check import LinkChecker, disabled_error, link_check_enabled
+from .link_check import Busy, LinkChecker, busy_error, disabled_error, link_check_enabled
 from .models import (
     ChangeApplicationStageRequest,
     CreateApplicationFromPasteRequest,
@@ -517,5 +517,8 @@ async def check_application_link(
         raise ApiError("NOT_FOUND", f"no application found for id {application_id!r}") from e
     if not link_check_enabled():
         raise disabled_error()
-    result = await checker.check(await _saved_link(supabase, application))
+    try:
+        result = await checker.check(await _saved_link(supabase, application))
+    except Busy as e:
+        raise busy_error() from e
     return result.as_body()

@@ -19,7 +19,7 @@ from between_jobs.api import rate_limits
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_link_checker, get_supabase
 from between_jobs.api.auth import require_user_id
-from between_jobs.api.link_check import LinkChecker
+from between_jobs.api.link_check import Busy, LinkChecker
 from between_jobs.api.link_fetch import USER_AGENT, refuse_hosts_outside_allowlist
 
 _USER = "00000000-0000-0000-0000-000000000001"
@@ -264,6 +264,30 @@ def test_the_kill_switch_answers_503_and_asks_no_one(
     assert error["details"] == {"reason": "link_check_disabled"}
     assert web.requests == []
     assert supabase.reads == ["applications"]
+    assert supabase.writes == []
+
+
+def test_a_check_turned_away_as_busy_is_a_503_that_says_so_and_asks_no_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    web = _greenhouse_web()
+    supabase = FakeSupabase(source_url=_GH_LINK, canonical_url=None)
+    checker = make_checker(web)
+
+    async def turned_away(_url: str | None) -> Any:
+        raise Busy
+
+    monkeypatch.setattr(checker, "check", turned_away)
+    with _client(supabase, checker) as client:
+        response = client.post(_PATH)
+
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "PROVIDER_UNAVAILABLE"
+    assert error["details"] == {"reason": "link_check_busy"}
+    assert (
+        error["message"] == "Too many postings are being checked right now. Try again in a moment."
+    )
     assert supabase.writes == []
 
 

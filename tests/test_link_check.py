@@ -32,6 +32,7 @@ from rendered_logs import rendered
 
 from between_jobs.api import link_check, link_fetch
 from between_jobs.api.link_check import (
+    LinkChecker,
     Refusal,
     Target,
     classify_link,
@@ -964,6 +965,50 @@ async def test_no_more_than_three_checks_run_at_once() -> None:
     assert peak == 3
 
 
+async def _take_every_slot(checker: LinkChecker) -> None:
+    for _ in range(link_check.MAX_CONCURRENT_CHECKS):
+        await checker._slots.acquire()
+
+
+def _release_every_slot(checker: LinkChecker) -> None:
+    for _ in range(link_check.MAX_CONCURRENT_CHECKS):
+        checker._slots.release()
+
+
+async def test_a_check_that_cannot_get_a_slot_in_time_is_busy_and_asks_no_employer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(link_check, "SLOT_WAIT_SECONDS", 0.05)
+    web = FakeWeb()  # no board is set up: any request at all fails the test
+    checker = make_checker(web)
+    await _take_every_slot(checker)
+
+    with pytest.raises(link_check.Busy):
+        await checker.check(_GH_LINK)
+
+    assert web.requests == []
+    _release_every_slot(checker)
+    web.on("GET", GH, "greenhouse_board_list")
+    assert (await checker.check(_GH_LINK)).state == "still_listed"  # no slot was lost
+
+
+async def test_the_wait_for_a_slot_is_not_part_of_a_checks_own_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A check that waited its turn and then ran quickly must not be told the company's site did
+    not answer in time: the site was never asked while it waited."""
+    monkeypatch.setattr(link_check, "CHECK_BUDGET_SECONDS", 0.2)
+    monkeypatch.setattr(link_check, "SLOT_WAIT_SECONDS", 5.0)
+    checker = make_checker(_greenhouse_web())
+    await _take_every_slot(checker)
+
+    waiting = asyncio.create_task(checker.check(_GH_LINK))
+    await asyncio.sleep(0.4)  # twice the budget, all of it spent waiting
+    _release_every_slot(checker)
+
+    assert (await waiting).state == "still_listed"
+
+
 async def test_the_whole_check_has_a_budget_and_runs_out_as_a_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -985,6 +1030,7 @@ async def test_the_whole_check_has_a_budget_and_runs_out_as_a_timeout(
 
 def test_the_check_budget_is_twenty_five_seconds_and_the_list_cache_five_minutes() -> None:
     assert link_check.CHECK_BUDGET_SECONDS == 25.0
+    assert link_check.SLOT_WAIT_SECONDS == 5.0
     assert link_check.BOARD_CACHE_SECONDS == 300.0
     assert link_check.MAX_CONCURRENT_CHECKS == 3
 
