@@ -95,15 +95,25 @@ export function isLinkCheckDisabled(error: unknown): boolean {
   return fields.status === 503 && (fields.reason === LINK_CHECK_DISABLED || fields.code === LINK_CHECK_DISABLED);
 }
 
+// The person pressed Check posting on a card whose application they have since deleted (in another tab, say).
+// The server's 404 names the id, which is nothing to show, and there is no posting left to open.
+export const APPLICATION_MISSING_WORDS = "That application is no longer here.";
+
+function isApplicationMissing(error: unknown): boolean {
+  return error instanceof Error && (error as Error & { status?: unknown }).status === 404;
+}
+
 function endSentence(text: string): string {
   const trimmed = text.trim();
   return trimmed === "" || /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
 // The words for a press that got no answer: the kill switch, the person's own rate limit (the app's usual
-// wording: friendlyApiMessage), or anything else in the server's words. Each ends with the suggestion.
+// wording: friendlyApiMessage), or anything else in the server's words. Each ends with the suggestion, except
+// the application that is no longer there: it has no posting to open.
 export function failureWords(error: unknown): string {
   if (isLinkCheckDisabled(error)) return cantTellWords(LINK_CHECK_DISABLED);
+  if (isApplicationMissing(error)) return APPLICATION_MISSING_WORDS;
   const message = endSentence(friendlyApiMessage(error, "Something went wrong."));
   return ["The check didn't go through.", message, CANT_TELL_SUGGESTION].filter((part) => part !== "").join(" ");
 }

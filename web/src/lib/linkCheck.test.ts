@@ -9,6 +9,7 @@ import {
   UNKNOWN_REASON_WORDS,
   UNREADABLE_WORDS,
   cantTellWords,
+  APPLICATION_MISSING_WORDS,
   checkedWords,
   failureWords,
   isLinkCheckDisabled,
@@ -173,8 +174,17 @@ describe("a press that got no answer", () => {
 
   it("keeps any other failure's own words, with the full stop it may have lacked", () => {
     expect(failureWords(new ApiError(500, "Request failed (500)"))).toBe(`The check didn't go through. Request failed (500). ${SUGGESTION}`);
-    expect(failureWords(new ApiError(404, "Application not found."))).toBe(`The check didn't go through. Application not found. ${SUGGESTION}`);
+    expect(failureWords(new ApiError(502, "Bad gateway"))).toBe(`The check didn't go through. Bad gateway. ${SUGGESTION}`);
     expect(failureWords(new TypeError("Failed to fetch"))).toBe(`The check didn't go through. Failed to fetch. ${SUGGESTION}`);
+  });
+
+  it("says a card whose application is gone in fixed words, not the server's own (which carries an id), and does not send the person to a posting", () => {
+    // What check_application_link answers for an id the person no longer has.
+    const words = failureWords(new ApiError(404, "no application found for id '30000000-0000-0000-0000-000000000001'", "NOT_FOUND"));
+    expect(words).toBe(APPLICATION_MISSING_WORDS);
+    expect(words).toBe("That application is no longer here.");
+    expect(words).not.toContain("30000000");
+    expect(words).not.toContain(SUGGESTION);
   });
 
   it("falls back to a plain sentence when the failure has no words, and for a thrown value that is not an Error", () => {

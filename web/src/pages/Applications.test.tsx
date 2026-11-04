@@ -1258,13 +1258,22 @@ describe("Check posting", () => {
     });
 
     it("keeps the server's words for any other failure, and for one that never reached the server", async () => {
-      answer({ [CHECK_A1]: new FakeApiError(404, "Application not found.", { code: "NOT_FOUND" }), "POST /applications/a2/check-link": new TypeError("Failed to fetch") });
+      answer({ [CHECK_A1]: new FakeApiError(502, "Bad gateway"), "POST /applications/a2/check-link": new TypeError("Failed to fetch") });
       const { container } = await draw();
       click(checkButton(container, "a1"));
       click(checkButton(container, "a2"));
       await settle();
-      expect(lineText(container, "a1")).toBe(`The check didn't go through. Application not found. ${SUGGESTION}`);
+      expect(lineText(container, "a1")).toBe(`The check didn't go through. Bad gateway. ${SUGGESTION}`);
       expect(lineText(container, "a2")).toBe(`The check didn't go through. Failed to fetch. ${SUGGESTION}`);
+    });
+
+    it("says an application deleted elsewhere is gone, in fixed words and not the server's, which carries its id", async () => {
+      // What check_application_link really answers for an id the person no longer has.
+      answer({ [CHECK_A1]: new FakeApiError(404, "no application found for id 'a1'", { code: "NOT_FOUND" }) });
+      const { container } = await draw();
+      click(checkButton(container, "a1"));
+      await settle();
+      expect(lineText(container, "a1")).toBe("That application is no longer here.");
     });
 
     it("says a reply it cannot read, and does not take it for an answer", async () => {
