@@ -72,6 +72,8 @@ ROBOTS_MAX_PARSED_BYTES = 512 * 1024
 """RFC 9309 asks a crawler to parse at least 500 KiB of a robots.txt; the rest is ignored."""
 
 _PACER_MAX_HOSTS = 256
+_REMEMBERED_HOSTS_MAX = 512
+"""The most hosts whose robots rules (or cool-down) are kept; the oldest go first."""
 
 STATIC_HOSTS = frozenset(
     {
@@ -200,7 +202,8 @@ def parse_robots(text: str) -> RobotsRules:
                 agents_by_group.append([])
                 rules_by_group.append([])
                 in_rules = False
-            agents_by_group[-1].append(value.lower())
+            # `BetweenJobsLinkCheck/1.0` names the same crawler as `BetweenJobsLinkCheck`
+            agents_by_group[-1].append(value.split("/", 1)[0].strip().lower())
         elif name in ("allow", "disallow") and agents_by_group:
             in_rules = True
             rules_by_group[-1].append((name == "allow", value))
@@ -265,7 +268,9 @@ class PoliteFetcher:
             cached = self._robots.get(host)
             if cached is None or cached[0] <= self._clock():
                 cached = await self._load_robots(host)
+                self._robots.pop(host, None)
                 self._robots[host] = cached
+                self._forget_beyond_the_limit(self._robots)
         if cached[1] is None:
             raise Undecided("robots_unavailable")
         return cached[1]
@@ -296,7 +301,13 @@ class PoliteFetcher:
 
     def _cool_down(self, host: str) -> None:
         self._cooldowns[host] = self._clock() + HOST_COOLDOWN_SECONDS
+        self._forget_beyond_the_limit(self._cooldowns)
         logger.warning("job board asked us to slow down", extra={"ctx": {"host": host}})
+
+    @staticmethod
+    def _forget_beyond_the_limit(remembered: dict[str, Any]) -> None:
+        while len(remembered) > _REMEMBERED_HOSTS_MAX:
+            del remembered[next(iter(remembered))]
 
     async def _pace(self, host: str) -> None:
         """Waits for this host's next one-second slot. Slots are handed out under a lock but

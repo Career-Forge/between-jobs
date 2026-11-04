@@ -251,6 +251,7 @@ async def test_a_redirect_is_an_answer_and_is_never_followed() -> None:
             False,
         ),
         ("User-agent: Googlebot\nUser-agent: BetweenJobsLinkCheck\nDisallow: /a", "/a", False),
+        ("User-agent: BetweenJobsLinkCheck/1.0\nDisallow: /a", "/a", False),
         ("User-agent: *\nUser-agent: Bingbot\nDisallow: /a", "/a", False),
         # the format: comments, case, spacing, line endings, a BOM, lines it does not know
         ("﻿User-agent: *\r\nDisallow: /a # not this\r\n", "/a", False),
@@ -657,7 +658,9 @@ async def test_a_request_is_timed_in_total_not_per_read(monkeypatch: pytest.Monk
     fetcher, _ = make_fetcher(web)
 
     with pytest.raises(Undecided) as refused:
-        await fetcher.fetch("GET", LIST_URL)
+        # the guard turns a missing total timeout into a failure here instead of a hang
+        async with asyncio.timeout(5):
+            await fetcher.fetch("GET", LIST_URL)
 
     assert refused.value.reason == "timeout"
 
@@ -715,3 +718,22 @@ def test_the_pacers_memory_of_hosts_stays_bounded() -> None:
     asyncio.run(many())
 
     assert len(fetcher._next_slot) < 300
+
+
+async def test_the_memory_of_robots_files_and_cool_downs_is_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(link_fetch, "_REMEMBERED_HOSTS_MAX", 3)
+    web = FakeWeb()
+    hosts = [f"t{n}.wd1.myworkdayjobs.com" for n in range(6)]
+    for host in hosts:
+        web.on("GET", f"https://{host}/x", status=200, text="")
+    fetcher, _ = make_fetcher(web)
+
+    for host in hosts:
+        await fetcher.fetch("GET", f"https://{host}/x")
+    for host in hosts:
+        fetcher._cool_down(host)
+
+    assert list(fetcher._robots) == hosts[-3:]
+    assert list(fetcher._cooldowns) == hosts[-3:]

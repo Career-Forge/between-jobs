@@ -214,7 +214,7 @@ def _greenhouse_target(path: str) -> Target | Refusal:
         or not _DIGITS.fullmatch(seg[2])
     ):
         return _unreadable("greenhouse")
-    return Target("greenhouse", seg[0], seg[2])
+    return Target("greenhouse", seg[0], str(int(seg[2])))
 
 
 def _lever_target(host: str, path: str) -> Target | Refusal:

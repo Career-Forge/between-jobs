@@ -75,6 +75,7 @@ _UUID = "0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0"
             Target("greenhouse", "stripe", "123"),
         ),
         ("https://boards.greenhouse.io/stripe/jobs/123/", Target("greenhouse", "stripe", "123")),
+        ("https://boards.greenhouse.io/stripe/jobs/000123", Target("greenhouse", "stripe", "123")),
         (
             "https://boards.greenhouse.io/stripe/jobs/123#apply",
             Target("greenhouse", "stripe", "123"),
@@ -922,18 +923,26 @@ async def test_no_more_than_three_checks_run_at_once() -> None:
 async def test_the_whole_check_has_a_budget_and_runs_out_as_a_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The request timeout is set far out of the way, so only the budget can end this check."""
     monkeypatch.setattr(link_check, "CHECK_BUDGET_SECONDS", 0.05)
+    monkeypatch.setattr(link_fetch, "REQUEST_TIMEOUT_SECONDS", 60.0)
     web = _greenhouse_web()
 
-    async def never(_: httpx.Request) -> httpx.Response:
-        await asyncio.sleep(30)
-        raise AssertionError("not reached")
+    async def stalls(_: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(3)
+        raise AssertionError("the budget should have ended the check")
 
-    web.on("GET", GH, never)
+    web.on("GET", GH, stalls)
 
     result = await make_checker(web).check(_GH_LINK)
 
     assert (result.state, result.reason) == ("cant_tell", "timeout")
+
+
+def test_the_check_budget_is_twenty_five_seconds_and_the_list_cache_five_minutes() -> None:
+    assert link_check.CHECK_BUDGET_SECONDS == 25.0
+    assert link_check.BOARD_CACHE_SECONDS == 300.0
+    assert link_check.MAX_CONCURRENT_CHECKS == 3
 
 
 async def test_a_request_that_takes_too_long_is_a_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
