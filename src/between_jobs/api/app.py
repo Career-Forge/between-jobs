@@ -68,6 +68,8 @@ from .job_registry_poller import _DEFAULT_POLL_INTERVAL_SECONDS as POLLER_INTERV
 from .job_registry_poller import run_poller_forever
 from .latex_service_client import _base_url as latex_service_base_url
 from .latex_service_client import latex_max_concurrency
+from .link_check import LinkChecker
+from .link_fetch import PoliteFetcher, build_link_check_client
 from .link_routes import router as link_router
 from .llm_credentials_routes import router as llm_credentials_router
 from .logging_setup import configure_logging, request_id_var
@@ -167,6 +169,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # source. A separate client because `app.state.http` legitimately talks to
     # many other hosts.
     app.state.hiring_http = httpx.AsyncClient(event_hooks={"request": [refuse_non_provider_hosts]})
+    # The link check's own client, for the same reason and the same way: it reads employers'
+    # public job boards, so it is held to the closed list of hosts in `link_fetch` by a request
+    # hook, never follows a redirect, and is paced, robots.txt-aware and bounded by the fetcher
+    # that wraps it. Nothing starts here: the check runs only when a person presses the button,
+    # and DISABLE_LINK_CHECK turns the route off without stopping anything.
+    app.state.link_checker = LinkChecker(PoliteFetcher(build_link_check_client()))
     # Telegram is optional: a server with neither value runs web-only (the
     # webhook and the link-code route answer 404 FEATURE_DISABLED, the digest
     # push is skipped, and GET /capabilities says so). One value without the
@@ -395,6 +403,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await app.state.health_http.aclose()
     await app.state.http.aclose()
     await app.state.hiring_http.aclose()
+    await app.state.link_checker.aclose()
 
 
 app = FastAPI(title="between-jobs", version="0.0.1", lifespan=lifespan)

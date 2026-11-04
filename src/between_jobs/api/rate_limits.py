@@ -149,6 +149,10 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     # Importing a resume file: text extraction on the server plus one model call (two at
     # most) on the user's own key. Like the credential check, a real cost per click.
     "profile_import": (10, HOUR),
+    # One person-initiated check of one saved link against the employer's own job board: one to
+    # four small requests to the employer, no model, no write. Paced and bounded per host in
+    # `link_fetch`; this keeps one person from pressing it across their whole list on a loop.
+    "link_check": (20, HOUR),
     # Joining or leaving the tester programme: one small read and one write on the caller's own
     # row. A person does each a handful of times at most; the bound is only there so a stuck
     # client loop cannot hammer the table.
