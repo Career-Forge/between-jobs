@@ -157,10 +157,19 @@ describe("Check posting", () => {
     expect(code).not.toMatch(/\.bj-app-check-result\[data-state/);
   });
 
-  it("takes no room while it is empty and a row of its own once it has words", () => {
+  it("takes no room while it is empty (not even the row's column gap) and a row of its own once it has words", () => {
     expect(answer.margin).toBe("0");
     expect(declarationsFor(base, ".bj-app-check-result:not(:empty)").flex).toBe("1 1 100%");
     expect(answer.flex).toBeUndefined();
+    // The column gap of .bj-app-controls, taken back, so a growing select is the same width with or without an answer.
+    expect(declarationsFor(base, ".bj-app-controls").gap).toBe("var(--bj-space-2) var(--bj-space-3)");
+    expect(declarationsFor(base, ".bj-app-check-result:empty")["margin-left"]).toBe("calc(var(--bj-space-3) * -1)");
+  });
+
+  it("keeps a board select wide enough to read, so the button beside the Actions menu wraps instead of squeezing it", () => {
+    const select = declarationsFor(base, ".bj-app-card--board .bj-app-select");
+    expect(select["min-width"]).toBe("120px");
+    expect(select.flex).toBe("1 1 0");
   });
 
   it("never takes the answer out of the page's accessibility tree: it is a live region, so no rule hides it when it is empty", () => {

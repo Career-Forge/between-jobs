@@ -217,8 +217,11 @@
   font-size: var(--bj-text-control);
 }
 
+/* A board select shares its row, but never shrinks below what its words need: beside the Check posting button
+   (the Actions menu's row) it would otherwise be squeezed to a stub, and at this width the button wraps instead. */
 .bj-app-card--board .bj-app-select {
   flex: 1 1 0;
+  min-width: 120px;
   font-size: var(--bj-text-small);
 }
 
@@ -270,6 +273,11 @@
 
 .bj-app-check-result:not(:empty) {
   flex: 1 1 100%;
+}
+
+/* Still one more item for the row's column gap to separate, which would narrow the growing select before it. */
+.bj-app-check-result:empty {
+  margin-left: calc(var(--bj-space-3) * -1);
 }
 
 /* ------------------------------------------------------------------ */
