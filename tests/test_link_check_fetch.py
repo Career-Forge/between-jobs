@@ -243,6 +243,14 @@ async def test_a_redirect_is_an_answer_and_is_never_followed() -> None:
         ("User-agent: *\nAllow: /\n\nUser-agent: betweenjobslinkcheck\nDisallow: /x", "/x", False),
         ("User-agent: *\nDisallow: /\n\nUser-agent: Googlebot\nAllow: /", "/x", False),
         ("User-agent: Googlebot\nDisallow: /", "/x", True),
+        # ... it REPLACES the `*` group, it is not added to it, whichever group is the stricter
+        ("User-agent: *\nAllow: /\n\nUser-agent: BetweenJobsLinkCheck\nDisallow: /", "/x", False),
+        (
+            "User-agent: *\nDisallow: /v1/boards/\n\nUser-agent: BetweenJobsLinkCheck\nAllow: /",
+            "/v1/boards/x",
+            True,
+        ),
+        ("User-agent: *\nDisallow: /\n\nUser-agent: BetweenJobsLinkCheck\nDisallow:", "/x", True),
         # two groups for this crawler are one group; so are two agent lines over one list
         (
             "User-agent: BetweenJobsLinkCheck\nDisallow: /a\n\n"
@@ -402,6 +410,30 @@ async def test_robots_is_fetched_once_per_host_and_remembered_for_six_hours() ->
     assert web.robots_requests().count(ROBOTS_URL) == 2
 
 
+@pytest.mark.parametrize(
+    ("status", "text"), [(200, "User-agent: *\nAllow: /\n"), (404, ""), (403, "Disallow: /")]
+)
+async def test_a_robots_file_that_was_read_is_not_asked_for_again_for_six_hours(
+    status: int, text: str
+) -> None:
+    web = FakeWeb()
+    web.on("GET", ROBOTS_URL, status=status, text=text)
+    web.on("GET", LIST_URL, status=200, json_body={})
+    fetcher, clock = make_fetcher(web)
+
+    await fetcher.fetch("GET", LIST_URL)
+    await fetcher.fetch("GET", LIST_URL)
+    assert len(web.robots_requests()) == 1
+
+    clock.now += 21_590  # ten seconds short of six hours
+    await fetcher.fetch("GET", LIST_URL)
+    assert len(web.robots_requests()) == 1
+
+    clock.now += 20
+    await fetcher.fetch("GET", LIST_URL)
+    assert len(web.robots_requests()) == 2
+
+
 async def test_an_unavailable_robots_file_is_asked_for_again_after_five_minutes_not_six_hours() -> (
     None
 ):
@@ -421,7 +453,12 @@ async def test_an_unavailable_robots_file_is_asked_for_again_after_five_minutes_
         await fetcher.fetch("GET", LIST_URL)
     assert len(web.robots_requests()) == 1
 
-    clock.now += link_fetch.ROBOTS_UNAVAILABLE_TTL_SECONDS + 1
+    clock.now += 290  # ten seconds short of five minutes
+    with pytest.raises(Undecided):
+        await fetcher.fetch("GET", LIST_URL)
+    assert len(web.robots_requests()) == 1
+
+    clock.now += 20
     answer = await fetcher.fetch("GET", LIST_URL)
 
     assert answer.status == 200
@@ -603,6 +640,7 @@ def test_the_body_cap_is_sixteen_mebibytes_and_the_request_timeout_fifteen_secon
     assert link_fetch.MIN_SECONDS_BETWEEN_REQUESTS == 1.0
     assert link_fetch.HOST_COOLDOWN_SECONDS == 600.0
     assert link_fetch.ROBOTS_TTL_SECONDS == 6 * 3600.0
+    assert link_fetch.ROBOTS_UNAVAILABLE_TTL_SECONDS == 300.0
 
 
 async def test_a_body_past_the_cap_is_abandoned() -> None:
