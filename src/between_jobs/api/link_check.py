@@ -176,6 +176,8 @@ def classify_link(url: str | None) -> Target | Refusal:
     text = (url or "").strip()
     if not text or len(text) > _MAX_URL_CHARS or _UNSAFE_CHARS.search(text):
         return Refusal("other", "no_link")
+    if is_denied_scrape_host(text):
+        return Refusal("other", "denylisted")
     try:
         parts = urlsplit(text)
         port = parts.port
@@ -184,7 +186,7 @@ def classify_link(url: str | None) -> Target | Refusal:
     host = parts.hostname
     if parts.scheme.lower() not in ("http", "https") or not host:
         return Refusal("other", "no_link")
-    if is_denied_scrape_host(text) or _on_domain(host, _ALSO_DENIED_DOMAINS):
+    if _on_domain(host, _ALSO_DENIED_DOMAINS):
         return Refusal("other", "denylisted")
     if parts.username is not None or parts.password is not None or port not in (None, 443):
         return Refusal("other", "company_page")
