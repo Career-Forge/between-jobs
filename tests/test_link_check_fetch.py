@@ -553,6 +553,47 @@ async def test_a_429_is_never_retried() -> None:
     assert web.urls() == [f"GET {LIST_URL}"]
 
 
+class _SlowClock(FakeClock):
+    """A clock whose waits take a little real time, in proportion to the virtual wait, so a request
+    queued behind another really does start after the earlier one has been answered."""
+
+    async def sleep(self, seconds: float) -> None:
+        await asyncio.sleep(seconds / 200)
+        self.now = max(self.now, self.now + seconds)
+
+
+async def test_a_429_stops_the_requests_already_waiting_for_their_turn_at_that_host() -> None:
+    web = FakeWeb()
+    for n in range(3):
+        web.on("GET", f"{LIST_URL}/{n}", status=429 if n == 0 else 404, text="slow down")
+    fetcher, _ = make_fetcher(web, _SlowClock())
+
+    outcomes = await asyncio.gather(
+        *(fetcher.fetch("GET", f"{LIST_URL}/{n}") for n in range(3)), return_exceptions=True
+    )
+
+    assert [o.reason for o in outcomes if isinstance(o, Undecided)] == ["rate_limited"] * 3
+    assert web.urls() == [f"GET {LIST_URL}/0"]
+
+
+async def test_a_429_on_robots_txt_stops_the_checks_waiting_for_that_robots_file() -> None:
+    async def slow_429(_: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.01)  # in flight long enough for the others to queue behind it
+        return httpx.Response(429, headers={"Retry-After": "120"})
+
+    web = FakeWeb()
+    web.on("GET", ROBOTS_URL, slow_429)
+    fetcher, _ = make_fetcher(web, _SlowClock())
+
+    outcomes = await asyncio.gather(
+        *(fetcher.fetch("GET", f"{LIST_URL}/{n}") for n in range(3)), return_exceptions=True
+    )
+
+    assert [o.reason for o in outcomes if isinstance(o, Undecided)] == ["rate_limited"] * 3
+    assert web.robots_requests() == [ROBOTS_URL]
+    assert web.urls() == []
+
+
 # -- bounds ------------------------------------------------------------------------------------
 
 

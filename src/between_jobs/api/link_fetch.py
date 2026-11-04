@@ -326,7 +326,11 @@ class PoliteFetcher:
         self, method: str, url: str, *, json_body: Any = None, read_body: bool = True
     ) -> Answer:
         host = httpx.URL(url).host
+        # Twice, because another request to this host can be answered 429 while this one waits
+        # for its slot, and a request already queued must stop too.
+        self._refuse_while_cooling(host)
         await self._pace(host)
+        self._refuse_while_cooling(host)
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
                 async with self.http.stream(method, url, json=json_body) as response:
