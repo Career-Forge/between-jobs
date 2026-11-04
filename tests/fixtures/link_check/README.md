@@ -6,8 +6,9 @@ in `src/between_jobs/api/link_check.py` are tested against the shapes these endp
 return, not against shapes written from memory.
 
 Every file is one JSON object: `captured` (the date), `request` (what was asked), `status`, and the
-`body` as the server sent it, or a trimmed copy of it (below). Nothing is kept of any job description or
-employer text beyond ids, urls the API itself returned and, in two files, a posting's id-bearing path.
+`body` as the server sent it, or a trimmed copy of it (below). No job description is kept. What is kept of
+employer text is ids, urls the API itself returned, requisition numbers, the titles of two postings on
+Lever's own demo board, and the job-title part of the path of two Workday postings.
 
 ## How they were captured
 
@@ -83,4 +84,11 @@ jq '{captured: "2026-11-04", request: "...", status: 200,
   global fixtures, answered from the EU host by a stub.
 - A real bare Workday 403 (one that is not S22) was not seen either; that test uses a hand-written
   body, and says so.
-- Every capture succeeded; nothing in this directory was written by hand.
+- No real answer to a Lever list request for a site that does not exist was captured. The tests for a
+  missing Lever site answer the list request with `lever_posting_404.json`, the 404 of a single
+  posting; the check reads only the status of that answer, which is all these tests rely on.
+- Every capture succeeded. Two files are not verbatim, as the table says: `greenhouse_board_list.json`
+  had `meta.total` rewritten from 754 to 3, and `ashby_hosted_404.json` is a status, a content type and
+  one marker string from the page, not the page. Anything else a test needs that was not captured is
+  built in the test from one of these files with a field changed, or written in the test, and says so
+  where it does it.
