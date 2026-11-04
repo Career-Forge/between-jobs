@@ -331,6 +331,9 @@ async def test_a_link_that_is_not_a_plain_job_link_never_causes_a_request() -> N
         ("No-Underscore-Here", None),
         ("Title_ABC", None),
         ("Title_R-12", None),
+        ("Title_R1234", "R1234"),
+        ("Engineer_2024", None),
+        ("Engineer_1234", None),
         ("Title_2024-12345", None),
         ("Title_JR1234567_extra", None),
         ("Title_", None),
@@ -683,6 +686,52 @@ async def test_workday_a_posting_that_can_no_longer_be_applied_to_is_gone() -> N
 
 
 @pytest.mark.parametrize(
+    "info",
+    [
+        {},
+        {"jobReqId": "JR9999999", "canApply": True},
+        {"jobReqId": "JR9999999", "canApply": False},
+    ],
+)
+async def test_workday_a_200_that_is_not_the_posting_asked_for_is_not_read(
+    info: dict[str, Any],
+) -> None:
+    """Neither an empty answer nor one for a different requisition says anything about this job,
+    open or closed."""
+    web = FakeWeb()
+    web.on("GET", _NVIDIA_DETAIL, status=200, json_body={"jobPostingInfo": info})
+
+    result = await make_checker(web).check(_NVIDIA_LINK)
+
+    assert (result.state, result.reason) == ("cant_tell", "unreadable_answer")
+
+
+async def test_workday_an_answer_that_names_no_requisition_is_taken_as_the_one_asked_for() -> None:
+    """Only a contradiction is a reason to doubt a 200 from the address built from the link: an
+    answer that is silent about its requisition is judged on `canApply` alone."""
+    web = FakeWeb()
+    web.on("GET", _NVIDIA_DETAIL, status=200, json_body={"jobPostingInfo": {"canApply": True}})
+
+    result = await make_checker(web).check(_NVIDIA_LINK)
+
+    assert (result.state, result.reason) == ("still_listed", "still_listed")
+
+
+@pytest.mark.parametrize("req_id", ["jr2017895", "JR-2017895", "JR2017895-1"])
+async def test_workday_the_requisition_in_the_answer_may_be_written_a_little_differently(
+    req_id: str,
+) -> None:
+    detail = fixture("workday_detail_200")["body"]
+    detail["jobPostingInfo"]["jobReqId"] = req_id
+    web = FakeWeb()
+    web.on("GET", _NVIDIA_DETAIL, status=200, json_body=detail)
+
+    result = await make_checker(web).check(_NVIDIA_LINK)
+
+    assert (result.state, result.reason) == ("still_listed", "still_listed")
+
+
+@pytest.mark.parametrize(
     "kwargs",
     [
         {"status": 200, "text": "<html>challenge</html>"},
@@ -770,6 +819,59 @@ async def test_workday_a_404_whose_requisition_the_search_finds_is_not_a_closure
     web = FakeWeb()
     web.on("GET", _NVIDIA_DETAIL, "workday_detail_404")
     web.on("POST", f"{NVIDIA_BASE}/jobs", "workday_search_match")
+
+    result = await make_checker(web).check(_NVIDIA_LINK)
+
+    assert (result.state, result.reason) == ("cant_tell", "signals_disagree")
+
+
+_OTHER_POSTING = {"externalPath": "/job/Elsewhere/Other-Role_JR1111111", "bulletFields": ["x"]}
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        pytest.param(
+            {"total": 57, "jobPostings": [_OTHER_POSTING] * 20}, id="a first page of many"
+        ),
+        pytest.param({"total": 12, "jobPostings": []}, id="a total with nothing in it"),
+        pytest.param(
+            {"total": 0, "jobPostings": [_OTHER_POSTING]}, id="a total of zero with a row"
+        ),
+        pytest.param({"total": 3, "jobPostings": [_OTHER_POSTING] * 2}, id="fewer rows than total"),
+    ],
+)
+async def test_workday_a_404_is_not_confirmed_by_a_search_page_that_is_not_the_whole_answer(
+    answer: dict[str, Any],
+) -> None:
+    """Missing from a page of a longer result, or from an answer that contradicts itself, is not
+    missing from the tenant."""
+    web = FakeWeb()
+    web.on("GET", _NVIDIA_DETAIL, "workday_detail_404")
+    web.on("POST", f"{NVIDIA_BASE}/jobs", status=200, json_body=answer)
+
+    result = await make_checker(web).check(_NVIDIA_LINK)
+
+    assert (result.state, result.reason) == ("cant_tell", "detail_404_unconfirmed")
+
+
+async def test_workday_a_404_is_confirmed_by_a_whole_answer_that_lacks_the_requisition() -> None:
+    web = FakeWeb()
+    web.on("GET", _NVIDIA_DETAIL, "workday_detail_404")
+    answer = {"total": 2, "jobPostings": [_OTHER_POSTING] * 2}
+    web.on("POST", f"{NVIDIA_BASE}/jobs", status=200, json_body=answer)
+
+    result = await make_checker(web).check(_NVIDIA_LINK)
+
+    assert (result.state, result.reason) == ("gone", "gone")
+
+
+async def test_workday_a_requisition_found_on_a_partial_page_is_still_a_disagreement() -> None:
+    web = FakeWeb()
+    web.on("GET", _NVIDIA_DETAIL, "workday_detail_404")
+    found = {"externalPath": f"/job/{_NVIDIA_SLUG}", "bulletFields": ["JR2017895"]}
+    answer = {"total": 57, "jobPostings": [_OTHER_POSTING] * 19 + [found]}
+    web.on("POST", f"{NVIDIA_BASE}/jobs", status=200, json_body=answer)
 
     result = await make_checker(web).check(_NVIDIA_LINK)
 

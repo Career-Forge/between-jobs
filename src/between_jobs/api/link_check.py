@@ -114,7 +114,7 @@ _DIGITS = re.compile(r"[0-9]{1,18}")
 _UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 _LOCALE = re.compile(r"[a-z]{2}-[A-Za-z]{2}")
 _PATH_SEGMENT = re.compile(r"(?!\.+\Z)[A-Za-z0-9._~-]{1,200}")
-_REQUISITION = re.compile(r"(?P<token>[A-Za-z]{0,4}-?[0-9]{4,12})(?:-[0-9]{1,3})?")
+_REQUISITION = re.compile(r"(?P<token>[A-Za-z]{1,4}-?[0-9]{4,12}|[0-9]{5,12})(?:-[0-9]{1,3})?")
 
 _GREENHOUSE_HOSTS = frozenset(
     {"boards.greenhouse.io", "job-boards.greenhouse.io", "job-boards.eu.greenhouse.io"}
@@ -265,8 +265,9 @@ def _workday_target(host: str, path: str) -> Target | Refusal:
 
 def requisition_token(slug: str) -> str | None:
     """The requisition id at the end of a Workday job slug (`Title_JR1234567`, `Title_R-12345`,
-    `Title_JR1234567-1`), or None when the last segment does not end in one we recognize. A search
-    for anything else could not tell a closed job from a mis-read one."""
+    `Title_JR1234567-1`), or None when the last segment does not end in one we recognize. A bare
+    number needs five digits (`Title_2024` is a year, not a requisition). A search for anything
+    else could not tell a closed job from a mis-read one."""
     last = slug.rsplit("/", 1)[-1]
     if "_" not in last:
         return None
@@ -600,7 +601,11 @@ class LinkChecker:
         if answer.status == 200:
             data = await _parse_json(answer.body)
             info = data.get("jobPostingInfo") if isinstance(data, dict) else None
-            if not isinstance(info, dict):
+            if (
+                not isinstance(info, dict)
+                or not info
+                or not _is_posting_asked_for(info, target.job)
+            ):
                 raise Undecided("unreadable_answer")
             return GONE if info.get("canApply") is False else STILL_LISTED
         if answer.status == 403:
@@ -634,11 +639,30 @@ class LinkChecker:
             except Undecided:
                 data = None
         postings = data.get("jobPostings") if isinstance(data, dict) else None
-        if not isinstance(postings, list) or not _is_int(data.get("total")):
+        total = data.get("total") if isinstance(data, dict) else None
+        if not isinstance(postings, list) or not _is_int(total):
             raise Undecided("detail_404_unconfirmed")
         if any(token.lower() in json.dumps(posting).lower() for posting in postings):
             raise Undecided("signals_disagree")
+        if total != len(postings):
+            # absent from one page of a longer result, or from an answer that contradicts itself
+            raise Undecided("detail_404_unconfirmed")
         return GONE
+
+
+def _is_posting_asked_for(info: dict[str, Any], slug: str) -> bool:
+    """False only when the answer names a requisition and it is not the one in the link, so an
+    answer for some other job is never read as this job's state. An answer that names none, or a
+    link with none to compare, is taken as asked for."""
+    token = requisition_token(slug)
+    named = info.get("jobReqId")
+    if token is None or not isinstance(named, str) or not named.strip():
+        return True
+    return _alphanumerics(token) in _alphanumerics(named)
+
+
+def _alphanumerics(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", text.lower())
 
 
 def _is_permission_denied(body: bytes) -> bool:
