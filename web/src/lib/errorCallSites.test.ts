@@ -13,6 +13,7 @@ const sources = import.meta.glob(
   [
     "./useGeneration.ts",
     "./useResearchRun.ts",
+    "./linkCheck.ts",
     "../components/InterviewPracticePanel.tsx",
     "../pages/Discover.tsx",
     "../components/settings/ProviderConnectCard.tsx",
@@ -32,6 +33,9 @@ const MINIMUM_CALL_SITES: Record<string, number> = {
   "./useGeneration.ts": 3, // generate, the two downloads (one function for both), the export checks
   // Company intel, Contacts and Events share it: the stored run's read and the run itself.
   "./useResearchRun.ts": 2,
+  // Check posting, on the Applications page: its press is limited per person (20 an hour), and linkCheckClient.ts
+  // words every failure of it here.
+  "./linkCheck.ts": 1,
   "../components/InterviewPracticePanel.tsx": 2, // start a session, submit an answer
   "../pages/Discover.tsx": 2, // search, track
   // Settings: saving a key (credential_save is behind the enrollment gate), choosing a model, removing
