@@ -17,7 +17,7 @@ import {
   type LinkCheckEntry,
   type LinkCheckResult,
 } from "./linkCheck";
-import { findForbiddenWord } from "./trail";
+import { findForbiddenWord, formatTrailTime } from "./trail";
 
 // The words are the spec's, typed out here rather than imported, so that a change to one is a change to a test.
 
@@ -188,7 +188,10 @@ describe("a press that got no answer", () => {
 });
 
 describe("when it was checked", () => {
-  const result: LinkCheckResult = { state: "still_listed", reason: "", checked_at: "2026-11-04T14:32:05Z" };
+  // The clock time is the reader's own (as the band's why line writes it), so the tests ask for it rather than
+  // assuming a zone. The check and the answer's arrival are a minute apart, so the two can be told apart.
+  const clock = (instant: string) => formatTrailTime(instant) as string;
+  const result: LinkCheckResult = { state: "still_listed", reason: "", checked_at: "2026-11-04T14:31:58Z" };
   const received = Date.UTC(2026, 10, 4, 14, 32, 7);
 
   it("says just now for the first minute, by this page's own clock", () => {
@@ -197,13 +200,16 @@ describe("when it was checked", () => {
   });
 
   it("then gives the clock time of the check, which stays true however long the page is open", () => {
-    expect(checkedWords(result, received, received + 60_000)).toBe("Checked at 14:32.");
-    expect(checkedWords(result, received, received + 6 * 3_600_000)).toBe("Checked at 14:32.");
+    const then = `Checked at ${clock("2026-11-04T14:31:58Z")}.`;
+    expect(then).toMatch(/^Checked at \d\d:\d\d\.$/);
+    expect(checkedWords(result, received, received + 60_000)).toBe(then);
+    expect(checkedWords(result, received, received + 6 * 3_600_000)).toBe(then);
   });
 
   it("falls back to when this page got the answer when the server's time cannot be read", () => {
-    expect(checkedWords({ ...result, checked_at: null }, received, received + 120_000)).toBe("Checked at 14:32.");
-    expect(checkedWords({ ...result, checked_at: "yesterday" }, received, received + 120_000)).toBe("Checked at 14:32.");
+    const arrived = `Checked at ${clock("2026-11-04T14:32:07Z")}.`;
+    expect(checkedWords({ ...result, checked_at: null }, received, received + 120_000)).toBe(arrived);
+    expect(checkedWords({ ...result, checked_at: "yesterday" }, received, received + 120_000)).toBe(arrived);
   });
 });
 

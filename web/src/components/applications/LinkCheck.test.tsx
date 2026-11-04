@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Application } from "../../lib/applicationsTypes";
 import { CANT_TELL_REASON_WORDS, GONE_WORDS, STILL_LISTED_WORDS, type LinkCheckEntry, type LinkCheckResult } from "../../lib/linkCheck";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
+import { formatTrailTime } from "../../lib/trail";
 import { text } from "../../testing/forms";
 import { click, query, render } from "../../testing/render";
 import { LinkCheck } from "./LinkCheck";
@@ -24,6 +25,8 @@ const APPLICATION: Application = {
 };
 
 const RESULT: LinkCheckResult = { state: "still_listed", reason: "listed", checked_at: "2026-11-04T14:32:05Z" };
+// The clock time is the reader's own, so the tests ask for it rather than assuming a zone.
+const CHECKED_AT = `Checked at ${formatTrailTime(RESULT.checked_at) as string}.`;
 const answered = (result: Partial<LinkCheckResult> = {}, receivedAt = Date.now()): LinkCheckEntry => ({ kind: "answered", result: { ...RESULT, ...result }, receivedAt });
 const PENDING: LinkCheckEntry = { kind: "pending" };
 
@@ -209,10 +212,10 @@ describe("how old a listed answer reads", () => {
     act(() => void vi.advanceTimersByTime(59_000));
     expect(text(line(container))).toBe("Still on the company's own board. Checked just now.");
     act(() => void vi.advanceTimersByTime(1_000));
-    expect(text(line(container))).toBe("Still on the company's own board. Checked at 14:32.");
+    expect(text(line(container))).toBe(`Still on the company's own board. ${CHECKED_AT}`);
     expect(vi.getTimerCount()).toBe(0);
     act(() => void vi.advanceTimersByTime(3_600_000));
-    expect(text(line(container))).toBe("Still on the company's own board. Checked at 14:32.");
+    expect(text(line(container))).toBe(`Still on the company's own board. ${CHECKED_AT}`);
   });
 
   it("changes only the time's own span, so a screen reader is not read the whole answer again", () => {
@@ -223,7 +226,7 @@ describe("how old a listed answer reads", () => {
     expect(when.textContent).toBe("Checked just now.");
     act(() => void vi.advanceTimersByTime(60_000));
     expect(query(line(container), "span")).toBe(when);
-    expect(when.textContent).toBe("Checked at 14:32.");
+    expect(when.textContent).toBe(CHECKED_AT);
   });
 
   it("starts no timer for an answer that makes no claim about time, and clears the one it started", () => {
@@ -251,7 +254,7 @@ describe("how old a listed answer reads", () => {
     act(() => void vi.advanceTimersByTime(59_000));
     expect(text(line(container))).toContain("Checked just now.");
     act(() => void vi.advanceTimersByTime(1_000));
-    expect(text(line(container))).toContain("Checked at 14:32.");
+    expect(text(line(container))).toContain(CHECKED_AT);
   });
 });
 
