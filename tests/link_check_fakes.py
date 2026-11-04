@@ -56,8 +56,11 @@ class FakeClock:
         return self.now
 
     async def sleep(self, seconds: float) -> None:
-        self.now += seconds
+        # Sleepers that start together wake together: time moves to the latest wake-up, not by
+        # the sum of the waits, or a race for one host would look slower than it is.
+        wake = self.now + seconds
         await asyncio.sleep(0)
+        self.now = max(self.now, wake)
 
 
 Responder = Callable[[httpx.Request], httpx.Response | Any]
