@@ -14,6 +14,11 @@ import "../../styles/applications.css";
 // clears the last answer while the new one is out, so the same words twice in a row are still heard. The
 // button is aria-disabled, not disabled, while the request is out: focus stays on it, and the press is
 // ignored.
+//
+// WHEN IT WAS CHECKED IS NOT IN THE LIVE REGION. A listed answer says "Checked just now." and, a minute later,
+// the clock time. The region is atomic, so any change inside it has a screen reader read the whole answer
+// again, unprompted. The time is its own line after the region, which no screen reader is watching: it is
+// read when the person goes looking, and its change at one minute is silent.
 
 export interface LinkCheckProps {
   application: Application;
@@ -58,18 +63,11 @@ function CheckResult({ entry }: { entry: LinkCheckEntry | undefined }) {
 
   const line = linkCheckLine(entry, Date.now());
   return (
-    <p className="bj-app-check-result" role="status" data-state={line?.state}>
-      {line !== null && (
-        <>
-          {line.text}
-          {line.when !== null && (
-            <>
-              {" "}
-              <span>{line.when}</span>
-            </>
-          )}
-        </>
-      )}
-    </p>
+    <>
+      <p className="bj-app-check-result" role="status" data-state={line?.state}>
+        {line?.text}
+      </p>
+      {line !== null && line.when !== null && <p className="bj-app-check-when">{line.when}</p>}
+    </>
   );
 }

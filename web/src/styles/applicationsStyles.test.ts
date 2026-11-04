@@ -166,6 +166,12 @@ describe("Check posting", () => {
     expect(declarationsFor(base, ".bj-app-check-result:empty")["margin-left"]).toBe("calc(var(--bj-space-3) * -1)");
   });
 
+  it("draws when it was checked as the answer is drawn, on a line of its own after the answer", () => {
+    const when = declarationsFor(base, ".bj-app-check-when");
+    for (const property of ["color", "font-size", "overflow-wrap", "min-width", "margin"]) expect(when[property], property).toBe(answer[property]);
+    expect(when.flex).toBe("1 1 100%");
+  });
+
   it("keeps a board select wide enough to read, so the button beside the Actions menu wraps instead of squeezing it", () => {
     const select = declarationsFor(base, ".bj-app-card--board .bj-app-select");
     expect(select["min-width"]).toBe("120px");

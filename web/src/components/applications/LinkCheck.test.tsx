@@ -43,6 +43,8 @@ const draw = (entry: LinkCheckEntry | undefined, onCheck?: () => void, applicati
 
 const button = (container: HTMLElement) => query<HTMLButtonElement>(container, "button");
 const line = (container: HTMLElement) => query(container, "[role='status']");
+// What a listed answer says about when, outside the live region.
+const when = (container: HTMLElement) => query(container, ".bj-app-check-when");
 
 afterEach(() => {
   vi.useRealTimers();
@@ -144,16 +146,20 @@ describe("the live region", () => {
     expect(line(container)).toBe(region);
     again(answered());
     expect(line(container)).toBe(region);
-    expect(text(region)).toBe(`${STILL_LISTED_WORDS} Checked just now.`);
+    expect(text(region)).toBe(STILL_LISTED_WORDS);
     again(PENDING);
     expect(region.matches(":empty")).toBe(true);
     again(answered({ state: "gone" }));
     expect(line(container)).toBe(region);
   });
 
-  it("is the last thing in the row, after the button", () => {
+  it("is the last thing in the row, after the button; a listed answer's time comes right after it", () => {
+    const gone = draw(answered({ state: "gone" }));
+    expect(gone.container.querySelector(".bj-app-controls")?.lastElementChild).toBe(line(gone.container));
+    expect(gone.container.querySelector(".bj-app-controls")?.firstElementChild).toBe(button(gone.container));
     const { container } = draw(answered());
-    expect(container.querySelector(".bj-app-controls")?.lastElementChild).toBe(line(container));
+    expect(container.querySelector(".bj-app-controls")?.lastElementChild).toBe(when(container));
+    expect(when(container).previousElementSibling).toBe(line(container));
     expect(container.querySelector(".bj-app-controls")?.firstElementChild).toBe(button(container));
   });
 });
@@ -161,8 +167,17 @@ describe("the live region", () => {
 describe("what it says", () => {
   it("says a listed posting is on the board, and when it was checked", () => {
     const { container } = draw(answered());
-    expect(text(line(container))).toBe("Still on the company's own board. Checked just now.");
+    expect(text(line(container))).toBe("Still on the company's own board.");
+    expect(text(when(container))).toBe("Checked just now.");
     expect(line(container).getAttribute("data-state")).toBe("still_listed");
+  });
+
+  it("draws no time for an answer that makes no claim about when", () => {
+    for (const entry of [answered({ state: "gone" }), answered({ state: "cant_tell", reason: "blocked" }), { kind: "unanswered", words: "x" } as const, PENDING, undefined]) {
+      const { container, unmount } = draw(entry);
+      expect(container.querySelector(".bj-app-check-when"), JSON.stringify(entry)).toBeNull();
+      unmount();
+    }
   });
 
   it("says a gone posting is no longer on the board, that it usually closed, and that it does not mean a rejection", () => {
@@ -208,25 +223,33 @@ describe("how old a listed answer reads", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-04T14:32:07Z"));
     const { container } = draw(answered({}, Date.now()));
-    expect(text(line(container))).toBe("Still on the company's own board. Checked just now.");
+    expect(text(when(container))).toBe("Checked just now.");
     act(() => void vi.advanceTimersByTime(59_000));
-    expect(text(line(container))).toBe("Still on the company's own board. Checked just now.");
+    expect(text(when(container))).toBe("Checked just now.");
     act(() => void vi.advanceTimersByTime(1_000));
-    expect(text(line(container))).toBe(`Still on the company's own board. ${CHECKED_AT}`);
+    expect(text(when(container))).toBe(CHECKED_AT);
     expect(vi.getTimerCount()).toBe(0);
     act(() => void vi.advanceTimersByTime(3_600_000));
-    expect(text(line(container))).toBe(`Still on the company's own board. ${CHECKED_AT}`);
+    expect(text(when(container))).toBe(CHECKED_AT);
+    expect(text(line(container))).toBe(STILL_LISTED_WORDS);
   });
 
-  it("changes only the time's own span, so a screen reader is not read the whole answer again", () => {
+  it("keeps the time out of every live region, so the change at one minute is never read out", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-04T14:32:07Z"));
     const { container } = draw(answered({}, Date.now()));
-    const when = query(line(container), "span");
-    expect(when.textContent).toBe("Checked just now.");
+    const region = line(container);
+    // Not inside the region the answer is announced in, or inside any other live region: the region is
+    // atomic, so a change anywhere within it would have a screen reader read the whole answer again.
+    expect(region.contains(when(container))).toBe(false);
+    expect(when(container).closest("[role='status'], [role='alert'], [role='log'], [aria-live]")).toBeNull();
+    const observed = new MutationObserver(() => undefined);
+    observed.observe(region, { subtree: true, childList: true, characterData: true, attributes: true });
     act(() => void vi.advanceTimersByTime(60_000));
-    expect(query(line(container), "span")).toBe(when);
-    expect(when.textContent).toBe(CHECKED_AT);
+    expect(text(when(container))).toBe(CHECKED_AT);
+    expect(observed.takeRecords()).toEqual([]);
+    expect(text(region)).toBe(STILL_LISTED_WORDS);
+    observed.disconnect();
   });
 
   it("starts no timer for an answer that makes no claim about time, and clears the one it started", () => {
@@ -252,9 +275,9 @@ describe("how old a listed answer reads", () => {
     act(() => void vi.advanceTimersByTime(30_000));
     again(answered({}, Date.now()));
     act(() => void vi.advanceTimersByTime(59_000));
-    expect(text(line(container))).toContain("Checked just now.");
+    expect(text(when(container))).toBe("Checked just now.");
     act(() => void vi.advanceTimersByTime(1_000));
-    expect(text(line(container))).toContain(CHECKED_AT);
+    expect(text(when(container))).toBe(CHECKED_AT);
   });
 });
 

@@ -274,14 +274,16 @@ cannot be read, is left out rather than guessed.
   no move, no status change. The page
   holds the answer by application id until it is reloaded (`pages/Applications.tsx`; nothing goes to storage), so a
   card that changes column or view keeps it. `lib/linkCheck.ts` has the words: *still on the company's own board*
-  (with "Checked just now.", which becomes the clock time after a minute), *no longer on it* ("That usually means
+  (and, as a line after it, "Checked just now.", which becomes the clock time after a minute), *no longer on it* ("That usually means
   the posting closed. It does not mean you were rejected."), or *can't tell* with the reason in words, always ending
   "Open the posting to see for yourself."; a reason the table does not know is said as one the page cannot use.
   `lib/linkCheckClient.ts` is the request and never throws: the person's own 429 reads as it does everywhere
-  (`friendlyApiMessage`), the 503 that names `link_check_disabled` reads "Checking is switched off right now", any
-  other failure keeps the server's words. The answer is a `role="status"` line that is in the card's controls row
-  from the start, empty (so it takes no room, and a screen reader hears it arrive), and a pending button is
-  `aria-busy` and `aria-disabled` rather than `disabled`, so focus stays on it and one press is one request.
+  (`friendlyApiMessage`), the 503 that names `link_check_disabled` reads "Checking is switched off right now", a 404
+  (the application was deleted elsewhere) says so in fixed words, any other failure keeps the server's words. The
+  answer is a `role="status"` line that is in the card's controls row from the start, empty (so it takes no room,
+  and a screen reader hears it arrive); the time of a listed answer is outside that region, so its change at one
+  minute is not read out again. A pending button is `aria-busy` and `aria-disabled` rather than `disabled`, so
+  focus stays on it and one press is one request.
 - The status select is always on a list card and shows the real status, so a wrong one is corrected in one
   choice. The board's cards keep "Move to..." (a required keyboard and touch fallback for drag and drop). A
   card whose move is out is `aria-disabled` and reads "Moving..."; one whose move failed stays on its old

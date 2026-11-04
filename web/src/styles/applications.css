@@ -263,7 +263,8 @@
   cursor: progress;
 }
 
-.bj-app-check-result {
+.bj-app-check-result,
+.bj-app-check-when {
   min-width: 0;
   margin: 0;
   font-size: var(--bj-text-small);
@@ -271,7 +272,10 @@
   overflow-wrap: anywhere;
 }
 
-.bj-app-check-result:not(:empty) {
+/* When it was checked is outside the live region (components/applications/LinkCheck.tsx says why), so it is a
+   line of its own after it. It is only drawn with words in it. */
+.bj-app-check-result:not(:empty),
+.bj-app-check-when {
   flex: 1 1 100%;
 }
 

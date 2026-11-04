@@ -1086,7 +1086,8 @@ describe("Check posting", () => {
     const before = cardsAsDrawn(container);
     click(checkButton(container, "a1"));
     await settle();
-    expect(lineText(container, "a1")).toBe("Still on the company's own board. Checked just now.");
+    expect(lineText(container, "a1")).toBe("Still on the company's own board.");
+    expect(text(query(card(container, "a1"), ".bj-app-check-when"))).toBe("Checked just now.");
     expect(line(container, "a1").getAttribute("data-state")).toBe("still_listed");
     expect(cardsAsDrawn(container)).toEqual(before);
     expect(line(container, "a2").textContent).toBe("");

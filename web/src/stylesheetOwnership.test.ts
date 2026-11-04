@@ -76,6 +76,7 @@ describe("the stylesheets", () => {
     const own = selectors(sheets[owner]);
     expect(own).toContain(".bj-app-check");
     expect(own).toContain(".bj-app-check-result");
+    expect(own).toContain(".bj-app-check-when");
   });
 
   // The Profile editor's rules were moved here out of app.css. The entry dialog's scrim is the one deliberate
