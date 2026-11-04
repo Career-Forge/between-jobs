@@ -15,8 +15,9 @@ Twelve requests in all, one at a time, two seconds apart, from one machine, with
 feature sends and no redirects followed. Only these public, documented endpoints were called. The
 commands below are the ones that were run, written without the flags that also dumped the response
 headers to a file.
-`robots.txt` was not re-read for this capture: the same hosts and paths were read against their
-robots.txt the same day by the research probe, and nothing was disallowed.
+`robots.txt` was not re-read for this capture (it is not one of the endpoints it was limited to):
+an earlier read of the same hosts, checking these same paths against their robots.txt the same
+day, found nothing disallowed.
 
 ```bash
 UA='BetweenJobsLinkCheck/1.0 (+https://between-jobs.tech; support@between-jobs.tech)'
