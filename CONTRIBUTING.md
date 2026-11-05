@@ -1,6 +1,6 @@
 # Contributing
 
-Between Jobs is early -- pre-alpha -- and moving fast. Issues and small PRs are
+Between Jobs is an early beta and moving fast. Issues and small PRs are
 welcome; for anything large, open an issue first so effort isn't wasted on a direction
 that won't merge.
 

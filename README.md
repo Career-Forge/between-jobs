@@ -5,7 +5,7 @@ prepare application documents, practice interviews. This repository is the open-
 core of Between Jobs. A hosted version at [between-jobs.tech](https://between-jobs.tech)
 is coming soon; it is not live yet.
 
-**Status: pre-alpha.** The API, the web app and the browser extension all run from this
+**Status: early beta, so expect rough edges.** The API, the web app and the browser extension all run from this
 repository, and so does a resume and cover-letter writer: the engine built into this
 repository answers when no separate engine service is configured. It writes one plain
 resume and one plain cover letter from your profile and a job, checks every fact in them
