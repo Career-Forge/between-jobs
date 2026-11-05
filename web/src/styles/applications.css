@@ -1,7 +1,8 @@
-/* Applications and Practice: the cards of the list and the board, the phone's one-status-at-a-time
- * list, the two tracking forms and the Practice pointer (pages/Applications.tsx, pages/Practice.tsx,
- * components/applications/, components/ApplicationsBoard.tsx). Tokens only -- no color is defined
- * here -- and no rule fills anything cyan: the page's one cyan fill is the next-step band's button.
+/* Applications and Practice: the cards of the list and the board with their Check posting button, the
+ * phone's one-status-at-a-time list, the two tracking forms and the Practice pointer
+ * (pages/Applications.tsx, pages/Practice.tsx, components/applications/, components/ApplicationsBoard.tsx).
+ * Tokens only -- no color is defined here -- and no rule fills anything cyan: the page's one cyan fill is
+ * the next-step band's button.
  *
  * Widths. The list is a column of at most 880px. The board takes the whole content column (from 1280px
  * the shell's 960px cap is lifted for this page) and its seven columns scroll inside their own row,
@@ -216,8 +217,11 @@
   font-size: var(--bj-text-control);
 }
 
+/* A board select shares its row, but never shrinks below what its words need: beside the Check posting button
+   (the Actions menu's row) it would otherwise be squeezed to a stub, and at this width the button wraps instead. */
 .bj-app-card--board .bj-app-select {
   flex: 1 1 0;
+  min-width: 120px;
   font-size: var(--bj-text-small);
 }
 
@@ -239,6 +243,45 @@
 /* A move that did not go through, under its own card. */
 .bj-app-problem {
   min-width: 0;
+}
+
+/* Check posting: a plain outlined button the height of the selects beside it, and the answer to it in the
+   same row. The answer is a live region that is there from the start (pages/Applications.tsx holds what it
+   says), so while it is empty it takes no room, and with words in it it is a row of its own. Waiting on its
+   request the button is aria-disabled, like the selects, and keeps its place and focus. */
+.bj-app-check {
+  min-height: 36px;
+  padding: 6px 12px;
+}
+
+.bj-app-card--board .bj-app-check {
+  font-size: var(--bj-text-small);
+}
+
+.bj-app-check[aria-disabled="true"] {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.bj-app-check-result,
+.bj-app-check-when {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--bj-text-small);
+  color: var(--bj-text);
+  overflow-wrap: anywhere;
+}
+
+/* When it was checked is outside the live region (components/applications/LinkCheck.tsx says why), so it is a
+   line of its own after it. It is only drawn with words in it. */
+.bj-app-check-result:not(:empty),
+.bj-app-check-when {
+  flex: 1 1 100%;
+}
+
+/* Still one more item for the row's column gap to separate, which would narrow the growing select before it. */
+.bj-app-check-result:empty {
+  margin-left: calc(var(--bj-space-3) * -1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -402,6 +445,7 @@
 
 @media (max-width: 959px) {
   .bj-app-select,
+  .bj-app-check,
   .bj-app-track-card button,
   .bj-app-track-card .bj-field input,
   .bj-app-track-link {

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { groupByStatus, STATUS_LABELS } from "../lib/applicationsBoard";
 import { ALL_STATUSES, type Application, type ApplicationStatus } from "../lib/applicationsTypes";
+import type { LinkCheckEntry } from "../lib/linkCheck";
+import { LinkCheck } from "./applications/LinkCheck";
 import {
   CardActions,
   CardIdentity,
@@ -39,11 +41,13 @@ export interface ApplicationsBoardProps {
   now: Date;
   busyIds: ReadonlySet<string>;
   problems: Readonly<Record<string, MoveProblem | undefined>>;
+  linkChecks: Readonly<Record<string, LinkCheckEntry | undefined>>;
   onChangeStatus: (applicationId: string, status: ApplicationStatus) => void;
   onRetry: (applicationId: string) => void;
+  onCheckLink: (applicationId: string) => void;
 }
 
-export default function ApplicationsBoard({ applications, now, busyIds, problems, onChangeStatus, onRetry }: ApplicationsBoardProps) {
+export default function ApplicationsBoard({ applications, now, busyIds, problems, linkChecks, onChangeStatus, onRetry, onCheckLink }: ApplicationsBoardProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<ApplicationStatus | null>(null);
   const groups = groupByStatus(applications);
@@ -89,11 +93,13 @@ export default function ApplicationsBoard({ applications, now, busyIds, problems
                   now={now}
                   busy={busyIds.has(application.id)}
                   problem={problems[application.id]}
+                  linkCheck={linkChecks[application.id]}
                   dragging={draggedId === application.id}
                   onDragStart={() => setDraggedId(application.id)}
                   onDragEnd={() => setDraggedId(null)}
                   onChangeStatus={(next) => onChangeStatus(application.id, next)}
                   onRetry={() => onRetry(application.id)}
+                  onCheckLink={() => onCheckLink(application.id)}
                 />
               ))}
             </ul>
@@ -109,15 +115,29 @@ export interface BoardCardProps {
   now: Date;
   busy: boolean;
   problem: MoveProblem | undefined;
+  linkCheck: LinkCheckEntry | undefined;
   onChangeStatus: (status: ApplicationStatus) => void;
   onRetry: () => void;
+  onCheckLink: () => void;
   /** The drag handlers; left out where a card cannot be dragged (the phone's per-status list). */
   dragging?: boolean;
   onDragStart?: () => void;
   onDragEnd?: () => void;
 }
 
-export function BoardCard({ application, now, busy, problem, dragging = false, onDragStart, onDragEnd, onChangeStatus, onRetry }: BoardCardProps) {
+export function BoardCard({
+  application,
+  now,
+  busy,
+  problem,
+  linkCheck,
+  dragging = false,
+  onDragStart,
+  onDragEnd,
+  onChangeStatus,
+  onRetry,
+  onCheckLink,
+}: BoardCardProps) {
   const draggable = onDragStart !== undefined && !busy;
   return (
     <li
@@ -137,6 +157,7 @@ export function BoardCard({ application, now, busy, problem, dragging = false, o
       </div>
       <div className="bj-app-controls">
         <CardActions application={application} />
+        <LinkCheck application={application} entry={linkCheck} onCheck={onCheckLink} />
       </div>
       <CardTrail application={application} now={now} />
     </li>

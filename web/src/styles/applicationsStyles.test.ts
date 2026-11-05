@@ -7,7 +7,8 @@ import applicationsCss from "./applications.css?raw";
 
 // applications.css is read as text (there is no layout engine in the test run). What it pins is what
 // can be measured in it: no color of its own, no cyan fill, the board scrolling inside itself, the
-// list's measure, the 44px targets on a phone, and that the old board's rules are gone from app.css.
+// list's measure, the 44px targets on a phone, Check posting's button and its answer, and that the old
+// board's rules are gone from app.css.
 
 const code = applicationsCss.replace(/\/\*[\s\S]*?\*\//g, "");
 const base = withoutMedia(applicationsCss);
@@ -110,7 +111,7 @@ describe("the list and the board", () => {
 
 describe("a phone", () => {
   it("makes every control at least 44px tall", () => {
-    const selectors = [".bj-app-select", ".bj-app-track-card button", ".bj-app-track-card .bj-field input", ".bj-app-track-link", ".bj-app-link", ".bj-app-track-card .bj-state-missing a", ".bj-app-problem button"];
+    const selectors = [".bj-app-select", ".bj-app-check", ".bj-app-track-card button", ".bj-app-track-card .bj-field input", ".bj-app-track-link", ".bj-app-link", ".bj-app-track-card .bj-state-missing a", ".bj-app-problem button"];
     for (const selector of selectors) {
       expect(declarationsFor(phone, selector)["min-height"], selector).toBe("44px");
     }
@@ -125,6 +126,66 @@ describe("a phone", () => {
     expect(declarationsFor(phone, ".bj-app-controls .bj-app-select")["flex"]).toBe("1 1 160px");
     expect(declarationsFor(base, ".bj-app-select")["max-width"]).toBe("100%");
     expect(declarationsFor(base, ".bj-app-select")["min-width"]).toBe("0");
+  });
+});
+
+describe("Check posting", () => {
+  const answer = declarationsFor(base, ".bj-app-check-result");
+
+  it("draws the button as an outlined one the height of the selects beside it, smaller on a board card", () => {
+    expect(declarationsFor(base, ".bj-app-check")["min-height"]).toBe("36px");
+    expect(declarationsFor(base, ".bj-app-select")["min-height"]).toBe("36px");
+    expect(declarationsFor(base, ".bj-app-card--board .bj-app-check")["font-size"]).toBe("var(--bj-text-small)");
+    // The outline, the fill and the colour are the shared button's: this sheet adds none of them.
+    const own = declarationsFor(base, ".bj-app-check");
+    for (const property of ["background", "background-color", "border", "border-color", "color"]) expect(own[property], property).toBeUndefined();
+  });
+
+  it("dims a button that is waiting on its request the way the selects are, and shows progress", () => {
+    const waiting = declarationsFor(base, '.bj-app-check[aria-disabled="true"]');
+    expect(waiting.opacity).toBe("0.65");
+    expect(waiting.cursor).toBe("progress");
+    expect(declarationsFor(base, ".bj-app-select[aria-disabled=\"true\"]").cursor).toBe(waiting.cursor);
+  });
+
+  it("draws the answer in the page's text colour at the small size, with no colour that says good or bad", () => {
+    expect(answer.color).toBe("var(--bj-text)");
+    expect(answer["font-size"]).toBe("var(--bj-text-small)");
+    expect(answer["overflow-wrap"]).toBe("anywhere");
+    expect(answer["min-width"]).toBe("0");
+    expect(code).not.toMatch(/\.bj-app-check[^{]*\{[^}]*(?:--bj-danger|--bj-emerald|--bj-cyan|--bj-gold)/);
+    expect(code).not.toMatch(/\.bj-app-check-result\[data-state/);
+  });
+
+  it("takes no room while it is empty (not even the row's column gap) and a row of its own once it has words", () => {
+    expect(answer.margin).toBe("0");
+    expect(declarationsFor(base, ".bj-app-check-result:not(:empty)").flex).toBe("1 1 100%");
+    expect(answer.flex).toBeUndefined();
+    // The column gap of .bj-app-controls, taken back, so a growing select is the same width with or without an answer.
+    expect(declarationsFor(base, ".bj-app-controls").gap).toBe("var(--bj-space-2) var(--bj-space-3)");
+    expect(declarationsFor(base, ".bj-app-check-result:empty")["margin-left"]).toBe("calc(var(--bj-space-3) * -1)");
+  });
+
+  it("draws when it was checked as the answer is drawn, on a line of its own after the answer", () => {
+    const when = declarationsFor(base, ".bj-app-check-when");
+    for (const property of ["color", "font-size", "overflow-wrap", "min-width", "margin"]) expect(when[property], property).toBe(answer[property]);
+    expect(when.flex).toBe("1 1 100%");
+  });
+
+  it("keeps a board select wide enough to read, so the button beside the Actions menu wraps instead of squeezing it", () => {
+    const select = declarationsFor(base, ".bj-app-card--board .bj-app-select");
+    expect(select["min-width"]).toBe("120px");
+    expect(select.flex).toBe("1 1 0");
+  });
+
+  it("never takes the answer out of the page's accessibility tree: it is a live region, so no rule hides it when it is empty", () => {
+    for (const rule of rulesOf(applicationsCss)) {
+      if (!rule.selectors.some((selector) => selector.includes(".bj-app-check-result"))) continue;
+      expect(rule.declarations.display, rule.selectors.join()).toBeUndefined();
+      expect(rule.declarations.visibility, rule.selectors.join()).toBeUndefined();
+      expect(rule.declarations.height, rule.selectors.join()).toBeUndefined();
+      expect(rule.declarations.position, rule.selectors.join()).toBeUndefined();
+    }
   });
 });
 

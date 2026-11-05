@@ -1,0 +1,16 @@
+{
+  "captured": "2026-11-04",
+  "request": "POST https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs  {\"appliedFacets\":{},\"limit\":5,\"offset\":0,\"searchText\":\"JR2017895\"}",
+  "status": 200,
+  "body": {
+    "total": 1,
+    "jobPostings": [
+      {
+        "externalPath": "/job/US-CA-Santa-Clara/Senior-Solutions-Architect--AI-Hyperscalers_JR2017895",
+        "bulletFields": [
+          "JR2017895"
+        ]
+      }
+    ]
+  }
+}

@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { STATUS_LABELS, groupByStatus, statusCounts } from "../../lib/applicationsBoard";
 import { ALL_STATUSES, type Application, type ApplicationStatus } from "../../lib/applicationsTypes";
+import type { LinkCheckEntry } from "../../lib/linkCheck";
 import { statusOptionLabel } from "../../lib/applicationsView";
 import { BoardCard } from "../ApplicationsBoard";
 import type { MoveProblem } from "./ApplicationParts";
@@ -19,11 +20,24 @@ export interface StatusPickerProps {
   onStatusChange: (status: ApplicationStatus) => void;
   busyIds: ReadonlySet<string>;
   problems: Readonly<Record<string, MoveProblem | undefined>>;
+  linkChecks: Readonly<Record<string, LinkCheckEntry | undefined>>;
   onChangeStatus: (applicationId: string, status: ApplicationStatus) => void;
   onRetry: (applicationId: string) => void;
+  onCheckLink: (applicationId: string) => void;
 }
 
-export function StatusPicker({ applications, now, status, onStatusChange, busyIds, problems, onChangeStatus, onRetry }: StatusPickerProps) {
+export function StatusPicker({
+  applications,
+  now,
+  status,
+  onStatusChange,
+  busyIds,
+  problems,
+  linkChecks,
+  onChangeStatus,
+  onRetry,
+  onCheckLink,
+}: StatusPickerProps) {
   const selectId = useId();
   const counts = statusCounts(applications);
   const shown = groupByStatus(applications)[status];
@@ -56,8 +70,10 @@ export function StatusPicker({ applications, now, status, onStatusChange, busyId
               now={now}
               busy={busyIds.has(application.id)}
               problem={problems[application.id]}
+              linkCheck={linkChecks[application.id]}
               onChangeStatus={(next) => onChangeStatus(application.id, next)}
               onRetry={() => onRetry(application.id)}
+              onCheckLink={() => onCheckLink(application.id)}
             />
           ))}
         </ul>

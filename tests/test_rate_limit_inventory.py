@@ -96,6 +96,9 @@ LIMITED: dict[str, str] = {
     # One read and one update of the caller's own row per remembered answer filled, bounded so
     # a stuck client cannot inflate the counter.
     "POST /extension/answers/{answer_id}/used": "answer_used",
+    # One person-initiated check of a saved link: a few small requests to the employer's own
+    # job board (paced, robots-aware and bounded in link_fetch), no model, no write.
+    "POST /applications/{application_id}/check-link": "link_check",
 }
 """Route -> bucket. Routes authenticated with the extension's scoped token are listed too; the
 limiter on them reads the user from that token (see
@@ -454,6 +457,8 @@ EXPENSIVE_NAMES = frozenset(
         "call_compile",
         "latest_resume_pdf",
         "latest_cover_letter_pdf",
+        # requests to an employer's own job board: the handler that takes the checker
+        "LinkChecker",
         # search and scrape providers, and the paid lookups
         "scrape_firecrawl",
         "run_research",

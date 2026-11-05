@@ -64,6 +64,21 @@ describe("the stylesheets", () => {
     expect(shared).toEqual([]);
   });
 
+  // The Applications page's cards, board and Check posting button are one feature with one stylesheet: a
+  // `.bj-app-` rule anywhere else would be the second home that the test above only finds when the selectors
+  // happen to match exactly.
+  it("keeps every .bj-app- rule, Check posting's included, in applications.css", () => {
+    const owner = "./styles/applications.css";
+    const elsewhere = Object.entries(sheets)
+      .filter(([file]) => file !== owner)
+      .flatMap(([file, css]) => selectors(css).filter((selector) => /\.bj-app-/.test(selector)).map((selector) => `${selector}  in ${file}`));
+    expect(elsewhere).toEqual([]);
+    const own = selectors(sheets[owner]);
+    expect(own).toContain(".bj-app-check");
+    expect(own).toContain(".bj-app-check-result");
+    expect(own).toContain(".bj-app-check-when");
+  });
+
   // The Profile editor's rules were moved here out of app.css. The entry dialog's scrim is the one deliberate
   // change: app.css had a literal rgba(0, 0, 0, 0.6), and this sheet may not hold a colour literal
   // (profileStyles.test.ts), so it is the paper sheets' scrim, built from the page colour. Pinned so the

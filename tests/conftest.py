@@ -40,6 +40,14 @@ def _disable_outbox_worker(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _link_check_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The link check's kill switch (DISABLE_LINK_CHECK) starts nothing, so unlike the worker
+    flags above it is not set here: a value left in a developer's shell or `.env` would turn the
+    route off under every test of it, so it is taken away instead. The switch's own test sets it."""
+    monkeypatch.delenv("DISABLE_LINK_CHECK", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _no_ambient_google_oauth(monkeypatch: pytest.MonkeyPatch) -> None:
     """Gmail is off unless a test turns it on. The lifespan stops the API when a Google client id
     or secret is set without the rest, and `app.py` loads the checkout's `.env` into the process
