@@ -86,18 +86,17 @@ fidelity losses:
   verified status was computed against the pre-correction value and can
   no longer be trusted) when ATS ground truth reveals a different real
   location than what a live-search provider's snippet guessed, and records
-  where it read the new one (`location_source`). The `/discover` route re-invokes
-  `filter_by_location` on this module's own output -- the same real
-  gazetteer, applied twice, is still correct and idempotent, not a second
-  implementation living here. Any other caller that scores after this
-  module must do the same: the `None` reset alone makes a corrected,
-  genuinely matching location score as unknown. A corrected location
-  carries `location_source`: one read from a board's own API (Greenhouse,
-  Lever, Ashby, Workday) is judged like any other location, but one
-  scraped from a job page's markup (SuccessFactors-shaped pages) is left
-  unjudged -- neither marked verified nor used to drop the result -- because
-  any host that serves a matching URL shape can put whatever location it
-  likes in its own markup.
+  where it read the new one (`location_source`). The `/discover` route then
+  calls `search_aggregation.rejudge_corrected_locations` on this module's own
+  output -- the same real gazetteer, not a second implementation living here.
+  Any other caller that scores after this module must do the same: the `None`
+  reset alone makes a corrected, genuinely matching location score as unknown.
+  A location read from a board's own API (Greenhouse, Lever, Ashby, Workday)
+  can be confirmed as a match there; one scraped from a job page's markup
+  (SuccessFactors-shaped pages) never is, because any host that serves a
+  matching URL shape can put whatever location it likes in its own markup.
+  Neither is used to drop a result: a probe reads a posting's primary location
+  only, and a posting open in several places lists the others elsewhere.
 
 Pipeline position, confirmed directly from n8n's own real node graph (not
 assumed from the plan doc's prose): `Filter Applied Jobs -> Verify Job

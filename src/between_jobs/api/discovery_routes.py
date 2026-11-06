@@ -48,7 +48,7 @@ from .search_aggregation import (
     apply_search_filters,
     fetch_registry_lane,
     fetch_registry_last_polled_at,
-    filter_by_location,
+    rejudge_corrected_locations,
     sort_results,
 )
 from .search_providers import ProviderCredentials, SearchResult, search_jobs
@@ -314,17 +314,17 @@ async def _search_discover(
     alive_live, dead_removed = await verify_liveness(http, live_to_check)
     # verify_liveness swaps a provider's guessed location for the ATS's own when the probe
     # returns one, and clears `location_verified` because the earlier verdict was about the
-    # guess. Nothing else judges the corrected location, so run the same filter over its output:
-    # a corrected match scores as a match, a corrected mismatch is dropped as it would have been
-    # had the provider reported it, and a location the gazetteer cannot place stays unknown. A
-    # result whose location was not corrected gets the verdict it already had, and one whose
-    # location was read from a job page's markup (location_source "ats_page") is left unjudged,
-    # neither confirmed nor dropped. The gazetteer is already cached in memory from the first
-    # filter pass, so this costs no second fetch. The probes read a posting's primary location
-    # only, so a posting open in several places whose primary location is elsewhere is dropped
-    # from a search for one of the others.
+    # guess. Nothing else judges the corrected location, so judge it now: a location a board's own
+    # API supplied (location_source "ats_api") that matches the search is confirmed and scores as
+    # a match. Nothing is dropped for its location here. The probes read one location per posting,
+    # the primary one, so a posting open in several places whose primary location is elsewhere
+    # would vanish from a search for one of the others, and the gazetteer can misread a place;
+    # a mismatch, or a place it cannot read, stays as unknown. A result whose location was not
+    # corrected, or was read from a job page's markup (location_source "ats_page"), is left as
+    # it is. The gazetteer is already cached in memory from the first filter pass, so this costs
+    # no second fetch.
     if gazetteer_active:
-        alive_live = filter_by_location(
+        alive_live = rejudge_corrected_locations(
             alive_live, location, gazetteer=await get_gazetteer(supabase), remote_only=remote_only
         )
     alive_live_by_url = {r.apply_url: r for r in alive_live}
@@ -337,9 +337,7 @@ async def _search_discover(
         elif r.apply_url in alive_live_by_url:
             alive.append(alive_live_by_url[r.apply_url])
         elif r.apply_url in live_checked_urls:
-            # confirmed dead, dropped as an aggregator listing page, or its corrected location
-            # is a confirmed mismatch
-            continue
+            continue  # confirmed dead, or dropped as an aggregator listing page
         else:
             rest.append(r)  # beyond the live-lane liveness cap, never checked
     # A corrected location is only judged above, after the sort that ran before liveness, so a

@@ -27,6 +27,7 @@ from between_jobs.api.search_aggregation import (
     filter_by_location,
     filter_by_role,
     matches_all_role_terms,
+    rejudge_corrected_locations,
     role_term_patterns,
     sort_results,
 )
@@ -684,43 +685,71 @@ def test_filter_by_location_stamps_none_on_unknown_not_false() -> None:
     assert result[0].location_verified is None  # never False -- mismatches are dropped, not flagged
 
 
-@pytest.mark.parametrize("job_location", ["New York, NY", "Berlin, Germany", "Zzyzxville"])
-def test_filter_by_location_leaves_a_page_read_location_unjudged(job_location: str) -> None:
-    """A location the liveness check scraped from a job page's markup is a claim by whatever host
-    served the page. Whether it matches the search, contradicts it or means nothing to the
-    gazetteer, the result stays and is not marked verified: the page may relabel the result but
-    may neither promote it nor hide it."""
-    job = _result(location=job_location, apply_url="https://a.com/1", location_source="ats_page")
+def test_rejudge_corrected_locations_confirms_a_board_api_match() -> None:
+    job = _result(location="New York, NY", apply_url="https://a.com/1", location_source="ats_api")
 
-    result = filter_by_location([job], "New York", gazetteer=_test_gazetteer())
+    result = rejudge_corrected_locations([job], "New York", gazetteer=_test_gazetteer())
+
+    assert [r.location for r in result] == ["New York, NY"]
+    assert result[0].location_verified is True
+
+
+@pytest.mark.parametrize("job_location", ["Berlin, Germany", "Zzyzxville"])
+def test_rejudge_corrected_locations_never_drops_a_board_api_result(job_location: str) -> None:
+    """A probe reads one location per posting and the gazetteer can misread a place, so a mismatch
+    or a place it cannot read keeps the result in, as unknown, instead of removing it."""
+    job = _result(
+        location=job_location,
+        apply_url="https://a.com/1",
+        location_source="ats_api",
+        location_verified=True,
+    )
+
+    result = rejudge_corrected_locations([job], "New York", gazetteer=_test_gazetteer())
 
     assert [r.location for r in result] == [job_location]
     assert result[0].location_verified is None
 
 
-def test_filter_by_location_clears_a_verified_stamp_from_a_page_read_location() -> None:
-    job = _result(
-        location="New York, NY",
-        apply_url="https://a.com/1",
-        location_source="ats_page",
-        location_verified=True,
-    )
+@pytest.mark.parametrize("job_location", ["New York, NY", "Berlin, Germany", "Zzyzxville"])
+def test_rejudge_corrected_locations_leaves_a_page_read_location_alone(job_location: str) -> None:
+    """A location scraped from a job page is a claim by whatever host served the page: it is not
+    confirmed, and it is not a reason to hide the result either."""
+    job = _result(location=job_location, apply_url="https://a.com/1", location_source="ats_page")
 
-    result = filter_by_location([job], "New York", gazetteer=_test_gazetteer())
+    result = rejudge_corrected_locations([job], "New York", gazetteer=_test_gazetteer())
 
+    assert result == [job]
     assert result[0].location_verified is None
 
 
-def test_filter_by_location_judges_a_board_api_location_like_a_provider_one() -> None:
-    match = _result(location="New York, NY", apply_url="https://a.com/1", location_source="ats_api")
-    mismatch = _result(
-        location="Berlin, Germany", apply_url="https://b.com/2", location_source="ats_api"
+def test_rejudge_corrected_locations_leaves_a_result_whose_location_was_not_corrected_alone() -> (
+    None
+):
+    """The first pass already judged these. A provider's own mismatch is not this pass's to
+    re-open, and a provider's own confirmed match is not this pass's to withdraw."""
+    verified = _result(location="New York, NY", apply_url="https://a.com/1", location_verified=True)
+    elsewhere = _result(location="Berlin, Germany", apply_url="https://b.com/2")
+
+    result = rejudge_corrected_locations(
+        [verified, elsewhere], "New York", gazetteer=_test_gazetteer()
     )
 
-    result = filter_by_location([match, mismatch], "New York", gazetteer=_test_gazetteer())
+    assert result == [verified, elsewhere]
 
-    assert [r.location for r in result] == ["New York, NY"]
-    assert result[0].location_verified is True
+
+def test_rejudge_corrected_locations_is_a_no_op_when_nothing_constrains_the_search() -> None:
+    job = _result(
+        location="Berlin, Germany", apply_url="https://a.com/1", location_source="ats_api"
+    )
+    empty = Gazetteer(city_index={}, country_alias_to_code={}, country_names={})
+
+    assert rejudge_corrected_locations([job], "New York", gazetteer=empty) == [job]
+    assert rejudge_corrected_locations([job], None, gazetteer=_test_gazetteer()) == [job]
+    assert rejudge_corrected_locations([job], "Zzyzxville", gazetteer=_test_gazetteer()) == [job]
+    assert rejudge_corrected_locations(
+        [job], "New York", gazetteer=_test_gazetteer(), remote_only=True
+    ) == [job]
 
 
 def test_filter_by_location_no_op_when_remote_only() -> None:

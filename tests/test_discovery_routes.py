@@ -326,7 +326,7 @@ class _FakeHttpClient:
         *,
         liveness_status: int = 200,
         you_com_body: dict[str, Any] | None = None,
-        liveness_json: dict[str, Any] | None = None,
+        liveness_json: dict[str, Any] | list[dict[str, Any]] | None = None,
         remoteok_json: list[dict[str, Any]] | None = None,
     ) -> None:
         self.liveness_status = liveness_status
@@ -962,16 +962,19 @@ def test_search_discover_rechecks_a_liveness_corrected_location_that_matches(
 
 
 @pytest.mark.usefixtures("_new_york_gazetteer")
-def test_search_discover_drops_a_liveness_corrected_location_that_mismatches(
+def test_search_discover_keeps_a_liveness_corrected_location_that_mismatches_as_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A confirmed mismatch is dropped, exactly as the first-pass filter
-    would have dropped it had the provider reported the ATS's location.
-    The job is still alive, so it doesn't count toward dead_removed."""
+    """A board whose primary location is London may still be hiring in New York, and the probe
+    reads only the primary one, so the second pass confirms matches but never removes a result.
+    The job stays, unconfirmed and scored as unknown (35)."""
     body = _search_new_york_with_ats_location(monkeypatch, "London, United Kingdom")
 
-    assert body["scored"] == []
-    assert body["more"] == []
+    assert len(body["scored"]) == 1
+    card = body["scored"][0]
+    assert card["location"] == "London, United Kingdom"
+    assert card["location_verified"] is None
+    assert card["score"]["sub_scores"]["location"] == 35
     assert body["dead_removed"] == 0
 
 
@@ -1012,7 +1015,7 @@ def test_search_discover_does_not_hide_a_result_on_a_page_read_location(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The same claim cannot remove a result either: a page that says London keeps its card in a
-    New York search, labelled unknown, where a board API saying London would drop it."""
+    New York search, labelled unknown."""
     _liveness_reads_locations_from_the_page(monkeypatch)
 
     body = _search_new_york_with_ats_location(monkeypatch, "London, United Kingdom")
@@ -1021,6 +1024,158 @@ def test_search_discover_does_not_hide_a_result_on_a_page_read_location(
     card = body["scored"][0]
     assert card["location"] == "London, United Kingdom"
     assert card["location_verified"] is None
+
+
+@pytest.fixture
+def _cambridge_gazetteer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A cached gazetteer where the larger "Cambridge" is the English one, so a job located in
+    "Cambridge, MA" resolves to the United Kingdom when the state is not read."""
+    import between_jobs.api.geo_gazetteer as gazetteer_module
+
+    monkeypatch.setattr(
+        gazetteer_module,
+        "_cached_gazetteer",
+        build_gazetteer(
+            [
+                {
+                    "name": "Cambridge",
+                    "ascii_name": "Cambridge",
+                    "alt_names": [],
+                    "country_code": "GB",
+                    "population": 145674,
+                },
+                {
+                    "name": "Cambridge",
+                    "ascii_name": "Cambridge",
+                    "alt_names": [],
+                    "country_code": "US",
+                    "population": 118927,
+                },
+                {
+                    "name": "Austin",
+                    "ascii_name": "Austin",
+                    "alt_names": [],
+                    "country_code": "US",
+                    "population": 974447,
+                },
+            ]
+        ),
+    )
+
+
+def _search_one_board_job(
+    monkeypatch: pytest.MonkeyPatch, *, apply_url: str, board_json: Any, location: str
+) -> dict[str, Any]:
+    """One live-search result with no location of its own, on a job board that answers
+    `board_json` to every request, searched for `location` through the real route."""
+    _patch_llm(
+        monkeypatch,
+        f'{{"scored": [{{"job_id": "{apply_url}", "fit_score": 8, "one_liner": "Strong fit"}}]}}',
+    )
+    supabase = _FakeSupabaseClient(
+        registry_postings=[],
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+        },
+    )
+    http = _FakeHttpClient(
+        you_com_body={
+            "results": {
+                "web": [
+                    {
+                        "url": apply_url,
+                        "title": "Backend Engineer",
+                        "snippets": ["A live-search-lane result on a job board."],
+                    }
+                ]
+            }
+        },
+        liveness_json=board_json,
+    )
+    response = _client(supabase, http).get(
+        "/discover", params={"q": "backend engineer", "location": location}
+    )
+
+    assert response.status_code == 200
+    return dict(response.json())
+
+
+_LEVER_JOB_ID = "ddad0cc6-1967-458c-a868-e14116ee139c"
+_ASHBY_JOB_ID = "0451eb82-21cd-4d72-8e03-c148c53e745d"
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_keeps_a_lever_job_open_in_new_york_whose_primary_location_is_london(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lever lists every office in `categories.allLocations` and puts only one in
+    `categories.location`. A job whose primary location is London is not a job that is absent from
+    New York, so a search for New York must still return it, as unknown rather than confirmed."""
+    board = [
+        {
+            "id": _LEVER_JOB_ID,
+            "categories": {"location": "London", "allLocations": ["London", "New York"]},
+        }
+    ]
+
+    body = _search_one_board_job(
+        monkeypatch,
+        apply_url=f"https://jobs.lever.co/acme/{_LEVER_JOB_ID}",
+        board_json=board,
+        location="New York",
+    )
+
+    assert [c["location"] for c in body["scored"]] == ["London"]
+    assert body["scored"][0]["location_verified"] is None
+    assert body["dead_removed"] == 0
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_keeps_an_ashby_job_open_in_new_york_whose_primary_location_is_london(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ashby lists further offices in `secondaryLocations`; `location` is only the primary one."""
+    board = {
+        "jobs": [
+            {
+                "id": _ASHBY_JOB_ID,
+                "location": "London",
+                "secondaryLocations": [{"location": "New York"}],
+                "address": {"postalAddress": {"addressCountry": "United Kingdom"}},
+            }
+        ]
+    }
+
+    body = _search_one_board_job(
+        monkeypatch,
+        apply_url=f"https://jobs.ashbyhq.com/acme/{_ASHBY_JOB_ID}",
+        board_json=board,
+        location="New York",
+    )
+
+    assert len(body["scored"]) == 1
+    assert body["scored"][0]["location_verified"] is None
+    assert body["dead_removed"] == 0
+
+
+@pytest.mark.usefixtures("_cambridge_gazetteer")
+def test_search_discover_keeps_a_cambridge_ma_job_in_a_united_states_search(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ "Cambridge, MA" resolves to the larger Cambridge in England when the state is ignored, so
+    the location filter reads it as a job outside the United States. A reading that unsure must not
+    remove a result the board itself says is in Massachusetts."""
+    body = _search_one_board_job(
+        monkeypatch,
+        apply_url="https://boards.greenhouse.io/acme/jobs/123",
+        board_json={"id": 123, "location": {"name": "Cambridge, MA"}},
+        location="United States",
+    )
+
+    assert [c["location"] for c in body["scored"]] == ["Cambridge, MA"]
+    assert body["scored"][0]["location_verified"] is None
+    assert body["dead_removed"] == 0
 
 
 @pytest.mark.usefixtures("_new_york_gazetteer")

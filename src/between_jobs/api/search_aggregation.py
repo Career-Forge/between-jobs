@@ -559,6 +559,22 @@ async def fetch_registry_last_polled_at(supabase: AsyncClient) -> datetime | Non
 # ── gazetteer-backed 3-state location filter ────────────────────────
 
 
+def _location_constraint(
+    gazetteer: Gazetteer, location: str | None, *, remote_only: bool
+) -> tuple[frozenset[str], str | None] | None:
+    """What a typed location asks for, as `(lower-cased cities, country)`, or None when nothing
+    constrains the results: a remote-only search, an empty gazetteer (fail-open, see
+    geo_gazetteer.py), no location, or one that resolves to no city and no country."""
+    if remote_only or not location or not gazetteer.city_index:
+        return None
+    request_geo = resolve_location(gazetteer, location)
+    request_cities = frozenset(c.lower() for c in request_geo.cities)
+    request_country = next(iter(request_geo.countries), None)
+    if not request_cities and not request_country:
+        return None
+    return request_cities, request_country
+
+
 def filter_by_location(
     results: list[SearchResult],
     location: str | None,
@@ -573,25 +589,14 @@ def filter_by_location(
     against). Otherwise drops every confirmed MISMATCH and stamps `location_verified` on
     every survivor (`True` for a confirmed match, `None` for genuinely
     unknown -- never `False`, since a mismatch is dropped outright, not
-    kept-and-flagged). A location the liveness check read out of a job page's
-    markup (`location_source == "ats_page"`) is judged neither way: it stays in
-    the results with `location_verified=None`, because a page naming its own
-    location is a claim, and that claim should neither promote a result nor hide
-    it from the person searching."""
-    if remote_only or not location or not gazetteer.city_index:
+    kept-and-flagged)."""
+    constraint = _location_constraint(gazetteer, location, remote_only=remote_only)
+    if constraint is None:
         return results
-
-    request_geo = resolve_location(gazetteer, location)
-    request_cities = frozenset(c.lower() for c in request_geo.cities)
-    request_country = next(iter(request_geo.countries), None)
-    if not request_cities and not request_country:
-        return results
+    request_cities, request_country = constraint
 
     kept = []
     for r in results:
-        if r.location_source == "ats_page":
-            kept.append(replace(r, location_verified=None))
-            continue
         state = check_location_state(
             gazetteer, r.location, request_cities=request_cities, request_country=request_country
         )
@@ -599,6 +604,41 @@ def filter_by_location(
             continue
         kept.append(replace(r, location_verified=True if state == "match" else None))
     return kept
+
+
+def rejudge_corrected_locations(
+    results: list[SearchResult],
+    location: str | None,
+    *,
+    gazetteer: Gazetteer,
+    remote_only: bool = False,
+) -> list[SearchResult]:
+    """The second location pass, for results whose location the liveness check replaced with the
+    job board's own. Only a result whose location a board's API supplied
+    (`location_source == "ats_api"`) is looked at: a match is confirmed
+    (`location_verified=True`) and anything else -- a mismatch, or a place the gazetteer cannot
+    read -- stays in the results as unknown (`None`). Nothing is dropped here. A probe reads one
+    location per posting, the primary one, while a posting open in several places lists the
+    others in fields it does not read; and the gazetteer can misread a place ("Cambridge, MA"
+    resolves to the larger Cambridge in England). Neither is evidence enough to remove a result
+    the first pass let through. A result from any other source, including one read from a job
+    page's markup (`"ats_page"`: a claim by whatever host served the page, never a confirmation),
+    is returned unchanged. Same no-op cases as `filter_by_location`."""
+    constraint = _location_constraint(gazetteer, location, remote_only=remote_only)
+    if constraint is None:
+        return results
+    request_cities, request_country = constraint
+
+    rejudged = []
+    for r in results:
+        if r.location_source != "ats_api":
+            rejudged.append(r)
+            continue
+        state = check_location_state(
+            gazetteer, r.location, request_cities=request_cities, request_country=request_country
+        )
+        rejudged.append(replace(r, location_verified=True if state == "match" else None))
+    return rejudged
 
 
 async def apply_search_filters(

@@ -135,9 +135,9 @@ class SearchResult:
     None: the provider reported it. "ats_api": the job board's own API (Greenhouse, Lever,
     Ashby, Workday), an endpoint only that board controls. "ats_page": read out of the job
     page's markup, which any host serving a matching URL can fill with whatever it likes.
-    `search_aggregation.filter_by_location` judges a provider's or an "ats_api" location, but
-    leaves an "ats_page" one alone (`location_verified` stays None): a page asserting its own
-    location may relabel the result, and may neither promote it nor hide it."""
+    `search_aggregation.rejudge_corrected_locations` confirms a match only for an "ats_api"
+    location; an "ats_page" one is never confirmed (`location_verified` stays None), because a
+    page asserting its own location is a claim. Neither is ever a reason to drop a result."""
 
 
 # ── URL-tier classifier (ported verbatim from n8n's real classifyUrlTier,
