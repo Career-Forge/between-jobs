@@ -116,9 +116,11 @@ class SearchResult:
     """None (default) means "not confirmed": location filtering wasn't applied at all (a no-op
     sort key), or it ran and the location is genuinely unknown, or it ran and deliberately left
     a page-read location unjudged (see `location_source`), or the liveness check replaced the
-    location and cleared the earlier verdict. True is only ever set by
-    `search_aggregation.filter_by_location`, for a confirmed match; a mismatch is dropped, so
-    False is never set."""
+    location and cleared the earlier verdict. True is set by
+    `search_aggregation.filter_by_location` (the provider's own location matches) and by
+    `search_aggregation.rejudge_corrected_locations` (a location a board's API supplied matches).
+    `filter_by_location` drops a mismatch and the second pass keeps it as None, so False is
+    never set."""
     link_checked: bool = False
     """True once a real liveness signal has confirmed this result --
     either `ats_liveness.verify_liveness` ran a live

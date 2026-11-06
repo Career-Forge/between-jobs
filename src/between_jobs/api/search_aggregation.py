@@ -223,13 +223,10 @@ def _parse_posted_at(posted_at: str | None) -> float:
 
 
 def _location_rank(r: SearchResult) -> int:
-    """0 sorts first (a confirmed location match); 1 covers both a
-    confirmed mismatch's absence from the list by the time sort runs
-    (filter_by_location already dropped those) and the common case where
-    location filtering never ran at all (`location_verified is None`) --
-    a no-op tiebreak identical for every result, exactly mirroring n8n's
-    own "undefined on every job" behavior when its own filter never
-    fired."""
+    """0 sorts first (a confirmed location match); 1 covers every result whose
+    location is unknown or unconfirmed, including the common case where location
+    filtering never ran at all (`location_verified is None`): a no-op tiebreak,
+    identical for every result."""
     return 0 if r.location_verified is True else 1
 
 
@@ -241,8 +238,8 @@ def sort_results(
 
     `aggregate_jobs` sorts with this. A caller whose results only learn whether their
     location matches AFTER that sort must sort again: `location_verified` is stamped by
-    `filter_by_location`, so any sort that runs before it sees every result as
-    unverified and its location-first key changes nothing."""
+    `filter_by_location` and `rejudge_corrected_locations`, so any sort that runs before
+    them sees every result as unverified and its location-first key changes nothing."""
     if sort_by == "newest":
         return sorted(results, key=lambda r: (_location_rank(r), -_parse_posted_at(r.posted_at)))
     return sorted(
@@ -623,7 +620,10 @@ def rejudge_corrected_locations(
     resolves to the larger Cambridge in England). Neither is evidence enough to remove a result
     the first pass let through. A result from any other source, including one read from a job
     page's markup (`"ats_page"`: a claim by whatever host served the page, never a confirmation),
-    is returned unchanged. Same no-op cases as `filter_by_location`."""
+    is returned unchanged. A match is only confirmed when the gazetteer read a city or a country
+    out of the location: text that merely sounds global ("Anywhere in Europe", "Global
+    Technology Center, Pune") matches every search and so confirms none. Same no-op cases as
+    `filter_by_location`."""
     constraint = _location_constraint(gazetteer, location, remote_only=remote_only)
     if constraint is None:
         return results
@@ -633,6 +633,9 @@ def rejudge_corrected_locations(
     for r in results:
         if r.location_source != "ats_api":
             rejudged.append(r)
+            continue
+        if resolve_location(gazetteer, r.location).is_global:
+            rejudged.append(replace(r, location_verified=None))
             continue
         state = check_location_state(
             gazetteer, r.location, request_cities=request_cities, request_country=request_country

@@ -316,8 +316,9 @@ class _FakeHttpClient:
     (every other provider is stubbed empty by default, so no discovery-
     route test before Phase 2a's fix ever exercised the live-search
     lane's own liveness check at all). `liveness_json`, when given, is the
-    body a GET liveness probe gets back -- enough for a Greenhouse probe
-    to hand back the ATS's own `location.name`. `remoteok_json`, when given,
+    body every GET liveness request gets back: a Greenhouse job, a Lever
+    org feed or an Ashby board, enough for a probe to hand back the board's
+    own location. `remoteok_json`, when given,
     is the RemoteOK feed, which is how a test gets a live-lane result that
     carries a real location of its own."""
 
@@ -1111,7 +1112,9 @@ def test_search_discover_keeps_a_lever_job_open_in_new_york_whose_primary_locati
 ) -> None:
     """Lever lists every office in `categories.allLocations` and puts only one in
     `categories.location`. A job whose primary location is London is not a job that is absent from
-    New York, so a search for New York must still return it, as unknown rather than confirmed."""
+    New York, so a search for New York must still return it, as unknown rather than confirmed.
+    The probe reads only the primary location: `allLocations` is in the fixture to show the real
+    shape of a multi-office posting and plays no part in the outcome."""
     board = [
         {
             "id": _LEVER_JOB_ID,
@@ -1135,7 +1138,9 @@ def test_search_discover_keeps_a_lever_job_open_in_new_york_whose_primary_locati
 def test_search_discover_keeps_an_ashby_job_open_in_new_york_whose_primary_location_is_london(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Ashby lists further offices in `secondaryLocations`; `location` is only the primary one."""
+    """Ashby lists further offices in `secondaryLocations`; `location` is only the primary one.
+    The probe reads only the primary location (and the country): `secondaryLocations` is in the
+    fixture to show the real shape of a multi-office posting and plays no part in the outcome."""
     board = {
         "jobs": [
             {
@@ -1154,7 +1159,7 @@ def test_search_discover_keeps_an_ashby_job_open_in_new_york_whose_primary_locat
         location="New York",
     )
 
-    assert len(body["scored"]) == 1
+    assert [c["location"] for c in body["scored"]] == ["London, United Kingdom"]
     assert body["scored"][0]["location_verified"] is None
     assert body["dead_removed"] == 0
 
@@ -1195,15 +1200,13 @@ def test_search_discover_keeps_an_unresolvable_corrected_location_unknown(
 def test_search_discover_remote_only_never_location_filters_a_corrected_location(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A remote-only search skips the location filter on the first pass, so the re-check after
-    liveness must skip it too: a London posting stays in a remote-only New York search."""
-    body = _search_new_york_with_ats_location(
-        monkeypatch, "London, United Kingdom", remote_only=True
-    )
+    """A remote-only search skips the location filter on the first pass, so the pass after
+    liveness must skip it too: even a board location that matches New York is not confirmed."""
+    body = _search_new_york_with_ats_location(monkeypatch, "New York, NY", remote_only=True)
 
     assert len(body["scored"]) == 1
     card = body["scored"][0]
-    assert card["location"] == "London, United Kingdom"
+    assert card["location"] == "New York, NY"
     assert card["location_verified"] is None
 
 

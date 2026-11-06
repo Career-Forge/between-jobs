@@ -723,25 +723,49 @@ def test_rejudge_corrected_locations_leaves_a_page_read_location_alone(job_locat
     assert result[0].location_verified is None
 
 
-def test_rejudge_corrected_locations_leaves_a_result_whose_location_was_not_corrected_alone() -> (
-    None
-):
-    """The first pass already judged these. A provider's own mismatch is not this pass's to
-    re-open, and a provider's own confirmed match is not this pass's to withdraw."""
-    verified = _result(location="New York, NY", apply_url="https://a.com/1", location_verified=True)
-    elsewhere = _result(location="Berlin, Germany", apply_url="https://b.com/2")
-
-    result = rejudge_corrected_locations(
-        [verified, elsewhere], "New York", gazetteer=_test_gazetteer()
+def test_rejudge_corrected_locations_leaves_an_uncorrected_result_alone() -> None:
+    """The first pass already judged these. A provider's own location that happens to match is
+    not this pass's to confirm, and a provider's own confirmed match is not this pass's to
+    withdraw, even when the location would read as a mismatch now."""
+    matches_but_unconfirmed = _result(location="New York, NY", apply_url="https://a.com/1")
+    confirmed_elsewhere = _result(
+        location="Berlin, Germany", apply_url="https://b.com/2", location_verified=True
     )
 
-    assert result == [verified, elsewhere]
+    result = rejudge_corrected_locations(
+        [matches_but_unconfirmed, confirmed_elsewhere], "New York", gazetteer=_test_gazetteer()
+    )
+
+    assert result == [matches_but_unconfirmed, confirmed_elsewhere]
+    assert [r.location_verified for r in result] == [None, True]
+
+
+@pytest.mark.parametrize(
+    "board_location",
+    [
+        "Anywhere in Europe",
+        "Global Technology Center, Pune",
+        "Worldwide",
+        "New York, NY or anywhere",
+    ],
+)
+def test_rejudge_corrected_locations_does_not_confirm_text_that_merely_sounds_global(
+    board_location: str,
+) -> None:
+    """The gazetteer calls any text with "global" or "anywhere" in it a match for every search.
+    That is not a location the board gave, so it confirms nothing."""
+    job = _result(location=board_location, apply_url="https://a.com/1", location_source="ats_api")
+
+    result = rejudge_corrected_locations([job], "New York", gazetteer=_test_gazetteer())
+
+    assert [r.location for r in result] == [board_location]
+    assert result[0].location_verified is None
 
 
 def test_rejudge_corrected_locations_is_a_no_op_when_nothing_constrains_the_search() -> None:
-    job = _result(
-        location="Berlin, Germany", apply_url="https://a.com/1", location_source="ats_api"
-    )
+    """The input is a board location that matches the search, so a pass that ran would confirm
+    it: every call below must leave it unconfirmed instead."""
+    job = _result(location="New York, NY", apply_url="https://a.com/1", location_source="ats_api")
     empty = Gazetteer(city_index={}, country_alias_to_code={}, country_names={})
 
     assert rejudge_corrected_locations([job], "New York", gazetteer=empty) == [job]
@@ -750,6 +774,23 @@ def test_rejudge_corrected_locations_is_a_no_op_when_nothing_constrains_the_sear
     assert rejudge_corrected_locations(
         [job], "New York", gazetteer=_test_gazetteer(), remote_only=True
     ) == [job]
+
+
+def test_filter_by_location_ignores_where_a_location_came_from() -> None:
+    """The first pass judges a location the same way whatever `location_source` says: that label
+    only matters to the second pass."""
+    matching = [
+        _result(location="New York, NY", apply_url="https://a.com/1", location_source=source)
+        for source in (None, "ats_api", "ats_page")
+    ]
+    elsewhere = _result(
+        location="Berlin, Germany", apply_url="https://b.com/2", location_source="ats_page"
+    )
+
+    result = filter_by_location([*matching, elsewhere], "New York", gazetteer=_test_gazetteer())
+
+    assert [r.location_verified for r in result] == [True, True, True]
+    assert len(result) == 3
 
 
 def test_filter_by_location_no_op_when_remote_only() -> None:
