@@ -5,6 +5,7 @@ Aggregate Jobs node (aggregate_jobs.js)."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -14,6 +15,7 @@ import pytest
 from between_jobs.api import geo_gazetteer as geo_gazetteer_module
 from between_jobs.api.geo_gazetteer import Gazetteer, build_gazetteer
 from between_jobs.api.search_aggregation import (
+    _backfill,
     _canonicalize_url,
     _dedup_keys,
     aggregate_jobs,
@@ -26,6 +28,7 @@ from between_jobs.api.search_aggregation import (
     filter_by_role,
     matches_all_role_terms,
     role_term_patterns,
+    sort_results,
 )
 from between_jobs.api.search_providers import SearchResult
 
@@ -681,6 +684,45 @@ def test_filter_by_location_stamps_none_on_unknown_not_false() -> None:
     assert result[0].location_verified is None  # never False -- mismatches are dropped, not flagged
 
 
+@pytest.mark.parametrize("job_location", ["New York, NY", "Berlin, Germany", "Zzyzxville"])
+def test_filter_by_location_leaves_a_page_read_location_unjudged(job_location: str) -> None:
+    """A location the liveness check scraped from a job page's markup is a claim by whatever host
+    served the page. Whether it matches the search, contradicts it or means nothing to the
+    gazetteer, the result stays and is not marked verified: the page may relabel the result but
+    may neither promote it nor hide it."""
+    job = _result(location=job_location, apply_url="https://a.com/1", location_source="ats_page")
+
+    result = filter_by_location([job], "New York", gazetteer=_test_gazetteer())
+
+    assert [r.location for r in result] == [job_location]
+    assert result[0].location_verified is None
+
+
+def test_filter_by_location_clears_a_verified_stamp_from_a_page_read_location() -> None:
+    job = _result(
+        location="New York, NY",
+        apply_url="https://a.com/1",
+        location_source="ats_page",
+        location_verified=True,
+    )
+
+    result = filter_by_location([job], "New York", gazetteer=_test_gazetteer())
+
+    assert result[0].location_verified is None
+
+
+def test_filter_by_location_judges_a_board_api_location_like_a_provider_one() -> None:
+    match = _result(location="New York, NY", apply_url="https://a.com/1", location_source="ats_api")
+    mismatch = _result(
+        location="Berlin, Germany", apply_url="https://b.com/2", location_source="ats_api"
+    )
+
+    result = filter_by_location([match, mismatch], "New York", gazetteer=_test_gazetteer())
+
+    assert [r.location for r in result] == ["New York, NY"]
+    assert result[0].location_verified is True
+
+
 def test_filter_by_location_no_op_when_remote_only() -> None:
     de_job = _result(location="Berlin, Germany", apply_url="https://b.com/2")
 
@@ -723,6 +765,60 @@ def test_aggregate_jobs_sorts_location_verified_first() -> None:
     result = aggregate_jobs([unverified_tier1, verified_tier2])
 
     assert [r.company for r in result] == ["B", "A"]  # verified wins even over a better tier
+
+
+def test_backfill_carries_the_source_of_a_location_it_copies() -> None:
+    """A page-read location must stay marked as such when a duplicate hands it to the result that
+    is kept, or the mark could be lost and the location judged as a provider's own."""
+    keep = _result(location=None, apply_url="https://a.com/1")
+    drop = _result(location="Camana Bay", location_source="ats_page", apply_url="https://b.com/2")
+
+    result = _backfill(keep, drop)
+
+    assert result.location == "Camana Bay"
+    assert result.location_source == "ats_page"
+
+
+def test_sort_results_newest_also_puts_a_verified_result_first() -> None:
+    newer_unverified = _result(
+        apply_url="https://a.com/1", company="A", posted_at="2026-08-30T00:00:00Z"
+    )
+    older_verified = _result(
+        apply_url="https://b.com/2",
+        company="B",
+        posted_at="2026-08-01T00:00:00Z",
+        location_verified=True,
+    )
+
+    result = sort_results([newer_unverified, older_verified], sort_by="newest")
+
+    assert [r.company for r in result] == ["B", "A"]
+
+
+def test_sort_results_lifts_a_result_stamped_verified_after_the_first_sort() -> None:
+    """`filter_by_location` stamps `location_verified` AFTER `aggregate_jobs` has sorted, so
+    the first order cannot know. Sorting again must lift the newly verified result over a
+    better tier and a newer date, and must return a new list, not reorder the caller's."""
+    newer_tier1 = _result(
+        apply_url="https://a.com/1",
+        company="A",
+        source_tier=1.0,
+        posted_at="2026-08-30T00:00:00Z",
+    )
+    older_tier2 = _result(
+        apply_url="https://b.com/2",
+        company="B",
+        source_tier=2.0,
+        posted_at="2026-08-01T00:00:00Z",
+    )
+    first_pass = aggregate_jobs([older_tier2, newer_tier1])
+    assert [r.company for r in first_pass] == ["A", "B"]  # nothing verified yet: tier, then recency
+
+    stamped = [replace(r, location_verified=True) if r.company == "B" else r for r in first_pass]
+    result = sort_results(stamped)
+
+    assert [r.company for r in result] == ["B", "A"]
+    assert [r.company for r in stamped] == ["A", "B"]  # the caller's list is left as it was
 
 
 # ── apply_search_filters: the shared 3-step chain ──

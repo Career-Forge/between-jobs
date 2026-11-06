@@ -12,7 +12,9 @@ network call, no real spend, in any test here.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -25,8 +27,10 @@ from fastapi.testclient import TestClient
 from between_jobs.api import product_events
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase
+from between_jobs.api.ats_liveness import verify_liveness
 from between_jobs.api.auth import require_user_id
 from between_jobs.api.discovery_routes import _result_to_card
+from between_jobs.api.geo_gazetteer import build_gazetteer
 from between_jobs.api.job_fit_scoring import ScoredJob, SubScores
 from between_jobs.api.llm_client import LLMResponse
 from between_jobs.api.search_providers import SearchResult
@@ -311,13 +315,24 @@ class _FakeHttpClient:
     given, lets a test produce a real live-search-lane `SearchResult`
     (every other provider is stubbed empty by default, so no discovery-
     route test before Phase 2a's fix ever exercised the live-search
-    lane's own liveness check at all)."""
+    lane's own liveness check at all). `liveness_json`, when given, is the
+    body a GET liveness probe gets back -- enough for a Greenhouse probe
+    to hand back the ATS's own `location.name`. `remoteok_json`, when given,
+    is the RemoteOK feed, which is how a test gets a live-lane result that
+    carries a real location of its own."""
 
     def __init__(
-        self, *, liveness_status: int = 200, you_com_body: dict[str, Any] | None = None
+        self,
+        *,
+        liveness_status: int = 200,
+        you_com_body: dict[str, Any] | None = None,
+        liveness_json: dict[str, Any] | None = None,
+        remoteok_json: list[dict[str, Any]] | None = None,
     ) -> None:
         self.liveness_status = liveness_status
         self.you_com_body = you_com_body
+        self.liveness_json = liveness_json
+        self.remoteok_json = remoteok_json
         self.get_calls: list[str] = []
         self.request_calls: list[tuple[str, str]] = []
         self.you_com_posts = 0
@@ -325,10 +340,14 @@ class _FakeHttpClient:
     async def get(self, url: str, **_kwargs: Any) -> httpx.Response:
         self.get_calls.append(url)
         if "remoteok.com" in url:
-            return httpx.Response(200, json=[], request=httpx.Request("GET", url))
+            return httpx.Response(
+                200, json=self.remoteok_json or [], request=httpx.Request("GET", url)
+            )
         if "arbeitnow.com" in url:
             return httpx.Response(200, json={"data": []}, request=httpx.Request("GET", url))
-        return httpx.Response(self.liveness_status, request=httpx.Request("GET", url))
+        return httpx.Response(
+            self.liveness_status, json=self.liveness_json, request=httpx.Request("GET", url)
+        )
 
     async def request(self, method: str, url: str, **_kwargs: Any) -> httpx.Response:
         self.request_calls.append((method, url))
@@ -783,6 +802,427 @@ def test_search_discover_location_param_is_a_no_op_against_an_empty_gazetteer(
     assert response.status_code == 200
     assert len(response.json()["scored"]) == 1
     gazetteer_module._cached_gazetteer = None
+
+
+# ── Location-verified results are ordered and re-checked before scoring ──
+
+_GREENHOUSE_LIVE_URL = "https://boards.greenhouse.io/acme/jobs/123"
+_GREENHOUSE_YOU_COM_BODY = {
+    "results": {
+        "web": [
+            {
+                "url": _GREENHOUSE_LIVE_URL,
+                "title": "Backend Engineer",
+                "snippets": ["A live-search-lane result on a Greenhouse board."],
+            }
+        ]
+    }
+}
+_GREENHOUSE_SCORE_LLM_RESPONSE = (
+    f'{{"scored": [{{"job_id": "{_GREENHOUSE_LIVE_URL}", "fit_score": 8, '
+    '"one_liner": "Strong fit"}]}'
+)
+
+
+@pytest.fixture
+def _new_york_gazetteer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A cached gazetteer that knows New York and London. monkeypatch restores the module's own
+    cache afterwards, even when an assertion in the test fails."""
+    import between_jobs.api.geo_gazetteer as gazetteer_module
+
+    monkeypatch.setattr(
+        gazetteer_module,
+        "_cached_gazetteer",
+        build_gazetteer(
+            [
+                {
+                    "name": "New York",
+                    "ascii_name": "New York",
+                    "alt_names": ["NYC"],
+                    "country_code": "US",
+                    "population": 8000000,
+                },
+                {
+                    "name": "London",
+                    "ascii_name": "London",
+                    "alt_names": [],
+                    "country_code": "GB",
+                    "population": 8900000,
+                },
+            ]
+        ),
+    )
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_location_verified_ordering_actually_applies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: aggregate_jobs() sorts location-verified-first,
+    but /discover calls it BEFORE apply_search_filters() -- the step that
+    actually runs filter_by_location and stamps location_verified. At
+    sort time every result's location_verified is still None, so that
+    sort's location-first key is a no-op in this route, and a genuine
+    location match can lose a scoring-batch slot to same-tier, more-
+    recent, location-UNKNOWN fillers it should have outranked.
+
+    30 fillers (unresolvable location, kept as location_verified=None,
+    each more recent than the match) plus 1 real match (older than every
+    filler, location_verified=True once apply_search_filters runs) means:
+    on a pure-recency tiebreak, the match is the 31st item and falls out
+    of score_jobs' own top-30 batch into `more`, unscored. Once the
+    location-first key actually applies, the match takes the first slot,
+    lands in `scored`, and the OLDEST filler is the one pushed out."""
+    # No valid "scored" JSON anywhere in this string -- forces the
+    # neutral_fallback parse strategy, which scores every job actually
+    # inside score_jobs' own to_score batch (whichever 30 that turns out
+    # to be), regardless of the exact order /discover hands it.
+    _patch_llm(monkeypatch, "Scoring unavailable right now.")
+
+    base = datetime(2026, 8, 31, tzinfo=UTC)
+    match_url = "https://example.com/careers/job-match"
+    match_row = {
+        **_REGISTRY_POSTING_ROW,
+        "apply_url": match_url,
+        "title": "Backend Engineer (match)",
+        "location": "New York, NY",
+        "posted_at": (base - timedelta(days=2)).isoformat(),
+    }
+    filler_rows = [
+        {
+            **_REGISTRY_POSTING_ROW,
+            "apply_url": f"https://example.com/careers/filler-{i}",
+            "title": f"Backend Engineer (filler {i})",
+            "location": "Zzyzxville, Nowhereland",  # unresolvable -> kept, verified stays None
+            "posted_at": (base - timedelta(hours=i)).isoformat(),
+        }
+        for i in range(30)
+    ]
+    supabase = _FakeSupabaseClient(registry_postings=[match_row, *filler_rows])
+    http = _FakeHttpClient()
+    client = _client(supabase, http)
+
+    response = client.get("/discover", params={"q": "backend engineer", "location": "New York"})
+
+    assert response.status_code == 200
+    body = response.json()
+    scored_urls = [c["apply_url"] for c in body["scored"]]
+    more_urls = [c["apply_url"] for c in body["more"]]
+
+    assert match_url in scored_urls
+    assert match_url not in more_urls
+    # the 30-job batch is full either way; what changed is who got bumped: the oldest filler
+    assert len(scored_urls) == 30
+    assert more_urls == ["https://example.com/careers/filler-29"]
+
+
+def _search_new_york_with_ats_location(
+    monkeypatch: pytest.MonkeyPatch, ats_location: Any, *, remote_only: bool = False
+) -> dict[str, Any]:
+    """A You.com result carries no location of its own, so the first-pass
+    location filter keeps it as unknown. Its Greenhouse liveness probe
+    then replaces that with the ATS's own `location.name`."""
+    _patch_llm(monkeypatch, _GREENHOUSE_SCORE_LLM_RESPONSE)
+    supabase = _FakeSupabaseClient(
+        registry_postings=[],
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+        },
+    )
+    http = _FakeHttpClient(
+        you_com_body=_GREENHOUSE_YOU_COM_BODY,
+        liveness_json={"id": 123, "location": {"name": ats_location}},
+    )
+    client = _client(supabase, http)
+
+    params = {"q": "backend engineer", "location": "New York"}
+    if remote_only:
+        params["remote_only"] = "true"
+    response = client.get("/discover", params=params)
+
+    assert response.status_code == 200
+    return dict(response.json())
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_rechecks_a_liveness_corrected_location_that_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """verify_liveness resets location_verified whenever it corrects a
+    location. Without a re-check, a corrected location that matches the
+    search still scored as unknown (35) instead of a match (100)."""
+    body = _search_new_york_with_ats_location(monkeypatch, "New York, NY")
+
+    assert len(body["scored"]) == 1
+    card = body["scored"][0]
+    assert card["location"] == "New York, NY"
+    assert card["location_verified"] is True
+    assert card["score"]["sub_scores"]["location"] == 100
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_drops_a_liveness_corrected_location_that_mismatches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A confirmed mismatch is dropped, exactly as the first-pass filter
+    would have dropped it had the provider reported the ATS's location.
+    The job is still alive, so it doesn't count toward dead_removed."""
+    body = _search_new_york_with_ats_location(monkeypatch, "London, United Kingdom")
+
+    assert body["scored"] == []
+    assert body["more"] == []
+    assert body["dead_removed"] == 0
+
+
+def _liveness_reads_locations_from_the_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Runs the real liveness check, then labels every location it corrected as read from the job
+    page's markup, the way the SuccessFactors probe reports one."""
+
+    async def from_the_page(
+        http: Any, results: list[SearchResult]
+    ) -> tuple[list[SearchResult], int]:
+        alive, dead_removed = await verify_liveness(http, results)
+        return [
+            replace(r, location_source="ats_page") if r.location_source else r for r in alive
+        ], dead_removed
+
+    monkeypatch.setattr("between_jobs.api.discovery_routes.verify_liveness", from_the_page)
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_does_not_confirm_a_page_read_location_that_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A location a job page states about itself is a claim, not a confirmation: the card shows
+    it, but it scores as unknown (35) and is not verified, unlike a board API's own answer."""
+    _liveness_reads_locations_from_the_page(monkeypatch)
+
+    body = _search_new_york_with_ats_location(monkeypatch, "New York, NY")
+
+    assert len(body["scored"]) == 1
+    card = body["scored"][0]
+    assert card["location"] == "New York, NY"
+    assert card["location_verified"] is None
+    assert card["score"]["sub_scores"]["location"] == 35
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_does_not_hide_a_result_on_a_page_read_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same claim cannot remove a result either: a page that says London keeps its card in a
+    New York search, labelled unknown, where a board API saying London would drop it."""
+    _liveness_reads_locations_from_the_page(monkeypatch)
+
+    body = _search_new_york_with_ats_location(monkeypatch, "London, United Kingdom")
+
+    assert len(body["scored"]) == 1
+    card = body["scored"][0]
+    assert card["location"] == "London, United Kingdom"
+    assert card["location_verified"] is None
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_keeps_an_unresolvable_corrected_location_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = _search_new_york_with_ats_location(monkeypatch, "Zzyzxville")
+
+    assert len(body["scored"]) == 1
+    card = body["scored"][0]
+    assert card["location"] == "Zzyzxville"
+    assert card["location_verified"] is None
+    assert card["score"]["sub_scores"]["location"] == 35
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_remote_only_never_location_filters_a_corrected_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A remote-only search skips the location filter on the first pass, so the re-check after
+    liveness must skip it too: a London posting stays in a remote-only New York search."""
+    body = _search_new_york_with_ats_location(
+        monkeypatch, "London, United Kingdom", remote_only=True
+    )
+
+    assert len(body["scored"]) == 1
+    card = body["scored"][0]
+    assert card["location"] == "London, United Kingdom"
+    assert card["location_verified"] is None
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_survives_a_non_string_ats_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ATS's own JSON is third-party input. A location that is not a string must not fail
+    the whole search: the result keeps the location it came with."""
+    body = _search_new_york_with_ats_location(monkeypatch, ["New York", "London"])
+
+    assert len(body["scored"]) == 1
+    assert body["scored"][0]["location"] is None
+
+
+def test_search_discover_without_a_location_never_loads_the_gazetteer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The gazetteer is a 34k-row table. A search with no location has nothing to check, so the
+    re-check after liveness must not be the thing that pulls it in on a cold cache."""
+    import between_jobs.api.geo_gazetteer as gazetteer_module
+
+    monkeypatch.setattr(gazetteer_module, "_cached_gazetteer", None)
+    _patch_llm(monkeypatch, _GREENHOUSE_SCORE_LLM_RESPONSE)
+
+    class _TableRecordingSupabase(_FakeSupabaseClient):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            self.tables_asked_for: list[str] = []
+
+        def table(self, name: str) -> Any:
+            self.tables_asked_for.append(name)
+            return super().table(name)
+
+    supabase = _TableRecordingSupabase(
+        registry_postings=[],
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+        },
+    )
+    http = _FakeHttpClient(
+        you_com_body=_GREENHOUSE_YOU_COM_BODY,
+        liveness_json={"id": 123, "location": {"name": "New York, NY"}},
+    )
+
+    response = _client(supabase, http).get("/discover", params={"q": "backend engineer"})
+
+    assert response.status_code == 200
+    assert len(response.json()["scored"]) == 1
+    assert "geo_gazetteer_cities" not in supabase.tables_asked_for
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_checks_a_location_verified_result_ranked_past_the_liveness_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the first 50 live-lane results get a liveness check. 55 web-search results (best
+    tier, location unknown) rank ahead of a RemoteOK result (lower tier) until the location
+    filter verifies that one as a New York match. It must then be sorted to the front before the
+    cap is applied: otherwise it is never checked and is shown unscored under "more"."""
+    _patch_llm(monkeypatch, "Scoring unavailable right now.")
+    web_results = [
+        {
+            "url": f"https://boards.greenhouse.io/acme/jobs/{2000 + i}",
+            "title": f"Backend Engineer {i}",
+            "snippets": ["live"],
+        }
+        for i in range(55)
+    ]
+    remoteok_url = "https://example.com/jobs/remoteok-new-york"
+    supabase = _FakeSupabaseClient(
+        registry_postings=[],
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+        },
+    )
+    http = _FakeHttpClient(
+        you_com_body={"results": {"web": web_results}},
+        remoteok_json=[
+            {
+                "id": 1,
+                "position": "Backend Engineer",
+                "company": "RemoteCo",
+                "location": "New York, NY",
+                "url": remoteok_url,
+                "description": "A role with a real location.",
+            }
+        ],
+    )
+
+    response = _client(supabase, http).get(
+        "/discover", params={"q": "backend engineer", "location": "New York"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    card = next(c for c in body["scored"] if c["apply_url"] == remoteok_url)
+    assert card["location_verified"] is True
+    assert card["link_checked"] is True
+    # 50 checked in all; the 6 web-search results past the cap stay unchecked under "more"
+    assert [c["link_checked"] for c in body["more"]].count(False) == 6
+
+
+class _PerJobLocationHttp(_FakeHttpClient):
+    """A Greenhouse probe that answers each job id with its own ATS location."""
+
+    def __init__(self, *, you_com_body: dict[str, Any], location_by_job: dict[str, str]) -> None:
+        super().__init__(you_com_body=you_com_body)
+        self.location_by_job = location_by_job
+
+    async def get(self, url: str, **kwargs: Any) -> httpx.Response:
+        if "boards-api.greenhouse.io" in url:
+            job_id = url.rsplit("/", 1)[1]
+            return httpx.Response(
+                200,
+                json={"id": job_id, "location": {"name": self.location_by_job[job_id]}},
+                request=httpx.Request("GET", url),
+            )
+        return await super().get(url, **kwargs)
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_scores_a_corrected_match_ahead_of_unverified_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """score_jobs scores the first 30 results it is given, in the order given. The results sort
+    verified-first BEFORE liveness, when none of these knew its real location yet. A result whose
+    corrected location matches is only known to match afterwards, and still belongs ahead of the
+    30 whose location is unknown, wherever the first sort left it."""
+    scored_batches: list[list[str]] = []
+
+    async def fake_generate(**kwargs: Any) -> LLMResponse:
+        ids = [job["job_id"] for job in json.loads(kwargs["user_prompt"])["jobs"]]
+        scored_batches.append(ids)
+        scored = [{"job_id": i, "fit_score": 8, "one_liner": "ok"} for i in ids]
+        return LLMResponse(content=json.dumps({"scored": scored}))
+
+    monkeypatch.setattr("between_jobs.api.discovery_routes.llm_generate", fake_generate)
+    urls = [f"https://boards.greenhouse.io/acme/jobs/{1000 + i}" for i in range(35)]
+    body = {
+        "results": {
+            "web": [
+                {"url": u, "title": f"Backend Engineer {i}", "snippets": ["live"]}
+                for i, u in enumerate(urls)
+            ]
+        }
+    }
+    locations = {str(1000 + i): "Zzyzxville" for i in range(35)}
+    for i in range(30, 35):
+        locations[str(1000 + i)] = "New York, NY"
+    supabase = _FakeSupabaseClient(
+        registry_postings=[],
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+        },
+    )
+    http = _PerJobLocationHttp(you_com_body=body, location_by_job=locations)
+
+    response = _client(supabase, http).get(
+        "/discover", params={"q": "backend engineer", "location": "New York"}
+    )
+
+    assert response.status_code == 200
+    assert len(scored_batches[0]) == 30
+    # the five corrected matches take the first five slots, in their original order
+    assert scored_batches[0][:5] == urls[30:35]
+    scored_cards = response.json()["scored"]
+    assert {c["apply_url"] for c in scored_cards if c["location_verified"] is True} == set(
+        urls[30:35]
+    )
+    assert [c["apply_url"] for c in response.json()["more"]] == urls[25:30]
 
 
 # ── POST /discover/track ─────────────────────────────────────────────────

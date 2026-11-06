@@ -76,22 +76,28 @@ fidelity losses:
   path-relative / all handled uniformly, then checked for a final https
   scheme), and `httpx` has no default truncation to work around, so no
   size-cap machinery is ported here.
-- n8n's own node also re-runs a SECOND, smaller location-match re-filter
-  (S30) after backfilling a corrected location from ATS ground truth,
-  using an `app_settings.geo_reference` table this project never ported.
-  between-jobs already has a strictly more capable location filter
+- Location is judged again after a correction, but not here. The project
+  already has a strictly more capable location filter
   (`search_aggregation.filter_by_location`, backed by the real
-  34,006-city GeoNames gazetteer from P5d) -- duplicating a weaker
-  version of the same logic here would violate this codebase's own DRY
-  discipline. This module therefore does NOT re-filter by location
-  itself: it only corrects `location` (and resets `location_verified` to
-  `None`, since the prior verified status was computed against the
-  pre-correction value and can no longer be trusted) when ATS ground
-  truth reveals a different real location than what a live-search
-  provider's snippet guessed. A caller that wants n8n's own S30 behavior
-  can simply re-invoke `filter_by_location` on this module's own output
-  -- the same real gazetteer, applied twice, is still correct and
-  idempotent, not a second implementation living here.
+  34,006-city GeoNames gazetteer) -- duplicating a weaker version of the
+  same logic here would violate this codebase's own DRY discipline. This
+  module therefore does NOT re-filter by location itself: it only corrects
+  `location` (and resets `location_verified` to `None`, since the prior
+  verified status was computed against the pre-correction value and can
+  no longer be trusted) when ATS ground truth reveals a different real
+  location than what a live-search provider's snippet guessed, and records
+  where it read the new one (`location_source`). The `/discover` route re-invokes
+  `filter_by_location` on this module's own output -- the same real
+  gazetteer, applied twice, is still correct and idempotent, not a second
+  implementation living here. Any other caller that scores after this
+  module must do the same: the `None` reset alone makes a corrected,
+  genuinely matching location score as unknown. A corrected location
+  carries `location_source`: one read from a board's own API (Greenhouse,
+  Lever, Ashby, Workday) is judged like any other location, but one
+  scraped from a job page's markup (SuccessFactors-shaped pages) is left
+  unjudged -- neither marked verified nor used to drop the result -- because
+  any host that serves a matching URL shape can put whatever location it
+  likes in its own markup.
 
 Pipeline position, confirmed directly from n8n's own real node graph (not
 assumed from the plan doc's prose): `Filter Applied Jobs -> Verify Job
@@ -109,6 +115,7 @@ import asyncio
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, replace
 from typing import Any, Literal
 from urllib.parse import unquote
@@ -166,10 +173,40 @@ _LivenessVerdict = Literal["keep", "dead"]
 class _ProbeResult:
     verdict: _LivenessVerdict
     location: str | None = None
+    location_source: Literal["ats_api", "ats_page"] = "ats_page"
+    """Where `location` was read. The default is the untrusted one, so a probe that does not say
+    otherwise cannot confirm a location match: only the probes that call the board's own API
+    pass "ats_api"."""
 
 
 def _is_listing_page(title: str) -> bool:
     return bool(_LISTING_PAGE_RX.search(title))
+
+
+_MAX_LOCATION_CHARS = 200
+"""A real location is a few words. A probe reads it from third-party JSON or HTML, so it can
+arrive as a non-string or as pages of text, and the location filter that runs after this module
+parses every string it is given: neither may get through."""
+
+
+_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+"""Unicode categories (control, format such as bidirectional overrides, line and paragraph
+separators) that have no place in a location a person reads and a database stores."""
+
+
+def _plausible_location(value: object) -> str | None:
+    """The probe's location, tidied, if it is a non-empty string of sane length with nothing
+    unprintable in it, else None -- in which case the result keeps the location (and verdict) it
+    already had. Runs of whitespace, newlines included, collapse to one space."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text or len(text) > _MAX_LOCATION_CHARS:
+        return None
+    text = " ".join(text.split())
+    if any(unicodedata.category(ch) in _UNSAFE_CATEGORIES for ch in text):
+        return None
+    return text
 
 
 def _host_of(raw: str) -> str:
@@ -183,10 +220,19 @@ def _host_of(raw: str) -> str:
 
 
 def _parse_url(raw: str) -> httpx.URL | None:
+    # A browser and this client read some malformed links differently: for
+    # `https://evil.example\@jobs.lever.co/acme/1` httpx sees the host jobs.lever.co (with
+    # `evil.example\` as credentials), while a browser treats the backslash as a slash and goes to
+    # evil.example. Probes are chosen by host and their answers are trusted as that board's own, so
+    # refuse any link that could be read two ways: a backslash, whitespace or an unprintable
+    # character inside it, or credentials in it (a job link never carries any).
+    raw = raw.strip()
+    if any(ch == "\\" or ch.isspace() or not ch.isprintable() for ch in raw):
+        return None
     # `.host` decodes IDNA, which raises UnicodeError for a malformed xn-- label.
     try:
         url = httpx.URL(raw)
-        if url.scheme != "https" or not url.host:
+        if url.scheme != "https" or not url.host or url.userinfo:
             return None
     except (httpx.InvalidURL, UnicodeError):
         return None
@@ -288,7 +334,7 @@ async def _probe_ashby(
     job = jobs.get(job_id)
     if job is None:
         return _ProbeResult("dead")
-    return _ProbeResult("keep", _ashby_location(job))
+    return _ProbeResult("keep", _ashby_location(job), "ats_api")
 
 
 # ── Lever ────────────────────────────────────────────────────────────────
@@ -338,7 +384,7 @@ async def _probe_lever(
     if posting is None:
         return _ProbeResult("dead")
     categories = _as_dict(posting.get("categories"))
-    return _ProbeResult("keep", categories.get("location") or None)
+    return _ProbeResult("keep", categories.get("location") or None, "ats_api")
 
 
 # ── Greenhouse ───────────────────────────────────────────────────────────
@@ -368,7 +414,7 @@ async def _probe_greenhouse(http: httpx.AsyncClient, url: httpx.URL) -> _ProbeRe
                 location = (
                     (data.get("location") or {}).get("name") if isinstance(data, dict) else None
                 )
-                return _ProbeResult("keep", location)
+                return _ProbeResult("keep", location, "ats_api")
             # API errored (network/timeout) or another status -> fall through to
             # redirect-chase below, matching n8n's own real fallback exactly.
     status, final_url = await _chase(http, url, method="HEAD")
@@ -434,7 +480,7 @@ async def _probe_workday(http: httpx.AsyncClient, url: httpx.URL) -> _ProbeResul
             country_obj = _as_dict(info.get("country"))
             parts = [info.get("location"), country_obj.get("descriptor")]
             location = ", ".join(p for p in parts if p) or None
-            return _ProbeResult("keep", location)
+            return _ProbeResult("keep", location, "ats_api")
         return _ProbeResult("keep")
     return _ProbeResult("keep")
 
@@ -577,7 +623,7 @@ async def _probe_successfactors(http: httpx.AsyncClient, url: httpx.URL) -> _Pro
         if not _SF_FINGERPRINT_RX.search(body):
             return _ProbeResult("keep")
         return _ProbeResult("dead")
-    return _ProbeResult("keep", _successfactors_location(body))
+    return _ProbeResult("keep", _successfactors_location(body), "ats_page")
 
 
 # ── LinkedIn ─────────────────────────────────────────────────────────────
@@ -722,7 +768,13 @@ async def verify_liveness(
         if verdict.verdict == "dead":
             continue
         updated = replace(result, link_checked=True)
-        if verdict.location:
-            updated = replace(updated, location=verdict.location, location_verified=None)
+        location = _plausible_location(verdict.location)
+        if location:
+            updated = replace(
+                updated,
+                location=location,
+                location_verified=None,
+                location_source=verdict.location_source,
+            )
         alive.append(updated)
     return alive, len(candidates) - len(alive)

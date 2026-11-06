@@ -57,7 +57,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -113,10 +113,12 @@ class SearchResult:
     sponsorship_signal: str = "unknown"
     source_tier: float = 4.0
     location_verified: bool | None = None
-    """None (default) means location filtering wasn't applied at all --
-    a no-op sort key: the field stays unset on every job until location
-    filtering is actually active. True/False only ever get set by
-    `search_aggregation.filter_by_location`."""
+    """None (default) means "not confirmed": location filtering wasn't applied at all (a no-op
+    sort key), or it ran and the location is genuinely unknown, or it ran and deliberately left
+    a page-read location unjudged (see `location_source`), or the liveness check replaced the
+    location and cleared the earlier verdict. True is only ever set by
+    `search_aggregation.filter_by_location`, for a confirmed match; a mismatch is dropped, so
+    False is never set."""
     link_checked: bool = False
     """True once a real liveness signal has confirmed this result --
     either `ats_liveness.verify_liveness` ran a live
@@ -128,6 +130,14 @@ class SearchResult:
     never meant to duplicate (registry-lane results must never reach it
     at all). Only a live-search-lane result that never went through the
     liveness check keeps the default `False`."""
+    location_source: Literal["ats_api", "ats_page"] | None = None
+    """Where `location` came from once the liveness check replaced the provider's own.
+    None: the provider reported it. "ats_api": the job board's own API (Greenhouse, Lever,
+    Ashby, Workday), an endpoint only that board controls. "ats_page": read out of the job
+    page's markup, which any host serving a matching URL can fill with whatever it likes.
+    `search_aggregation.filter_by_location` judges a provider's or an "ats_api" location, but
+    leaves an "ats_page" one alone (`location_verified` stays None): a page asserting its own
+    location may relabel the result, and may neither promote it nor hide it."""
 
 
 # ── URL-tier classifier (ported verbatim from n8n's real classifyUrlTier,

@@ -50,7 +50,8 @@ original query.
 
 `Aggregate Jobs` also does a freshness-cutoff DROP, deliberately left
 out of this port (unlike the location-verified sort key, which
-`filter_by_location` makes genuinely reachable -- see `aggregate_jobs()` itself). Nothing in
+`filter_by_location` makes reachable once a caller sorts again after filtering -- see
+`sort_results()`). Nothing in
 this codebase yet exposes a caller-configurable freshness window to drop
 against -- adding an unreachable-by-any-caller drop would be dead
 machinery, not a faithful port of a real capability.
@@ -169,6 +170,8 @@ def _backfill(keep: SearchResult, drop: SearchResult) -> SearchResult:
         updates["sponsorship_signal"] = drop.sponsorship_signal
     if (not keep.location or keep.location == "unknown") and drop.location:
         updates["location"] = drop.location
+        # A location read from a job page's markup stays marked as such when it moves.
+        updates["location_source"] = drop.location_source
     return replace(keep, **updates) if updates else keep  # type: ignore[arg-type]
 
 
@@ -230,6 +233,23 @@ def _location_rank(r: SearchResult) -> int:
     return 0 if r.location_verified is True else 1
 
 
+def sort_results(
+    results: list[SearchResult], *, sort_by: Literal["relevance", "newest"] = "relevance"
+) -> list[SearchResult]:
+    """`results` as a new list, location-verified first, then (tier, recency) or pure
+    recency per `sort_by`. The sort is stable, so ties keep their incoming order.
+
+    `aggregate_jobs` sorts with this. A caller whose results only learn whether their
+    location matches AFTER that sort must sort again: `location_verified` is stamped by
+    `filter_by_location`, so any sort that runs before it sees every result as
+    unverified and its location-first key changes nothing."""
+    if sort_by == "newest":
+        return sorted(results, key=lambda r: (_location_rank(r), -_parse_posted_at(r.posted_at)))
+    return sorted(
+        results, key=lambda r: (_location_rank(r), r.source_tier, -_parse_posted_at(r.posted_at))
+    )
+
+
 def aggregate_jobs(
     results: list[SearchResult], *, sort_by: Literal["relevance", "newest"] = "relevance"
 ) -> list[SearchResult]:
@@ -237,23 +257,15 @@ def aggregate_jobs(
     the same pipeline order as n8n's real Aggregate Jobs (aggregator
     demotion happens before dedup there too, so a collision between an
     aggregator-posted duplicate and a real one already carries the
-    correct demoted tier into the tier-collision comparison). Sort is
-    location-verified-first, then (tier, recency) or pure recency per
-    `sort_by` -- verbatim from n8n's own real sort, now genuinely
-    reachable since `filter_by_location` can set
-    `location_verified`."""
+    correct demoted tier into the tier-collision comparison). Sorted by
+    `sort_results`. Results that have not been through `filter_by_location`
+    yet are all unverified, so for them the location-first key is a no-op: a
+    caller that filters by location after this must sort again with
+    `sort_results`."""
     demoted = _demote_aggregators(results)
     deduped = _dedupe(demoted)
     filtered = [r for r in deduped if r.source_tier < _TIER_DROP_THRESHOLD]
-
-    if sort_by == "newest":
-        filtered.sort(key=lambda r: (_location_rank(r), -_parse_posted_at(r.posted_at)))
-    else:
-        filtered.sort(
-            key=lambda r: (_location_rank(r), r.source_tier, -_parse_posted_at(r.posted_at))
-        )
-
-    return filtered[:150]
+    return sort_results(filtered, sort_by=sort_by)[:150]
 
 
 # ── cohort/target-company lookup + filter ──────────────────────────
@@ -554,16 +566,18 @@ def filter_by_location(
     gazetteer: Gazetteer,
     remote_only: bool = False,
 ) -> list[SearchResult]:
-    """Verbatim from n8n's own real location-filter block: no-op when
-    `remote_only` (matches n8n's `remotePref !== 'remote_only'` guard --
-    a remote-only search never location-filters at all), no-op when the
-    gazetteer is empty/unavailable (fail-open, see geo_gazetteer.py), and
-    no-op when the request's own `location` string doesn't resolve to any
-    real city/country constraint (nothing to filter against). Otherwise
-    drops every confirmed MISMATCH and stamps `location_verified` on
+    """No-op when `remote_only` (a remote-only search never location-filters
+    at all), no-op when the gazetteer is empty/unavailable (fail-open, see
+    geo_gazetteer.py), and no-op when the request's own `location` string
+    doesn't resolve to any real city/country constraint (nothing to filter
+    against). Otherwise drops every confirmed MISMATCH and stamps `location_verified` on
     every survivor (`True` for a confirmed match, `None` for genuinely
     unknown -- never `False`, since a mismatch is dropped outright, not
-    kept-and-flagged)."""
+    kept-and-flagged). A location the liveness check read out of a job page's
+    markup (`location_source == "ats_page"`) is judged neither way: it stays in
+    the results with `location_verified=None`, because a page naming its own
+    location is a claim, and that claim should neither promote a result nor hide
+    it from the person searching."""
     if remote_only or not location or not gazetteer.city_index:
         return results
 
@@ -575,6 +589,9 @@ def filter_by_location(
 
     kept = []
     for r in results:
+        if r.location_source == "ats_page":
+            kept.append(replace(r, location_verified=None))
+            continue
         state = check_location_state(
             gazetteer, r.location, request_cities=request_cities, request_country=request_country
         )
