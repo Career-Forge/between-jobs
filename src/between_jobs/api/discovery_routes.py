@@ -214,7 +214,7 @@ def _result_to_card(result: SearchResult, scored: ScoredJob | None) -> dict[str,
 @router.get("", dependencies=[Depends(limit("discover"))])
 async def search_discover(
     q: str = Query(default=""),
-    location: str | None = Query(default=None),
+    location: str | None = Query(default=None, max_length=200),
     companies: str | None = Query(default=None, description="Comma-separated company names"),
     remote_only: bool = Query(default=False),
     user_id: str = Depends(require_user_id),

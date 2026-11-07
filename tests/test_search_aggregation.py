@@ -18,6 +18,8 @@ from between_jobs.api.search_aggregation import (
     _backfill,
     _canonicalize_url,
     _dedup_keys,
+    _Place,
+    _place_of,
     aggregate_jobs,
     apply_search_filters,
     expand_cohort,
@@ -741,11 +743,12 @@ def test_rejudge_corrected_locations_leaves_an_uncorrected_result_alone() -> Non
 
 
 def _places_gazetteer() -> Gazetteer:
-    """A small gazetteer built to contain what real data contains and the first tests did not:
-    names shared by several countries (Cambridge), alternate names that point at a place in
-    another country (Augusta is also an alias of the German Augsburg; Ireland of West Springfield;
-    India of the Serbian Indjija; USA of Concord), and names found in one country only. Rows are
-    in the population-descending order the real gazetteer query returns."""
+    """A small gazetteer built to contain what real data contains: names shared by several
+    countries (Cambridge), alternate names that point at a place in another country (Augusta is
+    also an alias of the German Augsburg; Ireland of West Springfield; USA of Concord), a US town
+    the table does not have beside its English namesake (Greenwich), small towns whose names are
+    region words or placeholders (Wa, Apac), names used in one country only, with one or several
+    rows (Austin, Dallas). Rows are in the population-descending order the real query returns."""
 
     def row(name: str, country_code: str, population: int, *alt: str) -> dict[str, Any]:
         return {
@@ -757,20 +760,31 @@ def _places_gazetteer() -> Gazetteer:
         }
 
     rows = [
+        row("Cairo", "EG", 9539673),
         row("London", "GB", 8961989),
         row("New York", "US", 8804190),
         row("Pune", "IN", 3124458),
+        row("Toronto", "CA", 2794356),
+        row("Dallas", "US", 1304379),
+        row("Boston", "US", 653833),
+        row("Dallas", "US", 15000),
+        row("Tbilisi", "GE", 1118000),
         row("Dublin", "IE", 1024027),
+        row("Boston", "GB", 45339),
         row("Austin", "US", 974447),
+        row("Austin", "US", 29677),
+        row("Seattle", "US", 780995),
         row("Atlanta", "US", 510823),
         row("Augsburg", "DE", 296582, "Augusta"),
         row("Augusta", "US", 195844),
         row("Cambridge", "GB", 145674),
-        row("Cambridge", "US", 118927),
         row("Concord", "US", 129000, "USA"),
-        row("Tbilisi", "GE", 1118000),
+        row("Cambridge", "US", 118927),
+        row("Wa", "GH", 107000),
+        row("Greenwich", "GB", 100000),
+        row("Apac", "UG", 70000, "APAC"),
         row("West Springfield", "US", 28000, "Ireland"),
-        row("Indjija", "RS", 24450, "India"),
+        row("Smallville", "US", 20000),
     ]
     return build_gazetteer(sorted(rows, key=lambda r: -r["population"]))
 
@@ -778,14 +792,24 @@ def _places_gazetteer() -> Gazetteer:
 @pytest.mark.parametrize(
     ("search", "board_location"),
     [
-        ("New York", "New York, NY"),  # a name used in one country only, so the country is placed
-        ("United Kingdom", "Cambridge, United Kingdom"),  # the board names the country
+        # a large city that is the only place of its name in one country, or the country named
+        ("New York", "New York, NY"),
+        ("New York", "New York"),
+        ("New York", "Remote - New York"),
+        ("Egypt", "Cairo"),
+        ("Toronto", "Toronto, ON"),
+        ("United Kingdom", "Cambridge, United Kingdom"),
+        ("Cambridge, United Kingdom", "Cambridge, United Kingdom"),
         ("United States", "Remote - US"),
-        ("United States", "Austin, TX"),  # every place called Austin is in the United States
-        ("USA", "Remote - USA"),  # "USA" is an alias of a town, and is the country here
-        ("India", "Pune, India"),  # "India" is an alias of a Serbian town, and is the country here
+        ("United States", "Remote (US), USA"),
+        ("United States", "Austin, TX"),
+        ("Austin", "Austin, TX"),  # several rows, all in one country
+        ("Dallas, TX", "Dallas, TX"),
+        ("London, UK", "London, GB"),  # a country code after the city is not a region to compare
+        # "USA" and "India" are alternate names of towns, and here are the countries
+        ("USA", "Remote - USA"),
+        ("India", "Pune, India"),
         ("India", "Remote - India"),
-        ("Atlanta, Georgia", "Atlanta, GA"),  # one Atlanta: the search names one place
     ],
 )
 def test_rejudge_corrected_locations_confirms_evidence_for_the_geography_searched(
@@ -802,31 +826,50 @@ def test_rejudge_corrected_locations_confirms_evidence_for_the_geography_searche
 @pytest.mark.parametrize(
     ("search", "board_location"),
     [
-        # a name shared by several countries, not qualified by one: the gazetteer's reading of
-        # "Cambridge, MA" as the larger, English Cambridge is a guess
+        # a name shared by several countries, not qualified by one: the largest is a guess
         ("United Kingdom", "Cambridge, MA"),
         ("United States", "Cambridge, MA"),
         ("Cambridge", "Cambridge, MA"),
-        # the same country as the searched city is not evidence for it
+        # a name that is large in one country and shared with a small place in another
+        ("United States", "Boston, MA"),
+        ("Boston", "Boston, MA"),
+        ("Boston", "Boston"),  # the same bare name on both sides is still two countries' worth
+        ("United Kingdom", "Boston"),
+        # another place in the searched city's country, or the same name in another region
         ("New York", "Austin, TX"),
+        ("Dallas, TX", "Dallas, OR"),
+        # only a two-letter region is read: a full state name is not
+        ("United States", "Austin, Texas"),
+        ("New York", "New York, New York"),
         # a country-level location, for a search about a city
         ("New York", "United States"),
         ("New York", "Remote"),
-        # a country the board names that the city cannot be in
+        # a country the board names that the city cannot be in, and the other country
+        ("Ireland", "Austin, Ireland"),
         ("New York", "New York, United Kingdom"),
-        # the other country than the one searched
         ("United States", "Cambridge, United Kingdom"),
-        # an alternate name shared with a place in another country is no evidence either
+        # an alternate name shared with a town in another country is not evidence
         ("Germany", "Augusta, GA"),
         ("Ireland", "West Springfield, MA"),
-        # several countries named, or several places listed
+        # the gazetteer does not know the town: a smaller foreign namesake is not evidence
+        ("United Kingdom", "Greenwich, CT"),
+        ("United States", "Greenwich, CT"),
+        ("Egypt", "Cairo, IL"),
+        ("United States", "Smallville, NY"),
+        # a name written as a fragment or inside a wrapper is not read, and neither are region
+        # words and placeholders that happen to be the names of small towns
+        ("Ghana", "Seattle-WA"),
+        ("Ghana", "Remote, WA"),
+        ("Uganda", "Remote - APAC"),
+        ("Uganda", "APAC"),
+        # several places, several countries, or a list of countries
         ("United States", "Remote - UK or Ireland"),
-        ("United States", "US Remote, United Kingdom"),  # one place that names two countries
-        ("Cambridge", "Cambridge, MA / London, UK"),
-        ("United Kingdom", "Cambridge, United Kingdom or Dublin, Ireland"),
-        ("New York", "New York, NY / Austin, TX"),  # the first place matches, but it is a list
-        # a country the board names that the city cannot be in (there is no Austin in Ireland)
-        ("Ireland", "Austin, Ireland"),
+        ("New York", "New York, NY / Austin, TX"),
+        ("United States", "USA, Canada"),
+        ("Canada", "USA, Canada"),
+        ("United States", "Remote - US & Canada"),
+        ("United States", "US Remote, United Kingdom"),
+        ("United Kingdom", "US Remote, United Kingdom"),
         # text that merely sounds global
         ("United States", "Anywhere in Europe"),
         ("India", "Global Technology Center, Pune"),
@@ -837,6 +880,7 @@ def test_rejudge_corrected_locations_confirms_evidence_for_the_geography_searche
         ("Cambridge, MA", "Cambridge, MA, United States"),
         ("London or New York", "London, UK"),
         ("London or New York", "New York, NY"),
+        # another country than the one named
         ("India", "Remote - Pakistan"),
     ],
 )
@@ -850,6 +894,25 @@ def test_rejudge_corrected_locations_does_not_confirm_what_is_not_evidence(
 
     assert [r.location for r in result] == [board_location]
     assert result[0].location_verified is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Austin, TX, United States", _Place("US", "austin", "tx")),
+        ("New York", _Place("US", "new york")),
+        ("Remote - US", _Place("US")),
+        ("Cambridge, United Kingdom", _Place("GB", "cambridge")),
+        ("Cambridge, MA", None),
+        ("Smallville", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_place_of_names_the_place_a_text_establishes(
+    text: str | None, expected: _Place | None
+) -> None:
+    assert _place_of(_places_gazetteer(), text) == expected
 
 
 def test_rejudge_corrected_locations_is_a_no_op_when_nothing_constrains_the_search() -> None:

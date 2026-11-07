@@ -190,9 +190,11 @@ arrive as a non-string or as pages of text, and the location filter that runs af
 parses every string it is given: neither may get through."""
 
 
-_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
-"""Unicode categories (control, format such as bidirectional overrides, line and paragraph
-separators) that have no place in a location a person reads and a database stores."""
+_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf"})
+"""Unicode categories (control, format such as bidirectional overrides and zero-width characters)
+that have no place in a location a person reads and a database stores. Whitespace-class
+controls (tab, newline, the line and paragraph separators) never get here: they are collapsed
+to a space first."""
 
 
 def _plausible_location(value: object) -> str | None:

@@ -1235,6 +1235,18 @@ def test_search_discover_still_confirms_a_new_york_location_in_a_new_york_search
     assert card["score"]["sub_scores"]["location"] == 100
 
 
+def test_search_discover_refuses_a_location_longer_than_a_place_name_can_be() -> None:
+    """The location is parsed by several scans that are quadratic in runs of whitespace, so a
+    long one is refused before any of them run."""
+    client = _client(_FakeSupabaseClient(registry_postings=[]), _FakeHttpClient())
+
+    ok = client.get("/discover", params={"q": "backend engineer", "location": "x" * 200})
+    too_long = client.get("/discover", params={"q": "backend engineer", "location": "x" * 201})
+
+    assert ok.status_code != 422
+    assert too_long.status_code == 422
+
+
 @pytest.mark.usefixtures("_new_york_gazetteer")
 def test_search_discover_keeps_an_unresolvable_corrected_location_unknown(
     monkeypatch: pytest.MonkeyPatch,

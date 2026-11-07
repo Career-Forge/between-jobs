@@ -90,7 +90,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any, Literal, cast
+from typing import Any, Literal, NamedTuple, cast
 
 from supabase import AsyncClient
 
@@ -99,7 +99,7 @@ from .geo_gazetteer import (
     check_location_state,
     explicit_countries_of_location,
     get_gazetteer,
-    names_one_place,
+    place_parts,
     resolve_location,
 )
 from .role_synonyms import RoleTermSlot, parse_role_query, registry_search_text
@@ -610,39 +610,146 @@ def filter_by_location(
     return kept
 
 
-def _place_of(gazetteer: Gazetteer, text: str | None) -> tuple[frozenset[str], str] | None:
-    """The one place a location text names, as `(lower-cased city names, country)`, or None when
-    it does not name exactly one place whose country the text establishes. A search and a board's
-    location are read by this same standard, and nothing is picked from an unordered set.
+class _Place(NamedTuple):
+    """The place a location text names, as far as the text itself establishes it."""
 
-    A country is established when the text names it ("Cambridge, United Kingdom", "Remote - US")
-    and the city, if there is one, can be in it, or else when every gazetteer place under the name
-    the text used is in one country ("New York"). A city name shared by several countries and not
-    qualified by one ("Cambridge, MA": the state is not read) establishes none, and the gazetteer's
-    habit of reading it as the largest is a guess, not evidence. A list of places, text that merely
-    sounds global, and text naming several countries establish none either. A token that is also a
-    country's name or alias ("USA", "India") is that country, not the town that carries it as an
-    alternate name."""
-    if not text or not names_one_place(text):
-        return None
-    geo = resolve_location(gazetteer, text)
-    if geo.is_global or geo.unresolved:
+    country: str
+    city: str | None = None
+    region: str | None = None
+
+
+_LARGE_CITY_POPULATION = 500_000
+"""A city name is taken to place a text in one country only for a city at least this large that
+is the only gazetteer place of its name. The gazetteer is incomplete: a town missing from it
+makes a smaller, foreign namesake look unique ("Greenwich, CT" reads as the English Greenwich).
+The larger the city, the less likely a homonym in another country is missing."""
+
+_REGION_CODE_RX = re.compile(r"[A-Za-z]{2}")
+
+_US_STATE_AND_CA_PROVINCE_CODES = frozenset(
+    [
+        "AL",
+        "AK",
+        "AZ",
+        "AR",
+        "CA",
+        "CO",
+        "CT",
+        "DE",
+        "DC",
+        "FL",
+        "GA",
+        "HI",
+        "ID",
+        "IL",
+        "IN",
+        "IA",
+        "KS",
+        "KY",
+        "LA",
+        "ME",
+        "MD",
+        "MA",
+        "MI",
+        "MN",
+        "MS",
+        "MO",
+        "MT",
+        "NE",
+        "NV",
+        "NH",
+        "NJ",
+        "NM",
+        "NY",
+        "NC",
+        "ND",
+        "OH",
+        "OK",
+        "OR",
+        "PA",
+        "RI",
+        "SC",
+        "SD",
+        "TN",
+        "TX",
+        "UT",
+        "VT",
+        "VA",
+        "WA",
+        "WV",
+        "WI",
+        "WY",
+        "AB",
+        "BC",
+        "MB",
+        "NB",
+        "NL",
+        "NS",
+        "NT",
+        "NU",
+        "ON",
+        "PE",
+        "QC",
+        "SK",
+        "YT",
+    ]
+)
+"""A trailing two-letter code that is a US state or a Canadian province. It is only used to
+refuse: "Cairo, IL" is Illinois, whatever the largest Cairo is."""
+
+
+def _place_of(gazetteer: Gazetteer, text: str | None) -> _Place | None:
+    """The one place a location text names, with the country the text establishes, or None. A
+    search and a board's location are read by this same function, and the gazetteer is used only
+    to refuse, never to guess. A country is established in two ways and no others:
+
+    - the text names it ("Cambridge, United Kingdom", "Remote - US"), exactly one, and the city,
+      if there is one, can be in it;
+    - or the text is just a city, or a city and a two-letter region ("New York", "Austin, TX"),
+      and that city is at least `_LARGE_CITY_POPULATION` and the only place of its name in
+      one country, so the gazetteer's reading of it cannot be a guess between homonyms.
+
+    So "Cambridge, MA" (several Cambridges, the state is not read), a list of places, a small
+    town, a name written as "City-ST" or inside a wrapper, and region names and placeholders
+    ("Ontario", "APAC", "TBD") establish none. Neither does text that merely sounds global
+    ("Anywhere in Europe"): the gazetteer calls that a match for every search, but it names no
+    country and is not a plain city. A token that is also a country's name or alias ("USA",
+    "India") is read as the country, never as the town that carries it as an alternate name."""
+    parts = place_parts(text)
+    if not parts:
         return None
     named = explicit_countries_of_location(text)
-    if len(named) > 1:
-        return None
-    keys = [k for k in geo.city_keys if k not in gazetteer.country_alias_to_code]
-    cities = frozenset(c.lower() for c in geo.cities) if keys else frozenset[str]()
-    candidate_countries = {c.country_code for k in keys for c in gazetteer.city_index[k]}
+    if len(named) > 1 or len({c for p in parts for c in explicit_countries_of_location(p)}) > 1:
+        return None  # several countries named, or a comma list of countries ("USA, Canada")
+    first = " ".join(parts[0].lower().split())
+    candidates = gazetteer.city_index.get(first, ())
+    region = None
+    if (
+        len(parts) > 1
+        and _REGION_CODE_RX.fullmatch(parts[1])
+        and not explicit_countries_of_location(parts[1])
+    ):
+        region = parts[1].lower()
     if named:
         (country,) = named
-        if keys and country not in candidate_countries:
-            return None
-        return cities, country
-    if len(candidate_countries) != 1:
+        if explicit_countries_of_location(parts[0]):  # the first part is itself the country
+            return _Place(country)
+        if candidates and country not in {c.country_code for c in candidates}:
+            return None  # the city cannot be in the country the text names
+        return _Place(country, first, region)
+    if len(parts) > 2 or (len(parts) == 2 and region is None):
         return None
-    (country,) = candidate_countries
-    return cities, country
+    countries = {c.country_code for c in candidates}  # empty for a name the gazetteer lacks
+    if len(countries) != 1 or max(c.population for c in candidates) < _LARGE_CITY_POPULATION:
+        return None
+    (country,) = countries
+    if (
+        region is not None
+        and region.upper() in _US_STATE_AND_CA_PROVINCE_CODES
+        and country not in {"US", "CA"}
+    ):
+        return None
+    return _Place(country, first, region)
 
 
 def rejudge_corrected_locations(
@@ -667,13 +774,13 @@ def rejudge_corrected_locations(
     the first pass let through, and the second is no evidence for confirming one either. A
     result from any other source, including one read from a job page's markup (`"ats_page"`: a
     claim by whatever host served the page, never a confirmation), is returned unchanged. Same
-    no-op cases as `filter_by_location`."""
+    no-op cases as `filter_by_location`; and a search that does not name one place with an
+    established country (an ambiguous name, a list) leaves every result as it is."""
     if remote_only or not location or not gazetteer.city_index:
         return results
     request = _place_of(gazetteer, location)
     if request is None:
         return results
-    request_cities, request_country = request
 
     rejudged = []
     for r in results:
@@ -683,8 +790,18 @@ def rejudge_corrected_locations(
         board = _place_of(gazetteer, r.location)
         supported = (
             board is not None
-            and board[1] == request_country
-            and (not request_cities or not request_cities.isdisjoint(board[0]))
+            and board.country == request.country
+            and (
+                request.city is None
+                or (
+                    board.city == request.city
+                    and (
+                        request.region is None
+                        or board.region is None
+                        or request.region == board.region
+                    )
+                )
+            )
         )
         rejudged.append(replace(r, location_verified=True if supported else None))
     return rejudged

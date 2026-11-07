@@ -199,9 +199,6 @@ class LocationResolution:
     remote: bool
     is_global: bool
     unresolved: bool
-    city_keys: frozenset[str] = frozenset()
-    """The lower-cased gazetteer keys the cities were found under: the text that matched, which
-    can be an alternate name, as opposed to `cities`, which holds the canonical names."""
 
 
 def _candidates_for_part(part: str) -> list[str]:
@@ -222,7 +219,6 @@ def resolve_location(gazetteer: Gazetteer, raw: str | None) -> LocationResolutio
     is_global = bool(_GLOBAL_RX.search(s))
     countries_found: set[str] = set()
     cities_found: set[str] = set()
-    keys_found: set[str] = set()
     any_resolved = False
 
     code_match = _CODE_REMOTE_RX.search(s)
@@ -253,7 +249,6 @@ def resolve_location(gazetteer: Gazetteer, raw: str | None) -> LocationResolutio
                 candidates = gazetteer.city_index.get(cand.lower())
                 if not candidates:
                     continue
-                keys_found.add(cand.lower())
                 city = candidates[0]
                 if matched_country:
                     same_country = next(
@@ -273,7 +268,6 @@ def resolve_location(gazetteer: Gazetteer, raw: str | None) -> LocationResolutio
         remote=remote,
         is_global=is_global,
         unresolved=not any_resolved and not remote and not is_global,
-        city_keys=frozenset(keys_found),
     )
 
 
@@ -382,16 +376,29 @@ def explicit_countries_of_location(raw: str | None) -> frozenset[str]:
     return frozenset(countries)
 
 
-def names_one_place(raw: str | None) -> bool:
-    """True when a location text names a single place: "San Francisco, CA", "Remote - US", "New
-    York". A list of places ("London or Toronto", "Cambridge, MA / London, UK", "New York;
-    Berlin") is not one place, and neither is text that names no place at all ("Remote")."""
-    places = 0
-    for segment in _COUNTRY_SEGMENT_SPLIT_RX.split(raw or ""):
+_PLACE_LIST_SPLIT_RX = re.compile(r"[;|/:&]|\s[-\u2013\u2014]\s|\s+(?:or|and)\s+", re.IGNORECASE)
+
+
+def place_parts(raw: str | None) -> list[str]:
+    """The comma-separated parts of the one place a location text names, without the words that
+    say how the job is worked: "Austin, TX, United States" gives ["Austin", "TX", "United
+    States"], "Remote - US" gives ["US"], "Remote (US), USA" gives ["US", "USA"]. Empty when the
+    text does not name exactly one place: a list ("London or Toronto", "Cambridge, MA / London,
+    UK", "New York; Berlin", "US & Canada") is several, and "Remote" is none. A parenthesis is
+    part of the place it follows, not another place. (A country whose own name contains "and"
+    or "&", such as Trinidad and Tobago, reads as a list and so places nothing.)"""
+    places: list[list[str]] = []
+    for segment in _PLACE_LIST_SPLIT_RX.split(re.sub(r"[()]", ",", raw or "")):
         parts = [p.strip() for p in segment.split(",") if p.strip()]
-        if any(not _WORK_MODE_PART_RX.match(p) for p in parts):
-            places += 1
-    return places == 1
+        parts = [p for p in parts if not _WORK_MODE_PART_RX.match(p)]
+        if parts:
+            places.append(parts)
+    return places[0] if len(places) == 1 else []
+
+
+def names_one_place(raw: str | None) -> bool:
+    """True when a location text names exactly one place (see `place_parts`)."""
+    return bool(place_parts(raw))
 
 
 LocationState = Literal["match", "mismatch", "unknown"]

@@ -20,6 +20,7 @@ from between_jobs.api.geo_gazetteer import (
     explicit_country_of_location,
     get_gazetteer,
     names_one_place,
+    place_parts,
     resolve_location,
 )
 
@@ -196,6 +197,7 @@ def test_check_location_state_empty_job_location_is_unknown() -> None:
         ("Cambridge, MA", set()),  # a state code is not a country
         ("Remote", set()),
         ("Anywhere in Europe", set()),
+        ("Global HQ, Austin, TX, United States", set()),  # worldwide text names no country
         ("", set()),
         (None, set()),
     ],
@@ -209,44 +211,29 @@ def test_explicit_countries_of_location_lists_every_country_the_text_names(
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("San Francisco, CA", True),
-        ("Remote - US", True),
-        ("Remote (US)", True),
-        ("New York", True),
-        ("London or Toronto", False),
-        ("Cambridge, MA / London, UK", False),
-        ("New York; Berlin", False),
-        ("Paris | Lagos", False),
-        ("Remote", False),
-        ("", False),
-        (None, False),
+        ("Austin, TX, United States", ["Austin", "TX", "United States"]),
+        ("Remote - US", ["US"]),
+        ("Remote (US), USA", ["US", "USA"]),  # a parenthesis belongs to the place it follows
+        ("Hybrid (Berlin, Germany)", ["Berlin", "Germany"]),
+        ("San Francisco (HQ), United States", ["San Francisco", "HQ", "United States"]),
+        ("New York", ["New York"]),
+        ("Seattle-WA", ["Seattle-WA"]),
+        ("London or Toronto", []),
+        ("Cambridge, MA / London, UK", []),
+        ("New York; Berlin", []),
+        ("Paris | Lagos", []),
+        ("Remote - US & Canada", []),
+        ("Trinidad and Tobago", []),  # reads as a list, so it places nothing
+        ("Remote", []),
+        ("", []),
+        (None, []),
     ],
 )
-def test_names_one_place_tells_one_place_from_a_list_or_none(
-    text: str | None, expected: bool
+def test_place_parts_gives_the_one_place_a_text_names_or_nothing(
+    text: str | None, expected: list[str]
 ) -> None:
-    assert names_one_place(text) is expected
-
-
-def test_resolve_location_reports_the_keys_a_city_was_found_under() -> None:
-    """`cities` holds canonical names; `city_keys` holds the text that matched, which can be an
-    alternate name, and which is what tells a country's name from a town that carries it."""
-    g = build_gazetteer(
-        [
-            {
-                "name": "Indjija",
-                "ascii_name": "Indjija",
-                "alt_names": ["India"],
-                "country_code": "RS",
-                "population": 24450,
-            }
-        ]
-    )
-
-    found = resolve_location(g, "India")
-
-    assert found.cities == frozenset({"Indjija"})
-    assert found.city_keys == frozenset({"india"})
+    assert place_parts(text) == expected
+    assert names_one_place(text) is bool(expected)
 
 
 def test_check_location_state_matches_request_country() -> None:
