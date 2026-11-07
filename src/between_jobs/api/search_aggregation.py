@@ -97,8 +97,9 @@ from supabase import AsyncClient
 from .geo_gazetteer import (
     Gazetteer,
     check_location_state,
-    explicit_country_of_location,
+    explicit_countries_of_location,
     get_gazetteer,
+    names_one_place,
     resolve_location,
 )
 from .role_synonyms import RoleTermSlot, parse_role_query, registry_search_text
@@ -609,46 +610,39 @@ def filter_by_location(
     return kept
 
 
-def _placed_country(
-    gazetteer: Gazetteer, job_location: str | None, job_cities: frozenset[str]
-) -> str | None:
-    """The country a board's location text establishes: one it names ("Cambridge, United
-    Kingdom", "Remote - US"), or else the one country that every place of that name is in. A city
-    name shared by several countries ("Cambridge" is in England, Canada and the United States)
-    establishes none: the gazetteer's habit of reading it as the largest one is a guess, not
-    evidence."""
-    stated = explicit_country_of_location(job_location)
-    if stated is not None:
-        return stated
-    countries = {
-        city.country_code
-        for name in job_cities
-        for city in gazetteer.city_index.get(name.lower(), ())
-    }
-    return next(iter(countries)) if len(countries) == 1 else None
+def _place_of(gazetteer: Gazetteer, text: str | None) -> tuple[frozenset[str], str] | None:
+    """The one place a location text names, as `(lower-cased city names, country)`, or None when
+    it does not name exactly one place whose country the text establishes. A search and a board's
+    location are read by this same standard, and nothing is picked from an unordered set.
 
-
-def _supports_request(
-    gazetteer: Gazetteer,
-    job_location: str | None,
-    *,
-    request_cities: frozenset[str],
-    request_country: str | None,
-) -> bool:
-    """Whether a board's location is evidence for the geography the search asked about, at the
-    level it asked: a search naming a city needs that city, with its country established; a search
-    naming only a country needs that country established. Sharing a country with the searched city
-    ("Austin" in a New York search) is not evidence, and neither is text that merely sounds global
-    or a place the gazetteer can only guess at."""
-    job_geo = resolve_location(gazetteer, job_location)
-    if job_geo.is_global or job_geo.unresolved:
-        return False
-    if request_cities and not any(c.lower() in request_cities for c in job_geo.cities):
-        return False
-    placed = _placed_country(gazetteer, job_location, job_geo.cities)
-    if placed is None:
-        return False
-    return request_country is None or placed == request_country
+    A country is established when the text names it ("Cambridge, United Kingdom", "Remote - US")
+    and the city, if there is one, can be in it, or else when every gazetteer place under the name
+    the text used is in one country ("New York"). A city name shared by several countries and not
+    qualified by one ("Cambridge, MA": the state is not read) establishes none, and the gazetteer's
+    habit of reading it as the largest is a guess, not evidence. A list of places, text that merely
+    sounds global, and text naming several countries establish none either. A token that is also a
+    country's name or alias ("USA", "India") is that country, not the town that carries it as an
+    alternate name."""
+    if not text or not names_one_place(text):
+        return None
+    geo = resolve_location(gazetteer, text)
+    if geo.is_global or geo.unresolved:
+        return None
+    named = explicit_countries_of_location(text)
+    if len(named) > 1:
+        return None
+    keys = [k for k in geo.city_keys if k not in gazetteer.country_alias_to_code]
+    cities = frozenset(c.lower() for c in geo.cities) if keys else frozenset[str]()
+    candidate_countries = {c.country_code for k in keys for c in gazetteer.city_index[k]}
+    if named:
+        (country,) = named
+        if keys and country not in candidate_countries:
+            return None
+        return cities, country
+    if len(candidate_countries) != 1:
+        return None
+    (country,) = candidate_countries
+    return cities, country
 
 
 def rejudge_corrected_locations(
@@ -661,29 +655,36 @@ def rejudge_corrected_locations(
     """The second location pass, for results whose location the liveness check replaced with the
     job board's own. Only a result whose location a board's API supplied
     (`location_source == "ats_api"`) is looked at. It is confirmed (`location_verified=True`)
-    only when the board's text is evidence for the geography the search asked about
-    (`_supports_request`); anything else -- a mismatch, a place the gazetteer can only guess at,
-    the same country as the searched city, text that sounds global -- stays in the results as
-    unknown (`None`). Nothing is dropped here. A probe reads one location per posting, the
-    primary one, while a posting open in several places lists the others in fields it does not
-    read; and the gazetteer can misread a place ("Cambridge, MA" resolves to the larger
-    Cambridge in England). Neither is evidence enough to remove a result the first pass let
-    through, and the second is no evidence for confirming one either. A result from any other
-    source, including one read from a job page's markup (`"ats_page"`: a claim by whatever host
-    served the page, never a confirmation), is returned unchanged. Same no-op cases as
-    `filter_by_location`."""
-    constraint = _location_constraint(gazetteer, location, remote_only=remote_only)
-    if constraint is None:
+    only when the board's text is evidence for the geography the search asked about: the search
+    and the board are each read as one place whose country is established (`_place_of`), and the
+    board is in the searched country and, for a search about a city, is that city. Anything else
+    -- a mismatch, a place the gazetteer can only guess at, another place in the searched city's
+    country, a list of places, text that sounds global, a search that is itself a guess or a list
+    -- stays in the results as unknown (`None`). Nothing is dropped here. A probe reads one
+    location per posting, the primary one, while a posting open in several places lists the
+    others in fields it does not read; and the gazetteer can misread a place ("Cambridge, MA"
+    resolves to the larger Cambridge in England). Neither is evidence enough to remove a result
+    the first pass let through, and the second is no evidence for confirming one either. A
+    result from any other source, including one read from a job page's markup (`"ats_page"`: a
+    claim by whatever host served the page, never a confirmation), is returned unchanged. Same
+    no-op cases as `filter_by_location`."""
+    if remote_only or not location or not gazetteer.city_index:
         return results
-    request_cities, request_country = constraint
+    request = _place_of(gazetteer, location)
+    if request is None:
+        return results
+    request_cities, request_country = request
 
     rejudged = []
     for r in results:
         if r.location_source != "ats_api":
             rejudged.append(r)
             continue
-        supported = _supports_request(
-            gazetteer, r.location, request_cities=request_cities, request_country=request_country
+        board = _place_of(gazetteer, r.location)
+        supported = (
+            board is not None
+            and board[1] == request_country
+            and (not request_cities or not request_cities.isdisjoint(board[0]))
         )
         rejudged.append(replace(r, location_verified=True if supported else None))
     return rejudged

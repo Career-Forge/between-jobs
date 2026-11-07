@@ -199,6 +199,9 @@ class LocationResolution:
     remote: bool
     is_global: bool
     unresolved: bool
+    city_keys: frozenset[str] = frozenset()
+    """The lower-cased gazetteer keys the cities were found under: the text that matched, which
+    can be an alternate name, as opposed to `cities`, which holds the canonical names."""
 
 
 def _candidates_for_part(part: str) -> list[str]:
@@ -219,6 +222,7 @@ def resolve_location(gazetteer: Gazetteer, raw: str | None) -> LocationResolutio
     is_global = bool(_GLOBAL_RX.search(s))
     countries_found: set[str] = set()
     cities_found: set[str] = set()
+    keys_found: set[str] = set()
     any_resolved = False
 
     code_match = _CODE_REMOTE_RX.search(s)
@@ -249,6 +253,7 @@ def resolve_location(gazetteer: Gazetteer, raw: str | None) -> LocationResolutio
                 candidates = gazetteer.city_index.get(cand.lower())
                 if not candidates:
                     continue
+                keys_found.add(cand.lower())
                 city = candidates[0]
                 if matched_country:
                     same_country = next(
@@ -268,6 +273,7 @@ def resolve_location(gazetteer: Gazetteer, raw: str | None) -> LocationResolutio
         remote=remote,
         is_global=is_global,
         unresolved=not any_resolved and not remote and not is_global,
+        city_keys=frozenset(keys_found),
     )
 
 
@@ -322,7 +328,9 @@ def country_named(text: str | None) -> str | None:
 
 def explicit_country_of_location(raw: str | None) -> str | None:
     """The ISO country a location text NAMES, or None. Used to tag an answer to a work-eligibility
-    question with the jurisdiction of the job it was written for.
+    question with the jurisdiction of the job it was written for, and, through
+    `explicit_countries_of_location`, to establish the country of a location in `/discover`'s
+    second location pass.
 
     It reads only what the text itself says. A location is "City, Region, Country": the country is
     read from the LAST comma part of each place, so "Lebanon, New Hampshire" and "Jamaica, NY" are
@@ -335,10 +343,22 @@ def explicit_country_of_location(raw: str | None) -> str | None:
     "Remote", a worldwide or multi-country location, or nothing is None -- an unknown jurisdiction,
     not a guess. That costs coverage (a bare "New York, NY" or "Tbilisi, Georgia" is unknown); a
     wrong tag would cost an answer reused under another country's rules."""
+    countries = explicit_countries_of_location(raw)
+    if len(countries) != 1:
+        return None
+    (country,) = countries
+    return country
+
+
+def explicit_countries_of_location(raw: str | None) -> frozenset[str]:
+    """Every country a location text NAMES, read the way `explicit_country_of_location` reads it
+    (empty for no text, for worldwide text, and for text that names none). A text that names
+    two or more ("Remote - UK or Ireland") is not the same as one that names none: the first has
+    several countries, the second has no evidence of any."""
     if not raw:
-        return None
+        return frozenset()
     if _GLOBAL_RX.search(raw):
-        return None
+        return frozenset()
     gazetteer = _countries_only_gazetteer()
     countries: set[str] = set()
     for segment in _COUNTRY_SEGMENT_SPLIT_RX.split(raw):
@@ -359,10 +379,19 @@ def explicit_country_of_location(raw: str | None) -> str | None:
             countries.add(remote_code)
     if _BARE_US_RX.search(raw):
         countries.add("US")
-    if len(countries) != 1:
-        return None
-    (country,) = countries
-    return country
+    return frozenset(countries)
+
+
+def names_one_place(raw: str | None) -> bool:
+    """True when a location text names a single place: "San Francisco, CA", "Remote - US", "New
+    York". A list of places ("London or Toronto", "Cambridge, MA / London, UK", "New York;
+    Berlin") is not one place, and neither is text that names no place at all ("Remote")."""
+    places = 0
+    for segment in _COUNTRY_SEGMENT_SPLIT_RX.split(raw or ""):
+        parts = [p.strip() for p in segment.split(",") if p.strip()]
+        if any(not _WORK_MODE_PART_RX.match(p) for p in parts):
+            places += 1
+    return places == 1
 
 
 LocationState = Literal["match", "mismatch", "unknown"]

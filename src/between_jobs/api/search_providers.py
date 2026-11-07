@@ -118,7 +118,8 @@ class SearchResult:
     a page-read location unjudged (see `location_source`), or the liveness check replaced the
     location and cleared the earlier verdict. True is set by
     `search_aggregation.filter_by_location` (the provider's own location matches) and by
-    `search_aggregation.rejudge_corrected_locations` (a location a board's API supplied matches).
+    `search_aggregation.rejudge_corrected_locations` (a location a board's API supplied is
+    evidence for the geography searched).
     `filter_by_location` drops a mismatch and the second pass keeps it as None, so False is
     never set."""
     link_checked: bool = False
