@@ -5,6 +5,7 @@ Aggregate Jobs node (aggregate_jobs.js)."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -14,6 +15,7 @@ import pytest
 from between_jobs.api import geo_gazetteer as geo_gazetteer_module
 from between_jobs.api.geo_gazetteer import Gazetteer, build_gazetteer
 from between_jobs.api.search_aggregation import (
+    _backfill,
     _canonicalize_url,
     _dedup_keys,
     aggregate_jobs,
@@ -25,7 +27,9 @@ from between_jobs.api.search_aggregation import (
     filter_by_location,
     filter_by_role,
     matches_all_role_terms,
+    rejudge_corrected_locations,
     role_term_patterns,
+    sort_results,
 )
 from between_jobs.api.search_providers import SearchResult
 
@@ -681,6 +685,204 @@ def test_filter_by_location_stamps_none_on_unknown_not_false() -> None:
     assert result[0].location_verified is None  # never False -- mismatches are dropped, not flagged
 
 
+def test_rejudge_corrected_locations_confirms_a_board_api_match() -> None:
+    job = _result(location="New York, NY", apply_url="https://a.com/1", location_source="ats_api")
+
+    result = rejudge_corrected_locations([job], "New York", gazetteer=_test_gazetteer())
+
+    assert [r.location for r in result] == ["New York, NY"]
+    assert result[0].location_verified is True
+
+
+@pytest.mark.parametrize("job_location", ["Berlin, Germany", "Zzyzxville"])
+def test_rejudge_corrected_locations_never_drops_a_board_api_result(job_location: str) -> None:
+    """A probe reads one location per posting and the gazetteer can misread a place, so a mismatch
+    or a place it cannot read keeps the result in, as unknown, instead of removing it."""
+    job = _result(
+        location=job_location,
+        apply_url="https://a.com/1",
+        location_source="ats_api",
+        location_verified=True,
+    )
+
+    result = rejudge_corrected_locations([job], "New York", gazetteer=_test_gazetteer())
+
+    assert [r.location for r in result] == [job_location]
+    assert result[0].location_verified is None
+
+
+@pytest.mark.parametrize("job_location", ["New York, NY", "Berlin, Germany", "Zzyzxville"])
+def test_rejudge_corrected_locations_leaves_a_page_read_location_alone(job_location: str) -> None:
+    """A location scraped from a job page is a claim by whatever host served the page: it is not
+    confirmed, and it is not a reason to hide the result either."""
+    job = _result(location=job_location, apply_url="https://a.com/1", location_source="ats_page")
+
+    result = rejudge_corrected_locations([job], "New York", gazetteer=_test_gazetteer())
+
+    assert result == [job]
+    assert result[0].location_verified is None
+
+
+def test_rejudge_corrected_locations_leaves_an_uncorrected_result_alone() -> None:
+    """The first pass already judged these. A provider's own location that happens to match is
+    not this pass's to confirm, and a provider's own confirmed match is not this pass's to
+    withdraw, even when the location would read as a mismatch now."""
+    matches_but_unconfirmed = _result(location="New York, NY", apply_url="https://a.com/1")
+    confirmed_elsewhere = _result(
+        location="Berlin, Germany", apply_url="https://b.com/2", location_verified=True
+    )
+
+    result = rejudge_corrected_locations(
+        [matches_but_unconfirmed, confirmed_elsewhere], "New York", gazetteer=_test_gazetteer()
+    )
+
+    assert result == [matches_but_unconfirmed, confirmed_elsewhere]
+    assert [r.location_verified for r in result] == [None, True]
+
+
+def _places_gazetteer() -> Gazetteer:
+    """A small gazetteer built to contain what real data contains and the first tests did not:
+    names shared by several countries (Cambridge), alternate names that point at a place in
+    another country (Augusta is also an alias of the German Augsburg; Ireland of West Springfield;
+    India of the Serbian Indjija; USA of Concord), and names found in one country only. Rows are
+    in the population-descending order the real gazetteer query returns."""
+
+    def row(name: str, country_code: str, population: int, *alt: str) -> dict[str, Any]:
+        return {
+            "name": name,
+            "ascii_name": name,
+            "alt_names": list(alt),
+            "country_code": country_code,
+            "population": population,
+        }
+
+    rows = [
+        row("London", "GB", 8961989),
+        row("New York", "US", 8804190),
+        row("Pune", "IN", 3124458),
+        row("Dublin", "IE", 1024027),
+        row("Austin", "US", 974447),
+        row("Atlanta", "US", 510823),
+        row("Augsburg", "DE", 296582, "Augusta"),
+        row("Augusta", "US", 195844),
+        row("Cambridge", "GB", 145674),
+        row("Cambridge", "US", 118927),
+        row("Concord", "US", 129000, "USA"),
+        row("Tbilisi", "GE", 1118000),
+        row("West Springfield", "US", 28000, "Ireland"),
+        row("Indjija", "RS", 24450, "India"),
+    ]
+    return build_gazetteer(sorted(rows, key=lambda r: -r["population"]))
+
+
+@pytest.mark.parametrize(
+    ("search", "board_location"),
+    [
+        ("New York", "New York, NY"),  # a name used in one country only, so the country is placed
+        ("United Kingdom", "Cambridge, United Kingdom"),  # the board names the country
+        ("United States", "Remote - US"),
+        ("United States", "Austin, TX"),  # every place called Austin is in the United States
+        ("USA", "Remote - USA"),  # "USA" is an alias of a town, and is the country here
+        ("India", "Pune, India"),  # "India" is an alias of a Serbian town, and is the country here
+        ("India", "Remote - India"),
+        ("Atlanta, Georgia", "Atlanta, GA"),  # one Atlanta: the search names one place
+    ],
+)
+def test_rejudge_corrected_locations_confirms_evidence_for_the_geography_searched(
+    search: str, board_location: str
+) -> None:
+    job = _result(location=board_location, apply_url="https://a.com/1", location_source="ats_api")
+
+    result = rejudge_corrected_locations([job], search, gazetteer=_places_gazetteer())
+
+    assert [r.location for r in result] == [board_location]
+    assert result[0].location_verified is True
+
+
+@pytest.mark.parametrize(
+    ("search", "board_location"),
+    [
+        # a name shared by several countries, not qualified by one: the gazetteer's reading of
+        # "Cambridge, MA" as the larger, English Cambridge is a guess
+        ("United Kingdom", "Cambridge, MA"),
+        ("United States", "Cambridge, MA"),
+        ("Cambridge", "Cambridge, MA"),
+        # the same country as the searched city is not evidence for it
+        ("New York", "Austin, TX"),
+        # a country-level location, for a search about a city
+        ("New York", "United States"),
+        ("New York", "Remote"),
+        # a country the board names that the city cannot be in
+        ("New York", "New York, United Kingdom"),
+        # the other country than the one searched
+        ("United States", "Cambridge, United Kingdom"),
+        # an alternate name shared with a place in another country is no evidence either
+        ("Germany", "Augusta, GA"),
+        ("Ireland", "West Springfield, MA"),
+        # several countries named, or several places listed
+        ("United States", "Remote - UK or Ireland"),
+        ("United States", "US Remote, United Kingdom"),  # one place that names two countries
+        ("Cambridge", "Cambridge, MA / London, UK"),
+        ("United Kingdom", "Cambridge, United Kingdom or Dublin, Ireland"),
+        ("New York", "New York, NY / Austin, TX"),  # the first place matches, but it is a list
+        # a country the board names that the city cannot be in (there is no Austin in Ireland)
+        ("Ireland", "Austin, Ireland"),
+        # text that merely sounds global
+        ("United States", "Anywhere in Europe"),
+        ("India", "Global Technology Center, Pune"),
+        ("United States", "Global HQ, Austin, TX"),
+        ("New York", "New York, NY or anywhere"),
+        # a search that is itself a guess or a list is held to the same bar
+        ("Cambridge, MA", "Cambridge, United Kingdom"),
+        ("Cambridge, MA", "Cambridge, MA, United States"),
+        ("London or New York", "London, UK"),
+        ("London or New York", "New York, NY"),
+        ("India", "Remote - Pakistan"),
+    ],
+)
+def test_rejudge_corrected_locations_does_not_confirm_what_is_not_evidence(
+    search: str, board_location: str
+) -> None:
+    """Every case stays in the results, unconfirmed: nothing here is dropped."""
+    job = _result(location=board_location, apply_url="https://a.com/1", location_source="ats_api")
+
+    result = rejudge_corrected_locations([job], search, gazetteer=_places_gazetteer())
+
+    assert [r.location for r in result] == [board_location]
+    assert result[0].location_verified is None
+
+
+def test_rejudge_corrected_locations_is_a_no_op_when_nothing_constrains_the_search() -> None:
+    """The input is a board location that matches the search, so a pass that ran would confirm
+    it: every call below must leave it unconfirmed instead."""
+    job = _result(location="New York, NY", apply_url="https://a.com/1", location_source="ats_api")
+    empty = Gazetteer(city_index={}, country_alias_to_code={}, country_names={})
+
+    assert rejudge_corrected_locations([job], "New York", gazetteer=empty) == [job]
+    assert rejudge_corrected_locations([job], None, gazetteer=_test_gazetteer()) == [job]
+    assert rejudge_corrected_locations([job], "Zzyzxville", gazetteer=_test_gazetteer()) == [job]
+    assert rejudge_corrected_locations(
+        [job], "New York", gazetteer=_test_gazetteer(), remote_only=True
+    ) == [job]
+
+
+def test_filter_by_location_ignores_where_a_location_came_from() -> None:
+    """The first pass judges a location the same way whatever `location_source` says: that label
+    only matters to the second pass."""
+    matching = [
+        _result(location="New York, NY", apply_url="https://a.com/1", location_source=source)
+        for source in (None, "ats_api", "ats_page")
+    ]
+    elsewhere = _result(
+        location="Berlin, Germany", apply_url="https://b.com/2", location_source="ats_page"
+    )
+
+    result = filter_by_location([*matching, elsewhere], "New York", gazetteer=_test_gazetteer())
+
+    assert [r.location_verified for r in result] == [True, True, True]
+    assert len(result) == 3
+
+
 def test_filter_by_location_no_op_when_remote_only() -> None:
     de_job = _result(location="Berlin, Germany", apply_url="https://b.com/2")
 
@@ -723,6 +925,60 @@ def test_aggregate_jobs_sorts_location_verified_first() -> None:
     result = aggregate_jobs([unverified_tier1, verified_tier2])
 
     assert [r.company for r in result] == ["B", "A"]  # verified wins even over a better tier
+
+
+def test_backfill_carries_the_source_of_a_location_it_copies() -> None:
+    """A page-read location must stay marked as such when a duplicate hands it to the result that
+    is kept, or the mark could be lost and the location judged as a provider's own."""
+    keep = _result(location=None, apply_url="https://a.com/1")
+    drop = _result(location="Camana Bay", location_source="ats_page", apply_url="https://b.com/2")
+
+    result = _backfill(keep, drop)
+
+    assert result.location == "Camana Bay"
+    assert result.location_source == "ats_page"
+
+
+def test_sort_results_newest_also_puts_a_verified_result_first() -> None:
+    newer_unverified = _result(
+        apply_url="https://a.com/1", company="A", posted_at="2026-08-30T00:00:00Z"
+    )
+    older_verified = _result(
+        apply_url="https://b.com/2",
+        company="B",
+        posted_at="2026-08-01T00:00:00Z",
+        location_verified=True,
+    )
+
+    result = sort_results([newer_unverified, older_verified], sort_by="newest")
+
+    assert [r.company for r in result] == ["B", "A"]
+
+
+def test_sort_results_lifts_a_result_stamped_verified_after_the_first_sort() -> None:
+    """`filter_by_location` stamps `location_verified` AFTER `aggregate_jobs` has sorted, so
+    the first order cannot know. Sorting again must lift the newly verified result over a
+    better tier and a newer date, and must return a new list, not reorder the caller's."""
+    newer_tier1 = _result(
+        apply_url="https://a.com/1",
+        company="A",
+        source_tier=1.0,
+        posted_at="2026-08-30T00:00:00Z",
+    )
+    older_tier2 = _result(
+        apply_url="https://b.com/2",
+        company="B",
+        source_tier=2.0,
+        posted_at="2026-08-01T00:00:00Z",
+    )
+    first_pass = aggregate_jobs([older_tier2, newer_tier1])
+    assert [r.company for r in first_pass] == ["A", "B"]  # nothing verified yet: tier, then recency
+
+    stamped = [replace(r, location_verified=True) if r.company == "B" else r for r in first_pass]
+    result = sort_results(stamped)
+
+    assert [r.company for r in result] == ["B", "A"]
+    assert [r.company for r in stamped] == ["A", "B"]  # the caller's list is left as it was
 
 
 # ── apply_search_filters: the shared 3-step chain ──

@@ -20,7 +20,7 @@ import asyncio
 import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 from fastapi import APIRouter, Depends, Query
@@ -34,6 +34,7 @@ from .auth import require_user_id
 from .company_tiers import get_company_tier_index
 from .credential_resolver import resolve, try_get_secret, try_get_secret_pair
 from .errors import ApiError
+from .geo_gazetteer import get_gazetteer
 from .job_fit_scoring import ScoredJob, score_jobs
 from .jobs_store import create_job_from_paste, lookup_registry_posting
 from .llm_client import generate as llm_generate
@@ -47,6 +48,8 @@ from .search_aggregation import (
     apply_search_filters,
     fetch_registry_lane,
     fetch_registry_last_polled_at,
+    rejudge_corrected_locations,
+    sort_results,
 )
 from .search_providers import ProviderCredentials, SearchResult, search_jobs
 
@@ -109,7 +112,8 @@ even if several of the top candidates turn out dead. Registry-lane
 results never count against this cap and are never probed at all (they are
 routed on `provider == "registry"`, whether or not `fetch_registry_lane` marked them
 link-checked) -- registry results
-sort ahead of most live-search-lane results (tier 1.0), so counting them
+sort ahead of most live-search-lane results (tier 1.0; only a
+location-verified live result sorts ahead of an unverified registry one), so counting them
 against this cap would silently starve the live-search-lane's own
 liveness budget, the one thing this cap actually exists to protect.
 Every checked candidate is checked concurrently (`verify_liveness`
@@ -276,7 +280,8 @@ async def _search_discover(
         if stale_note:
             warnings = [*warnings, stale_note]
 
-    combined = aggregate_jobs(live_results + registry_results, sort_by="relevance")
+    sort_by: Literal["relevance", "newest"] = "relevance"
+    combined = aggregate_jobs(live_results + registry_results, sort_by=sort_by)
     combined, gazetteer_active = await apply_search_filters(
         combined,
         supabase=supabase,
@@ -285,6 +290,15 @@ async def _search_discover(
         location=location,
         remote_only=remote_only,
     )
+    # aggregate_jobs() sorted before any result knew whether its location matched:
+    # `location_verified` is only stamped by the location filter inside
+    # apply_search_filters(), so at that first sort every result was still unverified and
+    # the location-first key did nothing. Sort again now that it can tell results apart:
+    # only the first _LIVENESS_CANDIDATE_CAP live results get a liveness check, so without
+    # this a confirmed location match can sit behind newer results whose location is unknown
+    # and never be checked or scored. This reorders only the results aggregate_jobs() kept;
+    # its own cap of 150 was applied before any location was judged.
+    combined = sort_results(combined, sort_by=sort_by)
 
     # Registry-lane results never go through verify_liveness, whether or not
     # fetch_registry_lane marked them link-checked (that depends on how
@@ -298,6 +312,22 @@ async def _search_discover(
     live_checked_urls = {r.apply_url for r in live_to_check}
 
     alive_live, dead_removed = await verify_liveness(http, live_to_check)
+    # verify_liveness swaps a provider's guessed location for the ATS's own when the probe
+    # returns one, and clears `location_verified` because the earlier verdict was about the
+    # guess. Nothing else judges the corrected location, so judge it now: a location a board's own
+    # API supplied (location_source "ats_api") is confirmed, and scores as a match, only when it
+    # is evidence for the geography the search asked about: the city searched with its country
+    # established, or the country searched. Nothing is dropped for its location here. The probes
+    # read one location per posting, the primary one, so a posting open in several places whose
+    # primary location is elsewhere would vanish from a search for one of the others, and the
+    # gazetteer can misread a place; a mismatch, a place it can only guess at, or another place in
+    # the same country stays as unknown. A result whose location was not corrected, or was read
+    # from a job page's markup (location_source "ats_page"), is left as it is. The gazetteer is
+    # already cached in memory from the first filter pass, so this costs no second fetch.
+    if gazetteer_active:
+        alive_live = rejudge_corrected_locations(
+            alive_live, location, gazetteer=await get_gazetteer(supabase), remote_only=remote_only
+        )
     alive_live_by_url = {r.apply_url: r for r in alive_live}
 
     alive: list[SearchResult] = []
@@ -311,6 +341,10 @@ async def _search_discover(
             continue  # confirmed dead, or dropped as an aggregator listing page
         else:
             rest.append(r)  # beyond the live-lane liveness cap, never checked
+    # A corrected location is only judged above, after the sort that ran before liveness, so a
+    # result that just became a verified match still sits where an unknown one would, and
+    # score_jobs would skip it for the 30 it takes from the front. Sort again; ties keep order.
+    alive = sort_results(alive, sort_by=sort_by)
 
     tier_index = await get_company_tier_index(supabase)
     scored, unscored, strategy = await score_jobs(

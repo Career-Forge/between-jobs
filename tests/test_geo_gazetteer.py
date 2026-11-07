@@ -16,8 +16,10 @@ from between_jobs.api.geo_gazetteer import (
     build_gazetteer,
     check_location_state,
     country_named,
+    explicit_countries_of_location,
     explicit_country_of_location,
     get_gazetteer,
+    names_one_place,
     resolve_location,
 )
 
@@ -184,6 +186,67 @@ def test_check_location_state_empty_job_location_is_unknown() -> None:
     assert check_location_state(g, "", request_country="US") == "unknown"
     assert check_location_state(g, None, request_country="US") == "unknown"
     assert check_location_state(g, "unknown", request_country="US") == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Cambridge, United Kingdom", {"GB"}),
+        ("Remote - UK or Ireland", {"GB", "IE"}),  # several named: not the same as none named
+        ("Cambridge, MA", set()),  # a state code is not a country
+        ("Remote", set()),
+        ("Anywhere in Europe", set()),
+        ("", set()),
+        (None, set()),
+    ],
+)
+def test_explicit_countries_of_location_lists_every_country_the_text_names(
+    text: str | None, expected: set[str]
+) -> None:
+    assert explicit_countries_of_location(text) == frozenset(expected)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("San Francisco, CA", True),
+        ("Remote - US", True),
+        ("Remote (US)", True),
+        ("New York", True),
+        ("London or Toronto", False),
+        ("Cambridge, MA / London, UK", False),
+        ("New York; Berlin", False),
+        ("Paris | Lagos", False),
+        ("Remote", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_names_one_place_tells_one_place_from_a_list_or_none(
+    text: str | None, expected: bool
+) -> None:
+    assert names_one_place(text) is expected
+
+
+def test_resolve_location_reports_the_keys_a_city_was_found_under() -> None:
+    """`cities` holds canonical names; `city_keys` holds the text that matched, which can be an
+    alternate name, and which is what tells a country's name from a town that carries it."""
+    g = build_gazetteer(
+        [
+            {
+                "name": "Indjija",
+                "ascii_name": "Indjija",
+                "alt_names": ["India"],
+                "country_code": "RS",
+                "population": 24450,
+            }
+        ]
+    )
+
+    found = resolve_location(g, "India")
+
+    assert found.cities == frozenset({"Indjija"})
+    assert found.city_keys == frozenset({"india"})
 
 
 def test_check_location_state_matches_request_country() -> None:

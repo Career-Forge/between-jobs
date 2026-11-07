@@ -50,7 +50,8 @@ original query.
 
 `Aggregate Jobs` also does a freshness-cutoff DROP, deliberately left
 out of this port (unlike the location-verified sort key, which
-`filter_by_location` makes genuinely reachable -- see `aggregate_jobs()` itself). Nothing in
+`filter_by_location` makes reachable once a caller sorts again after filtering -- see
+`sort_results()`). Nothing in
 this codebase yet exposes a caller-configurable freshness window to drop
 against -- adding an unreachable-by-any-caller drop would be dead
 machinery, not a faithful port of a real capability.
@@ -93,7 +94,14 @@ from typing import Any, Literal, cast
 
 from supabase import AsyncClient
 
-from .geo_gazetteer import Gazetteer, check_location_state, get_gazetteer, resolve_location
+from .geo_gazetteer import (
+    Gazetteer,
+    check_location_state,
+    explicit_countries_of_location,
+    get_gazetteer,
+    names_one_place,
+    resolve_location,
+)
 from .role_synonyms import RoleTermSlot, parse_role_query, registry_search_text
 from .search_providers import SearchResult
 
@@ -169,6 +177,8 @@ def _backfill(keep: SearchResult, drop: SearchResult) -> SearchResult:
         updates["sponsorship_signal"] = drop.sponsorship_signal
     if (not keep.location or keep.location == "unknown") and drop.location:
         updates["location"] = drop.location
+        # A location read from a job page's markup stays marked as such when it moves.
+        updates["location_source"] = drop.location_source
     return replace(keep, **updates) if updates else keep  # type: ignore[arg-type]
 
 
@@ -220,14 +230,28 @@ def _parse_posted_at(posted_at: str | None) -> float:
 
 
 def _location_rank(r: SearchResult) -> int:
-    """0 sorts first (a confirmed location match); 1 covers both a
-    confirmed mismatch's absence from the list by the time sort runs
-    (filter_by_location already dropped those) and the common case where
-    location filtering never ran at all (`location_verified is None`) --
-    a no-op tiebreak identical for every result, exactly mirroring n8n's
-    own "undefined on every job" behavior when its own filter never
-    fired."""
+    """0 sorts first (a confirmed location match); 1 covers every result whose
+    location is unknown or unconfirmed, including the common case where location
+    filtering never ran at all (`location_verified is None`): a no-op tiebreak,
+    identical for every result."""
     return 0 if r.location_verified is True else 1
+
+
+def sort_results(
+    results: list[SearchResult], *, sort_by: Literal["relevance", "newest"] = "relevance"
+) -> list[SearchResult]:
+    """`results` as a new list, location-verified first, then (tier, recency) or pure
+    recency per `sort_by`. The sort is stable, so ties keep their incoming order.
+
+    `aggregate_jobs` sorts with this. A caller whose results only learn whether their
+    location matches AFTER that sort must sort again: `location_verified` is stamped by
+    `filter_by_location` and `rejudge_corrected_locations`, so any sort that runs before
+    them sees every result as unverified and its location-first key changes nothing."""
+    if sort_by == "newest":
+        return sorted(results, key=lambda r: (_location_rank(r), -_parse_posted_at(r.posted_at)))
+    return sorted(
+        results, key=lambda r: (_location_rank(r), r.source_tier, -_parse_posted_at(r.posted_at))
+    )
 
 
 def aggregate_jobs(
@@ -237,23 +261,15 @@ def aggregate_jobs(
     the same pipeline order as n8n's real Aggregate Jobs (aggregator
     demotion happens before dedup there too, so a collision between an
     aggregator-posted duplicate and a real one already carries the
-    correct demoted tier into the tier-collision comparison). Sort is
-    location-verified-first, then (tier, recency) or pure recency per
-    `sort_by` -- verbatim from n8n's own real sort, now genuinely
-    reachable since `filter_by_location` can set
-    `location_verified`."""
+    correct demoted tier into the tier-collision comparison). Sorted by
+    `sort_results`. Results that have not been through `filter_by_location`
+    yet are all unverified, so for them the location-first key is a no-op: a
+    caller that filters by location after this must sort again with
+    `sort_results`."""
     demoted = _demote_aggregators(results)
     deduped = _dedupe(demoted)
     filtered = [r for r in deduped if r.source_tier < _TIER_DROP_THRESHOLD]
-
-    if sort_by == "newest":
-        filtered.sort(key=lambda r: (_location_rank(r), -_parse_posted_at(r.posted_at)))
-    else:
-        filtered.sort(
-            key=lambda r: (_location_rank(r), r.source_tier, -_parse_posted_at(r.posted_at))
-        )
-
-    return filtered[:150]
+    return sort_results(filtered, sort_by=sort_by)[:150]
 
 
 # ── cohort/target-company lookup + filter ──────────────────────────
@@ -547,6 +563,22 @@ async def fetch_registry_last_polled_at(supabase: AsyncClient) -> datetime | Non
 # ── gazetteer-backed 3-state location filter ────────────────────────
 
 
+def _location_constraint(
+    gazetteer: Gazetteer, location: str | None, *, remote_only: bool
+) -> tuple[frozenset[str], str | None] | None:
+    """What a typed location asks for, as `(lower-cased cities, country)`, or None when nothing
+    constrains the results: a remote-only search, an empty gazetteer (fail-open, see
+    geo_gazetteer.py), no location, or one that resolves to no city and no country."""
+    if remote_only or not location or not gazetteer.city_index:
+        return None
+    request_geo = resolve_location(gazetteer, location)
+    request_cities = frozenset(c.lower() for c in request_geo.cities)
+    request_country = next(iter(request_geo.countries), None)
+    if not request_cities and not request_country:
+        return None
+    return request_cities, request_country
+
+
 def filter_by_location(
     results: list[SearchResult],
     location: str | None,
@@ -554,24 +586,18 @@ def filter_by_location(
     gazetteer: Gazetteer,
     remote_only: bool = False,
 ) -> list[SearchResult]:
-    """Verbatim from n8n's own real location-filter block: no-op when
-    `remote_only` (matches n8n's `remotePref !== 'remote_only'` guard --
-    a remote-only search never location-filters at all), no-op when the
-    gazetteer is empty/unavailable (fail-open, see geo_gazetteer.py), and
-    no-op when the request's own `location` string doesn't resolve to any
-    real city/country constraint (nothing to filter against). Otherwise
-    drops every confirmed MISMATCH and stamps `location_verified` on
+    """No-op when `remote_only` (a remote-only search never location-filters
+    at all), no-op when the gazetteer is empty/unavailable (fail-open, see
+    geo_gazetteer.py), and no-op when the request's own `location` string
+    doesn't resolve to any real city/country constraint (nothing to filter
+    against). Otherwise drops every confirmed MISMATCH and stamps `location_verified` on
     every survivor (`True` for a confirmed match, `None` for genuinely
     unknown -- never `False`, since a mismatch is dropped outright, not
     kept-and-flagged)."""
-    if remote_only or not location or not gazetteer.city_index:
+    constraint = _location_constraint(gazetteer, location, remote_only=remote_only)
+    if constraint is None:
         return results
-
-    request_geo = resolve_location(gazetteer, location)
-    request_cities = frozenset(c.lower() for c in request_geo.cities)
-    request_country = next(iter(request_geo.countries), None)
-    if not request_cities and not request_country:
-        return results
+    request_cities, request_country = constraint
 
     kept = []
     for r in results:
@@ -582,6 +608,86 @@ def filter_by_location(
             continue
         kept.append(replace(r, location_verified=True if state == "match" else None))
     return kept
+
+
+def _place_of(gazetteer: Gazetteer, text: str | None) -> tuple[frozenset[str], str] | None:
+    """The one place a location text names, as `(lower-cased city names, country)`, or None when
+    it does not name exactly one place whose country the text establishes. A search and a board's
+    location are read by this same standard, and nothing is picked from an unordered set.
+
+    A country is established when the text names it ("Cambridge, United Kingdom", "Remote - US")
+    and the city, if there is one, can be in it, or else when every gazetteer place under the name
+    the text used is in one country ("New York"). A city name shared by several countries and not
+    qualified by one ("Cambridge, MA": the state is not read) establishes none, and the gazetteer's
+    habit of reading it as the largest is a guess, not evidence. A list of places, text that merely
+    sounds global, and text naming several countries establish none either. A token that is also a
+    country's name or alias ("USA", "India") is that country, not the town that carries it as an
+    alternate name."""
+    if not text or not names_one_place(text):
+        return None
+    geo = resolve_location(gazetteer, text)
+    if geo.is_global or geo.unresolved:
+        return None
+    named = explicit_countries_of_location(text)
+    if len(named) > 1:
+        return None
+    keys = [k for k in geo.city_keys if k not in gazetteer.country_alias_to_code]
+    cities = frozenset(c.lower() for c in geo.cities) if keys else frozenset[str]()
+    candidate_countries = {c.country_code for k in keys for c in gazetteer.city_index[k]}
+    if named:
+        (country,) = named
+        if keys and country not in candidate_countries:
+            return None
+        return cities, country
+    if len(candidate_countries) != 1:
+        return None
+    (country,) = candidate_countries
+    return cities, country
+
+
+def rejudge_corrected_locations(
+    results: list[SearchResult],
+    location: str | None,
+    *,
+    gazetteer: Gazetteer,
+    remote_only: bool = False,
+) -> list[SearchResult]:
+    """The second location pass, for results whose location the liveness check replaced with the
+    job board's own. Only a result whose location a board's API supplied
+    (`location_source == "ats_api"`) is looked at. It is confirmed (`location_verified=True`)
+    only when the board's text is evidence for the geography the search asked about: the search
+    and the board are each read as one place whose country is established (`_place_of`), and the
+    board is in the searched country and, for a search about a city, is that city. Anything else
+    -- a mismatch, a place the gazetteer can only guess at, another place in the searched city's
+    country, a list of places, text that sounds global, a search that is itself a guess or a list
+    -- stays in the results as unknown (`None`). Nothing is dropped here. A probe reads one
+    location per posting, the primary one, while a posting open in several places lists the
+    others in fields it does not read; and the gazetteer can misread a place ("Cambridge, MA"
+    resolves to the larger Cambridge in England). Neither is evidence enough to remove a result
+    the first pass let through, and the second is no evidence for confirming one either. A
+    result from any other source, including one read from a job page's markup (`"ats_page"`: a
+    claim by whatever host served the page, never a confirmation), is returned unchanged. Same
+    no-op cases as `filter_by_location`."""
+    if remote_only or not location or not gazetteer.city_index:
+        return results
+    request = _place_of(gazetteer, location)
+    if request is None:
+        return results
+    request_cities, request_country = request
+
+    rejudged = []
+    for r in results:
+        if r.location_source != "ats_api":
+            rejudged.append(r)
+            continue
+        board = _place_of(gazetteer, r.location)
+        supported = (
+            board is not None
+            and board[1] == request_country
+            and (not request_cities or not request_cities.isdisjoint(board[0]))
+        )
+        rejudged.append(replace(r, location_verified=True if supported else None))
+    return rejudged
 
 
 async def apply_search_filters(
