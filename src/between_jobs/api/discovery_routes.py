@@ -315,14 +315,15 @@ async def _search_discover(
     # verify_liveness swaps a provider's guessed location for the ATS's own when the probe
     # returns one, and clears `location_verified` because the earlier verdict was about the
     # guess. Nothing else judges the corrected location, so judge it now: a location a board's own
-    # API supplied (location_source "ats_api") that matches the search is confirmed and scores as
-    # a match. Nothing is dropped for its location here. The probes read one location per posting,
-    # the primary one, so a posting open in several places whose primary location is elsewhere
-    # would vanish from a search for one of the others, and the gazetteer can misread a place;
-    # a mismatch, or a place it cannot read, stays as unknown. A result whose location was not
-    # corrected, or was read from a job page's markup (location_source "ats_page"), is left as
-    # it is. The gazetteer is already cached in memory from the first filter pass, so this costs
-    # no second fetch.
+    # API supplied (location_source "ats_api") is confirmed, and scores as a match, only when it
+    # is evidence for the geography the search asked about: the city searched with its country
+    # established, or the country searched. Nothing is dropped for its location here. The probes
+    # read one location per posting, the primary one, so a posting open in several places whose
+    # primary location is elsewhere would vanish from a search for one of the others, and the
+    # gazetteer can misread a place; a mismatch, a place it can only guess at, or another place in
+    # the same country stays as unknown. A result whose location was not corrected, or was read
+    # from a job page's markup (location_source "ats_page"), is left as it is. The gazetteer is
+    # already cached in memory from the first filter pass, so this costs no second fetch.
     if gazetteer_active:
         alive_live = rejudge_corrected_locations(
             alive_live, location, gazetteer=await get_gazetteer(supabase), remote_only=remote_only

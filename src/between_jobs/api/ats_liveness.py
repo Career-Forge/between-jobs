@@ -92,7 +92,9 @@ fidelity losses:
   Any other caller that scores after this module must do the same: the `None`
   reset alone makes a corrected, genuinely matching location score as unknown.
   A location read from a board's own API (Greenhouse, Lever, Ashby, Workday)
-  can be confirmed as a match there; one scraped from a job page's markup
+  is confirmed there when it is evidence for the geography the search asked
+  about (the board's API says where the text came from, not that the gazetteer
+  read it correctly); one scraped from a job page's markup
   (SuccessFactors-shaped pages) never is, because any host that serves a
   matching URL shape can put whatever location it likes in its own markup.
   Neither is used to drop a result: a probe reads a posting's primary location

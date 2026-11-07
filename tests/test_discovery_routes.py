@@ -1039,6 +1039,13 @@ def _cambridge_gazetteer(monkeypatch: pytest.MonkeyPatch) -> None:
         build_gazetteer(
             [
                 {
+                    "name": "New York",
+                    "ascii_name": "New York",
+                    "alt_names": [],
+                    "country_code": "US",
+                    "population": 8804190,
+                },
+                {
                     "name": "Cambridge",
                     "ascii_name": "Cambridge",
                     "alt_names": [],
@@ -1181,6 +1188,51 @@ def test_search_discover_keeps_a_cambridge_ma_job_in_a_united_states_search(
     assert [c["location"] for c in body["scored"]] == ["Cambridge, MA"]
     assert body["scored"][0]["location_verified"] is None
     assert body["dead_removed"] == 0
+
+
+@pytest.mark.usefixtures("_cambridge_gazetteer")
+@pytest.mark.parametrize(
+    ("search", "board_location"),
+    [
+        ("United Kingdom", "Cambridge, MA"),  # which Cambridge the board meant is not established
+        ("New York", "Austin, TX"),  # the same country as the searched city is not evidence
+        ("New York", "Anywhere in Europe"),  # text that merely sounds global
+    ],
+)
+def test_search_discover_keeps_a_board_location_that_is_no_evidence_visible_but_unconfirmed(
+    monkeypatch: pytest.MonkeyPatch, search: str, board_location: str
+) -> None:
+    """The board's location is not what the search asked about, or cannot be placed, so the card
+    stays in the results as unknown and scores 35 for location instead of 100."""
+    body = _search_one_board_job(
+        monkeypatch,
+        apply_url="https://boards.greenhouse.io/acme/jobs/123",
+        board_json={"id": 123, "location": {"name": board_location}},
+        location=search,
+    )
+
+    assert [c["location"] for c in body["scored"]] == [board_location]
+    card = body["scored"][0]
+    assert card["location_verified"] is None
+    assert card["score"]["sub_scores"]["location"] == 35
+    assert body["dead_removed"] == 0
+
+
+@pytest.mark.usefixtures("_cambridge_gazetteer")
+def test_search_discover_still_confirms_a_new_york_location_in_a_new_york_search(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = _search_one_board_job(
+        monkeypatch,
+        apply_url="https://boards.greenhouse.io/acme/jobs/123",
+        board_json={"id": 123, "location": {"name": "New York, NY"}},
+        location="New York",
+    )
+
+    assert [c["location"] for c in body["scored"]] == ["New York, NY"]
+    card = body["scored"][0]
+    assert card["location_verified"] is True
+    assert card["score"]["sub_scores"]["location"] == 100
 
 
 @pytest.mark.usefixtures("_new_york_gazetteer")

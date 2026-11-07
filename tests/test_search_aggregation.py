@@ -740,6 +740,96 @@ def test_rejudge_corrected_locations_leaves_an_uncorrected_result_alone() -> Non
     assert [r.location_verified for r in result] == [None, True]
 
 
+def _us_and_uk_gazetteer() -> Gazetteer:
+    """New York, London, Austin and two Cambridges, in the population-descending order the real
+    gazetteer query returns. The larger Cambridge is the English one."""
+
+    def row(name: str, country_code: str, population: int) -> dict[str, Any]:
+        return {
+            "name": name,
+            "ascii_name": name,
+            "alt_names": [],
+            "country_code": country_code,
+            "population": population,
+        }
+
+    return build_gazetteer(
+        [
+            row("London", "GB", 8961989),
+            row("New York", "US", 8804190),
+            row("Austin", "US", 974447),
+            row("Cambridge", "GB", 145674),
+            row("Cambridge", "US", 118927),
+        ]
+    )
+
+
+@pytest.mark.parametrize("search", ["United Kingdom", "United States", "Cambridge"])
+def test_rejudge_corrected_locations_does_not_confirm_cambridge_ma_in_any_search(
+    search: str,
+) -> None:
+    """ "Cambridge" names places in England and in the United States, and the state is not read, so
+    nothing establishes which one the board meant. The gazetteer's reading of it as the larger,
+    English one is a guess. The result stays visible, unconfirmed, whatever the search asks."""
+    job = _result(location="Cambridge, MA", apply_url="https://a.com/1", location_source="ats_api")
+
+    result = rejudge_corrected_locations([job], search, gazetteer=_us_and_uk_gazetteer())
+
+    assert [r.location for r in result] == ["Cambridge, MA"]
+    assert result[0].location_verified is None
+
+
+def test_rejudge_corrected_locations_does_not_confirm_a_place_that_only_shares_the_country() -> (
+    None
+):
+    """Austin is in the United States, as New York is, but a search for New York asked about New
+    York: another place in the same country is not evidence for it."""
+    job = _result(location="Austin, TX", apply_url="https://a.com/1", location_source="ats_api")
+
+    result = rejudge_corrected_locations([job], "New York", gazetteer=_us_and_uk_gazetteer())
+
+    assert [r.location for r in result] == ["Austin, TX"]
+    assert result[0].location_verified is None
+
+
+@pytest.mark.parametrize(
+    ("search", "board_location"),
+    [
+        ("New York", "New York, NY"),  # a city that exists in one country only
+        ("United Kingdom", "Cambridge, United Kingdom"),  # the board names the country
+        ("United States", "Remote - US"),
+        ("United States", "Austin, TX"),  # every place called Austin is in the United States
+    ],
+)
+def test_rejudge_corrected_locations_confirms_a_location_that_matches_the_geography_searched(
+    search: str, board_location: str
+) -> None:
+    job = _result(location=board_location, apply_url="https://a.com/1", location_source="ats_api")
+
+    result = rejudge_corrected_locations([job], search, gazetteer=_us_and_uk_gazetteer())
+
+    assert result[0].location_verified is True
+
+
+@pytest.mark.parametrize(
+    ("search", "board_location"),
+    [
+        ("United States", "Cambridge, United Kingdom"),  # another country than the one searched
+        ("New York", "United States"),  # a country, for a search about a city
+        ("New York", "Remote"),
+    ],
+)
+def test_rejudge_corrected_locations_does_not_confirm_evidence_at_another_level_or_place(
+    search: str, board_location: str
+) -> None:
+    job = _result(location=board_location, apply_url="https://a.com/1", location_source="ats_api")
+
+    result = rejudge_corrected_locations([job], search, gazetteer=_us_and_uk_gazetteer())
+
+    assert [r.location for r in result] == [board_location]
+    assert result[0].location_verified is None
+
+
 @pytest.mark.parametrize(
     "board_location",
     [
