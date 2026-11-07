@@ -800,6 +800,9 @@ def _places_gazetteer() -> Gazetteer:
         ("Toronto", "Toronto, ON"),
         ("United Kingdom", "Cambridge, United Kingdom"),
         ("Cambridge, United Kingdom", "Cambridge, United Kingdom"),
+        # a state code between the city and the named country is a region, and the country is named
+        ("United States", "Cambridge, MA, United States"),
+        ("Cambridge, United States", "Cambridge, MA, United States"),
         ("United States", "Remote - US"),
         ("United States", "Remote (US), USA"),
         ("United States", "Austin, TX"),
