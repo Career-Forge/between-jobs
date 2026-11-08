@@ -190,11 +190,12 @@ arrive as a non-string or as pages of text, and the location filter that runs af
 parses every string it is given: neither may get through."""
 
 
-_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf"})
-"""Unicode categories (control, format such as bidirectional overrides and zero-width characters)
-that have no place in a location a person reads and a database stores. Whitespace-class
-controls (tab, newline, the line and paragraph separators) never get here: they are collapsed
-to a space first."""
+_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Cs"})
+"""Unicode categories (control, format such as bidirectional overrides and zero-width characters,
+and a lone surrogate, which JSON can carry and which cannot be encoded as UTF-8: it would fail the
+whole response) that have no place in a location a person reads and a database stores.
+Whitespace-class controls (tab, newline, the line and paragraph separators) never get here: they
+are collapsed to a space first."""
 
 
 def _plausible_location(value: object) -> str | None:
@@ -228,8 +229,7 @@ def _parse_url(raw: str) -> httpx.URL | None:
     # `evil.example\` as credentials), while a browser treats the backslash as a slash and goes to
     # evil.example. Probes are chosen by host and their answers are trusted as that board's own, so
     # refuse any link that could be read two ways: a backslash, whitespace or an unprintable
-    # character inside it, or credentials in it (a job link never carries any).
-    raw = raw.strip()
+    # character in it, or credentials in it (a job link never carries any).
     if any(ch == "\\" or ch.isspace() or not ch.isprintable() for ch in raw):
         return None
     # `.host` decodes IDNA, which raises UnicodeError for a malformed xn-- label.

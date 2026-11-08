@@ -112,8 +112,7 @@ even if several of the top candidates turn out dead. Registry-lane
 results never count against this cap and are never probed at all (they are
 routed on `provider == "registry"`, whether or not `fetch_registry_lane` marked them
 link-checked) -- registry results
-sort ahead of most live-search-lane results (tier 1.0; only a
-location-verified live result sorts ahead of an unverified registry one), so counting them
+sort ahead of most live-search-lane results (tier 1.0), so counting them
 against this cap would silently starve the live-search-lane's own
 liveness budget, the one thing this cap actually exists to protect.
 Every checked candidate is checked concurrently (`verify_liveness`

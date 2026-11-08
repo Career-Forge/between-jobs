@@ -322,9 +322,7 @@ def country_named(text: str | None) -> str | None:
 
 def explicit_country_of_location(raw: str | None) -> str | None:
     """The ISO country a location text NAMES, or None. Used to tag an answer to a work-eligibility
-    question with the jurisdiction of the job it was written for, and, through
-    `explicit_countries_of_location`, to establish the country of a location in `/discover`'s
-    second location pass.
+    question with the jurisdiction of the job it was written for.
 
     It reads only what the text itself says. A location is "City, Region, Country": the country is
     read from the LAST comma part of each place, so "Lebanon, New Hampshire" and "Jamaica, NY" are
@@ -337,22 +335,10 @@ def explicit_country_of_location(raw: str | None) -> str | None:
     "Remote", a worldwide or multi-country location, or nothing is None -- an unknown jurisdiction,
     not a guess. That costs coverage (a bare "New York, NY" or "Tbilisi, Georgia" is unknown); a
     wrong tag would cost an answer reused under another country's rules."""
-    countries = explicit_countries_of_location(raw)
-    if len(countries) != 1:
-        return None
-    (country,) = countries
-    return country
-
-
-def explicit_countries_of_location(raw: str | None) -> frozenset[str]:
-    """Every country a location text NAMES, read the way `explicit_country_of_location` reads it
-    (empty for no text, for worldwide text, and for text that names none). A text that names
-    two or more ("Remote - UK or Ireland") is not the same as one that names none: the first has
-    several countries, the second has no evidence of any."""
     if not raw:
-        return frozenset()
+        return None
     if _GLOBAL_RX.search(raw):
-        return frozenset()
+        return None
     gazetteer = _countries_only_gazetteer()
     countries: set[str] = set()
     for segment in _COUNTRY_SEGMENT_SPLIT_RX.split(raw):
@@ -373,32 +359,10 @@ def explicit_countries_of_location(raw: str | None) -> frozenset[str]:
             countries.add(remote_code)
     if _BARE_US_RX.search(raw):
         countries.add("US")
-    return frozenset(countries)
-
-
-_PLACE_LIST_SPLIT_RX = re.compile(r"[;|/:&]|\s[-\u2013\u2014]\s|\s+(?:or|and)\s+", re.IGNORECASE)
-
-
-def place_parts(raw: str | None) -> list[str]:
-    """The comma-separated parts of the one place a location text names, without the words that
-    say how the job is worked: "Austin, TX, United States" gives ["Austin", "TX", "United
-    States"], "Remote - US" gives ["US"], "Remote (US), USA" gives ["US", "USA"]. Empty when the
-    text does not name exactly one place: a list ("London or Toronto", "Cambridge, MA / London,
-    UK", "New York; Berlin", "US & Canada") is several, and "Remote" is none. A parenthesis is
-    part of the place it follows, not another place. (A country whose own name contains "and"
-    or "&", such as Trinidad and Tobago, reads as a list and so places nothing.)"""
-    places: list[list[str]] = []
-    for segment in _PLACE_LIST_SPLIT_RX.split(re.sub(r"[()]", ",", raw or "")):
-        parts = [p.strip() for p in segment.split(",") if p.strip()]
-        parts = [p for p in parts if not _WORK_MODE_PART_RX.match(p)]
-        if parts:
-            places.append(parts)
-    return places[0] if len(places) == 1 else []
-
-
-def names_one_place(raw: str | None) -> bool:
-    """True when a location text names exactly one place (see `place_parts`)."""
-    return bool(place_parts(raw))
+    if len(countries) != 1:
+        return None
+    (country,) = countries
+    return country
 
 
 LocationState = Literal["match", "mismatch", "unknown"]

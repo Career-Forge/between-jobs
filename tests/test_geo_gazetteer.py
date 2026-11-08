@@ -16,11 +16,8 @@ from between_jobs.api.geo_gazetteer import (
     build_gazetteer,
     check_location_state,
     country_named,
-    explicit_countries_of_location,
     explicit_country_of_location,
     get_gazetteer,
-    names_one_place,
-    place_parts,
     resolve_location,
 )
 
@@ -187,53 +184,6 @@ def test_check_location_state_empty_job_location_is_unknown() -> None:
     assert check_location_state(g, "", request_country="US") == "unknown"
     assert check_location_state(g, None, request_country="US") == "unknown"
     assert check_location_state(g, "unknown", request_country="US") == "unknown"
-
-
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("Cambridge, United Kingdom", {"GB"}),
-        ("Remote - UK or Ireland", {"GB", "IE"}),  # several named: not the same as none named
-        ("Cambridge, MA", set()),  # a state code is not a country
-        ("Remote", set()),
-        ("Anywhere in Europe", set()),
-        ("Global HQ, Austin, TX, United States", set()),  # worldwide text names no country
-        ("", set()),
-        (None, set()),
-    ],
-)
-def test_explicit_countries_of_location_lists_every_country_the_text_names(
-    text: str | None, expected: set[str]
-) -> None:
-    assert explicit_countries_of_location(text) == frozenset(expected)
-
-
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("Austin, TX, United States", ["Austin", "TX", "United States"]),
-        ("Remote - US", ["US"]),
-        ("Remote (US), USA", ["US", "USA"]),  # a parenthesis belongs to the place it follows
-        ("Hybrid (Berlin, Germany)", ["Berlin", "Germany"]),
-        ("San Francisco (HQ), United States", ["San Francisco", "HQ", "United States"]),
-        ("New York", ["New York"]),
-        ("Seattle-WA", ["Seattle-WA"]),
-        ("London or Toronto", []),
-        ("Cambridge, MA / London, UK", []),
-        ("New York; Berlin", []),
-        ("Paris | Lagos", []),
-        ("Remote - US & Canada", []),
-        ("Trinidad and Tobago", []),  # reads as a list, so it places nothing
-        ("Remote", []),
-        ("", []),
-        (None, []),
-    ],
-)
-def test_place_parts_gives_the_one_place_a_text_names_or_nothing(
-    text: str | None, expected: list[str]
-) -> None:
-    assert place_parts(text) == expected
-    assert names_one_place(text) is bool(expected)
 
 
 def test_check_location_state_matches_request_country() -> None:

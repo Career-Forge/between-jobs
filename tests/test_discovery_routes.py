@@ -327,7 +327,7 @@ class _FakeHttpClient:
         *,
         liveness_status: int = 200,
         you_com_body: dict[str, Any] | None = None,
-        liveness_json: dict[str, Any] | list[dict[str, Any]] | None = None,
+        liveness_json: dict[str, Any] | list[dict[str, Any]] | bytes | None = None,
         remoteok_json: list[dict[str, Any]] | None = None,
     ) -> None:
         self.liveness_status = liveness_status
@@ -346,6 +346,13 @@ class _FakeHttpClient:
             )
         if "arbeitnow.com" in url:
             return httpx.Response(200, json={"data": []}, request=httpx.Request("GET", url))
+        if isinstance(self.liveness_json, bytes):  # a body exactly as it came over the wire
+            return httpx.Response(
+                self.liveness_status,
+                content=self.liveness_json,
+                headers={"content-type": "application/json"},
+                request=httpx.Request("GET", url),
+            )
         return httpx.Response(
             self.liveness_status, json=self.liveness_json, request=httpx.Request("GET", url)
         )
@@ -827,8 +834,9 @@ _GREENHOUSE_SCORE_LLM_RESPONSE = (
 
 @pytest.fixture
 def _new_york_gazetteer(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A cached gazetteer that knows New York and London. monkeypatch restores the module's own
-    cache afterwards, even when an assertion in the test fails."""
+    """A cached gazetteer that knows New York and London, with New York named the way the real
+    table names it ("New York City", "New York" being an alternate name). monkeypatch restores the
+    module's own cache afterwards, even when an assertion in the test fails."""
     import between_jobs.api.geo_gazetteer as gazetteer_module
 
     monkeypatch.setattr(
@@ -837,9 +845,9 @@ def _new_york_gazetteer(monkeypatch: pytest.MonkeyPatch) -> None:
         build_gazetteer(
             [
                 {
-                    "name": "New York",
-                    "ascii_name": "New York",
-                    "alt_names": ["NYC"],
+                    "name": "New York City",
+                    "ascii_name": "New York City",
+                    "alt_names": ["New York", "NYC"],
                     "country_code": "US",
                     "population": 8000000,
                 },
@@ -1039,9 +1047,9 @@ def _cambridge_gazetteer(monkeypatch: pytest.MonkeyPatch) -> None:
         build_gazetteer(
             [
                 {
-                    "name": "New York",
-                    "ascii_name": "New York",
-                    "alt_names": [],
+                    "name": "New York City",
+                    "ascii_name": "New York City",
+                    "alt_names": ["New York", "NYC"],
                     "country_code": "US",
                     "population": 8804190,
                 },
@@ -1197,13 +1205,23 @@ def test_search_discover_keeps_a_cambridge_ma_job_in_a_united_states_search(
         ("United Kingdom", "Cambridge, MA"),  # which Cambridge the board meant is not established
         ("New York", "Austin, TX"),  # the same country as the searched city is not evidence
         ("New York", "Anywhere in Europe"),  # text that merely sounds global
+        ("Austin", "Austin, Downtown, United States"),  # an unread part: which place is unknown
+        ("United States", "US + Canada"),  # two countries, not the United States
+        ("United States", "Canada (or United States)"),  # a list of countries
+        ("Germany (or Austria)", "Berlin, Germany"),  # the same in the search
+        ("United States", "Remote - EMEA, United States"),  # a region word is not a place
+        ("US, Texas", "Austin, TX"),  # a search that starts with the country and goes on
     ],
 )
 def test_search_discover_keeps_a_board_location_that_is_no_evidence_visible_but_unconfirmed(
-    monkeypatch: pytest.MonkeyPatch, search: str, board_location: str
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    search: str,
+    board_location: str,
 ) -> None:
     """The board's location is not what the search asked about, or cannot be placed, so the card
-    stays in the results as unknown and scores 35 for location instead of 100."""
+    stays in the results as unknown and scores 35 for location instead of 100. Nothing here may
+    be a text the reader failed on: that would also leave the card unknown, so it is checked."""
     body = _search_one_board_job(
         monkeypatch,
         apply_url="https://boards.greenhouse.io/acme/jobs/123",
@@ -1216,6 +1234,7 @@ def test_search_discover_keeps_a_board_location_that_is_no_evidence_visible_but_
     assert card["location_verified"] is None
     assert card["score"]["sub_scores"]["location"] == 35
     assert body["dead_removed"] == 0
+    assert not [r for r in caplog.records if "could not read a location text" in r.getMessage()]
 
 
 @pytest.mark.usefixtures("_cambridge_gazetteer")
@@ -1235,16 +1254,42 @@ def test_search_discover_still_confirms_a_new_york_location_in_a_new_york_search
     assert card["score"]["sub_scores"]["location"] == 100
 
 
-def test_search_discover_refuses_a_location_longer_than_a_place_name_can_be() -> None:
+def test_search_discover_refuses_a_location_longer_than_a_place_name_can_be(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The location is parsed by several scans that are quadratic in runs of whitespace, so a
-    long one is refused before any of them run."""
+    long one is refused before any of them run. (The 200-character request loads the gazetteer
+    through a fake that has no table: the cache is put back so an empty one does not outlive it.)"""
+    import between_jobs.api.geo_gazetteer as gazetteer_module
+
+    monkeypatch.setattr(gazetteer_module, "_cached_gazetteer", None)
     client = _client(_FakeSupabaseClient(registry_postings=[]), _FakeHttpClient())
 
     ok = client.get("/discover", params={"q": "backend engineer", "location": "x" * 200})
     too_long = client.get("/discover", params={"q": "backend engineer", "location": "x" * 201})
 
-    assert ok.status_code != 422
+    assert ok.status_code == 200
     assert too_long.status_code == 422
+
+
+@pytest.mark.usefixtures("_new_york_gazetteer")
+def test_search_discover_survives_a_lone_surrogate_in_an_ats_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """JSON can carry a lone UTF-16 surrogate, which cannot be encoded as UTF-8: taken over as
+    the card's location it would turn the whole response into a 500. The board's answer is raw
+    bytes here, as on the wire: a Python string with a lone surrogate cannot even be put in a
+    response by the fake."""
+    body = _search_one_board_job(
+        monkeypatch,
+        apply_url="https://boards.greenhouse.io/acme/jobs/123",
+        board_json=b'{"id": 123, "location": {"name": "New York\\ud800"}}',
+        location="New York",
+    )
+
+    assert len(body["scored"]) == 1
+    assert body["scored"][0]["location"] is None
+    assert body["dead_removed"] == 0
 
 
 @pytest.mark.usefixtures("_new_york_gazetteer")
@@ -1374,6 +1419,50 @@ def test_search_discover_checks_a_location_verified_result_ranked_past_the_liven
     assert card["link_checked"] is True
     # 50 checked in all; the 6 web-search results past the cap stay unchecked under "more"
     assert [c["link_checked"] for c in body["more"]].count(False) == 6
+
+
+def test_search_discover_keeps_sorting_by_source_tier_not_recency_after_each_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The re-sort before liveness runs in `relevance` order, like the sort it repeats: best tier
+    first, then recency. One best-tier result that is the oldest of 56 sits behind 55 newer,
+    worse-tier ones if that re-sort ordered by recency alone: it would fall past the 50 that get a
+    liveness check, and so never be checked or scored. (The re-sort after liveness uses the same
+    function; no test here tells its tier key from a verified-only one.)"""
+    _patch_llm(monkeypatch, "Scoring unavailable right now.")
+    best_url = "https://boards.greenhouse.io/acme/jobs/9000"
+    web_results = [
+        {
+            "url": f"https://example.org/jobs/{i}",
+            "title": f"Backend Engineer {i}",
+            "snippets": ["live"],
+            "page_age": "2026-08-31T00:00:00Z",
+        }
+        for i in range(55)
+    ]
+    web_results.append(
+        {
+            "url": best_url,
+            "title": "Backend Engineer (best tier)",
+            "snippets": ["live"],
+            "page_age": "2026-01-01T00:00:00Z",
+        }
+    )
+    supabase = _FakeSupabaseClient(
+        registry_postings=[],
+        provider_credentials={
+            ("llm", "openrouter"): _LLM_CREDENTIAL_ROW,
+            ("search", "you_com"): _YOU_COM_CREDENTIAL_ROW,
+        },
+    )
+    http = _FakeHttpClient(you_com_body={"results": {"web": web_results}})
+
+    response = _client(supabase, http).get("/discover", params={"q": "backend engineer"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scored"][0]["apply_url"] == best_url
+    assert body["scored"][0]["link_checked"] is True
 
 
 class _PerJobLocationHttp(_FakeHttpClient):
