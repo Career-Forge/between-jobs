@@ -334,7 +334,8 @@ Everything here needs a person, except the one item now checked below.
       the panel recognized by `sender.url`/`sender.origin` in Chrome 148+, a Greenhouse or
       Ashby single-page navigation firing `wxt:locationchange`, and the review box sizing.
 - [ ] Decision on `host_permissions` (redundant with the content-script matches today;
-      `PERMISSIONS.md` note 1) and on the wildcard CORS the extension's API access depends on.
+      `PERMISSIONS.md` note 1) and on adding the extension's `chrome-extension://` origin to the
+      API's `CORS_ALLOWED_ORIGINS` once its id is known (the extension's API access depends on it).
 - [ ] Bump `version` in `package.json` for every upload.
 
 ## Sources (checked 2026-09-19; re-checked 2026-09-21 for section 4 specifically)

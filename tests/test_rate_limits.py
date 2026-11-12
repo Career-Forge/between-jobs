@@ -625,7 +625,7 @@ def test_the_real_app_sends_retry_after_and_lets_a_browser_read_it(
 
     assert response.status_code == 429
     assert response.headers["retry-after"] == "3000"
-    assert response.headers["access-control-allow-origin"] == "*"
+    assert response.headers["access-control-allow-origin"] == "https://app.example.com"
     exposed = response.headers["access-control-expose-headers"].lower()
     assert "retry-after" in exposed and "x-request-id" in exposed
     assert "x-request-id" in response.headers

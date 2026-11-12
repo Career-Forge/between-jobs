@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from between_jobs.api.app import app
 from between_jobs.api.env import (
     ConfigurationError,
+    cors_allowed_origins,
     https_url_or_refuse,
     optional_uuid_set,
     refuse,
@@ -332,3 +333,241 @@ def test_booting_with_a_good_web_app_url_is_fine(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("WEB_APP_URL", "https://between-jobs.tech")
     with TestClient(app):
         pass
+
+
+# -- CORS_ALLOWED_ORIGINS: the websites that may read the API's responses --------------------------
+
+_EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop"
+
+
+@pytest.mark.parametrize("unset", [None, "", "   "])
+def test_an_unset_or_blank_cors_list_is_none(
+    monkeypatch: pytest.MonkeyPatch, unset: str | None
+) -> None:
+    if unset is None:
+        monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
+    else:
+        monkeypatch.setenv("CORS_ALLOWED_ORIGINS", unset)
+
+    assert cors_allowed_origins() is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("https://between-jobs.tech", {"https://between-jobs.tech"}),
+        # the way a browser sends it: lower case, no default port
+        ("HTTPS://Between-Jobs.TECH", {"https://between-jobs.tech"}),
+        ("https://between-jobs.tech:443", {"https://between-jobs.tech"}),
+        ("https://app.example.com:8443", {"https://app.example.com:8443"}),
+        (" https://a.example , https://b.example ", {"https://a.example", "https://b.example"}),
+        ("https://a.example,https://a.example", {"https://a.example"}),
+        ("https://[2001:db8::1]:8443", {"https://[2001:db8::1]:8443"}),
+        # http is for a developer's own machine only
+        ("http://localhost:5173", {"http://localhost:5173"}),
+        ("http://localhost", {"http://localhost"}),
+        ("http://localhost:80", {"http://localhost"}),
+        ("http://127.0.0.1:8012", {"http://127.0.0.1:8012"}),
+        ("http://[::1]:5173", {"http://[::1]:5173"}),
+        (f"chrome-extension://{_EXTENSION_ID}", {f"chrome-extension://{_EXTENSION_ID}"}),
+        # what a browser accepts and sends as written: underscores, edge hyphens, one trailing dot
+        ("https://a_b.example", {"https://a_b.example"}),
+        ("https://-a.example", {"https://-a.example"}),
+        ("https://a-.example", {"https://a-.example"}),
+        ("https://example.com.", {"https://example.com."}),
+        # a number is a host name unless it is the LAST label
+        ("https://1.example", {"https://1.example"}),
+        ("https://3.4.example", {"https://3.4.example"}),
+        # the limits themselves: ports 1 and 65535, a 63-character label, a 253-character host
+        ("https://a.example:1", {"https://a.example:1"}),
+        ("https://a.example:65535", {"https://a.example:65535"}),
+        ("https://" + "a" * 63 + ".example", {"https://" + "a" * 63 + ".example"}),
+        (
+            "https://" + ".".join(["a" * 63] * 3 + ["a" * 61]),
+            {"https://" + ".".join(["a" * 63] * 3 + ["a" * 61])},
+        ),
+        # the case a browser never sends is written the way it does
+        ("HTTP://LOCALHOST:5173", {"http://localhost:5173"}),
+        ("https://[2001:DB8::1]:8443", {"https://[2001:db8::1]:8443"}),
+        # an IPv4-mapped IPv6 host, as a browser writes it (the same on every Python version)
+        ("https://[::ffff:102:304]", {"https://[::ffff:102:304]"}),
+        ("https://[::]", {"https://[::]"}),
+        # an IPv6 host as a browser writes it: the first longest run of zero groups is "::", a
+        # single zero group is written out, and nothing is padded
+        ("https://[fe80::1]", {"https://[fe80::1]"}),
+        ("https://[1::2:0:0:3:4]", {"https://[1::2:0:0:3:4]"}),
+        ("https://[1:0:0:2::34]", {"https://[1:0:0:2::34]"}),
+        ("https://[1:0:2:3:4:5:6:7]", {"https://[1:0:2:3:4:5:6:7]"}),
+        ("https://[1:2:3:4::5:6]", {"https://[1:2:3:4::5:6]"}),
+        (
+            "https://[2001:DB8:85A3:8D3:1319:8A2E:370:7344]",
+            {"https://[2001:db8:85a3:8d3:1319:8a2e:370:7344]"},
+        ),
+        # a last label that only starts like a number, a trailing dot, a leading-zero port
+        ("https://example.1a", {"https://example.1a"}),
+        ("https://example.0xg", {"https://example.0xg"}),
+        ("https://a.", {"https://a."}),
+        (
+            "https://" + ".".join(["a" * 63] * 3 + ["a" * 61]) + ".",
+            {"https://" + ".".join(["a" * 63] * 3 + ["a" * 61]) + "."},
+        ),
+        ("https://a.example:08443", {"https://a.example:8443"}),
+        (
+            f"https://between-jobs.tech,chrome-extension://{_EXTENSION_ID}",
+            {"https://between-jobs.tech", f"chrome-extension://{_EXTENSION_ID}"},
+        ),
+    ],
+)
+def test_a_good_cors_list_is_read_as_the_origins_a_browser_sends(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: set[str]
+) -> None:
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", raw)
+
+    assert cors_allowed_origins() == frozenset(expected)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "*",  # a wildcard is the setting being unset, written down: leave it unset
+        "https://*.between-jobs.tech",
+        "https://between-jobs.tech,*",
+        "between-jobs.tech",  # no scheme
+        "//between-jobs.tech",
+        "https:between-jobs.tech",
+        "https://",
+        "https://between-jobs.tech/",  # a path, even the empty one: no browser sends it
+        "https://between-jobs.tech/app",
+        "https://between-jobs.tech?x=1",
+        "https://between-jobs.tech#top",
+        "https://user@between-jobs.tech",
+        "https://user:pass@between-jobs.tech",
+        "http://between-jobs.tech",  # http for anything but localhost
+        "http://192.168.0.10:5173",
+        "http://localhost.evil.example",
+        "ftp://between-jobs.tech",
+        "javascript:alert(1)",
+        "https://between-jobs.tech:notaport",
+        "https://between-jobs.tech:99999",
+        "https://a.example,,https://b.example",  # an empty entry
+        "https://a.example,",
+        ",https://a.example",
+        "https://a b.example",  # whitespace inside
+        "https://between-jobs.tech\\app",
+        "https://b\u00fccher.test",  # an internationalised host must be written as xn--...
+        "https://between-jobs.tech\u200b",  # a zero-width space pasted from a chat
+        "https://between-jobs.tech\x01",
+        f"chrome-extension://{_EXTENSION_ID}/",  # a path
+        f"chrome-extension://{_EXTENSION_ID.upper()}",  # ids are lower case
+        "chrome-extension://abcdefghijklmnopabcdefghijklmno",  # 31 letters
+        f"chrome-extension://{_EXTENSION_ID}p",  # 33 letters
+        "chrome-extension://abcdefghijklmnopabcdefghijklmnoz",  # a letter outside a-p
+        "chrome-extension://*",
+        "moz-extension://abcdefgh-1234",  # another browser's extension scheme
+        # a host a browser would never send, or would read as something else
+        'https://between-jobs.tech"',  # a quote from a copied value
+        "https://%41.example",
+        "https://a..example",  # an empty label
+        "https://.example",
+        "https://" + "a" * 64 + ".example",  # a label over 63 characters
+        "https://" + ".".join(["abcdefghi"] * 30),  # a host over 253 characters
+        "https://127.1",  # a browser reads these as 127.0.0.1
+        "https://0x7f.1",
+        "https://2130706433",
+        "https://1.2.3",
+        "https://1.2.3.4.5",
+        "https://256.1.1.1",
+        "https://01.1.1.1",
+        # a letter that only looks like an ASCII one: IGNORECASE alone would read the Kelvin sign
+        # as k, the long s as s and the dotless i as i, and the boot would rewrite the entry
+        "https://\u212a.example",
+        "https://\u017f.example",
+        "https://\u0131.example",
+        # http for anything but localhost, in any case
+        "HTTP://between-jobs.tech",
+        "Http://evil.example:8080",
+        "HTTP://192.168.0.10",
+        # a number as the last label is an IPv4 address to a browser, in any case or base
+        "https://a.1",
+        "https://example.0x",
+        "https://a.0xFF",
+        "https://a.0XFF",
+        "https://1.0X7F",
+        "https://0x",
+        "https://1.2.3.4.",  # a browser drops the trailing dot of an address
+        "https://" + ".".join(["a" * 63] * 3 + ["a" * 62]),  # 254 characters, one too many
+        "https://a.example:" + "9" * 5000,  # a port that is not a port, not a crash
+        f"chrome-extension://{_EXTENSION_ID[:-1]}q",  # an id uses the letters a to p
+        # an IPv6 address that is not the text a browser writes for it, or not an address at all
+        "https://[1:0:0:2::3:4]",  # the FIRST longest run is the one written as ::
+        "https://[1::2:3:4:5:6:7]",  # a single zero group is not compressed
+        "https://[1:2:3]",
+        "https://[12345::1]",
+        "https://[:::]",
+        # one dot too many; http on a host that only resembles a loopback one
+        "https://example.com..",
+        "http://127.0.0.2",
+        "http://[::]",
+        "http://app.localhost",
+        "http://notlocalhost",
+        # a scheme that only starts like http(s), and entries joined without a comma
+        "http\u017f://between-jobs.tech",
+        "httpss://a.example",
+        "https://a.example;https://b.example",
+        "https://a.example:000443",  # a port is at most five characters
+        "https://[2001:db8:0:0:0:0:0:1]",  # an IPv6 address must be in its compressed form
+        "https://[2001:0db8::1]",
+        "https://[fe80::1%25eth0]",  # a zone id
+        "https://[v1.x]",
+        "https://[::ffff:1.2.3.4]",
+        "https://[]",
+        "https://a.example:",  # an empty port
+        "https://a.example:0",
+        "https://a.example:65536",
+        "https://a.example:00443x",
+        "http://[2001:db8::1]",  # http for loopback only, IPv6 included
+    ],
+)
+def test_a_bad_cors_list_stops_the_boot_and_names_the_setting_not_the_value(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, bad: str
+) -> None:
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", bad)
+    with caplog.at_level(logging.CRITICAL, logger=_LOGGER), pytest.raises(ConfigurationError):
+        cors_allowed_origins()
+    [message] = _critical(caplog)
+    caplog.clear()
+
+    # The message is the same fixed text whatever the value is, so no value can be in it (a value
+    # can carry credentials). Compared with the text for another bad value, not searched for the
+    # value, because a short bad value ("https://") is also part of the fixed explanation.
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "*")
+    with caplog.at_level(logging.CRITICAL, logger=_LOGGER), pytest.raises(ConfigurationError):
+        cors_allowed_origins()
+    [reference] = _critical(caplog)
+    assert "CORS_ALLOWED_ORIGINS" in message
+    assert message == reference
+
+
+def test_one_bad_entry_among_good_ones_is_refused_not_dropped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A typo must not quietly turn a list into a shorter one."""
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://between-jobs.tech,https://typo.example/")
+    with pytest.raises(ConfigurationError):
+        cors_allowed_origins()
+
+
+def test_booting_with_a_bad_cors_list_names_it_and_never_its_value(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://user:hunter2@between-jobs.tech")
+    with (
+        caplog.at_level(logging.CRITICAL, logger=_LOGGER),
+        pytest.raises(ConfigurationError),
+        TestClient(app),
+    ):
+        pass
+
+    [message] = _critical(caplog)
+    assert "CORS_ALLOWED_ORIGINS" in message
+    assert "hunter2" not in message and "between-jobs.tech" not in message

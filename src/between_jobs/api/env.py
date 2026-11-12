@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import re
+from functools import lru_cache
 from typing import NoReturn
 from urllib.parse import urlsplit
 
@@ -150,3 +152,137 @@ def web_app_url() -> str | None:
     if raw == "":
         return None
     return https_url_or_refuse("WEB_APP_URL", raw)
+
+
+_EXTENSION_ORIGIN = re.compile(r"chrome-extension://[a-p]{32}")
+# re.ASCII keeps IGNORECASE from folding the Kelvin sign, the long s and the dotless i onto k, s and
+# i, which would let a letter the operator never wrote through as another one.
+_ORIGIN_SHAPE = re.compile(
+    r"(?P<scheme>https?)://(?:\[(?P<v6>[0-9a-f:]+)\]|(?P<host>[a-z0-9._-]+))(?::(?P<port>[0-9]{1,5}))?",
+    re.IGNORECASE | re.ASCII,
+)
+_HOST_LABEL = re.compile(r"[a-z0-9_-]{1,63}", re.IGNORECASE | re.ASCII)
+_NUMERIC_LABEL = re.compile(r"[0-9]+|0x[0-9a-f]*", re.IGNORECASE | re.ASCII)
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1"})
+_DEFAULT_PORTS = {"https": 443, "http": 80}
+
+
+def _host_problem(host: str) -> str | None:
+    """Why `host` is not a host name or IPv4 address as a browser writes it, or None. A name is
+    labels of letters, digits, hyphens and underscores (1 to 63 each, 253 in all) and may end in
+    one dot, which a browser keeps in the origin it sends. A host whose last label is a number is
+    an IPv4 address to a browser (127.1 and 0x7f.1 both mean 127.0.0.1): only the canonical
+    dotted form, without a trailing dot, is what it sends."""
+    name = host[:-1] if host.endswith(".") else host
+    labels = name.split(".")
+    if _NUMERIC_LABEL.fullmatch(labels[-1]):
+        try:
+            if name == host and str(ipaddress.IPv4Address(host)) == host:
+                return None
+        except ValueError:
+            pass
+        return "an IPv4 address must be written as four decimal numbers"
+    if len(name) > 253 or not all(_HOST_LABEL.fullmatch(label) for label in labels):
+        return "not a valid host name"
+    return None
+
+
+def _ipv6_text(address: ipaddress.IPv6Address) -> str:
+    """The address as a browser writes an IPv6 host: lower-case hexadecimal groups without leading
+    zeros, the first longest run of two or more zero groups written as "::". Built here, not taken
+    from `ipaddress`, whose text for an IPv4-mapped address differs between Python versions."""
+    groups = [(address.packed[i] << 8) | address.packed[i + 1] for i in range(0, 16, 2)]
+    start, length, i = -1, 0, 0
+    while i < 8:
+        if groups[i] != 0:
+            i += 1
+            continue
+        j = i
+        while j < 8 and groups[j] == 0:
+            j += 1
+        if j - i > length:
+            start, length = i, j - i
+        i = j
+    if length < 2:
+        return ":".join(f"{group:x}" for group in groups)
+    head = ":".join(f"{group:x}" for group in groups[:start])
+    tail = ":".join(f"{group:x}" for group in groups[start + length :])
+    return f"{head}::{tail}"
+
+
+def _origin_problem(entry: str) -> str | None:
+    """Why `entry` is not an origin as a browser writes it in an `Origin` header, or None."""
+    if (
+        entry == ""
+        or not entry.isascii()
+        or any(ch.isspace() or not ch.isprintable() for ch in entry)
+    ):
+        return "empty, or whitespace, a control character or a non-ASCII character"
+    if _EXTENSION_ORIGIN.fullmatch(entry):
+        return None
+    shape = _ORIGIN_SHAPE.fullmatch(entry)
+    if shape is None:
+        return "not an origin: a scheme, a host and an optional port, with no path"
+    if shape["port"] is not None and not 1 <= int(shape["port"]) <= 65535:
+        return "a port outside 1 to 65535"
+    if shape["v6"] is not None:
+        try:
+            address = ipaddress.IPv6Address(shape["v6"])
+        except ValueError:
+            return "not a valid IPv6 address"
+        if _ipv6_text(address) != shape["v6"].lower():
+            return "an IPv6 address must be written in its compressed form"
+        loopback = shape["v6"] == "::1"
+    else:
+        problem = _host_problem(shape["host"])
+        if problem is not None:
+            return problem
+        loopback = shape["host"].lower() in _LOOPBACK_HOSTS
+    if shape["scheme"].lower() == "http" and not loopback:
+        return "http is allowed for localhost only"
+    return None
+
+
+def _normalised_origin(entry: str) -> str:
+    """The origin the browser will send for `entry`: lower case, without a default port."""
+    if _EXTENSION_ORIGIN.fullmatch(entry):
+        return entry
+    shape = _ORIGIN_SHAPE.fullmatch(entry)
+    assert shape is not None  # `_origin_problem` has accepted it
+    scheme = shape["scheme"].lower()
+    host = f"[{shape['v6'].lower()}]" if shape["v6"] is not None else shape["host"].lower()
+    port = None if shape["port"] is None else int(shape["port"])
+    shown = "" if port is None or port == _DEFAULT_PORTS[scheme] else f":{port}"
+    return f"{scheme}://{host}{shown}"
+
+
+@lru_cache(maxsize=16)
+def _parse_cors_origins(raw: str) -> frozenset[str]:
+    entries = [entry.strip() for entry in raw.split(",")]
+    if any(_origin_problem(entry) is not None for entry in entries):
+        refuse(
+            "CORS_ALLOWED_ORIGINS must be a comma-separated list of origins (https://host[:port], "
+            "http://localhost[:port] (or 127.0.0.1, [::1]), or chrome-extension://<32-letter id>), "
+            "each written the way a browser sends it: no path, no quotes, no wildcard, no empty "
+            "entry"
+        )
+    return frozenset(_normalised_origin(entry) for entry in entries)
+
+
+def cors_allowed_origins() -> frozenset[str] | None:
+    """The origins a browser page may read this API's responses from (CORS_ALLOWED_ORIGINS), or
+    None when it is unset or blank, which means any origin (the setting's absence is warned
+    about at boot, and a self-hoster who has not set it keeps working).
+
+    Every entry must be an origin exactly as a browser sends it in the `Origin` header: `https`
+    and a host with an optional port, `http` only for localhost, 127.0.0.1 or [::1], or a browser
+    extension's `chrome-extension://` and its 32-letter id. Anything that could never match (a
+    path, a trailing slash, a wildcard, an internationalised host not written in its `xn--` form) or
+    that is a mistake (credentials, an empty entry) stops the API from starting (`refuse`),
+    naming the setting and never its value. Entries are compared in lower case without a
+    default port. The lifespan reads this once at boot; the CORS middleware reads it again on
+    every request, which is cheap, so a value can never be used without having passed the check."""
+    raw = optional_env("CORS_ALLOWED_ORIGINS")
+    if raw is None or raw.strip() == "":
+        return None
+    return _parse_cors_origins(raw)

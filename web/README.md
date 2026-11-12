@@ -787,6 +787,11 @@ Connecting to 'https://api.other.example/' violates the following Content Securi
   and build again; the policy only changes when you rebuild. Compare the origin in the message with
   the one in the `connect-src` line of `dist/_headers`: a different port, `http` instead of `https`
   and a `www.` prefix each count as a different origin.
+- **A CORS refusal for your own API** ("No 'Access-Control-Allow-Origin' header is present", and
+  "Failed to fetch" in the page). The API has `CORS_ALLOWED_ORIGINS` set and this page's origin
+  is not in it. Add the exact origin the address bar shows (scheme, host and a non-default port;
+  no path, no trailing slash), then restart the API: a preview host, a `www.` prefix and `http`
+  instead of `https` each count as another origin.
 - **A `connect-src` refusal for a `wss://` Supabase address.** Something now uses Supabase Realtime.
   Add the `wss://` origin to `connect-src` in `scripts/securityHeaders.ts`, with a test.
 - **A refusal to run an inline script, or to apply an inline style.** Something put markup into the

@@ -70,8 +70,9 @@ Each of these is the same access for the same reason: the content script runs th
 the site's job-application pages, and the extension makes **no network request** to any of
 them. Its own requests go to the Between Jobs API and sign-in origins, which are not listed
 here: the service worker reaches them without a host permission only because those servers
-answer cross-origin (CORS) requests, and the API currently allows any origin (see note 1
-below). None of the four is a wildcard host and none is `<all_urls>`.
+answer cross-origin (CORS) requests: the API allows any origin until its operator sets
+`CORS_ALLOWED_ORIGINS`, and then only the origins listed there: the extension needs its
+`chrome-extension://` origin listed, or the API origin in `host_permissions` (see note 1 below). None of the four is a wildcard host and none is `<all_urls>`.
 
 ### `https://jobs.lever.co/*`
 
@@ -183,9 +184,12 @@ Nothing in the package is downloaded and run. The reviewer-facing facts:
    stands: drop them after a smoke test. If you do, check what the dashboard then asks
    you to justify (I could not open the dashboard, so I do not know whether it derives
    the host list from content-script matches too); the paragraphs above stay accurate
-   either way. If you later add the API origin to `host_permissions` to restrict CORS,
-   add a paragraph for it: "the Between Jobs API, used only for the extension's own
-   requests", and keep the privacy policy's section 3 consistent.
+   either way. Once the API's `CORS_ALLOWED_ORIGINS` is set there are two ways to keep the
+   extension working: list its `chrome-extension://` origin there (an unpacked build's id
+   differs per machine; the store assigns the published one), or add the API origin to
+   `host_permissions`, which takes its requests out of CORS and needs a paragraph in this
+   file: "the Between Jobs API, used only for the extension's own requests", with the
+   privacy policy's section 3 kept consistent.
 2. **`boards.greenhouse.io` is defensive.** Every board checked in earlier testing
    redirected to `job-boards.greenhouse.io`. The sentence in its paragraph says exactly
    that; keep it only while it is still true.
