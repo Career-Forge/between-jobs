@@ -630,7 +630,7 @@ def test_a_declared_oversize_body_gets_a_413_that_carries_cors_and_the_request_i
 
     assert response.status_code == 413
     assert response.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
-    assert response.headers["access-control-allow-origin"] == "*"
+    assert response.headers["access-control-allow-origin"] == _ORIGIN
     assert response.headers["x-request-id"] == "req-too-big-1"
     assert seen == []
 
@@ -651,7 +651,7 @@ def test_a_streamed_oversize_body_gets_the_same_413_through_the_whole_stack(
 
     assert response.status_code == 413
     assert response.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
-    assert response.headers["access-control-allow-origin"] == "*"
+    assert response.headers["access-control-allow-origin"] == _ORIGIN
     assert response.headers["x-request-id"] == "req-too-big-2"
     assert not seen or max(seen) <= _CAP  # the handler never saw more than the cap
 
@@ -683,5 +683,5 @@ def test_a_malformed_content_length_through_the_real_app_is_not_a_500(client: Te
 
 def test_the_middleware_is_inside_cors_and_the_request_id_middleware() -> None:
     names = [cast(Any, m.cls).__name__ for m in app.user_middleware]
-    assert names.index("CORSMiddleware") < names.index("BaseHTTPMiddleware")
+    assert names.index("ConfiguredCORSMiddleware") < names.index("BaseHTTPMiddleware")
     assert names.index("BaseHTTPMiddleware") < names.index("BodyLimitMiddleware")

@@ -24,7 +24,13 @@ def _stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "test-secret-not-real")
 
 
-def test_cors_preflight_allows_a_chrome_extension_origin() -> None:
+_EXTENSION = "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
+
+
+def test_cors_preflight_allows_a_chrome_extension_origin_that_is_listed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", f"https://app.example.com,{_EXTENSION}")
     with TestClient(app) as client:
         response = client.options(
             "/extension/lookup",
@@ -36,8 +42,27 @@ def test_cors_preflight_allows_a_chrome_extension_origin() -> None:
         )
 
     assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == "*"
+    assert response.headers["access-control-allow-origin"] == _EXTENSION
     assert "GET" in response.headers["access-control-allow-methods"]
+
+
+def test_cors_preflight_allows_a_chrome_extension_origin_when_no_list_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unset, any origin may read a response, as before the setting existed."""
+    monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
+    with TestClient(app) as client:
+        response = client.options(
+            "/extension/lookup",
+            headers={
+                "Origin": _EXTENSION,
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"
 
 
 def test_cors_does_not_allow_credentialed_requests() -> None:

@@ -28,6 +28,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from supabase import AsyncClient
 
@@ -48,7 +49,7 @@ from .discord_webhook import router as discord_router
 from .discord_webhook import shutdown_interaction_tasks
 from .discovery_routes import router as discovery_router
 from .engine_gateway import log_active_engine, remote_engine_url
-from .env import optional_env, refuse, web_app_url
+from .env import cors_allowed_origins, optional_env, refuse, web_app_url
 from .error_reporting import flush_error_reporting, init_error_reporting, report_exception
 from .errors import ApiError, log_api_error
 from .extension_routes import router as extension_router
@@ -149,6 +150,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # The web app's public address is optional (the bot's /privacy and /learn link to it when it
     # is set); a malformed one stops the boot here instead of reaching a person's chat.
     web_app_url()
+    # Which websites may read this API's responses in a browser: a malformed list stops the boot
+    # here; none at all is allowed (any origin) but said once, so the open setting is a choice
+    # that shows in the logs.
+    if cors_allowed_origins() is None:
+        logger.warning(
+            "CORS_ALLOWED_ORIGINS is not set: a page on any website can read this API's "
+            "responses in a browser. Set it to the web app's address (and the browser "
+            "extension's) to restrict that."
+        )
     # Gmail is optional like Telegram: none of the three GOOGLE_OAUTH_* settings runs without it
     # (its routes answer 404 FEATURE_DISABLED), and a half-set Gmail is a mistake that stops the
     # boot here, naming the variables, rather than failing one person's click later.
@@ -446,32 +456,62 @@ async def request_id_middleware(
     return response
 
 
-# The browser extension (browser-extension.md) calls this API directly from a
-# chrome-extension:// origin, and so does the deployed web frontend: its bundle
-# is served from a different host than the API (launch plan P2.3). Only
-# `npm run dev`, through Vite's proxy, is same-origin. Permissive by design, not
-# an oversight: every route here is already gated by a verified Supabase JWT
-# (auth.require_user_id) -- CORS only controls which browser-page origins may
-# READ a response via fetch/XHR, it is not this API's authorization boundary, and
-# no route here ever relies on a cookie (allow_credentials stays False, so this
-# can't be combined with credentialed requests to leak a session).
+# The browser extension calls this API directly from a chrome-extension:// origin,
+# and so does the deployed web frontend: its bundle is served from a different host
+# than the API. Only `npm run dev`, through Vite's proxy, is same-origin.
 #
+# CORS only controls which browser-page origins may READ a response via fetch/XHR;
+# it is not this API's authorization boundary (every route that returns a user's data
+# is gated by a verified Supabase JWT, auth.require_user_id), and no route relies on
+# a cookie (allow_credentials stays False, so it can't be combined with credentialed
+# requests to leak a session). Restricting the origins is opt-in: when
+# CORS_ALLOWED_ORIGINS lists them, a page on any other site cannot read a response.
+# Unset, any origin may, as before, and the boot says so; a self-hosted API with the
+# web app on another host sets it.
+class ConfiguredCORSMiddleware:
+    """Starlette's CORSMiddleware with its origins taken from CORS_ALLOWED_ORIGINS, read when a
+    request arrives (not when the module is imported, which a test or a boot check could not
+    control). `cors_allowed_origins()` is cached by its text, and one middleware is kept for
+    each list it has produced."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+        self._built: dict[frozenset[str] | None, ASGIApp] = {}
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            # The lifespan goes through the middleware first. Reading the setting here would raise
+            # for a malformed list before the lifespan runs, so no "startup failed" message would
+            # reach the server: it would call the lifespan unsupported and keep serving, instead
+            # of exiting. The lifespan checks the list itself (it must stop the boot).
+            await self.app(scope, receive, send)
+            return
+        origins = cors_allowed_origins()
+        inner = self._built.get(origins)
+        if inner is None:
+            if len(self._built) >= 16:
+                self._built.clear()
+            inner = CORSMiddleware(
+                self.app,
+                allow_origins=["*"] if origins is None else sorted(origins),
+                allow_credentials=False,
+                allow_methods=["*"],
+                allow_headers=["*"],
+                # Lets the extension and the web app read the request id they can quote in a
+                # bug report, and how long a 429 asks them to wait.
+                expose_headers=["X-Request-ID", "Retry-After"],
+            )
+            self._built[origins] = inner
+        await inner(scope, receive, send)
+
+
 # Registered AFTER request_id_middleware so it is the OUTERMOST middleware.
 # Anything that middleware answers itself -- its fallback 500 for an unhandled
 # error -- then still passes through here and carries the CORS headers; without
 # them a cross-origin browser discards the JSON error envelope and the caller
 # sees an opaque network failure ("Failed to fetch") instead of the message and
 # the request id it could quote in a bug report.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    # Lets the extension and the web app read the request id they can quote in a
-    # bug report, and how long a 429 asks them to wait.
-    expose_headers=["X-Request-ID", "Retry-After"],
-)
+app.add_middleware(ConfiguredCORSMiddleware)
 
 app.include_router(capabilities_router)
 app.include_router(telegram_router)

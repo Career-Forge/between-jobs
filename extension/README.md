@@ -177,8 +177,10 @@ What still needs a person:
   privacy-policy link is still a `[MAINTAINER TO FILL: ...]` placeholder until the policy
   is hosted.
 - A decision on `host_permissions` (redundant with the content-script matches today) and
-  on the wildcard CORS the extension's API access relies on (`store/PERMISSIONS.md`,
-  note 1).
+  on listing the extension's `chrome-extension://` origin in the API's `CORS_ALLOWED_ORIGINS`
+  once its id is known: until a list is set the API answers any origin, and once it is set the
+  extension is refused unless its id is in it or the API origin is in `host_permissions`
+  (`store/PERMISSIONS.md`, note 1).
 
 ## Architecture
 

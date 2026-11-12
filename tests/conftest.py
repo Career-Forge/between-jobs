@@ -152,3 +152,12 @@ def recorded_events(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
     monkeypatch.setattr(product_events, "write_event", record)
     return rows
+
+
+@pytest.fixture(autouse=True)
+def _cors_origins_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A deployed API has CORS_ALLOWED_ORIGINS set. Unset, the boot logs a warning that any
+    website can read its responses, and the tests that assert a quiet boot would trip on it (and
+    so would a developer's own value left in their shell or `.env`). The tests of the setting
+    itself set or remove it (tests/test_cors.py, tests/test_env.py)."""
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://app.example.com")

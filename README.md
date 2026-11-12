@@ -403,6 +403,8 @@ run without `VITE_API_BASE_URL` and `VITE_SUPABASE_URL` set to public `https://`
 `web/.env.example` explains why. The build also writes `dist/_headers`, a Content-Security-Policy
 and other security headers generated from those two origins (Cloudflare Pages applies the file
 as it is; `web/README.md` covers other hosts and what to do when something is blocked).
+If the API runs on another address than the page, set `CORS_ALLOWED_ORIGINS` on the API to the
+page's origin (`.env.example` explains it); until it is set the API answers any origin.
 Create an account on the sign-in page, open Settings and save a model key (OpenRouter is
 the default; see "Model providers"), then import your resume JSON on the Profile page.
 
@@ -438,6 +440,9 @@ your own, where every signed-in user may connect. PDF output needs `latex-servic
 Discord has its own walk-through below.
 `.env.example` explains each one. Setting `WEB_APP_URL` to the web app's public https address
 lets the bot's `/privacy` and `/learn` link to its pages.
+If the web app is served from a different address than the API, set `CORS_ALLOWED_ORIGINS` to the web
+app's origin (and the browser extension's, once you have its id): until you do, a page on any
+website may read the API's responses, and the API says so in its boot log.
 
 ### Discord
 
