@@ -14,10 +14,12 @@ import "../styles/workspace.css";
 import "../styles/research.css";
 
 // "Your play": what to lead with, the one gap that matters for this role, and one project to close it.
-// Every sentence is the person's model's, written from signals the platform already computed (Tailor's
-// coverage read, and Company intel when it was run), and each of the first two carries a citation that
-// code checked is one of the strengths or gaps found for this role. A citation is evidence, not a
-// verdict: it is gold, and the gap's is gold too, never red.
+// Every sentence is the person's model's. The server reads the posting's requirements itself (the Tailor
+// panel's result is not an input, and nothing is stored for it to reuse), matches them to the profile by
+// code, and gives the model the strengths and gaps that come out, with Company intel and the fit check of
+// the latest resume generation when they exist. Each of the first two sentences carries a citation that
+// code checked is one of those strengths or gaps. A citation is evidence, not a verdict: it is gold, and
+// the gap's is gold too, never red.
 //
 // A model that cannot ground a brief is not made to: the server answers INSUFFICIENT_EVIDENCE with its
 // reason (nothing supported to lead with, no gap left to name, or its last reply failed the parse or the
@@ -94,8 +96,8 @@ export function PositioningBriefPanel({ applicationId, now }: { applicationId: s
   return (
     <div className="bj-rs">
       <p className="bj-ws-intro">
-        What to lead with, the one gap that matters for this role, and one project to close it. Written by your model on your key from signals already computed for this role: your profile's match to the
-        posting and, if you ran it, Company intel.
+        What to lead with, the one gap that matters for this role, and one project to close it. Written by your model on your key. It reads this posting's requirements itself, whether or not you have run
+        Check coverage, matches them to your profile by code, and also uses Company intel and the fit check from generating a resume, if you ran them.
       </p>
       <div className="bj-actions bj-rs-bar">
         <button ref={buildButton} type="button" aria-disabled={building || read.kind === "loading" ? true : undefined} onClick={() => void build()}>
