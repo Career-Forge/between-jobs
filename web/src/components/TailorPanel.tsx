@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type { ResumeDocument } from "../lib/headerComposerTypes";
 import { failureOf, type SetupNotice } from "../lib/setupRequired";
@@ -30,10 +30,12 @@ import "../styles/workspace.css";
 // WHAT RUNS WHEN. Opening the page runs nothing here. The coverage match is a model call on the person's
 // own key, so it is made only when they press "Check coverage": never on mount (and so not twice a visit
 // under StrictMode in development), and never again on its own. A press reads the resume document, then
-// the profile's facts, and asks for the coverage last, so a read that fails costs no model call. Nothing
-// is stored: the answer lives in this panel's state, so a person who leaves the application and comes
-// back sees the button again, and the sentence above it says so. The page does not mount this panel
-// while it knows no model key is saved (it shows the missing key instead, and fires nothing).
+// the profile's facts, and asks for the coverage last, so a read that fails costs no model call, and
+// neither does a press the person has left the page before its reads finished. A call already out when
+// they leave is not cancelled: it is paid for and its answer dropped. Nothing is stored: the answer
+// lives in this panel's state, so a person who leaves the application and comes back sees the button
+// again, and the sentence above it says so. The page does not mount this panel while it knows no model
+// key is saved (it shows the missing key instead, and fires nothing).
 //
 // States: idle is one sentence and the button; loading keeps both (the button busy) with a placeholder
 // in the panel's own shape; a missing profile or key (the server's 409) shows its notice with the link
@@ -93,6 +95,15 @@ export function TailorPanel({ applicationId }: { applicationId: string }) {
   // which does not stop a click. Reset in `finally`, so a press after a failure, from the button or from the callout's
   // Retry, is a new one.
   const working = useRef(false);
+  // False once the panel has gone, so a press whose free reads outlast the person's stay does not go on to the model call.
+  // Set to true again on every mount: StrictMode runs a mount's cleanup and its setup once before the page is shown.
+  const present = useRef(true);
+  useEffect(() => {
+    present.current = true;
+    return () => {
+      present.current = false;
+    };
+  }, []);
   const checkButton = useRef<HTMLButtonElement>(null);
   const resultRoot = useRef<HTMLDivElement>(null);
   // Retry removes the callout it is pressed in; focus goes on to the button, which stays.
@@ -106,6 +117,7 @@ export function TailorPanel({ applicationId }: { applicationId: string }) {
     try {
       const resumeDocument = await apiFetch<ResumeDocument & { selected_evidence_fact_ids?: string[] }>(`/resume-documents/mine?application_id=${applicationId}`);
       const facts = await apiFetch<CareerFact[]>(`/profile/versions/${resumeDocument.profile_version_id}/career-facts`);
+      if (!present.current) return;
       const result = await apiFetch<CoverageResponse>(`/resume-documents/${resumeDocument.id}/coverage`, { method: "POST" });
       const stored = resumeDocument.selected_evidence_fact_ids ?? [];
       const initial = stored.length > 0 ? stored : result.coverage.flatMap((c) => c.matched_fact_ids);

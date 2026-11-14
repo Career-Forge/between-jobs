@@ -237,6 +237,22 @@ describe("Tailor when it is pressed", () => {
     expect(callsTo("GET /resume-documents/mine?application_id=a1")).toHaveLength(1);
   });
 
+  it.each([
+    ["plain", false],
+    ["StrictMode", true],
+  ])("does not spend the model call when the person has left before the reads finished (%s)", async (_mode, strict) => {
+    describeReads();
+    let release: (value: unknown) => void = () => undefined;
+    on("GET /resume-documents/mine?application_id=a1", () => new Promise((resolve) => (release = resolve)));
+    const { container, unmount } = panel({ strict });
+    click(buttonNamed(container, BUTTON));
+    await settle();
+    unmount();
+    release(DOCUMENT);
+    await settle();
+    expect(callsTo("POST /resume-documents/doc-1/coverage")).toHaveLength(0);
+  });
+
   it("keeps the focus on a button that is working, and puts it on the result when the button goes away", async () => {
     describeReads();
     let release: (value: unknown) => void = () => undefined;
