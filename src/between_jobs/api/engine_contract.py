@@ -248,35 +248,59 @@ personal fields (a work-authorisation line, for one); a paper never carries thos
 any other field is left out here as well, however it got in."""
 
 RESUME_CONTENT_MAX_BYTES = 64 * 1024
-"""Above this, serialised as compact UTF-8 JSON, a paper is not stored or shown."""
+"""Above this, serialised as compact UTF-8 JSON, a paper is not stored or shown. This is the one
+limit a legitimate paper can reach."""
 RESUME_CONTENT_MAX_TEXT_LENGTH = 2_000
 RESUME_CONTENT_MAX_HREF_LENGTH = 2_048
-RESUME_CONTENT_MAX_ENTRIES = 40
+RESUME_CONTENT_MAX_SEPARATOR_LENGTH = 32
+RESUME_CONTENT_MAX_ENTRIES = 100
 """Per section."""
-RESUME_CONTENT_MAX_BULLETS = 30
+RESUME_CONTENT_MAX_BULLETS = 100
 """Per entry."""
-RESUME_CONTENT_MAX_SKILL_ROWS = 40
-RESUME_CONTENT_MAX_SKILL_ITEMS = 100
-"""Per row."""
+RESUME_CONTENT_MAX_SKILL_ROWS = 100
+RESUME_CONTENT_MAX_SKILL_ITEMS = 1_000
+"""Per row. An engine does not cap a skills row, so this is the loosest of the count limits."""
 RESUME_CONTENT_MAX_CHIPS = 16
 RESUME_CONTENT_MAX_SECTIONS = 32
 RESUME_CONTENT_MAX_NOT_SHOWN = 32
-"""The limits above are defence in depth: an engine that follows the contract is nowhere near
-them. A paper that breaks one is rejected whole, never cut down to size, because a preview with
-bullets quietly missing would read as the resume."""
+"""The limits above, except `RESUME_CONTENT_MAX_BYTES`, are sanity bounds on the shape of one
+paper, set far above what any resume page prints: a hostile or broken engine is refused cheaply,
+and a legitimate paper (small, a few kilobytes) is never near them. They are not part of the
+contract an engine writes to, which has the one size limit. A paper that breaks one is rejected
+whole, never cut down to size, because a preview with bullets quietly missing would read as the
+resume. A list longer than its limit is refused without being read item by item."""
+
+
+_INVISIBLE_RANGES: tuple[range, ...] = (
+    range(0x00AD, 0x00AE),  # soft hyphen
+    range(0x180E, 0x180F),  # Mongolian vowel separator
+    range(0x200B, 0x200E),  # zero-width space, non-joiner and joiner
+    range(0x2060, 0x2070),  # word joiner, invisible operators, deprecated format controls
+    range(0xFE00, 0xFE10),  # variation selectors
+    range(0xFEFF, 0xFF00),  # byte order mark, zero-width no-break space
+    range(0xFFF9, 0xFFFC),  # interlinear annotation marks
+    range(0xE0000, 0xE0080),  # the tag block: invisible ASCII
+    range(0xE0100, 0xE01F0),  # variation selectors supplement
+)
 
 
 def _text_table() -> dict[int, str | None]:
     """What happens to each character of a text field: a tab, a line break or a paragraph break
     becomes one space (the web collapses runs of spaces); every other C0 and C1 control
-    character, the bidirectional controls that can reorder displayed text, and lone surrogates
+    character, the bidirectional controls that can reorder displayed text, the characters that
+    print nothing (zero-width and joiner characters, the soft hyphen, the byte order mark,
+    variation selectors and the tag block, which can carry invisible text) and lone surrogates
     (which cannot be encoded as UTF-8, so one in a stored value would fail the write) are
-    removed. Built from code points so the source stays plain ASCII."""
+    removed. Both engines write Latin letters and ASCII, so none of these belongs in a real
+    paper. Built from code points so the source stays plain ASCII."""
     table: dict[int, str | None] = {}
     for code in (*range(0x00, 0x20), *range(0x7F, 0xA0)):
         table[code] = None
     for code in (0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A)):
         table[code] = None
+    for codes in _INVISIBLE_RANGES:
+        for code in codes:
+            table[code] = None
     for code in range(0xD800, 0xE000):
         table[code] = None
     for code in (0x09, 0x0A, 0x0D, 0x2028, 0x2029):
