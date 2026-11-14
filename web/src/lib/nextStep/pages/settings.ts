@@ -174,13 +174,14 @@ export const rules = definePage("settings", [S1, S2, S2K, S3, S4U, S4], { facts:
 
 // What the page shows for the answer the engine gave, given the row that decided it. Only G2 with a key
 // that is not usable is replaced; every other answer, and an input whose facts cannot be read, is
-// returned as it came.
+// returned as it came. "Not usable" needs no check of its own: S1, S2 and S2k each match one of the
+// three unusable readings and nothing else, so with a usable key none of them answers and G2 stands.
 export function settingsOutcome(
   evaluation: { outcome: NextStepOutcome; rowId: string | null },
   input: NextStepInput<SettingsFacts>,
 ): NextStepOutcome {
   const { outcome, rowId } = evaluation;
-  if (rowId !== "G2" || !isSettingsFacts(input.facts) || input.facts.llm.state === "ready") return outcome;
+  if (rowId !== "G2" || !isSettingsFacts(input.facts)) return outcome;
   for (const row of [S1, S2, S2K]) {
     const result = row.match(input);
     if (result !== null && result !== "wait" && result !== "none") return { status: "ready", step: result };
