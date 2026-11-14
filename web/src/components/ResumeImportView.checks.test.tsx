@@ -222,6 +222,9 @@ describe("setup known to be missing", () => {
     const { container } = idle(reading);
     const state = query(container, ".bj-state--setup");
     expect(text(state)).toContain("Importing from a resume file uses your own AI model, so it needs a usable model key first.");
+    expect(text(state)).toContain("Pasting your profile as JSON, below, needs no key.");
+    // The state keeps one link, to where the key is added; the JSON sentence is words only.
+    expect(state.querySelectorAll("a")).toHaveLength(1);
     const link = query<HTMLAnchorElement>(state, "a");
     expect(text(link)).toBe(label);
     expect(link.getAttribute("href")).toBe("/settings#ai-provider");

@@ -239,6 +239,21 @@ def test_import_profile_version_success() -> None:
     assert body["warnings"]
 
 
+def test_import_profile_version_needs_no_credential() -> None:
+    # Pasting the profile template as JSON is parsed by code, so an account with no model key at
+    # all can still do it. The web app says exactly that on the resume file card ("needs no key").
+    # The success test above would pass whether or not this route resolved a credential, because
+    # its fake holds a usable one. Here none exists, so a resolve() added to the route fails this.
+    inserted_row = {"id": _VERSION_ID, "user_id": _USER_ID, "activated_at": None}
+    table = _FakeProfileVersionsTable(select_rows=[], insert_row=inserted_row)
+    supabase = _FakeSupabaseClient(table, provider_credentials=_FakeTable(select_rows=[]))
+    with _client(supabase) as client:
+        response = client.post("/profile/versions", json={"raw_text": _VALID_RAW_TEXT})
+
+    assert response.status_code == 201
+    assert response.json()["id"] == _VERSION_ID
+
+
 def test_import_profile_version_invalid_json_returns_422() -> None:
     supabase = _FakeSupabaseClient(_FakeProfileVersionsTable(select_rows=[]))
     with _client(supabase) as client:
@@ -310,6 +325,21 @@ def test_activate_profile_version_success() -> None:
     updated_row = {"id": _VERSION_ID, "activated_at": "2026-08-06T00:00:00Z"}
     supabase = _FakeSupabaseClient(
         _FakeProfileVersionsTable(select_rows=[], update_row=updated_row)
+    )
+    with _client(supabase) as client:
+        response = client.post(f"/profile/versions/{_VERSION_ID}/activate")
+
+    assert response.status_code == 200
+    assert response.json() == updated_row
+
+
+def test_activate_profile_version_needs_no_credential() -> None:
+    # Making a reviewed JSON import the active profile reads no credential either, so the whole
+    # paste-review-activate path works for an account with no model key (see the import test above).
+    updated_row = {"id": _VERSION_ID, "activated_at": "2026-08-06T00:00:00Z"}
+    supabase = _FakeSupabaseClient(
+        _FakeProfileVersionsTable(select_rows=[], update_row=updated_row),
+        provider_credentials=_FakeTable(select_rows=[]),
     )
     with _client(supabase) as client:
         response = client.post(f"/profile/versions/{_VERSION_ID}/activate")

@@ -42,8 +42,9 @@ import "../styles/profile.css";
 // SETUP KNOWN TO BE MISSING. Reading a file uses the person's own model, so when the page knows no model key is
 // usable (`modelKey`, as lib/modelKey.ts reads the saved keys) the card says what is missing, with a link to
 // where it is fixed, and "Choose a file" is switched off: no request is made while setup is known to be
-// missing. Nothing is known until the page has read the keys, so an unread or failed read leaves the card
-// as it was, and a server's SETUP_REQUIRED after a try is still shown as before.
+// missing. The message also says that the JSON import below needs no key, so the person is not left with
+// nothing to do until one is added. Nothing is known until the page has read the keys, so an unread or
+// failed read leaves the card as it was, and a server's SETUP_REQUIRED after a try is still shown as before.
 //
 // ACCESSIBLE BY CONSTRUCTION. A labelled region with real headings; every control is a button
 // (never a clickable div) whose name says what it acts on; a source toggle says whether it is open
@@ -74,9 +75,14 @@ export const LEFT_EMPTY_INTRO =
   "A model proposed these, but the check against your file did not keep them, so they are not in the draft and nothing was made up to fill them. Each line says why: some are not in your file; others may be in it but are not usable for that field, or are never read from a file. Entry and item numbers are the model's own and can differ from the list above.";
 export const LEAVE_NOTE =
   "If you leave this page without choosing, the draft stays saved but is not used. This page does not list saved drafts, so to review it again, upload the file again.";
+// Shown with the file button off while the page knows no model key is usable. The last sentence is a
+// fact about the API, not a hope: the JSON import below is read by code and its routes ask for no
+// credential (tests/test_profile_routes.py pins that), so a person with no key can still set up a
+// profile there. It carries no link of its own: this state keeps exactly one, to where the key is added.
+export const NEEDS_MODEL_MESSAGE =
+  "Importing from a resume file uses your own AI model, so it needs a usable model key first. Pasting your profile as JSON, below, needs no key.";
 // Shown, with the file button off, while the JSON import below is being sent: the two imports do not
 // run at once (see `importInProgress`).
-export const NEEDS_MODEL_MESSAGE = "Importing from a resume file uses your own AI model, so it needs a usable model key first.";
 export const BLOCKED_NOTE = "A JSON import below is in progress. Choose a file when it has finished.";
 export const USE_LABEL = "Use this profile";
 export const DISCARD_LABEL = "Discard this draft";

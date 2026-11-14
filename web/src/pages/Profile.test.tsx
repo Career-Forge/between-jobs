@@ -1135,9 +1135,32 @@ describe("the file import card with no usable model key", () => {
     await settle();
     const card = query(container, "#resume-import");
     expect(text(query(card, ".bj-state--setup"))).toContain("Importing from a resume file uses your own AI model");
+    expect(text(query(card, ".bj-state--setup"))).toContain("Pasting your profile as JSON, below, needs no key.");
     expect(query<HTMLAnchorElement>(card, ".bj-state--setup a").getAttribute("href")).toBe("/settings#ai-provider");
     expect(buttonNamed(card, "Choose a file").getAttribute("aria-disabled")).toBe("true");
     expect(cyan(container)).toHaveLength(1);
+  });
+
+  // The sentence "pasting your profile as JSON, below, needs no key" is said by the file card and made true
+  // by a different component, the JSON import section, so only the whole page can show both at once.
+  it("says the key is missing and, in the same render, has the JSON import below it, ready to use with no key", async () => {
+    describeAccount({ current: NOT_FOUND, credentials: [] });
+    on("POST /profile/versions", PENDING);
+    const { container } = page();
+    await settle();
+    const card = query(container, "#resume-import");
+    expect(text(query(card, ".bj-state--setup"))).toContain("Importing from a resume file uses your own AI model, so it needs a usable model key first.");
+    expect(text(query(card, ".bj-state--setup"))).toContain("Pasting your profile as JSON, below, needs no key.");
+    const json = jsonImport(container);
+    expect(card.compareDocumentPosition(json) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const box = query<HTMLTextAreaElement>(json, "textarea");
+    expect(box.disabled).toBe(false);
+    typeInto(box, '{"personal":{"name":"Asha Verma"}}');
+    expect(buttonNamed(json, "Import").hasAttribute("aria-disabled")).toBe(false);
+    click(buttonNamed(json, "Import"));
+    await settle();
+    expect(callsTo("POST /profile/versions")).toHaveLength(1);
+    expect(text(query(container, "#import-review h2"))).toBe("Review before activating");
   });
 
   it("says nothing while the keys are still being read, or when one is usable", async () => {
