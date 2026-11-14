@@ -283,6 +283,7 @@ async def record_event(
     actor_id: str,
     idempotency_key: str | None = None,
     outbox_event_type: str | None = None,
+    outbox_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Idempotent on `unique(user_id, idempotency_key)` -- a retried
     command with the same key returns the already-recorded event instead
@@ -301,6 +302,11 @@ async def record_event(
     which happened). Omitted entirely by any caller not ready to publish
     yet, matching `change_application_stage`'s own precedent of being the
     only thing writing to the bus before this.
+
+    `outbox_payload` is what that outbox row carries, for an event whose own payload holds more
+    than subscribers should be handed (the prepare result's resume preview is stored with the
+    result and read back by the app, and is of no use to a subscriber). Left out, the row
+    carries the event's own `payload`, as before.
 
     Not atomic with the `application_events` insert above it -- Postgrest
     is HTTP-only here, so there's no shared transaction across two
@@ -326,6 +332,7 @@ async def record_event(
         actor_id=actor_id,
         idempotency_key=idempotency_key,
         outbox_event_type=outbox_event_type,
+        outbox_payload=outbox_payload,
     )
 
 
@@ -340,6 +347,7 @@ async def _write_event(
     actor_id: str,
     idempotency_key: str | None = None,
     outbox_event_type: str | None = None,
+    outbox_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """`record_event` without its ownership check, for a caller that just created the
     application for `user_id` itself. Never expose this to an id that came from outside."""
@@ -381,7 +389,7 @@ async def _write_event(
                     "aggregate_id": application_id,
                     "event_type": outbox_event_type,
                     "event_version": 1,
-                    "payload": payload,
+                    "payload": payload if outbox_payload is None else outbox_payload,
                     "idempotency_key": f"outbox:{key}",
                 }
             )

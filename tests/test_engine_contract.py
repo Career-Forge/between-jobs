@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
+from test_resume_content import paper as sample_paper
 
 from between_jobs.api.engine_contract import (
     ArtifactRef,
     AtsAttempt,
     PrepareApplicationInput,
     PrepareApplicationResult,
+    ResumeContent,
 )
 
 _BREAKDOWN_WIRE = {
@@ -116,3 +121,98 @@ def test_prepare_application_result_round_trips_with_no_artifacts() -> None:
     assert result.score_scale == "0-100"
     assert result.resume is None
     assert result.ats_attempts == []
+
+
+# -- the stored result and its resume preview ----------------------------------------------------
+
+_RESULT_FIELDS = {
+    "run_id",
+    "profile_version_id",
+    "job_snapshot_id",
+    "resume",
+    "cover_letter",
+    "application_answers_id",
+    "ats_attempts",
+    "final_score",
+    "score_scale",
+    "fit",
+    "gate_outcome",
+    "gate_reason",
+    "gate_cautions",
+    "warnings",
+    "evidence_fact_ids",
+    "resume_content",
+}
+
+
+def _result(**overrides: Any) -> PrepareApplicationResult:
+    fields: dict[str, Any] = {
+        "run_id": "run-1",
+        "profile_version_id": "pv-1",
+        "job_snapshot_id": "js-1",
+        "resume": ArtifactRef(
+            artifact_id="art-1", version_id="ver-1", media_type="application/x-tex", sha256="abc"
+        ),
+        "cover_letter": None,
+        "application_answers_id": None,
+        "ats_attempts": [],
+        "final_score": None,
+        "warnings": [],
+        "evidence_fact_ids": [],
+    }
+    fields.update(overrides)
+    return PrepareApplicationResult(**fields)
+
+
+def test_a_result_has_no_preview_unless_one_is_given() -> None:
+    assert _result().resume_content is None
+    assert _result().model_dump(mode="json")["resume_content"] is None
+
+
+def test_the_stored_result_has_exactly_the_keys_the_web_app_expects() -> None:
+    preview = ResumeContent.model_validate(sample_paper())
+
+    assert set(_result().model_dump(mode="json")) == _RESULT_FIELDS
+    assert set(_result(resume_content=preview).model_dump(mode="json")) == _RESULT_FIELDS
+    assert set(PrepareApplicationResult.model_fields) == _RESULT_FIELDS
+
+
+def test_a_result_stored_before_the_preview_existed_still_validates() -> None:
+    stored = _result().model_dump(mode="json")
+    del stored["resume_content"]  # what an older row has: the key is not there at all
+
+    result = PrepareApplicationResult.model_validate(stored)
+
+    assert result.resume_content is None
+    assert result.resume is not None and result.resume.version_id == "ver-1"
+
+
+def test_a_result_carries_its_preview_through_a_stored_json_round_trip() -> None:
+    preview = ResumeContent.model_validate(sample_paper())
+    result = _result(resume_content=preview)
+
+    stored = json.loads(json.dumps(result.model_dump(mode="json"), allow_nan=False))
+    again = PrepareApplicationResult.model_validate(stored)
+
+    assert stored["resume_content"] == sample_paper()
+    assert stored["resume_content"]["schema"] == 1
+    assert again == result
+    assert again.resume_content is not None and again.resume_content.schema_ == 1
+
+
+def test_the_preview_can_be_left_out_of_a_dump_by_name() -> None:
+    # how the prepare flow builds the payload the outbox gets
+    preview = ResumeContent.model_validate(sample_paper())
+
+    kept_out = _result(resume_content=preview).model_dump(mode="json", exclude={"resume_content"})
+
+    assert set(kept_out) == _RESULT_FIELDS - {"resume_content"}
+    assert "section_order" not in json.dumps(kept_out)
+
+
+def test_a_stored_preview_is_checked_again_when_the_result_is_read_back() -> None:
+    stored = _result().model_dump(mode="json")
+    stored["resume_content"] = {**sample_paper(), "schema": 2}
+
+    with pytest.raises(ValidationError):
+        PrepareApplicationResult.model_validate(stored)

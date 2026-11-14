@@ -16,6 +16,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
+from test_resume_content import paper as sample_paper
 
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase
@@ -867,6 +868,59 @@ def test_extension_payload_trims_prepare_result_to_resume_and_cover_letter() -> 
         "resume": {"artifact_id": "art-1", "version_id": "ver-1"},
         "cover_letter": None,
     }
+
+
+def test_extension_payload_never_carries_the_resume_preview() -> None:
+    """The stored result now holds a plain-text preview of the resume (`resume_content`): the
+    web app draws it, the extension has no use for it, and it must not travel to the extension.
+    The route trims the result to the resume and the cover letter, so the preview, which is
+    present on the stored payload here, still must not appear anywhere in the response."""
+    application = {"id": _APPLICATION_ID, "user_id": _USER_ID, "job_id": _JOB_ID}
+    preview = sample_paper()
+    preview["experience"][0]["bullets"][0]["text"] = "CANARY-extension-preview"
+    prepared_event = {
+        "id": "event-1",
+        "user_id": _USER_ID,
+        "application_id": _APPLICATION_ID,
+        "event_type": "application.prepared",
+        "payload": {
+            "run_id": "run-1",
+            "profile_version_id": "profile-1",
+            "job_snapshot_id": "snap-1",
+            "resume": {"artifact_id": "art-1", "version_id": "ver-1", "sha256": "abc"},
+            "cover_letter": {"artifact_id": "art-2", "version_id": "ver-2", "sha256": "def"},
+            "application_answers_id": None,
+            "ats_attempts": [],
+            "final_score": 82,
+            "score_scale": "0-100",
+            "fit": None,
+            "gate_outcome": "proceed",
+            "gate_reason": "",
+            "gate_cautions": [],
+            "warnings": [],
+            "evidence_fact_ids": [],
+            "resume_content": preview,
+        },
+        "created_at": "2026-09-01T00:00:00Z",
+    }
+    supabase = _FakeSupabaseClient(
+        applications=_FakeTable(select_rows=[application]),
+        application_events=_FakeTable(select_rows=[prepared_event]),
+        profile_versions=_FakeTable(select_rows=[_profile_row()]),
+    )
+    with _client(supabase) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/extension-payload")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prepare_result"] == {
+        "resume": {"artifact_id": "art-1", "version_id": "ver-1", "sha256": "abc"},
+        "cover_letter": {"artifact_id": "art-2", "version_id": "ver-2", "sha256": "def"},
+    }
+    assert set(body) == {"prepare_result", "personal_info", "job_jurisdiction"}
+    assert "CANARY-extension-preview" not in response.text
+    assert "resume_content" not in response.text
+    assert "section_order" not in response.text
 
 
 def test_extension_payload_omits_sensitive_fields_by_default() -> None:

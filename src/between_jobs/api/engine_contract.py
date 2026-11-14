@@ -623,3 +623,24 @@ class PrepareApplicationResult(BaseModel):
     gate: no verdict was reached, so none is recorded."""
     warnings: list[str]
     evidence_fact_ids: list[str]
+    resume_content: ResumeContent | None = None
+    """A preview of the draft: the resume as the engine laid it out, in print order, as plain
+    text, for the web app to draw. It describes one resume, the one this same result names in
+    `resume`: that reference's `version_id` and `sha256` are what the preview was drawn for, and
+    nothing else binds the two, so a reader holding a different version of the resume must not
+    show it as that version.
+
+    Never present when `resume` is None: a run that declined to write a resume has no draft to
+    preview, and any preview the engine sent with it is not kept. None as well when the engine
+    sends no preview (the built-in engine does not yet) or sent one that could not be read
+    (`parse_resume_content`: wrong schema, wrong shape, over the size limit). Absent altogether
+    from results stored before this field existed, which read back as None; never a guess.
+
+    It is a preview, not the document: the PDF compiled from the stored LaTeX is the document,
+    and this holds what the engine says it printed, as the engine folded and truncated it. It
+    carries no page count and says nothing of fit.
+
+    It is stored with the rest of the result in `application_events.payload`, and so returned by
+    `POST /applications/{id}/prepare` and `GET /applications/{id}/prepare-result`. It is not
+    copied into the outbox payload that subscribers read, and the extension's payload does not
+    carry it."""

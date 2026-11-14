@@ -21,12 +21,13 @@ from fastapi.testclient import TestClient
 from generic_engine_fakes import ScriptedModel, echo_body
 from generic_engine_fakes import profile as sample_profile
 from generic_engine_fakes import snapshot as sample_snapshot
+from test_resume_content import paper as sample_paper
 
 from between_jobs.api import engine_gateway, product_events
 from between_jobs.api.app import app
 from between_jobs.api.app_state import get_http_client, get_supabase
 from between_jobs.api.auth import require_user_id
-from between_jobs.api.engine_contract import PrepareApplicationResult
+from between_jobs.api.engine_contract import PrepareApplicationResult, ResumeContent
 from between_jobs.api.errors import ApiError
 from between_jobs.api.forge_engines_client import ForgeApplyResult
 from between_jobs.engines import CAPABILITIES_BY_KIND, GenericBackend
@@ -1122,3 +1123,320 @@ async def test_the_evidence_is_the_reported_pointers_in_the_engines_order_and_no
     # the engine's order, the unknown pointer dropped, the publication left out
     assert ids == ["f-exp-1", "f-exp-0"]
     assert await prepare_orchestrator._evidence_fact_ids(None, "u", "v", []) == []  # type: ignore[arg-type]
+
+
+# -- the resume preview: `resume_content` on the stored result ----------------------------------
+
+_RESULT_KEYS = {
+    "run_id",
+    "profile_version_id",
+    "job_snapshot_id",
+    "resume",
+    "cover_letter",
+    "application_answers_id",
+    "ats_attempts",
+    "final_score",
+    "score_scale",
+    "fit",
+    "gate_outcome",
+    "gate_reason",
+    "gate_cautions",
+    "warnings",
+    "evidence_fact_ids",
+    "resume_content",
+}
+
+
+def _preview_with(text: str) -> dict[str, Any]:
+    preview = sample_paper()
+    preview["experience"][0]["bullets"][0]["text"] = text
+    return preview
+
+
+def _hosted_response_with(paper: Any) -> dict[str, Any]:
+    resume = {**_FORGE_APPLY_RESPONSE_BODY["resume"], "paper": paper}  # type: ignore[dict-item]
+    return {**_FORGE_APPLY_RESPONSE_BODY, "resume": resume}
+
+
+class _InProcessEngine:
+    """An engine that answers with exactly the `ForgeApplyResult` it is given, standing in for
+    the built-in engine."""
+
+    capabilities = CAPABILITIES_BY_KIND["generic"]
+
+    def __init__(self, result: ForgeApplyResult) -> None:
+        self.result = result
+        self.calls = 0
+
+    async def apply(self, http: Any, **kwargs: Any) -> ForgeApplyResult:
+        self.calls += 1
+        return self.result
+
+
+def _use_this_engine(monkeypatch: pytest.MonkeyPatch, result: ForgeApplyResult) -> _InProcessEngine:
+    engine = _InProcessEngine(result)
+    monkeypatch.delenv("FORGE_ENGINES_BASE_URL")
+    monkeypatch.setattr(engine_gateway, "_GENERIC", engine)
+    return engine
+
+
+def test_the_engines_preview_is_stored_with_the_result_and_returned_with_it() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(body=_hosted_response_with(sample_paper()))
+
+    response = _prepare(supabase, http)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["resume_content"] == sample_paper()
+    # the preview is bound to the resume it was drawn for by the stored version, in the same body
+    assert (
+        body["resume"]["version_id"] == "version-row-1" and body["resume"]["sha256"] == "deadbeef"
+    )
+    result = PrepareApplicationResult.model_validate(body)
+    assert result.resume_content is not None and result.resume_content.schema_ == 1
+    # and what is stored for the page that restores it after a reload is the same
+    (event,) = supabase.application_events.insert_calls
+    assert event["payload"] == body
+    assert event["payload"]["resume_content"] == sample_paper()
+    # nothing about the stored resume itself changed
+    assert supabase.bucket.uploads[0][1] == rb"\begin{document}hello\end{document}"
+
+
+def test_the_stored_result_has_exactly_these_keys() -> None:
+    response = _prepare(
+        _FakeSupabaseClient(), _FakeHttpClient(body=_hosted_response_with(sample_paper()))
+    )
+
+    assert set(response.json()) == _RESULT_KEYS
+
+
+def test_the_preview_never_reaches_the_outbox() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(body=_hosted_response_with(_preview_with("CANARY-outbox-bullet")))
+
+    response = _prepare(supabase, http)
+
+    assert response.status_code == 201
+    (event,) = supabase.application_events.insert_calls
+    (outbox,) = supabase.event_outbox.insert_calls
+    # stored with the result...
+    assert "CANARY-outbox-bullet" in json.dumps(event["payload"])
+    # ...and nowhere in what subscribers are handed, not even the key
+    assert "resume_content" not in outbox["payload"]
+    assert "CANARY-outbox-bullet" not in json.dumps(outbox)
+    assert "section_order" not in json.dumps(outbox)
+    # everything else they always got is still there, unchanged
+    assert outbox["payload"] == {k: v for k, v in event["payload"].items() if k != "resume_content"}
+    assert outbox["payload"]["final_score"] == 72.0
+    assert outbox["payload"]["warnings"] == ["Borderline seniority match."]
+    assert outbox["event_type"] == "artifact.generated.v1"
+
+
+def test_a_run_with_no_preview_still_has_the_key_and_the_outbox_still_has_none() -> None:
+    supabase = _FakeSupabaseClient()
+
+    response = _prepare(supabase, _FakeHttpClient())
+
+    assert response.json()["resume_content"] is None
+    assert "resume_content" not in supabase.event_outbox.insert_calls[0]["payload"]
+
+
+def test_a_declined_hosted_run_has_no_preview() -> None:
+    declined = {
+        **_hosted_response_with(sample_paper()),
+        "resume": None,
+        "ats_attempts": [],
+        "gate": {"outcome": "skip_low_score", "reason": "Fit score too low.", "cautions": []},
+    }
+    supabase = _FakeSupabaseClient()
+
+    response = _prepare(supabase, _FakeHttpClient(body=declined))
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["resume"] is None and body["resume_content"] is None
+    assert supabase.application_events.insert_calls[0]["payload"]["resume_content"] is None
+    assert supabase.event_outbox.insert_calls[0]["event_type"] == "artifact.generation_failed.v1"
+
+
+def test_a_run_that_wrote_no_resume_keeps_no_preview_even_when_the_engine_sent_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = ResumeContent.model_validate(sample_paper())
+    engine = _use_this_engine(
+        monkeypatch, ForgeApplyResult(resume=None, regenerated=False, paper=content)
+    )
+    supabase = _FakeSupabaseClient()
+
+    response = _prepare(supabase, _FakeHttpClient())
+
+    assert response.status_code == 201
+    assert engine.calls == 1
+    body = response.json()
+    assert body["resume"] is None
+    assert body["resume_content"] is None
+    assert supabase.application_events.insert_calls[0]["payload"]["resume_content"] is None
+    assert supabase.artifact_versions.insert_calls == []
+
+
+_POISON_PREVIEWS: list[Any] = [
+    pytest.param("a paper", id="a-string"),
+    pytest.param(["a", "paper"], id="a-list"),
+    pytest.param({"schema": 2}, id="a-newer-schema"),
+    pytest.param({**sample_paper(), "schema": "1"}, id="a-schema-that-is-text"),
+    pytest.param({**sample_paper(), "experience": 5}, id="a-section-that-is-not-a-list"),
+    pytest.param({**sample_paper(), "section_order": 5}, id="a-section-order-that-is-not-a-list"),
+    pytest.param({**sample_paper(), "summary": "x" * 100_000}, id="a-huge-string"),
+    pytest.param({**sample_paper(), "experience": [{}] * 5_000}, id="a-huge-list"),
+]
+
+
+@pytest.mark.parametrize("poison", _POISON_PREVIEWS)
+def test_a_preview_that_cannot_be_read_never_fails_a_generation(poison: Any) -> None:
+    supabase = _FakeSupabaseClient()
+
+    response = _prepare(supabase, _FakeHttpClient(body=_hosted_response_with(poison)))
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["resume_content"] is None
+    # the generation is all there: the resume stored, the result recorded, subscribers told
+    assert body["resume"]["artifact_id"] == "artifact-1" and body["final_score"] == 72.0
+    assert len(supabase.bucket.uploads) == 1
+    assert len(supabase.artifact_versions.insert_calls) == 1
+    assert supabase.application_events.insert_calls[0]["payload"]["resume_content"] is None
+    assert supabase.event_outbox.insert_calls[0]["event_type"] == "artifact.generated.v1"
+
+
+def test_a_preview_with_a_nul_is_stored_without_it() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(body=_hosted_response_with(_preview_with("before" + chr(0) + "after")))
+
+    response = _prepare(supabase, http)
+
+    assert response.status_code == 201
+    stored = supabase.application_events.insert_calls[0]["payload"]
+    assert stored["resume_content"]["experience"][0]["bullets"][0]["text"] == "beforeafter"
+    assert chr(0) not in json.dumps(stored, ensure_ascii=False)
+
+
+def test_a_preview_with_a_lone_surrogate_cannot_break_the_write_of_the_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hostile = _preview_with("a" + chr(0xD800) + "b" + chr(0xDFFF))
+    _use_this_engine(
+        monkeypatch,
+        ForgeApplyResult(
+            resume={"latex": r"\begin{document}x\end{document}", "paper": hostile},
+            regenerated=False,
+        ),
+    )
+    supabase = _FakeSupabaseClient()
+
+    response = _prepare(supabase, _FakeHttpClient())
+
+    assert response.status_code == 201
+    stored = supabase.application_events.insert_calls[0]["payload"]
+    assert stored["resume_content"]["experience"][0]["bullets"][0]["text"] == "ab"
+    # what the database client does to a payload before it sends it
+    json.dumps(stored, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    response.content.decode("utf-8")
+
+
+def test_an_in_process_engines_preview_is_read_the_same_way(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hostile = sample_paper()
+    hostile["header"]["chips"][0]["href"] = "javascript:alert(1)"
+    hostile["header"]["chips"].append({"field": "work_authorization", "text": "x", "href": None})
+    hostile["experience"][0]["location"] = "Springfield"
+    _use_this_engine(
+        monkeypatch,
+        ForgeApplyResult(
+            resume={"latex": r"\begin{document}x\end{document}", "paper": hostile},
+            regenerated=False,
+        ),
+    )
+    supabase = _FakeSupabaseClient()
+
+    response = _prepare(supabase, _FakeHttpClient())
+
+    content = response.json()["resume_content"]
+    assert content["header"]["chips"][0]["href"] is None
+    assert [chip["field"] for chip in content["header"]["chips"]] == [
+        "email",
+        "linkedin",
+        "phone",
+        "location",
+    ]
+    assert "location" not in content["experience"][0]
+    # the resume that was stored is the LaTeX and only the LaTeX
+    assert supabase.bucket.uploads[0][1] == rb"\begin{document}x\end{document}"
+
+
+def test_a_replayed_request_returns_the_stored_preview_without_running_the_engine() -> None:
+    stored = {
+        "run_id": "run-1",
+        "resume": {
+            "artifact_id": "a",
+            "version_id": "v",
+            "media_type": "application/x-tex",
+            "sha256": "s",
+        },
+        "final_score": 72.0,
+        "resume_content": sample_paper(),
+    }
+    already_prepared = {
+        "id": "event-1",
+        "idempotency_key": _prepare_body()["idempotency_key"],
+        "payload": stored,
+    }
+    supabase = _FakeSupabaseClient(application_events=_FakeTable(select_rows=[already_prepared]))
+    http = _FakeHttpClient(body=_hosted_response_with({"schema": 2}))
+
+    response = _prepare(supabase, http)
+
+    assert response.status_code == 201
+    assert response.json() == stored
+    assert response.json()["resume_content"] == sample_paper()
+    assert http.post_calls == []
+    assert supabase.event_outbox.insert_calls == []  # a replay publishes nothing
+
+
+def test_the_stored_preview_is_returned_when_the_page_restores_the_result() -> None:
+    prepared_event = {
+        "id": "event-1",
+        "event_type": "application.prepared",
+        "payload": {"run_id": "run-1", "resume": None, "resume_content": sample_paper()},
+    }
+    supabase = _FakeSupabaseClient(application_events=_FakeTable(select_rows=[prepared_event]))
+
+    with _client(supabase, _FakeHttpClient()) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/prepare-result")
+
+    assert response.json() == {"result": prepared_event["payload"]}
+
+
+def test_a_result_stored_before_the_preview_existed_is_returned_exactly_as_it_was() -> None:
+    old = {"run_id": "run-0", "resume": None, "final_score": None, "warnings": ["x"]}
+    prepared_event = {"id": "event-0", "event_type": "application.prepared", "payload": old}
+    supabase = _FakeSupabaseClient(application_events=_FakeTable(select_rows=[prepared_event]))
+
+    with _client(supabase, _FakeHttpClient()) as client:
+        response = client.get(f"/applications/{_APPLICATION_ID}/prepare-result")
+
+    assert response.json() == {"result": old}
+    assert "resume_content" not in response.json()["result"]
+
+
+def test_the_built_in_engine_stores_no_preview(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_the_built_in_engine(monkeypatch, ScriptedModel.faithful())
+    supabase = _supabase_with_a_real_profile()
+
+    response = _prepare(supabase, _FakeHttpClient())
+
+    assert response.status_code == 201
+    assert response.json()["resume_content"] is None
+    assert supabase.application_events.insert_calls[0]["payload"]["resume_content"] is None
+    assert "resume_content" not in supabase.event_outbox.insert_calls[0]["payload"]
