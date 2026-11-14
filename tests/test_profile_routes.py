@@ -225,6 +225,17 @@ def _clear_overrides() -> Any:
     app.dependency_overrides.clear()
 
 
+def _keyless(profile_versions: _FakeProfileVersionsTable) -> _FakeSupabaseClient:
+    """An account that has never set up a model: no saved credential and no capability preference,
+    as a person who has only just signed up. A route that resolves a credential (or reads the
+    preference that names one) fails for it, which the fakes' defaults would hide."""
+    return _FakeSupabaseClient(
+        profile_versions,
+        capability_preferences=_FakeTable(select_rows=[]),
+        provider_credentials=_FakeTable(select_rows=[]),
+    )
+
+
 def test_import_profile_version_success() -> None:
     inserted_row = {"id": _VERSION_ID, "user_id": _USER_ID, "activated_at": None}
     table = _FakeProfileVersionsTable(select_rows=[], insert_row=inserted_row)
@@ -244,9 +255,11 @@ def test_import_profile_version_needs_no_credential() -> None:
     # all can still do it. The web app says exactly that on the resume file card ("needs no key").
     # The success test above would pass whether or not this route resolved a credential, because
     # its fake holds a usable one. Here none exists, so a resolve() added to the route fails this.
+    # Four tests named "needs_no_credential" cover every route the paste, review, activate and
+    # discard steps call: this one, then activate, cancel and the current-profile read.
     inserted_row = {"id": _VERSION_ID, "user_id": _USER_ID, "activated_at": None}
     table = _FakeProfileVersionsTable(select_rows=[], insert_row=inserted_row)
-    supabase = _FakeSupabaseClient(table, provider_credentials=_FakeTable(select_rows=[]))
+    supabase = _keyless(table)
     with _client(supabase) as client:
         response = client.post("/profile/versions", json={"raw_text": _VALID_RAW_TEXT})
 
@@ -334,13 +347,10 @@ def test_activate_profile_version_success() -> None:
 
 
 def test_activate_profile_version_needs_no_credential() -> None:
-    # Making a reviewed JSON import the active profile reads no credential either, so the whole
-    # paste-review-activate path works for an account with no model key (see the import test above).
+    # Making a reviewed JSON import the active profile reads no credential either (see the import
+    # test above, and the cancel and current-profile tests below, for the rest of the path).
     updated_row = {"id": _VERSION_ID, "activated_at": "2026-08-06T00:00:00Z"}
-    supabase = _FakeSupabaseClient(
-        _FakeProfileVersionsTable(select_rows=[], update_row=updated_row),
-        provider_credentials=_FakeTable(select_rows=[]),
-    )
+    supabase = _keyless(_FakeProfileVersionsTable(select_rows=[], update_row=updated_row))
     with _client(supabase) as client:
         response = client.post(f"/profile/versions/{_VERSION_ID}/activate")
 
@@ -361,6 +371,17 @@ def test_cancel_profile_version_success() -> None:
     table = _FakeProfileVersionsTable(select_rows=[row])
     supabase = _FakeSupabaseClient(table)
     with _client(supabase) as client:
+        response = client.delete(f"/profile/versions/{_VERSION_ID}")
+
+    assert response.status_code == 204
+    assert table.delete_calls == 1
+
+
+def test_cancel_profile_version_needs_no_credential() -> None:
+    # Discarding a pasted draft is part of the same keyless path as import and activate.
+    row = {"id": _VERSION_ID, "user_id": _USER_ID, "activated_at": None}
+    table = _FakeProfileVersionsTable(select_rows=[row])
+    with _client(_keyless(table)) as client:
         response = client.delete(f"/profile/versions/{_VERSION_ID}")
 
     assert response.status_code == 204
@@ -392,6 +413,18 @@ def test_get_current_profile_found() -> None:
 
     assert response.status_code == 200
     assert response.json() == {**row, "version_count": 3}
+
+
+def test_get_current_profile_needs_no_credential() -> None:
+    # The page re-reads the active profile right after an activation, so this read is on the
+    # keyless path too.
+    row = {"id": _VERSION_ID, "activated_at": "2026-08-06T00:00:00Z"}
+    supabase = _keyless(_FakeProfileVersionsTable(select_rows=[row], select_count=1))
+    with _client(supabase) as client:
+        response = client.get("/profile/current")
+
+    assert response.status_code == 200
+    assert response.json() == {**row, "version_count": 1}
 
 
 def test_get_current_profile_none_yet() -> None:

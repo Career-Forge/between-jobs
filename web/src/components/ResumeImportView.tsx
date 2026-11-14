@@ -76,9 +76,10 @@ export const LEFT_EMPTY_INTRO =
 export const LEAVE_NOTE =
   "If you leave this page without choosing, the draft stays saved but is not used. This page does not list saved drafts, so to review it again, upload the file again.";
 // Shown with the file button off while the page knows no model key is usable. The last sentence is a
-// fact about the API, not a hope: the JSON import below is read by code and its routes ask for no
-// credential (tests/test_profile_routes.py pins that), so a person with no key can still set up a
-// profile there. It carries no link of its own: this state keeps exactly one, to where the key is added.
+// fact about the API, not a hope: the JSON import below is read by code and the routes it calls (import,
+// activate, cancel, and the re-read of the active profile) ask for no credential, which
+// tests/test_profile_routes.py pins, so a person with no key can still set up a profile there. It
+// carries no link of its own: this state keeps exactly one, to where the key is added.
 export const NEEDS_MODEL_MESSAGE =
   "Importing from a resume file uses your own AI model, so it needs a usable model key first. Pasting your profile as JSON, below, needs no key.";
 // Shown, with the file button off, while the JSON import below is being sent: the two imports do not
