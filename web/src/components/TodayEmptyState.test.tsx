@@ -34,6 +34,13 @@ describe("the Today empty state", () => {
     expect(html).toContain('href="/discover"');
   });
 
+  it("names no saved search: nothing on the page can say one will find a job", () => {
+    const text = visibleText(html);
+    expect(text).not.toMatch(/saved search/i);
+    expect(text).not.toContain("High fit job");
+    expect([...html.matchAll(/<li>/g)]).toHaveLength(5);
+  });
+
   it("still says what Today will show, and what it does not yet", () => {
     const text = visibleText(html);
     expect(text).toContain("Today shows what actually happened");

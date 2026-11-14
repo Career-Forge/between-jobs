@@ -265,7 +265,7 @@ const ROWS: Row[] = [
     name: "T5a an empty feed and no saved search",
     id: "T5a",
     facts: facts([], { savedSearches: { state: "ready", total: 0, active: 0 } }),
-    sentence: "Save a search in Discover so Strong matches can land here.",
+    sentence: "Find a job on Discover and track it.",
     action: { kind: "link", label: "Go to Discover", to: "/discover" },
     why: ["0 items", "0 saved searches"],
   },

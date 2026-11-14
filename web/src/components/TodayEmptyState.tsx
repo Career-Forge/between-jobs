@@ -19,10 +19,10 @@ export function TodayEmptyState() {
         <Link to="/discover">Discover</Link>, and track it.
       </p>
       <p>After that, Today shows what actually happened, whether it came from Telegram, Discord or the web:</p>
+      {/* No "High fit job" line: that kind is found by a saved search, and nothing this page can read
+          says a search will find one. The line comes back together with a band step that asks for a
+          saved search. */}
       <ul className="bj-today-kinds">
-        <li>
-          {KIND_LABELS.high_fit_job} -- needs a saved search in Discover
-        </li>
         <li>
           {KIND_LABELS.status_proposal} -- needs Gmail connected
         </li>

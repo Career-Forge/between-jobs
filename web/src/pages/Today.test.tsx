@@ -153,6 +153,37 @@ describe("what the page asks for", () => {
   });
 });
 
+// The first day: an active profile, a usable model key, nothing in the feed and no saved search.
+// Nothing this page can read says a saved search will find anything, so nothing on that screen may
+// say a match will arrive. The band, the empty state and the trail are written in three files; this
+// reads what the person sees, so a promise reintroduced in any one of them is caught here. Remove it
+// when the page reads whether saved-search matching is current and the copy is written against that
+// read.
+describe("the first day makes no promise of matches", () => {
+  const FUTURE_MATCH_PROMISE = /\b(can|will) (land|appear|show up|arrive)\b|nothing is being matched/i;
+
+  async function firstDay(width: number) {
+    answer({ "/saved-searches": [] });
+    const drawn = await draw(width);
+    // The trail is a margin when wide, and one line that opens when narrow: open it to read it.
+    if (width < 1280) click(query(drawn.container, "button.bj-bg-toggle"));
+    return drawn;
+  }
+
+  for (const width of [1400, 1000]) {
+    it(`says it nowhere in the band, the empty state or the trail at ${width}px`, async () => {
+      const { container } = await firstDay(width);
+      const trail = width >= 1280 ? query(container, "aside.bj-today-margin") : query(container, ".bj-bg-body");
+      // Each part has to be on the screen, or a scan of nothing would pass.
+      const parts = [query(band(container), ".bj-band-sentence"), query(container, ".bj-state--empty"), trail].map(words);
+      expect(parts[0]).toBe("Find a job on Discover and track it.");
+      expect(parts[1]).toContain("Nothing here yet");
+      expect(parts[2]).toContain("No saved searches.");
+      expect(parts.join(" ")).not.toMatch(FUTURE_MATCH_PROMISE);
+    });
+  }
+});
+
 describe("the band as the answers arrive", () => {
   it("shows only Loading... until the feed, the profile and the lists have all answered", async () => {
     let release: (value: unknown) => void = () => {};
@@ -178,10 +209,11 @@ describe("the band as the answers arrive", () => {
     expect(container.querySelector(".bj-primary, .bj-button-link-primary")).toBeNull();
   });
 
-  it("asks for a saved search when there is none and nothing in the feed", async () => {
+  it("sends a person with no saved search and nothing in the feed to find and track a job on Discover", async () => {
     answer({ "/saved-searches": [] });
     const { container } = await draw();
-    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Save a search in Discover so Strong matches can land here.");
+    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Find a job on Discover and track it.");
+    expect(words(query(band(container), ".bj-band-why"))).toBe("why: 0 items · 0 saved searches");
     expect(query(band(container), "a.bj-button-link-primary").getAttribute("href")).toBe("/discover");
   });
 

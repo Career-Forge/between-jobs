@@ -30,10 +30,7 @@ function Lines({ view, now, onRetry, timeZone }: Omit<BackgroundTrailProps, "pla
       {searches.state === "loading" && <LoadingState rows={1} rowHeight={44} label="Loading saved searches..." />}
       {searches.state === "failed" && <FailureState message="Your saved searches couldn't be read." onRetry={onRetry} />}
       {searches.state === "ready" && searches.total === 0 && (
-        <p className="bj-bg-line">
-          No saved searches, so nothing is being matched. A saved search is scored by your model on your key.{" "}
-          <Link to="/discover">Save one in Discover</Link>
-        </p>
+        <p className="bj-bg-line">No saved searches. A saved search is scored by your model on your key.</p>
       )}
       {searches.state === "ready" && searches.total > 0 && <SearchesLine view={searches} now={now} timeZone={timeZone} />}
 

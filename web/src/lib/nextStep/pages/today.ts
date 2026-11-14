@@ -6,7 +6,7 @@
 //   T2   a resume the fit check held back (the application is known, and no resume exists now)
 //   T3   a resume ready for review (the application is known)
 //   T4   a high fit job found by a saved search
-//   T5a  nothing in the feed and no saved search: save one
+//   T5a  nothing in the feed and no saved search: find a job on Discover and track it
 //   T5   nothing needs a decision (unlit)
 //
 // Today is the one page whose band holds the lit item itself, so the rows are over what the page has
@@ -327,6 +327,11 @@ const T2 = litRow("T2", heldBackStep);
 const T3 = litRow("T3", readyStep);
 const T4 = litRow("T4", matchStep);
 
+// The saved-search condition stays: having no saved search is the nearest thing this page can read
+// to the checklist's first-search step still being open, so it stands in for that step and decides
+// whether the band points at Discover or stays quiet. The sentence itself promises no match. A match
+// comes only from the registry listings the matcher reads, and the page cannot read whether those
+// are refreshed, so nothing here says a saved search will turn one up.
 const T5A: NextStepRow<TodayFacts> = {
   id: "T5a",
   match: (input) => {
@@ -335,7 +340,7 @@ const T5A: NextStepRow<TodayFacts> = {
     if (decision.kind === "wait") return "wait";
     if (decision.kind !== "empty-no-searches") return null;
     return {
-      sentence: "Save a search in Discover so Strong matches can land here.",
+      sentence: "Find a job on Discover and track it.",
       action: { kind: "link", label: "Go to Discover", to: "/discover" },
       why: ["0 items", "0 saved searches"],
     };

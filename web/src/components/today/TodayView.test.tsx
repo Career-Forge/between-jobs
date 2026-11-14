@@ -448,7 +448,6 @@ describe("empty", () => {
     expect(words(query(empty, "h2"))).toBe("Nothing here yet");
     const kinds = [...empty.querySelectorAll("li")].map(words);
     expect(kinds).toEqual([
-      "High fit job -- needs a saved search in Discover",
       "Status proposal -- needs Gmail connected",
       "Resume ready",
       "Resume not generated",
@@ -457,7 +456,7 @@ describe("empty", () => {
     ]);
     expect(container.querySelector("li.bj-today-row")).toBeNull();
     // And the band says the next step: T5a, a Discover link as the only cyan.
-    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Save a search in Discover so Strong matches can land here.");
+    expect(words(query(band(container), ".bj-band-sentence"))).toBe("Find a job on Discover and track it.");
     expect(container.querySelectorAll(CYAN_FILLS)).toHaveLength(1);
   });
 
@@ -627,11 +626,13 @@ describe("the margin and the inline trail", () => {
     expect(query(container, '.bj-today-margin a[href="' + SETTINGS_PATH + '"]')).toBeTruthy();
   });
 
-  it("says nothing runs yet, with a link to Discover, when there is no saved search", () => {
+  it("says there are no saved searches and what one costs, with no link and no claim about matching, when there is none", () => {
     const { container } = draw({ items: [], searches: ok([]), wide: true });
     const text = words(query(container, ".bj-today-margin"));
-    expect(text).toContain("No saved searches, so nothing is being matched.");
-    expect(query(container, '.bj-today-margin a[href="/discover"]')).toBeTruthy();
+    expect(text).toContain("No saved searches. A saved search is scored by your model on your key.");
+    expect(text).not.toContain("nothing is being matched");
+    expect(text).not.toContain("Save one in Discover");
+    expect(container.querySelector('.bj-today-margin a[href="/discover"]')).toBeNull();
   });
 
   it("opens a saved-search receipt with each search's own status", () => {
