@@ -216,3 +216,35 @@ def test_a_stored_preview_is_checked_again_when_the_result_is_read_back() -> Non
 
     with pytest.raises(ValidationError):
         PrepareApplicationResult.model_validate(stored)
+
+
+# -- exporting the contract's JSON Schema --------------------------------------------------------
+
+
+@pytest.mark.parametrize("mode", ["validation", "serialization"])
+def test_the_paper_contract_exports_a_json_schema_in_both_modes(mode: str) -> None:
+    schema: dict[str, Any] = ResumeContent.model_json_schema(mode=mode)  # type: ignore[arg-type]
+
+    assert set(schema["properties"]) == {
+        "schema",
+        "source",
+        "header",
+        "summary",
+        "section_order",
+        "not_shown",
+        "experience",
+        "internships",
+        "projects",
+        "education",
+        "skills",
+    }
+    assert {"schema", "source", "section_order", "skills"} <= set(schema["required"])
+
+
+@pytest.mark.parametrize("mode", ["validation", "serialization"])
+def test_the_result_exports_a_json_schema_that_names_the_paper_by_its_wire_key(mode: str) -> None:
+    schema = PrepareApplicationResult.model_json_schema(mode=mode)  # type: ignore[arg-type]
+
+    assert "resume_content" in schema["properties"]
+    assert "schema" in schema["$defs"]["ResumeContent"]["properties"]
+    assert "schema_" not in schema["$defs"]["ResumeContent"]["properties"]
