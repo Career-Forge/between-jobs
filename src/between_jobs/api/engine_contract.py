@@ -241,11 +241,13 @@ RESUME_CONTENT_SECTION_KINDS: tuple[str, ...] = (
 in print order; a kind that is not on this list is skipped, not an error."""
 
 RESUME_CONTENT_CHIP_FIELDS: frozenset[str] = frozenset(
-    {"phone", "email", "linkedin", "github", "portfolio", "location", "nationality"}
+    {"phone", "email", "linkedin", "github", "portfolio", "scholar", "location", "nationality"}
 )
 """The personal fields a header chip may carry. A saved header layout can make a PDF print other
 personal fields (a work-authorisation line, for one); a paper never carries those, so a chip of
-any other field is left out here as well, however it got in."""
+any other field is left out here as well, however it got in. The built-in engine's header can
+print a Scholar link, so `scholar` is here; adding a field to this set is additive and does not
+change `schema`, so a reader that predates it just leaves that chip out."""
 
 RESUME_CONTENT_MAX_BYTES = 64 * 1024
 """Above this, serialised as compact UTF-8 JSON, a paper is not stored or shown. This is the one
@@ -327,6 +329,15 @@ _PlainText = Annotated[
     StringConstraints(max_length=RESUME_CONTENT_MAX_TEXT_LENGTH),
 ]
 """Plain text, never HTML or LaTeX: the web draws it as text nodes. Cleaned, then limited."""
+
+
+_Separator = Annotated[
+    str,
+    Strict(),
+    BeforeValidator(_plain_text),
+    StringConstraints(max_length=RESUME_CONTENT_MAX_SEPARATOR_LENGTH),
+]
+"""Plain text of at most `RESUME_CONTENT_MAX_SEPARATOR_LENGTH` characters."""
 
 
 _HREF_REFUSED_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp", "Zs"})
@@ -440,7 +451,10 @@ class ResumeContentHeader(BaseModel):
         BeforeValidator(_known_chips),
         Field(max_length=RESUME_CONTENT_MAX_CHIPS),
     ]
-    separator: Literal["pipe", "dot", "bullet"]
+    separator: _Separator
+    """What goes between the chips: `pipe`, `dot` or `bullet` today. An open string, so that a new
+    value from a newer engine does not blank the preview over a decoration: a reader draws a pipe
+    for a separator it does not know."""
 
 
 class ResumeContentBullet(BaseModel):
@@ -511,7 +525,12 @@ class ResumeContent(BaseModel):
     - Keys this model does not name are ignored (`extra="ignore"`), so it is a second allowlist
       behind the engine's own: a field an engine should never have sent does not survive here.
     - `source` names who emitted the paper. It is an open string: show or log it, never branch
-      on it, never check it against a list.
+      on it, never check it against a list. `header.separator` is open too: a value that is not
+      `pipe`, `dot` or `bullet` is drawn as a pipe.
+    - Every `id` and `pointer` is opaque text, kept exactly as sent: ids are not checked for
+      form or uniqueness, a pointer is not checked against the profile. A consumer keys its rows
+      on position, and looks a pointer up with an own-property or `Map` lookup, never by building
+      a path from it.
     - A section kind in `section_order` that this code does not know is skipped; no list has a
       minimum length.
     - Every string is plain text, cleaned of control characters, and limited in length; the

@@ -685,13 +685,15 @@ def test_a_chip_of_each_known_field_is_kept(field: str) -> None:
     assert _stored(raw)["header"]["chips"] == [{"field": field, "text": "x", "href": None}]
 
 
-def test_the_known_chip_fields_are_the_seven_the_contract_names() -> None:
+def test_the_known_chip_fields_are_these_eight() -> None:
+    # the seven the hosted engine prints, and `scholar`, which the built-in engine's header can
     assert {
         "phone",
         "email",
         "linkedin",
         "github",
         "portfolio",
+        "scholar",
         "location",
         "nationality",
     } == RESUME_CONTENT_CHIP_FIELDS
@@ -761,10 +763,33 @@ def test_the_three_separators_are_read(separator: str) -> None:
     assert _stored(raw)["header"]["separator"] == separator
 
 
-@pytest.mark.parametrize("separator", ["slash", "Pipe", "", None, 1, ["pipe"]])
-def test_a_separator_the_contract_does_not_name_means_no_paper(separator: object) -> None:
+@pytest.mark.parametrize("separator", ["slash", "Pipe", "", "|", "a b"])
+def test_a_separator_the_contract_does_not_name_is_kept_for_the_web_to_draw_as_a_pipe(
+    separator: str,
+) -> None:
+    # a decoration is not worth blanking the preview: a newer engine can add a value without
+    # every reader having to ship first
     raw = paper()
     raw["header"]["separator"] = separator
+    assert _stored(raw)["header"]["separator"] == separator
+
+
+@pytest.mark.parametrize("separator", [None, 1, True, ["pipe"], {"a": 1}, b"pipe"])
+def test_a_separator_that_is_not_text_means_no_paper(separator: object) -> None:
+    raw = paper()
+    raw["header"]["separator"] = separator
+    assert parse_resume_content(raw) is None
+
+
+def test_a_separator_is_cleaned_like_any_other_text_and_is_short() -> None:
+    raw = paper()
+    raw["header"]["separator"] = "p" + chr(0) + "i" + chr(0x202E) + "pe"
+    assert _stored(raw)["header"]["separator"] == "pipe"
+
+    assert RESUME_CONTENT_MAX_SEPARATOR_LENGTH == 32
+    raw["header"]["separator"] = "x" * 32
+    assert _stored(raw)["header"]["separator"] == "x" * 32
+    raw["header"]["separator"] = "x" * 33
     assert parse_resume_content(raw) is None
 
 
