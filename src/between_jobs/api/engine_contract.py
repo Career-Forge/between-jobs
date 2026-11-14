@@ -15,13 +15,32 @@ model in this codebase.
 (IDs + idempotency_key, never raw text) -- the same shape works for both an MCP tool call
 and this platform's own internal command, since neither should ever trust caller-supplied
 profile/job text over a resolved, authorized snapshot id.
+
+`ResumeContent` is the one type here that this repository owns outright instead of mirroring: the
+wire contract for the "paper", a print-resolved description of the resume an engine just laid out,
+which the web app draws as a preview. An engine sends it as `resume["paper"]` in its apply answer;
+`parse_resume_content` is how every consumer reads it.
 """
 
 from __future__ import annotations
 
-from typing import Literal
+import logging
+import unicodedata
+from typing import Annotated, Any, Literal, get_args
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    Strict,
+    StringConstraints,
+    ValidationError,
+    model_serializer,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class ArtifactRef(BaseModel):
@@ -195,6 +214,380 @@ class ForgeFitResult(BaseModel):
     keyword_gaps: list[str] = Field(default_factory=list)
     keyword_hits: list[str] = Field(default_factory=list)
     visa_flag: bool | None = None
+
+
+# -- ResumeContent: the contract for the paper --------------------------------------------------
+#
+# What an engine sends, and how this platform reads it. Everything below until
+# `PrepareApplicationResult` is that one contract.
+
+ResumeContentSchema = Literal[1]
+SUPPORTED_RESUME_CONTENT_SCHEMAS: frozenset[int] = frozenset(get_args(ResumeContentSchema))
+"""The `schema` values this code can read. `schema` counts breaking changes: adding an optional
+key a reader can ignore does not change it; adding a section kind, changing what a field means or
+removing a key does. A paper of any other schema is never read, not even partly (see
+`parse_resume_content`). Stored papers outlive engines, so when a schema 2 ships its reader is
+added next to this one; the schema 1 reader stays as long as a stored result can carry one."""
+
+RESUME_CONTENT_SECTION_KINDS: tuple[str, ...] = (
+    "summary",
+    "experience",
+    "internships",
+    "projects",
+    "skills",
+    "education",
+)
+"""The section kinds a schema 1 paper can draw. `section_order` names the ones that were drawn,
+in print order; a kind that is not on this list is skipped, not an error."""
+
+RESUME_CONTENT_CHIP_FIELDS: frozenset[str] = frozenset(
+    {"phone", "email", "linkedin", "github", "portfolio", "location", "nationality"}
+)
+"""The personal fields a header chip may carry. A saved header layout can make a PDF print other
+personal fields (a work-authorisation line, for one); a paper never carries those, so a chip of
+any other field is left out here as well, however it got in."""
+
+RESUME_CONTENT_MAX_BYTES = 64 * 1024
+"""Above this, serialised as compact UTF-8 JSON, a paper is not stored or shown."""
+RESUME_CONTENT_MAX_TEXT_LENGTH = 2_000
+RESUME_CONTENT_MAX_HREF_LENGTH = 2_048
+RESUME_CONTENT_MAX_ENTRIES = 40
+"""Per section."""
+RESUME_CONTENT_MAX_BULLETS = 30
+"""Per entry."""
+RESUME_CONTENT_MAX_SKILL_ROWS = 40
+RESUME_CONTENT_MAX_SKILL_ITEMS = 100
+"""Per row."""
+RESUME_CONTENT_MAX_CHIPS = 16
+RESUME_CONTENT_MAX_SECTIONS = 32
+RESUME_CONTENT_MAX_NOT_SHOWN = 32
+"""The limits above are defence in depth: an engine that follows the contract is nowhere near
+them. A paper that breaks one is rejected whole, never cut down to size, because a preview with
+bullets quietly missing would read as the resume."""
+
+
+def _text_table() -> dict[int, str | None]:
+    """What happens to each character of a text field: a tab, a line break or a paragraph break
+    becomes one space (the web collapses runs of spaces); every other C0 and C1 control
+    character, the bidirectional controls that can reorder displayed text, and lone surrogates
+    (which cannot be encoded as UTF-8, so one in a stored value would fail the write) are
+    removed. Built from code points so the source stays plain ASCII."""
+    table: dict[int, str | None] = {}
+    for code in (*range(0x00, 0x20), *range(0x7F, 0xA0)):
+        table[code] = None
+    for code in (0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A)):
+        table[code] = None
+    for code in range(0xD800, 0xE000):
+        table[code] = None
+    for code in (0x09, 0x0A, 0x0D, 0x2028, 0x2029):
+        table[code] = " "
+    return table
+
+
+_TEXT_TABLE = _text_table()
+
+
+def _plain_text(value: object) -> object:
+    """Cleans a string field before it is checked. Anything that is not a string, or is longer
+    than the limit, is handed on untouched for the checks to refuse; nothing here raises, and a
+    long string is never scanned."""
+    if isinstance(value, str) and len(value) <= RESUME_CONTENT_MAX_TEXT_LENGTH:
+        return value.translate(_TEXT_TABLE)
+    return value
+
+
+_PlainText = Annotated[
+    str,
+    Strict(),
+    BeforeValidator(_plain_text),
+    StringConstraints(max_length=RESUME_CONTENT_MAX_TEXT_LENGTH),
+]
+"""Plain text, never HTML or LaTeX: the web draws it as text nodes. Cleaned, then limited."""
+
+
+_HREF_REFUSED_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp", "Zs"})
+_HREF_SCHEMES = frozenset({"http", "https", "mailto", "tel"})
+
+
+def _safe_href(value: object) -> str | None:
+    """A chip's link target if it is safe to put in a link, otherwise None. Never raises.
+
+    Kept: an `http`, `https`, `mailto` or `tel` address, the scheme in any case (it comes back
+    lower case). Everything else is None, and the chip stays: `javascript:`, `data:`,
+    `vbscript:` and any other scheme, an address with no scheme or a scheme-relative one
+    (`//host`), an http(s) address with no host, anything that is not a string or is over the
+    limit. A control, format (bidirectional or zero-width), space or surrogate character anywhere
+    in it, and a backslash, make it None rather than being cleaned out: a browser ignores some
+    of those characters when it reads a link, so what was checked has to be exactly what is
+    stored."""
+    if not isinstance(value, str) or not value or len(value) > RESUME_CONTENT_MAX_HREF_LENGTH:
+        return None
+    if "\\" in value:
+        return None
+    if any(unicodedata.category(char) in _HREF_REFUSED_CATEGORIES for char in value):
+        return None
+    scheme, colon, rest = value.partition(":")
+    scheme = scheme.lower()
+    if not colon or scheme not in _HREF_SCHEMES or not rest:
+        return None
+    if scheme in ("http", "https"):
+        try:
+            if not urlsplit(value).hostname:
+                return None
+        except ValueError:
+            return None
+    return f"{scheme}:{rest}"
+
+
+def _known_chips(value: object) -> object:
+    """Leaves out any chip whose field is not one of `RESUME_CONTENT_CHIP_FIELDS`. A chip that
+    is not even an object, or has no text field name, is left in for the checks to refuse."""
+    if not isinstance(value, list) or len(value) > RESUME_CONTENT_MAX_CHIPS:
+        return value
+    kept: list[object] = []
+    for chip in value:
+        field = _plain_text(chip.get("field")) if isinstance(chip, dict) else None
+        if isinstance(field, str) and field not in RESUME_CONTENT_CHIP_FIELDS:
+            continue
+        kept.append(chip)
+    return kept
+
+
+def _known_sections(value: object) -> object:
+    """Leaves out a section kind this code does not know, and a kind named a second time (it is
+    drawn once, at its first position). An item that is not a string is left in for the checks
+    to refuse."""
+    if not isinstance(value, list) or len(value) > RESUME_CONTENT_MAX_SECTIONS:
+        return value
+    kept: list[object] = []
+    for item in value:
+        kind = _plain_text(item)
+        if isinstance(kind, str) and (kind not in RESUME_CONTENT_SECTION_KINDS or kind in kept):
+            continue
+        kept.append(kind)
+    return kept
+
+
+def _exact_integer(value: object) -> object:
+    """`schema` must be an integer: not a bool (which is an int to Python), not 1.0, not "1"."""
+    if type(value) is not int:
+        raise ValueError("schema must be an integer")
+    return value
+
+
+class ResumeContentChip(BaseModel):
+    """One chip of the header, as the PDF header prints it: `field` is the personal field it
+    shows (one of `RESUME_CONTENT_CHIP_FIELDS`), `text` what it says, `href` where it links."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    field: _PlainText
+    text: _PlainText
+    href: Annotated[str | None, BeforeValidator(_safe_href)] = None
+    """None, or an `http`, `https`, `mailto` or `tel` address; anything else an engine sends
+    reads as None here, and the web checks the scheme again before it makes a link."""
+
+
+class ResumeContentHeader(BaseModel):
+    """The header block of the PDF. Chips are the ones the PDF header printed, in print order,
+    limited to the known fields, so there can be fewer than the PDF has."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: _PlainText
+    chips: Annotated[
+        list[ResumeContentChip],
+        BeforeValidator(_known_chips),
+        Field(max_length=RESUME_CONTENT_MAX_CHIPS),
+    ]
+    separator: Literal["pipe", "dot", "bullet"]
+
+
+class ResumeContentBullet(BaseModel):
+    """One bullet as the PDF prints it, after truncation, caps and merging. `text` can be ""
+    (a bullet the PDF prints empty). `id` is `<section>.<entry index>.b<bullet index>`."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: _PlainText
+    text: _PlainText
+
+
+class ResumeContentEntry(BaseModel):
+    """One job, internship, project or education entry, as printed. `id` is positional
+    (`experience.0`): stable inside one stored result, never across versions. `title` can be ""
+    (a title written in a script the PDF drops). `dates` is the PDF's range with an en dash
+    ("Jan 2020 - Present" with U+2013); an open end stays, and it is None when neither end
+    prints. `detail` is the tech stack of a project, or the education detail line, on one line.
+    There is no place field: an entry's location is never carried."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: _PlainText
+    pointer: _PlainText | None = None
+    """A JSON pointer into the profile (`/experience/2`, the scheme of `api/profile.py`) when the
+    engine knows one, else None."""
+    title: _PlainText
+    organisation: _PlainText | None = None
+    dates: _PlainText | None = None
+    detail: _PlainText | None = None
+    bullets: Annotated[list[ResumeContentBullet], Field(max_length=RESUME_CONTENT_MAX_BULLETS)]
+
+
+class ResumeContentSkillRow(BaseModel):
+    """One printed skills line. `label` and each item can be ""; a row whose items all print as
+    nothing is kept ("Label:" alone, as the PDF prints it)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    label: _PlainText
+    items: Annotated[list[_PlainText], Field(max_length=RESUME_CONTENT_MAX_SKILL_ITEMS)]
+
+
+class ResumeContent(BaseModel):
+    """The paper: a strict, allowlisted, print-resolved description of the resume an engine just
+    laid out, as plain text in print order. It is what the web's HTML preview draws, so it holds
+    what the PDF prints (after the engine's own text folding, truncation, caps and merging), not
+    what the engine started from, and nothing the PDF does not print. It is not the profile and
+    not a way to edit the resume.
+
+    Wire shape (JSON; the key is `paper` inside the engine's `resume` object)::
+
+        {"schema": 1, "source": str,
+         "header": null | {"name": str, "chips": [{"field", "text", "href"}], "separator": str},
+         "summary": str | null,
+         "section_order": [str],     # drawn sections only, print order, each kind at most once
+         "not_shown": [str],         # printed sections the paper does not draw, by heading
+         "experience": [Entry], "internships": [Entry], "projects": [Entry],
+         "education": [Entry], "skills": [{"label": str, "items": [str]}]}
+        Entry = {"id", "pointer", "title", "organisation", "dates", "detail",
+                 "bullets": [{"id", "text"}]}
+
+    Reading it (`parse_resume_content` is the entry point; validating this model directly gives
+    the same cleaning, not the schema gate or the size cap):
+
+    - Only schema values in `SUPPORTED_RESUME_CONTENT_SCHEMAS` are read. Any other, or none, is
+      a paper that is absent, never one read partly.
+    - Keys this model does not name are ignored (`extra="ignore"`), so it is a second allowlist
+      behind the engine's own: a field an engine should never have sent does not survive here.
+    - `source` names who emitted the paper. It is an open string: show or log it, never branch
+      on it, never check it against a list.
+    - A section kind in `section_order` that this code does not know is skipped; no list has a
+      minimum length.
+    - Every string is plain text, cleaned of control characters, and limited in length; the
+      lists and the whole object are limited too (the `RESUME_CONTENT_MAX_*` constants).
+    - A paper is bound to the resume it was drawn for by whoever stores it, not by the engine:
+      see `PrepareApplicationResult.resume_content`.
+
+    The Python attribute for the wire key `schema` is `schema_`, because `schema` is a
+    `BaseModel` method; dumping and validating both use the wire name.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    schema_: Annotated[ResumeContentSchema, BeforeValidator(_exact_integer)] = Field(alias="schema")
+    source: _PlainText
+    header: ResumeContentHeader | None = None
+    summary: _PlainText | None = None
+    section_order: Annotated[
+        list[_PlainText],
+        BeforeValidator(_known_sections),
+        Field(max_length=RESUME_CONTENT_MAX_SECTIONS),
+    ]
+    not_shown: Annotated[list[_PlainText], Field(max_length=RESUME_CONTENT_MAX_NOT_SHOWN)]
+    experience: Annotated[list[ResumeContentEntry], Field(max_length=RESUME_CONTENT_MAX_ENTRIES)]
+    internships: Annotated[list[ResumeContentEntry], Field(max_length=RESUME_CONTENT_MAX_ENTRIES)]
+    projects: Annotated[list[ResumeContentEntry], Field(max_length=RESUME_CONTENT_MAX_ENTRIES)]
+    education: Annotated[list[ResumeContentEntry], Field(max_length=RESUME_CONTENT_MAX_ENTRIES)]
+    skills: Annotated[list[ResumeContentSkillRow], Field(max_length=RESUME_CONTENT_MAX_SKILL_ROWS)]
+
+    @model_serializer(mode="wrap")
+    def _dump_with_the_wire_name(self, handler: Any) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if "schema_" in data:
+            data = {"schema": data.pop("schema_"), **data}
+        return data
+
+
+_SHAPE_COUNT_KEYS = (
+    "section_order",
+    "not_shown",
+    "experience",
+    "internships",
+    "projects",
+    "education",
+    "skills",
+)
+
+
+def _log_dropped(reason: str, **fields: object) -> None:
+    """One line saying a paper was dropped, and why, in numbers and fixed words only: the
+    schema number, list sizes, a byte count, the names of the checks that failed. Never a value
+    from the paper, and never an exception's message, which can quote the input."""
+    logger.warning("resume content dropped", extra={"ctx": {"reason": reason, **fields}})
+
+
+def _loggable_schema(schema: object) -> int | None:
+    """The `schema` number when it is a small integer, else None: an unreadable or huge value is
+    not worth printing, and printing an arbitrary one is not safe."""
+    if type(schema) is int and -10_000 <= schema <= 10_000:
+        return schema
+    return None
+
+
+def parse_resume_content(raw: object) -> ResumeContent | None:
+    """Reads an engine's paper (the `paper` value of its `resume` object), tolerantly: the paper,
+    or None. NEVER raises, whatever it is given.
+
+    None is returned, and nothing partial, when `raw` is None (an engine that sends no paper;
+    nothing is logged), is not an object, has a `schema` this code does not know (a newer one, an
+    old one no longer supported, a missing one, one that is not an integer), does not fit the
+    shape of `ResumeContent`, or is over `RESUME_CONTENT_MAX_BYTES` once cleaned. Every one of
+    those but the first logs one warning with the reason, the schema number and list sizes; no
+    value from `raw` is ever logged. The caller shows no preview for None; a generation never
+    fails because of it.
+
+    What comes back is cleaned (see `ResumeContent`): keys it does not name are gone, strings
+    have lost control characters, and every link is an `http`, `https`, `mailto` or `tel`
+    address or None."""
+    if raw is None:
+        return None
+    try:
+        return _read_resume_content(raw)
+    except Exception as exc:  # the contract: a paper can never fail the call that carries it
+        _log_dropped("unexpected_error", error_type=type(exc).__name__)
+        return None
+
+
+def _read_resume_content(raw: object) -> ResumeContent | None:
+    if not isinstance(raw, dict):
+        _log_dropped("not_an_object")
+        return None
+    schema = raw.get("schema")
+    if type(schema) is not int or schema not in SUPPORTED_RESUME_CONTENT_SCHEMAS:
+        _log_dropped("unsupported_schema", schema=_loggable_schema(schema))
+        return None
+    try:
+        content = ResumeContent.model_validate(raw)
+    except ValidationError as exc:
+        failed = exc.errors(include_url=False, include_context=False, include_input=False)
+        _log_dropped(
+            "invalid",
+            schema=schema,
+            errors=exc.error_count(),
+            error_types=sorted({str(error["type"]) for error in failed}),
+            **{key: _list_size(raw.get(key)) for key in _SHAPE_COUNT_KEYS},
+        )
+        return None
+    size = len(content.model_dump_json().encode("utf-8"))
+    if size > RESUME_CONTENT_MAX_BYTES:
+        _log_dropped("oversize", schema=schema, bytes=size)
+        return None
+    return content
+
+
+def _list_size(value: object) -> int | None:
+    return len(value) if isinstance(value, list) else None
 
 
 class PrepareApplicationResult(BaseModel):
