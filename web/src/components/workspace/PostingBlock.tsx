@@ -6,8 +6,10 @@ import "../../styles/workspace.css";
 // shown whole in a well that scrolls inside itself, with the length it has, so a person can see what
 // the model was given. A short text is said to be short rather than made to look complete.
 
-// The posting's text as the page reads it: trimmed, and "" when it has none. The resume part asks the same
-// question to decide whether there is anything for the coverage check to read, so the rule lives here once.
+// The posting's text as the page reads it: trimmed, and "" when it has none. This block and the resume part
+// both ask whether there is text, so the page's rule lives here once. It is the page's own trim, not the
+// built-in engine's check, which also drops invisible characters (zero-width spaces, soft hyphens) before
+// it decides a text is empty: text made only of those passes here and is refused there.
 export function postingBody(text: string | undefined | null): string {
   return typeof text === "string" ? text.trim() : "";
 }

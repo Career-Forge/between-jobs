@@ -27,7 +27,9 @@ import "../../styles/workspace.css";
 // is not known either way, so Tailor is not mounted and Generate's button is not drawn: a button that
 // makes a model call is never offered ahead of the answer that could forbid it. A posting with no text is
 // not offered the check either: the built-in engine refuses blank text before it calls any model, so a
-// button would promise a read and a call that cannot happen, and its Retry could never succeed.
+// button would promise a read and a call that cannot happen, and its Retry could never succeed. "No text"
+// here is the page's trim (postingBody); the engine also drops invisible characters first, so a posting of
+// nothing but those still gets the button, and its refusal shows as any other failed check, with Retry.
 
 export type Missing = { message: string; missing: readonly [StateLink, ...StateLink[]] };
 
