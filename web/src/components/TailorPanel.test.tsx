@@ -65,7 +65,7 @@ describe("Tailor", () => {
     on("GET /resume-documents/mine?application_id=a1", () => new Promise(() => undefined));
     const { container } = panel();
     await press(container);
-    expect(query(container, "[role='status'][aria-busy='true']").textContent).toContain("Loading tailor panel...");
+    expect(query(container, "[role='status'][aria-busy='true']").textContent).toContain("Checking coverage...");
     const button = buttonNamed(container, "Checking...");
     expect(button.getAttribute("aria-disabled")).toBe("true");
     expect(text(container)).toContain(SENTENCE);
@@ -135,7 +135,8 @@ describe("Tailor", () => {
     const { container } = panel();
     await press(container);
     expect(text(query(container, "[role='alert']"))).toContain("The server hit a problem.");
-    expect(callsTo("POST /resume-documents/doc-1/coverage")).toHaveLength(0);
+    // Everything that was sent: the one read that failed, and nothing after it.
+    expect(asked()).toEqual(["GET /resume-documents/mine?application_id=a1"]);
     describeReads();
     click(buttonNamed(container, "Retry"));
     await settle();
@@ -183,7 +184,7 @@ describe("Tailor", () => {
 describe.each([
   ["plain", false],
   ["StrictMode", true],
-])("Tailor before it is pressed (%s)", (_mode, strict) => {
+])("Tailor on open and on remount (%s)", (_mode, strict) => {
   it("asks for nothing when it opens: one sentence about what a press does and costs, and the button", async () => {
     describeReads();
     const { container } = panel({ strict });

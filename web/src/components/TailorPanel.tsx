@@ -157,7 +157,7 @@ export function TailorPanel({ applicationId }: { applicationId: string }) {
       <div className="bj-ws-tailor">
         <p className="bj-ws-intro">{IDLE_SENTENCE}</p>
         <RunButton label="Check coverage" busyLabel="Checking..." busy={state.kind === "loading"} buttonRef={checkButton} onRun={() => void check()} />
-        {state.kind === "loading" && <LoadingState rows={3} rowHeight={44} label="Loading tailor panel..." />}
+        {state.kind === "loading" && <LoadingState rows={3} rowHeight={44} label="Checking coverage..." />}
         {state.kind === "error" && <FailureState message={state.message} onRetry={() => void check()} restoreFocusTo={focusCheckButton} />}
       </div>
     );
