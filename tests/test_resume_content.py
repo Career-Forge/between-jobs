@@ -1222,12 +1222,62 @@ def test_the_section_order_is_limited_by_how_many_names_were_sent() -> None:
     assert parse_resume_content({**_minimal(), "section_order": [*at_limit, "x"]}) is None
 
 
+def _over(limit: int, item: object) -> list[object]:
+    return [item] * (limit + 1)
+
+
+def _entries_over_the_limit(raw: dict[str, Any], key: str) -> None:
+    raw[key] = _over(100, {})
+
+
+def _chips_over_the_limit(raw: dict[str, Any]) -> None:
+    raw["header"] = {"name": "N", "chips": _over(16, {}), "separator": "pipe"}
+
+
+_ONE_OVER: dict[str, Any] = {
+    "experience": lambda raw: _entries_over_the_limit(raw, "experience"),
+    "internships": lambda raw: _entries_over_the_limit(raw, "internships"),
+    "projects": lambda raw: _entries_over_the_limit(raw, "projects"),
+    "education": lambda raw: _entries_over_the_limit(raw, "education"),
+    "skills rows": lambda raw: raw.update(skills=_over(100, {})),
+    "not_shown": lambda raw: raw.update(not_shown=_over(32, 5)),
+    "section_order": lambda raw: raw.update(section_order=_over(32, {})),
+    "header chips": _chips_over_the_limit,
+    "bullets": lambda raw: raw.update(
+        experience=[{**_entry("experience", 0, "T"), "bullets": _over(100, {})}]
+    ),
+    "skill items": lambda raw: raw.update(skills=[{"label": "L", "items": _over(1_000, 5)}]),
+}
+
+
+@pytest.mark.parametrize("which", list(_ONE_OVER))
+def test_a_list_over_its_limit_is_refused_before_any_item_in_it_is_read(
+    which: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    # every item here is a bad one: read item by item, each would add errors of its own, and a
+    # hostile engine could make the reader build as many errors as it liked. The check that
+    # counts is that the whole list is one error.
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+    raw = _minimal()
+    _ONE_OVER[which](raw)
+
+    assert parse_resume_content(raw) is None
+
+    (record,) = caplog.records
+    assert record.ctx["reason"] == "invalid" and record.ctx["errors"] == 1  # type: ignore[attr-defined]
+
+
 @pytest.mark.parametrize(
     "key", ["experience", "skills", "not_shown", "section_order", "internships"]
 )
 def test_a_huge_list_is_refused_without_reading_it(key: str) -> None:
     assert parse_resume_content({**_minimal(), key: [5] * 2_000_000}) is None
     assert parse_resume_content({**_minimal(), key: [[]] * 2_000_000}) is None
+
+
+def test_a_huge_header_chip_list_is_refused_without_reading_it() -> None:
+    header = {"name": "N", "chips": [{}] * 2_000_000, "separator": "pipe"}
+    assert parse_resume_content({**_minimal(), "header": header}) is None
 
 
 def _sized(total: int) -> dict[str, Any]:
