@@ -514,8 +514,9 @@ def test_the_schema_is_logged_as_a_number_only_when_it_is_a_small_integer(
 # -- unknown keys, hidden fields, unknown kinds ------------------------------------------------
 
 # Everything the contract says may never reach a browser: a per-entry place, nationality, phone,
-# work authorisation, a visa flag, GPA outside the printed detail line, and the engine's internals
-# (the line budget, keyword, the selection pass, internal ids, the raw content).
+# work authorisation, a visa flag, GPA outside the printed detail line, and whatever bookkeeping an
+# engine keeps for itself (the stand-in names here are invented: any key the contract does not name
+# is dropped, whatever it is called).
 _HIDDEN_FIELDS = [
     "location",
     "city",
@@ -537,15 +538,15 @@ _HIDDEN_FIELDS = [
     "gpa_value",
     "show_location",
     "show_gpa",
-    "_budget",
-    "keyword",
-    "keywords",
-    "pass1",
+    "_scratch",
+    "debug",
+    "internal_note",
+    "extra_flag",
+    "unlisted_field",
+    "rawText",
     "content",
     "personal",
     "latex",
-    "resumePlainText",
-    "sectionOrder",
     "internal_id",
     "career_fact_id",
     "claims",

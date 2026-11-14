@@ -919,7 +919,7 @@ async def test_a_hostile_paper_comes_out_cleaned() -> None:
     hostile["header"]["chips"][0]["href"] = "javascript:alert(1)"
     hostile["header"]["chips"].append({"field": "work_authorization", "text": "x", "href": None})
     hostile["experience"][0]["location"] = "Springfield"
-    hostile["_budget"] = {"lines": 5}
+    hostile["internal_note"] = {"lines": 5}
 
     result = await _apply_through(_FakeHttpClient(body=_body_with_paper(hostile)))
 
@@ -933,7 +933,7 @@ async def test_a_hostile_paper_comes_out_cleaned() -> None:
         "phone",
         "location",
     ]
-    assert "location" not in stored["experience"][0] and "_budget" not in stored
+    assert "location" not in stored["experience"][0] and "internal_note" not in stored
 
 
 async def test_the_raw_paper_does_not_outlive_the_reader() -> None:
