@@ -1037,6 +1037,29 @@ def test_a_plain_object_given_as_the_paper_field_is_not_trusted() -> None:
     assert result.paper is None
 
 
+def test_a_plain_object_given_as_the_paper_field_of_a_declined_run_is_not_trusted_either() -> None:
+    # no resume, so no `resume["paper"]` to read: whatever was passed for `paper` is not a paper
+    result = ForgeApplyResult(
+        resume=None,
+        regenerated=False,
+        paper=sample_paper(),  # type: ignore[arg-type]
+    )
+
+    assert result.paper is None
+
+
+def test_the_paper_is_left_out_of_a_dump_and_survives_a_copy() -> None:
+    content = ResumeContent.model_validate(sample_paper())
+    result = ForgeApplyResult(resume={"latex": "x"}, regenerated=False, paper=content)
+
+    dumped = result.model_dump(mode="json")
+
+    # a dump put back through validation could not find its paper again, so it carries none
+    assert "paper" not in dumped
+    assert ForgeApplyResult.model_validate(dumped).paper is None
+    assert result.model_copy(deep=True).paper == content
+
+
 async def test_a_paper_that_is_dropped_logs_no_text(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.DEBUG)
     private = sample_paper()
