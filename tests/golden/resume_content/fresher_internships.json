@@ -1,0 +1,118 @@
+{
+ "schema": 1,
+ "source": "forge-engines",
+ "header": {
+  "name": "Jordan Rivera",
+  "chips": [
+   {
+    "field": "phone",
+    "text": "+1 555 010 1234",
+    "href": null
+   },
+   {
+    "field": "email",
+    "text": "jordan.rivera@example.com",
+    "href": "mailto:jordan.rivera@example.com"
+   },
+   {
+    "field": "linkedin",
+    "text": "linkedin.com/in/jordanrivera",
+    "href": "https://linkedin.com/in/jordanrivera"
+   },
+   {
+    "field": "github",
+    "text": "github.com/jordanrivera",
+    "href": "https://github.com/jordanrivera"
+   }
+  ],
+  "separator": "pipe"
+ },
+ "summary": null,
+ "section_order": [
+  "education",
+  "projects",
+  "internships",
+  "skills"
+ ],
+ "not_shown": [],
+ "experience": [],
+ "internships": [
+  {
+   "id": "internships.0",
+   "pointer": null,
+   "title": "Software Engineering Intern",
+   "organisation": "Initech",
+   "dates": "Jun 2024 \u2013 Aug 2024",
+   "detail": null,
+   "bullets": [
+    {
+     "id": "internships.0.b0",
+     "text": "Built an internal dashboard used by 40 engineers"
+    },
+    {
+     "id": "internships.0.b1",
+     "text": "Designed and delivered a multi-region event ingestion platform that absorbed billions of messages per day..."
+    },
+    {
+     "id": "internships.0.b2",
+     "text": "Wrote 120 unit tests and cut flaky builds by half"
+    }
+   ]
+  },
+  {
+   "id": "internships.1",
+   "pointer": null,
+   "title": "Data Analyst Intern & Tutor",
+   "organisation": "Globex Inc",
+   "dates": "Jan 2024 \u2013",
+   "detail": null,
+   "bullets": [
+    {
+     "id": "internships.1.b0",
+     "text": "Cleaned and joined four survey datasets in pandas"
+    }
+   ]
+  }
+ ],
+ "projects": [
+  {
+   "id": "projects.0",
+   "pointer": null,
+   "title": "campus-bus-tracker",
+   "organisation": null,
+   "dates": "2024",
+   "detail": "Python, FastAPI, Postgres",
+   "bullets": [
+    {
+     "id": "projects.0.b0",
+     "text": "Delivered measurable result number 1 for the course team"
+    },
+    {
+     "id": "projects.0.b1",
+     "text": "Delivered measurable result number 2 for the course team"
+    }
+   ]
+  }
+ ],
+ "education": [
+  {
+   "id": "education.0",
+   "pointer": null,
+   "title": "B.S. \u2013 Computer Science",
+   "organisation": "State University",
+   "dates": "May 2025",
+   "detail": "GPA: 3.6",
+   "bullets": []
+  }
+ ],
+ "skills": [
+  {
+   "label": "Languages",
+   "items": [
+    "Python",
+    "SQL",
+    "Java"
+   ]
+  }
+ ]
+}

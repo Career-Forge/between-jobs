@@ -1,0 +1,89 @@
+{
+ "schema": 1,
+ "source": "forge-engines",
+ "header": {
+  "name": "Jordan Rivera",
+  "chips": [
+   {
+    "field": "phone",
+    "text": "+1 555 010 1234",
+    "href": null
+   },
+   {
+    "field": "email",
+    "text": "jordan.rivera@example.com",
+    "href": "mailto:jordan.rivera@example.com"
+   },
+   {
+    "field": "linkedin",
+    "text": "linkedin.com/in/jordanrivera",
+    "href": "https://www.linkedin.com/in/jordanrivera/"
+   },
+   {
+    "field": "github",
+    "text": "github.com/jordanrivera",
+    "href": "https://github.com/jordanrivera"
+   }
+  ],
+  "separator": "pipe"
+ },
+ "summary": null,
+ "section_order": [
+  "experience",
+  "skills",
+  "education"
+ ],
+ "not_shown": [],
+ "experience": [
+  {
+   "id": "experience.0",
+   "pointer": null,
+   "title": "Lead {Platform} ~ Engineer",
+   "organisation": "R&D #1 -- Labs_Inc",
+   "dates": "Mar 2017 \u2013",
+   "detail": null,
+   "bullets": [
+    {
+     "id": "experience.0.b0",
+     "text": "Handled R&D budget #1: 100% of $5M in {tags} for snake_case ids, ~50% faster, x^2 growth, and C:\\temp paths"
+    },
+    {
+     "id": "experience.0.b1",
+     "text": ""
+    },
+    {
+     "id": "experience.0.b2",
+     "text": ""
+    },
+    {
+     "id": "experience.0.b3",
+     "text": "Kept the \\textbf{literal} macro text and 50% of it"
+    }
+   ]
+  }
+ ],
+ "internships": [],
+ "projects": [],
+ "education": [
+  {
+   "id": "education.0",
+   "pointer": null,
+   "title": "B.Tech \u2013 Electronics",
+   "organisation": "Institute of Technology",
+   "dates": "2015",
+   "detail": "GPA: 8.4/10",
+   "bullets": []
+  }
+ ],
+ "skills": [
+  {
+   "label": "C/C++ & Rust",
+   "items": [
+    "C++",
+    "C#",
+    "snake_case",
+    "100%"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,85 @@
+{
+ "schema": 1,
+ "source": "forge-engines",
+ "header": {
+  "name": "Jordan Rivera",
+  "chips": [
+   {
+    "field": "email",
+    "text": "jordan.rivera@example.com",
+    "href": "mailto:jordan.rivera@example.com"
+   },
+   {
+    "field": "linkedin",
+    "text": "LinkedIn",
+    "href": "https://www.linkedin.com/in/jordanrivera/"
+   },
+   {
+    "field": "github",
+    "text": "gh/jrivera",
+    "href": "https://github.com/jordanrivera"
+   },
+   {
+    "field": "location",
+    "text": "Springfield, IL",
+    "href": null
+   },
+   {
+    "field": "phone",
+    "text": "+1 555 010 1234",
+    "href": null
+   }
+  ],
+  "separator": "dot"
+ },
+ "summary": "Entry-level engineer with strong fundamentals. Entry-level engineer with strong fundamentals. Entry-level engineer with strong fundamentals. Entry-level engineer with strong fundamentals. Entry-level engineer with strong fundamentals.",
+ "section_order": [
+  "education",
+  "projects",
+  "skills",
+  "summary"
+ ],
+ "not_shown": [],
+ "experience": [],
+ "internships": [],
+ "projects": [
+  {
+   "id": "projects.0",
+   "pointer": null,
+   "title": "Sample Project",
+   "organisation": null,
+   "dates": null,
+   "detail": "Python",
+   "bullets": [
+    {
+     "id": "projects.0.b0",
+     "text": "Delivered measurable result number 1 for the course team"
+    },
+    {
+     "id": "projects.0.b1",
+     "text": "Delivered measurable result number 2 for the course team"
+    }
+   ]
+  }
+ ],
+ "education": [
+  {
+   "id": "education.0",
+   "pointer": null,
+   "title": "B.S. \u2013 Computer Science",
+   "organisation": "State University",
+   "dates": "May 2025",
+   "detail": "GPA: 3.5",
+   "bullets": []
+  }
+ ],
+ "skills": [
+  {
+   "label": "Languages",
+   "items": [
+    "Python",
+    "Go"
+   ]
+  }
+ ]
+}
