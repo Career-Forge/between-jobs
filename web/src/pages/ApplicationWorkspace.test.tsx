@@ -1001,6 +1001,7 @@ describe("asking for the setup again", () => {
     describeAccount({ credentials: FAILED() as unknown as typeof KEY, app: application({ resume_exists: true }), result: drafted([CLAIM]) });
     const { container } = page();
     await settle();
+    // A stand-in: it shows the panel was not rebuilt. What the real one asks for, and when, is pinned in TailorPanel.test.tsx.
     const tailor = query(container, "[data-standin='Tailor panel']");
     const before = { ...mounts };
     expect(Object.keys(before).length).toBeGreaterThanOrEqual(8);
@@ -1059,6 +1060,8 @@ describe("asking for the setup again", () => {
   });
 
   it("waits for the credentials before it mounts Tailor or draws Generate's button, and a failed read is an answer that claims nothing", async () => {
+    // Mounting Tailor asks for nothing by itself (its button does, once pressed); the page still holds it back until the
+    // answer is in, so no button that makes a model call is offered ahead of it. The stand-in records mounts only.
     describeAccount();
     let answer: (value: unknown) => void = () => undefined;
     on("GET /credentials", () => new Promise((resolve) => (answer = resolve)));

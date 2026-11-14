@@ -115,8 +115,10 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     # One or two LLM calls (the question wording, or the bullet draft). Shared by both gap
     # interview routes: they are one flow.
     "gap_interview": (60, HOUR),
-    # The Step 0 LLM analysis. Higher than its siblings because the Tailor panel asks for
-    # it every time it is opened, not only on a deliberate click.
+    # The Step 0 LLM analysis, made when the person presses "Check coverage" in the Tailor
+    # panel. Higher than its siblings because the result is not stored: every visit to an
+    # application that wants the check needs a press of its own, so one sitting that works
+    # through a list of postings makes many of them.
     "tailor_coverage": (120, HOUR),
     # No LLM: two light forge-engines calls and one read, but the Header Composer asks for
     # a preview on every layout edit, so the number is high.

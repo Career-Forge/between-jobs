@@ -437,11 +437,11 @@ failure of one panel never changes the band. Its states and wording are under "R
 
 - **Requests.** `GET /applications/{id}` and `GET /profile/current` are the page's own data (a 404 on the profile is
   tolerated: the Studio, Tailor and Generate then say the profile is missing, with a link). `GET /credentials` is read
-  once only to know whether a usable model key is saved (`modelKeyOf`), so Tailor, whose coverage match is a model call on
-  every mount, and Generate say so and fire nothing while it is known missing. The resume part's requests are the
-  generation hook's, `lib/useGeneration.ts`: the stored result read once on mount, a run, the two PDF downloads and the
-  export checks (on request only: they recompile the LaTeX). Changing the status is `POST /applications/{id}/stage`, then a
-  re-read.
+  once only to know whether a usable model key is saved (`modelKeyOf`), so Tailor, whose coverage check is a model call
+  made only when the person presses "Check coverage", and Generate say so and fire nothing while it is known missing.
+  The resume part's requests are the generation hook's, `lib/useGeneration.ts`: the stored result read once on mount, a
+  run, the two PDF downloads and the export checks (on request only: they recompile the LaTeX). Changing the status is
+  `POST /applications/{id}/stage`, then a re-read.
 - **The band** (`lib/nextStep/pages/workspace.ts`, one table test per row): no resume yet, generating, failed in this
   visit, held back by the fit check, flagged claims, no flagged claims, a PDF downloaded this visit, then a row per
   status from Applied on. The rows for a resume (A1c to A4) apply while the status is Saved. A why line names only
@@ -452,9 +452,9 @@ failure of one panel never changes the band. Its states and wording are under "R
   no Try again), failed (the band names the call and offers Try again; the body's callout carries a Retry of its own
   only when a higher band row, such as setup failing or no usable key, is showing instead) and ready. A profile read that
   fails is the setup check failing (the band's G1), naming the call. The band's Try again for setup re-reads only the
-  read that failed and leaves the ready page mounted, so a run, a download and Tailor's request are not lost or sent
-  twice; Tailor and the Generate button wait for the credentials read to answer (a failed read counts as an answer that
-  claims nothing).
+  read that failed and leaves the ready page mounted, so a run, a download and a coverage result already on the page are
+  not lost or sent twice; Tailor and the Generate button wait for the credentials read to answer (a failed read counts as
+  an answer that claims nothing).
 - **Trails** (`lib/workspaceTrails.ts`): the page's own ("You tracked this", how, when), the generation's (with the run,
   PDF hash, ATS attempts and gate in its receipt), the ATS score (engine), the claim check, the export checks (code, no
   model) and Tailor. A slot that was not returned is left out. A result read back from storage says it was restored,

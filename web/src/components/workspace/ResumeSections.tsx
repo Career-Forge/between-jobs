@@ -22,9 +22,10 @@ import "../../styles/workspace.css";
 //
 // A part that needs something the person has not set up says what is missing, with the link that fixes
 // it, and fires no request while it is known to be missing: Draft and Tailor need an active profile,
-// Tailor (a model call on mount) and Generate also need a usable model key. Until the credentials read
-// has answered, "known to be missing" is not known either way, so Tailor is not mounted and Generate's
-// button is not drawn: a model call must never go out ahead of the answer that could forbid it.
+// Tailor (whose coverage check is a model call, made only when the person presses its button) and
+// Generate also need a usable model key. Until the credentials read has answered, "known to be missing"
+// is not known either way, so Tailor is not mounted and Generate's button is not drawn: a button that
+// makes a model call is never offered ahead of the answer that could forbid it.
 
 export type Missing = { message: string; missing: readonly [StateLink, ...StateLink[]] };
 

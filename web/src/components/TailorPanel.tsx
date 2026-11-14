@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type { ResumeDocument } from "../lib/headerComposerTypes";
 import { failureOf, type SetupNotice } from "../lib/setupRequired";
@@ -7,6 +7,7 @@ import { tailorTrail } from "../lib/workspaceTrails";
 import { BlockTrail } from "./paper/DocumentLayout";
 import { FailureState, LoadingState } from "./paper/StateViews";
 import { TRAIL_GLYPHS, type TrailGlyphName } from "../lib/trail";
+import { RunButton } from "./research/RunParts";
 import { SetupRequiredNotice } from "./SetupRequiredNotice";
 import "../styles/workspace.css";
 
@@ -24,14 +25,23 @@ import "../styles/workspace.css";
 // plainly that the draft does not read them yet: generation is not given them today.
 //
 // The clusters themselves are a model's reading of the posting (the engine's first step); code then
-// checks them against the profile's facts. The trail under the panel says so. The coverage match is a
-// model call and runs on every mount, so the page does not mount this panel while it knows no model key
-// is saved (it shows the missing key instead, and fires nothing).
+// checks them against the profile's facts. The trail under the panel says so.
 //
-// States: loading is a placeholder in the panel's own shape; a missing profile or key (the server's
-// 409) shows its notice with the link that fixes it and no Retry; any other failure of the three reads
-// is a callout with Retry. A save that fails keeps the panel as it was and says the picks were not
-// saved, with a Retry that sends them again -- it does not run the coverage model call a second time.
+// WHAT RUNS WHEN. Opening the page runs nothing here. The coverage match is a model call on the person's
+// own key, so it is made only when they press "Check coverage": never on mount (and so not twice a visit
+// under StrictMode in development), and never again on its own. A press reads the resume document, then
+// the profile's facts, and asks for the coverage last, so a read that fails costs no model call. Nothing
+// is stored: the answer lives in this panel's state, so a person who leaves the application and comes
+// back sees the button again, and the sentence above it says so. The page does not mount this panel
+// while it knows no model key is saved (it shows the missing key instead, and fires nothing).
+//
+// States: idle is one sentence and the button; loading keeps both (the button busy) with a placeholder
+// in the panel's own shape; a missing profile or key (the server's 409) shows its notice with the link
+// that fixes it and no button and no Retry; any other failure of the three reads keeps the sentence and
+// the button and adds a callout with Retry, which makes the same press again (the button above does the
+// same). When the result arrives the button has gone, so focus moves to the result unless it was already
+// somewhere else. A save that fails keeps the panel as it was and says the picks were not saved, with a
+// Retry that sends them again -- it does not run the coverage model call a second time.
 
 interface CareerFact {
   id: string;
@@ -54,10 +64,12 @@ const SKILL_MARKS: Record<SkillState, { glyph: TrailGlyphName | null; char: stri
 };
 
 type State =
+  // Nothing has been asked yet: the sentence and the button.
+  | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "error"; message: string }
   // No active profile, or no model key for the coverage match: the notice links to the page that fixes
-  // it (no Retry).
+  // it (no button, no Retry).
   | { kind: "setup"; notice: SetupNotice }
   | {
       kind: "ready";
@@ -72,23 +84,35 @@ type State =
       saveError: string | null;
     };
 
-export function TailorPanel({ applicationId }: { applicationId: string }) {
-  const [state, setState] = useState<State>({ kind: "loading" });
+const IDLE_SENTENCE =
+  "Reads this posting's requirements with your model, then matches them to your profile by code. Pressing Check coverage makes a real model call on your own key. The match isn't saved, so each visit needs its own press.";
 
-  const load = useCallback(async () => {
+export function TailorPanel({ applicationId }: { applicationId: string }) {
+  const [state, setState] = useState<State>({ kind: "idle" });
+  // A press while one is out is ignored here, not by the button: the button is aria-disabled (so a focused one keeps focus),
+  // which does not stop a click. Reset in `finally`, so a press after a failure, from the button or from the callout's
+  // Retry, is a new one.
+  const working = useRef(false);
+  const checkButton = useRef<HTMLButtonElement>(null);
+  const resultRoot = useRef<HTMLDivElement>(null);
+  // Retry removes the callout it is pressed in; focus goes on to the button, which stays.
+  const focusCheckButton = useCallback(() => checkButton.current, []);
+
+  // The one press. The two reads that cost nothing come first and the model call last, so a failed read never spends it.
+  const check = useCallback(async () => {
+    if (working.current) return;
+    working.current = true;
     setState({ kind: "loading" });
     try {
-      const document = await apiFetch<ResumeDocument & { selected_evidence_fact_ids?: string[] }>(`/resume-documents/mine?application_id=${applicationId}`);
-      const [result, facts] = await Promise.all([
-        apiFetch<CoverageResponse>(`/resume-documents/${document.id}/coverage`, { method: "POST" }),
-        apiFetch<CareerFact[]>(`/profile/versions/${document.profile_version_id}/career-facts`),
-      ]);
-      const stored = document.selected_evidence_fact_ids ?? [];
+      const resumeDocument = await apiFetch<ResumeDocument & { selected_evidence_fact_ids?: string[] }>(`/resume-documents/mine?application_id=${applicationId}`);
+      const facts = await apiFetch<CareerFact[]>(`/profile/versions/${resumeDocument.profile_version_id}/career-facts`);
+      const result = await apiFetch<CoverageResponse>(`/resume-documents/${resumeDocument.id}/coverage`, { method: "POST" });
+      const stored = resumeDocument.selected_evidence_fact_ids ?? [];
       const initial = stored.length > 0 ? stored : result.coverage.flatMap((c) => c.matched_fact_ids);
       setState({
         kind: "ready",
-        documentId: document.id,
-        profileVersionId: typeof document.profile_version_id === "string" ? document.profile_version_id : null,
+        documentId: resumeDocument.id,
+        profileVersionId: typeof resumeDocument.profile_version_id === "string" ? resumeDocument.profile_version_id : null,
         coverage: result.coverage,
         skills: result.skills,
         facts,
@@ -99,21 +123,31 @@ export function TailorPanel({ applicationId }: { applicationId: string }) {
       });
     } catch (e) {
       setState(failureOf(e, "Failed to load"));
+    } finally {
+      working.current = false;
     }
   }, [applicationId]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // The pressed button goes when the result arrives, which would drop focus to the page body: the result takes it, unless
+  // the person has already moved on to something else.
+  useLayoutEffect(() => {
+    if (state.kind !== "ready") return;
+    const active = document.activeElement;
+    if (active === null || active === document.body) resultRoot.current?.focus();
+  }, [state.kind]);
 
-  if (state.kind === "loading") {
-    return <LoadingState rows={3} rowHeight={44} label="Loading tailor panel..." />;
-  }
   if (state.kind === "setup") {
     return <SetupRequiredNotice notice={state.notice} />;
   }
-  if (state.kind === "error") {
-    return <FailureState message={state.message} onRetry={() => void load()} />;
+  if (state.kind !== "ready") {
+    return (
+      <div className="bj-ws-tailor">
+        <p className="bj-ws-intro">{IDLE_SENTENCE}</p>
+        <RunButton label="Check coverage" busyLabel="Checking..." busy={state.kind === "loading"} buttonRef={checkButton} onRun={() => void check()} />
+        {state.kind === "loading" && <LoadingState rows={3} rowHeight={44} label="Loading tailor panel..." />}
+        {state.kind === "error" && <FailureState message={state.message} onRetry={() => void check()} restoreFocusTo={focusCheckButton} />}
+      </div>
+    );
   }
 
   const { documentId, coverage, skills, facts, selected, expanded, saving, saveError } = state;
@@ -155,7 +189,7 @@ export function TailorPanel({ applicationId }: { applicationId: string }) {
   const trail = tailorTrail({ clusters: coverage.length, skills: skills.length, profileVersionId: state.profileVersionId });
 
   return (
-    <div className="bj-ws-tailor">
+    <div className="bj-ws-tailor" ref={resultRoot} role="group" aria-label="Coverage result" tabIndex={-1}>
       <h4 className="bj-ws-label">Requirement clusters</h4>
       <ul className="bj-ws-clusters" aria-label="Requirement clusters">
         {coverage.map((cluster) => {

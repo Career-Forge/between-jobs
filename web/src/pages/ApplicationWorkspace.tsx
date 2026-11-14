@@ -61,7 +61,7 @@ import "../styles/workspace.css";
 //
 // Setup (profile and credentials) is asked again without disturbing the ready page: the band's Try
 // again re-reads only the read that failed, and the sections stay mounted while it is out, so a run, a
-// download, the checks and Tailor's request are not lost or sent again.
+// download, the checks and a coverage result already on the page are not lost or sent again.
 
 type Read<T> = { kind: "loading" } | { kind: "ready"; value: T } | { kind: "failed"; at: string; message: string } | { kind: "not_found" };
 
@@ -132,7 +132,7 @@ function Workspace({ id }: { id: string }) {
 
   // The band's Try again for a failed setup check. It asks again only for the read that failed and
   // keeps the old answer until the new one comes back: the ready page is never sent back to its
-  // loading frame, so nothing under it (a run in flight, a download, Tailor's coverage call) is
+  // loading frame, so nothing under it (a run in flight, a download, a coverage result) is
   // unmounted or asked for twice. A failed profile read has no ready page to protect (the page cannot
   // render without it), so it does show the loading frame.
   const [setupRetrying, setSetupRetrying] = useState(false);
