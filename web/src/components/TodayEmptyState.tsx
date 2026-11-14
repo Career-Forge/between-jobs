@@ -7,7 +7,8 @@ import { EmptyState } from "./paper/StateViews";
 // What Today says when there is nothing in it yet. For someone who has just signed up that is the
 // first thing they see, so it opens with the first step -- the profile, which every resume, score
 // and practice session is built from -- and then names what the page will show, by the real kinds
-// of item and what each one needs. No example rows and no sample numbers: nothing here is theirs.
+// of item that do not depend on a saved search (the one that does is left out, see below) and what
+// each one needs. No example rows and no sample numbers: nothing here is theirs.
 // The band holds the next step's button, so the links here are the ones inside the sentence.
 export function TodayEmptyState() {
   return (
@@ -20,8 +21,9 @@ export function TodayEmptyState() {
       </p>
       <p>After that, Today shows what actually happened, whether it came from Telegram, Discord or the web:</p>
       {/* No "High fit job" line: that kind is found by a saved search, and nothing this page can read
-          says a search will find one. The line comes back together with a band step that asks for a
-          saved search. */}
+          says a search will find one. The line comes back, together with a band step that asks for a
+          saved search, once the page can read when the listings the matcher reads were last refreshed
+          and the copy is written against that date. */}
       <ul className="bj-today-kinds">
         <li>
           {KIND_LABELS.status_proposal} -- needs Gmail connected

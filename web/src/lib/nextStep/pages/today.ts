@@ -327,11 +327,13 @@ const T2 = litRow("T2", heldBackStep);
 const T3 = litRow("T3", readyStep);
 const T4 = litRow("T4", matchStep);
 
-// The saved-search condition stays: having no saved search is the nearest thing this page can read
-// to the checklist's first-search step still being open, so it stands in for that step and decides
+// The saved-search condition stays. These rows read only TodayFacts, which carries the saved-search
+// count and nothing about this browser's remembered search or an application tracked from Discover,
+// and the first-run checklist counts both of those for its first-search step. So having no saved
+// search is a rough stand-in for that step still being open, and the two can disagree; it decides
 // whether the band points at Discover or stays quiet. The sentence itself promises no match. A match
-// comes only from the registry listings the matcher reads, and the page cannot read whether those
-// are refreshed, so nothing here says a saved search will turn one up.
+// comes only from the registry listings the matcher reads, and the page cannot read when those were
+// last refreshed, so nothing here says a saved search will turn one up.
 const T5A: NextStepRow<TodayFacts> = {
   id: "T5a",
   match: (input) => {
