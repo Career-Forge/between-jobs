@@ -417,6 +417,33 @@ async def test_an_event_can_hand_the_outbox_less_than_it_stores() -> None:
     assert "CANARY" not in str(outbox.insert_calls[0])
 
 
+async def test_an_empty_outbox_payload_is_what_the_outbox_gets_not_a_reason_to_send_all() -> None:
+    events = _FakeTable(select_rows=[], insert_row={"id": "event-1"})
+    outbox = _FakeTable(select_rows=[], insert_row={"id": "outbox-1"})
+    client = _FakeSupabaseClient(
+        _FakeTable(select_rows=[{"id": _APPLICATION_ID, "user_id": _USER_ID}]),
+        events,
+        event_outbox=outbox,
+    )
+
+    await record_event(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        application_id=_APPLICATION_ID,
+        event_type="application.note_added",
+        payload={"private_detail": "CANARY-stored-only"},
+        actor_type="user",
+        actor_id=_USER_ID,
+        idempotency_key="note-3",
+        outbox_event_type="application.note.v1",
+        outbox_payload={},
+    )
+
+    assert events.insert_calls[0]["payload"] == {"private_detail": "CANARY-stored-only"}
+    assert outbox.insert_calls[0]["payload"] == {}
+    assert "CANARY" not in str(outbox.insert_calls[0])
+
+
 async def test_an_outbox_payload_without_an_outbox_event_writes_no_outbox_row() -> None:
     events = _FakeTable(select_rows=[], insert_row={"id": "event-1"})
     outbox = _FakeTable(select_rows=[], insert_row={"id": "outbox-1"})
