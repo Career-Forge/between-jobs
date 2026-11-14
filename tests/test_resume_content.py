@@ -511,6 +511,29 @@ def test_the_schema_is_logged_as_a_number_only_when_it_is_a_small_integer(
     ]
 
 
+def test_the_schema_number_is_logged_up_to_ten_thousand_either_way(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+    for schema in (10_000, -10_000, 10_001, -10_001):
+        parse_resume_content({**paper(), "schema": schema})
+
+    assert [r.ctx["schema"] for r in caplog.records] == [10_000, -10_000, None, None]  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("schema", [True, False, 1.0, "1"])
+def test_a_schema_that_is_not_an_integer_is_dropped_as_an_unsupported_schema_not_as_a_misfit(
+    schema: object, caplog: pytest.LogCaptureFixture
+) -> None:
+    # `True` is an int to Python, and 1 is the schema this code reads: the reader refuses it as
+    # a schema before it ever tries the shape, and says so
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+    assert parse_resume_content({**paper(), "schema": schema}) is None
+
+    (record,) = caplog.records
+    assert record.ctx == {"reason": "unsupported_schema", "schema": None}  # type: ignore[attr-defined]
+
+
 # -- unknown keys, hidden fields, unknown kinds ------------------------------------------------
 
 # Everything the contract says may never reach a browser: a per-entry place, nationality, phone,
@@ -670,7 +693,10 @@ def test_a_section_kind_named_twice_is_listed_once_at_its_first_position() -> No
     assert _read(raw).section_order == ["experience", "summary", "skills"]
 
 
-@pytest.mark.parametrize("kind", [5, None, ["experience"], {"kind": "experience"}, True])
+@pytest.mark.parametrize(
+    "kind",
+    [5, None, ["experience"], {"kind": "experience"}, True, b"experience", bytearray(b"skills")],
+)
 def test_a_section_kind_that_is_not_a_string_means_no_paper(kind: object) -> None:
     assert parse_resume_content(_with(section_order=["summary", kind])) is None
 
@@ -1248,6 +1274,24 @@ def test_an_object_that_blows_up_when_read_is_no_paper_and_never_raises(
     assert "CANARY" not in rendered(caplog.records)
 
 
+@pytest.mark.parametrize(
+    "error", [KeyError, RuntimeError, RecursionError, TypeError, OSError, ZeroDivisionError]
+)
+def test_whatever_an_object_raises_when_read_it_is_no_paper_and_never_raises(
+    error: type[Exception], caplog: pytest.LogCaptureFixture
+) -> None:
+    class Hostile(dict[str, Any]):
+        def get(self, key: str, default: Any = None) -> Any:
+            raise error("CANARY-hostile-get")
+
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+
+    assert parse_resume_content(Hostile(paper())) is None
+
+    (record,) = caplog.records
+    assert record.ctx == {"reason": "unexpected_error", "error_type": error.__name__}  # type: ignore[attr-defined]
+
+
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
 def test_nan_and_infinity_where_text_belongs_mean_no_paper(bad: float) -> None:
     for path in (
@@ -1577,6 +1621,60 @@ def test_a_paper_that_does_not_fit_is_dropped_with_counts_and_check_names_only(
     assert all(isinstance(kind, str) and _CANARY not in kind for kind in ctx["error_types"])
     assert _CANARY not in _log_lines(caplog)
     assert "CANARY-key" not in _log_lines(caplog)
+
+
+def test_the_line_for_a_paper_that_does_not_fit_carries_exactly_these_fields(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER)
+    raw = _canary_paper()
+    raw["CANARY-top-key"] = {"CANARY-nested-key": _CANARY}
+    raw["header"]["CANARY-header-key"] = _CANARY
+    raw["experience"] = "CANARY-not-a-list"
+
+    assert parse_resume_content(raw) is None
+
+    (record,) = caplog.records
+    assert set(record.ctx) == {  # type: ignore[attr-defined]
+        "reason",
+        "schema",
+        "errors",
+        "error_types",
+        "section_order",
+        "not_shown",
+        "experience",
+        "internships",
+        "projects",
+        "education",
+        "skills",
+    }
+    assert _CANARY not in _log_lines(caplog)
+    assert "CANARY-top-key" not in _log_lines(caplog)
+    assert "CANARY-nested-key" not in _log_lines(caplog)
+    assert "CANARY-header-key" not in _log_lines(caplog)
+
+
+def test_the_check_names_in_the_log_are_the_error_types_once_each_in_order(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+    raw = paper()
+    raw["skills"] = [{"label": 1, "items": [2, 3]}]  # three string errors
+    raw["projects"] = [5, 6]  # two model errors
+    raw["experience"] = "x"  # a list error
+    raw["header"]["name"] = 7  # one more string error
+    del raw["source"]  # a missing key
+
+    assert parse_resume_content(raw) is None
+
+    (record,) = caplog.records
+    assert record.ctx["errors"] == 8  # type: ignore[attr-defined]
+    assert record.ctx["error_types"] == [  # type: ignore[attr-defined]
+        "list_type",
+        "missing",
+        "model_type",
+        "string_type",
+    ]
 
 
 def test_no_drop_reason_ever_logs_a_value_from_the_paper(caplog: pytest.LogCaptureFixture) -> None:
