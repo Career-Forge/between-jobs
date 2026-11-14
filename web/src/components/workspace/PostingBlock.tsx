@@ -6,8 +6,14 @@ import "../../styles/workspace.css";
 // shown whole in a well that scrolls inside itself, with the length it has, so a person can see what
 // the model was given. A short text is said to be short rather than made to look complete.
 
+// The posting's text as the page reads it: trimmed, and "" when it has none. The resume part asks the same
+// question to decide whether there is anything for the coverage check to read, so the rule lives here once.
+export function postingBody(text: string | undefined | null): string {
+  return typeof text === "string" ? text.trim() : "";
+}
+
 export function PostingBlock({ text }: { text: string | undefined | null }) {
-  const body = typeof text === "string" ? text.trim() : "";
+  const body = postingBody(text);
   return (
     <DocumentBlock>
       <SectionChapter level={3} title="The posting" />

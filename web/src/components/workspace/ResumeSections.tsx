@@ -9,7 +9,7 @@ import { SectionChapter } from "../paper/SectionChapter";
 import { LoadingState, SetupRequiredState, type StateLink } from "../paper/StateViews";
 import type { CanonicalProfile } from "../../lib/profileTypes";
 import { SECTION_IDS, SECTION_TITLES } from "../../lib/workspaceSections";
-import { PostingBlock } from "./PostingBlock";
+import { PostingBlock, postingBody } from "./PostingBlock";
 import "../../styles/workspace.css";
 
 // The resume part of the workspace: Tailor (the posting and how the profile covers it), Draft (the
@@ -25,7 +25,9 @@ import "../../styles/workspace.css";
 // Tailor (whose coverage check is a model call, made only when the person presses its button) and
 // Generate also need a usable model key. Until the credentials read has answered, "known to be missing"
 // is not known either way, so Tailor is not mounted and Generate's button is not drawn: a button that
-// makes a model call is never offered ahead of the answer that could forbid it.
+// makes a model call is never offered ahead of the answer that could forbid it. A posting with no text is
+// not offered the check either: the built-in engine refuses blank text before it calls any model, so a
+// button would promise a read and a call that cannot happen, and its Retry could never succeed.
 
 export type Missing = { message: string; missing: readonly [StateLink, ...StateLink[]] };
 
@@ -73,6 +75,8 @@ export function ResumeSections({ applicationId, descriptionText, profile, modelS
             <SetupRequiredState {...modelSetup} />
           ) : modelPending ? (
             <LoadingState rows={2} rowHeight={48} label="Checking your model setup..." />
+          ) : postingBody(descriptionText) === "" ? (
+            <p className="bj-muted bj-small">There is no posting text to check your profile against.</p>
           ) : (
             <TailorPanel applicationId={applicationId} />
           )}
