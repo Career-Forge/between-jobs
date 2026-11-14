@@ -539,7 +539,7 @@ describe("the band, from the first step to the last", () => {
     expect(callsTo(`POST /applications/${ID}/prepare`)).toHaveLength(1);
     release(drafted());
     await settle();
-    expect(text(band(container))).toContain("No claims flagged. Give it one read, then download.");
+    expect(text(band(container))).toContain("No claims flagged. Download the PDF and give it one read.");
   });
 
   it("A1c: a run that failed in this visit -> Generate again in the band, and no Retry of the body's own", async () => {
@@ -613,7 +613,7 @@ describe("the band, from the first step to the last", () => {
     describeAccount({ app: application({ resume_exists: true }), result: drafted([]) });
     const clean = page();
     await settle();
-    expect(text(band(clean.container))).toContain("No claims flagged. Give it one read, then download.");
+    expect(text(band(clean.container))).toContain("No claims flagged. Download the PDF and give it one read.");
     expect(text(band(clean.container))).toContain("why: status saved · resume drafted · 0 flagged, not the same as verified");
   });
 

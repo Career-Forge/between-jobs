@@ -9,7 +9,7 @@
 //   A1   no resume yet                                "Generate a tailored resume ..."      Generate resume
 //   A2   a resume with flagged claims                 "Read the {n} flagged claims ..."     Read the flagged claims
 //                                                      (link to the claim check; secondary: Download PDF)
-//   A2u  a resume whose claim check is not on the   "Your resume is ready to review ..."  Download PDF
+//   A2u  a resume whose claim check is not on the   "Your resume is ready. Download it ..."  Download PDF
 //        page (none stored, or it could not be read)
 //   A3   a resume with no flagged claims              "No claims flagged. ..."              Download PDF
 //   A4   the PDF was downloaded in this visit         "Submit on the employer's site ..."   Open the posting
@@ -28,7 +28,7 @@
 // to be read first, so its cyan goes to them (a link to the claim check, which the page's hash scroll
 // lands on and focuses) and Download PDF is the outlined button beside it. The band does not move on
 // after that link: the page cannot know the claims were read and does not say so, so the download stays
-// on offer next to it. A2u and A3 still lead with reading and keep Download PDF as their cyan.
+// on offer next to it. A2u and A3 ask for the download first, so Download PDF is their cyan.
 //
 // A band never starts, submits or sends anything the person has not asked for: the furthest it goes is
 // "Open the posting", and the person submits on the employer's own site.
@@ -225,7 +225,7 @@ const A2U: NextStepRow<WorkspaceFacts> = {
     const generation = facts.generation;
     if (generation.state !== "drafted" || generation.downloaded || generation.flagged !== null) return null;
     return {
-      sentence: "Your resume is ready to review. Read it against your own background, then download.",
+      sentence: "Your resume is ready. Download it and read it against your own background.",
       action: DOWNLOAD,
       // Two different unknowns, said differently: none stored, against a result the page could not show.
       why: [statusWhy(facts), "resume drafted", generation.unreadable ? "claim check result couldn't be read" : "claim check result not stored"],
@@ -239,7 +239,7 @@ const A3: NextStepRow<WorkspaceFacts> = {
     const generation = facts.generation;
     if (generation.state !== "drafted" || generation.downloaded || generation.flagged !== 0) return null;
     return {
-      sentence: "No claims flagged. Give it one read, then download.",
+      sentence: "No claims flagged. Download the PDF and give it one read.",
       action: DOWNLOAD,
       why: [statusWhy(facts), "resume drafted", "0 flagged, not the same as verified"],
     };
