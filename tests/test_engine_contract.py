@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import pytest
@@ -210,12 +211,56 @@ def test_the_preview_can_be_left_out_of_a_dump_by_name() -> None:
     assert "section_order" not in json.dumps(kept_out)
 
 
-def test_a_stored_preview_is_checked_again_when_the_result_is_read_back() -> None:
+def test_a_stored_preview_is_read_again_when_the_result_is_read_back() -> None:
     stored = _result().model_dump(mode="json")
-    stored["resume_content"] = {**sample_paper(), "schema": 2}
+    stored["resume_content"] = {**sample_paper(), "section_order": ["experience", "unknown-kind"]}
 
-    with pytest.raises(ValidationError):
-        PrepareApplicationResult.model_validate(stored)
+    result = PrepareApplicationResult.model_validate(stored)
+
+    assert result.resume_content is not None
+    assert result.resume_content.section_order == ["experience"]  # cleaned by the same reader
+
+
+@pytest.mark.parametrize(
+    "unreadable",
+    [
+        {**sample_paper(), "schema": 2},
+        {**sample_paper(), "schema": None},
+        {"schema": 1},
+        {**sample_paper(), "experience": "not a list"},
+        "a string",
+        ["a", "list"],
+        5,
+    ],
+)
+def test_a_stored_preview_this_code_cannot_read_is_a_missing_preview_not_a_failed_result(
+    unreadable: object,
+) -> None:
+    # stored papers outlive the engine that wrote them: one it cannot read is dropped, and the
+    # rest of the result is still the result
+    stored = _result().model_dump(mode="json")
+    stored["resume_content"] = unreadable
+
+    result = PrepareApplicationResult.model_validate(stored)
+
+    assert result.resume_content is None
+    assert result.resume is not None and result.resume.version_id == "ver-1"
+    assert result.run_id == "run-1"
+
+
+def test_a_preview_given_as_a_model_is_kept_as_it_is() -> None:
+    preview = ResumeContent.model_validate(sample_paper())
+    assert _result(resume_content=preview).resume_content is preview
+
+
+def test_a_null_preview_stays_null_and_is_not_a_reason_to_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    stored = _result().model_dump(mode="json")
+    stored["resume_content"] = None
+    with caplog.at_level(logging.WARNING):
+        assert PrepareApplicationResult.model_validate(stored).resume_content is None
+    assert caplog.records == []
 
 
 # -- exporting the contract's JSON Schema --------------------------------------------------------
