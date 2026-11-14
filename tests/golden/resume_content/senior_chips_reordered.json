@@ -1,0 +1,226 @@
+{
+ "schema": 1,
+ "source": "forge-engines",
+ "header": {
+  "name": "Jordan Rivera",
+  "chips": [
+   {
+    "field": "email",
+    "text": "jordan.rivera@example.com",
+    "href": "mailto:jordan.rivera@example.com"
+   },
+   {
+    "field": "linkedin",
+    "text": "LinkedIn",
+    "href": "https://www.linkedin.com/in/jordanrivera/"
+   },
+   {
+    "field": "github",
+    "text": "gh/jrivera",
+    "href": "https://github.com/jordanrivera"
+   },
+   {
+    "field": "phone",
+    "text": "+1 555 010 1234",
+    "href": null
+   }
+  ],
+  "separator": "dot"
+ },
+ "summary": "Staff-level engineer who ships data platforms: Python, Postgres and Kafka. Led three migrations. Mentors teams.",
+ "section_order": [
+  "summary",
+  "experience",
+  "internships",
+  "projects",
+  "skills",
+  "education"
+ ],
+ "not_shown": [
+  "Achievements",
+  "Certifications",
+  "Activities & Leadership",
+  "Publications",
+  "Patents"
+ ],
+ "experience": [
+  {
+   "id": "experience.0",
+   "pointer": null,
+   "title": "Principal Engineer",
+   "organisation": "Acme Corp",
+   "dates": "Jan 2023 \u2013 Present",
+   "detail": null,
+   "bullets": [
+    {
+     "id": "experience.0.b0",
+     "text": "Scale: Designed and delivered a multi-region event ingestion platform that absorbed billions of messages per day without dropping a single record. Partnered with product"
+    },
+    {
+     "id": "experience.0.b1",
+     "text": "Budget: Handled R&D budget #1: 100% of $5M in {tags} for snake_case ids, ~50% faster, x^2 growth, and C:\\temp paths"
+    },
+    {
+     "id": "experience.0.b2",
+     "text": "Latency: Reduced p95 API latency by 40% across 12 services"
+    }
+   ]
+  },
+  {
+   "id": "experience.1",
+   "pointer": null,
+   "title": "Senior Engineer",
+   "organisation": "Acme Corp",
+   "dates": "Jan 2021 \u2013 Dec 2022",
+   "detail": null,
+   "bullets": [
+    {
+     "id": "experience.1.b0",
+     "text": "Milestone 1: Shipped milestone 1 of the platform rewrite on schedule"
+    },
+    {
+     "id": "experience.1.b1",
+     "text": "Milestone 2: Shipped milestone 2 of the platform rewrite on schedule"
+    },
+    {
+     "id": "experience.1.b2",
+     "text": "Milestone 3: Shipped milestone 3 of the platform rewrite on schedule"
+    },
+    {
+     "id": "experience.1.b3",
+     "text": "Milestone 4: Shipped milestone 4 of the platform rewrite on schedule"
+    },
+    {
+     "id": "experience.1.b4",
+     "text": "Milestone 5: Shipped milestone 5 of the platform rewrite on schedule"
+    },
+    {
+     "id": "experience.1.b5",
+     "text": "Milestone 6: Shipped milestone 6 of the platform rewrite on schedule"
+    }
+   ]
+  },
+  {
+   "id": "experience.2",
+   "pointer": null,
+   "title": "Engineer",
+   "organisation": "Globex Inc",
+   "dates": "Nov 2019 \u2013 Dec 2020",
+   "detail": null,
+   "bullets": [
+    {
+     "id": "experience.2.b0",
+     "text": "Rebuilt the nightly reconciliation job around incremental checkpoints, cutting wall-clock time from nine hours to forty minutes, removing two manual hand-offs between operations and engineering"
+    },
+    {
+     "id": "experience.2.b1",
+     "text": "People: Mentored 3 junior engineers"
+    }
+   ]
+  },
+  {
+   "id": "experience.3",
+   "pointer": null,
+   "title": "Contractor",
+   "organisation": "ACME Corp.",
+   "dates": "Jan 2018 \u2013 Oct 2019",
+   "detail": null,
+   "bullets": [
+    {
+     "id": "experience.3.b0",
+     "text": "Router: Built a \"smart\" router -- with Jose -- for cafe data... -> fast"
+    }
+   ]
+  }
+ ],
+ "internships": [
+  {
+   "id": "internships.0",
+   "pointer": null,
+   "title": "Software Engineering Intern",
+   "organisation": "Initech",
+   "dates": "Jun 2016 \u2013 Aug 2016",
+   "detail": null,
+   "bullets": [
+    {
+     "id": "internships.0.b0",
+     "text": "Result 1: Delivered measurable result number 1 for the interns team"
+    },
+    {
+     "id": "internships.0.b1",
+     "text": "Result 2: Delivered measurable result number 2 for the interns team"
+    }
+   ]
+  }
+ ],
+ "projects": [
+  {
+   "id": "projects.0",
+   "pointer": null,
+   "title": "logship",
+   "organisation": null,
+   "dates": "2024",
+   "detail": "Rust, SQLite, Tokio, Serde, Prometheus, OpenTelemetry, Grafana, Docker, Kubernetes",
+   "bullets": [
+    {
+     "id": "projects.0.b0",
+     "text": "Wrote a log shipper in Rust that batches and compresses events"
+    },
+    {
+     "id": "projects.0.b1",
+     "text": "observability observability observability observability observability observability observability observability observability observability observability observability observability observability observability observability..."
+    }
+   ]
+  },
+  {
+   "id": "projects.1",
+   "pointer": null,
+   "title": "tabletop-tracker",
+   "organisation": null,
+   "dates": null,
+   "detail": "TypeScript, React",
+   "bullets": [
+    {
+     "id": "projects.1.b0",
+     "text": "Built a campaign tracker used by 30 people"
+    }
+   ]
+  }
+ ],
+ "education": [
+  {
+   "id": "education.0",
+   "pointer": null,
+   "title": "M.S. \u2013 Data Science",
+   "organisation": "State University",
+   "dates": "May 2023",
+   "detail": "GPA: 3.9",
+   "bullets": []
+  },
+  {
+   "id": "education.1",
+   "pointer": null,
+   "title": "B.S. \u2013 Computer Science",
+   "organisation": "City College",
+   "dates": "May 2019",
+   "detail": "GPA: 3.7",
+   "bullets": []
+  }
+ ],
+ "skills": [
+  {
+   "label": "Languages",
+   "items": [
+    "Python",
+    "SQL"
+   ]
+  },
+  {
+   "label": "Infra & Data",
+   "items": [
+    "Postgres",
+    "Kafka"
+   ]
+  }
+ ]
+}

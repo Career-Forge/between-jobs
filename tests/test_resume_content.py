@@ -4,9 +4,11 @@ The reader has one promise above the others: whatever an engine sends, it never 
 never hands back a paper that is only partly the paper. So most of what is here is hostile input,
 and every guard has a test that fails without it.
 
-Every fixture is hand-written and synthetic: invented names, companies and numbers. Characters
-that are awkward to put in source (controls, bidirectional marks, lone surrogates, the en dash) are
-built from code points, so this file stays plain ASCII.
+Every fixture is synthetic: invented names, companies and numbers. Most are written by hand here;
+the five files in `golden/resume_content/` are papers an engine's own builder emitted for invented
+people, kept as they came out, so the reader is also tried on the real shape and not only on one
+imagined for it. Characters that are awkward to put in source (controls, bidirectional marks, lone
+surrogates, the en dash) are built from code points, so this file stays plain ASCII.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import copy
 import json
 import logging
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -1766,3 +1769,32 @@ def _generic() -> dict[str, Any]:
 def test_papers_of_every_tier_are_read_whole(make: Any) -> None:
     raw = make()
     assert _stored(raw) == raw
+
+
+# Five papers exactly as an engine's own builder emitted them for invented people (see the
+# module docstring): different tiers, chip orders, a header with a location, an entry set
+# written to stress the text. Nothing in them was edited by hand.
+_EMITTED = sorted((Path(__file__).parent / "golden" / "resume_content").glob("*.json"))
+
+
+def test_the_emitted_papers_are_all_there() -> None:
+    assert [path.name for path in _EMITTED] == [
+        "fresher_internships.json",
+        "junior_summary_location.json",
+        "senior_chips_reordered.json",
+        "senior_full.json",
+        "special_characters.json",
+    ]
+
+
+@pytest.mark.parametrize("path", _EMITTED, ids=lambda path: path.stem)
+def test_a_paper_as_an_engine_emitted_it_is_read_back_unchanged_and_says_nothing(
+    path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    caplog.set_level(logging.DEBUG)
+
+    assert _stored(raw) == raw
+    assert caplog.records == []
+    assert set(raw) == _TOP_KEYS
+    assert len(json.dumps(raw, separators=(",", ":")).encode("utf-8")) < RESUME_CONTENT_MAX_BYTES
