@@ -304,19 +304,38 @@ describe("the sections", () => {
   });
 
   it.each([
-    ["no", ""],
+    ["empty", ""],
     ["only blank", "  \n\t  "],
+    ["null", null],
+    ["absent", undefined],
   ])("offers no coverage check for a posting with %s text: one line, no panel and no button to press", async (_name, description_text) => {
-    describeAccount({ app: application({ snapshot: { ...application().snapshot, description_text } }) });
+    const { description_text: _saved, ...withoutText } = application().snapshot;
+    describeAccount({ app: application({ snapshot: description_text === undefined ? withoutText : { ...withoutText, description_text } }) });
     const { container } = page();
     await settle();
     const line = "There is no posting text to check your profile against.";
     expect(container.querySelector("[data-standin='Tailor panel']")).toBeNull();
     expect(mounts["Tailor panel"]).toBeUndefined();
+    // The stand-in draws no button, so any "Check coverage" button here would be the page's own.
+    expect(names(container, "button").filter((label) => /check coverage/i.test(label))).toEqual([]);
     expect(text(container).split(line)).toHaveLength(2);
     expect(text(container)).toContain("No description text was saved for this posting, so tailoring has nothing to read.");
     // The rest of the resume part is still there.
     expect(container.querySelector("[data-standin='Header composer']")).not.toBeNull();
+  });
+
+  it.each([
+    ["no profile", { profile: new FakeApiError("none", "NOT_FOUND", undefined, 404) as unknown as typeof PROFILE }],
+    ["no usable model key", { credentials: [] as unknown as typeof KEY }],
+  ] as const)("says what setup is missing, not that the posting has no text, when both are true: %s", async (_name, account) => {
+    describeAccount({ ...account, app: application({ snapshot: { ...application().snapshot, description_text: "" } }) });
+    const { container } = page();
+    await settle();
+    const heading = [...container.querySelectorAll(".bj-chapter-title--h3")].find((node) => text(node) === "Coverage");
+    const block = heading?.closest(".bj-doc-block");
+    expect(block).toBeTruthy();
+    expect(block?.querySelector(".bj-state--setup")).not.toBeNull();
+    expect(text(container)).not.toContain("There is no posting text to check your profile against.");
   });
 
   it("offers the coverage check, and not that line, for a posting that has text", async () => {
