@@ -153,33 +153,55 @@ describe("what the page asks for", () => {
   });
 });
 
-// The first day: an active profile, a usable model key, nothing in the feed and no saved search.
-// Nothing this page can read says a saved search will find anything, so nothing on that screen may
-// say a match will arrive. The band, the empty state and the trail are written in three files; this
-// reads what the person sees, so a promise reintroduced in any one of them is caught here. Remove it
-// when the page reads whether saved-search matching is current and the copy is written against that
-// read.
+// The first day: an active profile, a usable model key, no application tracked, nothing in the feed
+// and no saved search. Nothing this page can read says a saved search will find anything, so nothing
+// on that screen may say a match will arrive. The band, the empty state and the trail are written in
+// three files, and the trail has two placements; this reads the whole page as a person sees it at a
+// width of each, so a promise reintroduced in any of them is caught here.
+//
+// It is a tripwire for the phrasings listed below, not proof that no paraphrase promises anything:
+// the band's sentence, the trail's line and the empty state's list of kinds are pinned exactly in
+// the tests of those three files. Remove it when the page can read when the listings the matcher
+// reads were last refreshed and the copy is written against that date.
 describe("the first day makes no promise of matches", () => {
-  const FUTURE_MATCH_PROMISE = /\b(can|will) (land|appear|show up|arrive)\b|nothing is being matched/i;
-
-  async function firstDay(width: number) {
-    answer({ "/saved-searches": [] });
-    const drawn = await draw(width);
-    // The trail is a margin when wide, and one line that opens when narrow: open it to read it.
-    if (width < 1280) click(query(drawn.container, "button.bj-bg-toggle"));
-    return drawn;
+  // Every piece of text on the page with a space between pieces, so a word that opens an element
+  // (a list item, a line) is still a word to the patterns below.
+  function everythingSaid(root: Element): string {
+    const pieces: string[] = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) pieces.push(node.textContent ?? "");
+    return pieces.join(" ").replace(/\s+/g, " ").trim();
   }
 
-  for (const width of [1400, 1000]) {
-    it(`says it nowhere in the band, the empty state or the trail at ${width}px`, async () => {
-      const { container } = await firstDay(width);
-      const trail = width >= 1280 ? query(container, "aside.bj-today-margin") : query(container, ".bj-bg-body");
-      // Each part has to be on the screen, or a scan of nothing would pass.
-      const parts = [query(band(container), ".bj-band-sentence"), query(container, ".bj-state--empty"), trail].map(words);
-      expect(parts[0]).toBe("Find a job on Discover and track it.");
-      expect(parts[1]).toContain("Nothing here yet");
-      expect(parts[2]).toContain("No saved searches.");
-      expect(parts.join(" ")).not.toMatch(FUTURE_MATCH_PROMISE);
+  const PROMISES: readonly RegExp[] = [
+    // The word itself, in any form: the first day has no match to speak of.
+    /\bmatch/i,
+    // Something arriving, said with a modal ("can land") or in the present tense ("show up here").
+    /\b(?:can|could|may|might|will|would|should|'ll)\s+(?:land|appear|show up|arrive|turn up|come in)\b/i,
+    /\b(?:lands?|appears?|shows? up|arrives?|turns? up)\s+here\b/i,
+  ];
+
+  // Wide, the trail is the page's margin; narrow, it is one line that opens.
+  for (const [width, inline] of [
+    [1400, false],
+    [1000, true],
+  ] as const) {
+    it(`says it nowhere on the page at ${width}px`, async () => {
+      answer({ "/saved-searches": [], "/applications": [] });
+      const { container } = await draw(width);
+      // Each part has to be on the screen, or a scan of nothing would pass: the band is the Discover
+      // step, the empty state is drawn, and the trail is in the placement this width calls for.
+      expect(query(band(container), "a.bj-button-link-primary").getAttribute("href")).toBe("/discover");
+      const toggle = container.querySelector("button.bj-bg-toggle");
+      expect(toggle === null).toBe(!inline);
+      if (toggle !== null) {
+        expect(words(toggle)).toContain("no saved searches");
+        click(toggle);
+      }
+      const text = everythingSaid(container);
+      expect(text).toContain("Nothing here yet");
+      expect(text).toContain("No saved searches.");
+      for (const promise of PROMISES) expect(text).not.toMatch(promise);
     });
   }
 });

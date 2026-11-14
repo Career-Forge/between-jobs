@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
+import { KIND_LABELS } from "../lib/todayFeed";
 import { TodayEmptyState } from "./TodayEmptyState";
 
 function visibleText(html: string): string {
@@ -34,11 +35,12 @@ describe("the Today empty state", () => {
     expect(html).toContain('href="/discover"');
   });
 
-  it("names no saved search: nothing on the page can say one will find a job", () => {
+  // The kinds that are listed are pinned, exactly, where the empty state is drawn inside the page
+  // (TodayView.test.tsx). What this pins is what is left out.
+  it("names no saved search and no high-fit kind", () => {
     const text = visibleText(html);
     expect(text).not.toMatch(/saved search/i);
-    expect(text).not.toContain("High fit job");
-    expect([...html.matchAll(/<li>/g)]).toHaveLength(5);
+    expect(text).not.toContain(KIND_LABELS.high_fit_job);
   });
 
   it("still says what Today will show, and what it does not yet", () => {

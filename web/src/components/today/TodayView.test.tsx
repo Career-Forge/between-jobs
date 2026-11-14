@@ -629,10 +629,23 @@ describe("the margin and the inline trail", () => {
   it("says there are no saved searches and what one costs, with no link and no claim about matching, when there is none", () => {
     const { container } = draw({ items: [], searches: ok([]), wide: true });
     const text = words(query(container, ".bj-today-margin"));
-    expect(text).toContain("No saved searches. A saved search is scored by your model on your key.");
+    // The line is pinned whole: a sentence added after it would otherwise pass a toContain.
+    const line = [...container.querySelectorAll(".bj-today-margin .bj-bg-line")].map(words).find((found) => found.startsWith("No saved searches"));
+    expect(line).toBe("No saved searches. A saved search is scored by your model on your key.");
     expect(text).not.toContain("nothing is being matched");
     expect(text).not.toContain("Save one in Discover");
     expect(container.querySelector('.bj-today-margin a[href="/discover"]')).toBeNull();
+  });
+
+  it("says the same in the inline line and the body it opens, when there is no saved search", () => {
+    const { container } = draw({ items: [], searches: ok([]), wide: false });
+    const toggle = query<HTMLButtonElement>(container, "button.bj-bg-toggle");
+    expect(words(toggle)).toBe("✦ In the background · no saved searches›");
+    click(toggle);
+    const line = [...container.querySelectorAll(".bj-bg-body .bj-bg-line")].map(words).find((found) => found.startsWith("No saved searches"));
+    expect(line).toBe("No saved searches. A saved search is scored by your model on your key.");
+    expect(words(query(container, ".bj-bg-body"))).not.toContain("matched");
+    expect(container.querySelector('.bj-bg-body a[href="/discover"]')).toBeNull();
   });
 
   it("opens a saved-search receipt with each search's own status", () => {
