@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import unicodedata
-from typing import Annotated, Any, Literal, get_args
+from typing import Annotated, Literal, get_args
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -37,7 +37,6 @@ from pydantic import (
     Strict,
     StringConstraints,
     ValidationError,
-    model_serializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -542,7 +541,7 @@ class ResumeContent(BaseModel):
     `BaseModel` method; dumping and validating both use the wire name.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", serialize_by_alias=True)
 
     schema_: Annotated[ResumeContentSchema, BeforeValidator(_exact_integer)] = Field(alias="schema")
     source: _PlainText
@@ -559,13 +558,6 @@ class ResumeContent(BaseModel):
     projects: Annotated[list[ResumeContentEntry], Field(max_length=RESUME_CONTENT_MAX_ENTRIES)]
     education: Annotated[list[ResumeContentEntry], Field(max_length=RESUME_CONTENT_MAX_ENTRIES)]
     skills: Annotated[list[ResumeContentSkillRow], Field(max_length=RESUME_CONTENT_MAX_SKILL_ROWS)]
-
-    @model_serializer(mode="wrap")
-    def _dump_with_the_wire_name(self, handler: Any) -> dict[str, Any]:
-        data: dict[str, Any] = handler(self)
-        if "schema_" in data:
-            data = {"schema": data.pop("schema_"), **data}
-        return data
 
 
 _SHAPE_COUNT_KEYS = (
