@@ -360,6 +360,86 @@ async def test_record_event_generates_a_key_when_none_given() -> None:
     assert events.insert_calls[0]["idempotency_key"].startswith("application.note_added:")
 
 
+async def test_the_outbox_row_carries_the_events_own_payload_unless_told_otherwise() -> None:
+    events = _FakeTable(select_rows=[], insert_row={"id": "event-1"})
+    outbox = _FakeTable(select_rows=[], insert_row={"id": "outbox-1"})
+    client = _FakeSupabaseClient(
+        _FakeTable(select_rows=[{"id": _APPLICATION_ID, "user_id": _USER_ID}]),
+        events,
+        event_outbox=outbox,
+    )
+    payload = {"headline": "kept", "detail": {"nested": [1, 2]}}
+
+    await record_event(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        application_id=_APPLICATION_ID,
+        event_type="application.note_added",
+        payload=payload,
+        actor_type="user",
+        actor_id=_USER_ID,
+        idempotency_key="note-1",
+        outbox_event_type="application.note.v1",
+    )
+
+    assert events.insert_calls[0]["payload"] == payload
+    assert outbox.insert_calls[0]["payload"] == payload
+
+
+async def test_an_event_can_hand_the_outbox_less_than_it_stores() -> None:
+    """The prepare result's resume preview is stored with the result and read back by the app;
+    a subscriber to the outbox has no use for it and is not handed it."""
+    events = _FakeTable(select_rows=[], insert_row={"id": "event-1"})
+    outbox = _FakeTable(select_rows=[], insert_row={"id": "outbox-1"})
+    client = _FakeSupabaseClient(
+        _FakeTable(select_rows=[{"id": _APPLICATION_ID, "user_id": _USER_ID}]),
+        events,
+        event_outbox=outbox,
+    )
+    payload = {"headline": "kept", "private_detail": "CANARY-stored-only"}
+    for_subscribers = {"headline": "kept"}
+
+    await record_event(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        application_id=_APPLICATION_ID,
+        event_type="application.note_added",
+        payload=payload,
+        actor_type="user",
+        actor_id=_USER_ID,
+        idempotency_key="note-2",
+        outbox_event_type="application.note.v1",
+        outbox_payload=for_subscribers,
+    )
+
+    assert events.insert_calls[0]["payload"] == payload
+    assert outbox.insert_calls[0]["payload"] == for_subscribers
+    assert "CANARY" not in str(outbox.insert_calls[0])
+
+
+async def test_an_outbox_payload_without_an_outbox_event_writes_no_outbox_row() -> None:
+    events = _FakeTable(select_rows=[], insert_row={"id": "event-1"})
+    outbox = _FakeTable(select_rows=[], insert_row={"id": "outbox-1"})
+    client = _FakeSupabaseClient(
+        _FakeTable(select_rows=[{"id": _APPLICATION_ID, "user_id": _USER_ID}]),
+        events,
+        event_outbox=outbox,
+    )
+
+    await record_event(
+        client,  # type: ignore[arg-type]
+        _USER_ID,
+        application_id=_APPLICATION_ID,
+        event_type="application.note_added",
+        payload={"a": 1},
+        actor_type="user",
+        actor_id=_USER_ID,
+        outbox_payload={},
+    )
+
+    assert outbox.insert_calls == []
+
+
 async def test_record_event_refuses_an_application_that_is_not_the_callers() -> None:
     """The foreign key only needs the application to exist, and this writes with the service
     role: without the check any user id could attach events (and an outbox event) to anyone's

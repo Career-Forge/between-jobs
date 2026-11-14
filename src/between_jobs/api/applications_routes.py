@@ -367,7 +367,8 @@ async def get_extension_payload(
     stored `PrepareApplicationResult` payload (which also carries
     `fit`/`gate_outcome`/`gate_reason`/`gate_cautions`/`final_score`/
     `ats_attempts`/`evidence_fact_ids`/`run_id`/`profile_version_id`/
-    `job_snapshot_id`). Confirmed by grepping the whole `extension/` tree
+    `job_snapshot_id`/`resume_content`, the plain-text resume preview only the web app draws).
+    Confirmed by grepping the whole `extension/` tree
     (`background.ts`, `content.ts`, every file under `extension/lib/`,
     and both test helper files that construct a payload fixture) for each
     of those field names plus `prepare_result` itself: the extension's

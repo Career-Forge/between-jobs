@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from test_resume_content import paper as sample_paper
 from update_ledger_fakes import UPDATE_RPCS, FakeUpdateLedger
 
 from between_jobs.api import rate_limits
@@ -405,6 +406,39 @@ def test_prepare_callback_success_sends_document_with_score_caption() -> None:
         prompt["inline_keyboard"][0][0]["callback_data"] == f"app:stage:{_APPLICATION_ID}:applied"
     )
     assert len(telegram.sent) == 1
+
+
+def test_a_resume_preview_in_the_result_changes_nothing_the_chat_shows() -> None:
+    """The stored result now carries a plain-text preview of the resume for the web app. The chat
+    reads a few fields of the result (the resume, the score, the warnings) and must not be handed,
+    or print, any of it."""
+
+    def run(apply_body: dict[str, Any] | None) -> _FakeTelegramClient:
+        supabase = _FakeSupabaseClient(channel_identities_rows=[{"user_id": _USER_ID}])
+        telegram = _FakeTelegramClient()
+        http = _FakeHttpClient(apply_body=apply_body)
+        response = _post(
+            supabase, telegram, http, _callback_update(f"app:prepare:{_APPLICATION_ID}")
+        )
+        assert response.status_code == 200
+        return telegram
+
+    preview = sample_paper()
+    preview["experience"][0]["bullets"][0]["text"] = "CANARY-chat-preview"
+    with_preview = run(
+        {
+            **_FORGE_APPLY_RESPONSE_BODY,
+            "resume": {**_FORGE_APPLY_RESPONSE_BODY["resume"], "paper": preview},  # type: ignore[dict-item]
+        }
+    )
+    plain = run(None)
+
+    assert len(with_preview.documents_sent) == 1
+    assert with_preview.sent == plain.sent
+    assert with_preview.edited == plain.edited
+    assert with_preview.documents_sent == plain.documents_sent
+    everything = repr([with_preview.sent, with_preview.edited, with_preview.documents_sent])
+    assert "CANARY-chat-preview" not in everything and "Platform engineer" not in everything
 
 
 def test_prepare_callback_answers_the_callback_before_running() -> None:

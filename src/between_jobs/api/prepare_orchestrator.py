@@ -108,6 +108,11 @@ async def run_prepare_application(
     scope and the one accepted limitation (a verifier outage and "nothing
     to flag" are indistinguishable downstream).
 
+    An engine may also send a preview of the resume it wrote (`ForgeApplyResult.paper`). It is
+    kept as `resume_content` on the stored result only when a resume was written, is returned
+    with the result, and is left out of the outbox payload. A preview that could not be read is
+    simply None: it never fails a run.
+
     Every real attempt is one `prepare_finished` product event (product_events.py), written when
     it ends: whether it delivered a resume, how many unsupported-claim warnings it carried, which
     applicant-tracking system the posting is on, how long it took. "Real" means the application
@@ -318,6 +323,9 @@ async def _prepare_application(
         gate_cautions=gate.cautions if gate is not None else [],
         warnings=warnings,
         evidence_fact_ids=evidence_fact_ids,
+        # The preview is of the resume just written: a run that wrote none keeps none, whatever
+        # the engine sent with it.
+        resume_content=forge_result.paper if resume_ref is not None else None,
     )
 
     payload = result.model_dump(mode="json")
@@ -327,6 +335,9 @@ async def _prepare_application(
         application_id=application_id,
         event_type="application.prepared",
         payload=payload,
+        # The preview lives with the result the app reads back. Subscribers to the outbox get
+        # what they always did: the result without it.
+        outbox_payload=result.model_dump(mode="json", exclude={"resume_content"}),
         actor_type="user",
         actor_id=user_id,
         idempotency_key=idempotency_key,
