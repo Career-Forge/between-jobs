@@ -82,6 +82,73 @@ export interface ForgeFitResult {
   visa_flag: boolean | null;
 }
 
+// A preview of the resume the engine laid out, in print order, as plain text. Mirrors engine_contract.py's
+// ResumeContent. Every string is text for a text node, never HTML or LaTeX. Read it only when `schema` is a
+// value this app has a reader for (1 today); for any other value, treat the preview as absent.
+export interface ResumeContentChip {
+  // The personal field the chip shows: phone, email, linkedin, github, portfolio, location or nationality.
+  field: string;
+  text: string;
+  // null, or an http, https, mailto or tel address. The server has already refused every other scheme; check it
+  // again before making a link.
+  href: string | null;
+}
+
+export interface ResumeContentHeader {
+  name: string;
+  // The chips the PDF header printed, in print order. Can be fewer than the PDF has.
+  chips: ResumeContentChip[];
+  separator: "pipe" | "dot" | "bullet";
+}
+
+export interface ResumeContentBullet {
+  // "<section>.<entry index>.b<bullet index>": stable only inside one stored result.
+  id: string;
+  // Can be "" (a bullet the PDF prints empty).
+  text: string;
+}
+
+export interface ResumeContentEntry {
+  // Positional ("experience.0"): stable only inside one stored result, never across versions.
+  id: string;
+  // A JSON pointer into the profile when the engine knows one, else null.
+  pointer: string | null;
+  // Can be "" (a title the PDF drops).
+  title: string;
+  organisation: string | null;
+  // The PDF's date range joined with an en dash (U+2013), e.g. Jan 2020, dash, Present; an open end stays; null when
+  // neither end prints.
+  dates: string | null;
+  // The tech stack of a project, or the education detail line, on one line.
+  detail: string | null;
+  bullets: ResumeContentBullet[];
+}
+
+export interface ResumeContentSkillRow {
+  // The label and each item can be "".
+  label: string;
+  items: string[];
+}
+
+export interface ResumeContent {
+  schema: number;
+  // Who emitted it. An open string: show or log it, never branch on it.
+  source: string;
+  // null when the PDF has no name of the person's to show: compose the header from the profile instead.
+  header: ResumeContentHeader | null;
+  summary: string | null;
+  // The drawn sections, in print order, each kind at most once. A plain string, not a union: skip any kind this
+  // app does not know how to draw (known today: summary, experience, internships, projects, skills, education).
+  section_order: string[];
+  // Printed sections the preview does not draw, by their printed heading.
+  not_shown: string[];
+  experience: ResumeContentEntry[];
+  internships: ResumeContentEntry[];
+  projects: ResumeContentEntry[];
+  education: ResumeContentEntry[];
+  skills: ResumeContentSkillRow[];
+}
+
 export interface PrepareApplicationResult {
   run_id: string;
   resume: ArtifactRef | null;
@@ -103,6 +170,10 @@ export interface PrepareApplicationResult {
   gate_reason?: string;
   gate_cautions?: string[];
   warnings: string[];
+  // A preview of the draft, bound to the resume this same result names (`resume.version_id`, `resume.sha256`): do
+  // not show it as any other version. Absent on a result stored before this field existed, null when the engine
+  // sent none or sent one the server could not read, and always null when `resume` is null.
+  resume_content?: ResumeContent | null;
 }
 
 export type ChecklistStatus = "pass" | "fail" | "not_checked";
