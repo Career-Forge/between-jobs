@@ -86,11 +86,13 @@ export interface ForgeFitResult {
 // ResumeContent. Every string is text for a text node, never HTML or LaTeX. Read it only when `schema` is a
 // value this app has a reader for (1 today); for any other value, treat the preview as absent.
 export interface ResumeContentChip {
-  // The personal field the chip shows: phone, email, linkedin, github, portfolio, location or nationality.
+  // The personal field the chip shows: phone, email, linkedin, github, portfolio, scholar, location or
+  // nationality.
   field: string;
   text: string;
-  // null, or an http, https, mailto or tel address. The server has already refused every other scheme; check it
-  // again before making a link.
+  // null, or an http, https, mailto or tel address. The server has already refused every other scheme, an http(s)
+  // address with a user name in front of the host, and a mailto with a query; check the scheme again before making
+  // a link.
   href: string | null;
 }
 
@@ -98,7 +100,9 @@ export interface ResumeContentHeader {
   name: string;
   // The chips the PDF header printed, in print order. Can be fewer than the PDF has.
   chips: ResumeContentChip[];
-  separator: "pipe" | "dot" | "bullet";
+  // What goes between the chips: "pipe", "dot" or "bullet" today. An open string, so that a value a newer engine adds
+  // does not blank the preview: draw a pipe for any value this app does not know.
+  separator: string;
 }
 
 export interface ResumeContentBullet {
