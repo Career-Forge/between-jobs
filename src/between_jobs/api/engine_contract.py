@@ -341,9 +341,14 @@ def _safe_href(value: object) -> str | None:
 
 def _known_chips(value: object) -> object:
     """Leaves out any chip whose field is not one of `RESUME_CONTENT_CHIP_FIELDS`. A chip that
-    is not even an object, or has no text field name, is left in for the checks to refuse."""
-    if not isinstance(value, list) or len(value) > RESUME_CONTENT_MAX_CHIPS:
+    is not even an object, or has no text field name, is left in for the checks to refuse. A list
+    longer than `RESUME_CONTENT_MAX_CHIPS` is refused here, before any chip is looked at: the
+    length limit on the field runs after this, and by then every chip would have been read and
+    every bad one reported."""
+    if not isinstance(value, list):
         return value
+    if len(value) > RESUME_CONTENT_MAX_CHIPS:
+        raise ValueError("too many chips")
     kept: list[object] = []
     for chip in value:
         field = _plain_text(chip.get("field")) if isinstance(chip, dict) else None
@@ -356,9 +361,12 @@ def _known_chips(value: object) -> object:
 def _known_sections(value: object) -> object:
     """Leaves out a section kind this code does not know, and a kind named a second time (it is
     drawn once, at its first position). An item that is not a string is left in for the checks
-    to refuse."""
-    if not isinstance(value, list) or len(value) > RESUME_CONTENT_MAX_SECTIONS:
+    to refuse. A list longer than `RESUME_CONTENT_MAX_SECTIONS` is refused here, before any item
+    is looked at, for the reason `_known_chips` gives."""
+    if not isinstance(value, list):
         return value
+    if len(value) > RESUME_CONTENT_MAX_SECTIONS:
+        raise ValueError("too many section names")
     kept: list[object] = []
     for item in value:
         kind = _plain_text(item)
