@@ -385,7 +385,7 @@ def _set_at(raw: dict[str, Any], path: tuple[Any, ...], value: object) -> None:
     holder[path[-1]] = value
 
 
-@pytest.mark.parametrize("value", [5, 1.5, True, ["a"], {"a": "b"}])
+@pytest.mark.parametrize("value", [5, 1.5, True, ["a"], {"a": "b"}, b"bytes", bytearray(b"x")])
 @pytest.mark.parametrize("path", _TEXT_PATHS)
 def test_a_text_field_that_is_not_text_means_no_paper(path: tuple[Any, ...], value: object) -> None:
     raw = paper()
@@ -540,12 +540,10 @@ _HIDDEN_FIELDS = [
     "keyword",
     "keywords",
     "pass1",
-    "pass2",
     "content",
     "personal",
     "latex",
     "resumePlainText",
-    "lintFindings",
     "sectionOrder",
     "internal_id",
     "career_fact_id",
@@ -1038,6 +1036,20 @@ def test_nothing_at_all_is_not_an_error_and_logs_nothing(caplog: pytest.LogCaptu
 )
 def test_anything_that_is_not_an_object_means_no_paper_and_never_raises(raw: object) -> None:
     assert parse_resume_content(raw) is None
+
+
+@pytest.mark.parametrize(
+    "raw", [[], [paper()], "a paper", json.dumps(paper()), 5, 1.5, True, b"{}", (1,), {1, 2}]
+)
+def test_something_that_is_not_an_object_is_dropped_for_that_reason_and_no_other(
+    raw: object, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.WARNING, logger=LOGGER)
+
+    assert parse_resume_content(raw) is None
+
+    (record,) = caplog.records
+    assert record.ctx == {"reason": "not_an_object"}  # type: ignore[attr-defined]
 
 
 def test_an_empty_object_means_no_paper() -> None:
