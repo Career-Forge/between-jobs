@@ -10,19 +10,24 @@ failure modes) correctly.
 
 from __future__ import annotations
 
+import json
+import logging
 from typing import Any
 
 import httpx
 import pytest
 from pydantic import ValidationError
+from rendered_logs import rendered
+from test_resume_content import paper as sample_paper
 
 from between_jobs.api import forge_engines_client
 from between_jobs.api.credential_resolver import ResolvedCredential
-from between_jobs.api.engine_contract import ForgeFitResult
+from between_jobs.api.engine_contract import ForgeFitResult, ResumeContent
 from between_jobs.api.errors import ApiError
 from between_jobs.api.forge_engines_client import (
     ForgeApplyResult,
     GateInfo,
+    RemoteApplyResult,
     call_apply,
     call_gap_answer_draft,
     call_gap_interview,
@@ -815,3 +820,231 @@ async def test_an_openrouter_credential_never_waits_on_the_contract() -> None:
     await _apply(http, _CREDENTIAL)
 
     assert http.gets == [] and len(http.requests) == 1
+
+
+# -- the paper: a preview of the resume, read tolerantly -----------------------------------------
+
+
+class _RawJsonHttp(_FakeHttpClient):
+    """Answers with JSON text exactly as given, for what `httpx` will not encode (NaN) or what
+    Python's own `json` would escape differently."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self.text = text
+
+    async def post(self, url: str, **kwargs: Any) -> httpx.Response:
+        self.requests.append((url, kwargs))
+        return httpx.Response(
+            status_code=200, content=self.text.encode("utf-8"), request=httpx.Request("POST", url)
+        )
+
+
+def _body_with_paper(paper: Any) -> dict[str, Any]:
+    resume = {**_APPLY_RESPONSE_BODY["resume"], "paper": paper}  # type: ignore[dict-item]
+    return {**_APPLY_RESPONSE_BODY, "resume": resume}
+
+
+async def _apply_through(http: _FakeHttpClient) -> RemoteApplyResult:
+    return await call_apply(
+        http,  # type: ignore[arg-type]
+        resume_template=_RESUME_TEMPLATE,
+        job_snapshot=_SNAPSHOT,
+        credential=_CREDENTIAL,
+        now="2026-08-15T00:00:00.000Z",
+    )
+
+
+async def test_a_paper_inside_the_resume_is_read() -> None:
+    result = await _apply_through(_FakeHttpClient(body=_body_with_paper(sample_paper())))
+
+    assert isinstance(result.paper, ResumeContent)
+    assert result.paper.model_dump(mode="json") == sample_paper()
+
+
+async def test_a_response_with_no_paper_has_none() -> None:
+    result = await _apply_through(_FakeHttpClient())
+
+    assert result.paper is None
+    assert result.generated is True
+
+
+async def test_a_null_paper_is_none_and_says_nothing(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+
+    result = await _apply_through(_FakeHttpClient(body=_body_with_paper(None)))
+
+    assert result.paper is None
+    assert [r for r in caplog.records if "resume content" in r.getMessage()] == []
+
+
+_UNREADABLE_PAPERS: list[Any] = [
+    pytest.param("a paper", id="a-string"),
+    pytest.param(5, id="a-number"),
+    pytest.param(True, id="a-bool"),
+    pytest.param([], id="an-empty-list"),
+    pytest.param([sample_paper()], id="a-list-of-papers"),
+    pytest.param({}, id="an-empty-object"),
+    pytest.param({**sample_paper(), "schema": 2}, id="a-newer-schema"),
+    pytest.param({**sample_paper(), "schema": "1"}, id="a-schema-that-is-text"),
+    pytest.param({**sample_paper(), "schema": True}, id="a-schema-that-is-a-bool"),
+    pytest.param({k: v for k, v in sample_paper().items() if k != "schema"}, id="no-schema"),
+    pytest.param({**sample_paper(), "experience": 5}, id="a-section-that-is-not-a-list"),
+    pytest.param({**sample_paper(), "header": "Jordan"}, id="a-header-that-is-text"),
+    pytest.param({**sample_paper(), "summary": ["a"]}, id="a-summary-that-is-a-list"),
+    pytest.param({**sample_paper(), "source": None}, id="no-source"),
+    pytest.param({**sample_paper(), "summary": "x" * 100_000}, id="a-huge-string"),
+    pytest.param({**sample_paper(), "experience": [{}] * 5_000}, id="a-huge-list"),
+]
+
+
+@pytest.mark.parametrize("paper", _UNREADABLE_PAPERS)
+async def test_a_paper_that_cannot_be_read_is_none_and_the_apply_still_succeeds(paper: Any) -> None:
+    result = await _apply_through(_FakeHttpClient(body=_body_with_paper(paper)))
+
+    assert result.paper is None
+    # everything the apply call is for is exactly as it was without a paper
+    assert result.generated is True
+    assert result.resume is not None and result.resume["latex"] == r"\begin{document}..."
+    assert result.gate.outcome == "proceed" and result.gate.cautions == [
+        "Borderline seniority match."
+    ]
+    assert result.fit.overall_score == 8.0
+    assert result.final_ats is not None and result.final_ats.overall_score == 72
+
+
+async def test_a_hostile_paper_comes_out_cleaned() -> None:
+    hostile = sample_paper()
+    hostile["summary"] = "ok" + chr(0) + chr(0x202E) + "\tdone"
+    hostile["header"]["chips"][0]["href"] = "javascript:alert(1)"
+    hostile["header"]["chips"].append({"field": "work_authorization", "text": "x", "href": None})
+    hostile["experience"][0]["location"] = "Springfield"
+    hostile["_budget"] = {"lines": 5}
+
+    result = await _apply_through(_FakeHttpClient(body=_body_with_paper(hostile)))
+
+    assert result.paper is not None
+    stored = result.paper.model_dump(mode="json")
+    assert stored["summary"] == "ok done"
+    assert stored["header"]["chips"][0]["href"] is None
+    assert [chip["field"] for chip in stored["header"]["chips"]] == [
+        "email",
+        "linkedin",
+        "phone",
+        "location",
+    ]
+    assert "location" not in stored["experience"][0] and "_budget" not in stored
+
+
+async def test_the_raw_paper_does_not_outlive_the_reader() -> None:
+    result = await _apply_through(_FakeHttpClient(body=_body_with_paper(sample_paper())))
+
+    assert result.resume is not None
+    assert "paper" not in result.resume
+    assert result.resume == _APPLY_RESPONSE_BODY["resume"]  # whatever else was sent stays
+    assert "paper" not in json.dumps(result.resume)
+
+
+async def test_a_paper_that_cannot_be_read_does_not_outlive_the_reader_either() -> None:
+    result = await _apply_through(_FakeHttpClient(body=_body_with_paper({"schema": 2})))
+
+    assert result.resume is not None and "paper" not in result.resume
+
+
+async def test_a_paper_beside_the_resume_instead_of_inside_it_is_not_read() -> None:
+    body = {**_APPLY_RESPONSE_BODY, "paper": sample_paper()}
+
+    result = await _apply_through(_FakeHttpClient(body=body))
+
+    assert result.paper is None
+
+
+async def test_a_paper_at_the_top_level_cannot_reach_the_result_in_any_form() -> None:
+    body = {**_APPLY_RESPONSE_BODY, "paper": "not even an object", "resume": {"latex": "x"}}
+
+    result = await _apply_through(_FakeHttpClient(body=body))
+
+    assert result.paper is None
+
+
+@pytest.mark.parametrize("missing", ["fit", "gate"])
+async def test_a_good_paper_does_not_excuse_a_remote_response_without_its_fit_or_gate(
+    missing: str,
+) -> None:
+    body = {k: v for k, v in _body_with_paper(sample_paper()).items() if k != missing}
+
+    with pytest.raises(ValidationError):
+        await _apply_through(_FakeHttpClient(body=body))
+
+
+async def test_json_text_as_it_arrives_with_nan_and_a_lone_surrogate_is_still_an_apply() -> None:
+    backslash = chr(92)
+    text = json.dumps(_body_with_paper(sample_paper()))
+    text = text.replace(
+        '"summary": "Platform',
+        f'"junk": NaN, "more": Infinity, "summary": "A{backslash}ud800Platform',
+    )
+    assert "NaN" in text and "ud800" in text
+
+    result = await _apply_through(_RawJsonHttp(text))
+
+    assert result.paper is not None
+    assert result.paper.summary == "APlatform engineer who ships boring, reliable systems."
+    json.dumps(result.paper.model_dump(mode="json"), allow_nan=False).encode("utf-8")
+
+
+def test_an_engine_that_sends_only_the_latex_has_no_paper() -> None:
+    # what the built-in engine returns
+    result = ForgeApplyResult(
+        resume={"latex": r"\begin{document}hi\end{document}"}, regenerated=False
+    )
+
+    assert result.paper is None
+    assert result.resume == {"latex": r"\begin{document}hi\end{document}"}
+
+
+def test_a_declined_run_has_no_resume_and_so_no_paper() -> None:
+    result = ForgeApplyResult(resume=None, regenerated=False)
+
+    assert result.paper is None and result.generated is False
+
+
+def test_an_engine_in_this_process_can_send_its_paper_inside_the_resume() -> None:
+    # how the built-in engine will: through the same reader, so it is cleaned the same way
+    resume = {"latex": "x", "paper": {**sample_paper(), "summary": "a" + chr(0) + "b"}}
+
+    result = ForgeApplyResult(resume=resume, regenerated=False)
+
+    assert result.paper is not None and result.paper.summary == "ab"
+    assert "paper" in resume  # the caller's own dict is never changed
+
+
+def test_a_resume_content_given_directly_is_kept_as_it_is() -> None:
+    content = ResumeContent.model_validate(sample_paper())
+
+    result = ForgeApplyResult(resume={"latex": "x"}, regenerated=False, paper=content)
+
+    assert result.paper is content
+
+
+def test_a_plain_object_given_as_the_paper_field_is_not_trusted() -> None:
+    result = ForgeApplyResult(
+        resume={"latex": "x"},
+        regenerated=False,
+        paper=sample_paper(),  # type: ignore[arg-type]
+    )
+
+    assert result.paper is None
+
+
+async def test_a_paper_that_is_dropped_logs_no_text(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    private = sample_paper()
+    private["experience"] = "CANARY-private-resume-text"
+
+    await _apply_through(_FakeHttpClient(body=_body_with_paper(private)))
+
+    dropped = [r for r in caplog.records if r.getMessage() == "resume content dropped"]
+    assert len(dropped) == 1
+    assert "CANARY" not in rendered(caplog.records) + caplog.text
+    assert "Jordan" not in rendered(caplog.records) + caplog.text
