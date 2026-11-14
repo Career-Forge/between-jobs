@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { copyToClipboard } from "../lib/clipboard";
 import { parseClaimWarning } from "../lib/claimWarnings";
+import { CLAIM_CHECK_HEADING_ID } from "../lib/workspaceSections";
 import { ClaimList, ClaimRow } from "./paper/ClaimRow";
 import "../styles/workspace.css";
 
@@ -23,6 +24,10 @@ import "../styles/workspace.css";
 //   - the footer: flags only, unless a line says it was removed or replaced.
 // Each row's actions are the two things a person can do with a claim: add it to their profile if it is
 // true (the profile is where evidence lives), or copy it.
+//
+// The heading is drawn in both views (flagged and nothing flagged) and is a focus target
+// (CLAIM_CHECK_HEADING_ID): the next-step band's "Read the flagged claims" is a link to it, and the
+// page's hash scroll lands on it and focuses it.
 
 // A warning the engine says it has already acted on: its disposition is removed or replaced.
 export function isRepairedClaim(warning: string): boolean {
@@ -77,7 +82,9 @@ export function ClaimWarningsBanner({ warnings }: { warnings: readonly string[] 
 
   return (
     <div className="bj-ws-claims">
-      <h3 className="bj-ws-block-title">Claim check</h3>
+      <h3 id={CLAIM_CHECK_HEADING_ID} tabIndex={-1} className="bj-ws-block-title">
+        Claim check
+      </h3>
       <p className="bj-ws-legend">{CLAIM_LEGEND}</p>
       {flagged === 0 ? (
         <>

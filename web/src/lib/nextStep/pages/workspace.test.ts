@@ -114,7 +114,8 @@ describe("the table", () => {
       input: { facts: facts({ state: "drafted", flagged: 1, unreadable: false, downloaded: false }) },
       row: "A2",
       sentence: "Read the 1 flagged claim, then download.",
-      action: "button:Download PDF:download-pdf",
+      action: "link:Read the flagged claim:#claim-check-heading",
+      secondary: "button:Download PDF:download-pdf",
       why: ["status saved", "resume drafted", "1 claim flagged"],
     },
     {
@@ -122,7 +123,8 @@ describe("the table", () => {
       input: { facts: facts({ state: "drafted", flagged: 3, unreadable: false, downloaded: false }) },
       row: "A2",
       sentence: "Read the 3 flagged claims, then download.",
-      action: "button:Download PDF:download-pdf",
+      action: "link:Read the flagged claims:#claim-check-heading",
+      secondary: "button:Download PDF:download-pdf",
       why: ["status saved", "resume drafted", "3 claims flagged"],
     },
     {
@@ -266,7 +268,7 @@ describe("the table", () => {
 
   it("never offers a second cyan: the one secondary is an outlined button beside it", () => {
     const withSecondary = rows.filter((entry) => entry.secondary !== undefined);
-    expect(withSecondary.map((entry) => entry.row)).toEqual(["A1b", "A1b", "A1b"]);
+    expect(withSecondary.map((entry) => entry.row)).toEqual(["A1b", "A1b", "A1b", "A2", "A2"]);
     for (const entry of withSecondary) expect(step(ask(entry.input).outcome).action).not.toBeNull();
   });
 });

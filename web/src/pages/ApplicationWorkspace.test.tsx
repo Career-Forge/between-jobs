@@ -89,6 +89,7 @@ const PROFILE = { id: "pv1", canonical_json: { personal: { name: "Reader Example
 const BREAKDOWN = { semantic_coverage: 27, experience_quality: 22, hard_req_score: 8, quantification: 6, company_alignment: 4, structure: 5 };
 const attempt = (score: number, gaps: string[] = []) => ({ overall_score: score, breakdown: BREAKDOWN, confidence: "medium", rating: "Moderate", gaps });
 const CLAIM = 'unsupported claim (unverifiable): "Cut query costs by 40%" -- Nothing picked mentions query costs.';
+const CLAIM_TWO = 'unsupported claim (contradicted): "Led 20 engineers" -- Your profile says a team of 6.';
 
 function drafted(warnings: string[] = [], attempts = [attempt(72)]) {
   return {
@@ -624,10 +625,108 @@ describe("the band, from the first step to the last", () => {
     expect(text(container)).toContain("This page has no stored score or claim check for your resume.");
   });
 
+  it.each([
+    ["one flagged claim", [CLAIM], "Read the flagged claim"],
+    ["two flagged claims", [CLAIM, CLAIM_TWO], "Read the flagged claims"],
+  ])("A2: with %s the cyan is a link to the claim check and Download PDF is the one outlined button beside it", async (_name, warnings, label) => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted(warnings) });
+    const { container } = page();
+    await settle();
+    expect(cyan(container)).toHaveLength(1);
+    const link = cyan(container)[0] as HTMLAnchorElement;
+    expect(link.tagName).toBe("A");
+    expect(text(link)).toBe(label);
+    expect(link.getAttribute("href")).toBe(`/applications/${ID}#claim-check-heading`);
+    expect(band(container).contains(link)).toBe(true);
+    const download = buttonNamed(band(container), "Download PDF");
+    expect(download.classList.contains("bj-primary")).toBe(false);
+    expect(download.classList.contains("bj-band-secondary")).toBe(true);
+    // The link's target is on the page: the claim check's heading.
+    expect(query(container, "#claim-check-heading").tagName).toBe("H3");
+  });
+
+  it("A2: pressing the cyan goes to the claim check, focuses its heading and sends no request", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
+    const { container } = page();
+    await settle();
+    const before = calls.length;
+    scrolled = [];
+    click(cyan(container)[0]);
+    await settle();
+    expect(text(query(container, "[data-testid='where']"))).toBe(`/applications/${ID}#claim-check-heading`);
+    expect(scrolled).toContain("claim-check-heading");
+    expect(document.activeElement).toBe(query(container, "#claim-check-heading"));
+    expect(calls).toHaveLength(before);
+    // The page cannot know the claims were read, so the band is where it was.
+    expect(text(band(container))).toContain("Read the 1 flagged claim, then download.");
+    expect(text(cyan(container)[0])).toBe("Read the flagged claim");
+    expect(cyan(container)).toHaveLength(1);
+  });
+
+  it("A2: a press on the cyan holds the claim check in view while the page above it grows, until the person takes over", async () => {
+    const callbacks: (() => void)[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        private readonly callback: () => void;
+        constructor(callback: () => void) {
+          this.callback = callback;
+          callbacks.push(callback);
+        }
+        observe() {}
+        disconnect() {
+          const at = callbacks.indexOf(this.callback);
+          if (at !== -1) callbacks.splice(at, 1);
+        }
+      },
+    );
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
+    const { container } = page();
+    await settle();
+    click(cyan(container)[0]);
+    await settle();
+    scrolled = [];
+    // The first report is the arrival; each change after it brings the heading back to the top.
+    act(() => callbacks.forEach((callback) => callback()));
+    act(() => callbacks.forEach((callback) => callback()));
+    act(() => callbacks.forEach((callback) => callback()));
+    expect(scrolled.filter((id) => id === "claim-check-heading").length).toBeGreaterThanOrEqual(1);
+    const held = scrolled.length;
+    act(() => {
+      window.dispatchEvent(new Event("wheel"));
+    });
+    act(() => callbacks.forEach((callback) => callback()));
+    expect(scrolled.length).toBe(held);
+    vi.unstubAllGlobals();
+  });
+
+  it("A2: the outlined Download PDF says Compiling PDF... meanwhile, then the band is A4 and focus is on Open the posting, with one cyan before and after", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
+    const { container } = page();
+    await settle();
+    expect(cyan(container)).toHaveLength(1);
+    const download = buttonNamed(band(container), "Download PDF");
+    // A browser focuses the button it presses; jsdom's dispatched click does not.
+    download.focus();
+    click(download);
+    expect(text(download)).toBe("Compiling PDF...");
+    expect(download.classList.contains("bj-primary")).toBe(false);
+    expect(cyan(container)).toHaveLength(1);
+    await settle();
+    expect(callsTo(`GET /applications/${ID}/resume.pdf`)).toHaveLength(1);
+    expect(text(band(container))).toContain("Submit on the employer's site, then mark it applied.");
+    expect(cyan(container)).toHaveLength(1);
+    expect(text(cyan(container)[0])).toBe("Open the posting");
+    expect(document.activeElement).toBe(cyan(container)[0]);
+  });
+
   it("A4: downloading the PDF from the band moves on to Open the posting, and focus follows the band", async () => {
     describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
     const { container } = page();
     await settle();
+    // With a flagged claim the cyan is the link to it, so the press below is on the outlined Download PDF.
+    expect(cyan(container)).toHaveLength(1);
+    expect(text(cyan(container)[0])).not.toBe("Download PDF");
     click(buttonNamed(band(container), "Download PDF"));
     await settle();
     expect(callsTo(`GET /applications/${ID}/resume.pdf`)).toHaveLength(1);
@@ -638,6 +737,21 @@ describe("the band, from the first step to the last", () => {
     expect(open.getAttribute("target")).toBe("_blank");
     expect(document.activeElement).toBe(open);
     expect(cyan(container)).toHaveLength(1);
+  });
+
+  it("A4 from A3: with nothing flagged the cyan is Download PDF, and pressing it moves on to Open the posting", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([]) });
+    const { container } = page();
+    await settle();
+    expect(cyan(container)).toHaveLength(1);
+    expect(text(cyan(container)[0])).toBe("Download PDF");
+    expect(buttonNamed(band(container), "Download PDF")).toBe(cyan(container)[0]);
+    click(cyan(container)[0]);
+    await settle();
+    expect(callsTo(`GET /applications/${ID}/resume.pdf`)).toHaveLength(1);
+    expect(cyan(container)).toHaveLength(1);
+    expect(text(cyan(container)[0])).toBe("Open the posting");
+    expect(document.activeElement).toBe(cyan(container)[0]);
   });
 
   it("offers the person's own step under Review: open the posting, and record it as applied through the stage endpoint", async () => {

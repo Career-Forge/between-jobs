@@ -7,7 +7,8 @@
 //                                                      (secondary: Generate anyway)
 //   A1g  generating, a request is out                 "Generate a tailored resume ..."      Generating...
 //   A1   no resume yet                                "Generate a tailored resume ..."      Generate resume
-//   A2   a resume with flagged claims                 "Read the {n} flagged claims ..."     Download PDF
+//   A2   a resume with flagged claims                 "Read the {n} flagged claims ..."     Read the flagged claims
+//                                                      (link to the claim check; secondary: Download PDF)
 //   A2u  a resume whose claim check is not on the   "Your resume is ready to review ..."  Download PDF
 //        page (none stored, or it could not be read)
 //   A3   a resume with no flagged claims              "No claims flagged. ..."              Download PDF
@@ -23,6 +24,12 @@
 // every fact in a `why` line is something the page read -- nothing is said about a claim check that
 // was not stored, a date that was not returned, or a practice session the page never read.
 //
+// The first thing a sentence asks the person to do is what the cyan button does. A2 asks for the claims
+// to be read first, so its cyan goes to them (a link to the claim check, which the page's hash scroll
+// lands on and focuses) and Download PDF is the outlined button beside it. The band does not move on
+// after that link: the page cannot know the claims were read and does not say so, so the download stays
+// on offer next to it. A2u and A3 still lead with reading and keep Download PDF as their cyan.
+//
 // A band never starts, submits or sends anything the person has not asked for: the furthest it goes is
 // "Open the posting", and the person submits on the employer's own site.
 //
@@ -30,6 +37,7 @@
 // no application there is nothing for the setup rows to be about, so the page uses it directly.
 
 import { CROSS_NAV_HASH } from "../../applicationsBoard";
+import { CLAIM_CHECK_HEADING_ID } from "../../workspaceSections";
 import { definePage, type NextStep, type NextStepRow } from "../types";
 
 // What the page knows about the resume at this moment.
@@ -202,7 +210,10 @@ const A2: NextStepRow<WorkspaceFacts> = {
     const n = generation.flagged;
     return {
       sentence: n === 1 ? "Read the 1 flagged claim, then download." : `Read the ${n} flagged claims, then download.`,
-      action: DOWNLOAD,
+      // A link, not a handler: the claim check's heading is a hash target the page already scrolls to
+      // and keeps in view while the panels above it load. Download is the step after it.
+      action: { kind: "link", label: plural(n, "Read the flagged claim", "Read the flagged claims"), to: `#${CLAIM_CHECK_HEADING_ID}` },
+      secondary: DOWNLOAD,
       why: [statusWhy(facts), "resume drafted", `${n} ${plural(n, "claim", "claims")} flagged`],
     };
   }),

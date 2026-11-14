@@ -45,6 +45,12 @@ export const SECTION_TITLES: Record<keyof typeof SECTION_IDS, string> = {
 // why" (the band, Today) lands here, not at the top of the Generate section.
 export const HONEST_READ_HEADING_ID = "honest-read-heading";
 
+// The heading of the claim check in Review. The band's "Read the flagged claims" is a link to it, so it
+// is a focus target like the section headings: arriving by the link leaves the keyboard on it. It is
+// not one of the section ids above (the Applications menu and the jump bar have no entry for it), so
+// it stays out of CROSS_NAV_HASH.
+export const CLAIM_CHECK_HEADING_ID = "claim-check-heading";
+
 export function workspaceJumpGroups(hiringPostsOn: boolean): JumpGroup[] {
   return [
     {

@@ -567,6 +567,35 @@ describe("the places other pages link to", () => {
     expect(container.querySelector("[id='honest-read-heading']")).not.toBeNull();
   });
 
+  // The band's link to the claims is a path plus a hash, which the page sweep's same-page link check (hrefs
+  // that start with "#") does not read, so the target is looked up from the link itself.
+  const claimsLink = (container: HTMLElement) =>
+    [...container.querySelectorAll('section[aria-label="Next step"] a')].find((a): a is HTMLAnchorElement => /^Read the flagged claims?$/.test(text(a)));
+
+  it.each([
+    ["one flagged claim", [CLAIM]],
+    ["two flagged claims", [CLAIM, 'unsupported claim (contradicted): "Led 20 engineers" -- Your profile says a team of 6.']],
+  ])("has the claim check's heading where the band's link to the flagged claims lands, with %s", async (_name, warnings) => {
+    describeWorkspace("empty", { resume_exists: true }, drafted(warnings));
+    const container = await open(`/applications/${ID}`, 1000);
+    const link = claimsLink(container);
+    expect(link, "the band offers the flagged claims").toBeDefined();
+    const target = new URL(link!.getAttribute("href") ?? "", "http://page.test").hash.slice(1);
+    expect(target).not.toBe("");
+    const heading = container.querySelector(`[id="${target}"]`);
+    expect(heading, `#${target}`).not.toBeNull();
+    expect(heading?.tagName).toBe("H3");
+  });
+
+  // The shell around the page (route boundary, scroll-to-top rule, focus-clear-of-bars) must leave the arrival alone.
+  it("puts keyboard focus on the claim check's heading when the band's link to the flagged claims is pressed, in the real shell", async () => {
+    describeWorkspace("empty", { resume_exists: true }, drafted([CLAIM]));
+    const container = await open(`/applications/${ID}`, 1000);
+    click(claimsLink(container)!);
+    await settle(3);
+    expect(document.activeElement).toBe(container.querySelector("[id='claim-check-heading']"));
+  });
+
   it("has the Settings sections the other pages link to", async () => {
     describeAccount("empty");
     const container = await open("/settings", 1000);

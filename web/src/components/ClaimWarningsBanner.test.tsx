@@ -2,7 +2,7 @@
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
-import { buttonNamed, click, render } from "../testing/render";
+import { buttonNamed, click, query, render } from "../testing/render";
 import { settle, text } from "../testing/forms";
 import { CLAIM_LEGEND, ClaimWarningsBanner, ZERO_FLAG_CAVEAT, claimOutcome, isRepairedClaim } from "./ClaimWarningsBanner";
 
@@ -118,6 +118,23 @@ describe("the rows", () => {
     const { container } = block(["unsupported claim (contradicted): Led 20 engineers -- no match"]);
     expect(container.querySelector(".bj-claimrow")).toBeNull();
     expect(text(container.querySelector('[aria-label="Other claim notes"]')!)).toContain("Led 20 engineers -- no match");
+  });
+});
+
+// The band's "Read the flagged claims" is a link to this heading (workspace.ts), and the page's hash scroll
+// focuses a heading that has a tabindex. Both views draw it, and once: an id that appeared twice would
+// make the link land on whichever came first.
+describe("the heading the band links to", () => {
+  it.each([
+    ["with flagged claims", [FLAGGED, CONTRADICTED]],
+    ["with nothing flagged", []],
+  ])("is the one element with the id, a focusable h3 reading Claim check, %s", (_name, warnings) => {
+    const { container } = block(warnings);
+    const heading = query(container, "[id='claim-check-heading']");
+    expect(container.querySelectorAll("[id='claim-check-heading']")).toHaveLength(1);
+    expect(heading.tagName).toBe("H3");
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+    expect(text(heading)).toBe("Claim check");
   });
 });
 

@@ -28,7 +28,9 @@ import "../styles/workspace.css";
 // drafted view and under the honest read alike.
 //
 // The Generate button and Download PDF are outlined here. When the next-step band carries the same step
-// it is the page's one cyan, and the body's copy stays secondary (one action, one cyan, once).
+// it is the page's one cyan, and the body's copy stays secondary (one action, one cyan, once). With
+// flagged claims the band's cyan is the link to the claim check and its own Download PDF is outlined
+// too; the one here is the same download.
 //
 // Per-bullet evidence is not shown: `evidence_fact_ids` is always empty today, so a per-bullet display
 // would be decoration with nothing behind it.

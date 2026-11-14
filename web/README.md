@@ -446,7 +446,10 @@ failure of one panel never changes the band. Its states and wording are under "R
   visit, held back by the fit check, flagged claims, no flagged claims, a PDF downloaded this visit, then a row per
   status from Applied on. The rows for a resume (A1c to A4) apply while the status is Saved. A why line names only
   what the page read: it never names a model or a generation time, never says a claim check "ran", and never says
-  "verified". The body copy of the band's action (Generate, Download PDF, Generate anyway) is outlined.
+  "verified". The body copy of the band's action (Generate, Download PDF, Generate anyway) is outlined. With flagged
+  claims the band's cyan is a link to the claim check's heading (`#claim-check-heading`, which the page's hash scroll
+  lands on and keeps in view while the panels above it load) and Download PDF is the outlined button beside it; the band
+  does not move on after the link, because the page cannot know the claims were read.
   `lib/workspaceFacts.ts` turns the generation hook's state and the account reads into the rows' facts.
 - **Frames.** Loading (breadcrumb, placeholder, the band's eyebrow only), not found (`workspaceNotFound`: a way back,
   no Try again), failed (the band names the call and offers Try again; the body's callout carries a Retry of its own
