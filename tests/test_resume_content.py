@@ -610,6 +610,26 @@ def test_an_unknown_key_that_is_not_hidden_is_ignored_too() -> None:
     assert _stored(raw) == paper()
 
 
+def test_ids_and_pointers_are_opaque_text_kept_exactly_as_sent() -> None:
+    # the reader does not judge their form or whether they repeat: a consumer keys its rows on
+    # position and looks a pointer up safely (see the `ResumeContent` docstring)
+    raw = paper()
+    first, second = raw["experience"]
+    first["id"] = second["id"] = "not an id at all"
+    first["pointer"] = "/__proto__/polluted"
+    second["pointer"] = "../../etc/passwd"
+    first["bullets"][0]["id"] = first["bullets"][1]["id"] = "same"
+
+    stored = _stored(raw)
+
+    assert [entry["id"] for entry in stored["experience"]] == ["not an id at all"] * 2
+    assert [entry["pointer"] for entry in stored["experience"]] == [
+        "/__proto__/polluted",
+        "../../etc/passwd",
+    ]
+    assert [bullet["id"] for bullet in stored["experience"][0]["bullets"]] == ["same", "same"]
+
+
 def test_every_level_of_the_stored_paper_has_exactly_the_contracts_keys() -> None:
     stored = _stored(paper())
     assert set(stored) == _TOP_KEYS
