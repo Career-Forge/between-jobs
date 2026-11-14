@@ -1312,6 +1312,63 @@ def test_a_run_that_wrote_only_a_cover_letter_keeps_no_preview_even_when_the_eng
     assert outbox["event_type"] == "artifact.generation_failed.v1"
 
 
+def _preview_with_a_nationality_chip() -> dict[str, Any]:
+    preview = sample_paper()
+    preview["header"]["chips"].append(
+        {"field": "nationality", "text": "Ruritanian", "href": None},
+    )
+    preview["header"]["chips"].append({"field": "github", "text": "github.com/jr", "href": None})
+    return preview
+
+
+def test_a_nationality_chip_is_left_out_of_the_stored_preview_unless_the_candidate_asked() -> None:
+    supabase = _FakeSupabaseClient()
+    http = _FakeHttpClient(body=_hosted_response_with(_preview_with_a_nationality_chip()))
+
+    response = _prepare(supabase, http)
+
+    assert response.status_code == 201
+    content = response.json()["resume_content"]
+    chips = [chip["field"] for chip in content["header"]["chips"]]
+    assert chips == ["email", "linkedin", "phone", "location", "github"]
+    assert "Ruritanian" not in json.dumps(supabase.application_events.insert_calls)
+    # nothing else of the preview changed
+    expected = _preview_with_a_nationality_chip()
+    expected["header"]["chips"] = [
+        chip for chip in expected["header"]["chips"] if chip["field"] != "nationality"
+    ]
+    assert content == expected
+
+
+def test_a_nationality_chip_is_kept_when_the_candidate_opted_in() -> None:
+    documents = [{"id": "doc-1", "shape_overrides": {"show_nationality": True}}]
+    supabase = _FakeSupabaseClient(resume_documents=_FakeTable(select_rows=documents))
+    http = _FakeHttpClient(body=_hosted_response_with(_preview_with_a_nationality_chip()))
+
+    response = _prepare(supabase, http)
+
+    assert response.status_code == 201
+    assert http.post_calls[0][1]["json"]["show_nationality"] is True
+    chips = [chip["field"] for chip in response.json()["resume_content"]["header"]["chips"]]
+    assert chips == ["email", "linkedin", "phone", "location", "nationality", "github"]
+
+
+def test_the_nationality_check_leaves_a_preview_with_nothing_to_remove_as_it_is() -> None:
+    from between_jobs.api import prepare_orchestrator
+
+    plain = ResumeContent.model_validate(sample_paper())
+    no_header = ResumeContent.model_validate({**sample_paper(), "header": None})
+
+    assert prepare_orchestrator._preview_for(plain, show_nationality=False) is plain
+    assert prepare_orchestrator._preview_for(no_header, show_nationality=False) is no_header
+    assert prepare_orchestrator._preview_for(None, show_nationality=False) is None
+    with_one = ResumeContent.model_validate(_preview_with_a_nationality_chip())
+    assert prepare_orchestrator._preview_for(with_one, show_nationality=True) is with_one
+    # the engine's own object is never changed
+    prepare_orchestrator._preview_for(with_one, show_nationality=False)
+    assert [chip.field for chip in with_one.header.chips][-2] == "nationality"  # type: ignore[union-attr]
+
+
 _POISON_PREVIEWS: list[Any] = [
     pytest.param("a paper", id="a-string"),
     pytest.param(["a", "paper"], id="a-list"),

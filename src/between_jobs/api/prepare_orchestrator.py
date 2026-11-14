@@ -30,7 +30,7 @@ from .applications_store import (
 )
 from .artifact_versions_store import create_version, download_content, get_latest_version
 from .credential_resolver import resolve
-from .engine_contract import ArtifactRef, PrepareApplicationResult
+from .engine_contract import ArtifactRef, PrepareApplicationResult, ResumeContent
 from .engine_gateway import active_capabilities, call_apply
 from .errors import ApiError
 from .jobs_store import SnapshotNotFound, get_snapshot
@@ -130,6 +130,20 @@ async def run_prepare_application(
             force_generate=force_generate,
             generate_cover_letter=generate_cover_letter,
         )
+
+
+def _preview_for(paper: ResumeContent | None, *, show_nationality: bool) -> ResumeContent | None:
+    """The engine's preview, as this platform keeps it. The platform is a second check behind the
+    engine on one thing it knows for certain: nationality is opt-in (`show_nationality`, off
+    unless the candidate turned it on), and an engine that ignored the flag, however it came to,
+    must not put one in the stored preview. Any other chip is as the engine sent it."""
+    header = paper.header if paper is not None else None
+    if paper is None or header is None or show_nationality:
+        return paper
+    chips = [chip for chip in header.chips if chip.field != "nationality"]
+    if len(chips) == len(header.chips):
+        return paper
+    return paper.model_copy(update={"header": header.model_copy(update={"chips": chips})})
 
 
 async def _prepare_application(
@@ -325,7 +339,11 @@ async def _prepare_application(
         evidence_fact_ids=evidence_fact_ids,
         # The preview is of the resume just written: a run that wrote none keeps none, whatever
         # the engine sent with it.
-        resume_content=forge_result.paper if resume_ref is not None else None,
+        resume_content=(
+            _preview_for(forge_result.paper, show_nationality=resolved_shape.show_nationality)
+            if resume_ref is not None
+            else None
+        ),
     )
 
     payload = result.model_dump(mode="json")
