@@ -28,10 +28,18 @@ from __future__ import annotations
 from typing import Any, Literal, cast
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .credential_resolver import ResolvedCredential
-from .engine_contract import AtsAttempt, ForgeFitResult, GapAnswerDraft, GapQuestion, Step0Result
+from .engine_contract import (
+    AtsAttempt,
+    ForgeFitResult,
+    GapAnswerDraft,
+    GapQuestion,
+    ResumeContent,
+    Step0Result,
+    parse_resume_content,
+)
 from .env import optional_env
 from .errors import ApiError
 from .upstream_errors import upstream_error_detail
@@ -226,6 +234,32 @@ class ForgeApplyResult(BaseModel):
     verified against, or are verbatim from, those entries. Empty when the engine does not report
     it (the separate service does not), never a guess. The prepare flow turns it into the
     `career_facts` ids stored with the document."""
+
+    paper: ResumeContent | None = None
+    """A preview of the resume the engine wrote: what it laid out, in print order, as plain text
+    (`ResumeContent`). Read from `resume["paper"]` by `parse_resume_content` and from nowhere
+    else, so a paper an engine sends beside the resume instead of inside it is not read. None
+    when the engine sends none (the built-in engine does not today), and when what it sent
+    could not be read: wrong schema, wrong shape, too big, hostile. Reading it never raises, so
+    the paper can never be the reason an apply call fails, and neither
+    `ForgeApplyResult` nor `RemoteApplyResult` is rejected over it.
+
+    The raw object does not outlive the reader: it is taken out of `resume`, which keeps whatever
+    else the engine sent. A `ResumeContent` given directly in code is kept as it is."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _read_the_paper(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or isinstance(data.get("paper"), ResumeContent):
+            return data
+        resume = data.get("resume")
+        if not isinstance(resume, dict):
+            return {**data, "paper": None}
+        return {
+            **data,
+            "resume": {key: value for key, value in resume.items() if key != "paper"},
+            "paper": parse_resume_content(resume.get("paper")),
+        }
 
     @property
     def generated(self) -> bool:
