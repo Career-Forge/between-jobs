@@ -235,17 +235,23 @@ class ForgeApplyResult(BaseModel):
     it (the separate service does not), never a guess. The prepare flow turns it into the
     `career_facts` ids stored with the document."""
 
-    paper: ResumeContent | None = None
+    paper: ResumeContent | None = Field(default=None, exclude=True)
     """A preview of the resume the engine wrote: what it laid out, in print order, as plain text
     (`ResumeContent`). Read from `resume["paper"]` by `parse_resume_content` and from nowhere
     else, so a paper an engine sends beside the resume instead of inside it is not read. None
     when the engine sends none (the built-in engine does not today), and when what it sent
     could not be read: wrong schema, wrong shape, too big, hostile. Reading it never raises, so
-    the paper can never be the reason an apply call fails, and neither
-    `ForgeApplyResult` nor `RemoteApplyResult` is rejected over it.
+    a paper that arrives as JSON is never the reason an apply call fails, and neither
+    `ForgeApplyResult` nor `RemoteApplyResult` is rejected over it. (A response whose JSON
+    cannot be parsed at all, a number of five thousand digits or nesting hundreds of thousands
+    deep, fails before this is reached, paper or no paper.)
 
     The raw object does not outlive the reader: it is taken out of `resume`, which keeps whatever
-    else the engine sent. A `ResumeContent` given directly in code is kept as it is."""
+    else the engine sent. A `ResumeContent` given directly in code is kept as it is.
+
+    Not part of a dump (`exclude=True`): it is read from an engine's response, and a dump put
+    back through validation would find no `resume["paper"]` to read it from, so a field that
+    appeared in the dump would come back None. `model_copy` keeps it."""
 
     @model_validator(mode="before")
     @classmethod
