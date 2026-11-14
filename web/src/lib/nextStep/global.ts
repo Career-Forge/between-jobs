@@ -18,7 +18,7 @@
 // page that says nothing about keys is never sent to add one. Settings, where the key is added, does
 // not supply it and has its own rows for the same states, with the buttons that act in place. It also
 // answers G2's case itself while the key is not usable (settingsOutcome, in pages/settings.ts), since
-// the profile import G2 points to needs that key first.
+// the resume file import on the page G2 points to needs that key first.
 
 import { MODEL_CHOICE_LABEL } from "../modelKey";
 import { MODEL_PROVIDER_PATH } from "../settingsPaths";

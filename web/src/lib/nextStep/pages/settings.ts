@@ -33,11 +33,13 @@
 //
 // WHEN THERE IS NO ACTIVE PROFILE YET. The global row G2 answers before the rows above and sends a
 // person to the Profile page to import one. Reading a resume file there uses the person's own model,
-// so that page asks for the same key this page adds, and a person with neither would be passed back and
-// forth with nothing done on either. `settingsOutcome` breaks that from this side: when G2 decided and
-// the key is not usable (none, needs_model or needs_key) it returns the first of S1, S2 and S2k that
-// applies, the very row objects above, so the words for each state are the same wherever they are said.
-// When the key is usable, G2 stands and the band sends the person on to their profile.
+// so that page's file card asks for the same key this page adds, and a person with neither would be
+// sent back and forth between this band and that card's key notice, with no key added at the end of it.
+// (Pasting the profile as JSON there needs no key, but it is not the step the band points at.)
+// `settingsOutcome` breaks that from this side: when G2 decided and the key is not usable (none,
+// needs_model or needs_key) it returns the first of S1, S2 and S2k that applies, the very row objects
+// above, so the words for each state are the same wherever they are said. When the key is usable, G2
+// stands and the band sends the person on to their profile.
 
 import { MODEL_CHOICE_LABEL } from "../../modelKey";
 import { definePage, type NextStepInput, type NextStepOutcome, type NextStepRow } from "../types";

@@ -10,8 +10,8 @@ import { nextStepWithRow, type NextStepInput } from "./index";
 import { settingsOutcome, type SettingsFacts } from "./pages/settings";
 
 // Two pages could each tell a person with no profile and no usable model key to go to the other, and
-// neither would get them anywhere: the Settings band sends them to the Profile page to import a profile,
-// and the Profile page's file card sends them to Settings for the key the import runs on. This test
+// neither link would get a key added: the Settings band sends them to the Profile page to import a profile,
+// and the Profile page's file card sends them to Settings for the key the file import runs on. This test
 // reads the two links from the code that makes them and pins that, for every state of the key, the two
 // are never both there.
 //
@@ -22,8 +22,14 @@ import { settingsOutcome, type SettingsFacts } from "./pages/settings";
 // Both pages read that as a usable key, so the import fails at the provider, its notice links to Settings,
 // and Settings then says "Set up your profile". That is one bounce, and it is a known and accepted one.
 //
-// Only the file card's own link is read: the Profile page has other links to Settings in its body copy,
-// which this does not look at.
+// Only the file card's own link is read: the Profile page's header has a Settings button of its own, which
+// is always there and which this does not look at.
+//
+// The Profile side's key reading is the one a page works out from the saved keys; the Settings side's is
+// the one Settings works out from the same keys. KEY_STATES maps one to the other by hand, so this checks
+// the two rule sets against each other, not Settings.tsx's derivation. The two can differ: a model dropped
+// during this visit makes Settings read needs_model even while another saved key is usable, where the
+// Profile page reads ready. This map has no entry for that account.
 
 // Written as a Record so that a reading added to ModelKeyReading is a type error here until it is covered.
 const KEY_STATES: Record<ModelKeyReading, SettingsFacts["llm"]> = {
@@ -72,7 +78,7 @@ function profileCardLinksToSettings(reading: ModelKeyReading): boolean {
 }
 
 describe("Settings and the Profile file card", () => {
-  it.each(READINGS)("never both send a person with no active profile to the other, for a key reading of %s", (reading) => {
+  it.each(READINGS)("the Settings band and the file card's link never both send a person with no active profile to the other, for a key reading of %s", (reading) => {
     expect(settingsLinksToProfile(reading) && profileCardLinksToSettings(reading)).toBe(false);
   });
 

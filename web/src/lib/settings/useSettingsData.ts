@@ -6,9 +6,10 @@ import { parseCredentialRows, type CredentialSummary } from "./credentials";
 
 // What the Settings page reads about the account: the saved credentials (the page's own data) and
 // whether there is an active profile (which the next-step band needs: without one, the band sends
-// the person to their profile first; a waiting import is known only in the session that made it, so
-// it is never claimed here). Each is loading, failed (with the call and the time, for the
-// band's why line) or ready.
+// the person to their profile once a model key is usable, and until then asks for the key itself,
+// because reading a resume file on the profile page needs that key; a waiting import is known only in
+// the session that made it, so it is never claimed here). Each is loading, failed (with the call and
+// the time, for the band's why line) or ready.
 //
 // A re-read after a change never goes back to "loading": the rows stay where they are while it is
 // out. If the re-read itself fails, the rows stay and `refreshFailed` says they may be out of date,
