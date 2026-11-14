@@ -517,7 +517,7 @@ class ResumeContent(BaseModel):
                  "bullets": [{"id", "text"}]}
 
     Reading it (`parse_resume_content` is the entry point; validating this model directly gives
-    the same cleaning, not the schema gate or the size cap):
+    the same cleaning and the same schema check, but not the size cap, and logs nothing):
 
     - Only schema values in `SUPPORTED_RESUME_CONTENT_SCHEMAS` are read. Any other, or none, is
       a paper that is absent, never one read partly.
@@ -641,6 +641,16 @@ def _list_size(value: object) -> int | None:
     return len(value) if isinstance(value, list) else None
 
 
+def _read_a_stored_paper(value: object) -> ResumeContent | None:
+    """How a result reads its `resume_content`: a `ResumeContent` as it is, anything else through
+    `parse_resume_content`. A stored paper outlives the engine and the code that wrote it, so one
+    this code cannot read (a schema it does not know, a shape that does not fit) is a paper that
+    is absent, not a result that fails to validate."""
+    if isinstance(value, ResumeContent):
+        return value
+    return parse_resume_content(value)
+
+
 class PrepareApplicationResult(BaseModel):
     run_id: str
     profile_version_id: str
@@ -674,18 +684,23 @@ class PrepareApplicationResult(BaseModel):
     gate: no verdict was reached, so none is recorded."""
     warnings: list[str]
     evidence_fact_ids: list[str]
-    resume_content: ResumeContent | None = None
+    resume_content: Annotated[ResumeContent | None, BeforeValidator(_read_a_stored_paper)] = None
     """A preview of the draft: the resume as the engine laid it out, in print order, as plain
     text, for the web app to draw. It describes one resume, the one this same result names in
     `resume`: that reference's `version_id` and `sha256` are what the preview was drawn for, and
     nothing else binds the two, so a reader holding a different version of the resume must not
     show it as that version.
 
-    Never present when `resume` is None: a run that declined to write a resume has no draft to
-    preview, and any preview the engine sent with it is not kept. None as well when the engine
-    sends no preview (the built-in engine does not yet) or sent one that could not be read
-    (`parse_resume_content`: wrong schema, wrong shape, over the size limit). Absent altogether
-    from results stored before this field existed, which read back as None; never a guess.
+    The prepare flow never stores one when `resume` is None: a run that declined to write a
+    resume has no draft to preview, and any preview the engine sent with it is not kept (this
+    model does not enforce that on its own). None as well when the engine sends no preview (the
+    built-in engine does not yet) or sent one that could not be read (`parse_resume_content`:
+    wrong schema, wrong shape, over the size limit). Absent altogether from results stored
+    before this field existed, which read back as None; never a guess.
+
+    A stored preview is read again whenever a result is validated, through
+    `parse_resume_content`: one this code cannot read (a newer engine's schema, say) reads back
+    as None and never fails the result it sits in.
 
     It is a preview, not the document: the PDF compiled from the stored LaTeX is the document,
     and this holds what the engine says it printed, as the engine folded and truncated it. It
