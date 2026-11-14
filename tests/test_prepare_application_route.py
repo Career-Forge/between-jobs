@@ -1280,6 +1280,38 @@ def test_a_run_that_wrote_no_resume_keeps_no_preview_even_when_the_engine_sent_o
     assert supabase.artifact_versions.insert_calls == []
 
 
+def test_a_run_that_wrote_only_a_cover_letter_keeps_no_preview_even_when_the_engine_sent_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # a preview describes the resume this same result names: with no resume there is nothing for
+    # it to describe, whatever else the run wrote
+    content = ResumeContent.model_validate(sample_paper())
+    engine = _use_this_engine(
+        monkeypatch,
+        ForgeApplyResult(
+            resume=None,
+            cover_letter={"latex": r"\begin{document}dear\end{document}", "word_count": 1},
+            regenerated=False,
+            paper=content,
+        ),
+    )
+    supabase = _FakeSupabaseClient()
+
+    response = _prepare(supabase, _FakeHttpClient(), generate_cover_letter=True)
+
+    assert response.status_code == 201
+    assert engine.calls == 1
+    body = response.json()
+    assert body["resume"] is None
+    assert body["cover_letter"] is not None  # the run did write something
+    assert body["resume_content"] is None
+    (event,) = supabase.application_events.insert_calls
+    assert event["payload"]["resume_content"] is None
+    (outbox,) = supabase.event_outbox.insert_calls
+    assert "resume_content" not in outbox["payload"]
+    assert outbox["event_type"] == "artifact.generation_failed.v1"
+
+
 _POISON_PREVIEWS: list[Any] = [
     pytest.param("a paper", id="a-string"),
     pytest.param(["a", "paper"], id="a-list"),
