@@ -25,7 +25,7 @@ import { useKeepBreadcrumbFocus } from "../lib/useKeepBreadcrumbFocus";
 import { useHiringSignalsStatus } from "../lib/useHiringSignalsStatus";
 import { useHoldHashTarget } from "../lib/useHoldHashTarget";
 import { useScrollToHash } from "../lib/useScrollToHash";
-import { SECTION_IDS, HONEST_READ_HEADING_ID, workspaceJumpGroups } from "../lib/workspaceSections";
+import { SECTION_IDS, CLAIM_CHECK_HEADING_ID, HONEST_READ_HEADING_ID, workspaceJumpGroups } from "../lib/workspaceSections";
 import { generationFact, gmailFactOf } from "../lib/workspaceFacts";
 import { stateSummary } from "../lib/workspaceTrails";
 import type { WorkspaceApplication } from "../lib/workspaceTypes";
@@ -399,6 +399,12 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
   // The panels load after the page arrives and push a deep link's section down; hold it in place until
   // the person takes over (lib/useHoldHashTarget.ts).
   useHoldHashTarget(true, location.hash);
+
+  // The band's "Read the flagged claims" links to the claim check's heading, and the address keeps that
+  // hash afterwards, so the next press (a second one, or the first after Back from the profile or a
+  // reload) is a link to the address already shown. That changes no hash, so the jump bar's scroll on a
+  // hash change stays quiet; it does make a new location key, so scroll and focus again on that.
+  useScrollToHash(location.hash === `#${CLAIM_CHECK_HEADING_ID}`, location.hash, location.key);
 
   // A link to #hiring-posts that arrives before the server has said whether the feature is on lands on
   // an empty anchor; scroll again once it has answered, when the section (or its note) exists.

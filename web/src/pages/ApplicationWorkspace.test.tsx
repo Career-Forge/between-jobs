@@ -177,6 +177,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // restoreAllMocks leaves vi.stubGlobal alone: a test that fails before its own unstub must not leave a
+  // stub ResizeObserver behind for the rest of the file.
+  vi.unstubAllGlobals();
   Reflect.deleteProperty(window, "matchMedia");
 });
 
@@ -641,6 +644,7 @@ describe("the band, from the first step to the last", () => {
     const download = buttonNamed(band(container), "Download PDF");
     expect(download.classList.contains("bj-primary")).toBe(false);
     expect(download.classList.contains("bj-band-secondary")).toBe(true);
+    expect(band(container).querySelectorAll(".bj-band-secondary")).toHaveLength(1);
     // The link's target is on the page: the claim check's heading.
     expect(query(container, "#claim-check-heading").tagName).toBe("H3");
   });
@@ -661,6 +665,37 @@ describe("the band, from the first step to the last", () => {
     expect(text(band(container))).toContain("Read the 1 flagged claim, then download.");
     expect(text(cyan(container)[0])).toBe("Read the flagged claim");
     expect(cyan(container)).toHaveLength(1);
+  });
+
+  // The address keeps its #claim-check-heading after the first press, and after Back from the profile or a
+  // reload, so the link is often pressed with the hash already there. A same-address press changes no
+  // hash; it makes a new location key, which is what the page scrolls again on.
+  it("A2: pressing the cyan again, with the address already on the claim check, scrolls to it and focuses it again", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
+    const { container } = page();
+    await settle();
+    click(cyan(container)[0]);
+    await settle();
+    const heading = query<HTMLElement>(container, "#claim-check-heading");
+    expect(document.activeElement).toBe(heading);
+    heading.blur();
+    scrolled = [];
+    click(cyan(container)[0]);
+    await settle();
+    expect(text(query(container, "[data-testid='where']"))).toBe(`/applications/${ID}#claim-check-heading`);
+    expect(scrolled).toContain("claim-check-heading");
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it("A2: a page that opens on the claim check's address, as after Back from the profile, answers the first press", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
+    const { container } = page(`/applications/${ID}#claim-check-heading`);
+    await settle();
+    scrolled = [];
+    click(cyan(container)[0]);
+    await settle();
+    expect(scrolled).toContain("claim-check-heading");
+    expect(document.activeElement).toBe(query(container, "#claim-check-heading"));
   });
 
   it("A2: a press on the cyan holds the claim check in view while the page above it grows, until the person takes over", async () => {
@@ -697,7 +732,6 @@ describe("the band, from the first step to the last", () => {
     });
     act(() => callbacks.forEach((callback) => callback()));
     expect(scrolled.length).toBe(held);
-    vi.unstubAllGlobals();
   });
 
   it("A2: the outlined Download PDF says Compiling PDF... meanwhile, then the band is A4 and focus is on Open the posting, with one cyan before and after", async () => {
@@ -706,7 +740,8 @@ describe("the band, from the first step to the last", () => {
     await settle();
     expect(cyan(container)).toHaveLength(1);
     const download = buttonNamed(band(container), "Download PDF");
-    // A browser focuses the button it presses; jsdom's dispatched click does not.
+    // Chrome focuses the button it presses. Safari and Firefox on macOS do not, and neither does jsdom's
+    // dispatched click: the next test presses without it.
     download.focus();
     click(download);
     expect(text(download)).toBe("Compiling PDF...");
@@ -728,6 +763,9 @@ describe("the band, from the first step to the last", () => {
     expect(cyan(container)).toHaveLength(1);
     expect(text(cyan(container)[0])).not.toBe("Download PDF");
     click(buttonNamed(band(container), "Download PDF"));
+    // Pressed without taking focus, as in a browser that does not focus a button on click: the band takes
+    // it while the PDF compiles, so it is never left on the page behind.
+    expect(band(container).contains(document.activeElement)).toBe(true);
     await settle();
     expect(callsTo(`GET /applications/${ID}/resume.pdf`)).toHaveLength(1);
     expect(text(band(container))).toContain("Submit on the employer's site, then mark it applied.");
