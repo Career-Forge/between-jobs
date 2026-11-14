@@ -266,7 +266,7 @@ describe("the table", () => {
     }
   });
 
-  it("never offers a second cyan: the one secondary is an outlined button beside it", () => {
+  it("only ever puts a secondary beside a primary action, and only on the rows that have one", () => {
     const withSecondary = rows.filter((entry) => entry.secondary !== undefined);
     expect(withSecondary.map((entry) => entry.row)).toEqual(["A1b", "A1b", "A1b", "A2", "A2"]);
     for (const entry of withSecondary) expect(step(ask(entry.input).outcome).action).not.toBeNull();

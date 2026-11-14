@@ -304,7 +304,7 @@ describe("a request out for the primary action", () => {
 
 describe("when the sentence changes", () => {
   const first = ready(step());
-  const second = ready(step({ sentence: "Read the 2 flagged claims, then download.", action: { kind: "button", label: "Download PDF", intent: "download" } }));
+  const second = ready(step({ sentence: "Your resume is ready. Download it.", action: { kind: "button", label: "Download PDF", intent: "download" } }));
 
   it("announces nothing on the first render: that is the page arriving", () => {
     const { container } = render(band(first));
@@ -318,7 +318,7 @@ describe("when the sentence changes", () => {
   it("announces the new sentence once through a polite live region, and fades it in", () => {
     const view = render(band(first));
     view.rerender(band(second));
-    expect(query(view.container, ".bj-band-live").textContent).toBe("Read the 2 flagged claims, then download.");
+    expect(query(view.container, ".bj-band-live").textContent).toBe("Your resume is ready. Download it.");
     expect(view.container.querySelector(FADING)).not.toBeNull();
   });
 
