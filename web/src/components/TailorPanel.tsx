@@ -129,11 +129,12 @@ export function TailorPanel({ applicationId }: { applicationId: string }) {
   }, [applicationId]);
 
   // The pressed button goes when the result arrives, which would drop focus to the page body: the result takes it, unless
-  // the person has already moved on to something else.
+  // the person has already moved on to something else. It takes it without scrolling: someone who pressed, then scrolled
+  // to another part of the page while the model worked, is not pulled back (a screen reader still lands on the result).
   useLayoutEffect(() => {
     if (state.kind !== "ready") return;
     const active = document.activeElement;
-    if (active === null || active === document.body) resultRoot.current?.focus();
+    if (active === null || active === document.body) resultRoot.current?.focus({ preventScroll: true });
   }, [state.kind]);
 
   if (state.kind === "setup") {

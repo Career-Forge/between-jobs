@@ -257,6 +257,18 @@ describe("Tailor when it is pressed", () => {
     expect(document.activeElement).toBe(result);
   });
 
+  it("moves focus to the result without scrolling the page to it", async () => {
+    describeReads();
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    const { container } = panel();
+    await press(container);
+    const result = query(container, "[role='group'][aria-label='Coverage result']");
+    // jsdom does not scroll, so what the page would do is read from the options the call was made with.
+    const onResult = focus.mock.calls.filter((_args, index) => focus.mock.contexts[index] === result);
+    expect(onResult).toEqual([[{ preventScroll: true }]]);
+    expect(document.activeElement).toBe(result);
+  });
+
   it("leaves focus alone when the person has moved on to something else while it worked", async () => {
     describeReads();
     let release: (value: unknown) => void = () => undefined;
