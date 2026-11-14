@@ -8,8 +8,8 @@ import { NextStepBand } from "../components/paper/NextStepBand";
 import { PageHeader } from "../components/paper/PageHeader";
 import { FailureState, LoadingState } from "../components/paper/StateViews";
 import { SavedSearchesCard } from "../components/SavedSearchesCard";
-import { nextStep } from "../lib/nextStep";
-import type { SettingsFacts, SettingsLlm } from "../lib/nextStep/pages/settings";
+import { nextStepWithRow, type NextStepInput } from "../lib/nextStep";
+import { settingsOutcome, type SettingsFacts, type SettingsLlm } from "../lib/nextStep/pages/settings";
 import { opensOptionalExtras } from "../lib/settings/optionalExtras";
 import { knownDefaultProvider, llmRows, llmSetupState, providerName } from "../lib/settings/llmProviders";
 import { useOpenRouterConnect } from "../lib/settings/useOpenRouterConnect";
@@ -149,7 +149,7 @@ export default function Settings() {
   const defaultUnknown =
     defaultMayBeCleared || (droppedModelFor !== null && llm.some((row) => row.provider === droppedModelFor && llmSetupState(row) === "needs_model"));
 
-  const outcome = nextStep({
+  const input: NextStepInput<SettingsFacts> = {
     page: "settings",
     signedIn: true,
     profile: data.profile,
@@ -158,7 +158,10 @@ export default function Settings() {
     // with the buttons that act in place. Both read the keys with llmSetupState (lib/modelKey.ts).
     credentials: data.credentials.state === "ready" ? { state: "ready", value: {} } : data.credentials,
     facts: facts ?? undefined,
-  });
+  };
+  // The global row for "no active profile" sends a person to the profile page, whose file import needs
+  // the key this page adds. While the key is not usable, settingsOutcome puts S1, S2 or S2k in its place.
+  const outcome = settingsOutcome(nextStepWithRow(input), input);
 
   function onAction(intent: string) {
     switch (intent) {

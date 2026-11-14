@@ -413,15 +413,6 @@ describe("when the account cannot be read", () => {
     expect(container.querySelector("#search-keys")).not.toBeNull();
   });
 
-  it("sends a person with no profile to it first; the connect button is then outlined like the rest", async () => {
-    describeAccount([], new FakeApiError("none", "NOT_FOUND", undefined, 404));
-    const { container } = page();
-    await settle();
-    expect(text(band(container))).toContain("Everything here starts from your profile. Import it first.");
-    const primaries = [...container.querySelectorAll(".bj-button-link-primary, .bj-primary")];
-    expect(primaries.map((p) => text(p))).toEqual(["Set up your profile"]);
-  });
-
   it("keeps the rows and says the list may be out of date when a re-read after a change fails", async () => {
     describeAccount([{ ...key("brave"), service: "search" }]);
     on("DELETE /credentials/search/brave", undefined);
@@ -433,6 +424,87 @@ describe("when the account cannot be read", () => {
     await settle();
     expect(text(container)).toContain("That change went through, but your keys couldn't be read again");
     expect(container.querySelector("#search-brave")).not.toBeNull();
+  });
+});
+
+// "No active profile yet" is a 404 on the profile read. The profile page's file import needs the model key
+// that is added on this page, so while the key is not usable the band asks for the key here, in place,
+// instead of sending the person to a page that would send them back (lib/nextStep/pages/settings.ts).
+const noProfile = () => new FakeApiError("none", "NOT_FOUND", undefined, 404);
+const primariesIn = (root: ParentNode) => [...root.querySelectorAll(".bj-button-link-primary, .bj-primary")];
+
+describe("with no active profile yet", () => {
+  it("asks for the model key first when none is saved: the band's one cyan is Connect with OpenRouter, and the section's own button stays outlined", async () => {
+    describeAccount([], noProfile());
+    const { container } = page();
+    await settle();
+    expect(text(band(container))).toContain("Add a model key so Between Jobs can draft and score.");
+    expect(text(band(container))).toContain("why: no model key saved");
+    expect(text(band(container))).not.toContain("profile active");
+    expect(text(band(container))).not.toContain("Everything here starts from your profile");
+    const primaries = primariesIn(container);
+    expect(primaries.map((p) => text(p))).toEqual(["Connect with OpenRouter"]);
+    expect(band(container).contains(primaries[0])).toBe(true);
+    const inSection = [...container.querySelectorAll("#ai-provider button")].find((b) => text(b) === "Connect with OpenRouter");
+    expect(inSection).toBeDefined();
+    expect(inSection?.classList.contains("bj-primary")).toBe(false);
+  });
+
+  it("says a saved key needs a model, and the band's button opens the model list", async () => {
+    describeAccount([key("openai", { setup_state: "needs_model" })], noProfile());
+    on("POST /credentials/llm/models", { ...MODELS, provider: "openai" });
+    const { container } = page();
+    await settle();
+    expect(text(band(container))).toContain("Your OpenAI key is saved. Choose a model to finish.");
+    expect(text(band(container))).not.toContain("Everything here starts from your profile");
+    click(buttonIn(band(container), "Choose a model"));
+    await settle();
+    expect(query(container, "#provider-openai .bj-set-picker")).toBeDefined();
+    expect(primariesIn(container)).toHaveLength(1);
+  });
+
+  it("says a key that is not confirmed needs replacing, and the band's button opens the replace form in place", async () => {
+    describeAccount([key("openai", { is_validated: false, setup_state: "needs_key" })], noProfile());
+    const { container } = page();
+    await settle();
+    expect(text(band(container))).toContain("Your OpenAI key isn't confirmed. Replace it to finish.");
+    expect(text(band(container))).toContain("why: OpenAI key not confirmed");
+    expect(container.querySelector("#provider-openai form")).toBeNull();
+    expect(query(container, "#provider-openai-replace-button").getAttribute("aria-expanded")).toBe("false");
+    click(buttonIn(band(container), "Replace the key"));
+    await settle();
+    expect(query(container, "#provider-openai form")).toBeDefined();
+    expect(query(container, "#provider-openai-replace-button").getAttribute("aria-expanded")).toBe("true");
+    expect(primariesIn(container).map((p) => text(p))).toEqual(["Replace the key"]);
+  });
+
+  it("moves on to the profile once a model is chosen, because the key is then usable", async () => {
+    describeAccount([key("openai", { setup_state: "needs_model" })], noProfile());
+    on("POST /credentials/llm/models", { ...MODELS, provider: "openai" });
+    const { container } = page();
+    await settle();
+    click(buttonIn(band(container), "Choose a model"));
+    await settle();
+    on("PUT /credentials/llm/openai/model", key("openai", { model: "vendor/model-a", setup_state: "ready" }));
+    on("GET /credentials", [key("openai", { model: "vendor/model-a", setup_state: "ready" })]);
+    click(query<HTMLInputElement>(container, 'input[type="radio"]'));
+    click(buttonIn(container, "Use this model"));
+    await settle();
+    expect(text(band(container))).toContain("Everything here starts from your profile. Import it first.");
+    expect(text(band(container))).toContain("why: no active profile");
+    expect(text(band(container))).not.toContain("Your model is set");
+    const link = buttonIn(band(container), "Set up your profile");
+    expect(link.getAttribute("href")).toBe("/profile");
+    expect(primariesIn(container).map((p) => text(p))).toEqual(["Set up your profile"]);
+  });
+
+  it("goes straight to the profile when a usable key is already saved", async () => {
+    describeAccount([key("openrouter", { model: "m", setup_state: "ready" })], noProfile());
+    const { container } = page();
+    await settle();
+    expect(text(band(container))).toContain("Everything here starts from your profile. Import it first.");
+    expect(buttonIn(band(container), "Set up your profile").getAttribute("href")).toBe("/profile");
+    expect(primariesIn(container).map((p) => text(p))).toEqual(["Set up your profile"]);
   });
 });
 

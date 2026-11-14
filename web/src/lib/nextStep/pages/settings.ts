@@ -1,7 +1,8 @@
 // The Settings page's rows. They run after the global ones, so by the time one is asked the profile
-// has been read and is active (the global G2 and G2b answer first when it is not), the credentials
-// read has answered, and the page is not in a whole-page failure. Every sentence is chosen by code,
-// and every fact in a `why` line is a field the page read.
+// has been read and is active (the global G2 and G2b answer first when it is not; `settingsOutcome`
+// below is the one place this page overrides that), the credentials read has answered, and the page
+// is not in a whole-page failure. Every sentence is chosen by code, and every fact in a `why` line is
+// a field the page read.
 //
 //   S1  no model key at all        "Add a model key ..."        Connect with OpenRouter (the page's one cyan)
 //   S2  a key is checked, no model "Your X key is saved ..."    Choose a model
@@ -29,9 +30,17 @@
 //
 // S3 is session-only: "chosen just now" is known only in the visit that chose the model, like the
 // workspace's "PDF downloaded this session". After a reload the page shows S4.
+//
+// WHEN THERE IS NO ACTIVE PROFILE YET. The global row G2 answers before the rows above and sends a
+// person to the Profile page to import one. Reading a resume file there uses the person's own model,
+// so that page asks for the same key this page adds, and a person with neither would be passed back and
+// forth with nothing done on either. `settingsOutcome` breaks that from this side: when G2 decided and
+// the key is not usable (none, needs_model or needs_key) it returns the first of S1, S2 and S2k that
+// applies, the very row objects above, so the words for each state are the same wherever they are said.
+// When the key is usable, G2 stands and the band sends the person on to their profile.
 
 import { MODEL_CHOICE_LABEL } from "../../modelKey";
-import { definePage, type NextStepRow } from "../types";
+import { definePage, type NextStepInput, type NextStepOutcome, type NextStepRow } from "../types";
 
 export type SettingsLlm =
   | { state: "none" }
@@ -160,3 +169,19 @@ const S4: NextStepRow<SettingsFacts> = {
 };
 
 export const rules = definePage("settings", [S1, S2, S2K, S3, S4U, S4], { facts: isSettingsFacts });
+
+// What the page shows for the answer the engine gave, given the row that decided it. Only G2 with a key
+// that is not usable is replaced; every other answer, and an input whose facts cannot be read, is
+// returned as it came.
+export function settingsOutcome(
+  evaluation: { outcome: NextStepOutcome; rowId: string | null },
+  input: NextStepInput<SettingsFacts>,
+): NextStepOutcome {
+  const { outcome, rowId } = evaluation;
+  if (rowId !== "G2" || !isSettingsFacts(input.facts) || input.facts.llm.state === "ready") return outcome;
+  for (const row of [S1, S2, S2K]) {
+    const result = row.match(input);
+    if (result !== null && result !== "wait" && result !== "none") return { status: "ready", step: result };
+  }
+  return outcome;
+}
