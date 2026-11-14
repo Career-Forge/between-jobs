@@ -343,7 +343,12 @@ def _safe_href(value: object) -> str | None:
     limit. A control, format (bidirectional or zero-width), space or surrogate character anywhere
     in it, and a backslash, make it None rather than being cleaned out: a browser ignores some
     of those characters when it reads a link, so what was checked has to be exactly what is
-    stored."""
+    stored.
+
+    Also None: an http(s) address with a user name or password in front of the host
+    (`https://example.com@other.example/` reads as one site and opens another; no resume link has
+    one), and a `mailto` address with a query (`?subject=...&bcc=...` presets a message and its
+    recipients; a resume's address is the bare one)."""
     if not isinstance(value, str) or not value or len(value) > RESUME_CONTENT_MAX_HREF_LENGTH:
         return None
     if "\\" in value:
@@ -356,10 +361,13 @@ def _safe_href(value: object) -> str | None:
         return None
     if scheme in ("http", "https"):
         try:
-            if not urlsplit(value).hostname:
+            parts = urlsplit(value)
+            if not parts.hostname or "@" in parts.netloc:
                 return None
         except ValueError:
             return None
+    elif scheme == "mailto" and "?" in rest:
+        return None
     return f"{scheme}:{rest}"
 
 

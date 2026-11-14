@@ -965,9 +965,13 @@ def test_a_huge_string_is_refused_by_its_length_alone() -> None:
         ("http://example.com", "http://example.com"),
         ("https://example.com/a?b=c&d=e#frag", "https://example.com/a?b=c&d=e#frag"),
         ("https://example.com:8443/path", "https://example.com:8443/path"),
-        ("https://user@example.com/", "https://user@example.com/"),
+        ("https://medium.com/@jordan", "https://medium.com/@jordan"),
+        (
+            "https://example.com/?contact=jordan@example.com",
+            "https://example.com/?contact=jordan@example.com",
+        ),
         ("mailto:jordan@example.com", "mailto:jordan@example.com"),
-        ("mailto:jordan@example.com?subject=Hello", "mailto:jordan@example.com?subject=Hello"),
+        ("mailto:jordan@example.com,sam@example.com", "mailto:jordan@example.com,sam@example.com"),
         ("tel:+15550101234", "tel:+15550101234"),
         # a scheme in any case is a scheme; it comes back in lower case, the rest as sent
         ("HTTPS://Example.com/Path", "https://Example.com/Path"),
@@ -1039,6 +1043,16 @@ _BAD_HREFS = [
     "https://example.com/" + chr(0xD800),
     "https://example.com/" + chr(0),
     "mailto:a@b.c" + chr(0x0A) + "bcc:x@y.z",
+    # a user name or password in front of the host: it reads as one site and opens another
+    "https://paypal.com@evil.example/",
+    "https://user@example.com/",
+    "http://user:pw@evil.example",
+    "https://:@example.com/",
+    "https://example.com:443@evil.example/",
+    # a mailto that presets a message or its recipients
+    "mailto:jordan@example.com?subject=Hello",
+    "mailto:a@b.co?bcc=evil@x.example&body=send%20money",
+    "mailto:?to=a@b.co",
     # allowed schemes with nothing behind them, or no host, or a backslash for a browser to
     # read as a slash
     "http:",
