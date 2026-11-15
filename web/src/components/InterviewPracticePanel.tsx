@@ -340,6 +340,8 @@ function QuestionForm({
   submitRef: RefObject<HTMLButtonElement | null>;
 }) {
   const questionId = useId();
+  // The cost note beside Submit answer is the button's description; both are drawn together.
+  const spendNoteId = useId();
   const empty = draft.trim().length === 0;
   return (
     <div className="bj-rs-question">
@@ -365,11 +367,13 @@ function QuestionForm({
         aria-labelledby={questionId}
       />
       <div className="bj-actions">
-        <button ref={submitRef} type="button" aria-disabled={submitting || empty ? true : undefined} onClick={onSubmit}>
+        <button ref={submitRef} type="button" aria-describedby={spendNoteId} aria-disabled={submitting || empty ? true : undefined} onClick={onSubmit}>
           {submitting ? "Scoring..." : "Submit answer"}
         </button>
         {empty && !submitting && <span className="bj-ws-caption">Write an answer to submit it.</span>}
-        <span className="bj-ws-caption">{SUBMIT_SPEND}</span>
+        <span id={spendNoteId} className="bj-ws-caption">
+          {SUBMIT_SPEND}
+        </span>
       </div>
       {problem !== null && (
         <div className="bj-rs-issue">

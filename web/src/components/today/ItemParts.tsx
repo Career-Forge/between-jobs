@@ -28,7 +28,9 @@ export function KindLine({ view }: { view: RowView }) {
 // The words under the headline: the chip, the detail lines, the reply's own words, what pressing the item's
 // own button costs (only a held-back resume's Generate anyway has one), then the trail. The band shows the
 // sentence in place of the headline, so it asks for the body only.
-export function ItemBody({ view }: { view: RowView }) {
+//
+// `spendNoteId` is the id the cost note carries, so the item's Generate anyway button can name it as its description.
+export function ItemBody({ view, spendNoteId }: { view: RowView; spendNoteId?: string }) {
   return (
     <>
       {view.chip !== null && (
@@ -50,7 +52,11 @@ export function ItemBody({ view }: { view: RowView }) {
         </p>
       ))}
       {/* A detail line like the ones above it: the same class, so the same zero margin inside the item's gap. */}
-      {view.spendNote !== undefined && <p className="bj-today-detail">{view.spendNote}</p>}
+      {view.spendNote !== undefined && (
+        <p id={spendNoteId} className="bj-today-detail">
+          {view.spendNote}
+        </p>
+      )}
       <TrailLine trail={view.trail} receipt={view.receipt} receiptTitle="Where this came from" />
     </>
   );
@@ -86,11 +92,13 @@ export interface ItemActionsProps {
   busy: BusyKind | undefined;
   onAction: (action: Exclude<RowAction["id"], "link">, item: TodayItem) => void;
   className?: string;
+  /** The id of the item's cost note, which describes its Generate anyway button (the one control that spends). */
+  spendNoteId?: string;
 }
 
 // The controls of an item. Row actions are secondary (outlined); Dismiss is quiet. A control that
 // is waiting on its request is aria-disabled, not disabled, so focus stays where it was.
-export function ItemActions({ item, actions, busy, onAction, className = "bj-today-item-actions" }: ItemActionsProps) {
+export function ItemActions({ item, actions, busy, onAction, className = "bj-today-item-actions", spendNoteId }: ItemActionsProps) {
   if (actions.length === 0) return null;
   return (
     <div className={className}>
@@ -108,6 +116,7 @@ export function ItemActions({ item, actions, busy, onAction, className = "bj-tod
             key={id}
             type="button"
             className={id === "dismiss" ? "bj-quiet bj-today-action" : "bj-today-action"}
+            aria-describedby={id === "generate-anyway" ? spendNoteId : undefined}
             aria-disabled={busy !== undefined}
             onClick={() => {
               if (busy === undefined) onAction(id, item);

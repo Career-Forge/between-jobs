@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerationController } from "../lib/useGeneration";
 import { COVER_LETTER_EXTRA, SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
-import { text } from "../testing/forms";
+import { describedText, text } from "../testing/forms";
 import { buttonNamed, click, query, render } from "../testing/render";
 import { GeneratePanel, type GeneratePanelProps } from "./GeneratePanel";
 
@@ -184,5 +184,49 @@ describe("Generate", () => {
   it("passes an accessibility check", async () => {
     const { container } = panel(controller({ hasResume: true, state: { kind: "ready", restored: true, result: RESULT } }));
     await expectNoSeriousA11yViolations(container);
+  });
+});
+
+describe("Generate, described by what pressing it costs", () => {
+  it("describes the Generate resume button by the sentence in its intro, naming Retry", () => {
+    const { container } = panel(controller());
+    const button = buttonNamed(container, "Generate resume");
+    expect(describedText(button)).toBe(spendNotice("Generate resume, or Retry after a failed run,", SEVERAL_MODEL_CALLS));
+    expect(query(container, ".bj-ws-intro").contains(document.getElementById(button.getAttribute("aria-describedby")!))).toBe(true);
+  });
+
+  it("describes it by the sentence that does not name Retry when the band carries Generate again", () => {
+    const { container } = panel(controller(), { retryInBand: true });
+    expect(describedText(buttonNamed(container, "Generate resume"))).toBe(spendNotice("Generate resume", SEVERAL_MODEL_CALLS));
+  });
+
+  it("keeps the description on the button that reads Generating... while a run is out, and on the one after a failed run", () => {
+    const busy = panel(controller({ state: { kind: "generating" } }));
+    expect(describedText(buttonNamed(busy.container, "Generating..."))).toContain("Pressing Generate resume");
+    busy.unmount();
+    const failed = panel(controller({ state: { kind: "error", message: "The engine did not answer.", at: "09:14" } }));
+    expect(describedText(buttonNamed(failed.container, "Generate resume"))).toContain("Pressing Generate resume");
+  });
+
+  it("changes none of the intro's words: the note is the same text, in the same place", () => {
+    const { container } = panel(controller());
+    expect(text(query(container, ".bj-ws-intro"))).toContain(
+      "Runs the resume engine against this job. Pressing Generate resume, or Retry after a failed run, makes several real model calls on your own key.",
+    );
+  });
+
+  it("draws no button, so names no id, while setup is missing", () => {
+    const { container } = panel(controller(), { setupMissing: { message: "No usable key.", missing: [{ label: "Add a model key", to: "/settings#ai-provider" }] } });
+    expect(container.querySelector("[aria-describedby]")).toBeNull();
+  });
+
+  it("gives each panel on the page its own note, so two never share an id", () => {
+    const first = panel(controller());
+    const second = panel(controller());
+    const a = buttonNamed(first.container, "Generate resume").getAttribute("aria-describedby");
+    const b = buttonNamed(second.container, "Generate resume").getAttribute("aria-describedby");
+    expect(a).not.toBe(b);
+    expect(first.container.contains(document.getElementById(a!))).toBe(true);
+    expect(second.container.contains(document.getElementById(b!))).toBe(true);
   });
 });

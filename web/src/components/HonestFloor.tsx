@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type { ForgeFitResult } from "../lib/generateTypes";
 import { dimensionRows, fitBadgeLabel } from "../lib/honestFloor";
@@ -37,6 +37,8 @@ export function HonestFloor({
   onParked?: () => void;
 }) {
   const [parking, setParking] = useState(false);
+  // The cost note under the buttons is Generate anyway's description; it is drawn whenever the button is.
+  const spendNoteId = useId();
   const [parked, setParked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Parking replaces the whole read with one line, and the button that was pressed goes with it. The
@@ -164,7 +166,7 @@ export function HonestFloor({
         <button type="button" aria-disabled={parking ? true : undefined} onClick={() => void parkApplication()}>
           {parking ? "Parking..." : "Park this application"}
         </button>
-        <button type="button" onClick={onGenerateAnyway}>
+        <button type="button" aria-describedby={spendNoteId} onClick={onGenerateAnyway}>
           Generate anyway
         </button>
       </div>
@@ -173,7 +175,9 @@ export function HonestFloor({
           {error}
         </p>
       )}
-      <p className="bj-ws-caption">Your call either way -- the platform advises, it never blocks. {spendNotice("Generate anyway", SEVERAL_MODEL_CALLS)}</p>
+      <p className="bj-ws-caption">
+        Your call either way -- the platform advises, it never blocks. <span id={spendNoteId}>{spendNotice("Generate anyway", SEVERAL_MODEL_CALLS)}</span>
+      </p>
     </div>
   );
 }

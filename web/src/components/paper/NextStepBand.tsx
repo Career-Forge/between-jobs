@@ -39,6 +39,12 @@ import "../../styles/paper.css";
 // ("Generating...", "Signing in..."). A route link is not a handler and stays as it is. A handler is
 // named by its `intent`; the form submit button is named by SUBMIT_INTENT.
 //
+// A button that spends (the model call behind Generate, a search) is described by the note that says
+// what pressing it costs: the page draws the note, as the band's `children` or beside the form, and
+// hands the note's id in `describedBy`. The id goes on the button as `aria-describedby`, so someone who
+// reaches the button by keyboard or screen reader hears the cost with its name. The page passes an id
+// only while the note is on the page, so it never points at nothing.
+//
 // Not built: the phone's docked sticky 56px bar (optional, and not part of this component).
 
 // The id of the element a "Skip to next step" link should focus: the button when the band is lit,
@@ -65,6 +71,16 @@ export interface NextStepBandProps {
    * handler and submit button in the band ignores presses.
    */
   pending?: NextStepPending | null;
+  /**
+   * The id of the note that says what pressing the band's primary button, or its secondary one, costs. Left
+   * out for a button with no such note; a route link takes it too, though none spends.
+   */
+  describedBy?: NextStepDescribedBy;
+}
+
+export interface NextStepDescribedBy {
+  primary?: string;
+  secondary?: string;
 }
 
 export interface NextStepPending {
@@ -100,12 +116,14 @@ function ActionControl({
   onAction,
   focusId,
   pending,
+  describedBy,
 }: {
   action: NextStepAction;
   primary: boolean;
   onAction?: (intent: string) => void;
   focusId?: string;
   pending?: NextStepPending | null;
+  describedBy?: string;
 }) {
   // A request out for the step: every handler and submit button holds still (aria-disabled, not
   // disabled, so a focused one keeps focus), and the one the request was for says what is happening.
@@ -117,7 +135,7 @@ function ActionControl({
   switch (action.kind) {
     case "link":
       return (
-        <Link id={focusId} className={link} to={action.to}>
+        <Link id={focusId} className={link} to={action.to} aria-describedby={describedBy}>
           {action.label}
         </Link>
       );
@@ -126,7 +144,7 @@ function ActionControl({
       const href = safeExternal(action.href);
       if (href === null) return null;
       return (
-        <a id={focusId} className={link} href={href} target="_blank" rel="noopener noreferrer">
+        <a id={focusId} className={link} href={href} target="_blank" rel="noopener noreferrer" aria-describedby={describedBy}>
           {action.label}
         </a>
       );
@@ -138,6 +156,7 @@ function ActionControl({
           type="submit"
           form={action.form}
           className={button}
+          aria-describedby={describedBy}
           aria-disabled={waiting ? true : undefined}
           onClick={waiting ? (event) => event.preventDefault() : undefined}
         >
@@ -150,6 +169,7 @@ function ActionControl({
           id={focusId}
           type="button"
           className={button}
+          aria-describedby={describedBy}
           aria-disabled={waiting ? true : undefined}
           onClick={() => {
             if (!waiting) onAction?.(action.intent);
@@ -162,7 +182,7 @@ function ActionControl({
   }
 }
 
-export function NextStepBand({ outcome, onAction, eyebrow, children, pending }: NextStepBandProps) {
+export function NextStepBand({ outcome, onAction, eyebrow, children, pending, describedBy }: NextStepBandProps) {
   const step = outcome.status === "ready" ? outcome.step : null;
   const sentence = step?.sentence ?? null;
   const lastSentence = useRef<string | null>(null);
@@ -242,9 +262,9 @@ export function NextStepBand({ outcome, onAction, eyebrow, children, pending }: 
                 </p>
               </>
             ) : (
-              <ActionControl action={action} primary onAction={onAction} focusId={NEXT_STEP_FOCUS_ID} pending={pending} />
+              <ActionControl action={action} primary onAction={onAction} focusId={NEXT_STEP_FOCUS_ID} pending={pending} describedBy={describedBy?.primary} />
             )}
-            {secondary !== null && <ActionControl action={secondary} primary={false} onAction={onAction} pending={pending} />}
+            {secondary !== null && <ActionControl action={secondary} primary={false} onAction={onAction} pending={pending} describedBy={describedBy?.secondary} />}
           </div>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { DocumentLayout } from "../components/paper/DocumentLayout";
 import { JumpBar } from "../components/paper/JumpBar";
@@ -307,6 +307,7 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
   const hiring = useHiringSignalsStatus();
   const gmail = gmailAccess(useCapabilities());
   const [now] = useState(() => new Date());
+  const bandSpendNoteId = useId();
   const [refocus, setRefocus] = useState(false);
 
   const snapshot = application.snapshot;
@@ -426,6 +427,8 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
   // and shared, so this is the page's own line, named after the button that spends. Read the fit check
   // (A1b's cyan button) only scrolls, so it is Generate anyway that the sentence is about there.
   const bandSpend = rowId === "A1" || rowId === "A1g" ? "Generate resume" : rowId === "A1c" ? "Generate again" : rowId === "A1b" ? "Generate anyway" : null;
+  // The line is the description of the button it is about: the band's primary one, or, for A1b, its second (the cyan one only scrolls).
+  const bandDescribedBy = bandSpend === null ? undefined : rowId === "A1b" ? { secondary: bandSpendNoteId } : { primary: bandSpendNoteId };
   const setup = modelSetupOf(modelKey);
   const result = controller.state.kind === "ready" ? controller.state.result : null;
   const drafted = result !== null && result.resume !== null;
@@ -447,10 +450,14 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
         onStatus={(status) => onStatus(status, "select")}
         problem={statusProblem?.source === "select" ? <FailureState message={statusProblem.message} onRetry={statusProblem.retry} /> : undefined}
       />
-      <NextStepBand outcome={outcome} onAction={onBandAction} pending={pending}>
+      <NextStepBand outcome={outcome} onAction={onBandAction} pending={pending} describedBy={bandDescribedBy}>
         {/* A caption, not a bare paragraph: workspace.css gives it a small top margin and none below, where a plain <p>
             would take the browser's paragraph margins (the band's own item rules live in the Today stylesheet). */}
-        {bandSpend !== null && <p className="bj-ws-caption">{spendNotice(bandSpend, SEVERAL_MODEL_CALLS)}</p>}
+        {bandSpend !== null && (
+          <p id={bandSpendNoteId} className="bj-ws-caption">
+            {spendNotice(bandSpend, SEVERAL_MODEL_CALLS)}
+          </p>
+        )}
         {coverLetterInBand && (
           <label className="bj-ws-check bj-small">
             <input type="checkbox" checked={controller.wantCoverLetter} onChange={(e) => controller.setWantCoverLetter(e.target.checked)} disabled={controller.state.kind === "generating"} />

@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type { NextStep, NextStepOutcome } from "../../lib/nextStep";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
+import { describedText } from "../../testing/forms";
 import { click, query, render } from "../../testing/render";
 import { NEXT_STEP_FOCUS_ID, NextStepBand, SUBMIT_INTENT, type NextStepPending } from "./NextStepBand";
 
@@ -496,5 +497,48 @@ describe("a band with a request out for its step", () => {
   it("has no serious accessibility violation", async () => {
     const { container } = render(waiting({ intent: "anyway", label: "Generating..." }));
     await expectNoSeriousA11yViolations(container);
+  });
+});
+
+describe("a button described by a cost note", () => {
+  const withNote = (overrides: Partial<NextStep>, describedBy: { primary?: string; secondary?: string }) => (
+    <MemoryRouter>
+      <NextStepBand outcome={ready(step(overrides))} describedBy={describedBy}>
+        <p id="primary-note">Pressing Generate resume makes several real model calls on your own key.</p>
+        <p id="secondary-note">Pressing Generate anyway makes several real model calls on your own key.</p>
+      </NextStepBand>
+    </MemoryRouter>
+  );
+
+  it("names no description on a button when the page gives none", () => {
+    const { container } = render(band(ready(step({ secondary: { kind: "button", label: "Generate anyway", intent: "anyway" } }))));
+    expect(container.querySelector("[aria-describedby]")).toBeNull();
+  });
+
+  it("puts the page's note on the primary button, as the text a screen reader reads with its name", () => {
+    const { container } = render(withNote({}, { primary: "primary-note" }));
+    const button = query(container, "button.bj-primary");
+    expect(button.getAttribute("aria-describedby")).toBe("primary-note");
+    expect(describedText(button)).toBe("Pressing Generate resume makes several real model calls on your own key.");
+  });
+
+  it("puts a note on the secondary button without touching the primary, as when the cyan one only scrolls", () => {
+    const { container } = render(
+      withNote({ action: { kind: "link", label: "See why", to: "/x" }, secondary: { kind: "button", label: "Generate anyway", intent: "anyway" } }, { secondary: "secondary-note" }),
+    );
+    const primary = query(container, "a.bj-button-link-primary");
+    const secondary = query(container, "button.bj-band-secondary");
+    expect(primary.getAttribute("aria-describedby")).toBeNull();
+    expect(describedText(secondary)).toBe("Pressing Generate anyway makes several real model calls on your own key.");
+  });
+
+  it("describes a form submit button the same way", () => {
+    const { container } = render(withNote({ action: { kind: "submit", label: "Search", form: "discover-form" } }, { primary: "primary-note" }));
+    expect(describedText(query(container, "button[type='submit']"))).toContain("Pressing Generate resume");
+  });
+
+  it("keeps a note's words out of the button's own name, so the visible label does not change", () => {
+    const { container } = render(withNote({}, { primary: "primary-note" }));
+    expect(text(query(container, "button.bj-primary"))).toBe("Generate resume");
   });
 });

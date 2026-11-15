@@ -133,6 +133,16 @@ Submit answer); and the Hiring signals tab's widen button (the sentence under it
 next-step band's own Try again and Today's Retry on a held-back card have no sentence of their own: they re-run the
 press that the nearby form's or card's sentence already describes.
 
+Four controls also carry their sentence as their accessible description, so someone who reaches the button by
+keyboard or screen reader hears the cost with its name: Search (the form's button and the band's), Generate (the
+Generate panel's button, the band's, the honest read's Generate anyway and Today's), Check coverage and Submit
+answer. The sentence gets an id from `useId` (several panels can be mounted at once), is drawn whenever its button
+is so the id never points at nothing, and the button names it in `aria-describedby`; the band takes the ids in
+`NextStepBand`'s `describedBy`, one for its primary button and one for its secondary. The visible words do not
+change. Tests read the description back with `describedText` in `src/testing/forms.ts`, which fails on an id that
+names nothing. The other costed buttons (the research runs, Start practice session, Save this search) do not do
+this yet.
+
 Not covered by the shape, on purpose:
 
 - Free actions. A press that makes no model or search call says nothing about cost. Two notes sit near such

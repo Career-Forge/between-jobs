@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
 import { job, mixedResponse, response, score } from "../../testing/discoverFixtures";
+import { describedText } from "../../testing/forms";
 import { buttonNamed, click, installViewport, query, render } from "../../testing/render";
 import { EMPTY_REQUEST, resultsFactOf } from "../../lib/discoverFacts";
 import { findForbiddenWord } from "../../lib/trail";
@@ -1599,5 +1600,103 @@ describe("accessibility", () => {
     const { container } = draw(ready(response({ scored: rows, more: [job({ apply_url: "https://jobs.example/acme/3", score: null, sponsorship_signal: "explicit_no" })] })));
     click(buttonNamed(container.querySelectorAll("li.bj-disc-row")[0], /^Why this score for /));
     await expectNoSeriousA11yViolations(container);
+  });
+});
+
+describe("what pressing Search costs, as the buttons' description", () => {
+  const SEARCH_WORDS = spendNotice("Search", `${A_MODEL_CALL} and can run several searches on each search key you have connected`);
+  const blocked = { message: "x", missing: [{ label: "Add a model key", to: "/settings#ai-provider" }] } as const;
+  const submit = (container: HTMLElement) => query<HTMLButtonElement>(container, "form button[type='submit']");
+  const bandButton = (container: HTMLElement) => query<HTMLButtonElement>(bandOf(container), "button.bj-primary");
+  // A finished search whose scoring fell back: the band's step is Search again, a submit of this form.
+  const fallbackResult = () => response({ scoring_strategy: "neutral_fallback" });
+  const fallback = (extra: Partial<DiscoverViewProps> = {}): Partial<DiscoverViewProps> => ({ ...ready(fallbackResult()), ...extra });
+
+  it("describes the band's Search by the note under the form, before a search has run (the form draws no Search of its own)", () => {
+    const { container } = draw();
+    const search = bandButton(container);
+    expect(words(search)).toBe("Search");
+    expect(describedText(search)).toBe(SEARCH_WORDS);
+    expect(query(container, "form").contains(document.getElementById(search.getAttribute("aria-describedby")!))).toBe(true);
+  });
+
+  it("describes the form's Search again by the note under the form after a search", () => {
+    const { container } = draw(ready());
+    expect(words(submit(container))).toBe("Search again");
+    expect(describedText(submit(container))).toBe(SEARCH_AGAIN_SPEND_NOTE);
+  });
+
+  it("describes the band's Search again by the same note when the band holds it", () => {
+    const { container } = draw(fallback());
+    expect(words(bandButton(container))).toBe("Search again");
+    expect(describedText(bandButton(container))).toBe(SEARCH_AGAIN_SPEND_NOTE);
+    expect(bandButton(container).getAttribute("aria-describedby")).toBe(submit(container).getAttribute("aria-describedby"));
+  });
+
+  it("describes the form's button, and the band's, by the restored answer's line, which carries the note instead of the form", () => {
+    const { container } = draw(fallback({ restored: { at: "09:14" } }));
+    expect(describedText(submit(container))).toBe(SEARCH_AGAIN_SPEND_NOTE);
+    const note = document.getElementById(submit(container).getAttribute("aria-describedby")!)!;
+    expect(query(container, "section.bj-disc-results").contains(note)).toBe(true);
+    expect(query(container, "form").contains(note)).toBe(false);
+    expect(words(bandButton(container))).toBe("Search again");
+    expect(describedText(bandButton(container))).toBe(SEARCH_AGAIN_SPEND_NOTE);
+  });
+
+  it("names the note only while it is on the page: a restored line that is not drawn leaves nothing to point at", () => {
+    for (const overrides of [{ search: { kind: "loading", startedAt: NOW.getTime() } }, { search: { kind: "error", message: "x" } }] as Partial<DiscoverViewProps>[]) {
+      const { container } = draw({ ...overrides, restored: { at: "09:14" } });
+      for (const button of container.querySelectorAll("[aria-describedby]")) expect(() => describedText(button)).not.toThrow();
+      expect(submit(container).getAttribute("aria-describedby")).toBeNull();
+    }
+  });
+
+  it("keeps the setup note, and no cost note, on a Search that setup blocks", () => {
+    const { container } = draw({ setup: blocked });
+    expect(describedText(submit(container))).toBe(SETUP_BLOCKED_NOTE);
+  });
+
+  it("describes the band's Search by the cost note when only the server said setup is missing, since Search stays pressable", () => {
+    const { container } = draw({ setup: { ...blocked, blocksSearch: false } });
+    expect(describedText(bandButton(container))).toBe(SEARCH_WORDS);
+  });
+
+  it("never names an id that is missing, in any state of the page", () => {
+    const states: Partial<DiscoverViewProps>[] = [
+      {},
+      ready(),
+      fallback(),
+      fallback({ restored: { at: "09:14" } }),
+      { ...ready(), restored: { at: "09:14" } },
+      { setup: blocked },
+      { setup: { ...blocked, blocksSearch: false } },
+      { saving: true },
+      { search: { kind: "loading", startedAt: NOW.getTime() }, outcome: band({ phase: "searching" }) },
+    ];
+    for (const overrides of states) {
+      const { container, unmount } = draw(overrides);
+      for (const button of container.querySelectorAll("[aria-describedby]")) expect(() => describedText(button)).not.toThrow();
+      unmount();
+    }
+  });
+
+  it("does not describe a band button that is not Search", () => {
+    const result = response({ scored: [], more: [] });
+    const { container } = draw({ search: { kind: "ready", result }, outcome: band({ phase: "results", results: resultsFactOf(result, { ...EMPTY_REQUEST, q: "zzz" }) }) });
+    expect(words(bandButton(container))).toBe("Clear filters");
+    expect(bandButton(container).getAttribute("aria-describedby")).toBeNull();
+    // The form's own button still says what it costs.
+    expect(describedText(submit(container))).toBe(SEARCH_AGAIN_SPEND_NOTE);
+  });
+
+  it("gives each mounted page its own id, so two never point at each other's note", () => {
+    const first = draw();
+    const second = draw();
+    const a = bandButton(first.container).getAttribute("aria-describedby");
+    const b = bandButton(second.container).getAttribute("aria-describedby");
+    expect(a).not.toBeNull();
+    expect(a).not.toBe(b);
+    expect(first.container.contains(document.getElementById(a!))).toBe(true);
+    expect(second.container.contains(document.getElementById(b!))).toBe(true);
   });
 });

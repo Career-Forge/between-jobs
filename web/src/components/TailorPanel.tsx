@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type { ResumeDocument } from "../lib/headerComposerTypes";
 import { failureOf, type SetupNotice } from "../lib/setupRequired";
@@ -87,10 +87,15 @@ type State =
       saveError: string | null;
     };
 
-const IDLE_SENTENCE = `Reads this posting's requirements with your model, then matches them to your profile by code. ${spendNotice("Check coverage", A_MODEL_CALL)} The match isn't saved, so each visit needs its own press.`;
+// The intro, in three parts so the cost sentence in the middle can carry an id: it is Check coverage's description
+// (`aria-describedby`), drawn in the same place as the button so the id never points at nothing.
+const IDLE_BEFORE = "Reads this posting's requirements with your model, then matches them to your profile by code.";
+const CHECK_SPEND = spendNotice("Check coverage", A_MODEL_CALL);
+const IDLE_AFTER = "The match isn't saved, so each visit needs its own press.";
 
 export function TailorPanel({ applicationId }: { applicationId: string }) {
   const [state, setState] = useState<State>({ kind: "idle" });
+  const spendNoteId = useId();
   // A press while one is out is ignored here, not by the button: the button is aria-disabled (so a focused one keeps focus),
   // which does not stop a click. Reset in `finally`, so a press after a failure, from the button or from the callout's
   // Retry, is a new one.
@@ -155,8 +160,10 @@ export function TailorPanel({ applicationId }: { applicationId: string }) {
   if (state.kind !== "ready") {
     return (
       <div className="bj-ws-tailor">
-        <p className="bj-ws-intro">{IDLE_SENTENCE}</p>
-        <RunButton label="Check coverage" busyLabel="Checking..." busy={state.kind === "loading"} buttonRef={checkButton} onRun={() => void check()} />
+        <p className="bj-ws-intro">
+          {IDLE_BEFORE} <span id={spendNoteId}>{CHECK_SPEND}</span> {IDLE_AFTER}
+        </p>
+        <RunButton label="Check coverage" busyLabel="Checking..." busy={state.kind === "loading"} buttonRef={checkButton} describedBy={spendNoteId} onRun={() => void check()} />
         {state.kind === "loading" && <LoadingState rows={3} rowHeight={44} label="Checking coverage..." />}
         {state.kind === "error" && <FailureState message={state.message} onRetry={() => void check()} restoreFocusTo={focusCheckButton} />}
       </div>

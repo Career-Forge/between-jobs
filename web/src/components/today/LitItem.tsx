@@ -15,13 +15,15 @@ export interface LitItemProps {
   problem: Failure | undefined;
   onAction: ItemActionsProps["onAction"];
   onRetryProblem: () => void;
+  /** The id the item's cost note carries: the band's Generate anyway button names it as its description. */
+  spendNoteId?: string;
 }
 
-export function LitItem({ item, view, busy, problem, onAction, onRetryProblem }: LitItemProps) {
+export function LitItem({ item, view, busy, problem, onAction, onRetryProblem, spendNoteId }: LitItemProps) {
   const dismiss = rowActions(item, null).filter((action) => action.id === "dismiss");
   return (
     <>
-      <ItemBody view={view} />
+      <ItemBody view={view} spendNoteId={spendNoteId} />
       {problem !== undefined && <ItemProblem problem={problem} onRetry={onRetryProblem} />}
       <ItemActions item={item} actions={dismiss} busy={busy} onAction={onAction} />
     </>
