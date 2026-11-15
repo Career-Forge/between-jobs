@@ -51,7 +51,7 @@ export const TRAIL_GLYPHS: Readonly<Record<TrailGlyphName, TrailGlyph>> = {
     tone: "gold",
     meaning: "Evidence, uncertain, held back for your decision, waiting on your review, or a step to do",
   },
-  failed: { char: "✕", tone: "danger", meaning: "Failed, contradicted, or not generated" },
+  failed: { char: "✕", tone: "danger", meaning: "Failed or not generated" },
   passed: { char: "✓", tone: "emerald", meaning: "A deterministic pass, a validated key, a done step" },
 };
 

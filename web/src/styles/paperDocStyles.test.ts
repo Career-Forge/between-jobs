@@ -226,15 +226,23 @@ describe("the claim and checklist rows", () => {
     expect(italic.map((rule) => rule.selectors)).toEqual([[".bj-claimrow-claim"]]);
   });
 
-  it("outlines a chip: gold for supported and unverifiable, red only for contradicted, muted for the rest", () => {
+  it("outlines a chip: gold for supported, unverifiable and contradicted (a model's reading), muted for the rest, and nothing red", () => {
     expect(decl(".bj-claimrow-chip").border).toBe("1px solid var(--bj-outline)");
     expect(declarationsFor(base, ".bj-claimrow-chip--unverifiable")["border-color"]).toBe("var(--bj-gold)");
     expect(declarationsFor(base, ".bj-claimrow-chip--supported")["border-color"]).toBe("var(--bj-gold)");
-    expect(declarationsFor(base, ".bj-claimrow-chip--contradicted")["border-color"]).toBe("var(--bj-danger)");
+    expect(declarationsFor(base, ".bj-claimrow-chip--contradicted")["border-color"]).toBe("var(--bj-gold)");
     expect(declarationsFor(base, ".bj-claimrow-chip--unchecked")["border-color"]).toBeUndefined();
-    // Flagged is not backed: the two gold chips differ in the outline's style as well as the word.
+    // Flagged is not backed: the flagged gold chips are dashed, and differ from the solid supported one in the outline's
+    // style as well as the word. A contradicted claim is the same dashed gold chip as an unverifiable one.
     expect(declarationsFor(base, ".bj-claimrow-chip--unverifiable")["border-style"]).toBe("dashed");
+    expect(declarationsFor(base, ".bj-claimrow-chip--contradicted")["border-style"]).toBe("dashed");
     expect(declarationsFor(base, ".bj-claimrow-chip--supported")["border-style"]).toBeUndefined();
+    // The contradicted chip's word is a sentence: it wraps in a width of its own rather than pushing a phone sideways.
+    expect(declarationsFor(base, ".bj-claimrow-chip--contradicted")).toMatchObject({ "white-space": "normal", "max-width": "15rem" });
+    // Nothing about a claim row is red: red is for a check that ran and failed, which is the checklist's.
+    for (const rule of rulesOf(docCss).filter((candidate) => candidate.selectors.some((selector) => selector.includes(".bj-claimrow")))) {
+      expect(Object.values(rule.declarations).join(" "), rule.selectors.join(", ")).not.toContain("--bj-danger");
+    }
     // Red is an outline, never a fill.
     for (const rule of rulesOf(docCss)) {
       expect(rule.declarations.background ?? "").not.toContain("--bj-danger");

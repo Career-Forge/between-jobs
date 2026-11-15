@@ -11,13 +11,18 @@ import "../../styles/paper-doc.css";
 //             actions={<><Link to="/profile">If it's true, add it to your profile</Link>
 //                        <button type="button">Copy claim</button></>} />
 //
-// The four statuses each have a word AND a mark AND an outline, so color is never the only thing
-// telling them apart (the two gold chips share a mark and differ in the word and the outline's style):
+// The four statuses each have a word AND a mark AND an outline (the gold chips share a mark and are told
+// apart by the word, and `supported` by its solid outline):
 //
 //   supported      ◆ Supported     solid gold outline. The claim matches something the page can name;
 //                                  the reason says what. It is not "verified" and is never green.
 //   unverifiable   ◆ Unverifiable  dashed gold outline. Flagged: nothing the check could see supports it.
-//   contradicted   ✕ Contradicted  red outline. Flagged: something the check could see says otherwise.
+//   contradicted   ◆ Contradicted -- a model's reading, may be wrong
+//                                  the same dashed gold chip as unverifiable, never red. Flagged: the model
+//                                  that checked the claim read something that says otherwise. That is a
+//                                  model's judgement, and a check like it can call a true claim false, so
+//                                  the chip says whose reading it is and that it may be wrong. Red is kept
+//                                  for what code ran and found failed (a ✕ Fail row, a failed run).
 //   unchecked      ○ Not checked   muted outline. Nobody has looked; that is not a pass.
 //
 // The claim check lists only what it flagged (unverifiable and contradicted); a claim it did not flag
@@ -40,7 +45,7 @@ interface ChipSpec {
 export const CLAIM_CHIPS: Readonly<Record<ClaimStatus, ChipSpec>> = {
   supported: { glyph: "evidence", word: "Supported" },
   unverifiable: { glyph: "evidence", word: "Unverifiable" },
-  contradicted: { glyph: "failed", word: "Contradicted" },
+  contradicted: { glyph: "evidence", word: "Contradicted -- a model's reading, may be wrong" },
   unchecked: { glyph: "code", word: "Not checked" },
 };
 

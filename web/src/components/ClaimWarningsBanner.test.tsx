@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { buttonNamed, click, query, render } from "../testing/render";
 import { settle, text } from "../testing/forms";
-import { CLAIM_LEGEND, ClaimWarningsBanner, ZERO_FLAG_CAVEAT, claimOutcome, isRepairedClaim } from "./ClaimWarningsBanner";
+import { CLAIM_CLOSING, CLAIM_LEGEND, CLAIM_MODEL_NOTE, ClaimWarningsBanner, ZERO_FLAG_CAVEAT, claimOutcome, isRepairedClaim } from "./ClaimWarningsBanner";
 
 // What the block says it did must match what the warnings say was done. The separate engine only flags;
 // the built-in engine has already removed the text or put the candidate's own wording back. (All text
@@ -78,12 +78,38 @@ describe("ClaimWarningsBanner", () => {
 });
 
 describe("the rows", () => {
-  it("draws a flagged claim as unverifiable and a contradicted one as contradicted, each with a word and a mark", () => {
+  it("draws a flagged claim as unverifiable and a contradicted one as contradicted, each with a word and the same gold mark, and neither red", () => {
     const { container } = block([FLAGGED, CONTRADICTED]);
     const chips = [...container.querySelectorAll(".bj-claimrow-chip")].map((chip) => text(chip));
-    expect(chips).toEqual(["◆ Unverifiable", "✕ Contradicted"]);
+    expect(chips).toEqual(["◆ Unverifiable", "◆ Contradicted -- a model's reading, may be wrong"]);
     expect(container.querySelector(".bj-claimrow--unverifiable")).not.toBeNull();
     expect(container.querySelector(".bj-claimrow--contradicted")).not.toBeNull();
+    // A model's reading is not a failed check: no cross and no danger tone anywhere in the block.
+    expect(container.textContent).not.toContain("✕");
+    expect(container.innerHTML).not.toMatch(/danger|trail-glyph--red/);
+    expect([...container.querySelectorAll(".bj-claimrow-chip .bj-trail-glyph")].map((glyph) => glyph.className)).toEqual([
+      "bj-trail-glyph bj-trail-glyph--gold",
+      "bj-trail-glyph bj-trail-glyph--gold",
+    ]);
+  });
+
+  it("says over the rows that a model flagged them and may be wrong, once, and only when there are rows", () => {
+    expect(CLAIM_MODEL_NOTE).toBe("A model flagged these claims and may be wrong about any of them, including the ones marked Contradicted.");
+    const { container } = block([FLAGGED, CONTRADICTED]);
+    expect(text(container).split(CLAIM_MODEL_NOTE)).toHaveLength(2);
+    const note = [...container.querySelectorAll("p")].find((line) => text(line) === CLAIM_MODEL_NOTE)!;
+    expect(note.compareDocumentPosition(query(container, "ul[aria-label='Flagged claims']")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Nothing flagged: no rows, so no line about flagged claims.
+    expect(text(block([]).container)).not.toContain(CLAIM_MODEL_NOTE);
+    // A warning that cannot be read as a claim is plain text, not a row: the line is about rows.
+    expect(text(block(["unsupported claim (contradicted): Led 20 engineers -- no match"]).container)).not.toContain(CLAIM_MODEL_NOTE);
+  });
+
+  it("keeps the flags and the footer as they were: a contradicted claim still counts as flagged, and nothing is blocked", () => {
+    const { container } = block([FLAGGED, CONTRADICTED]);
+    expect(text(container)).toContain("2 claims flagged");
+    expect(text(container)).toContain(CLAIM_CLOSING["none-repaired"]);
+    expect(text(container)).toContain("Flags only. Nothing was auto-edited or blocked");
   });
 
   it("says what the built-in engine did to a claim, and which part of the document it was in", () => {
@@ -143,6 +169,11 @@ describe("what is always said", () => {
     expect(text(block([FLAGGED]).container)).toContain(CLAIM_LEGEND);
     expect(text(block([]).container)).toContain(CLAIM_LEGEND);
     expect(CLAIM_LEGEND).toContain("claims that weren't flagged aren't listed");
+  });
+
+  it("words the legend's Contradicted as a model's reading, with the same gold mark as Unverifiable and no cross", () => {
+    expect(CLAIM_LEGEND).toBe("◆ Unverifiable · ◆ Contradicted -- a model's reading, may be wrong · claims that weren't flagged aren't listed");
+    expect(CLAIM_LEGEND).not.toContain("✕");
   });
 
   it("says 'No claims flagged in this run' with the caveat, and never a count of grounded claims or a green mark", () => {
