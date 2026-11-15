@@ -37,6 +37,7 @@ import {
 import { providerDisplayName } from "./providerNames";
 import { setupRequiredNotice } from "./setupRequired";
 import { SETTINGS_PATH } from "./settingsPaths";
+import { spendNotice } from "./spendNotice";
 
 // ── embed and post urls ────────────────────────────────────────────────────
 
@@ -309,6 +310,24 @@ export function resultSource(queryLabel: string, provider: SearchProvider | null
 
 export const CACHED_NOTE =
   "These results came from a recent cached search, so the newest posts may not be included.";
+
+// What one press of a hiring-posts search button costs, said once for both places that search (the
+// per-application panel and the Hiring signals tab). Nothing here is a model call: a press asks the search
+// keys the person saved, one call per key, in a fixed order, and goes on to the next key only when the one
+// before it failed or answered without a single post. So the sentence says "search call", and says that
+// more than one key can be asked.
+export const HIRING_SEARCH_SPEND =
+  "a real search call on your own search key, then tries each other search key you have saved only if that one fails or finds no posts";
+
+export function hiringSearchSpend(press: string): string {
+  return spendNotice(press, HIRING_SEARCH_SPEND);
+}
+
+// A repeat is answered from a shared cache while the earlier answer is kept, but a key whose call failed
+// is never cached and is asked again, and an answer with no results at all is kept for only an hour, so
+// the sentence says "usually".
+export const HIRING_SEARCH_CACHE_NOTE =
+  "A search repeated soon after is usually answered from a cache, which makes no new call.";
 
 export const UNCLASSIFIED_LEGEND =
   "Tags come from the wording of each post. Unclassified means no known pattern matched, so it is not confirmed as a hiring call.";

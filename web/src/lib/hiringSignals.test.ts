@@ -4,6 +4,8 @@ import {
   CACHED_NOTE,
   EMBED_URL_PREFIX,
   FRESHNESS_OPTIONS,
+  HIRING_SEARCH_CACHE_NOTE,
+  HIRING_SEARCH_SPEND,
   NOTHING_SHOWN_NOTE,
   NO_POSTS_SEEN_NOTE,
   SETUP_FALLBACK_LABEL,
@@ -17,6 +19,7 @@ import {
   emptyStateNote,
   failureMessage,
   freshnessLabel,
+  hiringSearchSpend,
   isSignalSaved,
   postedAtFromActivityId,
   postedLabel,
@@ -416,6 +419,25 @@ describe("small labels", () => {
     expect(CACHED_NOTE).not.toMatch(/\d/);
     expect(CACHED_NOTE).toContain("newest posts may not be included");
     expect(CACHED_NOTE).not.toContain("slightly");
+  });
+
+  it("says what a press of a search button costs in the one spend-sentence shape, as a search call on the person's own key", () => {
+    expect(hiringSearchSpend("Search")).toBe(
+      "Pressing Search makes a real search call on your own search key, then tries each other search key you have saved only if that one fails or finds no posts.",
+    );
+    expect(HIRING_SEARCH_SPEND).toContain("search call");
+    expect(HIRING_SEARCH_SPEND).toContain("each other search key");
+    expect(HIRING_SEARCH_CACHE_NOTE).toBe(
+      "A search repeated soon after is usually answered from a cache, which makes no new call.",
+    );
+  });
+
+  it("never calls a search a model call, and uses no dash and none of the banned words", () => {
+    for (const phrase of [HIRING_SEARCH_SPEND, HIRING_SEARCH_CACHE_NOTE, hiringSearchSpend("Search")]) {
+      expect(phrase).not.toMatch(/model/i);
+      expect(phrase).not.toMatch(/[\u2013\u2014]/);
+      expect(phrase).not.toMatch(/verified|unknown model|linkedin/i);
+    }
   });
 });
 

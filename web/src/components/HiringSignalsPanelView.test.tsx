@@ -218,6 +218,70 @@ describe("the search button", () => {
   });
 });
 
+describe("what pressing the search button costs", () => {
+  // Spelled out in full on purpose: the words are the promise, and a refactor must not change them quietly.
+  const SPEND =
+    "Pressing Find hiring posts, or Search again once it has run, makes a real search call on your own search key, then tries each other search key you have saved only if that one fails or finds no posts.";
+  const CACHE = "A search repeated soon after is usually answered from a cache, which makes no new call.";
+  const INTRO = "Recent public hiring posts about this company, found through the search provider you connected.";
+
+  // The panel's first block is its intro; the controls row follows it directly.
+  function introAndControls(state: PanelState): [HostElement, HostElement] {
+    const { actions } = recorder();
+    const root = tree(state, actions)[0];
+    if (!isHost(root)) throw new Error("the panel rendered no element");
+    const [intro, controls] = root.children;
+    if (!isHost(intro) || !isHost(controls)) throw new Error("expected the intro and the controls row first");
+    return [intro, controls];
+  }
+
+  it("says in the intro that Find hiring posts, or Search again, makes a search call on the person's own key and may try their other keys", () => {
+    const [intro, controls] = introAndControls(ready());
+    expect(intro.type).toBe("p");
+    expect(textOf(intro).replace(/\s+/g, " ").trim()).toBe(`${INTRO} ${SPEND} ${CACHE}`);
+    expect(findAll([controls], (el) => prop(el, "id") === SEARCH_BUTTON_ID)).toHaveLength(1);
+  });
+
+  it("calls it a search call, never a model call, and uses no dash and none of the banned words", () => {
+    const [intro] = introAndControls(ready());
+    const words = textOf(intro);
+    expect(words).toContain("a real search call on your own search key");
+    expect(words).not.toMatch(/model/i);
+    expect(words).not.toMatch(/[\u2013\u2014]/);
+    expect(words).not.toMatch(/verified|unknown model|linkedin/i);
+  });
+
+  it("keeps the same sentence above the button once a search has run, whose button then reads Search again", () => {
+    const state = ready({ search: { kind: "ready", outcome: makeOutcome([makeSignal()]) } });
+    const [intro, controls] = introAndControls(state);
+    expect(textOf(intro)).toContain(SPEND);
+    expect(textOf(intro)).toContain(CACHE);
+    expect(onlyButton([controls], "Search again")).toBeDefined();
+  });
+
+  it("keeps it above Try again after a failed search and above the widen button on an empty answer", () => {
+    const failed = ready({
+      search: { kind: "failed", failure: { kind: "error", message: "Busy.", retryable: true }, freshness: "week" },
+    });
+    const [failedIntro] = introAndControls(failed);
+    expect(textOf(failedIntro)).toContain(SPEND);
+    expect(onlyButton(tree(failed, recorder().actions), "Try again")).toBeDefined();
+
+    const empty = ready({ search: { kind: "ready", outcome: makeOutcome([], "day") } });
+    const [emptyIntro] = introAndControls(empty);
+    expect(textOf(emptyIntro)).toContain(SPEND);
+    expect(onlyButton(tree(empty, recorder().actions), "Search the last 3 days")).toBeDefined();
+  });
+
+  it("does not add the sentence to the saved posts section's own Try again, which reads the saved list and searches nothing", () => {
+    const state = ready({ savesStatus: "error", savesError: "Could not load saved posts." });
+    const nodes = tree(state, recorder().actions);
+    const sections = findAll(nodes, (el) => el.type === "section");
+    expect(sections).toHaveLength(1);
+    expect(textOf(sections[0])).not.toContain("Pressing");
+  });
+});
+
 describe("the live region", () => {
   it("gives every notice its own key, so the same words twice in a row are announced twice (F4)", () => {
     const { actions } = recorder();

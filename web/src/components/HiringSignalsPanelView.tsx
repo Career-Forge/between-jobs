@@ -1,5 +1,7 @@
 import {
   FRESHNESS_OPTIONS,
+  HIRING_SEARCH_CACHE_NOTE,
+  hiringSearchSpend,
   resultHeadline,
   savedCardKey,
   savesByActivity,
@@ -41,6 +43,10 @@ import { BlockTrail } from "./paper/DocumentLayout";
 // press (see hiringSignalsPanelModel.ts). The stylesheet dims them like
 // :disabled.
 
+// What pressing the search button costs. It sits in the intro, above the button and the Try again and widen
+// buttons that run the same search.
+const SEARCH_SPEND = hiringSearchSpend("Find hiring posts, or Search again once it has run,");
+
 export interface PanelActions {
   setFreshness: (freshness: Freshness) => void;
   search: (freshness: Freshness) => void;
@@ -70,7 +76,7 @@ export function HiringSignalsPanelView({
     <div className="bj-card bj-hs-panel">
       <p className="bj-muted bj-small">
         Recent public hiring posts about this company, found through the search provider you
-        connected.
+        connected. {SEARCH_SPEND} {HIRING_SEARCH_CACHE_NOTE}
       </p>
 
       <div className="bj-hs-controls">

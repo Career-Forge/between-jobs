@@ -52,6 +52,19 @@ describe("HiringSignalsPanel, idle", () => {
     );
   });
 
+  it("says, in that same line and before the button, that pressing it makes a search call on the person's own key, then the cache", () => {
+    const html = renderIdle();
+    const text = visibleText(html);
+    const spend =
+      "Pressing Find hiring posts, or Search again once it has run, makes a real search call on your own search key, then tries each other search key you have saved only if that one fails or finds no posts.";
+    const cache = "A search repeated soon after is usually answered from a cache, which makes no new call.";
+    const intro =
+      "Recent public hiring posts about this company, found through the search provider you connected.";
+    expect(text).toContain(`${intro} ${spend} ${cache}`);
+    expect(html.indexOf("Pressing Find hiring posts")).toBeLessThan(html.indexOf(">Find hiring posts<"));
+    expect(text).not.toMatch(/model call/i);
+  });
+
   it("never uses the source site's name or marks in anything a person can see or a browser can load", () => {
     const html = renderIdle();
     expect(html).not.toMatch(/linkedin/i);
