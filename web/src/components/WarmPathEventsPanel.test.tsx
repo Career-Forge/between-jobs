@@ -26,7 +26,7 @@ const stored = (events: unknown[], runOverrides: Record<string, unknown> = {}) =
 beforeEach(() => reset());
 afterEach(() => vi.restoreAllMocks());
 
-const RUN_SENTENCE = spendNotice("Find events, or Refresh once it has run,", `${A_MODEL_CALL} and searches with your You.com or Firecrawl key`);
+const RUN_SENTENCE = spendNotice("Find events, or Refresh once it has run,", `${A_MODEL_CALL} and runs three searches on your You.com key, or on your Firecrawl key if you have no You.com key`);
 
 describe("Events", () => {
   it("shows a placeholder while the stored run is read", () => {
@@ -54,7 +54,7 @@ describe("Events", () => {
     on(`GET ${PATH}`, { run: null, events: [] });
     const { container } = panel();
     await settle();
-    expect(RUN_SENTENCE).toBe("Pressing Find events, or Refresh once it has run, makes a real model call on your own key and searches with your You.com or Firecrawl key.");
+    expect(RUN_SENTENCE).toBe("Pressing Find events, or Refresh once it has run, makes a real model call on your own key and runs three searches on your You.com key, or on your Firecrawl key if you have no You.com key.");
     const intro = query(container, ".bj-ws-intro");
     // The first sentences of the intro are kept, and the vague line the sentence replaces is gone.
     expect(text(intro)).toContain("no one's attendance is guessed.");

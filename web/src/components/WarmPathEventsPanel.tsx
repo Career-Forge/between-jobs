@@ -31,7 +31,9 @@ import "../styles/research.css";
 type Certainty = "confirmed_speaker" | "likely_staffed_sponsor" | "company_adjacent";
 
 // What one press of the run button costs. It sits in the intro, which stays on screen beside the button and its Retry.
-const RUN_SPEND = spendNotice("Find events, or Refresh once it has run,", `${A_MODEL_CALL} and searches with your You.com or Firecrawl key`);
+// The search half is exact: build_event_query_plan is a fixed list of three queries, each one search on You.com when
+// that key is saved and on Firecrawl otherwise.
+const RUN_SPEND = spendNotice("Find events, or Refresh once it has run,", `${A_MODEL_CALL} and runs three searches on your You.com key, or on your Firecrawl key if you have no You.com key`);
 
 interface WarmPathEvent {
   id: string;

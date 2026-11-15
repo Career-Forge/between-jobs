@@ -64,8 +64,10 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 // What one press of the run button costs. It sits in the intro, which stays on screen beside the button and its
-// Retry. The intro's next sentence describes the second, conditional model call.
-const RUN_SPEND = spendNotice("Research this company, or Refresh once it has run,", `${A_MODEL_CALL} and searches with your You.com or Firecrawl key`);
+// Retry. The search half is exact: build_query_plan is a fixed list of seven queries, each one search on You.com
+// when that key is saved and on Firecrawl otherwise. The intro's next sentence describes the second, conditional
+// model call.
+const RUN_SPEND = spendNotice("Research this company, or Refresh once it has run,", `${A_MODEL_CALL} and runs seven searches on your You.com key, or on your Firecrawl key if you have no You.com key`);
 
 // A dossier longer than this opens on its first few claims.
 export const COLLAPSE_ABOVE = 5;

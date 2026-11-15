@@ -122,8 +122,8 @@ describe("Company intel: loading, empty and a stored dossier", () => {
     on(`GET ${PATH}`, { run: null, claims: [] });
     const { container } = panel();
     await settle();
-    const sentence = spendNotice("Research this company, or Refresh once it has run,", `${A_MODEL_CALL} and searches with your You.com or Firecrawl key`);
-    expect(sentence).toBe("Pressing Research this company, or Refresh once it has run, makes a real model call on your own key and searches with your You.com or Firecrawl key.");
+    const sentence = spendNotice("Research this company, or Refresh once it has run,", `${A_MODEL_CALL} and runs seven searches on your You.com key, or on your Firecrawl key if you have no You.com key`);
+    expect(sentence).toBe("Pressing Research this company, or Refresh once it has run, makes a real model call on your own key and runs seven searches on your You.com key, or on your Firecrawl key if you have no You.com key.");
     const intro = query(container, ".bj-ws-intro");
     expect(text(intro)).toContain(sentence);
     // The vague line it replaces is gone, and the second, conditional call is still described after it.
@@ -139,7 +139,7 @@ describe("Company intel: loading, empty and a stored dossier", () => {
     on(`POST ${PATH}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
     const { container } = panel();
     await settle();
-    const sentence = spendNotice("Research this company, or Refresh once it has run,", `${A_MODEL_CALL} and searches with your You.com or Firecrawl key`);
+    const sentence = spendNotice("Research this company, or Refresh once it has run,", `${A_MODEL_CALL} and runs seven searches on your You.com key, or on your Firecrawl key if you have no You.com key`);
     const intro = query(container, ".bj-ws-intro");
     expect(text(intro)).toContain(sentence);
     expect(buttonNamed(container, "Refresh").closest(".bj-actions")!.previousElementSibling).toBe(intro);
