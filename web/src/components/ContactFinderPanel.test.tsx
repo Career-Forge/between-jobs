@@ -445,13 +445,14 @@ describe("Contacts: an outreach draft stays a draft", () => {
 });
 
 describe("Contacts: running", () => {
-  const RUN_SENTENCE = spendNotice("Find contacts, or Refresh once it has run,", "up to two real model calls on your own key and searches with your You.com or Firecrawl key");
+  const DRAFT_SENTENCE = `${spendNotice("Draft outreach", `${A_MODEL_CALL}, and a second one if the first draft fails its checks`)} Pressing Redraft outreach, or Retry after a failed draft, does the same.`;
+  const RUN_SENTENCE = spendNotice("Find contacts, or Refresh once it has run,", "up to two real model calls on your own key and runs up to eight searches, on your You.com key if you saved one and otherwise your Firecrawl key, except the hiring post searches, which use your Firecrawl key when you saved one");
 
   it("says in the intro, right above the run button's row, what pressing it costs: up to two model calls on the person's own key, and searches with their key", async () => {
     on(`GET ${PATH}`, { run: null, candidates: [] });
     const { container } = panel();
     await settle();
-    expect(RUN_SENTENCE).toBe("Pressing Find contacts, or Refresh once it has run, makes up to two real model calls on your own key and searches with your You.com or Firecrawl key.");
+    expect(RUN_SENTENCE).toBe("Pressing Find contacts, or Refresh once it has run, makes up to two real model calls on your own key and runs up to eight searches, on your You.com key if you saved one and otherwise your Firecrawl key, except the hiring post searches, which use your Firecrawl key when you saved one.");
     const intro = query(container, ".bj-ws-intro");
     expect(text(intro)).toContain(RUN_SENTENCE);
     // The vague line it replaces is gone, and the sentence about email and phone numbers is kept after it.
@@ -466,9 +467,9 @@ describe("Contacts: running", () => {
     on(`GET ${PATH}`, stored([candidate(1), candidate(2)]));
     const { container } = panel();
     await settle();
-    const sentence = `${spendNotice("Draft outreach", `${A_MODEL_CALL}, and a second one if the first draft fails its checks`)} Pressing Redraft outreach does the same.`;
+    const sentence = DRAFT_SENTENCE;
     expect(sentence).toBe(
-      "Pressing Draft outreach makes a real model call on your own key, and a second one if the first draft fails its checks. Pressing Redraft outreach does the same.",
+      "Pressing Draft outreach makes a real model call on your own key, and a second one if the first draft fails its checks. Pressing Redraft outreach, or Retry after a failed draft, does the same.",
     );
     const intro = query(container, ".bj-ws-intro");
     expect(text(intro)).toContain(sentence);
@@ -494,6 +495,21 @@ describe("Contacts: running", () => {
     await settle();
     expect(buttonNamed(container, "Retry")).toBeTruthy();
     expect(text(query(container, ".bj-ws-intro"))).toContain(RUN_SENTENCE);
+    // The people from the earlier run are still listed with their Draft outreach buttons, so that sentence stays too.
+    expect(text(query(container, ".bj-ws-intro"))).toContain(DRAFT_SENTENCE);
+  });
+
+  it("names the Retry under a failed draft in the same intro sentence, and the row itself says nothing about cost", async () => {
+    on(`GET ${PATH}`, stored([candidate(1)]));
+    on(`POST ${PATH}/p1/draft-outreach`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    const { container } = panel();
+    await settle();
+    click(buttonNamed(container, "Draft outreach"));
+    await settle();
+    const retry = buttonNamed(row(container), "Retry");
+    expect(retry).toBeTruthy();
+    expect(text(query(container, ".bj-ws-intro"))).toContain(DRAFT_SENTENCE);
+    expect(text(row(container))).not.toContain("Pressing");
   });
 
   it("keeps the earlier people when a run fails, and Retry runs again", async () => {

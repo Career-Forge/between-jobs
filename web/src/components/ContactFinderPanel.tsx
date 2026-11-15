@@ -118,14 +118,16 @@ type Issue = { action: Action; problem: Failure | { kind: "note"; message: strin
 const COPY_FAILED_NOTICE_MS = 6000;
 
 // What one press of the run button costs. It sits in the intro, which stays on screen beside the button and its
-// Retry. A run makes up to two model calls (one to pick product terms for the searches, one to name people), and
-// the searches use the person's You.com or Firecrawl key.
-const RUN_SPEND = spendNotice("Find contacts, or Refresh once it has run,", "up to two real model calls on your own key and searches with your You.com or Firecrawl key");
+// Retry. A run makes up to two model calls (one to pick product terms for the searches, one to name people) and
+// four to eight searches: four fixed queries, two more when product terms were found, two more for companies the
+// size index does not know. They run on You.com when that key is saved and on Firecrawl otherwise, except the hiring
+// post searches, which run only on Firecrawl and are skipped without a Firecrawl key.
+const RUN_SPEND = spendNotice("Find contacts, or Refresh once it has run,", "up to two real model calls on your own key and runs up to eight searches, on your You.com key if you saved one and otherwise your Firecrawl key, except the hiring post searches, which use your Firecrawl key when you saved one");
 
-// What one press of a person's Draft outreach (or, once a draft exists, Redraft outreach) costs. It is said once,
-// in the intro, never in a row: the rows repeat for every person. The draft is written with one model call, and a
-// second only when the first draft fails to parse or fails the writing checks.
-const DRAFT_SPEND = `${spendNotice("Draft outreach", `${A_MODEL_CALL}, and a second one if the first draft fails its checks`)} Pressing Redraft outreach does the same.`;
+// What one press of a person's Draft outreach (or, once a draft exists, Redraft outreach, or the Retry under a draft
+// that failed) costs. It is said once, in the intro, never in a row: the rows repeat for every person. The draft is
+// written with one model call, and a second only when the first draft fails to parse or fails the writing checks.
+const DRAFT_SPEND = `${spendNotice("Draft outreach", `${A_MODEL_CALL}, and a second one if the first draft fails its checks`)} Pressing Redraft outreach, or Retry after a failed draft, does the same.`;
 
 const PERSONA_LABELS: Record<string, string> = {
   hiring_lead: "Hiring lead",
