@@ -14,6 +14,7 @@ import { QUESTION_TYPE_LABELS } from "../lib/interviewPracticeTypes";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { answerTrail, failedTrail, sessionTrail } from "../lib/researchTrails";
 import { failureOf, type Failure } from "../lib/setupRequired";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { formatTrailDate } from "../lib/trail";
 import { useNow } from "../lib/useNow";
 import { BlockTrail } from "./paper/DocumentLayout";
@@ -43,6 +44,13 @@ import "../styles/research.css";
 // read replaces the panel with a Retry; a failed start or answer keeps what is on screen (and the draft of
 // the answer) and says what failed beside it; a missing key or profile is a notice with the link that
 // fixes it and no Retry.
+
+// What the two presses that spend cost. Starting a session (or practising again) writes the five questions with one
+// model call; each answer is then scored with one more. The intro says both. The intro scrolls away once a session
+// is open, so the answer form says what Submit answer costs again, beside the button.
+const START_SPEND = spendNotice("Start practice session, or Practice again,", `${A_MODEL_CALL} to write the questions`);
+const SUBMIT_SPEND_IN_INTRO = spendNotice("Submit answer", "one more to score it");
+const SUBMIT_SPEND = spendNotice("Submit answer", `${A_MODEL_CALL} to score it`);
 
 type LoadState =
   | { kind: "loading" }
@@ -212,8 +220,7 @@ export function InterviewPracticePanel({ applicationId, now }: { applicationId: 
   return (
     <div className="bj-rs bj-rs-practice">
       <p ref={introRef} tabIndex={-1} className="bj-ws-intro">
-        Five mock questions for this role, asked by your model and grounded in your resume evidence and, when one was found, a cited interview-process brief for this company. Each answer is scored by your model
-        on your key.
+        Five mock questions for this role, asked by your model and grounded in your resume evidence and, when one was found, a cited interview-process brief for this company. {START_SPEND} {SUBMIT_SPEND_IN_INTRO}
       </p>
 
       {state.kind === "loading" && <LoadingState rows={2} rowHeight={56} label="Loading practice sessions..." />}
@@ -362,6 +369,7 @@ function QuestionForm({
           {submitting ? "Scoring..." : "Submit answer"}
         </button>
         {empty && !submitting && <span className="bj-ws-caption">Write an answer to submit it.</span>}
+        <span className="bj-ws-caption">{SUBMIT_SPEND}</span>
       </div>
       {problem !== null && (
         <div className="bj-rs-issue">

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
 import { settle, text, typeInto } from "../testing/forms";
@@ -12,6 +13,12 @@ vi.mock("../lib/api", async () => (await import("../testing/fakeApi")).apiModule
 
 const BASE = "/applications/a1/interview-practice/sessions";
 const DETAIL = `${BASE}/${SESSION.id}`;
+
+// The two presses that spend: Start practice session (or Practice again) writes the questions, and each Submit answer
+// scores one answer. The intro says both; the answer form says the second again beside its button.
+const START_SENTENCE = spendNotice("Start practice session, or Practice again,", `${A_MODEL_CALL} to write the questions`);
+const SUBMIT_IN_INTRO = spendNotice("Submit answer", "one more to score it");
+const SUBMIT_BESIDE_BUTTON = spendNotice("Submit answer", `${A_MODEL_CALL} to score it`);
 
 function panel() {
   return render(
@@ -62,6 +69,23 @@ describe("Practice: loading, failure and empty", () => {
     expect(text(container)).toContain("Question 1 of 5");
   });
 
+  it("says in the intro, above the Start button, what starting a session and submitting an answer each cost, on the person's own key", async () => {
+    on(`GET ${BASE}`, { sessions: [] });
+    const { container } = panel();
+    await settle();
+    expect(START_SENTENCE).toBe("Pressing Start practice session, or Practice again, makes a real model call on your own key to write the questions.");
+    expect(SUBMIT_IN_INTRO).toBe("Pressing Submit answer makes one more to score it.");
+    const intro = query(container, ".bj-ws-intro");
+    expect(text(intro)).toContain(`${START_SENTENCE} ${SUBMIT_IN_INTRO}`);
+    // The first sentence of the intro is kept; the vague line the two sentences replace is gone.
+    expect(text(intro)).toContain("Five mock questions for this role, asked by your model and grounded in your resume evidence");
+    expect(text(intro)).not.toContain("Each answer is scored by your model on your key.");
+    // The intro keeps its class, and is still the element that takes focus (tabIndex -1).
+    expect(intro.getAttribute("tabindex")).toBe("-1");
+    expect(buttonNamed(container, "Start practice session").closest(".bj-actions")!.previousElementSibling).toBe(query(container, ".bj-rs-empty"));
+    expect(intro.compareDocumentPosition(buttonNamed(container, "Start practice session")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("teaches what a session is and what it needs, and draws no example question and no trail", async () => {
     on(`GET ${BASE}`, { sessions: [] });
     const { container } = panel();
@@ -101,6 +125,17 @@ describe("Practice: starting", () => {
     await settle();
     expect(container.querySelector("[role='alert']")).toBeNull();
     expect(callsTo(`POST ${BASE}`)).toHaveLength(2);
+  });
+
+  it("keeps the intro, and with it the cost of starting, on screen beside a failed start's Retry", async () => {
+    on(`GET ${BASE}`, { sessions: [] });
+    on(`POST ${BASE}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    const { container } = panel();
+    await settle();
+    click(buttonNamed(container, "Start practice session"));
+    await settle();
+    expect(buttonNamed(container, "Retry")).toBeTruthy();
+    expect(text(query(container, ".bj-ws-intro"))).toContain(START_SENTENCE);
   });
 
   it("hands keyboard focus to the Start button when its Retry removes the callout it was pressed in", async () => {
@@ -232,6 +267,14 @@ describe("Practice: a session read back from an earlier visit", () => {
     expect(buttonNamed(container, "Practice again")).toBeTruthy();
   });
 
+  it("keeps the intro, and with it the cost of Practice again, on screen beside a completed session's Practice again button", async () => {
+    resume(five(5), { status: "completed", completed_at: "2026-09-21T12:30:00Z" });
+    const { container } = panel();
+    await settle();
+    expect(buttonNamed(container, "Practice again")).toBeTruthy();
+    expect(text(query(container, ".bj-ws-intro"))).toContain(START_SENTENCE);
+  });
+
   it("says that grounding research is shared across users, in the question and in the receipt", async () => {
     resume([question(1, { grounded_in: "Two rounds on data modeling" }), ...[2, 3, 4, 5].map((n) => question(n))], { registry_entry_id: "r1" });
     const { container } = panel();
@@ -263,6 +306,39 @@ describe("Practice: answering", () => {
     expect(text(container)).toContain("Write an answer to submit it.");
     click(submit);
     expect(callsTo(`POST ${ANSWERS}`)).toHaveLength(0);
+  });
+
+  it("says beside Submit answer, in the answer form, that pressing it makes a model call to score the answer on the person's own key", async () => {
+    resume(five(0));
+    const { container } = panel();
+    await settle();
+    expect(SUBMIT_BESIDE_BUTTON).toBe("Pressing Submit answer makes a real model call on your own key to score it.");
+    const submit = buttonNamed(container, "Submit answer");
+    const actions = submit.closest(".bj-actions")!;
+    const captions = [...actions.querySelectorAll(".bj-ws-caption")].map((node) => text(node));
+    // With the box empty the row keeps the line that says why the button is off, and says the cost beside it.
+    expect(captions).toContain("Write an answer to submit it.");
+    expect(captions).toContain(SUBMIT_BESIDE_BUTTON);
+    // Once there is an answer to send, the cost is still there and the empty-box line is not.
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), "I led the migration.");
+    expect([...actions.querySelectorAll(".bj-ws-caption")].map((node) => text(node))).toEqual([SUBMIT_BESIDE_BUTTON]);
+    // The panel's intro, which scrolls away once a session is open, still says the same thing in its own words.
+    expect(text(query(container, ".bj-ws-intro"))).toContain(SUBMIT_IN_INTRO);
+    // The sentence sits in the same row as the button, as a sibling, not in a row of its own.
+    expect(actions.contains(submit)).toBe(true);
+    expect(submit.parentElement).toBe(actions);
+  });
+
+  it("keeps the cost beside Submit answer while the answer is being scored, and beside a failed submit's Send again", async () => {
+    resume(five(0));
+    on(`POST ${ANSWERS}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    const { container } = panel();
+    await settle();
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), "I led the migration.");
+    click(buttonNamed(container, "Submit answer"));
+    await settle();
+    expect(buttonNamed(container, "Send again")).toBeTruthy();
+    expect(text(query(container, ".bj-rs-question .bj-actions"))).toContain(SUBMIT_BESIDE_BUTTON);
   });
 
   it("sends the answer, busies only the button, then shows the feedback for it and moves focus there", async () => {
