@@ -2,6 +2,7 @@
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerationController } from "../lib/useGeneration";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { text } from "../testing/forms";
 import { buttonNamed, click, query, render } from "../testing/render";
@@ -55,7 +56,8 @@ describe("Generate", () => {
   it("says what it runs, with a secondary Generate resume and the cover letter choice off by default", () => {
     const c = controller();
     const { container } = panel(c);
-    expect(text(container)).toContain("a real model call, on the provider key you saved");
+    expect(text(query(container, ".bj-ws-intro"))).toContain(`Runs the resume engine against this job. ${spendNotice("Generate resume", SEVERAL_MODEL_CALLS)}`);
+    expect(text(container)).not.toContain("a real model call, on the provider key you saved");
     const run = buttonNamed(container, "Generate resume");
     expect(run.classList.contains("bj-primary")).toBe(false);
     click(run);

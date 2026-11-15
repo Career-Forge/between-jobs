@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { flaggedCount, isClaimWarning } from "../lib/claimWarnings";
 import type { PrepareApplicationResult } from "../lib/generateTypes";
 import { notScoredNote } from "../lib/scoreBreakdown";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import type { GenerationController } from "../lib/useGeneration";
 import { generationTrail } from "../lib/workspaceTrails";
 import { HonestFloor } from "./HonestFloor";
@@ -77,7 +78,7 @@ export function GeneratePanel({ applicationId, controller, setupMissing = null, 
   return (
     <div className="bj-ws-generate">
       <p className="bj-ws-intro">
-        Runs the resume engine against this job: a real model call, on the provider key you saved.
+        Runs the resume engine against this job. {spendNotice("Generate resume", SEVERAL_MODEL_CALLS)}
         {!hasResume && state.kind === "idle" && " A run makes a resume PDF with its ATS score and its claim check, and a cover letter if you ask for one."}
       </p>
 
