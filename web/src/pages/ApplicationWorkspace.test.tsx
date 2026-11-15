@@ -511,7 +511,7 @@ describe("the band, from the first step to the last", () => {
     expect(bandNotes(container)).toEqual([spendNotice("Generate resume", SEVERAL_MODEL_CALLS)]);
     expect([...query(band(container), ".bj-band-item").children].map((node) => text(node))).toEqual([
       spendNotice("Generate resume", SEVERAL_MODEL_CALLS),
-      "Also draft a cover letter (a real, extra model call)",
+      "Also draft a cover letter (a real, extra model call, and a second if the letter fails its checks)",
     ]);
     expect(band(container).querySelector("input[type='checkbox']")).not.toBeNull();
     expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1);

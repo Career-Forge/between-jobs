@@ -2,7 +2,7 @@
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerationController } from "../lib/useGeneration";
-import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
+import { COVER_LETTER_EXTRA, SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { text } from "../testing/forms";
 import { buttonNamed, click, query, render } from "../testing/render";
@@ -56,7 +56,13 @@ describe("Generate", () => {
   it("says what it runs, with a secondary Generate resume and the cover letter choice off by default", () => {
     const c = controller();
     const { container } = panel(c);
-    expect(text(query(container, ".bj-ws-intro"))).toContain(`Runs the resume engine against this job. ${spendNotice("Generate resume", SEVERAL_MODEL_CALLS)}`);
+    // The failed-run Retry runs the same press, so the sentence names it too.
+    expect(text(query(container, ".bj-ws-intro"))).toContain(
+      "Runs the resume engine against this job. Pressing Generate resume, or Retry after a failed run, makes several real model calls on your own key.",
+    );
+    expect(text(query(container, ".bj-ws-intro"))).toContain(
+      spendNotice("Generate resume, or Retry after a failed run,", SEVERAL_MODEL_CALLS),
+    );
     expect(text(container)).not.toContain("a real model call, on the provider key you saved");
     const run = buttonNamed(container, "Generate resume");
     expect(run.classList.contains("bj-primary")).toBe(false);
@@ -64,6 +70,9 @@ describe("Generate", () => {
     expect(c.generate).toHaveBeenCalledWith();
     const box = query<HTMLInputElement>(container, "input[type='checkbox']");
     expect(box.checked).toBe(false);
+    // A cover letter can take a second call when the first fails its checks, so the choice never says one.
+    expect(text(box.closest("label")!)).toBe(`Also generate a cover letter (${COVER_LETTER_EXTRA})`);
+    expect(text(box.closest("label")!)).toContain("a second if the letter fails its checks");
     click(box);
     expect(c.setWantCoverLetter).toHaveBeenCalledWith(true);
   });
@@ -102,6 +111,26 @@ describe("Generate", () => {
     const inBand = panel(c, { retryInBand: true });
     expect(text(query(inBand.container, "[role='alert']"))).toContain("The engine did not answer.");
     expect(inBand.container.querySelector("[role='alert'] button")).toBeNull();
+  });
+
+  // The sentence is in the intro, which stays on screen in every state: a Retry after a failed run is a paid press,
+  // and a person who has not set up a model key yet is told what the press will cost once they have.
+  it("keeps the spend sentence in the intro after a failed run, naming Retry, and without Retry when the band carries Generate again", () => {
+    const failed = controller({ state: { kind: "error", message: "The engine did not answer.", at: "09:14" } });
+    const own = panel(failed);
+    expect(text(query(own.container, ".bj-ws-intro"))).toContain(
+      "Pressing Generate resume, or Retry after a failed run, makes several real model calls on your own key.",
+    );
+    own.unmount();
+    const inBand = panel(failed, { retryInBand: true });
+    expect(text(query(inBand.container, ".bj-ws-intro"))).toContain(spendNotice("Generate resume", SEVERAL_MODEL_CALLS));
+    expect(text(query(inBand.container, ".bj-ws-intro"))).not.toContain("Retry");
+  });
+
+  it("keeps the spend sentence in the intro while setup is missing, although no Generate button is drawn yet", () => {
+    const { container } = panel(controller(), { setupMissing: { message: "No usable key.", missing: [{ label: "Add a model key", to: "/settings#ai-provider" }] } });
+    expect(container.querySelector(".bj-actions")).toBeNull();
+    expect(text(query(container, ".bj-ws-intro"))).toContain("makes several real model calls on your own key.");
   });
 
   it("keeps the link in a setup failure, and does not fire anything", () => {

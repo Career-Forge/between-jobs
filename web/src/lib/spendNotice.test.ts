@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { A_MODEL_CALL, SEVERAL_MODEL_CALLS, spendNotice } from "./spendNotice";
+import { A_MODEL_CALL, COVER_LETTER_EXTRA, SEVERAL_MODEL_CALLS, spendNotice } from "./spendNotice";
 
 // The shape every "what pressing this costs" sentence is built in. The exact words are pinned here once;
 // the controls that use them pin only that their sentence sits next to them.
@@ -12,6 +12,12 @@ describe("spendNotice", () => {
     expect(SEVERAL_MODEL_CALLS).toBe("several real model calls on your own key");
   });
 
+  it("says a cover letter adds one call and possibly a second, never a single call", () => {
+    expect(COVER_LETTER_EXTRA).toBe("a real, extra model call, and a second if the letter fails its checks");
+    expect(COVER_LETTER_EXTRA).not.toMatch(EM_OR_EN_DASH);
+    expect(COVER_LETTER_EXTRA).not.toMatch(/verified|unknown model|search/i);
+  });
+
   it("builds the one sentence for a single call", () => {
     expect(spendNotice("Check coverage", A_MODEL_CALL)).toBe("Pressing Check coverage makes a real model call on your own key.");
   });
@@ -21,8 +27,8 @@ describe("spendNotice", () => {
   });
 
   it("carries words that go on after the spend, and still ends in one period", () => {
-    expect(spendNotice("Search again", `${A_MODEL_CALL} and uses any search keys you have connected`)).toBe(
-      "Pressing Search again makes a real model call on your own key and uses any search keys you have connected.",
+    expect(spendNotice("Search", `${A_MODEL_CALL} and can run several searches on each search key you have connected`)).toBe(
+      "Pressing Search makes a real model call on your own key and can run several searches on each search key you have connected.",
     );
   });
 
@@ -47,7 +53,14 @@ describe("spendNotice", () => {
   });
 
   it("uses no em dash or en dash and none of the words the trail copy bans", () => {
-    for (const phrase of [A_MODEL_CALL, SEVERAL_MODEL_CALLS, spendNotice("Check coverage", A_MODEL_CALL), spendNotice("Generate resume", SEVERAL_MODEL_CALLS)]) {
+    for (const phrase of [
+      A_MODEL_CALL,
+      SEVERAL_MODEL_CALLS,
+      COVER_LETTER_EXTRA,
+      spendNotice("Check coverage", A_MODEL_CALL),
+      spendNotice("Generate resume", SEVERAL_MODEL_CALLS),
+      spendNotice("a file", A_MODEL_CALL, "Choosing"),
+    ]) {
       expect(phrase).not.toMatch(EM_OR_EN_DASH);
       expect(phrase).not.toMatch(/verified|unknown model/i);
     }

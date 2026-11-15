@@ -17,7 +17,7 @@ import { WORKSPACE_INTENTS, workspaceNotFound, type WorkspaceFacts } from "../li
 import type { CanonicalProfile } from "../lib/profileTypes";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { MODEL_PROVIDER_PATH } from "../lib/settingsPaths";
-import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
+import { COVER_LETTER_EXTRA, SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { clockTime } from "../lib/todayFeed";
 import { formatTrailDate } from "../lib/trail";
 import { useCapabilities } from "../lib/useCapabilities";
@@ -452,7 +452,7 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
         {coverLetterInBand && (
           <label className="bj-ws-check bj-small">
             <input type="checkbox" checked={controller.wantCoverLetter} onChange={(e) => controller.setWantCoverLetter(e.target.checked)} disabled={controller.state.kind === "generating"} />
-            Also draft a cover letter (a real, extra model call)
+            Also draft a cover letter ({COVER_LETTER_EXTRA})
           </label>
         )}
       </NextStepBand>
