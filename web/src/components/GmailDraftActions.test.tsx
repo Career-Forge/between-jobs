@@ -2,8 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { anchorsOf, tagsOf, textOfMarkup } from "../testing/markup";
-import { expand, findAll, press, prop, textOf } from "../testing/reactTree";
-import { GmailDraftActions, type GmailDraftActionsProps } from "./GmailDraftActions";
+import { expand, findAll, type HostElement, isHost, press, prop, textOf } from "../testing/reactTree";
+import { GMAIL_DRAFT_NOTE, GmailDraftActions, type GmailDraftActionsProps } from "./GmailDraftActions";
 
 // What sits under an outreach draft for each state Gmail can be in (lib/gmailAccess.ts decides the
 // state; the contact panel owns the requests). Nothing here sends mail.
@@ -39,6 +39,16 @@ function html(extra: Partial<GmailDraftActionsProps>): string {
 
 const MAIL_APP = "Open in your mail app";
 const COPY = "Copy subject and email";
+// The sentence beside the button, word for word: the press makes no model call, and what can come later does.
+const NOTE =
+  "Pressing Create Gmail draft puts the draft in your Gmail and makes no model call. Once you send it, a reply to it can be read by your model on your own key and show up in Today as an update.";
+const EM_OR_EN_DASH = new RegExp(`[${String.fromCharCode(0x2013)}${String.fromCharCode(0x2014)}]`);
+
+// The one row the button and its note sit in, read from what the component returns.
+function actionsRow(extra: Partial<GmailDraftActionsProps>) {
+  const [row] = findAll(expand(GmailDraftActions(props(extra))), (el) => el.type === "div" && prop(el, "className") === "bj-actions");
+  return row;
+}
 
 describe("a draft already in Gmail", () => {
   it("says so, whatever the state, and offers nothing else", () => {
@@ -59,7 +69,7 @@ describe("a draft already in Gmail", () => {
 describe("with Gmail connected, or not known yet", () => {
   it.each(["connected", "unknown"] as const)("(%s) offers to create the draft once the contact has a work email", (state) => {
     const markup = html({ state });
-    expect(textOfMarkup(markup)).toBe("Create Gmail draft");
+    expect(textOfMarkup(markup)).toBe(`Create Gmail draft${NOTE}`);
     expect(markup).not.toContain("bj-primary");
     expect(markup).not.toContain("mailto:");
     expect(textOfMarkup(markup)).not.toContain(COPY);
@@ -73,7 +83,7 @@ describe("with Gmail connected, or not known yet", () => {
 
   it("says Creating draft... and marks the button aria-disabled (not disabled, so focus stays) while the request is out", () => {
     const markup = html({ pushing: true });
-    expect(textOfMarkup(markup)).toBe("Creating draft...");
+    expect(textOfMarkup(markup)).toBe(`Creating draft...${NOTE}`);
     expect(tagsOf(markup, "button")[0]).toHaveProperty("aria-disabled", "true");
     expect(tagsOf(markup, "button")[0]).not.toHaveProperty("disabled");
   });
@@ -93,6 +103,42 @@ describe("with Gmail connected, or not known yet", () => {
     expect(onPush).not.toHaveBeenCalled();
     press(buttons[0]);
     expect(onPush).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("what Create Gmail draft costs, said beside it", () => {
+  it.each(["connected", "unknown"] as const)("(%s) says beside the button that the press makes no model call, and what can come later", (state) => {
+    const row = actionsRow({ state });
+    const [button, note] = row.children;
+    expect(isHost(button) && button.type).toBe("button");
+    expect(textOf(button)).toBe("Create Gmail draft");
+    // The note follows the button in the same row, in the muted small style, and is the sentence word for word.
+    expect(isHost(note) && note.type).toBe("span");
+    expect(prop(note as HostElement, "className")).toBe("bj-muted bj-small");
+    expect(textOf(note)).toBe(NOTE);
+    expect(GMAIL_DRAFT_NOTE).toBe(NOTE);
+  });
+
+  it("stays beside the button while the draft is being created", () => {
+    const row = actionsRow({ pushing: true });
+    expect(textOf(row.children[0])).toBe("Creating draft...");
+    expect(textOf(row.children[1])).toBe(NOTE);
+  });
+
+  it("says a press makes no model call and does not use the spend sentence for a press that has no spend", () => {
+    expect(NOTE.startsWith("Pressing Create Gmail draft puts the draft in your Gmail and makes no model call.")).toBe(true);
+    expect(NOTE).not.toMatch(/makes a real model call|several real model calls/);
+    expect(NOTE).toContain("on your own key");
+    expect(NOTE).not.toMatch(EM_OR_EN_DASH);
+    expect(NOTE).not.toMatch(/verified|unknown model/i);
+  });
+
+  it("is not shown where there is no button: no work email yet, a draft already in Gmail, or no Gmail", () => {
+    expect(textOfMarkup(html({ recipient: null }))).not.toContain("Pressing Create Gmail draft");
+    expect(textOfMarkup(html({ alreadyPushed: true }))).not.toContain("Pressing Create Gmail draft");
+    for (const state of ["not_connected", "reconnect_needed", "availability_unknown", "unavailable"] as const) {
+      expect(textOfMarkup(html({ state }))).not.toContain("Pressing Create Gmail draft");
+    }
   });
 });
 

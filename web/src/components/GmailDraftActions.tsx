@@ -24,6 +24,11 @@ import { SETTINGS_PATH } from "../lib/settingsPaths";
 // filled in; the recipient is the contact's work email the person looked up, or empty. "Create Gmail
 // draft" saves the email as a draft in the person's own Gmail, to be sent from there.
 //
+// Next to "Create Gmail draft" a note says what the press does and does not cost. The press itself
+// makes no model call, so this is not the spend sentence the other controls carry; it says so, and
+// says what happens later: once the draft is sent, a reply to it can be read by the person's model on
+// their own key. The note is there only while the button is.
+//
 // Every control is secondary (outlined): the page's one cyan fill is the next-step band's. A busy button
 // is aria-disabled, not disabled, so a focused one keeps focus.
 
@@ -47,6 +52,10 @@ export interface GmailDraftActionsProps {
 }
 
 const SETTINGS = SETTINGS_PATH;
+
+/** What sits beside the Create Gmail draft button: the press makes no model call; a reply to the sent draft can. */
+export const GMAIL_DRAFT_NOTE =
+  "Pressing Create Gmail draft puts the draft in your Gmail and makes no model call. Once you send it, a reply to it can be read by your model on your own key and show up in Today as an update.";
 
 function fallbackExplanation(state: GmailState, unavailableMessage: string | null): string {
   switch (state) {
@@ -86,15 +95,18 @@ export function GmailDraftActions({
     return (
       <div className="bj-actions">
         {recipient ? (
-          <button
-            type="button"
-            aria-disabled={pushing ? true : undefined}
-            onClick={() => {
-              if (!pushing) onPush();
-            }}
-          >
-            {pushing ? "Creating draft..." : "Create Gmail draft"}
-          </button>
+          <>
+            <button
+              type="button"
+              aria-disabled={pushing ? true : undefined}
+              onClick={() => {
+                if (!pushing) onPush();
+              }}
+            >
+              {pushing ? "Creating draft..." : "Create Gmail draft"}
+            </button>
+            <span className="bj-muted bj-small">{GMAIL_DRAFT_NOTE}</span>
+          </>
         ) : (
           <span className="bj-muted bj-small">
             Find this contact's work email to create a Gmail draft.
