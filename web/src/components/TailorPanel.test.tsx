@@ -437,7 +437,9 @@ describe("Tailor, described by what pressing Check coverage costs", () => {
     expect(describedText(buttonNamed(second.container, BUTTON))).toBe(NOTE);
   });
 
-  it("has no serious accessibility violation with the description in place", async () => {
+  // axe reports an aria-describedby that names nothing as incomplete, not as a violation, so this does not pin the wiring
+  // (the describedText tests above do): it checks the markup around the note and the button is sound.
+  it("has no serious accessibility violation in the idle panel", async () => {
     const { container } = panel();
     await expectNoSeriousA11yViolations(container);
   });

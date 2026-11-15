@@ -490,6 +490,16 @@ describe("Contacts: running", () => {
     expect(sentence).not.toMatch(/gmail/i);
   });
 
+  it("repeats the Draft outreach sentence above a list of exactly one person too, where their Draft button is", async () => {
+    on(`GET ${PATH}`, stored([candidate(1)]));
+    const { container } = panel();
+    await settle();
+    expect(container.querySelectorAll(".bj-rs-item")).toHaveLength(1);
+    expect(text(container).split(DRAFT_SENTENCE)).toHaveLength(3);
+    const list = query(container, "ul[aria-label='People named for this company']");
+    expect(text(list.previousElementSibling!)).toBe(DRAFT_SENTENCE);
+  });
+
   it.each([
     ["no run yet", { run: null, candidates: [] }],
     ["a run that found nobody", stored([])],
