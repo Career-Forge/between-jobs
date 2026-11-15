@@ -2,6 +2,9 @@
 import { StrictMode, act } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NEXT_STEP_FOCUS_ID } from "../components/paper/NextStepBand";
+import { ACTIVITY_HEADING_ID } from "../components/today/TodayView";
+import { PROPOSAL_STEPS } from "../lib/nextStep/pages/today";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { buttonNamed, click, installViewport, query, render } from "../testing/render";
 import Today from "./Today";
@@ -964,14 +967,22 @@ describe("an accepted proposal", () => {
     expect(buttonNamed(band(container), "Accept: move to Interviewing")).toBeTruthy();
   });
 
-  // The five stages Accept can move an application to, with the type that leads to each.
-  it.each([
+  // The five stages Accept can move an application to, with the type that leads to each. The words
+  // are written out here on purpose, so a changed stage word fails the rows below; the next test
+  // fails when a type is added or removed without a row being added or removed with it.
+  const STAGES: [string, string][] = [
     ["assessment.received", "Screening"],
     ["interview.requested", "Interviewing"],
     ["interview.scheduled", "Interviewing"],
     ["offer.received", "Offer"],
     ["application.rejected", "Rejected"],
-  ])("says %s moved the application to %s, in the line and in the polite status", async (proposedType, stage) => {
+  ];
+
+  it("has a row below for every type Accept can move an application for", () => {
+    expect(Object.keys(PROPOSAL_STEPS).sort()).toEqual(STAGES.map(([proposedType]) => proposedType).sort());
+  });
+
+  it.each(STAGES)("says %s moved the application to %s, in the line and in the polite status", async (proposedType, stage) => {
     const item = { ...proposalItem, status_proposal: { ...proposalItem.status_proposal, proposed_type: proposedType } };
     answer({ "/today": [item], "POST /today/p1/accept-proposal": {} });
     const { container } = await draw();
@@ -1040,7 +1051,7 @@ describe("an accepted proposal", () => {
     click(accept);
     await flush();
     expect(container.contains(accept)).toBe(false);
-    expect(document.activeElement).toBe(query(container, "#bj-today-activity"));
+    expect(document.activeElement).toBe(query(container, `#${ACTIVITY_HEADING_ID}`));
     expect(document.activeElement).not.toBe(query(container, ".bj-today-confirmation a"));
   });
 
@@ -1052,8 +1063,8 @@ describe("an accepted proposal", () => {
     click(accept);
     await flush();
     // The list is gone with its last row: focus lands in the band, not on the page.
-    expect(container.querySelector("#bj-today-activity")).toBeNull();
-    expect(document.activeElement).toBe(document.getElementById("next-step-focus"));
+    expect(container.querySelector(`#${ACTIVITY_HEADING_ID}`)).toBeNull();
+    expect(document.activeElement).toBe(document.getElementById(NEXT_STEP_FOCUS_ID));
     expect(band(container).contains(document.activeElement)).toBe(true);
   });
 });
@@ -1134,7 +1145,7 @@ describe("the other replies about an application once one is accepted", () => {
     expect(rows(container)).toEqual([]);
   });
 
-  it("does not replay a sibling's failed Dismiss against the proposal route on Retry: the failure goes with the Accept it lost", async () => {
+  it("takes a sibling's failed Dismiss and its Retry away with the Accept it lost, so the next Dismiss goes the plain way", async () => {
     answer({
       "/today": [proposalItem, sibling("s1")],
       "POST /today/s1/dismiss-proposal": new FakeApiError(500, "Request failed (500)"),
@@ -1157,6 +1168,63 @@ describe("the other replies about an application once one is accepted", () => {
     expect(calls().filter((call) => call === "POST /today/s1/dismiss-proposal")).toHaveLength(1);
     expect(calls()).toContain("POST /today/s1/dismiss");
     expect(rows(container)).toEqual([]);
+  });
+
+  it("takes the failure and Retry off a reply that never had an Accept, too", async () => {
+    answer({
+      "/today": [proposalItem, sibling("s2", { type: "recruiter.replied" })],
+      "POST /today/s2/dismiss-proposal": new FakeApiError(500, "Request failed (500)"),
+      "POST /today/p1/accept-proposal": {},
+    });
+    const { container } = await draw();
+    const row = container.querySelector("li.bj-today-row") as HTMLElement;
+    click(buttonNamed(row, "Dismiss"));
+    await flush();
+    expect(buttonNamed(row, "Retry")).toBeTruthy();
+
+    await acceptLit(container);
+    // Nothing is said of it, but it was settled all the same: its Retry would be refused too.
+    expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Interviewing. Open workspace");
+    expect(container.querySelector(".bj-state--failure")).toBeNull();
+    expect(() => buttonNamed(container, "Retry")).toThrow();
+  });
+
+  it("keeps an unrelated reply's failure and its Retry, while a sibling's goes", async () => {
+    // x1 is another application's reply with no stage, so it stays a row with its failure on it.
+    answer({
+      "/today": [proposalItem, sibling("s1"), sibling("x1", { type: "recruiter.replied", application: "app-2", at: "2026-09-22T08:00:00Z" })],
+      "POST /today/s1/dismiss-proposal": new FakeApiError(500, "Request failed (500)"),
+      "POST /today/x1/dismiss-proposal": new FakeApiError(500, "Request failed (500)"),
+      "POST /today/p1/accept-proposal": {},
+    });
+    const { container } = await draw();
+    const [offer, other] = [...container.querySelectorAll("li.bj-today-row")] as HTMLElement[];
+    click(buttonNamed(offer, "Dismiss"));
+    click(buttonNamed(other, "Dismiss"));
+    await flush();
+    expect(container.querySelectorAll(".bj-state--failure")).toHaveLength(2);
+
+    await acceptLit(container);
+    const kept = container.querySelectorAll("li.bj-today-row")[1] as HTMLElement;
+    expect(container.querySelectorAll(".bj-state--failure")).toHaveLength(1);
+    expect(kept.querySelector(".bj-state--failure")).not.toBeNull();
+    // Its Retry is still the request it was for.
+    click(buttonNamed(kept, "Retry"));
+    await flush();
+    expect(calls().filter((call) => call === "POST /today/x1/dismiss-proposal")).toHaveLength(2);
+    expect(calls().filter((call) => call === "POST /today/s1/dismiss-proposal")).toHaveLength(1);
+  });
+
+  it("leaves the other replies offering Accept, and says nothing of them, when the Accept itself failed", async () => {
+    answer({ "/today": [proposalItem, sibling("s1")], "POST /today/p1/accept-proposal": new FakeApiError(500, "Request failed (500)") });
+    const { container } = await draw();
+    await acceptLit(container);
+    expect(container.querySelector(".bj-today-confirmation")).toBeNull();
+    expect(status(container)).toBe("");
+    expect(query(band(container), ".bj-state--failure")).toBeTruthy();
+    const older = rowNamed(container, "Offer");
+    expect(buttonNamed(older, "Accept: move to Offer")).toBeTruthy();
+    expect(words(older)).toContain("Needs your decision");
   });
 
   it("leaves a reply whose own request is out as it is, with its Accept, and does not count it", async () => {
@@ -1185,7 +1253,10 @@ describe("the other replies about an application once one is accepted", () => {
     const { container } = await draw();
     click(buttonNamed(rowNamed(container, "Offer"), "Dismiss"));
     await acceptLit(container);
-    // Both answers arrive before the page has drawn either.
+    // Both answers arrive before the page has drawn either. The order is what makes this test bite:
+    // the dismiss is answered first, so its continuation has taken the reply out of the feed by the
+    // time the accept's reads the feed. Answered the other way round, the reply would still have a
+    // request out and be left alone, and nothing here would be put to the test.
     await act(async () => {
       finishDismiss({});
       finishAccept({});
@@ -1194,7 +1265,9 @@ describe("the other replies about an application once one is accepted", () => {
     expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Interviewing. Open workspace");
   });
 
-  it("counts each reply once under StrictMode, which runs renders and state updaters twice", async () => {
+  // A smoke pin that the page settles the same way when React runs its renders and state updaters
+  // twice. Other tests also fail for a count taken in the wrong place, so this is not the only guard.
+  it("counts each reply once, and leaves the same cards, under StrictMode", async () => {
     answer({
       "/today": [proposalItem, sibling("s1"), sibling("s2", { type: "recruiter.replied", at: "2026-09-22T08:00:00Z" })],
       "POST /today/p1/accept-proposal": {},
@@ -1249,7 +1322,7 @@ describe("the other replies about an application once one is accepted", () => {
     expect(container.textContent).not.toContain("Accept: move to");
     // The band's reply went into the list as a record, and the pressed row went: focus is on the heading.
     expect(rows(container)).toEqual(["status_proposal"]);
-    expect(document.activeElement).toBe(query(container, "#bj-today-activity"));
+    expect(document.activeElement).toBe(query(container, `#${ACTIVITY_HEADING_ID}`));
   });
 });
 

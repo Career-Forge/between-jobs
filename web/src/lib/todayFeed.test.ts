@@ -659,6 +659,13 @@ describe("a reply accepted for an application", () => {
       item({ id: "ready", kind: "resume_ready", application_id: "app-1" }),
       item({ id: "stage", kind: "stage_changed", application_id: "app-1" }),
       item({ id: "bare", kind: "status_proposal", application_id: "app-1" }),
+      // Not a reply, whatever it carries: only a reply's own proposal is the server's to settle.
+      item({
+        id: "odd",
+        kind: "resume_ready",
+        application_id: "app-1",
+        status_proposal: { id: "sp-odd", proposed_type: "interview.requested", confidence: 0.6, evidence_spans: [], status: "pending" },
+      }),
     ];
     const result = supersedeSiblings(items, accepted);
     expect(result).toMatchObject({ count: 0, flipped: [] });
@@ -691,6 +698,17 @@ describe("a reply accepted for an application", () => {
     expect(supersedeSiblings([blank, reply("s1", "   "), reply("s2", ""), reply("s3", null)], blank)).toMatchObject({ count: 0, flipped: [] });
     const padded = reply("a", " app-1 ");
     expect(supersedeSiblings([padded, reply("s1", "app-1")], padded)).toMatchObject({ count: 1, flipped: ["s1"] });
+    // The other side as well: a sibling whose id is the one that is padded.
+    const plain = reply("a", "app-1");
+    expect(supersedeSiblings([plain, reply("s1", " app-1 ")], plain)).toMatchObject({ count: 1, flipped: ["s1"] });
+  });
+
+  it("never marks the accepted item itself, even when the list holds a copy of it that carries another proposal", () => {
+    const accepted = reply("a", "app-1", { proposalId: "sp-then" });
+    const items = [reply("a", "app-1", { proposalId: "sp-now" }), reply("s1", "app-1")];
+    const result = supersedeSiblings(items, accepted);
+    expect(result).toMatchObject({ count: 1, flipped: ["s1"] });
+    expect(statusOf(result.items, "a")).toBe("pending");
   });
 
   it("leaves an item with a request of its own out alone, and does not count it", () => {
