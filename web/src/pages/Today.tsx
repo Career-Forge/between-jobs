@@ -7,7 +7,7 @@ import { apiFetch } from "../lib/api";
 import { ACCOUNT_STILL_LOADING, firstRunFactsOf, readAccount, type AccountReads } from "../lib/firstRun";
 import { modelKeyOf } from "../lib/modelKey";
 import { nextStepWithRow, type NextStepInput, type SetupCheck } from "../lib/nextStep";
-import { PROPOSAL_STEPS, parseTodayIntent, todayLit, workspacePath, type TodayRowId } from "../lib/nextStep/pages/today";
+import { PROPOSAL_STEPS, isMappableProposal, parseTodayIntent, todayLit, workspacePath, type TodayRowId } from "../lib/nextStep/pages/today";
 import { gmailAccess } from "../lib/gmailAccess";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { failureOf, type Failure } from "../lib/setupRequired";
@@ -259,11 +259,29 @@ export default function Today() {
           removeItem(item.id);
           finished("Dismissed.", from);
           break;
-        case "accept":
+        case "accept": {
           await apiFetch(`/today/${item.id}/accept-proposal`, { method: "POST" });
           removeItem(item.id);
-          finished(`Moved to ${PROPOSAL_STEPS[item.status_proposal?.proposed_type ?? ""]?.stage ?? "the new stage"}.`, from);
+          const proposedType = item.status_proposal?.proposed_type ?? "";
+          const stage = isMappableProposal(proposedType) ? PROPOSAL_STEPS[proposedType].stage : null;
+          if (stage === null) {
+            // Accept is only offered for a type that has a stage, so this is not reached with a real
+            // item; if it ever is, nothing is claimed about where the application went.
+            finished("Moved to the new stage.", from);
+            break;
+          }
+          // The card is gone, so the page says what the click did and where to see it, in one
+          // sentence that is also what a screen reader is told.
+          const applicationId = item.application_id?.trim() ?? "";
+          const job = applicationId === "" ? null : jobLabel(context.names.get(applicationId));
+          const sentence = `${job ?? "The application"} moved to ${stage}.`;
+          setConfirmation({
+            text: sentence,
+            link: applicationId === "" ? { label: "Go to Applications", to: "/applications" } : { label: "Open workspace", to: workspacePath(applicationId) },
+          });
+          finished(sentence, from);
           break;
+        }
         case "track": {
           const match = item.job_match;
           if (match === null) break;

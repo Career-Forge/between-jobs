@@ -379,13 +379,20 @@ describe("dismissing, accepting and tracking", () => {
     expect(rows(container)).toEqual([]);
   });
 
-  it("accepts a proposal from the band's one cyan button, and removes it", async () => {
+  it("accepts a proposal from the band's one cyan button, removes it, and says where the application went", async () => {
     answer({ "/today": [proposalItem], "POST /today/p1/accept-proposal": {} });
     const { container } = await draw();
     click(buttonNamed(band(container), "Accept: move to Interviewing"));
     await flush();
     expect(calls()).toContain("POST /today/p1/accept-proposal");
     expect(band(container).className).toContain("bj-band--unlit");
+    // The card is gone from the band and from the list, not just the band's lit styling.
+    expect(container.querySelector("[data-kind='status_proposal']")).toBeNull();
+    expect(container.textContent).not.toContain("Accept: move to");
+    expect(container.textContent).not.toContain("Are you free Thursday?");
+    const confirmation = query(container, ".bj-today-confirmation");
+    expect(words(confirmation)).toBe("Data Engineer at Acme moved to Interviewing. Open workspace");
+    expect(query(confirmation, "a").getAttribute("href")).toBe("/applications/app-1");
   });
 
   it("ignores a second press while the first request is out, and the band shows the request while it is", async () => {
@@ -755,7 +762,9 @@ describe("telling a screen reader what happened", () => {
     expect(status(container)).toBe("");
     click(buttonNamed(band(container), "Accept: move to Interviewing"));
     await flush();
-    expect(status(container)).toBe("Moved to Interviewing.");
+    // The same sentence the page shows, so a screen reader hears what a sighted person reads.
+    expect(status(container)).toBe("Data Engineer at Acme moved to Interviewing.");
+    expect(words(query(container, ".bj-today-confirmation"))).toBe(`${status(container)} Open workspace`);
     click(buttonNamed(container, "Dismiss"));
     await flush();
     expect(status(container)).toBe("Dismissed.");
@@ -793,6 +802,13 @@ describe("where keyboard focus goes when its control is gone", () => {
     expect(document.activeElement).toBe(focusTarget());
     expect(document.activeElement?.tagName).toBe("A");
     expect(words(document.activeElement)).toBe("Open workspace");
+    // The confirmation has an Open workspace link of its own now; focus is on the band's, which is
+    // the person's next step, and not on the confirmation's.
+    const confirmationLink = query(container, ".bj-today-confirmation a");
+    expect(confirmationLink.getAttribute("href")).toBe("/applications/app-1");
+    expect(document.activeElement).not.toBe(confirmationLink);
+    expect(band(container).contains(document.activeElement)).toBe(true);
+    expect(document.activeElement?.getAttribute("href")).toBe("/applications/app-2");
   });
 
   it("goes to the new Open workspace link after Track turns its button into one", async () => {
@@ -914,6 +930,119 @@ describe("a forced generation", () => {
     click(buttonNamed(band(container), "Generate anyway"));
     await flush();
     expect(query(container, ".bj-today-problem").getAttribute("role")).toBe("alert");
+  });
+});
+
+// A reply for another application, older than the lit one, so the band holds the first and this
+// one stays in the list with its own Accept.
+const listedProposal = {
+  ...proposalItem,
+  id: "p2",
+  application_id: "app-2",
+  created_at: "2026-09-22T08:30:00Z",
+  status_proposal: { ...proposalItem.status_proposal, id: "sp2" },
+};
+
+describe("an accepted proposal", () => {
+  const confirmationOf = (container: HTMLElement) => words(container.querySelector(".bj-today-confirmation"));
+  const listRow = (container: HTMLElement) => container.querySelectorAll("li.bj-today-row")[0] as HTMLElement;
+
+  it("names the application that was pressed from a list row, not the one the band holds", async () => {
+    answer({ "/today": [proposalItem, listedProposal, trackedItem], "POST /today/p2/accept-proposal": {} });
+    const { container } = await draw();
+    // The band holds the Data Engineer reply; the Orbit reply is a row of the list.
+    expect(words(query(band(container), ".bj-band-sentence"))).toContain("Acme");
+    const row = listRow(container);
+    expect(row.getAttribute("data-kind")).toBe("status_proposal");
+    click(buttonNamed(row, "Accept: move to Interviewing"));
+    await flush();
+    expect(calls().filter((call) => call.includes("accept-proposal"))).toEqual(["POST /today/p2/accept-proposal"]);
+    expect(confirmationOf(container)).toBe("ML Engineer at Orbit moved to Interviewing. Open workspace");
+    expect(query(container, ".bj-today-confirmation a").getAttribute("href")).toBe("/applications/app-2");
+    expect(status(container)).toBe("ML Engineer at Orbit moved to Interviewing.");
+    // The band's own item is untouched.
+    expect(buttonNamed(band(container), "Accept: move to Interviewing")).toBeTruthy();
+  });
+
+  // The five stages Accept can move an application to, with the type that leads to each.
+  it.each([
+    ["assessment.received", "Screening"],
+    ["interview.requested", "Interviewing"],
+    ["interview.scheduled", "Interviewing"],
+    ["offer.received", "Offer"],
+    ["application.rejected", "Rejected"],
+  ])("says %s moved the application to %s, in the line and in the polite status", async (proposedType, stage) => {
+    const item = { ...proposalItem, status_proposal: { ...proposalItem.status_proposal, proposed_type: proposedType } };
+    answer({ "/today": [item], "POST /today/p1/accept-proposal": {} });
+    const { container } = await draw();
+    click(buttonNamed(band(container), `Accept: move to ${stage}`));
+    await flush();
+    expect(confirmationOf(container)).toBe(`Data Engineer at Acme moved to ${stage}. Open workspace`);
+    expect(status(container)).toBe(`Data Engineer at Acme moved to ${stage}.`);
+  });
+
+  it("says 'The application' when the applications list could not be read, and still links to its workspace", async () => {
+    answer({ "/today": [proposalItem], "/applications": new FakeApiError(500, "boom"), "POST /today/p1/accept-proposal": {} });
+    const { container } = await draw();
+    click(buttonNamed(band(container), "Accept: move to Interviewing"));
+    await flush();
+    expect(confirmationOf(container)).toBe("The application moved to Interviewing. Open workspace");
+    expect(query(container, ".bj-today-confirmation a").getAttribute("href")).toBe("/applications/app-1");
+    expect(status(container)).toBe("The application moved to Interviewing.");
+  });
+
+  it("shows no confirmation for a failed accept, keeps the card with its Retry, and confirms only once Retry succeeds", async () => {
+    answer({ "/today": [proposalItem], "POST /today/p1/accept-proposal": new FakeApiError(409, "this proposal was already dismissed, not pending anymore") });
+    const { container } = await draw();
+    click(buttonNamed(band(container), "Accept: move to Interviewing"));
+    await flush();
+    expect(container.querySelector(".bj-today-confirmation")).toBeNull();
+    expect(status(container)).toBe("");
+    expect(words(query(band(container), ".bj-state--failure"))).toContain("already dismissed");
+    expect(buttonNamed(band(container), "Accept: move to Interviewing")).toBeTruthy();
+
+    answer({ "/today": [proposalItem], "POST /today/p1/accept-proposal": {} });
+    click(buttonNamed(band(container), "Retry"));
+    await flush();
+    expect(calls().filter((call) => call === "POST /today/p1/accept-proposal")).toHaveLength(2);
+    expect(container.querySelector(".bj-state--failure")).toBeNull();
+    expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Interviewing. Open workspace");
+  });
+
+  it("clears the confirmation when the next action starts", async () => {
+    answer({ "/today": [proposalItem, trackedItem], "POST /today/p1/accept-proposal": {}, "POST /today/t1/dismiss": () => new Promise(() => {}) });
+    const { container } = await draw();
+    click(buttonNamed(band(container), "Accept: move to Interviewing"));
+    await flush();
+    expect(container.querySelector(".bj-today-confirmation")).not.toBeNull();
+    click(buttonNamed(container, "Dismiss"));
+    await flush();
+    expect(container.querySelector(".bj-today-confirmation")).toBeNull();
+  });
+
+  it("keeps focus on the list's heading when Accept is pressed on a row and other rows remain", async () => {
+    answer({ "/today": [proposalItem, listedProposal, trackedItem], "POST /today/p2/accept-proposal": {} });
+    const { container } = await draw();
+    const accept = buttonNamed(listRow(container), "Accept: move to Interviewing");
+    accept.focus();
+    click(accept);
+    await flush();
+    expect(container.contains(accept)).toBe(false);
+    expect(document.activeElement).toBe(query(container, "#bj-today-activity"));
+    expect(document.activeElement).not.toBe(query(container, ".bj-today-confirmation a"));
+  });
+
+  it("falls back to the band's next step when Accept was pressed on the list's last row", async () => {
+    answer({ "/today": [proposalItem, listedProposal], "POST /today/p2/accept-proposal": {} });
+    const { container } = await draw();
+    const accept = buttonNamed(listRow(container), "Accept: move to Interviewing");
+    accept.focus();
+    click(accept);
+    await flush();
+    // The list is gone with its last row: focus lands in the band, not on the page.
+    expect(container.querySelector("#bj-today-activity")).toBeNull();
+    expect(document.activeElement).toBe(document.getElementById("next-step-focus"));
+    expect(band(container).contains(document.activeElement)).toBe(true);
   });
 });
 
