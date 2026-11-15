@@ -9,7 +9,6 @@ import {
   discoverQuery,
   resultsAnnouncement,
   resultsFactOf,
-  rowsOf,
   savedSearchBody,
   type DiscoverRequest,
 } from "../lib/discoverFacts";
@@ -58,7 +57,10 @@ import { useSetupReads } from "../lib/useSetupReads";
 // What is held is the last answer that came back with rows: a search that is running, that failed or that
 // asked for setup leaves it where it is, so a failed "Search again" does not take the earlier list away,
 // while an answer with no rows and "Clear filters" empty it. It lives in memory only (a reload starts
-// empty), is dropped after two hours, and belongs to one signed-in person.
+// empty), is dropped after two hours counted from when the answer arrived, and belongs to one signed-in
+// person. A posting whose Track request is still out when the person leaves is not added to the held answer
+// (the page that asked is gone), so it offers Track again on return; pressing it hands back the same
+// application, because creating one is idempotent per person and posting.
 //
 // This file is the reading and the requests; what is drawn for each state is
 // components/discover/DiscoverView.tsx, the row words are lib/discoverRow.ts.
@@ -209,20 +211,21 @@ export default function Discover() {
   // Keeps the hold true to the page (see WHAT IS KEPT in the header). A finished answer with rows is held with
   // what was tracked from it, an answer with no rows empties the hold, and anything else (a search running,
   // a failure, a setup answer, the idle page) leaves the held answer alone, except that a row tracked while
-  // one of those is on show still belongs to the answer it came from. An answer that is already held as it
-  // is (one just restored) is not written again, and a write keeps the time the answer arrived, so showing
-  // it again never makes it younger.
+  // one of those is on show still belongs to the answer it came from. Every write keeps the time the answer
+  // arrived (`state.at` on this page, the held stamp in the branch that rewrites the held entry), so tracking
+  // a row, or showing an answer again, never makes it younger. "No rows" is counted by resultsFactOf, the
+  // reading the next-step band's "No results" step uses, so the hold and the band cannot disagree about it.
   useEffect(() => {
-    const held = hold.read();
     if (state.kind !== "ready") {
+      const held = hold.read();
       if (held !== null && held.tracked !== tracked) hold.write({ ...held, tracked });
       return;
     }
-    if (rowsOf(state.result.scored).length + rowsOf(state.result.more).length === 0) {
+    const rows = resultsFactOf(state.result, state.request);
+    if (rows.scored + rows.more === 0) {
       hold.clear();
       return;
     }
-    if (held !== null && held.result === state.result && held.tracked === tracked) return;
     hold.write({ result: state.result, request: state.request, tracked, at: state.at });
   }, [hold, state, tracked]);
 
@@ -287,7 +290,9 @@ export default function Discover() {
       return;
     }
     if (intent === "clear-filters") {
-      // Clearing the filters starts the page over, so nothing is held to come back to.
+      // Clearing the filters starts the page over, so nothing is held to come back to. The answer that offers
+      // this button has no rows and has already emptied the hold (the effect above), so this line only says
+      // the same thing here, where the page is reset, in case the button is ever offered for another answer.
       hold.clear();
       setValues(EMPTY_REQUEST);
       setState({ kind: "idle" });

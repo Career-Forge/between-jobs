@@ -122,7 +122,10 @@ describe("how old an answer may be", () => {
 
   it("reads null for a stamp that is not a readable number, whatever the clock says", () => {
     const hold = createDiscoverHold(() => T0);
-    for (const at of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, "2026-11-14T12:00:00Z", null, undefined, {}] as unknown[]) {
+    // A number written as text, and a Date, would both do arithmetic as the time they stand for and so pass the
+    // age check: only the check on the kind of value turns them away.
+    const stamps = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, "2026-11-14T12:00:00Z", String(T0), String(T0 - 1000), new Date(T0), null, undefined, {}];
+    for (const at of stamps as unknown[]) {
       hold.write(entry({ at: at as number }));
       expect(hold.read(), String(at)).toBeNull();
     }

@@ -989,6 +989,58 @@ describe("coming back to the page", () => {
     expect(openWorkspaceLinks(page.container)).toEqual(["/applications/app-7"]);
   });
 
+  it("keeps every row tracked across visits: a row tracked from the restored answer is held as well", async () => {
+    let applications = 6;
+    answer({ "/discover?": response({ scored: [ROW_ONE, ROW_TWO] }), "POST /discover/track": () => ({ id: `app-${++applications}` }) });
+    const page = await drawHeld();
+    await search(page.container);
+    click(buttonNamed(page.container, "Track Data Engineer at Acme"));
+    await flush();
+    await page.leave();
+    await page.comeBack();
+
+    click(buttonNamed(page.container, "Track Analyst at Acme"));
+    await flush();
+    expect(openWorkspaceLinks(page.container)).toEqual(["/applications/app-7", "/applications/app-8"]);
+    await page.leave();
+    await page.comeBack();
+
+    expect(openWorkspaceLinks(page.container)).toEqual(["/applications/app-7", "/applications/app-8"]);
+    expect(callsTo("POST /discover/track")).toHaveLength(2);
+    expect(callsTo("GET /discover")).toHaveLength(1);
+  });
+
+  it("holds the filters that produced the answer, not what the form says when a row is tracked", async () => {
+    answer({ "/discover?q=analyst": response({ scored: [ROW_ONE] }), "POST /discover/track": { id: "app-7" } });
+    const page = await drawHeld();
+    type(query(form(page.container), "input[type='text']"), "analyst");
+    await search(page.container);
+    type(query(form(page.container), "input[type='text']"), "something else");
+    click(buttonNamed(page.container, "Track Data Engineer at Acme"));
+    await flush();
+
+    await page.leave();
+    await page.comeBack();
+
+    expect(formText(page.container).fields[0]).toBe("analyst");
+    expect(openWorkspaceLinks(page.container)).toEqual(["/applications/app-7"]);
+  });
+
+  it("holds an answer whose rows are all under More results, scored or not", async () => {
+    const onlyMore = job({ title: "Platform Engineer", apply_url: "https://jobs.example/acme/3", score: null });
+    answer({ "/discover?": response({ scored: [], more: [onlyMore] }) });
+    const page = await drawHeld();
+    await search(page.container);
+    expect(titles(page.container)).toEqual(["Platform Engineer"]);
+
+    await page.leave();
+    await page.comeBack();
+
+    expect(titles(page.container)).toEqual(["Platform Engineer"]);
+    expect(restoredNotes(page.container)).toHaveLength(1);
+    expect(callsTo("GET /discover")).toHaveLength(1);
+  });
+
   it("holds the newer answer when a second search replaces the first", async () => {
     answer({ "/discover?q=one": response({ scored: [ROW_ONE] }), "/discover?q=two": response({ scored: [ROW_TWO] }) });
     const page = await drawHeld();
@@ -1026,18 +1078,20 @@ describe("coming back to the page", () => {
       expect(restoredNotes(page.container)).toHaveLength(1);
     });
 
-    it("still holds what was tracked from the earlier answer while the search again was out", async () => {
+    it("still holds what was tracked from the earlier answer while the search again was out, with the filters of that answer", async () => {
       let releaseTrack: (value: unknown) => void = () => undefined;
       let failSecond: (error: Error) => void = () => undefined;
-      let asked = 0;
       answer({
-        "/discover?": () => (++asked === 1 ? response() : new Promise((_resolve, reject) => (failSecond = reject))),
+        "/discover?q=analyst": response(),
+        "/discover?q=zzz": () => new Promise((_resolve, reject) => (failSecond = reject)),
         "POST /discover/track": () => new Promise((resolve) => (releaseTrack = resolve)),
       });
       const page = await drawHeld();
+      type(query(form(page.container), "input[type='text']"), "analyst");
       await search(page.container);
       click(buttonNamed(page.container, "Track Data Engineer at Acme"));
       await flush();
+      type(query(form(page.container), "input[type='text']"), "zzz");
       await search(page.container);
       await act(async () => releaseTrack({ id: "app-7" }));
       await flush();
@@ -1049,6 +1103,7 @@ describe("coming back to the page", () => {
       await page.comeBack();
 
       expect(openWorkspaceLinks(page.container)).toEqual(["/applications/app-7"]);
+      expect(formText(page.container).fields[0]).toBe("analyst");
     });
   });
 
@@ -1072,7 +1127,9 @@ describe("coming back to the page", () => {
       expect(callsTo("GET /discover")).toHaveLength(2);
     });
 
-    it("is Clear filters: nothing is held after it either", async () => {
+    // Clear filters is offered only for an answer with no rows, which has already emptied the hold, so this
+    // cannot tell the button's own clear from that one; what it pins is what a person sees after the button.
+    it("is Clear filters: the page and the form are empty on the next visit", async () => {
       answer({ "/discover?q=zzz&location=Mars": response({ scored: [], more: [] }) });
       const page = await drawHeld();
       const [q, location] = [...form(page.container).querySelectorAll<HTMLInputElement>("input[type='text']")];
@@ -1095,15 +1152,35 @@ describe("coming back to the page", () => {
   describe("how long an answer is kept", () => {
     const T = ARRIVED;
 
-    async function searchedAndAway() {
+    const TRACK = { "POST /discover/track": { id: "app-7" } };
+
+    async function searched(extra: Record<string, Reply> = {}) {
       vi.useFakeTimers({ toFake: ["Date"] });
       vi.setSystemTime(T);
-      answer({ "/discover?q=analyst": response({ scored: [ROW_ONE] }) });
+      answer({ "/discover?q=analyst": response({ scored: [ROW_ONE] }), ...extra });
       const page = await drawHeld();
       type(query(form(page.container), "input[type='text']"), "analyst");
       await search(page.container);
+      return page;
+    }
+
+    async function searchedAndAway(extra: Record<string, Reply> = {}) {
+      const page = await searched(extra);
       await page.leave();
       return page;
+    }
+
+    // After a row was tracked late in the answer's life: it is still shown, still dated from when it arrived,
+    // on the last instant of its two hours, and gone one millisecond after, as if nothing had been tracked.
+    async function expectStillTheOriginalAnswerUntilItsLimit(page: Awaited<ReturnType<typeof searched>>) {
+      vi.setSystemTime(T + HOLD_MAX_AGE_MS);
+      await page.comeBack();
+      expect(openWorkspaceLinks(page.container)).toEqual(["/applications/app-7"]);
+      expect(words(restoredNotes(page.container)[0])).toContain(`Showing your search from ${arrivedAt}.`);
+      await page.leave();
+      vi.setSystemTime(T + HOLD_MAX_AGE_MS + 1);
+      await page.comeBack();
+      expect(titles(page.container)).toEqual([]);
     }
 
     it("shows it again up to the limit, counted from when it arrived", async () => {
@@ -1134,6 +1211,43 @@ describe("coming back to the page", () => {
       await page.comeBack();
       expect(titles(page.container)).toEqual([]);
     });
+
+    it("does not make an answer younger when a row is tracked from it late, on the visit that searched", async () => {
+      const page = await searched(TRACK);
+      vi.setSystemTime(T + HOLD_MAX_AGE_MS - 60_000);
+      click(buttonNamed(page.container, "Track Data Engineer at Acme"));
+      await flush();
+      await page.leave();
+      await expectStillTheOriginalAnswerUntilItsLimit(page);
+    });
+
+    it("does not make a restored answer younger when a row is tracked from it", async () => {
+      const page = await searchedAndAway(TRACK);
+      vi.setSystemTime(T + HOLD_MAX_AGE_MS / 2);
+      await page.comeBack();
+      click(buttonNamed(page.container, "Track Data Engineer at Acme"));
+      await flush();
+      await page.leave();
+      await expectStillTheOriginalAnswerUntilItsLimit(page);
+    });
+
+    it("does not make an answer younger when a row is tracked from it while a search again is out", async () => {
+      let releaseTrack: (value: unknown) => void = () => undefined;
+      const page = await searched({
+        "/discover?q=zzz": () => new Promise(() => undefined),
+        "POST /discover/track": () => new Promise((resolve) => (releaseTrack = resolve)),
+      });
+      click(buttonNamed(page.container, "Track Data Engineer at Acme"));
+      await flush();
+      type(query(form(page.container), "input[type='text']"), "zzz");
+      await search(page.container);
+      expect(titles(page.container)).toEqual([]);
+      vi.setSystemTime(T + HOLD_MAX_AGE_MS - 60_000);
+      await act(async () => releaseTrack({ id: "app-7" }));
+      await flush();
+      await page.leave();
+      await expectStillTheOriginalAnswerUntilItsLimit(page);
+    });
   });
 
   it("starts empty for a different person, and keeps what the first person searched for out of reach", async () => {
@@ -1148,7 +1262,7 @@ describe("coming back to the page", () => {
     expect(callsTo("GET /discover")).toHaveLength(1);
   });
 
-  it("starts empty for a different person even when the page never left, because the holder is keyed by the person", async () => {
+  it("starts empty under a holder that is keyed anew, even when the page never left: each holder makes a store of its own", async () => {
     answer({ "/discover?": response() });
     const page = await drawHeld();
     await search(page.container);
