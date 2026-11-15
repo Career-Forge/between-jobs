@@ -340,9 +340,12 @@ function QuestionForm({
   submitRef: RefObject<HTMLButtonElement | null>;
 }) {
   const questionId = useId();
-  // The cost note beside Submit answer is the button's description; both are drawn together.
+  // The cost note beside Submit answer is the button's description; both are drawn together. While the box is empty the
+  // button is inert, and the line that says why is part of the description too, ahead of the cost, in page order.
   const spendNoteId = useId();
+  const emptyNoteId = useId();
   const empty = draft.trim().length === 0;
+  const emptyNoteShown = empty && !submitting;
   return (
     <div className="bj-rs-question">
       <p className="bj-rs-eyebrow">
@@ -367,10 +370,14 @@ function QuestionForm({
         aria-labelledby={questionId}
       />
       <div className="bj-actions">
-        <button ref={submitRef} type="button" aria-describedby={spendNoteId} aria-disabled={submitting || empty ? true : undefined} onClick={onSubmit}>
+        <button ref={submitRef} type="button" aria-describedby={emptyNoteShown ? `${emptyNoteId} ${spendNoteId}` : spendNoteId} aria-disabled={submitting || empty ? true : undefined} onClick={onSubmit}>
           {submitting ? "Scoring..." : "Submit answer"}
         </button>
-        {empty && !submitting && <span className="bj-ws-caption">Write an answer to submit it.</span>}
+        {emptyNoteShown && (
+          <span id={emptyNoteId} className="bj-ws-caption">
+            Write an answer to submit it.
+          </span>
+        )}
         <span id={spendNoteId} className="bj-ws-caption">
           {SUBMIT_SPEND}
         </span>
