@@ -125,8 +125,9 @@ const COPY_FAILED_NOTICE_MS = 6000;
 const RUN_SPEND = spendNotice("Find contacts, or Refresh once it has run,", "up to two real model calls on your own key and runs up to eight searches, on your You.com key if you saved one and otherwise your Firecrawl key, except the hiring post searches, which use your Firecrawl key when you saved one");
 
 // What one press of a person's Draft outreach (or, once a draft exists, Redraft outreach, or the Retry under a draft
-// that failed) costs. It is said once, in the intro, never in a row: the rows repeat for every person. The draft is
-// written with one model call, and a second only when the first draft fails to parse or fails the writing checks.
+// that failed) costs. It is said in the intro and once more directly above the list of people, so it sits by the
+// per-person buttons; never in a row, because the rows repeat for every person. The draft is written with one model
+// call, and a second only when the first draft fails to parse or fails the writing checks.
 const DRAFT_SPEND = `${spendNotice("Draft outreach", `${A_MODEL_CALL}, and a second one if the first draft fails its checks`)} Pressing Redraft outreach, or Retry after a failed draft, does the same.`;
 
 const PERSONA_LABELS: Record<string, string> = {
@@ -383,6 +384,7 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
       {data !== null && (
         <>
           <RunWarnings run={data.run} />
+          {data.candidates.length > 0 && <p className="bj-ws-caption">{DRAFT_SPEND}</p>}
           {data.candidates.length === 0 ? (
             <p className="bj-muted bj-small">No named people turned up in that search pass. Refresh to try again.</p>
           ) : (

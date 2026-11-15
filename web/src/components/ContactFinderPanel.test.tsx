@@ -463,7 +463,7 @@ describe("Contacts: running", () => {
     expect(buttonNamed(container, "Find contacts").closest(".bj-actions")!.previousElementSibling).toBe(intro);
   });
 
-  it("says once, in the intro, what Draft outreach and Redraft outreach cost: a model call, and a second one if the first draft fails its checks", async () => {
+  it("says what Draft outreach and Redraft outreach cost in the intro, and once more directly above the list of people: a model call, and a second one if the first draft fails its checks", async () => {
     on(`GET ${PATH}`, stored([candidate(1), candidate(2)]));
     const { container } = panel();
     await settle();
@@ -475,12 +475,33 @@ describe("Contacts: running", () => {
     expect(text(intro)).toContain(sentence);
     // It comes after the lookups sentence, in the same intro.
     expect(text(intro).indexOf(sentence)).toBeGreaterThan(text(intro).indexOf("for one person at a time."));
-    // Two people are listed, each with a Draft outreach button, and the sentence is said once: not in a row.
+    // The second copy is its own caption, the element right before the list, so it sits by the first person's Draft button.
+    const list = query(container, "ul[aria-label='People named for this company']");
+    const repeated = list.previousElementSibling!;
+    expect(text(repeated)).toBe(sentence);
+    expect(repeated.classList.contains("bj-ws-caption")).toBe(true);
+    expect(repeated.closest(".bj-ws-intro")).toBeNull();
+    // Two people are listed, each with a Draft outreach button, and the sentence is said twice in all: in the intro and
+    // above the list, never in a row.
     expect(container.querySelectorAll(".bj-rs-item")).toHaveLength(2);
-    expect(text(container).split(sentence)).toHaveLength(2);
+    expect(text(container).split(sentence)).toHaveLength(3);
     for (const item of container.querySelectorAll(".bj-rs-item")) expect(text(item)).not.toContain("Pressing");
     // No Gmail wording rides along with it.
     expect(sentence).not.toMatch(/gmail/i);
+  });
+
+  it.each([
+    ["no run yet", { run: null, candidates: [] }],
+    ["a run that found nobody", stored([])],
+  ])("does not repeat the Draft outreach sentence when there is no one to draft for: %s", async (_name, answer) => {
+    on(`GET ${PATH}`, answer);
+    const { container } = panel();
+    await settle();
+    expect(container.querySelector(".bj-rs-item")).toBeNull();
+    expect(container.querySelector("ul[aria-label='People named for this company']")).toBeNull();
+    // Only the intro says it.
+    expect(text(container).split(DRAFT_SENTENCE)).toHaveLength(2);
+    expect(text(query(container, ".bj-ws-intro"))).toContain(DRAFT_SENTENCE);
   });
 
   it("keeps the same sentence on screen for a stored run, whose button reads Refresh, and beside a failed run's Retry", async () => {
