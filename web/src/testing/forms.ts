@@ -60,14 +60,18 @@ export function visibleText(element: Element): string {
 }
 
 // What a screen reader adds to a control from its `aria-describedby`: the text of each element the ids name, in
-// order. An id that names nothing on the page throws, since a description that points at nothing says nothing and
-// is the one mistake this check exists to catch. A control with no `aria-describedby` has "" described.
+// order. Two mistakes throw, since each is one this check exists to catch: an id that names nothing on the page (a
+// description that points at nothing says nothing), and a note that is hidden (`hidden`, `aria-hidden="true"`, or
+// visually hidden, on the note or any element around it), because what a button costs is said in words everyone sees,
+// and a note a sighted person cannot read, or that is kept from assistive tech, is not the description. A control with
+// no `aria-describedby` has "" described.
 export function describedText(element: Element): string {
   const ids = (element.getAttribute("aria-describedby") ?? "").split(/\s+/).filter((id) => id !== "");
   return ids
     .map((id) => {
       const target = element.ownerDocument.getElementById(id);
       if (target === null) throw new Error(`aria-describedby names #${id}, which is not on the page`);
+      if (target.closest("[hidden], [aria-hidden='true'], .bj-visually-hidden") !== null) throw new Error(`aria-describedby names #${id}, which is hidden`);
       return text(target);
     })
     .join(" ");
