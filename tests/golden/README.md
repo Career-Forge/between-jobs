@@ -115,3 +115,13 @@ against a real model and reads the result:
 - whether the prompts produce bullets and letters that read well;
 - how many of a real model's cover-letter sentences the check removes.
 
+## `resume_content/` is not a parity fixture
+
+The five files in `tests/golden/resume_content/` follow the layout above only loosely: they are
+not captures of the n8n reference. Each is the "paper" the engine's own builder emits for an
+invented person (the fresher and senior tiers, reordered header chips, a header with a location,
+text written to stress the escaping), kept exactly as the engine wrote it (`json.dumps(paper,
+indent=1)` and a newline), so the paper reader is tried on the real shape and not only on one
+imagined for it (`tests/test_resume_content.py`). When the engine's paper changes, regenerate
+them from the engine rather than editing them by hand.
+

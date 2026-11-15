@@ -469,10 +469,10 @@ class ResumeContentBullet(BaseModel):
 class ResumeContentEntry(BaseModel):
     """One job, internship, project or education entry, as printed. `id` is positional
     (`experience.0`): stable inside one stored result, never across versions. `title` can be ""
-    (a title written in a script the PDF drops). `dates` is the PDF's range with an en dash
-    ("Jan 2020 - Present" with U+2013); an open end stays, and it is None when neither end
-    prints. `detail` is the tech stack of a project, or the education detail line, on one line.
-    There is no place field: an entry's location is never carried."""
+    (a title written in a script the PDF drops). `dates` is the PDF's range as it prints,
+    with two hyphens ("Jan 2020 -- Present"); an open end stays ("Jan 2020 --"), and it is None
+    when neither end prints. `detail` is the tech stack of a project, or the education detail line,
+    on one line. There is no place field: an entry's location is never carried."""
 
     model_config = ConfigDict(extra="ignore")
 
