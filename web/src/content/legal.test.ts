@@ -1058,6 +1058,30 @@ describe("the lists of what each recipient receives match the payloads", () => {
     expect(aiList).toContain("written from the job's company, title and description");
   });
 
+  it("positioning briefs: the model reads the posting text first, then gets the skills, the company research and the stored fit read", () => {
+    // The first call is the Tailor panel's requirement step, which sends the posting's text.
+    const routes = apiModule("positioning_brief_routes");
+    expect(routes).toContain("await load_coverage_context(supabase, http, user_id, document)");
+    const coverage = apiModule("tailor_coverage");
+    expect(coverage).toContain("step0 = await call_step0(");
+    expect(coverage).toContain('job_description=snapshot.get("description_text")');
+    // The second call gets the skills as matched, the company research claims and the stored fit's recommendation and score.
+    expect(routes).toContain('fit_data = prepare_result.get("fit")');
+    expect(routes).toContain("fit=fit_data");
+    const brief = apiModule("positioning_brief");
+    expect(brief).toContain('recommendation = fit.get("recommendation")');
+    expect(brief).toContain('overall = fit.get("overall_score")');
+    expect(brief).toContain("recommendation={recommendation}, overall_score={overall}/10");
+    expect(brief).toContain('f"\\n\\n{fit_context_line(fit)}"');
+    expect(brief).toContain("{c['claim_text']}");
+    const line = aiList.split("\n").find((entry) => entry.startsWith("Positioning briefs"));
+    expect(line).toBeDefined();
+    expect(line).toContain("the job posting text, which the model reads first");
+    expect(line).toContain("your skills as matched against those requirements");
+    expect(line).toContain("the company research you already have");
+    expect(line).toContain("a fit check has run for the job, its recommendation and overall score");
+  });
+
   it("Exa: the contact's job title is part of the query, so the entry names it", () => {
     expect(contactEnrichment).toContain('query += f", {claimed_title}"');
     const exa = PROCESSORS.find((processor) => processor.name === "Exa");
