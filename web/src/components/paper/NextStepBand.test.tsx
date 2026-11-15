@@ -532,6 +532,16 @@ describe("a button described by a cost note", () => {
     expect(describedText(secondary)).toBe("Pressing Generate anyway makes several real model calls on your own key.");
   });
 
+  it.each([
+    ["a route link", { kind: "link", label: "See why", to: "/x" }, "a"],
+    ["an external link", { kind: "external", label: "Open the posting", href: "https://jobs.example.test/123" }, "a"],
+  ] as const)("describes %s the same way, so a note can be handed to any kind of action", (_name, action, tag) => {
+    const { container } = render(withNote({ action }, { primary: "primary-note" }));
+    const control = query(container, `${tag}.bj-button-link-primary`);
+    expect(control.getAttribute("aria-describedby")).toBe("primary-note");
+    expect(describedText(control)).toBe("Pressing Generate resume makes several real model calls on your own key.");
+  });
+
   it("describes a form submit button the same way", () => {
     const { container } = render(withNote({ action: { kind: "submit", label: "Search", form: "discover-form" } }, { primary: "primary-note" }));
     expect(describedText(query(container, "button[type='submit']"))).toContain("Pressing Generate resume");
