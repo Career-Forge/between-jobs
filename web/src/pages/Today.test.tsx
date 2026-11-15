@@ -991,6 +991,18 @@ describe("an accepted proposal", () => {
     expect(status(container)).toBe("The application moved to Interviewing.");
   });
 
+  it("says 'this application', not 'this job', when other replies lost their Accept and no job could be named", async () => {
+    // The sentence before it has no job in it, so "this job" would have nothing to point at.
+    const older = { ...proposalItem, id: "s1", created_at: "2026-09-22T09:00:00Z", status_proposal: { ...proposalItem.status_proposal, id: "sp-s1", proposed_type: "offer.received" } };
+    answer({ "/today": [proposalItem, older], "/applications": new FakeApiError(500, "boom"), "POST /today/p1/accept-proposal": {} });
+    const { container } = await draw();
+    click(buttonNamed(band(container), "Accept: move to Interviewing"));
+    await flush();
+    const sentence = "The application moved to Interviewing. 1 other reply about this application can no longer be accepted.";
+    expect(confirmationOf(container)).toBe(`${sentence} Open workspace`);
+    expect(status(container)).toBe(sentence);
+  });
+
   it("shows no confirmation for a failed accept, keeps the card with its Retry, and confirms only once Retry succeeds", async () => {
     answer({ "/today": [proposalItem], "POST /today/p1/accept-proposal": new FakeApiError(409, "this proposal was already dismissed, not pending anymore") });
     const { container } = await draw();

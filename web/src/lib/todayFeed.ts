@@ -520,9 +520,10 @@ export interface Superseded {
 // as dismissed, whatever kind of reply it was, and does not touch the feed items that carry them.
 // This does the same to the page's copy, so a card does not go on offering an Accept the server
 // would now refuse. Only items that are pending proposals for the same application change (an
-// application id is read the way rowActions reads it, so a blank one is none and matches nothing);
-// `leave` holds the items that have a request of their own out, which that request settles.
-// The list it is given is never changed.
+// application id is read the way rowActions reads it, so a blank one is none and matches nothing).
+// Like the server's except_proposal_id, it never counts the accepted reply itself as a sibling,
+// nor an item that carries the same proposal. `leave` holds the items that have a request of their
+// own out, which the page leaves to that request. The list it is given is never changed.
 export function supersedeSiblings(items: readonly TodayItem[], accepted: TodayItem, leave: ReadonlySet<string> = new Set()): Superseded {
   const applicationId = text(accepted.application_id);
   const flipped: string[] = [];
@@ -547,9 +548,11 @@ export function supersedeSiblings(items: readonly TodayItem[], accepted: TodayIt
   return { items: next, count, flipped };
 }
 
-// What the confirmation adds when siblings lost their Accept, in the page's own words.
-export function supersededWords(count: number): string {
-  return count === 1 ? "1 other reply about this job can no longer be accepted." : `${count} other replies about this job can no longer be accepted.`;
+// What the confirmation adds when siblings lost their Accept, in the page's own words. It says "this
+// job" after a sentence that named one, and "this application" after one that had no name to give.
+export function supersededWords(count: number, about: "job" | "application" = "job"): string {
+  const replies = count === 1 ? "1 other reply" : `${count} other replies`;
+  return `${replies} about this ${about} can no longer be accepted.`;
 }
 
 // ── the background trail ───────────────────────────────────────────────────

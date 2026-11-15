@@ -241,9 +241,11 @@ export default function Today() {
   // offering Accept: the server settled them when it accepted this one, and would refuse them now.
   // The count is read from the feed as it is (feedRef) before anything changes, and the feed changes
   // once, with an updater that only reads the state it is given. A sibling with a request of its own
-  // out is left as it is: that request ends it, and its Retry still has the request it was for. For
-  // each sibling that did change, an earlier failure and its Retry go, since the request a Retry
-  // would send is one the server now refuses. Returns how many of them had an Accept.
+  // out is left as it is: if that request succeeds the sibling leaves the feed on its own, and if it
+  // is refused it fails like any other refused request on this page. For each sibling that did
+  // change, an earlier failure goes, and its Retry with it, since the request a Retry would send is
+  // one the server now refuses; the remembered request goes too, so nothing holds on to it. Returns
+  // how many of them had an Accept.
   function settleAccepted(accepted: TodayItem): number {
     const known = feedRef.current;
     const leave = new Set(inFlight.current);
@@ -303,9 +305,10 @@ export default function Today() {
           const proposedType = item.status_proposal?.proposed_type ?? "";
           const stage = isMappableProposal(proposedType) ? PROPOSAL_STEPS[proposedType].stage : null;
           if (stage === null) {
-            // Accept is only offered for a type that has a stage, so this is not reached with a real
-            // item; if it ever is, nothing is claimed about where the application went.
-            finished("Moved to the new stage.", from);
+            // Accept is only offered for a type that has a stage, and the server refuses the rest,
+            // so this is not reached with a real item; if it ever is, the card is already gone and
+            // nothing is claimed about where the application went.
+            finished("Accepted.", from);
             break;
           }
           // The card is gone, so the page says what the click did and where to see it, in one
@@ -313,7 +316,7 @@ export default function Today() {
           const applicationId = item.application_id?.trim() ?? "";
           const job = applicationId === "" ? null : jobLabel(context.names.get(applicationId));
           const moved = `${job ?? "The application"} moved to ${stage}.`;
-          const sentence = others === 0 ? moved : `${moved} ${supersededWords(others)}`;
+          const sentence = others === 0 ? moved : `${moved} ${supersededWords(others, job === null ? "application" : "job")}`;
           setConfirmation({
             text: sentence,
             link: applicationId === "" ? { label: "Go to Applications", to: "/applications" } : { label: "Open workspace", to: workspacePath(applicationId) },

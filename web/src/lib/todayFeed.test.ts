@@ -713,4 +713,10 @@ describe("a reply accepted for an application", () => {
     expect(supersededWords(3)).toBe("3 other replies about this job can no longer be accepted.");
     for (const count of [1, 2]) expect(supersededWords(count)).not.toMatch(/dismiss|pending/i);
   });
+
+  it("says 'this application' when the sentence before it had no job to name", () => {
+    expect(supersededWords(1, "application")).toBe("1 other reply about this application can no longer be accepted.");
+    expect(supersededWords(2, "application")).toBe("2 other replies about this application can no longer be accepted.");
+    expect(supersededWords(2, "job")).toBe(supersededWords(2));
+  });
 });
