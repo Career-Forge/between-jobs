@@ -65,9 +65,9 @@ describe("Close the gaps", () => {
       `Up to 3 questions, drafted from your own profile -- a yes becomes a fact you approve first, and a no changes nothing. ${sentence}`,
     );
     // It can make a second call, so it never reads as a single one, and it is not a search call.
-    expect(sentence).toMatch(/a second one/);
-    expect(sentence).not.toMatch(/search/i);
-    expect(sentence).not.toMatch(/[\u2013\u2014]/);
+    expect(text(note!)).toMatch(/a second one/);
+    expect(text(note!)).not.toMatch(/search/i);
+    expect(text(note!)).not.toMatch(/[\u2013\u2014]/);
   });
 
   it("says when there is no honest gap to ask about, and names a failure with Try again", async () => {
@@ -82,6 +82,16 @@ describe("Close the gaps", () => {
     click(buttonNamed(failed.container, "Close the gaps"));
     await settle();
     expect(text(query(failed.container, "[role='alert']"))).toContain("The server hit a problem.");
+    // Try again is the same two-call press, and the idle block that carried the sentence is gone, so the
+    // sentence is repeated right under the failure, naming Try again.
+    const alert = query(failed.container, "[role='alert']");
+    const retryNote = alert.nextElementSibling;
+    expect(retryNote).not.toBeNull();
+    expect(text(retryNote!)).toBe(
+      "Pressing Try again makes a real model call on your own key to read the posting, and a second one to word the questions when it finds a gap worth asking about.",
+    );
+    expect(retryNote!.classList.contains("bj-muted")).toBe(true);
+    expect(text(alert)).not.toContain("Pressing");
     on("POST /resume-documents/doc-1/gap-interview", QUESTIONS);
     click(buttonNamed(failed.container, "Try again"));
     await settle();
@@ -160,7 +170,48 @@ describe("Close the gaps", () => {
     expect(note!.classList.contains("bj-muted")).toBe(true);
     expect(note!.classList.contains("bj-small")).toBe(true);
     // The sentence names the control without its arrow glyph.
-    expect(sentence).not.toContain("→");
+    expect(text(note!)).not.toContain("→");
+  });
+
+  // Draft the fact stays pressable while it is drafting and again after a failed draft, so the sentence is
+  // still next to it in both.
+  it("keeps the Draft the fact sentence beside the button while it drafts and after a failed draft", async () => {
+    on("POST /resume-documents/doc-1/gap-interview", QUESTIONS);
+    let release: (value: unknown) => void = () => undefined;
+    on("POST /profile/gap-interview/draft", () => new Promise((resolve) => (release = resolve)));
+    const { container } = open();
+    click(buttonNamed(container, "Close the gaps"));
+    await settle();
+    click(buttonNamed(container, "Yes, add detail"));
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), "I wrote a Kafka consumer.");
+    const sentence = spendNotice("Draft the fact", A_MODEL_CALL);
+    const sentenceAfterButton = () => {
+      const actions = query(container, ".bj-gap-answer .bj-actions");
+      return actions.nextElementSibling === null ? null : text(actions.nextElementSibling);
+    };
+    expect(sentenceAfterButton()).toBe(sentence);
+    click(buttonNamed(container, /Draft the fact/));
+    await settle();
+    expect(buttonNamed(container, /Drafting/)).toBeTruthy();
+    expect(sentenceAfterButton()).toBe(sentence);
+    release({ bullet: "Built an event stream consumer.", entity_pointer: "/experience/0", candidates: [] });
+    await settle();
+  });
+
+  it("keeps the Draft the fact sentence beside the button after a failed draft", async () => {
+    on("POST /resume-documents/doc-1/gap-interview", QUESTIONS);
+    on("POST /profile/gap-interview/draft", new FakeApiError("The draft failed.", "INTERNAL"));
+    const { container } = open();
+    click(buttonNamed(container, "Close the gaps"));
+    await settle();
+    click(buttonNamed(container, "Yes, add detail"));
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), "I wrote a Kafka consumer.");
+    click(buttonNamed(container, /Draft the fact/));
+    await settle();
+    expect(text(query(container, "[role='alert']"))).toContain("The draft failed.");
+    const actions = buttonNamed(container, /Draft the fact/).closest(".bj-actions");
+    expect(actions).not.toBeNull();
+    expect(text(actions!.nextElementSibling!)).toBe(spendNotice("Draft the fact", A_MODEL_CALL));
   });
 
   // Every step replaces the button that was pressed, which drops keyboard focus to the top of the page: it goes

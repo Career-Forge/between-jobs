@@ -48,6 +48,10 @@ type Phase =
   | "approved"
   | "exhausted";
 
+// What one Close the gaps press costs: the posting is read by a model, then a second call words the
+// questions only when code finds a gap worth asking about. Said beside the button and beside Try again.
+const CLOSE_THE_GAPS_SPEND = `${A_MODEL_CALL} to read the posting, and a second one to word the questions when it finds a gap worth asking about`;
+
 interface Draft {
   bullet: string;
   entityPointer: string;
@@ -201,10 +205,7 @@ export function GapInterview({
           <div className="bj-muted bj-small">
             Up to 3 questions, drafted from your own profile -- a yes becomes a fact you
             approve first, and a no changes nothing.{" "}
-            {spendNotice(
-              "Close the gaps",
-              `${A_MODEL_CALL} to read the posting, and a second one to word the questions when it finds a gap worth asking about`,
-            )}
+            {spendNotice("Close the gaps", CLOSE_THE_GAPS_SPEND)}
           </div>
         </div>
       )}
@@ -216,12 +217,16 @@ export function GapInterview({
       )}
 
       {phase === "error" && (
-        <div className="bj-error" role="alert">
-          {errorMessage}{" "}
-          <button type="button" onClick={() => void loadQuestions()}>
-            Try again
-          </button>
-        </div>
+        <>
+          <div className="bj-error" role="alert">
+            {errorMessage}{" "}
+            <button type="button" onClick={() => void loadQuestions()}>
+              Try again
+            </button>
+          </div>
+          {/* Try again is the Close the gaps press over again, so it costs what that press costs. */}
+          <div className="bj-muted bj-small">{spendNotice("Try again", CLOSE_THE_GAPS_SPEND)}</div>
+        </>
       )}
 
       {phase === "empty" && (
