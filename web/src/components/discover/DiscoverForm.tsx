@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { DISCOVER_FORM_ID } from "../../lib/nextStep/pages/discover";
 import type { DiscoverRequest } from "../../lib/discoverFacts";
+import { A_MODEL_CALL } from "../../lib/spendNotice";
 import "../../styles/discover.css";
 
 // The filter form: search words, location, companies and "remote only". It is a real <form>, so Enter in
@@ -20,6 +21,12 @@ import "../../styles/discover.css";
 // Busy controls are `aria-disabled`, not `disabled`, so focus stays where it is; the page's handlers
 // are the guard. Save this search keeps what the filters hold, for the background checks; it is a quiet
 // button, since saving is the lower-stakes action.
+
+// What pressing Save this search starts. The press itself only writes a row; a background check then runs over
+// every active saved search every few hours, and scores a search's new postings with one batched call on the
+// person's own model key, only when it finds some. Pausing or deleting the search stops the checks. It is
+// drawn whenever the button is, so the form reads the same for a fresh answer and a restored one.
+export const SAVE_SEARCH_SPEND_NOTE = `Pressing Save this search starts background checks. Each time one finds new postings, scoring them makes ${A_MODEL_CALL}, until you pause or delete the search.`;
 
 // Roles the search box suggests in turn, so a first-time visitor sees the kinds of words that work.
 export const ROLE_PLACEHOLDERS: readonly string[] = ["Data Analyst", "Data Engineer", "Software Development Engineer", "Analytics Engineer", "ML Engineer"];
@@ -135,6 +142,7 @@ export function DiscoverForm({ values, onChange, searching, searched, blockedRea
         </button>
       </div>
       {spendNote !== null && <p className="bj-muted bj-small">{spendNote}</p>}
+      <p className="bj-muted bj-small">{SAVE_SEARCH_SPEND_NOTE}</p>
       {blockedReason !== null && (
         <p id="bj-discover-blocked" className="bj-disc-note">
           {blockedReason}

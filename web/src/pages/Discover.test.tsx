@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { act } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SAVE_SEARCH_SPEND_NOTE } from "../components/discover/DiscoverForm";
 import { SEARCH_AGAIN_SPEND_NOTE } from "../components/discover/DiscoverView";
 import { HOLD_MAX_AGE_MS } from "../lib/discoverHold";
 import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
@@ -740,6 +741,23 @@ describe("saved searches", () => {
     expect(labels).toEqual(['"data engineer" at Acme, Initech in Jersey City remote only', '"analytics engineer"']);
     expect(words(container.querySelectorAll(".bj-ss-row .bj-trail")[0])).toBe("○ Not checked yet");
     expect(status(container)).toBe("Search saved.");
+  });
+
+  it("says beside Save this search what it starts, and the press itself sends only the one write", async () => {
+    answer({ "POST /saved-searches": { ...SAVED, id: "ss-4", last_matched_at: null } });
+    const { container } = await draw();
+    const saveNotes = () => [...form(container).querySelectorAll("p")].map((note) => words(note)).filter((note) => note.startsWith("Pressing Save this search"));
+    const saveRow = buttonNamed(form(container), "Save this search").parentElement!;
+    expect(saveNotes()).toEqual([
+      `Pressing Save this search starts background checks. Each time one finds new postings, scoring them makes ${A_MODEL_CALL}, until you pause or delete the search.`,
+    ]);
+    expect(saveNotes()[0]).toBe(SAVE_SEARCH_SPEND_NOTE);
+    expect(words(saveRow.nextElementSibling?.nextElementSibling ?? null)).toBe(SAVE_SEARCH_SPEND_NOTE);
+    click(buttonNamed(form(container), "Save this search"));
+    await flush();
+    expect(callsTo("POST")).toEqual(["POST /saved-searches"]);
+    expect(callsTo("GET /discover")).toEqual([]);
+    expect(saveNotes()).toEqual([SAVE_SEARCH_SPEND_NOTE]);
   });
 
   it("sends a blank location as none and no companies as an empty list", async () => {

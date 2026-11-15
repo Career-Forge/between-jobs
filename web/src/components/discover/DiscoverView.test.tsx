@@ -11,6 +11,7 @@ import { nextStep, type NextStepInput, type NextStepOutcome } from "../../lib/ne
 import type { DiscoverFacts } from "../../lib/nextStep/pages/discover";
 import type { SavedSearchesState } from "../../lib/savedSearches";
 import { A_MODEL_CALL, spendNotice } from "../../lib/spendNotice";
+import { SAVE_SEARCH_SPEND_NOTE } from "./DiscoverForm";
 import { DiscoverView, SEARCH_AGAIN_SPEND_NOTE, SETUP_BLOCKED_NOTE, type DiscoverViewProps, type SearchView } from "./DiscoverView";
 
 // Every state of the Discover page, drawn from props: what each shows, what it leaves out, and that
@@ -574,6 +575,79 @@ describe("what pressing Search costs, said under the form's buttons", () => {
       expect(note).not.toMatch(/verified|unknown model/i);
       expect(findForbiddenWord(note)).toBeNull();
     }
+  });
+});
+
+// What pressing Save this search starts. The press only writes a row, so the sentence does not say the press makes a
+// call: it says the background checks it starts do, when they find something to score, until the search is paused
+// or deleted. It is drawn whenever the button is, so the form reads the same for a fresh answer and a restored one.
+describe("what pressing Save this search starts, said under the form's buttons", () => {
+  const SAVE_WORDS =
+    "Pressing Save this search starts background checks. Each time one finds new postings, scoring them makes a real model call on your own key, until you pause or delete the search.";
+  const EM_OR_EN_DASH = new RegExp(`[${String.fromCharCode(0x2013)}${String.fromCharCode(0x2014)}]`);
+  const blocked = { message: "x", missing: [{ label: "Add a model key", to: "/settings#ai-provider" }] } as const;
+  // Every paragraph that follows the row of buttons, in order, found from the Save this search button and not by a class.
+  const afterTheButtons = (container: HTMLElement) => {
+    const found: string[] = [];
+    for (let next = buttonNamed(query(container, "form"), /^(Save this search|Saving\.\.\.)$/).parentElement!.nextElementSibling; next !== null; next = next.nextElementSibling) {
+      expect(next.tagName).toBe("P");
+      found.push(words(next));
+    }
+    return found;
+  };
+  const saveNotes = (container: HTMLElement) => [...query(container, "form").querySelectorAll("p")].map((note) => words(note)).filter((note) => note.startsWith("Pressing Save this search"));
+
+  it("says the words, built from the shared model-call phrase", () => {
+    expect(SAVE_SEARCH_SPEND_NOTE).toBe(SAVE_WORDS);
+    expect(SAVE_SEARCH_SPEND_NOTE).toBe(`Pressing Save this search starts background checks. Each time one finds new postings, scoring them makes ${A_MODEL_CALL}, until you pause or delete the search.`);
+  });
+
+  it("draws it right under the Save this search row, after what Search costs", () => {
+    const { container } = draw();
+    expect(afterTheButtons(container)).toEqual([spendNotice("Search", `${A_MODEL_CALL} and can run several searches on each search key you have connected`), SAVE_WORDS]);
+  });
+
+  it("draws it once, in every state of the page, so the form reads the same for a fresh answer and a restored one", () => {
+    const failure = { search: { kind: "error", message: "x" } as SearchView, outcome: band({}, { pageFailure: { what: "Couldn't finish the search", call: "GET /discover", at: "09:14", intent: "retry" } }) };
+    const loading = { search: { kind: "loading", startedAt: NOW.getTime() } as SearchView, outcome: band({ phase: "searching" }) };
+    const states: Partial<DiscoverViewProps>[] = [{}, ready(), { ...ready(), restored: { at: "09:14" } }, failure, loading, { setup: blocked }, { setup: { ...blocked, blocksSearch: false } }, { saving: true }];
+    for (const overrides of states) {
+      const { container, unmount } = draw(overrides);
+      expect(saveNotes(container)).toEqual([SAVE_WORDS]);
+      unmount();
+    }
+  });
+
+  it("sits ahead of the setup note when Search is blocked, which stays the last line of the form", () => {
+    const { container } = draw({ setup: blocked });
+    expect(afterTheButtons(container)).toEqual([SAVE_WORDS, SETUP_BLOCKED_NOTE]);
+  });
+
+  it("is the one paragraph the form draws for a restored answer, which leaves what Search again costs to the line under Results", () => {
+    const { container } = draw({ ...ready(), restored: { at: "09:14" } });
+    expect(afterTheButtons(container)).toEqual([SAVE_WORDS]);
+  });
+
+  it("does not say the press makes a call: it starts checks, and the call comes with them", () => {
+    expect(SAVE_WORDS.startsWith("Pressing Save this search starts background checks.")).toBe(true);
+    expect(SAVE_WORDS).not.toMatch(/^Pressing Save this search makes/);
+    expect(SAVE_WORDS.match(/model call/g)).toHaveLength(1);
+    expect(SAVE_WORDS).toContain("until you pause or delete the search");
+  });
+
+  it("names a stop the person really has: the saved search's Pause and Delete", () => {
+    const saved = { id: "s-1", query: "data analyst", location: null, companies: [], remote_only: false, is_active: true, created_at: "2026-09-01T00:00:00Z", last_matched_at: null };
+    const { container } = draw({ saved: { state: { kind: "ready", searches: [saved], busyId: null, error: null }, actions: { toggle: vi.fn(), remove: vi.fn(), retry: vi.fn() }, createError: null } });
+    click(query(container, "button.bj-disc-saved-toggle"));
+    expect(words(buttonNamed(container, /^Pause the saved search/))).toBe("Pause");
+    expect(words(buttonNamed(container, /^Delete the saved search/))).toBe("Delete");
+    expect(saveNotes(container)).toEqual([SAVE_WORDS]);
+  });
+
+  it("uses plain words: no dash, never 'verified', nothing the trail copy bans", () => {
+    expect(SAVE_WORDS).not.toMatch(EM_OR_EN_DASH);
+    expect(SAVE_WORDS).not.toMatch(/verified|unknown model/i);
+    expect(findForbiddenWord(SAVE_WORDS)).toBeNull();
   });
 });
 
