@@ -103,6 +103,36 @@ loading. Every signed-in page also has a title of its own, and no content sits o
 sections, the profile's import, each workspace section) are there. A page that adds a second filled button or a
 second band fails here, whichever page it is.
 
+## Spend notices
+
+Every model call here is made with the person's own key, and every search call with their own search key,
+so a control that makes one says so beside the control, before it is pressed, in one shape:
+
+    Pressing Check coverage makes a real model call on your own key.
+
+`src/lib/spendNotice.ts` builds the sentence (`spendNotice(press, what)`) from two phrases it owns,
+`A_MODEL_CALL` and `SEVERAL_MODEL_CALLS`, so a page intro, a note under a button and a row in a band cannot
+drift into slightly different promises. The caller says how many: one call says "a real model call", and a
+press that can make more says so ("several", "up to two", "a second one if ..."). A press that spends a search
+key says "search call", never "model call". Where the work starts on a choice rather than a press (picking a
+resume file) the third argument is `"Choosing"`. The sentence is plain text with no dashes; the helper's tests
+refuse dashes and the words a trail never says. A control that spends gets its sentence by calling the helper
+and pins it in its own test, next to the control by role and text, so a restyle cannot lose it.
+
+Not covered by the shape, on purpose:
+
+- Free actions. A press that makes no model or search call says nothing about cost. The one note near such a
+  press is Create Gmail draft (`components/GmailDraftActions.tsx`): the press makes no call, but a reply to
+  the draft once it is sent can be read by the person's model, so the note says both.
+- Saving a key and choosing a model. They already say, in their own words, that they send one small real
+  request to check the key or the model (`components/settings/`).
+- Contact lookups (a work email through Apollo or Hunter, a profile through Exa). They ask for confirmation
+  first and name the credit one lookup uses.
+- Work nobody presses: the saved-search scoring and the reading of Gmail replies. Today's "In the background"
+  lines say what runs on the person's key (`components/today/BackgroundTrail.tsx`).
+- The browser extension. It is a separate package and does not import from the web app, so its side panel
+  says the same thing beside Draft answer, in the same shape, from `extension/lib/draftAnswerNote.ts`.
+
 ## Document pages
 
 The pieces a long, document-like page (the application workspace, Profile) is built from. They hold no data:
