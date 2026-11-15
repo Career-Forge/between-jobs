@@ -41,7 +41,7 @@ const MAIL_APP = "Open in your mail app";
 const COPY = "Copy subject and email";
 // The sentence beside the button, word for word: the press makes no model call, and what can come later does.
 const NOTE =
-  "Pressing Create Gmail draft puts the draft in your Gmail and makes no model call. Once you send it, a reply to it can be read by your model on your own key and show up in Today as an update.";
+  "Pressing Create Gmail draft puts the draft in your Gmail and makes no model call. Once you send it, a reply to it can be read by your model on your own key, then show up in Today as an update or, when the model is confident of it, move this application's stage.";
 const EM_OR_EN_DASH = new RegExp(`[${String.fromCharCode(0x2013)}${String.fromCharCode(0x2014)}]`);
 
 // The one row the button and its note sit in, read from what the component returns.

@@ -55,7 +55,7 @@ const SETTINGS = SETTINGS_PATH;
 
 /** What sits beside the Create Gmail draft button: the press makes no model call; a reply to the sent draft can. */
 export const GMAIL_DRAFT_NOTE =
-  "Pressing Create Gmail draft puts the draft in your Gmail and makes no model call. Once you send it, a reply to it can be read by your model on your own key and show up in Today as an update.";
+  "Pressing Create Gmail draft puts the draft in your Gmail and makes no model call. Once you send it, a reply to it can be read by your model on your own key, then show up in Today as an update or, when the model is confident of it, move this application's stage.";
 
 function fallbackExplanation(state: GmailState, unavailableMessage: string | null): string {
   switch (state) {
