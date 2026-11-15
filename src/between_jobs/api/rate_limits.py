@@ -93,8 +93,10 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     # the page would use up the budget.
     "discover": (20, HOUR),
     # The headline generation: forge-engines pipeline, several LLM calls, one or two
-    # artifacts. Retries of one click share an idempotency key and return the stored result
-    # without re-running, but they are still attempts and still count.
+    # artifacts. The web app sends a fresh idempotency key with every press and every Retry,
+    # so a Retry is a new run (more model calls, one more slot), not a replay. Only a repeat
+    # of the very same request, with the same key, returns the stored result without
+    # re-running; it still passes this limit and still counts as an attempt.
     "prepare": (10, HOUR),
     # Several search-provider calls plus an LLM synthesis per click, on the user's own keys.
     "company_intel": (10, DAY),
