@@ -7,6 +7,7 @@ import { contactConfidence, countWords, runDate, safeSourceUrl } from "../lib/re
 import { contactsTrail, draftTrail, failedTrail } from "../lib/researchTrails";
 import { failureOf, type Failure } from "../lib/setupRequired";
 import { SETTINGS_PATH } from "../lib/settingsPaths";
+import { spendNotice } from "../lib/spendNotice";
 import { refreshCapabilities, useCapabilities } from "../lib/useCapabilities";
 import { useGmailConnection } from "../lib/useGmailConnection";
 import { useNow } from "../lib/useNow";
@@ -115,6 +116,11 @@ type Issue = { action: Action; problem: Failure | { kind: "note"; message: strin
 
 // How long "Couldn't copy" stays up before the button reads as before.
 const COPY_FAILED_NOTICE_MS = 6000;
+
+// What one press of the run button costs. It sits in the intro, which stays on screen beside the button and its
+// Retry. A run makes up to two model calls (one to pick product terms for the searches, one to name people), and
+// the searches use the person's You.com or Firecrawl key.
+const RUN_SPEND = spendNotice("Find contacts, or Refresh once it has run,", "up to two real model calls on your own key and searches with your You.com or Firecrawl key");
 
 const PERSONA_LABELS: Record<string, string> = {
   hiring_lead: "Hiring lead",
@@ -331,8 +337,8 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
   return (
     <div className="bj-rs">
       <p className="bj-ws-intro">
-        People the web publicly names for this company, each linked to the source that names them. A run searches with your You.com or Firecrawl key and asks your model to pick out names, so it uses
-        your own keys each time. No email address or phone number comes with it: looking one up is a separate step you choose, for one person at a time.
+        People the web publicly names for this company, each linked to the source that names them. {RUN_SPEND} No email address or phone number comes with it: looking one up is a separate step you
+        choose, for one person at a time.
       </p>
       <RunButton
         label={data !== null ? "Refresh" : "Find contacts"}

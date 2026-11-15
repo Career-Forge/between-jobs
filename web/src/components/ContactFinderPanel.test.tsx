@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CapabilitiesState } from "../lib/capabilities";
 import type { GmailConnection } from "../lib/gmailAccess";
+import { spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
 import { settle, text } from "../testing/forms";
@@ -444,6 +445,37 @@ describe("Contacts: an outreach draft stays a draft", () => {
 });
 
 describe("Contacts: running", () => {
+  const RUN_SENTENCE = spendNotice("Find contacts, or Refresh once it has run,", "up to two real model calls on your own key and searches with your You.com or Firecrawl key");
+
+  it("says in the intro, right above the run button's row, what pressing it costs: up to two model calls on the person's own key, and searches with their key", async () => {
+    on(`GET ${PATH}`, { run: null, candidates: [] });
+    const { container } = panel();
+    await settle();
+    expect(RUN_SENTENCE).toBe("Pressing Find contacts, or Refresh once it has run, makes up to two real model calls on your own key and searches with your You.com or Firecrawl key.");
+    const intro = query(container, ".bj-ws-intro");
+    expect(text(intro)).toContain(RUN_SENTENCE);
+    // The vague line it replaces is gone, and the sentence about email and phone numbers is kept after it.
+    expect(text(intro)).not.toContain("uses your own keys each time");
+    const lookups = "No email address or phone number comes with it: looking one up is a separate step you choose, for one person at a time.";
+    expect(text(intro)).toContain(lookups);
+    expect(text(intro).indexOf(RUN_SENTENCE)).toBeLessThan(text(intro).indexOf(lookups));
+    expect(buttonNamed(container, "Find contacts").closest(".bj-actions")!.previousElementSibling).toBe(intro);
+  });
+
+  it("keeps the same sentence on screen for a stored run, whose button reads Refresh, and beside a failed run's Retry", async () => {
+    on(`GET ${PATH}`, stored([candidate(1)]));
+    on(`POST ${PATH}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    const { container } = panel();
+    await settle();
+    const intro = query(container, ".bj-ws-intro");
+    expect(text(intro)).toContain(RUN_SENTENCE);
+    expect(buttonNamed(container, "Refresh").closest(".bj-actions")!.previousElementSibling).toBe(intro);
+    click(buttonNamed(container, "Refresh"));
+    await settle();
+    expect(buttonNamed(container, "Retry")).toBeTruthy();
+    expect(text(query(container, ".bj-ws-intro"))).toContain(RUN_SENTENCE);
+  });
+
   it("keeps the earlier people when a run fails, and Retry runs again", async () => {
     on(`GET ${PATH}`, stored([candidate(1)]));
     on(`POST ${PATH}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
