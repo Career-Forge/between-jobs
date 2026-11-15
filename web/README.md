@@ -105,25 +105,33 @@ second band fails here, whichever page it is.
 
 ## Spend notices
 
-Every model call here is made with the person's own key, and every search call with their own search key,
-so a control that makes one says so beside the control, before it is pressed, in one shape:
+Every model call here is made with the person's own key, and every call to a search provider that needs a
+key (search, or the Firecrawl page fetch) with their own search key, so a control that makes one says so
+beside the control, before it is pressed, in one shape:
 
     Pressing Check coverage makes a real model call on your own key.
 
 `src/lib/spendNotice.ts` builds the sentence (`spendNotice(press, what)`) from two phrases it owns,
 `A_MODEL_CALL` and `SEVERAL_MODEL_CALLS`, so a page intro, a note under a button and a row in a band cannot
 drift into slightly different promises. The caller says how many: one call says "a real model call", and a
-press that can make more says so ("several", "up to two", "a second one if ..."). A press that spends a search
-key says "search call", never "model call". Where the work starts on a choice rather than a press (picking a
-resume file) the third argument is `"Choosing"`. The sentence is plain text with no dashes; the helper's tests
-refuse dashes and the words a trail never says. A control that spends gets its sentence by calling the helper
-and pins it in its own test, next to the control by role and text, so a restyle cannot lose it.
+press that can make more says so ("several", "up to two", "a second one if ..."). A press that spends only a
+search key says "search call" (or "scrape call" for the page fetch), never "model call"; a press that makes both
+says both ("a real model call on your own key and runs seven searches ..."). Where the work starts on a choice
+rather than a press (picking a resume file) the third argument is `"Choosing"`. The sentence is plain text with
+no dashes; the helper's tests refuse dashes and the words a trail never says for the phrases the helper owns.
+A control that spends gets its sentence from the helper, or from a constant written in the same shape where the
+helper's one-clause form does not fit (Save this search, Create Gmail draft, the extension), and pins it in its
+own test, next to the control by role and text, so a restyle cannot lose it. A button that runs the same paid
+press again (a Retry, a Try again, a button that widens a search window) is named in the sentence where the
+sentence sits beside it. Two are not: the next-step band's own Try again, and Today's Retry on a held-back
+card. They re-run the press that the nearby form's or card's sentence already describes.
 
 Not covered by the shape, on purpose:
 
-- Free actions. A press that makes no model or search call says nothing about cost. The one note near such a
-  press is Create Gmail draft (`components/GmailDraftActions.tsx`): the press makes no call, but a reply to
-  the draft once it is sent can be read by the person's model, so the note says both.
+- Free actions. A press that makes no model or search call says nothing about cost. Two notes sit near such
+  a press: Create Gmail draft (`components/GmailDraftActions.tsx`), which makes no call but whose draft, once
+  sent, can have a reply read by the person's model, so the note says both; and the Hiring signals form
+  (`components/HiringSignalsTabForm.tsx`), which says that saving a search runs and watches nothing.
 - Saving a key and choosing a model. They already say, in their own words, that they send one small real
   request to check the key or the model (`components/settings/`).
 - Contact lookups (a work email through Apollo or Hunter, a profile through Exa). They ask for confirmation
