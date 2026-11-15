@@ -17,6 +17,7 @@ import { WORKSPACE_INTENTS, workspaceNotFound, type WorkspaceFacts } from "../li
 import type { CanonicalProfile } from "../lib/profileTypes";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { MODEL_PROVIDER_PATH } from "../lib/settingsPaths";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { clockTime } from "../lib/todayFeed";
 import { formatTrailDate } from "../lib/trail";
 import { useCapabilities } from "../lib/useCapabilities";
@@ -421,6 +422,10 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
           : null;
 
   const coverLetterInBand = rowId === "A1" || rowId === "A1g";
+  // What the band's own press costs, said under its buttons: the band's sentences are the rule table's
+  // and shared, so this is the page's own line, named after the button that spends. Read the fit check
+  // (A1b's cyan button) only scrolls, so it is Generate anyway that the sentence is about there.
+  const bandSpend = rowId === "A1" || rowId === "A1g" ? "Generate resume" : rowId === "A1c" ? "Generate again" : rowId === "A1b" ? "Generate anyway" : null;
   const setup = modelSetupOf(modelKey);
   const result = controller.state.kind === "ready" ? controller.state.result : null;
   const drafted = result !== null && result.resume !== null;
@@ -443,6 +448,7 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
         problem={statusProblem?.source === "select" ? <FailureState message={statusProblem.message} onRetry={statusProblem.retry} /> : undefined}
       />
       <NextStepBand outcome={outcome} onAction={onBandAction} pending={pending}>
+        {bandSpend !== null && <p className="bj-small bj-muted">{spendNotice(bandSpend, SEVERAL_MODEL_CALLS)}</p>}
         {coverLetterInBand && (
           <label className="bj-ws-check bj-small">
             <input type="checkbox" checked={controller.wantCoverLetter} onChange={(e) => controller.setWantCoverLetter(e.target.checked)} disabled={controller.state.kind === "generating"} />

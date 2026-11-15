@@ -3,6 +3,7 @@ import { act, useEffect } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CROSS_NAV_HASH } from "../lib/applicationsBoard";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { SECTION_IDS } from "../lib/workspaceSections";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, calls, callsTo, on, reset } from "../testing/fakeApi";
@@ -157,6 +158,8 @@ function page(entry = `/applications/${ID}`) {
 const band = (root: ParentNode) => query(root, 'section[aria-label="Next step"]');
 const names = (root: ParentNode, selector: string) => [...root.querySelectorAll(selector)].map((node) => text(node));
 const cyan = (root: ParentNode) => [...root.querySelectorAll(".bj-primary, .bj-button-link-primary")];
+// The sentences the band itself carries under its buttons (what pressing its button costs).
+const bandNotes = (root: ParentNode) => names(band(root), ".bj-band-item p");
 
 beforeEach(() => {
   reset();
@@ -503,6 +506,13 @@ describe("the band, from the first step to the last", () => {
     expect(cyan(container)).toHaveLength(1);
     expect(band(container).contains(cyan(container)[0])).toBe(true);
     expect(text(cyan(container)[0])).toBe("Generate resume");
+    // The band's cyan press is the page's most-pressed button, so it says what it costs, ahead of the
+    // cover letter choice that widens it.
+    expect(bandNotes(container)).toEqual([spendNotice("Generate resume", SEVERAL_MODEL_CALLS)]);
+    expect([...query(band(container), ".bj-band-item").children].map((node) => text(node))).toEqual([
+      spendNotice("Generate resume", SEVERAL_MODEL_CALLS),
+      "Also draft a cover letter (a real, extra model call)",
+    ]);
     expect(band(container).querySelector("input[type='checkbox']")).not.toBeNull();
     expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(1);
     // The body's copy of the action is outlined.
@@ -538,6 +548,8 @@ describe("the band, from the first step to the last", () => {
     const button = cyan(container)[0];
     expect(text(button)).toBe("Generating...");
     expect(button.getAttribute("aria-disabled")).toBe("true");
+    // The run is out, and the band is still the Generate step (A1g): its line about the cost stays.
+    expect(bandNotes(container)).toEqual([spendNotice("Generate resume", SEVERAL_MODEL_CALLS)]);
     click(button);
     expect(callsTo(`POST /applications/${ID}/prepare`)).toHaveLength(1);
     release(drafted());
@@ -555,6 +567,10 @@ describe("the band, from the first step to the last", () => {
     expect(text(band(container))).toContain("Generation didn't finish. You didn't do anything wrong, and nothing was lost.");
     expect(text(band(container))).toMatch(/why: POST \/prepare failed · \d\d:\d\d/);
     expect(text(cyan(container)[0])).toBe("Generate again");
+    // The failed row names its own button, and has no cover letter choice (that is only on the first two rows).
+    expect(bandNotes(container)).toEqual([spendNotice("Generate again", SEVERAL_MODEL_CALLS)]);
+    expect([...query(band(container), ".bj-band-item").children].map((node) => text(node))).toEqual([spendNotice("Generate again", SEVERAL_MODEL_CALLS)]);
+    expect(band(container).querySelector("input[type='checkbox']")).toBeNull();
     const callout = query(container, ".bj-ws-generate .bj-state--failure");
     expect(text(callout)).toContain("The engine did not answer.");
     expect(callout.querySelector("button")).toBeNull();
@@ -576,6 +592,9 @@ describe("the band, from the first step to the last", () => {
     expect(cyan(container)).toHaveLength(1);
     const secondary = buttonNamed(band(container), "Generate anyway");
     expect(secondary.classList.contains("bj-primary")).toBe(false);
+    // The cyan button only scrolls to the fit check, so the one line about the cost is about Generate anyway.
+    expect(bandNotes(container)).toEqual([spendNotice("Generate anyway", SEVERAL_MODEL_CALLS)]);
+    expect(text(band(container))).not.toContain("Pressing Read the fit check");
     expect(query(container, "#honest-read-heading").tagName).toBe("H3");
     expect(container.querySelector(".bj-danger-callout, .bj-ws-callout--danger")).toBeNull();
     // Reading the fit check goes to its heading.
@@ -611,6 +630,8 @@ describe("the band, from the first step to the last", () => {
     await settle();
     expect(text(band(flagged.container))).toContain("Read the 1 flagged claim, then download.");
     expect(text(band(flagged.container))).toContain("why: status saved · resume drafted · 1 claim flagged");
+    // Reading and downloading cost nothing, so the band says nothing about a call.
+    expect(band(flagged.container).querySelector(".bj-band-item")).toBeNull();
     flagged.unmount();
 
     describeAccount({ app: application({ resume_exists: true }), result: drafted([]) });
