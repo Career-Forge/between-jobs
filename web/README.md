@@ -296,6 +296,12 @@ their trail line, inline at every width. Neither makes a search when it opens.
   only from the form (Enter, its Search, or the band's Search), one at a time, and never while the profile or model
   key is known to be missing. `POST /discover/track`, `POST /saved-searches` and the saved-search PATCH and DELETE
   are the ones the page has always made.
+- **Coming back.** The last answer that returned rows is held in memory (`lib/discoverHold.ts`, one store per
+  signed-in person from `lib/useDiscoverHold.tsx`), so a person who opens a job from the results and comes back
+  finds the same rows and the same form, under one line that says when the search ran and that the scores and link
+  checks were not refreshed. Showing it makes no request. An answer with no rows, Clear filters, signing out and a
+  different person signing in all empty it, it expires after two hours (`HOLD_MAX_AGE_MS`), and it is never written
+  to browser storage, so a reload starts empty.
 - **The band** (`lib/nextStep/pages/discover.ts`, rows D1 to D5; `hiring-signals.ts`, rows HS0 to HS3) holds the
   page's one cyan fill: Search when ready, Search again when the scoring fell back, Clear filters when nothing
   matched, Save this search when Hiring signals results are on the page for a search that is not saved. Before a
