@@ -7,6 +7,7 @@ import type { DiscoverResponse, JobCard } from "../../lib/discoverTypes";
 import type { NextStepOutcome } from "../../lib/nextStep";
 import { bandHoldsSearch } from "../../lib/nextStep/pages/discover";
 import type { SavedSearchesState } from "../../lib/savedSearches";
+import { A_MODEL_CALL, spendNotice } from "../../lib/spendNotice";
 import { DiscoverForm } from "./DiscoverForm";
 import { ResultsView } from "./ResultsView";
 import { SavedSearchesFold } from "./SavedSearchesFold";
@@ -76,7 +77,7 @@ export const SETUP_BLOCKED_NOTE = "Search is waiting on the setup above.";
 
 // What pressing Search again costs, said before it is pressed. A search asks every search provider the
 // person has connected, with their own keys, and scores what it finds with one call on their own model key.
-export const SEARCH_AGAIN_SPEND_NOTE = "Pressing Search again makes a real model call on your own key and uses any search keys you have connected.";
+export const SEARCH_AGAIN_SPEND_NOTE = spendNotice("Search again", `${A_MODEL_CALL} and uses any search keys you have connected`);
 
 export function DiscoverView(props: DiscoverViewProps) {
   const { now, search, setup } = props;

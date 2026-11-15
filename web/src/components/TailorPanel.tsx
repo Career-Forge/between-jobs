@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { apiFetch } from "../lib/api";
 import type { ResumeDocument } from "../lib/headerComposerTypes";
 import { failureOf, type SetupNotice } from "../lib/setupRequired";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { SKILL_STATE_LABELS, type ClusterCoverage, type CoverageResponse, type SkillState } from "../lib/tailorTypes";
 import { tailorTrail } from "../lib/workspaceTrails";
 import { BlockTrail } from "./paper/DocumentLayout";
@@ -86,8 +87,7 @@ type State =
       saveError: string | null;
     };
 
-const IDLE_SENTENCE =
-  "Reads this posting's requirements with your model, then matches them to your profile by code. Pressing Check coverage makes a real model call on your own key. The match isn't saved, so each visit needs its own press.";
+const IDLE_SENTENCE = `Reads this posting's requirements with your model, then matches them to your profile by code. ${spendNotice("Check coverage", A_MODEL_CALL)} The match isn't saved, so each visit needs its own press.`;
 
 export function TailorPanel({ applicationId }: { applicationId: string }) {
   const [state, setState] = useState<State>({ kind: "idle" });
