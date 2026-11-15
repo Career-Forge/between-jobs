@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { StrictMode, act } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
@@ -1043,6 +1043,201 @@ describe("an accepted proposal", () => {
     expect(container.querySelector("#bj-today-activity")).toBeNull();
     expect(document.activeElement).toBe(document.getElementById("next-step-focus"));
     expect(band(container).contains(document.activeElement)).toBe(true);
+  });
+});
+
+// The server settles the other pending replies for an application when one is accepted, and leaves
+// their items in the feed. The page marks them decided too, so none offers an Accept that would be
+// refused, and says how many lost theirs.
+describe("the other replies about an application once one is accepted", () => {
+  // A reply for app-1 older than the lit one (10:00), so the band holds `proposalItem` and these are rows.
+  const sibling = (id: string, overrides: { type?: string; status?: string; at?: string; application?: string } = {}) => ({
+    ...proposalItem,
+    id,
+    application_id: overrides.application ?? "app-1",
+    created_at: overrides.at ?? "2026-09-22T09:00:00Z",
+    status_proposal: { ...proposalItem.status_proposal, id: `sp-${id}`, proposed_type: overrides.type ?? "offer.received", status: overrides.status ?? "pending" },
+  });
+  const rowNamed = (container: HTMLElement, name: string) => [...container.querySelectorAll("li.bj-today-row")].find((row) => words(row).includes(name)) as HTMLElement;
+  const confirmationOf = (container: HTMLElement) => words(container.querySelector(".bj-today-confirmation"));
+  const acceptLit = async (container: HTMLElement) => {
+    click(buttonNamed(band(container), "Accept: move to Interviewing"));
+    await flush();
+  };
+
+  it("takes Accept and 'Needs your decision' off a reply that could be accepted, and its Dismiss then uses the plain route", async () => {
+    answer({ "/today": [proposalItem, sibling("s1")], "POST /today/p1/accept-proposal": {}, "POST /today/s1/dismiss": {} });
+    const { container } = await draw();
+    const before = rowNamed(container, "Offer");
+    expect(words(before)).toContain("Needs your decision");
+    expect(buttonNamed(before, "Accept: move to Offer")).toBeTruthy();
+
+    await acceptLit(container);
+    const row = rowNamed(container, "Possible update");
+    expect(row.getAttribute("data-kind")).toBe("status_proposal");
+    expect(container.textContent).not.toContain("Accept: move to");
+    expect(container.textContent).not.toContain("Needs your decision");
+    expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Interviewing. 1 other reply about this job can no longer be accepted. Open workspace");
+    expect(status(container)).toBe("Data Engineer at Acme moved to Interviewing. 1 other reply about this job can no longer be accepted.");
+    // The band has nothing to hold: the sibling is not offered to it either.
+    expect(band(container).className).toContain("bj-band--unlit");
+
+    click(buttonNamed(row, "Dismiss"));
+    await flush();
+    expect(calls()).toContain("POST /today/s1/dismiss");
+    expect(calls().filter((call) => call.includes("dismiss-proposal"))).toEqual([]);
+    expect(calls().filter((call) => call.includes("accept-proposal"))).toEqual(["POST /today/p1/accept-proposal"]);
+    expect(rows(container)).toEqual([]);
+  });
+
+  it("counts the replies that lost an Accept, in the plural, and not the ones that never had one", async () => {
+    answer({
+      "/today": [proposalItem, sibling("s1"), sibling("s2", { type: "assessment.received", at: "2026-09-22T08:00:00Z" }), sibling("s3", { type: "recruiter.replied", at: "2026-09-22T07:00:00Z" })],
+      "POST /today/p1/accept-proposal": {},
+    });
+    const { container } = await draw();
+    await acceptLit(container);
+    expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Interviewing. 2 other replies about this job can no longer be accepted. Open workspace");
+    expect(status(container)).not.toMatch(/dismiss|pending/i);
+    expect(confirmationOf(container)).not.toMatch(/dismiss|pending/i);
+  });
+
+  it("sends the Dismiss of a reply with no stage to move to the same plain route, and says nothing of it", async () => {
+    answer({
+      "/today": [proposalItem, sibling("s2", { type: "recruiter.replied" }), sibling("s3", { type: "acknowledged", at: "2026-09-22T08:00:00Z" })],
+      "POST /today/p1/accept-proposal": {},
+      "POST /today/s2/dismiss": {},
+      "POST /today/s3/dismiss": {},
+    });
+    const { container } = await draw();
+    // Before: these were only ever offered Dismiss, through the proposal route.
+    expect(rows(container)).toEqual(["status_proposal", "status_proposal"]);
+    await acceptLit(container);
+    // Neither had an Accept, so neither is counted.
+    expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Interviewing. Open workspace");
+    for (const row of container.querySelectorAll("li.bj-today-row")) click(buttonNamed(row, "Dismiss"));
+    await flush();
+    expect(calls()).toEqual(expect.arrayContaining(["POST /today/s2/dismiss", "POST /today/s3/dismiss"]));
+    expect(calls().filter((call) => call.includes("dismiss-proposal"))).toEqual([]);
+    expect(rows(container)).toEqual([]);
+  });
+
+  it("does not replay a sibling's failed Dismiss against the proposal route on Retry: the failure goes with the Accept it lost", async () => {
+    answer({
+      "/today": [proposalItem, sibling("s1")],
+      "POST /today/s1/dismiss-proposal": new FakeApiError(500, "Request failed (500)"),
+      "POST /today/p1/accept-proposal": {},
+      "POST /today/s1/dismiss": {},
+    });
+    const { container } = await draw();
+    const row = rowNamed(container, "Offer");
+    click(buttonNamed(row, "Dismiss"));
+    await flush();
+    expect(words(query(row, ".bj-state--failure"))).toContain("Request failed (500)");
+    expect(buttonNamed(row, "Retry")).toBeTruthy();
+
+    await acceptLit(container);
+    expect(container.querySelector(".bj-state--failure")).toBeNull();
+    expect(() => buttonNamed(container, "Retry")).toThrow();
+    // Dismiss again: the one request that goes out is the plain one.
+    click(buttonNamed(container.querySelector("li.bj-today-row") as HTMLElement, "Dismiss"));
+    await flush();
+    expect(calls().filter((call) => call === "POST /today/s1/dismiss-proposal")).toHaveLength(1);
+    expect(calls()).toContain("POST /today/s1/dismiss");
+    expect(rows(container)).toEqual([]);
+  });
+
+  it("leaves a reply whose own request is out as it is, with its Accept, and does not count it", async () => {
+    answer({ "/today": [proposalItem, sibling("s1")], "POST /today/p1/accept-proposal": {}, "POST /today/s1/dismiss-proposal": () => new Promise(() => {}) });
+    const { container } = await draw();
+    const row = rowNamed(container, "Offer");
+    click(buttonNamed(row, "Dismiss"));
+    await flush();
+    expect(words(buttonNamed(row, "Dismissing..."))).toBe("Dismissing...");
+    await acceptLit(container);
+    expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Interviewing. Open workspace");
+    // It is still a reply that can be accepted, so the band holds it now, with its request still out.
+    expect(words(band(container))).toContain("Needs your decision");
+    expect(buttonNamed(band(container), "Accept: move to Offer")).toBeTruthy();
+    expect(words(buttonNamed(band(container), "Dismissing..."))).toBe("Dismissing...");
+  });
+
+  it("does not count a reply that another action has just taken out of the feed, even in the same batch of updates", async () => {
+    let finishDismiss: (value: unknown) => void = () => {};
+    let finishAccept: (value: unknown) => void = () => {};
+    answer({
+      "/today": [proposalItem, sibling("s1")],
+      "POST /today/s1/dismiss-proposal": () => new Promise((resolve) => (finishDismiss = resolve)),
+      "POST /today/p1/accept-proposal": () => new Promise((resolve) => (finishAccept = resolve)),
+    });
+    const { container } = await draw();
+    click(buttonNamed(rowNamed(container, "Offer"), "Dismiss"));
+    await acceptLit(container);
+    // Both answers arrive before the page has drawn either.
+    await act(async () => {
+      finishDismiss({});
+      finishAccept({});
+    });
+    expect(rows(container)).toEqual([]);
+    expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Interviewing. Open workspace");
+  });
+
+  it("counts each reply once under StrictMode, which runs renders and state updaters twice", async () => {
+    answer({
+      "/today": [proposalItem, sibling("s1"), sibling("s2", { type: "recruiter.replied", at: "2026-09-22T08:00:00Z" })],
+      "POST /today/p1/accept-proposal": {},
+    });
+    installViewport(1000);
+    const { container } = render(
+      <StrictMode>
+        <MemoryRouter>
+          <Today />
+        </MemoryRouter>
+      </StrictMode>,
+    );
+    await flush();
+    await acceptLit(container);
+    expect(calls().filter((call) => call.includes("accept-proposal"))).toEqual(["POST /today/p1/accept-proposal"]);
+    expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Interviewing. 1 other reply about this job can no longer be accepted. Open workspace");
+    expect(container.textContent).not.toContain("Accept: move to");
+    expect(rows(container)).toEqual(["status_proposal", "status_proposal"]);
+  });
+
+  it("leaves another application's reply with its Accept, and does not count it", async () => {
+    answer({ "/today": [proposalItem, listedProposal], "POST /today/p1/accept-proposal": {} });
+    const { container } = await draw();
+    await acceptLit(container);
+    expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Interviewing. Open workspace");
+    // It is the next thing for the band to hold, with its own Accept.
+    expect(buttonNamed(band(container), "Accept: move to Interviewing")).toBeTruthy();
+    expect(words(query(band(container), ".bj-band-sentence"))).toContain("Orbit");
+  });
+
+  it("does not count a reply that was already decided", async () => {
+    answer({
+      "/today": [proposalItem, sibling("s1"), sibling("done", { status: "dismissed", at: "2026-09-22T08:00:00Z" }), sibling("taken", { status: "accepted", at: "2026-09-22T07:00:00Z" })],
+      "POST /today/p1/accept-proposal": {},
+    });
+    const { container } = await draw();
+    await acceptLit(container);
+    expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Interviewing. 1 other reply about this job can no longer be accepted. Open workspace");
+  });
+
+  it("stops the band holding a reply the server has closed when Accept was pressed on another one of the same application's rows", async () => {
+    // The band holds the newest reply (p1). The older one in the list is the one accepted.
+    answer({ "/today": [proposalItem, sibling("s1")], "POST /today/s1/accept-proposal": {} });
+    const { container } = await draw();
+    const accept = buttonNamed(rowNamed(container, "Offer"), "Accept: move to Offer");
+    accept.focus();
+    click(accept);
+    await flush();
+    expect(calls().filter((call) => call.includes("accept-proposal"))).toEqual(["POST /today/s1/accept-proposal"]);
+    expect(confirmationOf(container)).toBe("Data Engineer at Acme moved to Offer. 1 other reply about this job can no longer be accepted. Open workspace");
+    expect(band(container).className).toContain("bj-band--unlit");
+    expect(container.textContent).not.toContain("Accept: move to");
+    // The band's reply went into the list as a record, and the pressed row went: focus is on the heading.
+    expect(rows(container)).toEqual(["status_proposal"]);
+    expect(document.activeElement).toBe(query(container, "#bj-today-activity"));
   });
 });
 

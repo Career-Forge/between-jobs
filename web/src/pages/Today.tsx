@@ -20,6 +20,8 @@ import {
   isPending,
   jobLabel,
   searchesRead,
+  supersededWords,
+  supersedeSiblings,
   todayFacts,
   trackRequestBody,
   type FitRead,
@@ -103,6 +105,15 @@ export default function Today() {
   const inFlight = useRef(new Set<string>());
   const lastAction = useRef(new Map<string, { action: ItemAction; item: TodayItem }>());
   const askedFit = useRef(new Set<string>());
+  // The feed as an action should read it. It is set from the state on every render, and by every
+  // change made through changeFeed as soon as it is asked for, so an action that reads it is never
+  // behind a change another action has queued but the page has not drawn yet.
+  const feedRef = useRef<FeedLoad>(feed);
+  feedRef.current = feed;
+  const changeFeed = useCallback((change: (current: FeedLoad) => FeedLoad) => {
+    feedRef.current = change(feedRef.current);
+    setFeed(change);
+  }, []);
 
   const load = useCallback(async () => {
     setFeed({ kind: "loading" });
@@ -223,7 +234,34 @@ export default function Today() {
   // ── the actions ──────────────────────────────────────────────────────────
 
   function removeItem(itemId: string) {
-    setFeed((current) => (current.kind === "ready" ? { ...current, items: current.items.filter((item) => item.id !== itemId) } : current));
+    changeFeed((current) => (current.kind === "ready" ? { ...current, items: current.items.filter((item) => item.id !== itemId) } : current));
+  }
+
+  // An accepted reply leaves the feed, and the other pending replies for the same application stop
+  // offering Accept: the server settled them when it accepted this one, and would refuse them now.
+  // The count is read from the feed as it is (feedRef) before anything changes, and the feed changes
+  // once, with an updater that only reads the state it is given. A sibling with a request of its own
+  // out is left as it is: that request ends it, and its Retry still has the request it was for. For
+  // each sibling that did change, an earlier failure and its Retry go, since the request a Retry
+  // would send is one the server now refuses. Returns how many of them had an Accept.
+  function settleAccepted(accepted: TodayItem): number {
+    const known = feedRef.current;
+    const leave = new Set(inFlight.current);
+    const { count, flipped } = known.kind === "ready" ? supersedeSiblings(known.items, accepted, leave) : { count: 0, flipped: [] };
+    changeFeed((current) =>
+      current.kind === "ready"
+        ? { ...current, items: supersedeSiblings(current.items.filter((candidate) => candidate.id !== accepted.id), accepted, leave).items }
+        : current,
+    );
+    for (const itemId of flipped) lastAction.current.delete(itemId);
+    if (flipped.length > 0) {
+      setProblems((current) => {
+        const next = { ...current };
+        for (const itemId of flipped) delete next[itemId];
+        return next;
+      });
+    }
+    return count;
   }
 
   function setProblem(itemId: string, problem: Failure | undefined) {
@@ -261,7 +299,7 @@ export default function Today() {
           break;
         case "accept": {
           await apiFetch(`/today/${item.id}/accept-proposal`, { method: "POST" });
-          removeItem(item.id);
+          const others = settleAccepted(item);
           const proposedType = item.status_proposal?.proposed_type ?? "";
           const stage = isMappableProposal(proposedType) ? PROPOSAL_STEPS[proposedType].stage : null;
           if (stage === null) {
@@ -274,7 +312,8 @@ export default function Today() {
           // sentence that is also what a screen reader is told.
           const applicationId = item.application_id?.trim() ?? "";
           const job = applicationId === "" ? null : jobLabel(context.names.get(applicationId));
-          const sentence = `${job ?? "The application"} moved to ${stage}.`;
+          const moved = `${job ?? "The application"} moved to ${stage}.`;
+          const sentence = others === 0 ? moved : `${moved} ${supersededWords(others)}`;
           setConfirmation({
             text: sentence,
             link: applicationId === "" ? { label: "Go to Applications", to: "/applications" } : { label: "Open workspace", to: workspacePath(applicationId) },

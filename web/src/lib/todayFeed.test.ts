@@ -19,6 +19,8 @@ import {
   searchStatusWords,
   searchesRead,
   searchesTrail,
+  supersededWords,
+  supersedeSiblings,
   todayFacts,
   trackRequestBody,
   type BackgroundSearch,
@@ -607,5 +609,108 @@ describe("what a row can do", () => {
     for (const kind of ["job_tracked", "stage_changed"] as const) {
       expect(ids(rowActions(item({ id: "x", kind, application_id: "a1" }), null))).toEqual(["link:Open workspace:/applications/a1", "dismiss"]);
     }
+  });
+});
+
+describe("a reply accepted for an application", () => {
+  const reply = (id: string, applicationId: string | null | undefined, overrides: { type?: string; status?: "pending" | "accepted" | "dismissed"; proposalId?: string } = {}) =>
+    item({
+      id,
+      kind: "status_proposal",
+      application_id: applicationId,
+      status_proposal: { id: overrides.proposalId ?? `sp-${id}`, proposed_type: overrides.type ?? "interview.requested", confidence: 0.6, evidence_spans: [], status: overrides.status ?? "pending" },
+    });
+  const statusOf = (items: readonly TodayItem[], id: string) => items.find((candidate) => candidate.id === id)?.status_proposal?.status;
+
+  function deepFreeze<T>(value: T): T {
+    if (typeof value === "object" && value !== null) {
+      for (const inner of Object.values(value)) deepFreeze(inner);
+      Object.freeze(value);
+    }
+    return value;
+  }
+
+  it("marks every other pending reply for the same application as decided, whatever kind of reply it is", () => {
+    const accepted = reply("a", "app-1");
+    const items = [accepted, reply("s1", "app-1", { type: "offer.received" }), reply("s2", "app-1", { type: "recruiter.replied" }), reply("s3", "app-1", { type: "acknowledged" })];
+    const result = supersedeSiblings(items, accepted);
+    expect(["s1", "s2", "s3"].map((id) => statusOf(result.items, id))).toEqual(["dismissed", "dismissed", "dismissed"]);
+    expect(result.flipped).toEqual(["s1", "s2", "s3"]);
+    // The accepted item is the page's to remove; this does not touch it.
+    expect(statusOf(result.items, "a")).toBe("pending");
+  });
+
+  it("counts only the replies that had been offered Accept", () => {
+    const accepted = reply("a", "app-1");
+    const items = [accepted, reply("s1", "app-1", { type: "offer.received" }), reply("s2", "app-1", { type: "assessment.received" }), reply("s3", "app-1", { type: "recruiter.replied" })];
+    expect(supersedeSiblings(items, accepted).count).toBe(2);
+    expect(supersedeSiblings([accepted, reply("s3", "app-1", { type: "recruiter.replied" })], accepted)).toMatchObject({ count: 0, flipped: ["s3"] });
+  });
+
+  it("leaves another application's reply, a reply already decided, any other kind of item and an item with no application alone", () => {
+    const accepted = reply("a", "app-1");
+    const items = [
+      accepted,
+      reply("other", "app-2"),
+      reply("done", "app-1", { status: "dismissed" }),
+      reply("taken", "app-1", { status: "accepted" }),
+      reply("loose", null),
+      reply("unset", undefined),
+      item({ id: "ready", kind: "resume_ready", application_id: "app-1" }),
+      item({ id: "stage", kind: "stage_changed", application_id: "app-1" }),
+      item({ id: "bare", kind: "status_proposal", application_id: "app-1" }),
+    ];
+    const result = supersedeSiblings(items, accepted);
+    expect(result).toMatchObject({ count: 0, flipped: [] });
+    expect(result.items).toEqual(items);
+    expect(statusOf(result.items, "done")).toBe("dismissed");
+    expect(statusOf(result.items, "taken")).toBe("accepted");
+  });
+
+  it("does not count a reply that was already decided, only the ones that changed", () => {
+    const accepted = reply("a", "app-1");
+    const items = [accepted, reply("s1", "app-1"), reply("done", "app-1", { status: "dismissed" }), reply("taken", "app-1", { status: "accepted" })];
+    expect(supersedeSiblings(items, accepted)).toMatchObject({ count: 1, flipped: ["s1"] });
+  });
+
+  it("never changes the list or an item it is given, and hands back the items it did not touch as they were", () => {
+    const accepted = reply("a", "app-1");
+    const items = deepFreeze([accepted, reply("s1", "app-1"), reply("other", "app-2")]);
+    const before = structuredClone(items);
+    const result = supersedeSiblings(items, accepted, new Set(["unrelated"]));
+    expect(items).toEqual(before);
+    expect(result.items).not.toBe(items);
+    expect(result.items[0]).toBe(items[0]);
+    expect(result.items[2]).toBe(items[2]);
+    expect(result.items[1]).not.toBe(items[1]);
+    expect(statusOf(result.items, "s1")).toBe("dismissed");
+  });
+
+  it("reads a blank application id as none, on either side, and trims the ones it compares", () => {
+    const blank = reply("a", "   ");
+    expect(supersedeSiblings([blank, reply("s1", "   "), reply("s2", ""), reply("s3", null)], blank)).toMatchObject({ count: 0, flipped: [] });
+    const padded = reply("a", " app-1 ");
+    expect(supersedeSiblings([padded, reply("s1", "app-1")], padded)).toMatchObject({ count: 1, flipped: ["s1"] });
+  });
+
+  it("leaves an item with a request of its own out alone, and does not count it", () => {
+    const accepted = reply("a", "app-1");
+    const items = [accepted, reply("s1", "app-1"), reply("s2", "app-1")];
+    const result = supersedeSiblings(items, accepted, new Set(["s1"]));
+    expect(result).toMatchObject({ count: 1, flipped: ["s2"] });
+    expect(statusOf(result.items, "s1")).toBe("pending");
+    expect(result.items[1]).toBe(items[1]);
+  });
+
+  it("does not treat an item that carries the accepted proposal itself as a sibling", () => {
+    const accepted = reply("a", "app-1", { proposalId: "sp-shared" });
+    const items = [accepted, reply("twin", "app-1", { proposalId: "sp-shared" })];
+    expect(supersedeSiblings(items, accepted)).toMatchObject({ count: 0, flipped: [] });
+  });
+
+  it("says the count in the page's own words, and never in the server's", () => {
+    expect(supersededWords(1)).toBe("1 other reply about this job can no longer be accepted.");
+    expect(supersededWords(3)).toBe("3 other replies about this job can no longer be accepted.");
+    for (const count of [1, 2]) expect(supersededWords(count)).not.toMatch(/dismiss|pending/i);
   });
 });

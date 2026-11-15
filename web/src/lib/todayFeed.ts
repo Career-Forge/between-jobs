@@ -506,6 +506,52 @@ export function rowActions(item: TodayItem, trackedApplicationId: string | null,
   return actions;
 }
 
+export interface Superseded {
+  /** The feed with each sibling marked as decided; the accepted item and everything else is as it was. */
+  items: TodayItem[];
+  /** The siblings that had been offered Accept: the ones the person could have chosen and now cannot. */
+  count: number;
+  /** Every sibling that was marked, whether or not it had an Accept. */
+  flipped: string[];
+}
+
+// When one reply about an application is accepted, the server settles the others about it: its
+// dismiss_other_pending_proposals marks every other still-pending proposal of the same application
+// as dismissed, whatever kind of reply it was, and does not touch the feed items that carry them.
+// This does the same to the page's copy, so a card does not go on offering an Accept the server
+// would now refuse. Only items that are pending proposals for the same application change (an
+// application id is read the way rowActions reads it, so a blank one is none and matches nothing);
+// `leave` holds the items that have a request of their own out, which that request settles.
+// The list it is given is never changed.
+export function supersedeSiblings(items: readonly TodayItem[], accepted: TodayItem, leave: ReadonlySet<string> = new Set()): Superseded {
+  const applicationId = text(accepted.application_id);
+  const flipped: string[] = [];
+  let count = 0;
+  const next = items.map((candidate) => {
+    const proposal = candidate.status_proposal;
+    if (
+      applicationId === null ||
+      candidate.id === accepted.id ||
+      candidate.kind !== "status_proposal" ||
+      !isPending(proposal) ||
+      proposal.id === accepted.status_proposal?.id ||
+      leave.has(candidate.id) ||
+      text(candidate.application_id) !== applicationId
+    ) {
+      return candidate;
+    }
+    flipped.push(candidate.id);
+    if (isMappableProposal(proposal.proposed_type)) count += 1;
+    return { ...candidate, status_proposal: { ...proposal, status: "dismissed" as const } };
+  });
+  return { items: next, count, flipped };
+}
+
+// What the confirmation adds when siblings lost their Accept, in the page's own words.
+export function supersededWords(count: number): string {
+  return count === 1 ? "1 other reply about this job can no longer be accepted." : `${count} other replies about this job can no longer be accepted.`;
+}
+
 // ── the background trail ───────────────────────────────────────────────────
 
 export type SearchStatus = "paused" | "checked" | "not_checked";
