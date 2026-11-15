@@ -10,6 +10,7 @@ import { findForbiddenWord } from "../../lib/trail";
 import { nextStep, type NextStepInput, type NextStepOutcome } from "../../lib/nextStep";
 import type { DiscoverFacts } from "../../lib/nextStep/pages/discover";
 import type { SavedSearchesState } from "../../lib/savedSearches";
+import { A_MODEL_CALL, spendNotice } from "../../lib/spendNotice";
 import { DiscoverView, SEARCH_AGAIN_SPEND_NOTE, SETUP_BLOCKED_NOTE, type DiscoverViewProps, type SearchView } from "./DiscoverView";
 
 // Every state of the Discover page, drawn from props: what each shows, what it leaves out, and that
@@ -413,7 +414,7 @@ function openDetails(container: HTMLElement, row = 0): Element {
 
 describe("restored: an answer brought back from an earlier visit", () => {
   const RESTORED_WORDS =
-    "Showing your search from 09:14. The scores and link checks are from then and have not been refreshed. Pressing Search again makes a real model call on your own key and uses any search keys you have connected.";
+    "Showing your search from 09:14. The scores and link checks are from then and have not been refreshed. Pressing Search again makes a real model call on your own key and can run several searches on each search key you have connected.";
   const restored = (result = response(), at = "09:14"): Partial<DiscoverViewProps> => ({ ...ready(result), restored: { at } });
   // The notes of the results block itself (the dropped count, the none-scored and More results notes) are not
   // this line, so a plain answer is used where the count of notes is the point.
@@ -430,8 +431,9 @@ describe("restored: an answer brought back from an earlier visit", () => {
   });
 
   it("says the spend in the shared shape: Pressing X makes a real model call on your own key", () => {
-    expect(SEARCH_AGAIN_SPEND_NOTE).toBe("Pressing Search again makes a real model call on your own key and uses any search keys you have connected.");
+    expect(SEARCH_AGAIN_SPEND_NOTE).toBe("Pressing Search again makes a real model call on your own key and can run several searches on each search key you have connected.");
     expect(SEARCH_AGAIN_SPEND_NOTE).toMatch(/^Pressing .+ makes a real model call on your own key/);
+    expect(SEARCH_AGAIN_SPEND_NOTE).toBe(spendNotice("Search again", `${A_MODEL_CALL} and can run several searches on each search key you have connected`));
   });
 
   it("writes the time it was given and nothing else about it", () => {
@@ -452,17 +454,28 @@ describe("restored: an answer brought back from an earlier visit", () => {
     }
   });
 
-  it("leaves the rows, the band and the form as they are for any answer: the line is the only difference", () => {
+  it("leaves the rows, the band and the form as they are for any answer: the line is the only difference, and it carries the sentence the form would have said", () => {
     const plain = draw(ready(response({ scored: [job(), job({ apply_url: "https://jobs.example/acme/2", title: "Analyst" })] })));
     const brought = draw(restored(response({ scored: [job(), job({ apply_url: "https://jobs.example/acme/2", title: "Analyst" })] })));
     const rows = (container: HTMLElement) => [...container.querySelectorAll("li.bj-disc-row")].map((row) => words(row));
     expect(rows(brought.container)).toEqual(rows(plain.container));
     expect(words(bandOf(brought.container))).toBe(words(bandOf(plain.container)));
-    expect(words(query(brought.container, "form"))).toBe(words(query(plain.container, "form")));
+    // The form says what Search again costs under a plain answer and leaves it to the line under a restored one,
+    // so the two forms differ by that one sentence and nothing else.
+    expect(words(query(plain.container, "form"))).toContain(SEARCH_AGAIN_SPEND_NOTE);
+    expect(words(query(brought.container, "form"))).not.toContain(SEARCH_AGAIN_SPEND_NOTE);
+    expect(words(query(plain.container, "form")).replace(SEARCH_AGAIN_SPEND_NOTE, "")).toBe(words(query(brought.container, "form")));
     // And the line is that difference: one more note than the plain answer has, and it is the restored one.
     expect(notes(brought.container)).toHaveLength(notes(plain.container).length + 1);
     expect(notes(brought.container).filter((note) => words(note).startsWith("Showing your search from"))).toHaveLength(1);
     expect(notes(plain.container).filter((note) => words(note).startsWith("Showing your search from"))).toHaveLength(0);
+  });
+
+  it("says what Search again costs once on the page: in the line, not again under the form", () => {
+    const { container } = draw(restored());
+    expect(words(container).split(SEARCH_AGAIN_SPEND_NOTE)).toHaveLength(2);
+    expect(words(query(container, "section.bj-disc-results"))).toContain(SEARCH_AGAIN_SPEND_NOTE);
+    expect([...query(container, "form").querySelectorAll("p")].map((note) => words(note)).filter((note) => note.startsWith("Pressing Search"))).toEqual([]);
   });
 
   it("holds one page heading and at most one cyan fill, and never says anything is verified", () => {
@@ -483,6 +496,84 @@ describe("restored: an answer brought back from an earlier visit", () => {
   it("has no serious or critical axe violation", async () => {
     const { container } = draw(restored(response({ warnings: ["brave: down"], more: [job({ apply_url: "https://jobs.example/acme/2", score: null })], dead_removed: 2 })));
     await expectNoSeriousA11yViolations(container);
+  });
+});
+
+// What pressing Search costs, said before it is pressed. The sentence hangs under the form's buttons because the
+// band's Search and Search again submit this form and its Try again re-runs the same search; the band's own
+// sentences are shared with other pages and say nothing about spend.
+describe("what pressing Search costs, said under the form's buttons", () => {
+  const WHAT = "a real model call on your own key and can run several searches on each search key you have connected";
+  const SEARCH_WORDS = "Pressing Search makes a real model call on your own key and can run several searches on each search key you have connected.";
+  const AGAIN_WORDS = "Pressing Search again makes a real model call on your own key and can run several searches on each search key you have connected.";
+  const EM_OR_EN_DASH = new RegExp(`[${String.fromCharCode(0x2013)}${String.fromCharCode(0x2014)}]`);
+  const failed = () => ({
+    search: { kind: "error", message: "The service is down." } as SearchView,
+    outcome: band({}, { pageFailure: { what: "Couldn't finish the search", call: "GET /discover", at: "09:14", intent: "retry" } }),
+  });
+  const blocked = { message: "x", missing: [{ label: "Add a model key", to: "/settings#ai-provider" }] } as const;
+  const formNotes = (container: HTMLElement) => [...query(container, "form").querySelectorAll("p")].map((note) => words(note));
+  const costNotes = (container: HTMLElement) => formNotes(container).filter((note) => note.startsWith("Pressing Search"));
+  // The line right under the row that holds the form's buttons (found by its Save this search button, not by a class).
+  const underTheButtons = (container: HTMLElement) => buttonNamed(query(container, "form"), "Save this search").parentElement!.nextElementSibling;
+
+  it("says it under the buttons before a search has run, naming the band's Search, which submits this form", () => {
+    const { container } = draw();
+    expect(costNotes(container)).toEqual([SEARCH_WORDS]);
+    expect(SEARCH_WORDS).toBe(spendNotice("Search", WHAT));
+    const note = underTheButtons(container);
+    expect([note?.tagName, words(note)]).toEqual(["P", SEARCH_WORDS]);
+    const bandSearch = query<HTMLButtonElement>(bandOf(container), "button.bj-primary");
+    expect(words(bandSearch)).toBe("Search");
+    expect(bandSearch.form).toBe(query(container, "form"));
+    expect(SEARCH_WORDS.startsWith(`Pressing ${words(bandSearch)} makes `)).toBe(true);
+  });
+
+  it("leaves the band's own sentences alone: they are shared with other pages and say nothing about spend", () => {
+    for (const overrides of [{}, ready(), failed()]) {
+      const { container, unmount } = draw(overrides);
+      expect(words(bandOf(container))).not.toContain("Pressing");
+      unmount();
+    }
+  });
+
+  it("says Search again once a search has finished, the name of the form's own button, after an answer or a failure", () => {
+    for (const overrides of [ready(), failed()]) {
+      const { container, unmount } = draw(overrides);
+      expect(words(buttonNamed(query(container, "form"), "Search again"))).toBe("Search again");
+      expect(costNotes(container)).toEqual([AGAIN_WORDS]);
+      expect(AGAIN_WORDS).toBe(spendNotice("Search again", WHAT));
+      expect(words(underTheButtons(container))).toBe(AGAIN_WORDS);
+      unmount();
+    }
+  });
+
+  it("is still there while a search runs, so the form does not lose a line under the button that was pressed", () => {
+    const { container } = draw({ search: { kind: "loading", startedAt: NOW.getTime() }, outcome: band({ phase: "searching" }) });
+    expect(costNotes(container)).toHaveLength(1);
+    expect(costNotes(container)[0]).toMatch(/^Pressing Search( again)? makes a real model call on your own key and can run several searches on each search key you have connected\.$/);
+  });
+
+  it("is left out while setup blocks the search: the setup note is the one beside Search", () => {
+    const { container } = draw({ setup: blocked });
+    expect(costNotes(container)).toEqual([]);
+    expect(formNotes(container)).toContain(SETUP_BLOCKED_NOTE);
+  });
+
+  it("is drawn when only the server said setup is missing, because Search stays pressable and asks it again", () => {
+    const { container } = draw({ setup: { ...blocked, blocksSearch: false } });
+    expect(costNotes(container)).toEqual([SEARCH_WORDS]);
+    expect(formNotes(container)).not.toContain(SETUP_BLOCKED_NOTE);
+  });
+
+  it("calls the model's work a model call and the search keys' work searches, in plain words", () => {
+    for (const note of [SEARCH_WORDS, AGAIN_WORDS]) {
+      expect(note.match(/model call/g)).toHaveLength(1);
+      expect(note).toContain("several searches on each search key you have connected");
+      expect(note).not.toMatch(EM_OR_EN_DASH);
+      expect(note).not.toMatch(/verified|unknown model/i);
+      expect(findForbiddenWord(note)).toBeNull();
+    }
   });
 });
 

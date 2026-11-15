@@ -75,12 +75,25 @@ export interface DiscoverViewProps {
 
 export const SETUP_BLOCKED_NOTE = "Search is waiting on the setup above.";
 
-// What pressing Search again costs, said before it is pressed. A search asks every search provider the
-// person has connected, with their own keys, and scores what it finds with one call on their own model key.
-export const SEARCH_AGAIN_SPEND_NOTE = spendNotice("Search again", `${A_MODEL_CALL} and uses any search keys you have connected`);
+// What pressing Search costs, said before it is pressed. A search scores what it finds with one batched call
+// on the person's own model key, and asks each web-search key they have connected (You.com, Firecrawl, Serper,
+// Brave) several times, once per query. It says what a press can do, not what every press does: with no
+// search words those four are left alone, and the model call is skipped when no posting survives the link
+// checks.
+const SEARCH_SPEND = `${A_MODEL_CALL} and can run several searches on each search key you have connected`;
+
+/** The sentence for the form's Search, named as the person reads it: "Search" before one has run, "Search again" after. */
+export const searchSpendNote = (press: "Search" | "Search again"): string => spendNotice(press, SEARCH_SPEND);
+
+export const SEARCH_AGAIN_SPEND_NOTE = searchSpendNote("Search again");
 
 export function DiscoverView(props: DiscoverViewProps) {
   const { now, search, setup } = props;
+  const searched = search.kind === "ready" || search.kind === "error";
+  const blockedReason = setup === null || setup.blocksSearch === false ? null : SETUP_BLOCKED_NOTE;
+  // A restored answer's lead (below) already says what Search again costs, and a blocked search is not
+  // one anyone can press, so the form says nothing in either case.
+  const spendNote = blockedReason !== null || props.restored !== undefined ? null : searchSpendNote(searched ? "Search again" : "Search");
   return (
     <div className="bj-discover">
       <div className="bj-visually-hidden" role="status" aria-live="polite">
@@ -94,8 +107,9 @@ export function DiscoverView(props: DiscoverViewProps) {
         values={props.values}
         onChange={props.onValuesChange}
         searching={search.kind === "loading"}
-        searched={search.kind === "ready" || search.kind === "error"}
-        blockedReason={setup === null || setup.blocksSearch === false ? null : SETUP_BLOCKED_NOTE}
+        searched={searched}
+        blockedReason={blockedReason}
+        spendNote={spendNote}
         searchInBand={bandHoldsSearch(props.outcome)}
         bandPending={props.outcome.status === "loading"}
         onSearch={props.onSearch}

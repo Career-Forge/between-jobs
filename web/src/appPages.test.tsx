@@ -649,7 +649,7 @@ describe("Discover, coming back to its answer", () => {
     [...container.querySelectorAll("li.bj-disc-row a")].filter((link) => text(link) === "Open workspace").map((link) => link.getAttribute("href"));
   const staleLine = (container: HTMLElement) => [...container.querySelectorAll(".bj-disc-note")].filter((note) => text(note).startsWith("Showing your search from"));
   const STALE_LINE =
-    /^Showing your search from \d\d:\d\d\. The scores and link checks are from then and have not been refreshed\. Pressing Search again makes a real model call on your own key and uses any search keys you have connected\.$/;
+    /^Showing your search from \d\d:\d\d\. The scores and link checks are from then and have not been refreshed\. Pressing Search again makes a real model call on your own key and can run several searches on each search key you have connected\.$/;
 
   // One search, one Track, then the Open workspace link: the person is on the workspace with the answer left behind.
   async function searchTrackAndOpenTheWorkspace(width = 1000) {

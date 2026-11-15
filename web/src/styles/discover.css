@@ -89,6 +89,12 @@
   padding-inline: 0;
 }
 
+/* The sentences under the buttons say what a press costs. They sit in the form's own column, so its gap
+   spaces them, not the browser's paragraph margins. */
+.bj-disc-form > p.bj-muted {
+  margin: 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* The saved searches, folded into one row                              */
 /* ------------------------------------------------------------------ */

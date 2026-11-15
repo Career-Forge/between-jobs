@@ -12,6 +12,11 @@ import "../../styles/discover.css";
 // outlined "Search again" in every state, so the button a person pressed is never taken from under them.
 // Nothing here searches on its own.
 //
+// Under the buttons the form says what pressing Search costs (the sentence comes in as `spendNote`). The band's
+// Search and Search again submit this form and its Try again re-runs the same search, so the one line sits
+// beside all of them. It is left out while setup blocks the search and while a restored answer's own line is
+// saying the same thing.
+//
 // Busy controls are `aria-disabled`, not `disabled`, so focus stays where it is; the page's handlers
 // are the guard. Save this search keeps what the filters hold, for the background checks; it is a quiet
 // button, since saving is the lower-stakes action.
@@ -46,6 +51,11 @@ export interface DiscoverFormProps {
   searched: boolean;
   /** Setup is known to be missing: Search ignores presses, and the reason is said beside it. */
   blockedReason: string | null;
+  /**
+   * What pressing Search costs, said under the buttons. The band's Search, Search again and Try again make the
+   * same request, so the one sentence covers them. Null when it is said somewhere else or does not apply.
+   */
+  spendNote: string | null;
   /** The next-step band's button is this form's Search (a submit that names it). */
   searchInBand: boolean;
   /** The band has not decided yet (it is loading), so the form does not draw a Search that it would take away a moment later. */
@@ -55,7 +65,7 @@ export interface DiscoverFormProps {
   saving: boolean;
 }
 
-export function DiscoverForm({ values, onChange, searching, searched, blockedReason, searchInBand, bandPending, onSearch, onSave, saving }: DiscoverFormProps) {
+export function DiscoverForm({ values, onChange, searching, searched, blockedReason, spendNote, searchInBand, bandPending, onSearch, onSave, saving }: DiscoverFormProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const placeholder = useRolePlaceholder(values.q === "" && !searchFocused);
   const unavailable = searching || blockedReason !== null;
@@ -124,6 +134,7 @@ export function DiscoverForm({ values, onChange, searching, searched, blockedRea
           {saving ? "Saving..." : "Save this search"}
         </button>
       </div>
+      {spendNote !== null && <p className="bj-muted bj-small">{spendNote}</p>}
       {blockedReason !== null && (
         <p id="bj-discover-blocked" className="bj-disc-note">
           {blockedReason}

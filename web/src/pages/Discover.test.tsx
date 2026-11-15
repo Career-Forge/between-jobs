@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SEARCH_AGAIN_SPEND_NOTE } from "../components/discover/DiscoverView";
 import { HOLD_MAX_AGE_MS } from "../lib/discoverHold";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { clockTime } from "../lib/todayFeed";
 import { DiscoverHoldProvider } from "../lib/useDiscoverHold";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
@@ -356,6 +357,54 @@ describe("a search", () => {
     act(() => box.focus());
     await search(container);
     expect(document.activeElement).toBe(box);
+  });
+});
+
+// What pressing Search costs is said once, under the form's buttons, and it follows the form's own button: the
+// band's Search and Search again submit this form and its Try again re-runs the same search, so the one line
+// covers them.
+describe("what pressing Search costs", () => {
+  const SEARCH_WHAT = `${A_MODEL_CALL} and can run several searches on each search key you have connected`;
+  const costNotes = (container: HTMLElement) => [...form(container).querySelectorAll("p")].map((note) => words(note)).filter((note) => note.startsWith("Pressing Search"));
+
+  it("says Search costs a model call and several searches per key when the page opens, with nothing searched", async () => {
+    const { container } = await draw();
+    expect(costNotes(container)).toEqual([spendNotice("Search", SEARCH_WHAT)]);
+    expect(words(query(band(container), "button.bj-primary"))).toBe("Search");
+    expect(words(band(container))).not.toContain("Pressing");
+    expect(callsTo("GET /discover")).toEqual([]);
+  });
+
+  it("says Search again once an answer is on show, and says it once on the page", async () => {
+    answer({ "/discover?": response() });
+    const { container } = await draw();
+    await search(container);
+    expect(costNotes(container)).toEqual([spendNotice("Search again", SEARCH_WHAT)]);
+    expect(words(container).split(spendNotice("Search again", SEARCH_WHAT))).toHaveLength(2);
+  });
+
+  it("says Search again after a failed search, beside the band's Try again", async () => {
+    answer({ "/discover?": new FakeApiError(503, "The scoring model did not answer.", { code: "PROVIDER_UNAVAILABLE" }) });
+    const { container } = await draw();
+    await search(container);
+    expect(words(buttonNamed(band(container), "Try again"))).toBe("Try again");
+    expect(costNotes(container)).toEqual([spendNotice("Search again", SEARCH_WHAT)]);
+  });
+
+  it("says nothing while the setup reads show the search cannot work, and nothing was asked of the keys", async () => {
+    answer({ "/credentials": [] });
+    const { container } = await draw();
+    expect(words(form(container))).toContain("Search is waiting on the setup above.");
+    expect(costNotes(container)).toEqual([]);
+    expect(callsTo("GET /discover")).toEqual([]);
+  });
+
+  it("says it again once the server has answered that setup is missing, because the next press asks it again", async () => {
+    answer({ "/discover?": new FakeApiError(409, "Add a model key before searching.", { code: "SETUP_REQUIRED", capability: "job_scoring", missing: ["credential"] }) });
+    const { container } = await draw();
+    await search(container);
+    expect(container.querySelector(".bj-state--setup")).not.toBeNull();
+    expect(costNotes(container)).toEqual([spendNotice("Search", SEARCH_WHAT)]);
   });
 });
 
@@ -925,11 +974,23 @@ describe("coming back to the page", () => {
     expect(notes).toHaveLength(1);
     // The clock time is written in the reader's zone, so the expectation is written by the same function.
     expect(words(notes[0])).toBe(
-      `Showing your search from ${arrivedAt}. The scores and link checks are from then and have not been refreshed. Pressing Search again makes a real model call on your own key and uses any search keys you have connected.`,
+      `Showing your search from ${arrivedAt}. The scores and link checks are from then and have not been refreshed. Pressing Search again makes a real model call on your own key and can run several searches on each search key you have connected.`,
     );
     expect(words(notes[0])).toContain(SEARCH_AGAIN_SPEND_NOTE);
     expect(notes[0].parentElement).toBe(query(page.container, "section.bj-disc-results"));
     expect(notes[0].previousElementSibling?.tagName).toBe("H2");
+  });
+
+  it("does not say what Search again costs a second time under the form: the note under Results says it", async () => {
+    answer({ "/discover?": response() });
+    const page = await drawHeld();
+    await search(page.container);
+    expect(words(form(page.container))).toContain(spendNotice("Search again", `${A_MODEL_CALL} and can run several searches on each search key you have connected`));
+    await page.leave();
+    await page.comeBack();
+    expect(restoredNotes(page.container)).toHaveLength(1);
+    expect([...form(page.container).querySelectorAll("p")].map((note) => words(note)).filter((note) => note.startsWith("Pressing Search"))).toEqual([]);
+    expect(words(page.container).split(SEARCH_AGAIN_SPEND_NOTE)).toHaveLength(2);
   });
 
   it("makes no request and writes no first-run mark when it brings the answer back, only the three reads of the setup", async () => {
