@@ -34,7 +34,11 @@ import { PRIVACY_EMAIL, REPO_URL, SOURCE_LICENSE, SUPPORT_EMAIL } from "./site";
 // the version against that list. The DeepSeek and Alibaba Cloud (Qwen) entries now say where those
 // providers run (the same sentences the Settings page shows beside their key forms). That wording is a
 // proposal that needs the maintainer's approval, and was added after the date below was set, so it is
-// settled in the same pass that sets the version and the date.
+// settled in the same pass that sets the version and the date. The same goes for the Positioning briefs
+// bullet under "What your AI provider receives" and the Resume engine entry's mention of it: both were
+// corrected after the date below was set, to say that the posting text is read first and that the company,
+// the role title and the stored fit read are sent too. That is a disclosure correction to legal wording, and
+// it is waiting for the maintainer's approval, not settled here.
 export const LEGAL_VERSION = "2026-10-05";
 export const LEGAL_EFFECTIVE_DATE = { iso: "2026-10-05", label: "October 5, 2026" } as const;
 export const LEGAL_WHAT_CHANGED = "First version.";
@@ -205,7 +209,7 @@ export const PROCESSORS: readonly Processor[] = [
     name: "Resume engine",
     group: "service",
     detail: [
-      "Writes resumes and cover letters (and, on the hosted service, scores them), reads the requirements in a job posting for the Tailor panel, builds interview-practice context and previews your resume header. Whoever runs the server chooses how it runs. On the hosted service it is a private service run by the operator, separate from the API: with each request it receives your profile, the job posting text, and the AI key and model you chose, and it uses the key to call your AI provider for that one request. The engine does not store your key. That service is not part of the open-source repository yet. On a server set up without it, the engine built into the open-source API answers instead, inside the API itself: it handles the same data in the API's own process, uses your key for that one request and does not store it either, and for what it cannot do it says so rather than guess.",
+      "Writes resumes and cover letters (and, on the hosted service, scores them), reads the requirements in a job posting for the Tailor panel and for positioning briefs, builds interview-practice context and previews your resume header. Whoever runs the server chooses how it runs. On the hosted service it is a private service run by the operator, separate from the API: with each request it receives your profile, the job posting text, and the AI key and model you chose, and it uses the key to call your AI provider for that one request. The engine does not store your key. That service is not part of the open-source repository yet. On a server set up without it, the engine built into the open-source API answers instead, inside the API itself: it handles the same data in the API's own process, uses your key for that one request and does not store it either, and for what it cannot do it says so rather than guess.",
     ],
   },
   {
@@ -377,7 +381,7 @@ function processorBlocks(): Block[] {
           "Importing a resume file (PDF or DOCX): the text read from the file, which is your resume as you wrote it, so the model can fill in a draft profile for you to review. We do not keep the file itself.",
           "Company research: excerpts of public web pages found by your search provider, which the model turns into short claims.",
           "Contact research, event research and outreach drafts: the company, a contact's name and job title, the role, and excerpts of public web pages. They do not send your profile. In event research the AI provider sees only the excerpts of public pages: your city goes to your search provider as part of the search words and is not sent to the AI provider.",
-          "Positioning briefs: the job posting text, which the model reads first, through the resume engine as in the Tailor panel, to pick out what the role asks for; then your skills as matched against those requirements, the company research you already have and, if a fit check has run for the job, its recommendation and overall score.",
+          "Positioning briefs: the job posting text, which the model reads first, through the resume engine as in the Tailor panel, to pick out what the role asks for; then the company, the role title, your skills as matched against those requirements, the company research you already have and, if a fit check has run for the job, its recommendation and overall score.",
           "Interview practice: questions are written from the job's company, title and description, evidence in your resume and, where there is one, a company-level summary of how interviews there are run. The answers you type are sent for scoring and feedback along with the question and your resume evidence.",
           "The browser extension's Draft answer: the question's text, a summary of your profile and the job posting text, and then the draft again for a check. The summary leaves out your work-authorization note unless the question itself is about work authorization, a visa or sponsorship; the question and the job posting are sent marked as data the model is told not to obey.",
           "Gmail replies (only if you connect Gmail): the text of the newest reply in a thread of a draft we created, so it can be classified. This also runs in the background.",
