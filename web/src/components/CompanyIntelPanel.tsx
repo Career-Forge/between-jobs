@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { countWords, intelConfidence, runDate } from "../lib/research";
 import { intelTrail, failedTrail } from "../lib/researchTrails";
 import { SETTINGS_PATH } from "../lib/settingsPaths";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { useNow } from "../lib/useNow";
 import { useResearchRun } from "../lib/useResearchRun";
 import { BlockTrail } from "./paper/DocumentLayout";
@@ -62,6 +63,10 @@ const CATEGORY_LABELS: Record<string, string> = {
   relevant_news: "Relevant news",
 };
 
+// What one press of the run button costs. It sits in the intro, which stays on screen beside the button and its
+// Retry. The intro's next sentence describes the second, conditional model call.
+const RUN_SPEND = spendNotice("Research this company, or Refresh once it has run,", `${A_MODEL_CALL} and searches with your You.com or Firecrawl key`);
+
 // A dossier longer than this opens on its first few claims.
 export const COLLAPSE_ABOVE = 5;
 export const COLLAPSED_SHOWS = 3;
@@ -99,9 +104,8 @@ export function CompanyIntelPanel({ applicationId, now }: { applicationId: strin
   return (
     <div className="bj-rs">
       <p className="bj-ws-intro">
-        Sourced claims about this company. Each one links to a page your search returned, and the confidence beside it is your model's own reading. A run searches with your You.com or Firecrawl key
-        and calls your model to write the claims. When it finds claims about the interview process it calls your model once more, to build interview research that other people's practice sessions can
-        use too. It uses your own keys each time.
+        Sourced claims about this company. Each one links to a page your search returned, and the confidence beside it is your model's own reading. {RUN_SPEND} When it finds claims about the
+        interview process it calls your model once more, to build interview research that other people's practice sessions can use too.
       </p>
       <RunButton
         label={data !== null ? "Refresh" : "Research this company"}

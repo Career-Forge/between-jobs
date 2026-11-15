@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
 import { settle, text } from "../testing/forms";
@@ -115,6 +116,37 @@ describe("Company intel: loading, empty and a stored dossier", () => {
     const intro = text(query(container, ".bj-ws-intro"));
     expect(intro).not.toContain("one call");
     expect(intro).toContain("calls your model once more");
+  });
+
+  it("says in the intro, right above the run button's row, what pressing it costs: a model call on the person's own key and a search with their key", async () => {
+    on(`GET ${PATH}`, { run: null, claims: [] });
+    const { container } = panel();
+    await settle();
+    const sentence = spendNotice("Research this company, or Refresh once it has run,", `${A_MODEL_CALL} and searches with your You.com or Firecrawl key`);
+    expect(sentence).toBe("Pressing Research this company, or Refresh once it has run, makes a real model call on your own key and searches with your You.com or Firecrawl key.");
+    const intro = query(container, ".bj-ws-intro");
+    expect(text(intro)).toContain(sentence);
+    // The vague line it replaces is gone, and the second, conditional call is still described after it.
+    expect(text(intro)).not.toContain("uses your own keys each time");
+    expect(text(intro)).toContain("calls your model once more");
+    expect(text(intro).indexOf(sentence)).toBeLessThan(text(intro).indexOf("calls your model once more"));
+    // It is next to the control it is about: the intro sits directly above the row that holds the run button.
+    expect(buttonNamed(container, "Research this company").closest(".bj-actions")!.previousElementSibling).toBe(intro);
+  });
+
+  it("keeps the same sentence on screen for a stored run, whose button reads Refresh, and beside a failed run's Retry", async () => {
+    on(`GET ${PATH}`, stored([claim(1)]));
+    on(`POST ${PATH}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    const { container } = panel();
+    await settle();
+    const sentence = spendNotice("Research this company, or Refresh once it has run,", `${A_MODEL_CALL} and searches with your You.com or Firecrawl key`);
+    const intro = query(container, ".bj-ws-intro");
+    expect(text(intro)).toContain(sentence);
+    expect(buttonNamed(container, "Refresh").closest(".bj-actions")!.previousElementSibling).toBe(intro);
+    click(buttonNamed(container, "Refresh"));
+    await settle();
+    expect(buttonNamed(container, "Retry")).toBeTruthy();
+    expect(text(query(container, ".bj-ws-intro"))).toContain(sentence);
   });
 
   it("names a run with no claims, keeps its trail (it did run) and offers Refresh", async () => {
