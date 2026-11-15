@@ -18,6 +18,9 @@ import "../styles/workspace.css";
 //
 // What the block always says, so the list is never read as a verdict:
 //   - the legend: only flagged claims are listed, and one that was not flagged is not "supported";
+//   - a line over the rows that a model flagged them and may be wrong, Contradicted ones too: a
+//     contradicted claim is drawn in the same gold as an unverifiable one, never red, because it is a
+//     model's reading and not a failed check;
 //   - with nothing flagged: "No claims flagged in this run", never a count of grounded claims, and the
 //     caveat that not flagged is not verified, because a check that did not run reads the same way
 //     (the response does not say whether it ran);
@@ -51,7 +54,10 @@ export const CLAIM_CLOSING: Record<ClaimOutcome, string> = {
     "Where a line says it was removed or replaced, that text is no longer in the document; the rest is still there, so review it against your own background before you send anything.",
 };
 
-export const CLAIM_LEGEND = "◆ Unverifiable · ✕ Contradicted · claims that weren't flagged aren't listed";
+export const CLAIM_LEGEND = "◆ Unverifiable · ◆ Contradicted -- a model's reading, may be wrong · claims that weren't flagged aren't listed";
+// Drawn above the rows whenever there are any. A flag, a Contradicted one included, is a model's reading of the claim:
+// the hosted check has called true claims contradicted, so the block says so and never draws one as a failure.
+export const CLAIM_MODEL_NOTE = "A model flagged these claims and may be wrong about any of them, including the ones marked Contradicted.";
 export const ZERO_FLAG_CAVEAT =
   "Not flagged isn't verified: the check compares claims to the achievements picked for this draft, and a check that didn't run reads the same way.";
 
@@ -96,6 +102,7 @@ export function ClaimWarningsBanner({ warnings }: { warnings: readonly string[] 
           <p className="bj-ws-count">
             {flagged === 1 ? "1 claim flagged" : `${flagged} claims flagged`}
           </p>
+          {rows.length > 0 && <p className="bj-ws-caption">{CLAIM_MODEL_NOTE}</p>}
           {rows.length > 0 && (
             <ClaimList label="Flagged claims">
               {rows.map(({ warning, claim }) => (

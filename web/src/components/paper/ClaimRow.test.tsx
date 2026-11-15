@@ -42,24 +42,37 @@ describe("ClaimRow", () => {
       expect(chip.classList.contains(`bj-claimrow-chip--${status}`)).toBe(true);
       unmount();
     }
-    expect(words).toEqual(["Supported", "Unverifiable", "Contradicted", "Not checked"]);
-    // Contradicted and unchecked each have a mark of their own; the two gold ones differ by their word.
-    expect(marks.get("contradicted")).toBe("✕");
+    expect(words).toEqual(["Supported", "Unverifiable", "Contradicted -- a model's reading, may be wrong", "Not checked"]);
+    // The three gold chips share a mark and are told apart by their word; the unchecked one has a mark of its own.
     expect(marks.get("unchecked")).toBe("○");
     expect(marks.get("supported")).toBe("◆");
     expect(marks.get("unverifiable")).toBe("◆");
+    expect(marks.get("contradicted")).toBe("◆");
     expect(new Set(words).size).toBe(4);
+  });
+
+  it("draws a contradicted claim as a model's reading in the unverifiable gold, never with the failure cross or the danger tone", () => {
+    const { container } = render(<ClaimRow as="div" status="contradicted" claim="Led 20 engineers" />);
+    const chip = query(container, ".bj-claimrow-chip");
+    expect(chip.className).toBe("bj-claimrow-chip bj-claimrow-chip--contradicted");
+    expect(text(chip)).toBe("◆ Contradicted -- a model's reading, may be wrong");
+    expect(query(chip, ".bj-trail-glyph").className).toBe("bj-trail-glyph bj-trail-glyph--gold");
+    expect(container.innerHTML).not.toMatch(/danger|✕/);
+    // The same glyph and tone as unverifiable, so the two read as one family of flags.
+    const other = render(<ClaimRow as="div" status="unverifiable" claim="A claim" />);
+    expect(query(query(other.container, ".bj-claimrow-chip"), ".bj-trail-glyph").className).toBe(query(chip, ".bj-trail-glyph").className);
   });
 
   it("draws the mark aria-hidden and lets the word carry the meaning", () => {
     const { container } = render(<ClaimRow as="div" status="contradicted" claim="A claim" />);
     const chip = query(container, ".bj-claimrow-chip");
-    expect(query(chip, "[aria-hidden='true']").textContent).toBe("✕");
-    expect(chip.textContent?.replace("✕", "").trim()).toBe("Contradicted");
+    expect(query(chip, "[aria-hidden='true']").textContent).toBe("◆");
+    expect(chip.textContent?.replace("◆", "").trim()).toBe("Contradicted -- a model's reading, may be wrong");
   });
 
-  it("takes its marks from the shared trail glyph set: ◆ evidence, ✕ failed, ○ not checked", () => {
-    expect(CLAIM_CHIPS.contradicted.glyph).toBe("failed");
+  it("takes its marks from the shared trail glyph set: ◆ evidence for every flag, ○ not checked, and never ✕ failed", () => {
+    expect(CLAIM_CHIPS.contradicted.glyph).toBe("evidence");
+    expect(Object.values(CLAIM_CHIPS).map((chip) => chip.glyph)).not.toContain("failed");
     expect(CLAIM_CHIPS.unchecked.glyph).toBe("code");
     expect(CLAIM_CHIPS.unverifiable.glyph).toBe("evidence");
     expect(CLAIM_CHIPS.supported.glyph).toBe("evidence");

@@ -538,9 +538,10 @@ select.bj-jump-select-control optgroup {
   min-width: 0;
 }
 
-/* The chip is an outline with a mark and a word. Gold for what is only unproven, red for what is
-   contradicted, muted for what was not looked at: and each has its own word, so the border color is
-   never the only difference. */
+/* The chip is an outline with a mark and a word. Gold for what is only unproven or a model's reading
+   (a claim a model calls contradicted is that, and may be wrong), muted for what was not looked at: and
+   each has its own word, so the border color is never the only difference. Nothing here is red: red is
+   for a check that ran and failed. */
 .bj-claimrow-chip {
   flex: none;
   display: inline-flex;
@@ -556,17 +557,24 @@ select.bj-jump-select-control optgroup {
 }
 
 .bj-claimrow-chip--supported,
-.bj-claimrow-chip--unverifiable {
+.bj-claimrow-chip--unverifiable,
+.bj-claimrow-chip--contradicted {
   border-color: var(--bj-gold);
 }
 
 /* Flagged is drawn differently from backed: a dashed outline says nothing here confirms the claim. */
-.bj-claimrow-chip--unverifiable {
+.bj-claimrow-chip--unverifiable,
+.bj-claimrow-chip--contradicted {
   border-style: dashed;
 }
 
+/* Its word is a sentence ("Contradicted -- a model's reading, may be wrong"), too long for the one line the
+   other chips keep: it wraps inside a width of its own, so a phone is never pushed sideways by it. */
 .bj-claimrow-chip--contradicted {
-  border-color: var(--bj-danger);
+  max-width: 15rem;
+  padding-block: 4px;
+  line-height: 1.3;
+  white-space: normal;
 }
 
 .bj-claimrow-body {

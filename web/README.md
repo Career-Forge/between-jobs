@@ -237,13 +237,17 @@ that code computed; a model's judgement gets the model mark in its trail, not th
 **`ClaimRow`, `ClaimList`** (`components/paper/ClaimRow.tsx`). One claim and what is known about it: `status`
 ("supported", "unverifiable", "contradicted" or "unchecked"), `claim` (verbatim, without quotation marks), `reason?`,
 `actions?`, `as?` ("li" or "div"). Each status has a word and a mark as well as an outline: ◆ Supported (solid gold),
-◆ Unverifiable (dashed gold), ✕ Contradicted (red), ○ Not checked (muted). The claim check lists only what it flagged,
+◆ Unverifiable (dashed gold), ◆ Contradicted -- a model's reading, may be wrong (the same dashed gold, never red),
+○ Not checked (muted). Contradicted is a model's judgement and the hosted check has called true claims contradicted,
+so it is worded as a reading that may be wrong and kept out of the red, which is for a check that ran and failed
+(a ✕ Fail row, a failed run). The claim check lists only what it flagged,
 so a claim it did not flag is not drawn as "supported": not flagged is not backed. Use "supported" only where
 something named does back the claim. The sentences around the list are the page's to write, because the
 components do not supply them: the claim check's always-visible legend ("claims that weren't flagged aren't
-listed"), its "Flags only -- nothing was auto-edited or blocked" footer, and the zero-flag state with its "Not
-flagged isn't verified" caveat; for the checklist, the "Checked by code · no model involved" trail and the
-one-page caveat. Leaving one out turns an honest list into a verdict.
+listed"), its line over the rows that a model flagged them and may be wrong, its "Flags only -- nothing was
+auto-edited or blocked" footer, and the zero-flag state with its "Not flagged isn't verified" caveat; for the
+checklist, the "Checked by code · no model involved" trail and the one-page caveat. Leaving one out turns an honest
+list into a verdict.
 
 **`ChecklistGroup`, `ChecklistRow`, `ChecklistSummary`** (`components/paper/ChecklistRow.tsx`, counts in
 `lib/checklistSummary.ts`). The rows of a review checklist: `ChecklistGroup` (`title`, `rows` with an `id` each,
@@ -524,8 +528,8 @@ failure of one panel never changes the band. Its states and wording are under "R
   PDF hash, ATS attempts and gate in its receipt), the ATS score (engine), the claim check, the export checks (code, no
   model) and Tailor. A slot that was not returned is left out. A result read back from storage says it was restored,
   with no date.
-- **Claims** (`lib/claimWarnings.ts`) are parsed from the engines' warnings into rows: unverifiable or contradicted, the
-  claim in its own words, and what the built-in engine did to it when it acted. A warning that does not read as a claim
+- **Claims** (`lib/claimWarnings.ts`) are parsed from the engines' warnings into rows: unverifiable or contradicted (both gold: a model's
+  reading), the claim in its own words, and what the built-in engine did to it when it acted. A warning that does not read as a claim
   is shown as plain text. Zero flagged says "No claims flagged in this run" and that not flagged is not verified.
 - **The export checks' "I checked this" marks** are the person's own for the visit: not saved, not counted in the
   summary, read by nothing, and cleared when a new generation resets the checks. A page that could not show a stored
