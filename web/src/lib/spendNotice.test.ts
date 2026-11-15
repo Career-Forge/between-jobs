@@ -26,6 +26,13 @@ describe("spendNotice", () => {
     );
   });
 
+  it("opens with Pressing unless it is told the work starts on a choice", () => {
+    expect(spendNotice("Check coverage", A_MODEL_CALL, "Pressing")).toBe(spendNotice("Check coverage", A_MODEL_CALL));
+    expect(spendNotice("a file", `${A_MODEL_CALL}, and a second one if the first answer can't be read`, "Choosing")).toBe(
+      "Choosing a file makes a real model call on your own key, and a second one if the first answer can't be read.",
+    );
+  });
+
   it("starts with the press and ends with a single period, whatever it is given", () => {
     for (const [press, what] of [
       ["Check coverage", A_MODEL_CALL],

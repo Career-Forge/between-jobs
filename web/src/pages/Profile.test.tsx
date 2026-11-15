@@ -943,6 +943,8 @@ function chooseFile(container: HTMLElement) {
   });
 }
 
+const CHOOSING_COSTS = "Choosing a file makes a real model call on your own key, and a second one if the first answer can't be read.";
+
 async function readFile(container: HTMLElement) {
   chooseFile(container);
   await settle(5);
@@ -954,6 +956,29 @@ describe("a resume file's draft for a person with a profile", () => {
   beforeEach(() => {
     describeAccount();
     upload.fetchBytes.mockResolvedValue(DRAFT);
+  });
+
+  // The file is sent to the model the moment it is chosen, so the card says what that costs before the
+  // person chooses, and nothing is sent until they do.
+  it("says in the card, above Choose a file, that choosing a file makes a real model call on the person's own key, and sends nothing until a file is chosen", async () => {
+    const { container } = page();
+    await settle();
+    const card = query(container, "#resume-import");
+    const notes = [...card.querySelectorAll("p")].filter((p) => text(p) === CHOOSING_COSTS);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].compareDocumentPosition(buttonNamed(card, "Choose a file")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(upload.fetchBytes).not.toHaveBeenCalled();
+    // Choosing is the whole of the action: no other press stands between the file and the model.
+    chooseFile(container);
+    await settle(5);
+    expect(upload.fetchBytes).toHaveBeenCalledTimes(1);
+  });
+
+  it("says nothing of choosing a file once the draft is on screen", async () => {
+    const { container } = page();
+    await settle();
+    await readFile(container);
+    expect(text(query(container, "#resume-import"))).not.toContain("Choosing a file");
   });
 
   it("sends the file as bytes, and shows the draft in its card with its trail, leaving the profile above it", async () => {
@@ -1139,6 +1164,17 @@ describe("the file import card with no usable model key", () => {
     expect(query<HTMLAnchorElement>(card, ".bj-state--setup a").getAttribute("href")).toBe("/settings#ai-provider");
     expect(buttonNamed(card, "Choose a file").getAttribute("aria-disabled")).toBe("true");
     expect(cyan(container)).toHaveLength(1);
+  });
+
+  it("still says what choosing a file costs, above the missing-key notice, while the file button is off", async () => {
+    describeAccount({ credentials: [] });
+    const { container } = page();
+    await settle();
+    const card = query(container, "#resume-import");
+    const notes = [...card.querySelectorAll("p")].filter((p) => text(p) === CHOOSING_COSTS);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].compareDocumentPosition(query(card, ".bj-state--setup")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(buttonNamed(card, "Choose a file").getAttribute("aria-disabled")).toBe("true");
   });
 
   // The sentence "pasting your profile as JSON, below, needs no key" is said by the file card and made true

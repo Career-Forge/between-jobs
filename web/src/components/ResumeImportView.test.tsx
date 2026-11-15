@@ -12,8 +12,9 @@ import {
 } from "../lib/resumeImport";
 import { parseImportResponse, type ImportDraft } from "../lib/resumeImportDraft";
 import { buildReview, allFields } from "../lib/resumeImportReview";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { headingLevels, tagsOf, textOfMarkup } from "../testing/markup";
-import { buttonsLabelled, expand, findAll, onlyButton, press, textOf, type TreeNode } from "../testing/reactTree";
+import { buttonsLabelled, expand, findAll, isHost, onlyButton, press, textOf, type TreeNode } from "../testing/reactTree";
 import viewSource from "./ResumeImportView.tsx?raw";
 import {
   ALREADY_ACTIVE_NOTICE,
@@ -22,6 +23,7 @@ import {
   IMPORT_LIMITS,
   IMPORT_MARK_ID,
   IMPORT_PRIVACY_STATEMENT,
+  IMPORT_SPEND,
   IMPORT_TITLE,
   LEAVE_NOTE,
   LEFT_EMPTY_INTRO,
@@ -178,6 +180,42 @@ describe("the card before anything is chosen", () => {
     expect(IMPORT_LIMITS).toBe("PDF or DOCX, up to 5 MiB.");
   });
 
+  // The file is read by a model the moment it is chosen, with no second press, so the cost is said above
+  // the button that opens the chooser, in the same words as every other control that spends the person's key.
+  it("says, above Choose a file, that choosing a file makes a real model call on the person's own key, and a second if the first answer can't be read", () => {
+    const sentence = "Choosing a file makes a real model call on your own key, and a second one if the first answer can't be read.";
+    expect(IMPORT_SPEND).toBe(sentence);
+    const nodes = tree(initialImportState);
+    const notes = findAll(nodes, (el) => el.type === "p" && textOf(el) === sentence);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].props.className).toBe("bj-muted bj-small");
+    // In the panel's own order: the privacy statement, the limits, this sentence, then the button that starts the work.
+    const panel = findAll(nodes, (el) => el.type === "div" && el.children.includes(notes[0]))[0];
+    const kids = panel.children.filter(isHost);
+    const at = (predicate: (el: (typeof kids)[number]) => boolean) => kids.findIndex(predicate);
+    const privacy = at((el) => el.type === "p" && textOf(el) === IMPORT_PRIVACY_STATEMENT);
+    const limits = at((el) => el.type === "p" && textOf(el) === IMPORT_LIMITS);
+    const spend = at((el) => el === notes[0]);
+    const choose = at((el) => buttonsLabelled([el], "Choose a file").length === 1);
+    expect(privacy).toBe(0);
+    expect(limits).toBe(privacy + 1);
+    expect(spend).toBe(limits + 1);
+    expect(choose).toBeGreaterThan(spend);
+    // It is words next to the button, not a control of its own.
+    expect(findAll(notes, (el) => el.type === "button" || el.type === "a")).toHaveLength(0);
+    expect(textOfMarkup(html)).toContain(sentence);
+  });
+
+  it("leaves the privacy statement and the limits as they were, and words the spend as the same sentence every spending control uses", () => {
+    expect(IMPORT_PRIVACY_STATEMENT).toBe(
+      "The text of your file is sent to your own AI provider, using the model key you saved in Settings, so a model can fill in a draft profile for you to review. We do not keep the file itself.",
+    );
+    expect(IMPORT_LIMITS).toBe("PDF or DOCX, up to 5 MiB.");
+    expect(IMPORT_SPEND).toBe(spendNotice("a file", `${A_MODEL_CALL}, and a second one if the first answer can't be read`, "Choosing"));
+    expect(IMPORT_SPEND).not.toMatch(/[\u2013\u2014]/);
+    expect(IMPORT_SPEND).not.toMatch(/verified|unknown model|search call/i);
+  });
+
   it("says nothing the privacy policy does not: it has the same two statements in its own list", () => {
     const policy = JSON.stringify(PRIVACY);
     expect(policy).toContain("Importing a resume file (PDF or DOCX)");
@@ -221,6 +259,40 @@ describe("the card before anything is chosen", () => {
   it("offers no review controls", () => {
     expect(buttonsLabelled(tree(initialImportState), USE_LABEL)).toHaveLength(0);
     expect(buttonsLabelled(tree(initialImportState), DISCARD_LABEL)).toHaveLength(0);
+  });
+});
+
+describe("what choosing a file costs, in every state that draws the file button", () => {
+  const SENTENCE = "Choosing a file makes a real model call on your own key, and a second one if the first answer can't be read.";
+
+  it.each([
+    ["idle", initialImportState],
+    ["a file being read", { kind: "reading", fileName: "a.pdf" } as ImportState],
+    ["a file being sent", { kind: "uploading", fileName: "a.pdf" } as ImportState],
+    ["a failed upload", FAILED],
+    ["a draft that was used", { kind: "activated", replacedCurrent: true } as ImportState],
+    ["a draft that was discarded", { kind: "discarded", keptInHistory: false } as ImportState],
+  ])("says it once above the file button after %s", (_name, state) => {
+    const nodes = tree(state);
+    expect(findAll(nodes, (el) => el.type === "p" && textOf(el) === SENTENCE)).toHaveLength(1);
+    expect(textOfMarkup(render(state)).split(SENTENCE)).toHaveLength(2);
+  });
+
+  it("says nothing of choosing a file once a draft is on screen: the file has been read and nothing is left to choose", () => {
+    for (const state of [reviewState(), importReducer(reviewState(), { type: "discard_started" })]) {
+      expect(textOfMarkup(render(state))).not.toContain("Choosing a file");
+    }
+  });
+
+  it("is still said while the page knows no model key is usable, above the notice that says one is needed", () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <ResumeImportView state={initialImportState} replacesCurrent actions={actionsOf()} modelKey="none" />
+      </MemoryRouter>,
+    );
+    const text = textOfMarkup(html);
+    expect(text).toContain(SENTENCE);
+    expect(text.indexOf(SENTENCE)).toBeLessThan(text.indexOf("Importing from a resume file uses your own AI model"));
   });
 });
 

@@ -25,10 +25,17 @@ export const A_MODEL_CALL = "a real model call on your own key";
 export const SEVERAL_MODEL_CALLS = "several real model calls on your own key";
 
 /**
+ * The word a notice opens with. A button is "Pressing" it; the one control that starts its work the
+ * moment a file is picked, with no button to press afterwards, is "Choosing" the file.
+ */
+export type SpendAction = "Pressing" | "Choosing";
+
+/**
  * "Pressing <press> makes <what>." -- `press` is the control's own label as the person reads it
  * ("Check coverage"), `what` is the spend ({@link A_MODEL_CALL}, {@link SEVERAL_MODEL_CALLS}, or one of
- * those followed by more words) without a closing period.
+ * those followed by more words) without a closing period. `action` is "Pressing" unless the work starts
+ * on a choice rather than a press ("Choosing a file makes ...").
  */
-export function spendNotice(press: string, what: string): string {
-  return `Pressing ${press} makes ${what}.`;
+export function spendNotice(press: string, what: string, action: SpendAction = "Pressing"): string {
+  return `${action} ${press} makes ${what}.`;
 }

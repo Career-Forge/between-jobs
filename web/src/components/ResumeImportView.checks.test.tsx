@@ -207,6 +207,8 @@ describe("the other states of the card draw no cyan fill and no inline style", (
 });
 
 describe("setup known to be missing", () => {
+  const CHOOSING_COSTS = "Choosing a file makes a real model call on your own key, and a second one if the first answer can't be read.";
+
   const idle = (modelKey?: "none" | "needs_key" | "needs_model" | "ready", actions = actionsOf()) =>
     render(
       <MemoryRouter>
@@ -230,6 +232,14 @@ describe("setup known to be missing", () => {
     expect(link.getAttribute("href")).toBe("/settings#ai-provider");
   });
 
+  it.each([["none"], ["needs_key"], ["needs_model"]] as const)("still says what choosing a file costs, above the missing-key notice, for a key reading of %s", (reading) => {
+    const { container } = idle(reading);
+    const note = [...container.querySelectorAll("p")].filter((p) => text(p) === CHOOSING_COSTS);
+    expect(note).toHaveLength(1);
+    expect(note[0].compareDocumentPosition(query(container, ".bj-state--setup")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note[0].compareDocumentPosition(buttonNamed(container, "Choose a file")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("switches 'Choose a file' off and sends nothing while it is known to be missing, and keeps it focusable", () => {
     const actions = { ...actionsOf(), chooseFile: vi.fn() };
     const { container } = idle("none", actions);
@@ -244,6 +254,8 @@ describe("setup known to be missing", () => {
     const actions = { ...actionsOf(), chooseFile: vi.fn() };
     const { container } = idle(reading, actions);
     expect(container.querySelector(".bj-state--setup")).toBeNull();
+    // What choosing costs is said whatever the keys say: it is not a setup message.
+    expect([...container.querySelectorAll("p")].filter((p) => text(p) === CHOOSING_COSTS)).toHaveLength(1);
     const choose = buttonNamed(container, "Choose a file");
     expect(choose.hasAttribute("aria-disabled")).toBe(false);
     click(choose);

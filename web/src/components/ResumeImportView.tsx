@@ -15,6 +15,7 @@ import type { Failure } from "../lib/setupRequired";
 import { MODEL_CHOICE_LABEL, type ModelKeyReading } from "../lib/modelKey";
 import { IMPORT_REVIEW_ID } from "../lib/nextStep/pages/profile";
 import { MODEL_PROVIDER_PATH } from "../lib/settingsPaths";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { SetupRequiredState } from "./paper/StateViews";
 import { SetupRequiredNotice } from "./SetupRequiredNotice";
 import "../styles/profile.css";
@@ -61,6 +62,11 @@ export const IMPORT_PRIVACY_STATEMENT =
   "The text of your file is sent to your own AI provider, using the model key you saved in Settings, so a model can fill in a draft profile for you to review. We do not keep the file itself.";
 
 export const IMPORT_LIMITS = `PDF or DOCX, up to ${MAX_IMPORT_BYTES / (1024 * 1024)} MiB.`;
+
+// What choosing a file costs. The file is sent the moment it is chosen, with no second press, so this
+// is said above "Choose a file" and not after it. The server asks the model once, and asks again only
+// when the first reply could not be read as a profile (a hard cap of two).
+export const IMPORT_SPEND = spendNotice("a file", `${A_MODEL_CALL}, and a second one if the first answer can't be read`, "Choosing");
 
 export const REVIEW_TITLE = "Check what was read from your file";
 export const REVIEW_LABEL = "Read from your file by an AI model: check every field before you use it";
@@ -200,6 +206,7 @@ function UploadPanel({
     <div>
       <p className="bj-muted">{IMPORT_PRIVACY_STATEMENT}</p>
       <p className="bj-muted bj-small">{IMPORT_LIMITS}</p>
+      <p className="bj-muted bj-small">{IMPORT_SPEND}</p>
 
       {missingKey && (
         <SetupRequiredState
