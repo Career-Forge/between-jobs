@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AtsAttempt } from "../lib/generateTypes";
-import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
+import { A_MODEL_CALL, SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
 import { settle, text, typeInto } from "../testing/forms";
@@ -32,18 +32,42 @@ describe("Close the gaps", () => {
     expect(buttonNamed(open().container, "Close the gaps")).toBeTruthy();
   });
 
-  it("asks for questions only on the click, says how many and that a no costs nothing", async () => {
+  it("asks for questions only on the click, says how many and that a no changes nothing", async () => {
     on("POST /resume-documents/doc-1/gap-interview", QUESTIONS);
     const { container } = open();
     await settle();
     expect(callsTo("POST /resume-documents/doc-1/gap-interview")).toHaveLength(0);
     expect(text(container)).toContain("Up to 3 questions");
+    expect(text(container)).toContain("a no changes nothing.");
+    // "costs you nothing" read as free, and pressing the button is not free.
+    expect(text(container)).not.toContain("costs you nothing");
     click(buttonNamed(container, "Close the gaps"));
     await settle();
     expect(text(container)).toContain("Have you worked with an event stream?");
     expect(text(container)).toContain("Streaming systems");
     expect(text(query(container, ".bj-ws-gap-head"))).toContain("Worded by your model");
     expect(text(container)).toContain("Hard cap: 3 questions per application.");
+  });
+
+  it("says, beside Close the gaps, that pressing it makes a model call to read the posting and a second one to word the questions", () => {
+    const { container } = open();
+    const sentence = spendNotice(
+      "Close the gaps",
+      `${A_MODEL_CALL} to read the posting, and a second one to word the questions when it finds a gap worth asking about`,
+    );
+    expect(sentence).toBe(
+      "Pressing Close the gaps makes a real model call on your own key to read the posting, and a second one to word the questions when it finds a gap worth asking about.",
+    );
+    const note = buttonNamed(container, "Close the gaps").nextElementSibling;
+    expect(note).not.toBeNull();
+    expect(note!.classList.contains("bj-muted")).toBe(true);
+    expect(text(note!)).toBe(
+      `Up to 3 questions, drafted from your own profile -- a yes becomes a fact you approve first, and a no changes nothing. ${sentence}`,
+    );
+    // It can make a second call, so it never reads as a single one, and it is not a search call.
+    expect(sentence).toMatch(/a second one/);
+    expect(sentence).not.toMatch(/search/i);
+    expect(sentence).not.toMatch(/[\u2013\u2014]/);
   });
 
   it("says when there is no honest gap to ask about, and names a failure with Try again", async () => {

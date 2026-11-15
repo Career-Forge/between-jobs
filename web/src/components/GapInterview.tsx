@@ -9,7 +9,7 @@ import type {
 } from "../lib/generateTypes";
 import type { ResumeDocument } from "../lib/headerComposerTypes";
 import { latestAttempt } from "../lib/scoreBreakdown";
-import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
+import { A_MODEL_CALL, SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { GlyphMark } from "./paper/TrailLine";
 import "../styles/workspace.css";
 
@@ -200,7 +200,11 @@ export function GapInterview({
           </button>
           <div className="bj-muted bj-small">
             Up to 3 questions, drafted from your own profile -- a yes becomes a fact you
-            approve first; a no costs you nothing.
+            approve first, and a no changes nothing.{" "}
+            {spendNotice(
+              "Close the gaps",
+              `${A_MODEL_CALL} to read the posting, and a second one to word the questions when it finds a gap worth asking about`,
+            )}
           </div>
         </div>
       )}
