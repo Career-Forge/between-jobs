@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SEARCH_AGAIN_SPEND_NOTE } from "../components/discover/DiscoverView";
 import { HOLD_MAX_AGE_MS } from "../lib/discoverHold";
+import { clockTime } from "../lib/todayFeed";
 import { DiscoverHoldProvider } from "../lib/useDiscoverHold";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { job, mixedResponse, response, score } from "../testing/discoverFixtures";
@@ -863,6 +864,10 @@ const restoredNotes = (container: HTMLElement) => [...container.querySelectorAll
 const openWorkspaceLinks = (container: HTMLElement) =>
   [...container.querySelectorAll<HTMLAnchorElement>("li.bj-disc-row a")].filter((link) => words(link) === "Open workspace").map((link) => link.getAttribute("href"));
 const SETUP_GETS = ["GET /credentials", "GET /profile/current", "GET /saved-searches"];
+// When the answer in the timed tests arrived, and the clock time the page writes for it (in whatever zone the
+// suite runs in, so the expectation is built by the page's own function and not typed out).
+const ARRIVED = Date.UTC(2026, 10, 14, 14, 5, 0);
+const arrivedAt = clockTime(new Date(ARRIVED));
 
 describe("coming back to the page", () => {
   describe.each([
@@ -909,17 +914,18 @@ describe("coming back to the page", () => {
 
   it("says when the answer is from and that nothing was refreshed, in the one note above the results, and says what searching again spends", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(Date.UTC(2026, 10, 14, 14, 5, 0));
+    vi.setSystemTime(ARRIVED);
     answer({ "/discover?": response() });
     const page = await drawHeld();
     await search(page.container);
     await page.leave();
-    vi.setSystemTime(Date.UTC(2026, 10, 14, 15, 0, 0));
+    vi.setSystemTime(ARRIVED + 55 * 60_000);
     await page.comeBack();
     const notes = restoredNotes(page.container);
     expect(notes).toHaveLength(1);
+    // The clock time is written in the reader's zone, so the expectation is written by the same function.
     expect(words(notes[0])).toBe(
-      "Showing your search from 14:05. The scores and link checks are from then and have not been refreshed. Pressing Search again makes a real model call on your own key and uses any search keys you have connected.",
+      `Showing your search from ${arrivedAt}. The scores and link checks are from then and have not been refreshed. Pressing Search again makes a real model call on your own key and uses any search keys you have connected.`,
     );
     expect(words(notes[0])).toContain(SEARCH_AGAIN_SPEND_NOTE);
     expect(notes[0].compareDocumentPosition(query(page.container, ".bj-disc-results")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -1086,7 +1092,7 @@ describe("coming back to the page", () => {
   });
 
   describe("how long an answer is kept", () => {
-    const T = Date.UTC(2026, 10, 14, 14, 5, 0);
+    const T = ARRIVED;
 
     async function searchedAndAway() {
       vi.useFakeTimers({ toFake: ["Date"] });
@@ -1104,7 +1110,7 @@ describe("coming back to the page", () => {
       vi.setSystemTime(T + HOLD_MAX_AGE_MS);
       await page.comeBack();
       expect(titles(page.container)).toEqual(["Data Engineer"]);
-      expect(words(restoredNotes(page.container)[0])).toContain("Showing your search from 14:05.");
+      expect(words(restoredNotes(page.container)[0])).toContain(`Showing your search from ${arrivedAt}.`);
     });
 
     it("starts the page and the form empty once the limit has passed", async () => {
