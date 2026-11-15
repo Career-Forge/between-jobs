@@ -57,6 +57,7 @@ import {
   type HostElement,
   expand,
   findAll,
+  isHost,
   onlyButton,
   press,
   prop,
@@ -340,6 +341,31 @@ describe("the idle tab", () => {
     expect(text).toContain("Searches run only when you ask.");
     expect(text).toContain("A saved search keeps just the role and location");
     expect(text).toContain("it does not run or watch anything");
+  });
+
+  it("says, under the form's buttons, that pressing Search makes a search call on the person's own key, before the line that says searches run only when asked", () => {
+    const spend =
+      "Pressing Search makes a real search call on your own search key, then tries each other search key you have saved only if that one fails or finds no posts.";
+    const cache = "A search repeated soon after is usually answered from a cache, which makes no new call.";
+    const form = findAll(tree(ready(), NO_ACTIONS), (el) => el.type === "form")[0];
+    const notes = findAll(form.children, (el) => el.type === "p");
+    expect(notes).toHaveLength(1);
+    expect(textOf(notes[0]).replace(/\s+/g, " ").trim()).toBe(
+      `${spend} ${cache} Searches run only when you ask. A saved search keeps just the role and location -- it does not run or watch anything.`,
+    );
+    // It follows the form's own Search and Save this search buttons rather than sitting above them.
+    const kids = form.children;
+    const buttonsRow = kids.findIndex((c) => isHost(c) && findAll([c], (el) => prop(el, "id") === TAB_SEARCH_BUTTON_ID).length === 1);
+    expect(buttonsRow).toBeGreaterThan(-1);
+    expect(kids.indexOf(notes[0])).toBeGreaterThan(buttonsRow);
+    expect(textOf(notes[0])).not.toMatch(/model/i);
+    expect(textOf(notes[0])).not.toMatch(/[\u2013\u2014]/);
+  });
+
+  it("gives Save this search no spend sentence of its own: saving spends nothing and runs nothing", () => {
+    const text = visibleText(idle);
+    expect(text).not.toContain("Pressing Save this search");
+    expect(text.match(/Pressing /g) ?? []).toHaveLength(1);
   });
 
   it("shows no results, no saved lists and no embed before anything has happened", () => {

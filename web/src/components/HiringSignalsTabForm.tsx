@@ -1,4 +1,4 @@
-import { FRESHNESS_OPTIONS } from "../lib/hiringSignals";
+import { FRESHNESS_OPTIONS, HIRING_SEARCH_CACHE_NOTE, hiringSearchSpend } from "../lib/hiringSignals";
 import { savedTrail } from "../lib/hiringSignalsTrail";
 import { HIRING_FORM_ID } from "../lib/nextStep/pages/hiring-signals";
 import { FailureState } from "./paper/StateViews";
@@ -83,6 +83,10 @@ export interface SavedSearchesActions {
 }
 
 const LOCATION_HINT_ID = "hst-location-hint";
+
+// What pressing Search costs. It sits under the form's buttons, and covers the next-step band's Search, which
+// submits this form, and its Try again after a failed search, which re-runs the same search.
+const SEARCH_SPEND = hiringSearchSpend("Search");
 
 export function SearchForm({ state, actions }: { state: TabState; actions: FormActions }) {
   const { form, fieldErrors, search } = state;
@@ -205,8 +209,8 @@ export function SearchForm({ state, actions }: { state: TabState; actions: FormA
       )}
 
       <p className="bj-muted bj-small">
-        Searches run only when you ask. A saved search keeps just the role and location -- it does
-        not run or watch anything.
+        {SEARCH_SPEND} {HIRING_SEARCH_CACHE_NOTE} Searches run only when you ask. A saved search
+        keeps just the role and location -- it does not run or watch anything.
       </p>
     </form>
   );
