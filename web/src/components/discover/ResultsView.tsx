@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   arrange,
   arrangeAnnouncement,
@@ -29,6 +29,8 @@ import "../../styles/discover.css";
 // words in the status block (lib/discoverFacts.ts searchNotesOf, SearchStatus.tsx), so a short list is
 // never a silent one.
 //
+//   lead          one line about the answer as a whole, handed in by the page and drawn right under the
+//                 heading, before everything else; an answer with no rows draws none
 //   rows          the scored rows, then "More results": rows past the scoring batch, which have no
 //                 score block at all and read "Not scored". A row is scored only when its bin is one the
 //                 ladder knows, whichever list it sits in
@@ -81,10 +83,12 @@ export interface ResultsViewProps {
   tracked: Readonly<Record<string, string>>;
   trackErrors: Readonly<Record<string, string>>;
   onTrack: (job: JobCard) => void;
+  /** A line about the answer as a whole (where it is from), drawn under the "Results" heading. Not drawn when there are no rows. */
+  lead?: ReactNode;
   timeZone?: string;
 }
 
-export function ResultsView({ result, now, tracking, tracked, trackErrors, onTrack, timeZone }: ResultsViewProps) {
+export function ResultsView({ result, now, tracking, tracked, trackErrors, onTrack, lead, timeZone }: ResultsViewProps) {
   const [filter, setFilter] = useState<FitFilter>("all");
   const [sort, setSort] = useState<SortMode>("returned");
   // "Show score details": every row's "Why this score". A row's own press is an override of it, keyed by
@@ -214,6 +218,7 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
       <h2 className="bj-disc-heading" id={RESULTS_HEADING_ID} tabIndex={-1}>
         Results
       </h2>
+      {lead}
       {placeholderRows && (
         <p className="bj-disc-fallback">
           <span className="bj-trail-glyph bj-trail-glyph--gold" aria-hidden="true">

@@ -912,7 +912,7 @@ describe("coming back to the page", () => {
     });
   });
 
-  it("says when the answer is from and that nothing was refreshed, in the one note above the results, and says what searching again spends", async () => {
+  it("says when the answer is from and that nothing was refreshed, in the one note under the results heading, and says what searching again spends", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(ARRIVED);
     answer({ "/discover?": response() });
@@ -928,7 +928,8 @@ describe("coming back to the page", () => {
       `Showing your search from ${arrivedAt}. The scores and link checks are from then and have not been refreshed. Pressing Search again makes a real model call on your own key and uses any search keys you have connected.`,
     );
     expect(words(notes[0])).toContain(SEARCH_AGAIN_SPEND_NOTE);
-    expect(notes[0].compareDocumentPosition(query(page.container, ".bj-disc-results")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(notes[0].parentElement).toBe(query(page.container, "section.bj-disc-results"));
+    expect(notes[0].previousElementSibling?.tagName).toBe("H2");
   });
 
   it("makes no request and writes no first-run mark when it brings the answer back, only the three reads of the setup", async () => {

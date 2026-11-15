@@ -22,7 +22,8 @@ import "../../styles/discover.css";
 //   setup     what is missing, each with a link to where it is fixed -- no request is made
 //   error     what could not be read; the band holds "Try again", so the body has no Retry of its own
 //   ready     the rows (lib/discoverRow.ts), what did not arrive, "No results" when nothing did; for an
-//             answer brought back from an earlier visit, one line above them says when it is from
+//             answer brought back from an earlier visit, one line under the Results heading says when it
+//             is from (ResultsView draws it, inside its own block, so the block's spacing applies to it)
 
 export type SearchView =
   | { kind: "idle" }
@@ -115,11 +116,6 @@ export function DiscoverView(props: DiscoverViewProps) {
           )}
           {search.kind === "loading" && <LoadingState rows={3} rowHeight={200} label="Searching..." announce={false} />}
           {search.kind === "error" && <FailureState message={`The search couldn't be read: ${search.message}`} />}
-          {search.kind === "ready" && props.restored !== undefined && (
-            <p className="bj-disc-note">
-              Showing your search from {props.restored.at}. The scores and link checks are from then and have not been refreshed. {SEARCH_AGAIN_SPEND_NOTE}
-            </p>
-          )}
           {search.kind === "ready" && (
             <ResultsView
               result={search.result}
@@ -128,6 +124,13 @@ export function DiscoverView(props: DiscoverViewProps) {
               tracked={props.tracked}
               trackErrors={props.trackErrors}
               onTrack={props.onTrack}
+              lead={
+                props.restored !== undefined ? (
+                  <p className="bj-disc-note">
+                    Showing your search from {props.restored.at}. The scores and link checks are from then and have not been refreshed. {SEARCH_AGAIN_SPEND_NOTE}
+                  </p>
+                ) : undefined
+              }
               timeZone={props.timeZone}
             />
           )}

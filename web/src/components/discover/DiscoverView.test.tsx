@@ -419,12 +419,14 @@ describe("restored: an answer brought back from an earlier visit", () => {
   // this line, so a plain answer is used where the count of notes is the point.
   const notes = (container: HTMLElement) => [...container.querySelectorAll(".bj-disc-note")];
 
-  it("draws exactly one note above the results, with the time and the spend, for a restored answer", () => {
+  it("draws exactly one note, with the time and the spend, for a restored answer: inside the results block, right under its heading", () => {
     const { container } = draw(restored());
     expect(notes(container).map((note) => words(note))).toEqual([RESTORED_WORDS]);
-    const results = query(container, ".bj-disc-results");
-    expect(notes(container)[0].compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(results.contains(notes(container)[0])).toBe(false);
+    // Under the heading, in the block's own column (its gap is what keeps the line off the rows), not a bare
+    // child of the page where nothing separates it from the heading below.
+    const results = query(container, "section.bj-disc-results");
+    expect([...results.children].slice(0, 2).map((child) => child.tagName)).toEqual(["H2", "P"]);
+    expect(results.children[1]).toBe(notes(container)[0]);
   });
 
   it("says the spend in the shared shape: Pressing X makes a real model call on your own key", () => {
@@ -457,6 +459,10 @@ describe("restored: an answer brought back from an earlier visit", () => {
     expect(rows(brought.container)).toEqual(rows(plain.container));
     expect(words(bandOf(brought.container))).toBe(words(bandOf(plain.container)));
     expect(words(query(brought.container, "form"))).toBe(words(query(plain.container, "form")));
+    // And the line is that difference: one more note than the plain answer has, and it is the restored one.
+    expect(notes(brought.container)).toHaveLength(notes(plain.container).length + 1);
+    expect(notes(brought.container).filter((note) => words(note).startsWith("Showing your search from"))).toHaveLength(1);
+    expect(notes(plain.container).filter((note) => words(note).startsWith("Showing your search from"))).toHaveLength(0);
   });
 
   it("holds one page heading and at most one cyan fill, and never says anything is verified", () => {

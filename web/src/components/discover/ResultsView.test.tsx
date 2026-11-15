@@ -658,6 +658,29 @@ describe("what it keeps", () => {
   });
 });
 
+describe("a line about the answer as a whole", () => {
+  const LEAD = <p className="bj-disc-note">From an earlier search.</p>;
+
+  it("is drawn inside the results block, right under the heading and before the notices and the rows", () => {
+    const { container } = draw(response({ warnings: ["brave: down"], scored: [job()] }), { lead: LEAD });
+    const block = query(container, "section.bj-disc-results");
+    const [heading, lead] = [...block.children];
+    expect(heading.tagName).toBe("H2");
+    expect(words(heading)).toBe("Results");
+    expect(words(lead)).toBe("From an earlier search.");
+    expect(lead.parentElement).toBe(block);
+    const after = (element: Element) => lead.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(after(query(block, ".bj-disc-status"))).toBeTruthy();
+    expect(after(query(block, "ul.bj-disc-list"))).toBeTruthy();
+  });
+
+  it("is not drawn when it is not given, and not for an answer with no rows", () => {
+    expect(draw(response()).container.textContent).not.toContain("From an earlier search.");
+    const none = draw(response({ scored: [], more: [] }), { lead: LEAD });
+    expect(none.container.textContent).not.toContain("From an earlier search.");
+  });
+});
+
 const sortNames = (container: HTMLElement) => [...sortGroup(container).querySelectorAll("button")].map((button) => words(button));
 const printedDays = (container: HTMLElement) => [...container.querySelectorAll(".bj-disc-trail")].map((trail) => /Posted ([A-Z][a-z]{2} \d+)/.exec(words(trail))?.[1] ?? null);
 
