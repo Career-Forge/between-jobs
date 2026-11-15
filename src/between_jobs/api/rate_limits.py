@@ -98,7 +98,8 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     # of the very same request, with the same key, returns the stored result without
     # re-running; it still passes this limit and still counts as an attempt.
     "prepare": (10, HOUR),
-    # Several search-provider calls plus an LLM synthesis per click, on the user's own keys.
+    # Seven search-provider calls plus an LLM synthesis per click, and a second LLM call when
+    # the claims describe the interview process, all on the user's own keys.
     "company_intel": (10, DAY),
     # Question generation: an LLM call plus a forge-engines ingest, once per session.
     "interview_practice_session": (10, DAY),
@@ -106,9 +107,11 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     # Same cost class as company intel (a search fan-out plus LLM calls): same budget.
     "contact_research": (10, DAY),
     "warm_path_events": (10, DAY),
-    # Two LLM calls per click (the Step 0 analysis, then the brief itself).
+    # Up to three LLM calls per click: the Step 0 analysis, then the brief itself, which is
+    # asked a second time when the first answer cannot be used.
     "positioning_brief": (30, HOUR),
-    # One LLM call per click; a person works through a handful of contacts per sitting.
+    # One LLM call per click, or two when the first draft cannot be parsed or fails its writing
+    # checks; a person works through a handful of contacts per sitting.
     "outreach_draft": (60, HOUR),
     # One paid third-party lookup per click (Apollo, Hunter, Exa), on the user's own key.
     "contact_lookup": (60, HOUR),
@@ -125,8 +128,9 @@ RATE_LIMITS: dict[str, tuple[int, int]] = {
     # No LLM: two light forge-engines calls and one read, but the Header Composer asks for
     # a preview on every layout edit, so the number is high.
     "header_preview": (300, HOUR),
-    # A search-provider call on the user's own key (a shared cache absorbs repeats). Shared
-    # by the per-application and the standalone search.
+    # One search-provider call per saved search key, tried in order and stopping at the first
+    # that answers with posts (four at most), on the user's own keys; a shared cache absorbs
+    # repeats. Shared by the per-application and the standalone search.
     "hiring_signal_search": (60, HOUR),
     # Adding a posting by URL: possibly a Firecrawl scrape, always a registry lookup and
     # writes. Shared with "track a discovered job", which is the same act from Discover.
