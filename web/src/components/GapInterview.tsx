@@ -9,6 +9,7 @@ import type {
 } from "../lib/generateTypes";
 import type { ResumeDocument } from "../lib/headerComposerTypes";
 import { latestAttempt } from "../lib/scoreBreakdown";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { GlyphMark } from "./paper/TrailLine";
 import "../styles/workspace.css";
 
@@ -420,12 +421,15 @@ export function GapInterview({
                     </button>
                   </div>
                 ) : (
-                  <div className="bj-actions">
-                    <span className="bj-ws-tag bj-ws-tag--done">✓ Active</span>
-                    <button type="button" onClick={onRegenerate}>
-                      Generate again
-                    </button>
-                  </div>
+                  <>
+                    <div className="bj-actions">
+                      <span className="bj-ws-tag bj-ws-tag--done">✓ Active</span>
+                      <button type="button" onClick={onRegenerate}>
+                        Generate again
+                      </button>
+                    </div>
+                    <div className="bj-muted bj-small">{spendNotice("Generate again", SEVERAL_MODEL_CALLS)}</div>
+                  </>
                 )}
               </>
             )}

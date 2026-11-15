@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AtsAttempt } from "../lib/generateTypes";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
 import { settle, text, typeInto } from "../testing/forms";
@@ -83,11 +84,38 @@ describe("Close the gaps", () => {
     await settle();
     expect(callsTo("POST /profile/gap-interview/approve")[0].body).toEqual({ bullet: "Built an event stream consumer.", entity_pointer: "/experience/0" });
     expect(text(container)).toContain("Saved as a new profile version, pending");
+    // Activating is free; the paid press (and its sentence) only appears once the fact is active.
+    expect(text(container)).not.toContain(spendNotice("Generate again", SEVERAL_MODEL_CALLS));
+    expect(text(container)).not.toContain("Pressing Activate now");
     click(buttonNamed(container, "Activate now"));
     await settle();
     click(buttonNamed(container, "Generate again"));
     expect(regenerate).toHaveBeenCalledTimes(1);
     expect(container.querySelector(".bj-primary")).toBeNull();
+  });
+
+  it("says, right under Generate again, that pressing it makes several model calls on the person's own key", async () => {
+    on("POST /resume-documents/doc-1/gap-interview", QUESTIONS);
+    on("POST /profile/gap-interview/draft", { bullet: "Built an event stream consumer.", entity_pointer: "/experience/0", candidates: [{ pointer: "/experience/0", label: "Data Engineer -- Initech" }] });
+    on("POST /profile/gap-interview/approve", { id: "pv-9" });
+    on("POST /profile/versions/pv-9/activate", {});
+    const { container } = open();
+    click(buttonNamed(container, "Close the gaps"));
+    await settle();
+    click(buttonNamed(container, "Yes, add detail"));
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), "I wrote a Kafka consumer.");
+    click(buttonNamed(container, /Draft the fact/));
+    await settle();
+    click(buttonNamed(container, /Approve & save to profile/));
+    await settle();
+    click(buttonNamed(container, "Activate now"));
+    await settle();
+    const sentence = spendNotice("Generate again", SEVERAL_MODEL_CALLS);
+    const actions = buttonNamed(container, "Generate again").closest(".bj-actions");
+    expect(actions).not.toBeNull();
+    expect(text(actions!.nextElementSibling!)).toBe(sentence);
+    expect(actions!.nextElementSibling!.classList.contains("bj-muted")).toBe(true);
+    expect(text(container)).toContain(sentence);
   });
 
   // Every step replaces the button that was pressed, which drops keyboard focus to the top of the page: it goes
