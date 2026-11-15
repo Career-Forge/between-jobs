@@ -1,6 +1,7 @@
 import { countWords, runDate } from "../lib/research";
 import { eventsTrail, failedTrail } from "../lib/researchTrails";
 import { SETTINGS_PATH } from "../lib/settingsPaths";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { useNow } from "../lib/useNow";
 import { useResearchRun } from "../lib/useResearchRun";
 import { BlockTrail } from "./paper/DocumentLayout";
@@ -28,6 +29,9 @@ import "../styles/research.css";
 // are the research runs' (see CompanyIntelPanel).
 
 type Certainty = "confirmed_speaker" | "likely_staffed_sponsor" | "company_adjacent";
+
+// What one press of the run button costs. It sits in the intro, which stays on screen beside the button and its Retry.
+const RUN_SPEND = spendNotice("Find events, or Refresh once it has run,", `${A_MODEL_CALL} and searches with your You.com or Firecrawl key`);
 
 interface WarmPathEvent {
   id: string;
@@ -102,7 +106,7 @@ export function WarmPathEventsPanel({ applicationId, now }: { applicationId: str
     <div className="bj-rs">
       <p className="bj-ws-intro">
         Public conference, meetup and sponsor listings near you that name this company, each labeled by how certain the tie is. A speaker is named only when the source's own text names them, and no one's
-        attendance is guessed. A run searches with your You.com or Firecrawl key and makes one call to your model, so it uses your own keys each time.
+        attendance is guessed. {RUN_SPEND}
       </p>
       <RunButton
         label={data !== null ? "Refresh" : "Find events"}

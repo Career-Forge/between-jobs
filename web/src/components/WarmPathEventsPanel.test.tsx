@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
 import { settle, text } from "../testing/forms";
@@ -25,6 +26,8 @@ const stored = (events: unknown[], runOverrides: Record<string, unknown> = {}) =
 beforeEach(() => reset());
 afterEach(() => vi.restoreAllMocks());
 
+const RUN_SENTENCE = spendNotice("Find events, or Refresh once it has run,", `${A_MODEL_CALL} and searches with your You.com or Firecrawl key`);
+
 describe("Events", () => {
   it("shows a placeholder while the stored run is read", () => {
     on(`GET ${PATH}`, () => new Promise(() => undefined));
@@ -32,11 +35,11 @@ describe("Events", () => {
     expect(query(container, "[role='status'][aria-busy='true']").textContent).toContain("Loading events...");
   });
 
-  it("says before any run that it uses the person's own keys, what it finds and what it needs, and teaches the three certainties", async () => {
+  it("says before any run what pressing the button costs, what it finds and what it needs, and teaches the three certainties", async () => {
     on(`GET ${PATH}`, { run: null, events: [] });
     const { container } = panel();
     await settle();
-    expect(text(query(container, ".bj-ws-intro"))).toContain("uses your own keys each time");
+    expect(text(query(container, ".bj-ws-intro"))).toContain(RUN_SENTENCE);
     expect(text(query(container, ".bj-rs-empty h3"))).toBe("No events found yet");
     const body = text(query(container, ".bj-rs-empty"));
     expect(body).toContain("a confirmed speaker");
@@ -45,6 +48,34 @@ describe("Events", () => {
     expect(query<HTMLAnchorElement>(container, ".bj-rs-empty a").getAttribute("href")).toBe("/settings");
     expect(container.querySelector(".bj-trail")).toBeNull();
     expect(buttonNamed(container, "Find events")).toBeTruthy();
+  });
+
+  it("says in the intro, right above the run button's row, that pressing it makes a model call on the person's own key and searches with their key", async () => {
+    on(`GET ${PATH}`, { run: null, events: [] });
+    const { container } = panel();
+    await settle();
+    expect(RUN_SENTENCE).toBe("Pressing Find events, or Refresh once it has run, makes a real model call on your own key and searches with your You.com or Firecrawl key.");
+    const intro = query(container, ".bj-ws-intro");
+    // The first sentences of the intro are kept, and the vague line the sentence replaces is gone.
+    expect(text(intro)).toContain("no one's attendance is guessed.");
+    expect(text(intro)).not.toContain("uses your own keys each time");
+    expect(text(intro)).not.toContain("makes one call to your model");
+    expect(text(intro).indexOf(RUN_SENTENCE)).toBeGreaterThan(text(intro).indexOf("no one's attendance is guessed."));
+    expect(buttonNamed(container, "Find events").closest(".bj-actions")!.previousElementSibling).toBe(intro);
+  });
+
+  it("keeps the same sentence on screen for a stored run, whose button reads Refresh, and beside a failed run's Retry", async () => {
+    on(`GET ${PATH}`, stored([event(1, "confirmed_speaker")]));
+    on(`POST ${PATH}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    const { container } = panel();
+    await settle();
+    const intro = query(container, ".bj-ws-intro");
+    expect(text(intro)).toContain(RUN_SENTENCE);
+    expect(buttonNamed(container, "Refresh").closest(".bj-actions")!.previousElementSibling).toBe(intro);
+    click(buttonNamed(container, "Refresh"));
+    await settle();
+    expect(buttonNamed(container, "Retry")).toBeTruthy();
+    expect(text(query(container, ".bj-ws-intro"))).toContain(RUN_SENTENCE);
   });
 
   it("draws a certainty it does not know as its own word with no mark, not as a plain-code circle", async () => {
