@@ -7,7 +7,7 @@ import { contactConfidence, countWords, runDate, safeSourceUrl } from "../lib/re
 import { contactsTrail, draftTrail, failedTrail } from "../lib/researchTrails";
 import { failureOf, type Failure } from "../lib/setupRequired";
 import { SETTINGS_PATH } from "../lib/settingsPaths";
-import { spendNotice } from "../lib/spendNotice";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { refreshCapabilities, useCapabilities } from "../lib/useCapabilities";
 import { useGmailConnection } from "../lib/useGmailConnection";
 import { useNow } from "../lib/useNow";
@@ -121,6 +121,11 @@ const COPY_FAILED_NOTICE_MS = 6000;
 // Retry. A run makes up to two model calls (one to pick product terms for the searches, one to name people), and
 // the searches use the person's You.com or Firecrawl key.
 const RUN_SPEND = spendNotice("Find contacts, or Refresh once it has run,", "up to two real model calls on your own key and searches with your You.com or Firecrawl key");
+
+// What one press of a person's Draft outreach (or, once a draft exists, Redraft outreach) costs. It is said once,
+// in the intro, never in a row: the rows repeat for every person. The draft is written with one model call, and a
+// second only when the first draft fails to parse or fails the writing checks.
+const DRAFT_SPEND = `${spendNotice("Draft outreach", `${A_MODEL_CALL}, and a second one if the first draft fails its checks`)} Pressing Redraft outreach does the same.`;
 
 const PERSONA_LABELS: Record<string, string> = {
   hiring_lead: "Hiring lead",
@@ -338,7 +343,7 @@ export function ContactFinderPanel({ applicationId, now }: { applicationId: stri
     <div className="bj-rs">
       <p className="bj-ws-intro">
         People the web publicly names for this company, each linked to the source that names them. {RUN_SPEND} No email address or phone number comes with it: looking one up is a separate step you
-        choose, for one person at a time.
+        choose, for one person at a time. {DRAFT_SPEND}
       </p>
       <RunButton
         label={data !== null ? "Refresh" : "Find contacts"}

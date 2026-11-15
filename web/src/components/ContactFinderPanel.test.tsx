@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CapabilitiesState } from "../lib/capabilities";
 import type { GmailConnection } from "../lib/gmailAccess";
-import { spendNotice } from "../lib/spendNotice";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
 import { settle, text } from "../testing/forms";
@@ -460,6 +460,26 @@ describe("Contacts: running", () => {
     expect(text(intro)).toContain(lookups);
     expect(text(intro).indexOf(RUN_SENTENCE)).toBeLessThan(text(intro).indexOf(lookups));
     expect(buttonNamed(container, "Find contacts").closest(".bj-actions")!.previousElementSibling).toBe(intro);
+  });
+
+  it("says once, in the intro, what Draft outreach and Redraft outreach cost: a model call, and a second one if the first draft fails its checks", async () => {
+    on(`GET ${PATH}`, stored([candidate(1), candidate(2)]));
+    const { container } = panel();
+    await settle();
+    const sentence = `${spendNotice("Draft outreach", `${A_MODEL_CALL}, and a second one if the first draft fails its checks`)} Pressing Redraft outreach does the same.`;
+    expect(sentence).toBe(
+      "Pressing Draft outreach makes a real model call on your own key, and a second one if the first draft fails its checks. Pressing Redraft outreach does the same.",
+    );
+    const intro = query(container, ".bj-ws-intro");
+    expect(text(intro)).toContain(sentence);
+    // It comes after the lookups sentence, in the same intro.
+    expect(text(intro).indexOf(sentence)).toBeGreaterThan(text(intro).indexOf("for one person at a time."));
+    // Two people are listed, each with a Draft outreach button, and the sentence is said once: not in a row.
+    expect(container.querySelectorAll(".bj-rs-item")).toHaveLength(2);
+    expect(text(container).split(sentence)).toHaveLength(2);
+    for (const item of container.querySelectorAll(".bj-rs-item")) expect(text(item)).not.toContain("Pressing");
+    // No Gmail wording rides along with it.
+    expect(sentence).not.toMatch(/gmail/i);
   });
 
   it("keeps the same sentence on screen for a stored run, whose button reads Refresh, and beside a failed run's Retry", async () => {
