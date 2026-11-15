@@ -58,12 +58,14 @@ function Section({ id, title, eyebrow, children }: { id: string; title: string; 
 
 export interface PanelSectionsProps {
   applicationId: string;
+  /** The posting's description as stored: Your play reads the posting's requirements, so it needs to know whether there is any. */
+  postingText: string | undefined | null;
   hiring: HiringStatus;
   /** Whether the address names #hiring-posts (the note is only for a person who asked for it). */
   hiringRequested: boolean;
 }
 
-export function PanelSections({ applicationId, hiring, hiringRequested }: PanelSectionsProps) {
+export function PanelSections({ applicationId, postingText, hiring, hiringRequested }: PanelSectionsProps) {
   return (
     <>
       <Section id={SECTION_IDS.companyIntel} title={SECTION_TITLES.companyIntel} eyebrow="Research">
@@ -92,7 +94,7 @@ export function PanelSections({ applicationId, hiring, hiringRequested }: PanelS
         <InterviewPracticePanel applicationId={applicationId} />
       </Section>
       <Section id={SECTION_IDS.yourPlay} title={SECTION_TITLES.yourPlay}>
-        <PositioningBriefPanel applicationId={applicationId} />
+        <PositioningBriefPanel applicationId={applicationId} postingText={postingText} />
       </Section>
     </>
   );

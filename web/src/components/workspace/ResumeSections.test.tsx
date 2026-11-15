@@ -2,9 +2,9 @@
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CanonicalProfile } from "../../lib/profileTypes";
-import { calls, reset } from "../../testing/fakeApi";
+import { calls, on, reset } from "../../testing/fakeApi";
 import { describedText, settle, text } from "../../testing/forms";
-import { render } from "../../testing/render";
+import { click, render } from "../../testing/render";
 import { ResumeSections, type ResumeSectionsProps } from "./ResumeSections";
 
 // The resume part's Coverage block, with the real Tailor panel and the API faked: a posting with no text
@@ -51,7 +51,7 @@ describe("Coverage with no posting text", () => {
     ["the API's placeholder", "(no description available)"],
     ["the placeholder, shouted and padded", "  (NO DESCRIPTION AVAILABLE)  "],
     ["the placeholder without its parentheses", "No description available."],
-  ])("offers no Check coverage button and makes no request for %s", async (_name, descriptionText) => {
+  ])("offers no Check coverage button, and nothing is fetched on mount, for %s", async (_name, descriptionText) => {
     const { container } = sections(descriptionText);
     await settle();
     expect(checkButtons(container)).toEqual([]);
@@ -69,6 +69,16 @@ describe("Coverage with no posting text", () => {
     expect(text(container)).not.toContain(NO_TEXT_LINE);
     expect(text(container)).not.toContain(NONE_SAVED);
     expect(calls).toEqual([]);
+  });
+
+  // The control for the empty-calls assertions above: the same fake API does record the check's request once the button is pressed.
+  it("starts the check's requests when the button for a posting that has text is pressed", async () => {
+    on("GET /resume-documents/mine?application_id=a1", new Error("stopped here: only the request is under test"));
+    const { container } = sections("Build and run batch pipelines.");
+    await settle();
+    click(checkButtons(container)[0]);
+    await settle();
+    expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual(["GET /resume-documents/mine?application_id=a1"]);
   });
 
   it("offers the button for a real posting that merely mentions the words", async () => {

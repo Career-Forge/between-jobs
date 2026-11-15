@@ -38,12 +38,12 @@ vi.mock("../lib/useCapabilities", () => ({ useCapabilities: () => gmail.state, r
 const mounts = vi.hoisted(() => ({}) as Record<string, number>);
 
 function standIn(name: string, heading?: string) {
-  return ({ applicationId }: { applicationId: string }) => {
+  return ({ applicationId, postingText }: { applicationId: string; postingText?: string | null }) => {
     useEffect(() => {
       mounts[name] = (mounts[name] ?? 0) + 1;
     }, []);
     return (
-      <div className="bj-card" data-standin={name}>
+      <div className="bj-card" data-standin={name} data-posting-text={postingText ?? undefined}>
         {heading !== undefined && <h2>{heading}</h2>}
         <p>{name} for {applicationId}</p>
       </div>
@@ -330,6 +330,8 @@ describe("the sections", () => {
     expect(text(container)).toContain("No description text was saved for this posting, so tailoring has nothing to read.");
     // The rest of the resume part is still there.
     expect(container.querySelector("[data-standin='Header composer']")).not.toBeNull();
+    // Your play reads the posting's requirements too, so it is handed the same stored text to apply the same rule to.
+    expect(query(container, "[data-standin='Your play panel']").getAttribute("data-posting-text")).toBe(description_text ?? null);
   });
 
   it.each([

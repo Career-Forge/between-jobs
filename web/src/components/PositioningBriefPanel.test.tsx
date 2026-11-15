@@ -13,13 +13,18 @@ vi.mock("../lib/api", async () => (await import("../testing/fakeApi")).apiModule
 
 const PATH = "/applications/a1/positioning-brief";
 
-function panel() {
+// The posting's stored description: a build starts by reading its requirements, so the panel needs to know there is text.
+const POSTING = "Build and run batch pipelines.";
+
+function panelFor(postingText: string | undefined | null) {
   return render(
     <MemoryRouter>
-      <PositioningBriefPanel applicationId="a1" now={NOW} />
+      <PositioningBriefPanel applicationId="a1" postingText={postingText} now={NOW} />
     </MemoryRouter>,
   );
 }
+
+const panel = () => panelFor(POSTING);
 
 beforeEach(() => reset());
 afterEach(() => vi.restoreAllMocks());
@@ -226,5 +231,61 @@ describe("Your play", () => {
     const empty = panel();
     await settle();
     await expectNoSeriousA11yViolations(empty.container);
+  });
+});
+
+// The build's first step reads the posting's requirements, as the Coverage block's check does, so a posting with no text is
+// not offered it: the API stores "(no description available)" for a tracked job that came with none, and that sentence
+// would be sent to the model as if it were the posting. All text is synthetic.
+describe("Your play for a posting with no text", () => {
+  const NO_TEXT = "There is no posting text to read this role's requirements from, so there is nothing to build a brief on.";
+
+  it.each([
+    ["empty", ""],
+    ["only blanks", "  \n\t "],
+    ["null", null],
+    ["absent", undefined],
+    ["the API's placeholder", "(no description available)"],
+    ["the placeholder, shouted and padded", "  (NO DESCRIPTION AVAILABLE)  "],
+    ["the placeholder without its parentheses", "No description available."],
+  ])("offers no build button, says why, and makes no build request for %s", async (_name, postingText) => {
+    on(`GET ${PATH}`, { brief: null });
+    const { container } = panelFor(postingText);
+    await settle();
+    expect([...container.querySelectorAll("button")].filter((button) => /build my positioning brief|refresh/i.test(button.textContent ?? ""))).toEqual([]);
+    const intro = text(query(container, ".bj-ws-intro"));
+    expect(intro).toContain("What to lead with, the one gap that matters for this role, and one project to close it.");
+    expect(intro).toContain(NO_TEXT);
+    // The cost sentence belongs to a button that is not there.
+    expect(text(container)).not.toContain("Pressing Build my positioning brief");
+    expect(callsTo(`POST ${PATH}`)).toHaveLength(0);
+  });
+
+  it("still reads and shows a brief already stored, with no Refresh to build another", async () => {
+    on(`GET ${PATH}`, { brief: BRIEF });
+    const { container } = panelFor("(no description available)");
+    await settle();
+    expect(callsTo(`GET ${PATH}`)).toHaveLength(1);
+    expect(container.querySelector(".bj-rs-brief")).not.toBeNull();
+    expect(text(query(container, ".bj-ws-intro"))).toContain(NO_TEXT);
+    expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Refresh")).toBe(false);
+  });
+
+  it("offers the build, and not the line, for a posting that has text, including one that only mentions the words", async () => {
+    on(`GET ${PATH}`, { brief: null });
+    for (const postingText of [POSTING, "(no description available) -- see the careers page for the full text of this role."]) {
+      const { container } = panelFor(postingText);
+      await settle();
+      expect(buttonNamed(container, "Build my positioning brief")).toBeTruthy();
+      expect(text(query(container, ".bj-ws-intro"))).not.toContain(NO_TEXT);
+      expect(text(query(container, ".bj-ws-intro"))).toContain("Pressing Build my positioning brief, or Refresh once it has run,");
+    }
+  });
+
+  it("has no serious accessibility violation", async () => {
+    on(`GET ${PATH}`, { brief: null });
+    const { container } = panelFor("(no description available)");
+    await settle();
+    await expectNoSeriousA11yViolations(container);
   });
 });
