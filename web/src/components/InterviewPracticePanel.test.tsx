@@ -331,11 +331,18 @@ describe("Practice: answering", () => {
 
   it("keeps the cost beside Submit answer while the answer is being scored, and beside a failed submit's Send again", async () => {
     resume(five(0));
-    on(`POST ${ANSWERS}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    // Held open so the sentence can be read while the answer is out, then failed so Send again appears.
+    let fail: (reason: Error) => void = () => undefined;
+    on(`POST ${ANSWERS}`, () => new Promise((_resolve, reject) => (fail = reject)));
     const { container } = panel();
     await settle();
     typeInto(query<HTMLTextAreaElement>(container, "textarea"), "I led the migration.");
     click(buttonNamed(container, "Submit answer"));
+    await settle(1);
+    expect(callsTo(`POST ${ANSWERS}`)).toHaveLength(1);
+    expect([...container.querySelectorAll("button")].some((button) => text(button) === "Send again")).toBe(false);
+    expect(text(query(container, ".bj-rs-question .bj-actions"))).toContain(SUBMIT_BESIDE_BUTTON);
+    fail(new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
     await settle();
     expect(buttonNamed(container, "Send again")).toBeTruthy();
     expect(text(query(container, ".bj-rs-question .bj-actions"))).toContain(SUBMIT_BESIDE_BUTTON);

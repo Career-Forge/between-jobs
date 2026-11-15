@@ -76,6 +76,10 @@ describe("the honest read", () => {
     const block = buttonNamed(container, "Generate anyway").closest(".bj-ws-honest");
     expect(block).not.toBeNull();
     expect(block!.contains(caption!)).toBe(true);
+    // It follows the row that holds both buttons rather than sitting above them.
+    const actions = buttonNamed(container, "Generate anyway").closest(".bj-actions");
+    expect(actions).not.toBeNull();
+    expect(actions!.nextElementSibling).toBe(caption);
     expect(text(container)).not.toContain("Pressing Park this application");
   });
 
