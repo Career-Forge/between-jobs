@@ -18,9 +18,10 @@ import "../styles/workspace.css";
 //
 // What the block always says, so the list is never read as a verdict:
 //   - the legend: only flagged claims are listed, and one that was not flagged is not "supported";
-//   - a line over the rows that a model flagged them and may be wrong, Contradicted ones too: a
-//     contradicted claim is drawn in the same gold as an unverifiable one, never red, because it is a
-//     model's reading and not a failed check;
+//   - when a row is Contradicted, a line over the rows that a Contradicted claim is a model's reading and may
+//     be wrong: it is drawn in the same gold as an unverifiable one, never red, because it is a model's
+//     reading and not a failed check. Only the separate engine reports Contradicted; the built-in engine's
+//     flags come from code with no model, so a block of those never carries the line;
 //   - with nothing flagged: "No claims flagged in this run", never a count of grounded claims, and the
 //     caveat that not flagged is not verified, because a check that did not run reads the same way
 //     (the response does not say whether it ran);
@@ -55,9 +56,10 @@ export const CLAIM_CLOSING: Record<ClaimOutcome, string> = {
 };
 
 export const CLAIM_LEGEND = "◆ Unverifiable · ◆ Contradicted -- a model's reading, may be wrong · claims that weren't flagged aren't listed";
-// Drawn above the rows whenever there are any. A flag, a Contradicted one included, is a model's reading of the claim:
-// the hosted check has called true claims contradicted, so the block says so and never draws one as a failure.
-export const CLAIM_MODEL_NOTE = "A model flagged these claims and may be wrong about any of them, including the ones marked Contradicted.";
+// Drawn above the rows when at least one is Contradicted, and only then. A Contradicted claim is a model's reading,
+// and a model can call a true claim false, so the block says so and never draws one as a failure. It is not drawn for
+// a block of the built-in engine's flags, which code wrote and no model read, or for flags that are only Unverifiable.
+export const CLAIM_MODEL_NOTE = "Claims marked Contradicted are a model's reading, and it may be wrong about any of them.";
 export const ZERO_FLAG_CAVEAT =
   "Not flagged isn't verified: the check compares claims to the achievements picked for this draft, and a check that didn't run reads the same way.";
 
@@ -85,6 +87,7 @@ export function ClaimWarningsBanner({ warnings }: { warnings: readonly string[] 
   const rows = parsed.flatMap((entry) => (entry.claim === null ? [] : [{ warning: entry.warning, claim: entry.claim }]));
   const others = parsed.filter((entry) => entry.claim === null).map((entry) => entry.warning);
   const flagged = warnings.length;
+  const anyContradicted = rows.some(({ claim }) => claim.status === "contradicted");
 
   return (
     <div className="bj-ws-claims">
@@ -102,7 +105,7 @@ export function ClaimWarningsBanner({ warnings }: { warnings: readonly string[] 
           <p className="bj-ws-count">
             {flagged === 1 ? "1 claim flagged" : `${flagged} claims flagged`}
           </p>
-          {rows.length > 0 && <p className="bj-ws-caption">{CLAIM_MODEL_NOTE}</p>}
+          {anyContradicted && <p className="bj-ws-caption">{CLAIM_MODEL_NOTE}</p>}
           {rows.length > 0 && (
             <ClaimList label="Flagged claims">
               {rows.map(({ warning, claim }) => (

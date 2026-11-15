@@ -93,16 +93,27 @@ describe("the rows", () => {
     ]);
   });
 
-  it("says over the rows that a model flagged them and may be wrong, once, and only when there are rows", () => {
-    expect(CLAIM_MODEL_NOTE).toBe("A model flagged these claims and may be wrong about any of them, including the ones marked Contradicted.");
-    const { container } = block([FLAGGED, CONTRADICTED]);
+  it("says over the rows that a Contradicted claim is a model's reading and may be wrong, once", () => {
+    expect(CLAIM_MODEL_NOTE).toBe("Claims marked Contradicted are a model's reading, and it may be wrong about any of them.");
+    const { container } = block([FLAGGED, CONTRADICTED, CONTRADICTED.replace("Led 20 engineers", "Ran the data team")]);
     expect(text(container).split(CLAIM_MODEL_NOTE)).toHaveLength(2);
     const note = [...container.querySelectorAll("p")].find((line) => text(line) === CLAIM_MODEL_NOTE)!;
     expect(note.compareDocumentPosition(query(container, "ul[aria-label='Flagged claims']")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // Nothing flagged: no rows, so no line about flagged claims.
-    expect(text(block([]).container)).not.toContain(CLAIM_MODEL_NOTE);
-    // A warning that cannot be read as a claim is plain text, not a row: the line is about rows.
-    expect(text(block(["unsupported claim (contradicted): Led 20 engineers -- no match"]).container)).not.toContain(CLAIM_MODEL_NOTE);
+  });
+
+  it.each([
+    ["nothing flagged", []],
+    ["a flag the separate engine only calls unverifiable", [FLAGGED]],
+    ["claims the built-in engine took out or put back (flags from code, no model read them)", [REMOVED, REPLACED]],
+    ["built-in repairs beside an unverifiable flag", [REPLACED, FLAGGED]],
+    // A warning that cannot be read as a claim is plain text, not a row: the line is about the rows.
+    ["a contradicted warning that cannot be read as a claim", ["unsupported claim (contradicted): Led 20 engineers -- no match"]],
+  ])("does not say a model read the claims for %s", (_name, warnings) => {
+    const words = text(block(warnings).container);
+    expect(words).not.toContain(CLAIM_MODEL_NOTE);
+    // Nothing else in the block credits a model with these flags (the legend's lower-case "a model's reading"
+    // only says what Contradicted means).
+    expect(words).not.toMatch(/\bA model\b/);
   });
 
   it("keeps the flags and the footer as they were: a contradicted claim still counts as flagged, and nothing is blocked", () => {
