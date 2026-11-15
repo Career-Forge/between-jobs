@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, calls, callsTo, on, reset } from "../testing/fakeApi";
-import { settle, text } from "../testing/forms";
+import { describedText, settle, text } from "../testing/forms";
 import { buttonNamed, click, query, render } from "../testing/render";
 import { TailorPanel } from "./TailorPanel";
 
@@ -390,5 +390,55 @@ describe("Tailor when it is pressed", () => {
     expect(text(query(container, "[role='alert']"))).toContain("You are doing that too often. Try again in about 12 minutes.");
     expect(buttonNamed(container, BUTTON)).toBeTruthy();
     expect(buttonNamed(container, "Retry")).toBeTruthy();
+  });
+});
+
+describe("Tailor, described by what pressing Check coverage costs", () => {
+  const NOTE = "Pressing Check coverage makes a real model call on your own key.";
+
+  it("describes the Check coverage button by the cost sentence inside the intro, and leaves the intro's words as they were", () => {
+    const { container } = panel();
+    const button = buttonNamed(container, BUTTON);
+    expect(describedText(button)).toBe(NOTE);
+    const note = document.getElementById(button.getAttribute("aria-describedby")!)!;
+    expect(query(container, ".bj-ws-intro").contains(note)).toBe(true);
+    expect(text(query(container, ".bj-ws-intro"))).toBe(SENTENCE);
+  });
+
+  it("keeps the description while the check is out and after a failed press, since the sentence and the button both stay", async () => {
+    on("GET /resume-documents/mine?application_id=a1", () => new Promise(() => undefined));
+    const busy = panel();
+    await press(busy.container);
+    expect(describedText(buttonNamed(busy.container, "Checking..."))).toBe(NOTE);
+    busy.unmount();
+    reset();
+    on("GET /resume-documents/mine?application_id=a1", new FakeApiError("The server hit a problem.", "INTERNAL"));
+    const failed = panel();
+    await press(failed.container);
+    expect(buttonNamed(failed.container, "Retry")).toBeTruthy();
+    expect(describedText(buttonNamed(failed.container, BUTTON))).toBe(NOTE);
+  });
+
+  it("draws neither the button nor an id once the result is on screen", async () => {
+    describeReads();
+    const { container } = panel();
+    await press(container);
+    expect(container.querySelector("[aria-describedby]")).toBeNull();
+  });
+
+  it("gives two panels on one page their own notes, so each button reads its own", () => {
+    const first = panel();
+    const second = panel();
+    const a = buttonNamed(first.container, BUTTON).getAttribute("aria-describedby");
+    const b = buttonNamed(second.container, BUTTON).getAttribute("aria-describedby");
+    expect(a).not.toBe(b);
+    expect(first.container.contains(document.getElementById(a!))).toBe(true);
+    expect(second.container.contains(document.getElementById(b!))).toBe(true);
+    expect(describedText(buttonNamed(second.container, BUTTON))).toBe(NOTE);
+  });
+
+  it("has no serious accessibility violation with the description in place", async () => {
+    const { container } = panel();
+    await expectNoSeriousA11yViolations(container);
   });
 });

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import { Link } from "react-router-dom";
 import { flaggedCount, isClaimWarning } from "../lib/claimWarnings";
 import type { PrepareApplicationResult } from "../lib/generateTypes";
@@ -70,6 +70,9 @@ export function GeneratePanel({ applicationId, controller, setupMissing = null, 
   // "Generate anyway" is in the held-back read, which a new run replaces. Focus moves to this panel's own
   // Generate button first (it says "Generating..." while the run is out), so it is not dropped to the page.
   const generateButton = useRef<HTMLButtonElement>(null);
+  // The cost note in the intro is the Generate button's description. It is drawn whether or not the button is, so the id never
+  // points at nothing.
+  const spendNoteId = useId();
   // The restore can land on a DECLINED latest attempt (the honest read) while an OLDER successful
   // generation's resume still exists and is downloadable: both are true at once, so a note says so
   // instead of letting it read as a contradiction.
@@ -78,7 +81,7 @@ export function GeneratePanel({ applicationId, controller, setupMissing = null, 
   return (
     <div className="bj-ws-generate">
       <p className="bj-ws-intro">
-        Runs the resume engine against this job. {spendNotice(retryInBand ? "Generate resume" : "Generate resume, or Retry after a failed run,", SEVERAL_MODEL_CALLS)}
+        Runs the resume engine against this job. <span id={spendNoteId}>{spendNotice(retryInBand ? "Generate resume" : "Generate resume, or Retry after a failed run,", SEVERAL_MODEL_CALLS)}</span>
         {!hasResume && state.kind === "idle" && " A run makes a resume PDF with its ATS score and its claim check, and a cover letter if you ask for one."}
       </p>
 
@@ -89,7 +92,7 @@ export function GeneratePanel({ applicationId, controller, setupMissing = null, 
       ) : (
         <>
           <div className="bj-actions">
-            <button ref={generateButton} type="button" aria-disabled={generating ? true : undefined} onClick={() => void controller.generate()}>
+            <button ref={generateButton} type="button" aria-describedby={spendNoteId} aria-disabled={generating ? true : undefined} onClick={() => void controller.generate()}>
               {generating ? "Generating..." : "Generate resume"}
             </button>
           </div>

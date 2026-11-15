@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { rowActions, type FitRead, type RowView, type TodayItem } from "../../lib/todayFeed";
 import type { Failure } from "../../lib/setupRequired";
 import { ItemActions, ItemBody, ItemProblem, KindLine, type BusyKind, type ItemActionsProps } from "./ItemParts";
@@ -27,6 +28,9 @@ export interface TodayRowProps {
 
 export function TodayRow({ item, view, trackedApplicationId, fit, busy, problem, onAction, onRetryProblem }: TodayRowProps) {
   const mark = marker(view);
+  // The cost note of a held-back card describes its Generate anyway button; it is on the page whenever the id is used.
+  const spendNoteId = useId();
+  const noteId = view.spendNote === undefined ? undefined : spendNoteId;
   return (
     <li className="bj-today-row" data-kind={item.kind}>
       <span className={`bj-today-marker bj-today-marker--${mark.tone}`} aria-hidden="true">
@@ -35,7 +39,7 @@ export function TodayRow({ item, view, trackedApplicationId, fit, busy, problem,
       <div className="bj-today-row-body">
         <KindLine view={view} />
         <p className={view.serifTitle ? "bj-today-title bj-today-title--serif" : "bj-today-title"}>{view.title}</p>
-        <ItemBody view={view} />
+        <ItemBody view={view} spendNoteId={noteId} />
         {problem !== undefined && <ItemProblem problem={problem} onRetry={onRetryProblem} />}
       </div>
       <ItemActions
@@ -44,6 +48,7 @@ export function TodayRow({ item, view, trackedApplicationId, fit, busy, problem,
         busy={busy}
         onAction={onAction}
         className="bj-today-item-actions bj-today-row-actions"
+        spendNoteId={noteId}
       />
     </li>
   );

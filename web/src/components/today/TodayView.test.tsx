@@ -17,6 +17,7 @@ import {
   type TodayItem,
 } from "../../lib/todayFeed";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
+import { describedText } from "../../testing/forms";
 import { buttonNamed, click, query, render } from "../../testing/render";
 import { TodayView, type AccountNotes, type FeedState, type TodayViewProps } from "./TodayView";
 
@@ -862,5 +863,45 @@ describe("what the view says besides the feed", () => {
     const heading = query(container, "#bj-today-activity");
     expect(heading.getAttribute("tabindex")).toBe("-1");
     expect(query(container, "section.bj-today-section").getAttribute("aria-labelledby")).toBe("bj-today-activity");
+  });
+});
+
+describe("Generate anyway, described by what pressing it costs", () => {
+  const sentence = spendNotice("Generate anyway", SEVERAL_MODEL_CALLS);
+
+  it("describes the band's Generate anyway by the note in the band's item block", () => {
+    const { container } = draw({ items: [held], fits: { "app-1": { state: "held", score: 3.6 } } });
+    const button = buttonNamed(band(container), "Generate anyway");
+    expect(describedText(button)).toBe(sentence);
+    expect(query(band(container), ".bj-band-item").contains(document.getElementById(button.getAttribute("aria-describedby")!))).toBe(true);
+  });
+
+  it("describes a list row's Generate anyway by the note in that row, and each card by its own", () => {
+    const { container } = draw({ items: [held, { ...held, id: "f2", application_id: "app-2" }, { ...held, id: "f3", application_id: "app-3" }] });
+    const listed = rows(container);
+    expect(listed).toHaveLength(2);
+    const ids = listed.map((row) => {
+      const button = buttonNamed(row, "Generate anyway");
+      expect(describedText(button)).toBe(sentence);
+      expect(row.contains(document.getElementById(button.getAttribute("aria-describedby")!))).toBe(true);
+      return button.getAttribute("aria-describedby");
+    });
+    ids.push(buttonNamed(band(container), "Generate anyway").getAttribute("aria-describedby"));
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it("describes nothing that does not spend: Dismiss, See why and Open workspace", () => {
+    const { container } = draw({ items: [held, ready, { ...held, id: "f2", application_id: "app-2" }] });
+    for (const control of container.querySelectorAll("a, button")) {
+      const label = words(control);
+      if (label === "Generate anyway") continue;
+      expect(control.getAttribute("aria-describedby"), label).toBeNull();
+    }
+  });
+
+  it("names no id for a card whose Generate anyway is not offered", () => {
+    const { container } = draw({ items: [held, ready], fits: { "app-1": { state: "moved_on" } } });
+    for (const node of container.querySelectorAll("[aria-describedby]")) expect(() => describedText(node)).not.toThrow();
+    expect([...container.querySelectorAll("button")].map(words)).not.toContain("Generate anyway");
   });
 });

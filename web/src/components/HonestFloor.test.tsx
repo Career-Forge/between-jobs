@@ -4,7 +4,7 @@ import type { ForgeFitResult } from "../lib/generateTypes";
 import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
-import { settle, text } from "../testing/forms";
+import { describedText, settle, text } from "../testing/forms";
 import { buttonNamed, click, query, render } from "../testing/render";
 import { HonestFloor } from "./HonestFloor";
 
@@ -109,5 +109,28 @@ describe("the honest read", () => {
   it("passes an accessibility check", async () => {
     const { container } = render(<HonestFloor applicationId="a1" fit={{ ...FIT, visa_flag: true }} onGenerateAnyway={() => undefined} />);
     await expectNoSeriousA11yViolations(container);
+  });
+});
+
+describe("the honest read, described by what Generate anyway costs", () => {
+  it("describes Generate anyway by the sentence beside it, and the words of that line are unchanged", () => {
+    const { container } = render(<HonestFloor applicationId="a1" fit={FIT} onGenerateAnyway={() => undefined} />);
+    const button = buttonNamed(container, "Generate anyway");
+    expect(describedText(button)).toBe(spendNotice("Generate anyway", SEVERAL_MODEL_CALLS));
+    const caption = document.getElementById(button.getAttribute("aria-describedby")!)!.closest(".bj-ws-caption")!;
+    expect(text(caption)).toBe(`Your call either way -- the platform advises, it never blocks. ${spendNotice("Generate anyway", SEVERAL_MODEL_CALLS)}`);
+  });
+
+  it("does not describe Park this application, which spends nothing", () => {
+    const { container } = render(<HonestFloor applicationId="a1" fit={FIT} onGenerateAnyway={() => undefined} />);
+    expect(buttonNamed(container, "Park this application").getAttribute("aria-describedby")).toBeNull();
+  });
+
+  it("gives two honest reads on one page their own notes", () => {
+    const first = render(<HonestFloor applicationId="a1" fit={FIT} onGenerateAnyway={() => undefined} />);
+    const second = render(<HonestFloor applicationId="a2" fit={FIT} onGenerateAnyway={() => undefined} />);
+    const a = buttonNamed(first.container, "Generate anyway").getAttribute("aria-describedby");
+    const b = buttonNamed(second.container, "Generate anyway").getAttribute("aria-describedby");
+    expect(a).not.toBe(b);
   });
 });

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { NextStepOutcome } from "../../lib/nextStep";
 import type { TodayRowId } from "../../lib/nextStep/pages/today";
@@ -102,6 +102,11 @@ function trackedFor(item: TodayItem, tracked: Readonly<Record<string, string>>):
 
 export function TodayView(props: TodayViewProps) {
   const { now, wide, outcome, litRow, litItem, feed, context, tracked, busy, problems, background, account } = props;
+  // The lit item's cost note (a held-back resume's Generate anyway) is the description of the band's second button,
+  // which the item sits under. It is named only while the note is on the page.
+  const litNoteId = useId();
+  const litView = litItem === null ? null : rowView(litItem, context);
+  const litNoteOnPage = litView !== null && litView.spendNote !== undefined;
   const items = feed.state === "ready" ? feed.items.filter((item) => item.id !== litItem?.id) : [];
   const hasNamedItems = feed.state === "ready" && feed.items.some((item) => item.application_id != null);
   // Until the band knows what it holds, the list is held back too: the item it will lift out would
@@ -178,11 +183,12 @@ export function TodayView(props: TodayViewProps) {
         {props.announcement}
       </div>
       <PageHeader title="Today" subtitle="What happened on your jobs and saved searches, and the one thing to do next." />
-      <NextStepBand outcome={outcome} onAction={props.onBandAction} eyebrow={eyebrowFor(litRow, litItem)} pending={pendingFor(litItem, busy)}>
-        {litItem !== null && (
+      <NextStepBand outcome={outcome} onAction={props.onBandAction} eyebrow={eyebrowFor(litRow, litItem)} pending={pendingFor(litItem, busy)} describedBy={{ secondary: litNoteOnPage ? litNoteId : undefined }}>
+        {litItem !== null && litView !== null && (
           <LitItem
             item={litItem}
-            view={rowView(litItem, context)}
+            view={litView}
+            spendNoteId={litNoteOnPage ? litNoteId : undefined}
             busy={busy[litItem.id]}
             problem={problems[litItem.id]}
             onAction={props.onItemAction}

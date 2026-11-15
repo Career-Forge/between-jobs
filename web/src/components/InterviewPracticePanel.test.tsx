@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
-import { settle, text, typeInto } from "../testing/forms";
+import { describedText, settle, text, typeInto } from "../testing/forms";
 import { NOW, SESSION, FakeSetupError, answered, question } from "../testing/researchFixtures";
 import { buttonNamed, click, query, render } from "../testing/render";
 import { InterviewPracticePanel } from "./InterviewPracticePanel";
@@ -503,5 +503,51 @@ describe("Practice: the page's one cyan fill is the band's, and the markup is so
     const row = container.querySelector<HTMLButtonElement>("button.bj-rs-answer-row");
     if (row !== null) click(row);
     await expectNoSeriousA11yViolations(container);
+  });
+});
+
+describe("Practice: Submit answer, described by what pressing it costs", () => {
+  const ANSWERS = `${DETAIL}/answers`;
+
+  it("describes the button by the sentence beside it, with the box empty and with an answer typed", async () => {
+    resume(five(0));
+    const { container } = panel();
+    await settle();
+    const submit = buttonNamed(container, "Submit answer");
+    expect(describedText(submit)).toBe(SUBMIT_BESIDE_BUTTON);
+    expect(submit.closest(".bj-actions")!.contains(document.getElementById(submit.getAttribute("aria-describedby")!))).toBe(true);
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), "I led the migration.");
+    expect(describedText(buttonNamed(container, "Submit answer"))).toBe(SUBMIT_BESIDE_BUTTON);
+  });
+
+  it("keeps the description while the answer is being scored, on the button that reads Scoring...", async () => {
+    resume(five(0));
+    on(`POST ${ANSWERS}`, () => new Promise(() => undefined));
+    const { container } = panel();
+    await settle();
+    typeInto(query<HTMLTextAreaElement>(container, "textarea"), "I led the migration.");
+    click(buttonNamed(container, "Submit answer"));
+    await settle(1);
+    expect(describedText(buttonNamed(container, "Scoring..."))).toBe(SUBMIT_BESIDE_BUTTON);
+  });
+
+  it("changes no visible word: the sentence is still the caption in the button's row", async () => {
+    resume(five(0));
+    const { container } = panel();
+    await settle();
+    const captions = [...buttonNamed(container, "Submit answer").closest(".bj-actions")!.querySelectorAll(".bj-ws-caption")].map((node) => text(node));
+    expect(captions).toEqual(["Write an answer to submit it.", SUBMIT_BESIDE_BUTTON]);
+  });
+
+  it("does not describe the panel's other buttons by it, and names no id that is missing", async () => {
+    on(`GET ${BASE}`, { sessions: [] });
+    const idle = panel();
+    await settle();
+    expect(idle.container.querySelector("[aria-describedby]")).toBeNull();
+    idle.unmount();
+    resume(five(0));
+    const { container } = panel();
+    await settle();
+    for (const node of container.querySelectorAll("[aria-describedby]")) expect(() => describedText(node)).not.toThrow();
   });
 });

@@ -7,7 +7,7 @@ import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { SECTION_IDS } from "../lib/workspaceSections";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, calls, callsTo, on, reset } from "../testing/fakeApi";
-import { choose, settle, text } from "../testing/forms";
+import { choose, describedText, settle, text } from "../testing/forms";
 import { buttonNamed, click, installViewport, keydown, query, render } from "../testing/render";
 import ApplicationWorkspace from "./ApplicationWorkspace";
 
@@ -1637,3 +1637,68 @@ function buttonNamedOrNull(root: ParentNode, name: string): HTMLButtonElement | 
     return null;
   }
 }
+
+describe("the Generate buttons, described by what pressing them costs", () => {
+  const generateNote = spendNotice("Generate resume", SEVERAL_MODEL_CALLS);
+  const bodyNote = spendNotice("Generate resume, or Retry after a failed run,", SEVERAL_MODEL_CALLS);
+  const ownButton = (container: HTMLElement, label: string) => [...container.querySelectorAll("button")].filter((button) => text(button) === label && !band(container).contains(button));
+
+  it("A1: the band's Generate resume is described by the band's note, and the body's by the sentence in its intro", async () => {
+    describeAccount();
+    const { container } = page();
+    await settle();
+    expect(describedText(cyan(container)[0])).toBe(generateNote);
+    expect(band(container).contains(document.getElementById(cyan(container)[0].getAttribute("aria-describedby")!))).toBe(true);
+    const body = ownButton(container, "Generate resume");
+    expect(body).toHaveLength(1);
+    expect(describedText(body[0])).toBe(bodyNote);
+    expect(query(container, ".bj-ws-generate .bj-ws-intro").contains(document.getElementById(body[0].getAttribute("aria-describedby")!))).toBe(true);
+    // The two buttons name two different notes.
+    expect(body[0].getAttribute("aria-describedby")).not.toBe(cyan(container)[0].getAttribute("aria-describedby"));
+  });
+
+  it("A1g: keeps the band's description while the run is out, on the button that now reads Generating...", async () => {
+    describeAccount();
+    on(`POST /applications/${ID}/prepare`, () => new Promise(() => undefined));
+    const { container } = page();
+    await settle();
+    click(cyan(container)[0]);
+    await settle(1);
+    expect(text(cyan(container)[0])).toBe("Generating...");
+    expect(describedText(cyan(container)[0])).toBe(generateNote);
+  });
+
+  it("A1c: Generate again is described by the note that names it", async () => {
+    describeAccount();
+    on(`POST /applications/${ID}/prepare`, new FakeApiError("The engine did not answer.", "INTERNAL", undefined, 500));
+    const { container } = page();
+    await settle();
+    click(cyan(container)[0]);
+    await settle();
+    expect(text(cyan(container)[0])).toBe("Generate again");
+    expect(describedText(cyan(container)[0])).toBe(spendNotice("Generate again", SEVERAL_MODEL_CALLS));
+  });
+
+  it("A1b: Generate anyway, the band's second button and the honest read's, are each described by the note beside them, and the link that only scrolls is not", async () => {
+    describeAccount({ result: HELD });
+    const { container } = page();
+    await settle();
+    const anyway = spendNotice("Generate anyway", SEVERAL_MODEL_CALLS);
+    expect(text(cyan(container)[0])).toBe("Read the fit check");
+    expect(cyan(container)[0].getAttribute("aria-describedby")).toBeNull();
+    expect(describedText(buttonNamed(band(container), "Generate anyway"))).toBe(anyway);
+    const honest = ownButton(container, "Generate anyway");
+    expect(honest).toHaveLength(1);
+    expect(describedText(honest[0])).toBe(anyway);
+    expect(query(container, ".bj-ws-honest").contains(document.getElementById(honest[0].getAttribute("aria-describedby")!))).toBe(true);
+    expect(honest[0].getAttribute("aria-describedby")).not.toBe(buttonNamed(band(container), "Generate anyway").getAttribute("aria-describedby"));
+  });
+
+  it("names no note on a band that spends nothing", async () => {
+    describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
+    const { container } = page();
+    await settle();
+    expect(band(container).querySelector("[aria-describedby]")).toBeNull();
+    for (const node of container.querySelectorAll("[aria-describedby]")) expect(() => describedText(node)).not.toThrow();
+  });
+});

@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { NextStepBand } from "../paper/NextStepBand";
 import { PageHeader } from "../paper/PageHeader";
 import { EmptyState, FailureState, LoadingState, SetupRequiredState, type StateLink } from "../paper/StateViews";
@@ -94,13 +95,19 @@ export function DiscoverView(props: DiscoverViewProps) {
   // A restored answer's lead (below) already says what Search again costs, and a blocked search is not
   // one anyone can press, so the form says nothing in either case.
   const spendNote = blockedReason !== null || props.restored !== undefined ? null : searchSpendNote(searched ? "Search again" : "Search");
+  // The one cost note is on the page under the form's buttons, or in the restored answer's lead (which is drawn only
+  // with the results). It describes the form's Search and the band's, whichever of the two it is, and each names it
+  // only while it is there.
+  const spendNoteId = useId();
+  const noteInLead = props.restored !== undefined && setup === null && search.kind === "ready";
+  const noteOnPage = spendNote !== null || noteInLead;
   return (
     <div className="bj-discover">
       <div className="bj-visually-hidden" role="status" aria-live="polite">
         {props.announcement}
       </div>
       <PageHeader title="Discover" subtitle="Company job boards and your search providers, scored against your profile by your own model." />
-      <NextStepBand outcome={props.outcome} onAction={props.onBandAction}>
+      <NextStepBand outcome={props.outcome} onAction={props.onBandAction} describedBy={{ primary: noteOnPage && bandHoldsSearch(props.outcome) ? spendNoteId : undefined }}>
         {search.kind === "loading" && <SearchTimer startedAt={search.startedAt} />}
       </NextStepBand>
       <DiscoverForm
@@ -110,6 +117,8 @@ export function DiscoverView(props: DiscoverViewProps) {
         searched={searched}
         blockedReason={blockedReason}
         spendNote={spendNote}
+        spendNoteId={spendNoteId}
+        spendNoteInLead={noteInLead}
         searchInBand={bandHoldsSearch(props.outcome)}
         bandPending={props.outcome.status === "loading"}
         onSearch={props.onSearch}
@@ -142,7 +151,7 @@ export function DiscoverView(props: DiscoverViewProps) {
               lead={
                 props.restored !== undefined ? (
                   <p className="bj-disc-note">
-                    Showing your search from {props.restored.at}. The scores and link checks are from then and have not been refreshed. {SEARCH_AGAIN_SPEND_NOTE}
+                    Showing your search from {props.restored.at}. The scores and link checks are from then and have not been refreshed. <span id={spendNoteId}>{SEARCH_AGAIN_SPEND_NOTE}</span>
                   </p>
                 ) : undefined
               }

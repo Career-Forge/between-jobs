@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { DISCOVER_FORM_ID } from "../../lib/nextStep/pages/discover";
 import type { DiscoverRequest } from "../../lib/discoverFacts";
 import { A_MODEL_CALL } from "../../lib/spendNotice";
@@ -17,6 +17,11 @@ import "../../styles/discover.css";
 // Search and Search again submit this form and its Try again re-runs the same search, so the one line sits
 // beside all of them. It is left out while setup blocks the search and while a restored answer's own line is
 // saying the same thing.
+//
+// The sentence is the Search button's description (`aria-describedby`), so a keyboard or screen reader user who
+// reaches the button hears the cost with its name. The note carries an id, given by the page because the band's
+// Search points at the same note, and the button names it only while a note is on the page: here under the
+// buttons, or, for a restored answer, in the line above the results (`spendNoteInLead`).
 //
 // Busy controls are `aria-disabled`, not `disabled`, so focus stays where it is; the page's handlers
 // are the guard. Save this search keeps what the filters hold, for the background checks; it is a quiet
@@ -63,6 +68,13 @@ export interface DiscoverFormProps {
    * same request, so the one sentence covers them. Null when it is said somewhere else or does not apply.
    */
   spendNote: string | null;
+  /**
+   * The id the cost note carries, wherever it is drawn: under the buttons, or in the restored answer's lead. The
+   * button is described by it only while one of the two is on the page. The form makes its own when none is given.
+   */
+  spendNoteId?: string;
+  /** The restored answer's lead draws the cost note, so the form does not: the button is described by that one. */
+  spendNoteInLead?: boolean;
   /** The next-step band's button is this form's Search (a submit that names it). */
   searchInBand: boolean;
   /** The band has not decided yet (it is loading), so the form does not draw a Search that it would take away a moment later. */
@@ -72,7 +84,10 @@ export interface DiscoverFormProps {
   saving: boolean;
 }
 
-export function DiscoverForm({ values, onChange, searching, searched, blockedReason, spendNote, searchInBand, bandPending, onSearch, onSave, saving }: DiscoverFormProps) {
+export function DiscoverForm({ values, onChange, searching, searched, blockedReason, spendNote, spendNoteId, spendNoteInLead = false, searchInBand, bandPending, onSearch, onSave, saving }: DiscoverFormProps) {
+  const ownNoteId = useId();
+  const noteId = spendNoteId ?? ownNoteId;
+  const describedBy = [spendNote !== null || spendNoteInLead ? noteId : null, blockedReason !== null ? "bj-discover-blocked" : null].filter((id) => id !== null).join(" ");
   const [searchFocused, setSearchFocused] = useState(false);
   const placeholder = useRolePlaceholder(values.q === "" && !searchFocused);
   const unavailable = searching || blockedReason !== null;
@@ -133,7 +148,7 @@ export function DiscoverForm({ values, onChange, searching, searched, blockedRea
       </label>
       <div className="bj-disc-form-actions">
         {showSubmit && (
-          <button type="submit" aria-disabled={unavailable ? true : undefined} aria-describedby={blockedReason !== null ? "bj-discover-blocked" : undefined}>
+          <button type="submit" aria-disabled={unavailable ? true : undefined} aria-describedby={describedBy === "" ? undefined : describedBy}>
             {searching ? "Searching..." : searched ? "Search again" : "Search"}
           </button>
         )}
@@ -141,7 +156,11 @@ export function DiscoverForm({ values, onChange, searching, searched, blockedRea
           {saving ? "Saving..." : "Save this search"}
         </button>
       </div>
-      {spendNote !== null && <p className="bj-muted bj-small">{spendNote}</p>}
+      {spendNote !== null && (
+        <p id={noteId} className="bj-muted bj-small">
+          {spendNote}
+        </p>
+      )}
       <p className="bj-muted bj-small">{SAVE_SEARCH_SPEND_NOTE}</p>
       {blockedReason !== null && (
         <p id="bj-discover-blocked" className="bj-disc-note">

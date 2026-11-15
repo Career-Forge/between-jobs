@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CanonicalProfile } from "../../lib/profileTypes";
 import { calls, reset } from "../../testing/fakeApi";
-import { settle, text } from "../../testing/forms";
+import { describedText, settle, text } from "../../testing/forms";
 import { render } from "../../testing/render";
 import { ResumeSections, type ResumeSectionsProps } from "./ResumeSections";
 
@@ -65,6 +65,7 @@ describe("Coverage with no posting text", () => {
     const { container } = sections("Build and run batch pipelines.");
     await settle();
     expect(checkButtons(container)).toHaveLength(1);
+    expect(describedText(checkButtons(container)[0])).toBe("Pressing Check coverage makes a real model call on your own key.");
     expect(text(container)).not.toContain(NO_TEXT_LINE);
     expect(text(container)).not.toContain(NONE_SAVED);
     expect(calls).toEqual([]);

@@ -12,11 +12,29 @@ import "../../styles/research.css";
 // finds it; the press itself is ignored by the hook (lib/useResearchRun.ts).
 //
 // `busy` is a run being out (the label says so); `held` is the section still reading what it showed
-// before, when a press has nothing to do yet (the label stays).
-export function RunButton({ label, busyLabel, busy, held = false, onRun, buttonRef }: { label: string; busyLabel: string; busy: boolean; held?: boolean; onRun: () => void; buttonRef?: Ref<HTMLButtonElement> }) {
+// before, when a press has nothing to do yet (the label stays). `describedBy` is the id of the note on the page
+// that says what a press costs, so the button reads it out with its name; the caller passes it only while the
+// note is drawn.
+export function RunButton({
+  label,
+  busyLabel,
+  busy,
+  held = false,
+  onRun,
+  buttonRef,
+  describedBy,
+}: {
+  label: string;
+  busyLabel: string;
+  busy: boolean;
+  held?: boolean;
+  onRun: () => void;
+  buttonRef?: Ref<HTMLButtonElement>;
+  describedBy?: string;
+}) {
   return (
     <div className="bj-actions bj-rs-bar">
-      <button ref={buttonRef} type="button" aria-disabled={busy || held ? true : undefined} onClick={onRun}>
+      <button ref={buttonRef} type="button" aria-describedby={describedBy} aria-disabled={busy || held ? true : undefined} onClick={onRun}>
         {busy ? busyLabel : label}
       </button>
     </div>
