@@ -14,6 +14,7 @@ import { formatTrailDate, formatTrailTime, mono } from "./trail";
 import type { TrackDiscoveredJobBody } from "./discoverTypes";
 import { savedSearchLabel } from "./discover";
 import { parseSavedSearch } from "./savedSearches";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "./spendNotice";
 import { gmailConnection, gmailState, type GmailAccess, type GmailCredentialRow } from "./gmailAccess";
 import { CROSS_NAV_HASH } from "./applicationsBoard";
 import {
@@ -327,6 +328,12 @@ export interface RowView {
   serifTitle: boolean;
   details: string[];
   quotes: string[];
+  /**
+   * What pressing this item's own Generate anyway costs, as the shared spend sentence. Set only on a held-back
+   * card that has that button (the same cases as `rowActions`), and kept out of `details`, which are the item's
+   * own words. It is drawn with the item's text, so a list row and the band's item block both say it.
+   */
+  spendNote?: string;
   trail: TrailInput;
   receipt: ReceiptRowInput[];
 }
@@ -384,6 +391,8 @@ export function rowView(item: TodayItem, context: RowContext): RowView {
         serifTitle: true,
         chip: { tone: "gold", text: score !== null ? `Fit check held it back · ${formatTenScale(score)} / 10` : "Fit check held it back" },
         details: detail === null ? [] : [detail],
+        // Generate anyway is offered only when the application is known (rowActions), and so is its cost.
+        ...(applicationId !== null ? { spendNote: spendNotice("Generate anyway", SEVERAL_MODEL_CALLS) } : {}),
         trail: { glyph: "engine", actor: "Held back by the fit check", basis: "code-weighted from your model's sub-scores", when },
         receipt: [
           { label: "kind", value: item.kind },

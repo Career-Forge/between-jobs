@@ -25,8 +25,9 @@ export function KindLine({ view }: { view: RowView }) {
   return <p className="bj-today-kind">{view.label}</p>;
 }
 
-// The words under the headline: the chip, the detail lines, the reply's own words, then the trail.
-// The band shows the sentence in place of the headline, so it asks for the body only.
+// The words under the headline: the chip, the detail lines, the reply's own words, what pressing the item's
+// own button costs (only a held-back resume's Generate anyway has one), then the trail. The band shows the
+// sentence in place of the headline, so it asks for the body only.
 export function ItemBody({ view }: { view: RowView }) {
   return (
     <>
@@ -48,6 +49,7 @@ export function ItemBody({ view }: { view: RowView }) {
           {"”"}
         </p>
       ))}
+      {view.spendNote !== undefined && <p className="bj-small bj-muted">{view.spendNote}</p>}
       <TrailLine trail={view.trail} receipt={view.receipt} receiptTitle="Where this came from" />
     </>
   );

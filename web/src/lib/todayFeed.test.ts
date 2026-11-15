@@ -30,6 +30,7 @@ import {
   type TodayItem,
 } from "./todayFeed";
 import type { GmailAccess } from "./gmailAccess";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "./spendNotice";
 import { buildReceipt, buildTrail, findForbiddenWord } from "./trail";
 
 // The feed as the page draws it. Every line a person reads is built from a returned field, so these
@@ -330,6 +331,48 @@ describe("a row's words", () => {
       expect(view.chip).toBeNull();
       expect(view.details).toEqual(["A resume exists for this application now."]);
       expect(view.title).toBe("Data Engineer at Acme");
+    });
+
+    it("carries what Generate anyway costs on a field of its own, never among the details", () => {
+      const sentence = spendNotice("Generate anyway", SEVERAL_MODEL_CALLS);
+      for (const fit of [undefined, { state: "loading" } as const, { state: "unavailable" } as const, { state: "held", score: 3.6 } as const, { state: "held", score: null } as const]) {
+        const view = rowView(held, context({ names, fits: fit === undefined ? {} : { "app-1": fit } }));
+        expect(view.spendNote).toBe(sentence);
+        expect(view.details).toEqual(["Fit too low"]);
+      }
+    });
+
+    it("carries none where there is no Generate anyway: moved on, no application, any other kind", () => {
+      expect(rowView(held, context({ names, fits: { "app-1": { state: "moved_on" } } })).spendNote).toBeUndefined();
+      expect(rowView({ ...held, application_id: null }, context()).spendNote).toBeUndefined();
+      const others = [
+        item({ id: "a", kind: "job_tracked", application_id: "app-1" }),
+        item({ id: "b", kind: "resume_ready", application_id: "app-1" }),
+        item({ id: "c", kind: "high_fit_job", job_match: MATCH }),
+        item({ id: "d", kind: "stage_changed", application_id: "app-1" }),
+        item({ id: "e", kind: "status_proposal", application_id: "app-1" }),
+      ];
+      for (const other of others) expect(rowView(other, context({ names })).spendNote).toBeUndefined();
+    });
+
+    it("is there exactly when the row offers Generate anyway, whatever the fit read says", () => {
+      const cases: [TodayItem, FitRead | undefined][] = [
+        [held, undefined],
+        [held, { state: "loading" }],
+        [held, { state: "unavailable" }],
+        [held, { state: "held", score: 2 }],
+        [held, { state: "moved_on" }],
+        [{ ...held, application_id: null }, undefined],
+        [{ ...held, application_id: "  " }, undefined],
+        [item({ id: "r", kind: "resume_ready", application_id: "app-1" }), undefined],
+        [item({ id: "m", kind: "high_fit_job", job_match: MATCH }), undefined],
+      ];
+      for (const [candidate, fit] of cases) {
+        const applicationId = candidate.application_id?.trim();
+        const fits = fit === undefined || applicationId === undefined ? {} : { [applicationId]: fit };
+        const offered = rowActions(candidate, null, fit).some((action) => action.id === "generate-anyway");
+        expect(rowView(candidate, context({ names, fits })).spendNote !== undefined).toBe(offered);
+      }
     });
 
     it("does not take the job out of the server's headline", () => {

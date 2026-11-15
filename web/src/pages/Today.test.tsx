@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NEXT_STEP_FOCUS_ID } from "../components/paper/NextStepBand";
 import { ACTIVITY_HEADING_ID } from "../components/today/TodayView";
 import { PROPOSAL_STEPS } from "../lib/nextStep/pages/today";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { buttonNamed, click, installViewport, query, render } from "../testing/render";
 import Today from "./Today";
@@ -583,6 +584,37 @@ describe("a resume the fit check held back", () => {
     expect(words(query(band(container), ".bj-state--failure"))).toContain("No resume was produced.");
     expect(calls()).not.toContain("POST /today/f1/dismiss");
     expect(container.querySelector(".bj-band-sentence")?.textContent).toContain("held back your draft");
+  });
+
+  it("says what Generate anyway costs, beside it in the band and beside it in a list row", async () => {
+    const second = { ...heldItem, id: "f2", application_id: "app-2", created_at: "2026-09-22T07:30:00Z" };
+    answer({ "/today": [heldItem, second], "/applications/app-1/prepare-result": prepareResult, "/applications/app-2/prepare-result": prepareResult });
+    const { container } = await draw();
+    const sentence = spendNotice("Generate anyway", SEVERAL_MODEL_CALLS);
+    const pressing = (root: ParentNode) => [...root.querySelectorAll("p")].map((line) => words(line)).filter((line) => line.startsWith("Pressing "));
+    expect(buttonNamed(band(container), "Generate anyway")).toBeTruthy();
+    expect(pressing(query(band(container), ".bj-band-item"))).toEqual([sentence]);
+    const row = container.querySelector("li[data-kind='resume_failed']") as HTMLElement;
+    expect(buttonNamed(row, "Generate anyway")).toBeTruthy();
+    expect(pressing(row)).toEqual([sentence]);
+  });
+
+  it("keeps that sentence with the item, not with Retry, when generating anyway fails", async () => {
+    answer({
+      "/today": [heldItem],
+      "/applications/app-1/prepare-result": prepareResult,
+      "POST /applications/app-1/prepare": new FakeApiError(500, "The engine did not answer."),
+    });
+    const { container } = await draw();
+    click(buttonNamed(band(container), "Generate anyway"));
+    await flush();
+    const callout = query(band(container), ".bj-today-problem");
+    expect(words(callout)).toContain("The engine did not answer.");
+    expect(words(buttonNamed(callout, "Retry"))).toBe("Retry");
+    expect(words(callout)).not.toContain("Pressing");
+    const notes = [...band(container).querySelectorAll("p")].filter((line) => words(line) === spendNotice("Generate anyway", SEVERAL_MODEL_CALLS));
+    expect(notes).toHaveLength(1);
+    expect(callout.contains(notes[0])).toBe(false);
   });
 
   it("names what is missing, with its link, when generating needs a key", async () => {

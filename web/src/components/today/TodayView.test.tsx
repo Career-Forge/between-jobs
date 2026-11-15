@@ -6,6 +6,7 @@ import type { GmailAccess } from "../../lib/gmailAccess";
 import { nextStepWithRow, type NextStepInput } from "../../lib/nextStep";
 import { todayLit, type TodayRowId } from "../../lib/nextStep/pages/today";
 import { SETTINGS_PATH } from "../../lib/settingsPaths";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "../../lib/spendNotice";
 import {
   applicationNames,
   backgroundView,
@@ -340,6 +341,72 @@ describe("a resume the fit check held back", () => {
     click(buttonNamed(container, "Generate anyway"));
     expect(onItemAction.mock.calls.map(([action, target]) => [action, target.id])).toEqual([["dismiss", "f1"]]);
     expect(onBandAction).toHaveBeenCalledWith("generate-anyway:f1");
+  });
+});
+
+describe("what pressing Generate anyway costs, said beside it", () => {
+  const sentence = spendNotice("Generate anyway", SEVERAL_MODEL_CALLS);
+  // Every line on the page that says what a press costs.
+  const pressing = (root: ParentNode) => [...root.querySelectorAll("p")].map(words).filter((line) => line.startsWith("Pressing "));
+
+  it("is in the band's item block, once, with the band's Generate anyway button above it", () => {
+    const { container } = draw({ items: [held], fits: { "app-1": { state: "held", score: 3.6 } } });
+    const section = band(container);
+    expect(buttonNamed(section, "Generate anyway")).toBeTruthy();
+    expect(pressing(section)).toEqual([sentence]);
+    expect(pressing(query(section, ".bj-band-item"))).toEqual([sentence]);
+    // The band's button row comes first, so the sentence sits under the buttons it is about.
+    expect(query(section, ".bj-band-body").compareDocumentPosition(query(section, ".bj-band-item").querySelector("p.bj-muted") as Element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("is in the list row of a held-back card that is not the lit one, ahead of the trail line", () => {
+    const { container } = draw({ items: [held, { ...held, id: "f2", application_id: "app-2" }] });
+    const row = rows(container)[0];
+    expect(buttonNamed(row, "Generate anyway")).toBeTruthy();
+    expect(pressing(row)).toEqual([sentence]);
+    // The trail stays the last line of the text.
+    expect(query(row, ".bj-today-row-body").lastElementChild?.className).toContain("bj-trail");
+    // One in the band for the lit card, one in the row: each card says it beside its own button.
+    expect(pressing(container)).toEqual([sentence, sentence]);
+  });
+
+  it("is drawn from the item's own field, so a list row and the band say exactly the same thing", () => {
+    const { container, view } = draw({ items: [held, { ...held, id: "f2", application_id: "app-2" }] });
+    expect(view.litItem?.id).toBe("f1");
+    expect(pressing(query(band(container), ".bj-band-item"))).toEqual(pressing(rows(container)[0]));
+  });
+
+  it("is not there when the button is not: a card that has moved on, one with no application, and the free controls", () => {
+    const moved = draw({ items: [held, ready], fits: { "app-1": { state: "moved_on" } } });
+    const movedRow = rows(moved.container).find((candidate) => candidate.getAttribute("data-kind") === "resume_failed") as HTMLElement;
+    expect(pressing(movedRow)).toEqual([]);
+    expect(pressing(moved.container)).toEqual([]);
+    moved.unmount();
+
+    const orphan = draw({ items: [{ ...held, application_id: null }] });
+    expect(pressing(orphan.container)).toEqual([]);
+    orphan.unmount();
+
+    // Nothing else on the page says what a press costs: See why, Dismiss, Track and Accept are free.
+    const others = draw({ items: [proposal, ready, match, tracked, staged] });
+    expect(pressing(others.container)).toEqual([]);
+  });
+
+  it("does not hang on Retry: a failed attempt keeps the sentence with the item, and the callout with Retry says nothing about cost", () => {
+    const { container } = draw({ items: [held], problems: { f1: { kind: "error", message: "Request failed (500)" } } });
+    const section = band(container);
+    const callout = query(section, ".bj-today-problem");
+    expect(words(buttonNamed(callout, "Retry"))).toBe("Retry");
+    expect(pressing(callout)).toEqual([]);
+    expect(words(callout)).not.toContain("Pressing");
+    expect(pressing(section)).toEqual([sentence]);
+    // The sentence is not in the callout's own block, so it cannot be read as being about Retry.
+    expect(callout.contains([...section.querySelectorAll("p")].find((line) => words(line) === sentence) as Element)).toBe(false);
+  });
+
+  it("stays while the request is out, beside the button that now reads Generating...", () => {
+    const { container } = draw({ items: [held], busy: { f1: "generate-anyway" } });
+    expect(pressing(band(container))).toEqual([sentence]);
   });
 });
 
