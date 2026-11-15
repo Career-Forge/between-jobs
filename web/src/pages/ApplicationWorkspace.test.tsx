@@ -315,6 +315,7 @@ describe("the sections", () => {
     ["only blank", "  \n\t  "],
     ["null", null],
     ["absent", undefined],
+    ["the API's placeholder", "(no description available)"],
   ])("offers no coverage check for a posting with %s text: one line, no panel and no button to press", async (_name, description_text) => {
     const { description_text: _saved, ...withoutText } = application().snapshot;
     describeAccount({ app: application({ snapshot: description_text === undefined ? withoutText : { ...withoutText, description_text } }) });

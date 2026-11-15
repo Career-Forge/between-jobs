@@ -28,8 +28,10 @@ import "../../styles/workspace.css";
 // makes a model call is never offered ahead of the answer that could forbid it. A posting with no text is
 // not offered the check either: the built-in engine refuses blank text before it calls any model, so a
 // button would promise a read and a call that cannot happen, and its Retry could never succeed. "No text"
-// here is the page's trim (postingBody); the engine also drops invisible characters first, so a posting of
-// nothing but those still gets the button, and its refusal shows as any other failed check, with Retry.
+// here is the page's rule (postingBody: a trim, and the sentence the API stores for a posting that had no
+// text, which would otherwise be sent to the model as if it were the description); the engine also drops
+// invisible characters first, so a posting of nothing but those still gets the button, and its refusal
+// shows as any other failed check, with Retry.
 
 export type Missing = { message: string; missing: readonly [StateLink, ...StateLink[]] };
 
