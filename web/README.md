@@ -121,27 +121,38 @@ rather than a press (picking a resume file) the third argument is `"Choosing"`. 
 no dashes; the helper's tests refuse dashes and the words a trail never says for the phrases the helper owns.
 A control that spends gets its sentence from the helper, or from a constant written in the same shape where the
 helper's one-clause form does not fit (Save this search, Create Gmail draft, the extension), and pins it in its
-own test, next to the control by role and text, so a restyle cannot lose it. A button that runs a costed press again (a Retry, a Try again, a Send again, a button that widens a search
-window) is covered by the cost sentence in the same panel, form or card when it has one, and is named in it only
-where the sentence says so. Named: the Hiring signals panel's sentence lists Search again, Try again after a
-failed search and its widen buttons; Contacts' Draft outreach sentence lists Redraft outreach and the Retry after a
-failed draft; the Generate panel's lists the Retry after a failed run; and Refresh, Search again and Practice
-again are named where they replace the first button. Not named, and covered by the sentence beside them: the Retry
-after a failed run in Company intel, Contacts, Events and Your play (their sentences end "... or Refresh once it
-has run,"); Tailor's Retry; Practice's Retry after a failed start and its "Send again" (the Submit note sits beside
-Submit answer); and the Hiring signals tab's widen button (the sentence under its form says "Search"). The
-next-step band's own Try again and Today's Retry on a held-back card have no sentence of their own: they re-run the
-press that the nearby form's or card's sentence already describes.
+own test, next to the control by role and text, so a restyle cannot lose it.
+
+A button that runs a costed press again (a Retry, a Try again, a Send again, a button that widens a search window)
+is covered by the cost sentence in the same panel, form or card when it has one, and is named in it only where that
+sentence says so. The lists below are what was read in the components, as examples, and are not every control.
+Named: the Hiring signals panel's sentence lists Search again, Try again after a failed search and its widen
+buttons; Contacts' Draft outreach sentence lists Redraft outreach and the Retry after a failed draft; the Generate
+panel's lists the Retry after a failed run, unless the next-step band holds that Retry (`retryInBand`), when the
+panel has none to name; resume import's names its Try again, and Close the gaps has a sentence of its own for its
+Try again; and Refresh, Search again and Practice again are named where they replace the first button. Not named,
+and covered by the sentence beside them: the Retry after a failed run in Company intel, Contacts, Events and Your
+play (their sentences name "Refresh once it has run", not Retry); Tailor's Retry; Practice's Retry after a failed
+start and its "Send again" (the Submit note sits beside Submit answer); and the Hiring signals tab's Try again and
+widen buttons (the sentence under its form says "Search"). Covered by a confirm and not by a sentence: Contacts'
+per-person lookups for a work email (an Apollo or Hunter credit) and a LinkedIn profile (an Exa credit) have no
+cost sentence, and each press, a Retry after a failed lookup included, asks `window.confirm`, which names the
+credit it uses. The next-step band's own Try again and Today's Retry on a held-back card have no sentence of their
+own: they re-run the press that the nearby form's or card's sentence already describes.
 
 Four controls also carry their sentence as their accessible description, so someone who reaches the button by
 keyboard or screen reader hears the cost with its name: Search (the form's button and the band's), Generate (the
 Generate panel's button, the band's, the honest read's Generate anyway and Today's), Check coverage and Submit
-answer. The sentence gets an id from `useId` (several panels can be mounted at once), is drawn whenever its button
-is so the id never points at nothing, and the button names it in `aria-describedby`; the band takes the ids in
-`NextStepBand`'s `describedBy`, one for its primary button and one for its secondary. The visible words do not
-change. Tests read the description back with `describedText` in `src/testing/forms.ts`, which fails on an id that
-names nothing. The other costed buttons (the research runs, Start practice session, Save this search) do not do
-this yet.
+answer (which, while the answer box is empty, is also described by the line that says why it is inert). The sentence
+gets an id from `useId` (several panels can be mounted at once), is drawn whenever its button is so the id never
+points at nothing, and the button names it in `aria-describedby`; the band takes the ids in `NextStepBand`'s
+`describedBy`, one for its primary button and one for its secondary. A restored Discover answer carries Search
+again's sentence in its "Showing your search from" line, which is drawn only when it has rows; in any other state the
+form says it itself. The visible words do not change. Tests read the description back with `describedText` in
+`src/testing/forms.ts`, which fails on an id that names nothing and on a note that is hidden (`hidden`,
+`aria-hidden="true"` or visually hidden, on it or around it). Other costed buttons, for example the research runs,
+Start practice session, Save this search, Draft outreach, Close the gaps, resume import and the Hiring signals
+searches, do not do this yet.
 
 Not covered by the shape, on purpose:
 
