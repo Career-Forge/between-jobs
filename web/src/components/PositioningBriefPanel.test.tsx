@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
 import { settle, text } from "../testing/forms";
@@ -39,6 +40,42 @@ describe("Your play", () => {
     expect(text(query(container, ".bj-rs-empty"))).toContain("It needs a model key and an active profile.");
     expect(container.querySelector(".bj-rs-brief, .bj-trail")).toBeNull();
     expect(buttonNamed(container, "Build my positioning brief")).toBeTruthy();
+  });
+
+  it("says in the intro, right above the build button, that pressing it makes a model call to read the posting and up to two more to write the brief, on the person's own key", async () => {
+    on(`GET ${PATH}`, { brief: null });
+    const { container } = panel();
+    await settle();
+    const sentence = spendNotice("Build my positioning brief, or Refresh once it has run,", `${A_MODEL_CALL} to read this posting's requirements, then up to two more to write the brief`);
+    expect(sentence).toBe(
+      "Pressing Build my positioning brief, or Refresh once it has run, makes a real model call on your own key to read this posting's requirements, then up to two more to write the brief.",
+    );
+    const intro = query(container, ".bj-ws-intro");
+    expect(text(intro)).toContain(sentence);
+    // What the intro said before is kept, apart from the line the sentence now says better.
+    expect(text(intro)).toContain("What to lead with, the one gap that matters for this role, and one project to close it.");
+    expect(text(intro)).not.toContain("Written by your model on your key.");
+    // The claim that Check coverage is not needed is still made, and still follows the cost.
+    const notNeeded = "It reads this posting's requirements itself, whether or not you have run Check coverage";
+    expect(text(intro)).toContain(notNeeded);
+    expect(text(intro).indexOf(sentence)).toBeLessThan(text(intro).indexOf(notNeeded));
+    expect(text(intro)).toContain("Company intel and the fit check from generating a resume, if you ran them.");
+    expect(buttonNamed(container, "Build my positioning brief").closest(".bj-actions")!.previousElementSibling).toBe(intro);
+  });
+
+  it("keeps the same sentence on screen for a stored brief, whose button reads Refresh, and beside a failed build's Retry", async () => {
+    on(`GET ${PATH}`, { brief: BRIEF });
+    on(`POST ${PATH}`, new FakeApiError("The server hit a problem.", "INTERNAL", undefined, 500));
+    const { container } = panel();
+    await settle();
+    const sentence = spendNotice("Build my positioning brief, or Refresh once it has run,", `${A_MODEL_CALL} to read this posting's requirements, then up to two more to write the brief`);
+    const intro = query(container, ".bj-ws-intro");
+    expect(text(intro)).toContain(sentence);
+    expect(buttonNamed(container, "Refresh").closest(".bj-actions")!.previousElementSibling).toBe(intro);
+    click(buttonNamed(container, "Refresh"));
+    await settle();
+    expect(buttonNamed(container, "Retry")).toBeTruthy();
+    expect(text(query(container, ".bj-ws-intro"))).toContain(sentence);
   });
 
   it("draws the three parts, each of the first two with its citation as evidence -- gold, the gap's too, never red or green", async () => {

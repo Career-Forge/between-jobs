@@ -3,6 +3,7 @@ import { apiFetch, ApiError } from "../lib/api";
 import { friendlyApiMessage } from "../lib/rateLimitMessage";
 import { briefTrail, failedTrail } from "../lib/researchTrails";
 import { failureOf, type Failure } from "../lib/setupRequired";
+import { A_MODEL_CALL, spendNotice } from "../lib/spendNotice";
 import { formatTrailDate } from "../lib/trail";
 import { useNow } from "../lib/useNow";
 import { BlockTrail } from "./paper/DocumentLayout";
@@ -45,6 +46,11 @@ interface PositioningBrief {
 type Read = { kind: "loading" } | { kind: "failed"; message: string } | { kind: "ready"; brief: PositioningBrief | null };
 
 type Outcome = Failure | { kind: "note"; message: string };
+
+// What one press of the build button costs. It sits in the intro, which stays on screen beside the button and its
+// Retry. Every press reads the posting's requirements first (one model call, nothing is stored to reuse), then the
+// brief itself takes up to two more, or none when there is no strength to lead with or no gap to name.
+const BUILD_SPEND = spendNotice("Build my positioning brief, or Refresh once it has run,", `${A_MODEL_CALL} to read this posting's requirements, then up to two more to write the brief`);
 
 export function PositioningBriefPanel({ applicationId, now }: { applicationId: string; now?: Date }) {
   const clock = useNow(now);
@@ -96,8 +102,8 @@ export function PositioningBriefPanel({ applicationId, now }: { applicationId: s
   return (
     <div className="bj-rs">
       <p className="bj-ws-intro">
-        What to lead with, the one gap that matters for this role, and one project to close it. Written by your model on your key. It reads this posting's requirements itself, whether or not you have run
-        Check coverage, matches them to your profile by code, and also uses Company intel and the fit check from generating a resume, if you ran them.
+        What to lead with, the one gap that matters for this role, and one project to close it. {BUILD_SPEND} It reads this posting's requirements itself, whether or not you have run Check coverage,
+        matches them to your profile by code, and also uses Company intel and the fit check from generating a resume, if you ran them.
       </p>
       <div className="bj-actions bj-rs-bar">
         <button ref={buildButton} type="button" aria-disabled={building || read.kind === "loading" ? true : undefined} onClick={() => void build()}>
