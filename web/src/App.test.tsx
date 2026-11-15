@@ -3,7 +3,9 @@ import { Navigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { AppShell } from "./components/AppShell";
+import { EnrollmentGate } from "./components/EnrollmentGate";
 import { PublicLayout } from "./components/PublicLayout";
+import { DiscoverHoldProvider } from "./lib/useDiscoverHold";
 import HowItWorks from "./pages/HowItWorks";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -161,6 +163,37 @@ describe("App", () => {
     current.auth.session = { user: { id: "user-1", email: "someone@example.test" } } as typeof current.auth.session;
     expect(shell().props).toMatchObject({ email: "someone@example.test" });
     expect(typeof (shell().props as { onSignOut: unknown }).onSignOut).toBe("function");
+  });
+
+  // The holder of the last Discover answer (lib/discoverHold.ts) has to outlive the page, so it sits around
+  // the gate and the routes; the page-level round trips are in appPages.test.tsx. Here: where it is in the
+  // tree, and that it is the signed-in person's alone.
+  describe("the holder of the last Discover answer", () => {
+    const provider = () => (shell().props as { children?: ReactElement }).children as ReactElement;
+
+    it("is the one child of the shell, around the gate, which is around the routes", () => {
+      expect(shell().type).toBe(AppShell);
+      expect(provider().type).toBe(DiscoverHoldProvider);
+      const gate = (provider().props as { children?: ReactElement }).children as ReactElement;
+      expect(gate.type).toBe(EnrollmentGate);
+    });
+
+    it("is keyed by the signed-in person's id, so a different person gets an empty one", () => {
+      expect(provider().key).toBe("user-1");
+      current.auth.session = { user: { id: "user-2" } };
+      expect(provider().key).toBe("user-2");
+    });
+
+    it("is not drawn for a signed-out visitor, on any screen: those screens are returned before the shell", () => {
+      current.auth.session = null;
+      for (const pathname of ["/", "/login", "/privacy", "/applications/1"]) {
+        current.pathname = pathname;
+        const node = shell();
+        expect(node.type, pathname).not.toBe(AppShell);
+        expect(node.type, pathname).not.toBe(DiscoverHoldProvider);
+        expect((node.props as { children?: ReactElement }).children?.type, pathname).not.toBe(DiscoverHoldProvider);
+      }
+    });
   });
 
   it("sends a signed-in person away from the sign-in page, to Today", () => {

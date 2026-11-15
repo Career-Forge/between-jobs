@@ -16,6 +16,7 @@ import {
   appView,
   documentTitleFor,
 } from "./lib/publicRoutes";
+import { DiscoverHoldProvider } from "./lib/useDiscoverHold";
 import { useDocumentTitle } from "./lib/useDocumentTitle";
 import { useScrollToTopOnNavigate } from "./lib/useScrollToTopOnNavigate";
 import Enroll from "./pages/Enroll";
@@ -122,30 +123,36 @@ export default function App() {
 
   return (
     <AppShell email={session?.user.email ?? null} onSignOut={() => void signOut()}>
-      {/* When the server requires the tester programme, a person who has not joined sees the
-          enrollment page here instead of any page but the exempt ones (lib/enrollment.ts). */}
-      <EnrollmentGate>
-        <RouteBoundary>
-          <Routes>
-            <Route path="/" element={<Today />} />
-            <Route path="/discover" element={<Discover />} />
-            <Route path="/hiring-signals" element={<HiringSignals />} />
-            <Route path="/applications" element={<Applications />} />
-            <Route path="/applications/:id" element={<ApplicationWorkspace />} />
-            <Route path="/practice" element={<Practice />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/profile/integrations" element={<LegacyIntegrationsRedirect />} />
-            <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
-            <Route path={HOW_IT_WORKS_PATH} element={<HowItWorks />} />
-            <Route path={OPEN_SOURCE_PATH} element={<OpenSource />} />
-            <Route path={PRIVACY_PATH} element={<Privacy />} />
-            <Route path={TERMS_PATH} element={<Terms />} />
-            <Route path={ENROLL_PATH} element={<Enroll />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </RouteBoundary>
-      </EnrollmentGate>
+      {/* The last Discover answer is held in memory for the signed-in person, so that opening that page
+          again can show it (lib/discoverHold.ts). The holder has to outlive the page, which unmounts when
+          the person leaves it, so it sits around the gate and the routes. It is keyed by the person's id,
+          so a different person starts with an empty one, and it is drawn only here, so signing out drops it. */}
+      <DiscoverHoldProvider key={session?.user.id}>
+        {/* When the server requires the tester programme, a person who has not joined sees the
+            enrollment page here instead of any page but the exempt ones (lib/enrollment.ts). */}
+        <EnrollmentGate>
+          <RouteBoundary>
+            <Routes>
+              <Route path="/" element={<Today />} />
+              <Route path="/discover" element={<Discover />} />
+              <Route path="/hiring-signals" element={<HiringSignals />} />
+              <Route path="/applications" element={<Applications />} />
+              <Route path="/applications/:id" element={<ApplicationWorkspace />} />
+              <Route path="/practice" element={<Practice />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/profile/integrations" element={<LegacyIntegrationsRedirect />} />
+              <Route path={UPDATE_PASSWORD_PATH} element={<UpdatePassword />} />
+              <Route path={HOW_IT_WORKS_PATH} element={<HowItWorks />} />
+              <Route path={OPEN_SOURCE_PATH} element={<OpenSource />} />
+              <Route path={PRIVACY_PATH} element={<Privacy />} />
+              <Route path={TERMS_PATH} element={<Terms />} />
+              <Route path={ENROLL_PATH} element={<Enroll />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </RouteBoundary>
+        </EnrollmentGate>
+      </DiscoverHoldProvider>
     </AppShell>
   );
 }
