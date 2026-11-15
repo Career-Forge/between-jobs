@@ -121,10 +121,17 @@ rather than a press (picking a resume file) the third argument is `"Choosing"`. 
 no dashes; the helper's tests refuse dashes and the words a trail never says for the phrases the helper owns.
 A control that spends gets its sentence from the helper, or from a constant written in the same shape where the
 helper's one-clause form does not fit (Save this search, Create Gmail draft, the extension), and pins it in its
-own test, next to the control by role and text, so a restyle cannot lose it. A button that runs the same paid
-press again (a Retry, a Try again, a button that widens a search window) is named in the sentence where the
-sentence sits beside it. Two are not: the next-step band's own Try again, and Today's Retry on a held-back
-card. They re-run the press that the nearby form's or card's sentence already describes.
+own test, next to the control by role and text, so a restyle cannot lose it. A button that runs a costed press again (a Retry, a Try again, a Send again, a button that widens a search
+window) is covered by the cost sentence in the same panel, form or card when it has one, and is named in it only
+where the sentence says so. Named: the Hiring signals panel's sentence lists Search again, Try again after a
+failed search and its widen buttons; Contacts' Draft outreach sentence lists Redraft outreach and the Retry after a
+failed draft; the Generate panel's lists the Retry after a failed run; and Refresh, Search again and Practice
+again are named where they replace the first button. Not named, and covered by the sentence beside them: the Retry
+after a failed run in Company intel, Contacts, Events and Your play (their sentences end "... or Refresh once it
+has run,"); Tailor's Retry; Practice's Retry after a failed start and its "Send again" (the Submit note sits beside
+Submit answer); and the Hiring signals tab's widen button (the sentence under its form says "Search"). The
+next-step band's own Try again and Today's Retry on a held-back card have no sentence of their own: they re-run the
+press that the nearby form's or card's sentence already describes.
 
 Not covered by the shape, on purpose:
 
@@ -558,7 +565,9 @@ are `styles/research.css`.
   "Clear match", never as a verification. Your play's citations are the same line with a gold diamond and no link. Nothing
   here is green.
 - **Contacts** gives no email address or phone number with a run. Each lookup is one person at a time, behind a confirm that
-  names the credit it spends, and a failure of one person's lookup or draft sits on that person's row. The server
+  names the credit it spends, and a failure of one person's lookup or draft sits on that person's row. What a draft costs is
+  said in the intro and once more directly above the list of people, so it sits by the per-person Draft buttons (the rows
+  themselves say nothing about cost, and the second copy is left out when no one was found). The server
   declining to draft or to build a brief for want of evidence (`INSUFFICIENT_EVIDENCE`) is a gold note with its own reason,
   not a failure. **An outreach draft stays a draft**: it is labeled "Draft -- not sent", every message has a Copy, the copy
   under it says nothing is sent from here, and Gmail drafting (optional, invite-only, saved as a draft in the person's own
