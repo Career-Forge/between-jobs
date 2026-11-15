@@ -44,8 +44,8 @@ import { BlockTrail } from "./paper/DocumentLayout";
 // :disabled.
 
 // What pressing the search button costs. It sits in the intro, above the button and the Try again and widen
-// buttons that run the same search.
-const SEARCH_SPEND = hiringSearchSpend("Find hiring posts, or Search again once it has run,");
+// buttons that run the same search, and it names them, so none of the buttons that search is left unsaid.
+const SEARCH_SPEND = hiringSearchSpend("Find hiring posts, Search again, Try again after a failed search, or a button that widens the window,");
 
 export interface PanelActions {
   setFreshness: (freshness: Freshness) => void;

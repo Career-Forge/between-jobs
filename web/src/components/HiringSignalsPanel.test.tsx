@@ -56,7 +56,7 @@ describe("HiringSignalsPanel, idle", () => {
     const html = renderIdle();
     const text = visibleText(html);
     const spend =
-      "Pressing Find hiring posts, or Search again once it has run, makes a real search call on your own search key, then tries each other search key you have saved only if that one fails or finds no posts.";
+      "Pressing Find hiring posts, Search again, Try again after a failed search, or a button that widens the window, makes a real search call on your own search key, then tries each other search key you have saved only if that one fails or finds no posts.";
     const cache = "A search repeated soon after is usually answered from a cache, which makes no new call.";
     const intro =
       "Recent public hiring posts about this company, found through the search provider you connected.";

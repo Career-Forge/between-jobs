@@ -221,7 +221,7 @@ describe("the search button", () => {
 describe("what pressing the search button costs", () => {
   // Spelled out in full on purpose: the words are the promise, and a refactor must not change them quietly.
   const SPEND =
-    "Pressing Find hiring posts, or Search again once it has run, makes a real search call on your own search key, then tries each other search key you have saved only if that one fails or finds no posts.";
+    "Pressing Find hiring posts, Search again, Try again after a failed search, or a button that widens the window, makes a real search call on your own search key, then tries each other search key you have saved only if that one fails or finds no posts.";
   const CACHE = "A search repeated soon after is usually answered from a cache, which makes no new call.";
   const INTRO = "Recent public hiring posts about this company, found through the search provider you connected.";
 
@@ -235,7 +235,7 @@ describe("what pressing the search button costs", () => {
     return [intro, controls];
   }
 
-  it("says in the intro that Find hiring posts, or Search again, makes a search call on the person's own key and may try their other keys", () => {
+  it("says in the intro that Find hiring posts, Search again, Try again and the widen buttons make a search call on the person's own key and may try their other keys", () => {
     const [intro, controls] = introAndControls(ready());
     expect(intro.type).toBe("p");
     expect(textOf(intro).replace(/\s+/g, " ").trim()).toBe(`${INTRO} ${SPEND} ${CACHE}`);
