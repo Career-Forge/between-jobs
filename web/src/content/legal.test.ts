@@ -1058,7 +1058,7 @@ describe("the lists of what each recipient receives match the payloads", () => {
     expect(aiList).toContain("written from the job's company, title and description");
   });
 
-  it("positioning briefs: the model reads the posting text first, then gets the skills, the company research and the stored fit read", () => {
+  it("positioning briefs: the model reads the posting text first, then gets the company, the role title, the skills, the company research and the stored fit read", () => {
     // The first call is the Tailor panel's requirement step, which sends the posting's text.
     const routes = apiModule("positioning_brief_routes");
     expect(routes).toContain("await load_coverage_context(supabase, http, user_id, document)");
@@ -1074,12 +1074,19 @@ describe("the lists of what each recipient receives match the payloads", () => {
     expect(brief).toContain("recommendation={recommendation}, overall_score={overall}/10");
     expect(brief).toContain('f"\\n\\n{fit_context_line(fit)}"');
     expect(brief).toContain("{c['claim_text']}");
+    // It also opens with the company and the role title.
+    expect(brief).toContain('f"Company: {company}\\nRole: {role_title}\\n\\n"');
+    expect(routes).toContain('company=job_snapshot["company_name"]');
+    expect(routes).toContain('role_title=job_snapshot["title"]');
     const line = aiList.split("\n").find((entry) => entry.startsWith("Positioning briefs"));
     expect(line).toBeDefined();
     expect(line).toContain("the job posting text, which the model reads first");
-    expect(line).toContain("your skills as matched against those requirements");
+    expect(line).toContain("then the company, the role title, your skills as matched against those requirements");
     expect(line).toContain("the company research you already have");
     expect(line).toContain("a fit check has run for the job, its recommendation and overall score");
+    // The resume engine's own entry says the requirements read is for positioning briefs as well as the Tailor panel.
+    const engine = PROCESSORS.find((processor) => processor.name === "Resume engine");
+    expect(engine?.detail.map(inlineText).join(" ")).toContain("reads the requirements in a job posting for the Tailor panel and for positioning briefs");
   });
 
   it("Exa: the contact's job title is part of the query, so the entry names it", () => {
