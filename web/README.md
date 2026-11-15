@@ -504,6 +504,10 @@ failure of one panel never changes the band. Its states and wording are under "R
   tolerated: the Studio, Tailor and Generate then say the profile is missing, with a link). `GET /credentials` is read
   once only to know whether a usable model key is saved (`modelKeyOf`), so Tailor, whose coverage check is a model call
   made only when the person presses "Check coverage", and Generate say so and fire nothing while it is known missing.
+  Tailor's check and Your play's build both start by reading the posting's requirements, so a posting with no text
+  (`postingBody` in `components/workspace/PostingBlock.tsx`: nothing, only blanks, or the sentence the API stores for a
+  tracked job that came with none) is offered neither: a line says so in place of each, and no request is made.
+  Generate and Practice do not wait for posting text.
   The resume part's requests are the generation hook's, `lib/useGeneration.ts`: the stored result read once on mount, a
   run, the two PDF downloads and the export checks (on request only: they recompile the LaTeX). Changing the status is
   `POST /applications/{id}/stage`, then a re-read.

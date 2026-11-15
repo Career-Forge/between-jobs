@@ -497,7 +497,7 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
               : null
           }
         />
-        <PanelSections applicationId={id} hiring={hiring} hiringRequested={location.hash === `#${SECTION_IDS.hiringPosts}`} />
+        <PanelSections applicationId={id} postingText={snapshot?.description_text} hiring={hiring} hiringRequested={location.hash === `#${SECTION_IDS.hiringPosts}`} />
       </DocumentLayout>
     </>
   );

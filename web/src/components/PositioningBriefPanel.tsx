@@ -10,6 +10,7 @@ import { BlockTrail } from "./paper/DocumentLayout";
 import { FailureState, LoadingState, PartialState } from "./paper/StateViews";
 import { EmptyBlock } from "./research/EmptyBlock";
 import { CitationItem, EvidenceList, EvidenceNote } from "./research/Evidence";
+import { postingBody } from "./workspace/PostingBlock";
 import { SetupRequiredNotice } from "./SetupRequiredNotice";
 import "../styles/workspace.css";
 import "../styles/research.css";
@@ -26,6 +27,12 @@ import "../styles/research.css";
 // reason (nothing supported to lead with, no gap left to name, or its last reply failed the parse or the
 // citation check), and that is a gold note, not a failure. A brief the code flagged for outcome-promise
 // wording is shown with each flag as a neutral outline note above it; nothing is removed.
+//
+// A posting with no text (the page's rule, postingBody: nothing, only blanks, or the sentence the API stores for a
+// posting that arrived without any) is not offered a build, as the Coverage block is not offered its check: the build
+// starts by reading the posting's requirements, so a button would promise a read that cannot happen, or would send that
+// stored sentence to the model as if it were the posting. The line that says so takes the intro's place; a brief
+// already stored is still shown.
 //
 // States: a placeholder while the stored brief is read; empty teaching before the first build; the brief
 // with the day it was built; a build in flight keeps the brief already shown and busies only its button;
@@ -52,7 +59,17 @@ type Outcome = Failure | { kind: "note"; message: string };
 // brief itself takes up to two more, or none when there is no strength to lead with or no gap to name.
 const BUILD_SPEND = spendNotice("Build my positioning brief, or Refresh once it has run,", `${A_MODEL_CALL} to read this posting's requirements, then up to two more to write the brief`);
 
-export function PositioningBriefPanel({ applicationId, now }: { applicationId: string; now?: Date }) {
+const NO_POSTING_TEXT = "There is no posting text to read this role's requirements from, so there is nothing to build a brief on.";
+
+export interface PositioningBriefPanelProps {
+  applicationId: string;
+  /** The posting's description as the API stored it; read with the page's rule for "has text" (postingBody). */
+  postingText: string | undefined | null;
+  now?: Date;
+}
+
+export function PositioningBriefPanel({ applicationId, postingText, now }: PositioningBriefPanelProps) {
+  const hasPosting = postingBody(postingText) !== "";
   const clock = useNow(now);
   const [read, setRead] = useState<Read>({ kind: "loading" });
   const [building, setBuilding] = useState(false);
@@ -102,14 +119,23 @@ export function PositioningBriefPanel({ applicationId, now }: { applicationId: s
   return (
     <div className="bj-rs">
       <p className="bj-ws-intro">
-        What to lead with, the one gap that matters for this role, and one project to close it. {BUILD_SPEND} It reads this posting's requirements itself, whether or not you have run Check coverage,
-        matches them to your profile by code, and also uses Company intel and the fit check from generating a resume, if you ran them.
+        What to lead with, the one gap that matters for this role, and one project to close it.{" "}
+        {hasPosting ? (
+          <>
+            {BUILD_SPEND} It reads this posting's requirements itself, whether or not you have run Check coverage, matches them to your profile by code, and also uses Company intel and the fit check from generating a
+            resume, if you ran them.
+          </>
+        ) : (
+          NO_POSTING_TEXT
+        )}
       </p>
-      <div className="bj-actions bj-rs-bar">
-        <button ref={buildButton} type="button" aria-disabled={building || read.kind === "loading" ? true : undefined} onClick={() => void build()}>
-          {building ? "Building..." : brief !== null ? "Refresh" : "Build my positioning brief"}
-        </button>
-      </div>
+      {hasPosting && (
+        <div className="bj-actions bj-rs-bar">
+          <button ref={buildButton} type="button" aria-disabled={building || read.kind === "loading" ? true : undefined} onClick={() => void build()}>
+            {building ? "Building..." : brief !== null ? "Refresh" : "Build my positioning brief"}
+          </button>
+        </div>
+      )}
 
       <div role="status" className="bj-rs-live">
         {built !== null && <p className="bj-rs-meta">Built {built}</p>}

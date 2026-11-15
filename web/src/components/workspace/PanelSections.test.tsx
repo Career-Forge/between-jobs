@@ -36,11 +36,11 @@ function describeEverything() {
   on("GET /applications/a1/positioning-brief", { brief: BRIEF });
 }
 
-function sections(hiring: HiringStatus = ENABLED, hiringRequested = false) {
+function sections(hiring: HiringStatus = ENABLED, hiringRequested = false, postingText: string | null = "Build and run batch pipelines.") {
   return render(
     <MemoryRouter>
       <DocumentLayout>
-        <PanelSections applicationId="a1" hiring={hiring} hiringRequested={hiringRequested} />
+        <PanelSections applicationId="a1" postingText={postingText} hiring={hiring} hiringRequested={hiringRequested} />
       </DocumentLayout>
     </MemoryRouter>,
   );
@@ -237,6 +237,22 @@ describe("a failure of one section never touches another", () => {
     expect(container.querySelectorAll(".bj-doc-margin .bj-trail")).toHaveLength(6);
     expect(text(container.querySelectorAll(".bj-doc-margin")[0].querySelector(".bj-trail")!)).toBe("✕ Company intel couldn't be read");
     expect(container.querySelectorAll(".bj-rs-item").length).toBeGreaterThan(0);
+  });
+});
+
+describe("Your play reads the posting's text", () => {
+  const yourPlay = (container: HTMLElement) => query(container, `#${SECTION_IDS.yourPlay}`).parentElement!;
+
+  it("offers a refresh while the posting has text, and none when it has none or only the API's placeholder", async () => {
+    const withText = sections();
+    await settle();
+    expect(buttonNamed(yourPlay(withText.container), "Refresh")).toBeTruthy();
+    for (const postingText of [null, "", "(no description available)"]) {
+      const { container } = sections(ENABLED, false, postingText);
+      await settle();
+      expect([...yourPlay(container).querySelectorAll("button")].some((button) => button.textContent === "Refresh")).toBe(false);
+      expect(text(yourPlay(container))).toContain("There is no posting text to read this role's requirements from");
+    }
   });
 });
 
