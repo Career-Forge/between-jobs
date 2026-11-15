@@ -7,6 +7,7 @@ import {
   readConsentDecision,
   type StoredConsent,
 } from "@/lib/consent";
+import { draftAnswerNote } from "@/lib/draftAnswerNote";
 import { asJurisdiction, isEligibilityQuestion, memoryTagsForLookup, memoryTagsForSave } from "@/lib/questionIntent";
 import { normalizeQuestionLabel } from "@/lib/questionMatching";
 import { sanitizeDraftText } from "@/lib/questionSafety";
@@ -961,13 +962,16 @@ export default function App() {
                           {draftable && (
                             <div className="question-answer">
                               {state.status === "idle" && trackedTabState !== null && (
-                                <button
-                                  onClick={() =>
-                                    handleDraftAnswer(trackedTabState.applicationId, q.fieldName, q.label)
-                                  }
-                                >
-                                  Draft answer
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() =>
+                                      handleDraftAnswer(trackedTabState.applicationId, q.fieldName, q.label)
+                                    }
+                                  >
+                                    Draft answer
+                                  </button>
+                                  <p className="question-meta">{draftAnswerNote("Draft answer")}</p>
+                                </>
                               )}
                               {state.status === "loading" && (
                                 <p className="question-meta">Checking for an answer...</p>
@@ -981,13 +985,16 @@ export default function App() {
                                       : state.message}
                                   </p>
                                   {trackedTabState !== null && (
-                                    <button
-                                      onClick={() =>
-                                        handleDraftAnswer(trackedTabState.applicationId, q.fieldName, q.label)
-                                      }
-                                    >
-                                      Try again
-                                    </button>
+                                    <>
+                                      <button
+                                        onClick={() =>
+                                          handleDraftAnswer(trackedTabState.applicationId, q.fieldName, q.label)
+                                        }
+                                      >
+                                        Try again
+                                      </button>
+                                      <p className="question-meta">{draftAnswerNote("Try again")}</p>
+                                    </>
                                   )}
                                 </div>
                               )}

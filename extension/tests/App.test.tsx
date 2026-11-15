@@ -1453,3 +1453,100 @@ describe("fields left empty on purpose are shown to the person", () => {
     expect(textOf()).not.toContain("Left empty");
   });
 });
+
+// ---- what pressing Draft answer (or Try again) costs, said beside the button ----------------------
+
+describe("what Draft answer costs, said beside the button", () => {
+  const sentence = (press: string) =>
+    `Pressing ${press} makes up to two real model calls on your own key, one to draft the answer and one to check the claims in it, unless you already saved an answer to this question.`;
+
+  function pageWithOneQuestion(): void {
+    toTab = (_tabId, message) => {
+      if (message.type === "GET_DETECTION_STATE") return tracked(APP_A);
+      if (message.type === "REQUEST_FILL") {
+        return fillResult({ unresolvedQuestions: [{ fieldName: "question_1", label: "Why us?", kind: "text" }] });
+      }
+      return undefined;
+    };
+  }
+
+  // The note a button is followed by, in the same block.
+  const noteAfter = (button: HTMLButtonElement | undefined) => {
+    const next = button?.nextElementSibling ?? null;
+    return next === null ? null : { tag: next.tagName, className: next.className, text: next.textContent };
+  };
+
+  it("says beside Draft answer, before it is pressed, that it can make up to two model calls on the person's own key", async () => {
+    pageWithOneQuestion();
+    await mount();
+
+    await click("Fill this page");
+
+    const button = buttonExactly("Draft answer");
+    expect(noteAfter(button)).toEqual({ tag: "P", className: "question-meta", text: sentence("Draft answer") });
+    expect(textOf()).toContain("Pressing Draft answer makes up to two real model calls on your own key");
+    // Nothing has been sent yet: the sentence is shown before the press, not after.
+    expect(backgroundMessages.filter((m) => m.type === "DRAFT_ANSWER")).toEqual([]);
+  });
+
+  it("says the same beside Try again after a draft the service declined, naming that button", async () => {
+    pageWithOneQuestion();
+    toBackground = (m) =>
+      m.type === "MATCH_ANSWER" ? { answer: null } : { eligible: true, answer_text: null, declined_reason: "That is not a question.", warnings: [] };
+    await mount();
+    await click("Fill this page");
+
+    await click("Draft answer");
+
+    expect(textOf()).toContain("That is not a question.");
+    expect(buttonExactly("Draft answer")).toBeUndefined();
+    expect(noteAfter(buttonExactly("Try again"))).toEqual({ tag: "P", className: "question-meta", text: sentence("Try again") });
+    expect(textOf()).not.toContain("Pressing Draft answer");
+  });
+
+  it("says the same beside Try again after a draft that failed", async () => {
+    pageWithOneQuestion();
+    toBackground = (m) => {
+      if (m.type === "MATCH_ANSWER") return { answer: null };
+      throw new Error("The model could not be reached.");
+    };
+    await mount();
+    await click("Fill this page");
+
+    await click("Draft answer");
+
+    expect(textOf()).toContain("The model could not be reached.");
+    expect(noteAfter(buttonExactly("Try again"))).toEqual({ tag: "P", className: "question-meta", text: sentence("Try again") });
+  });
+
+  it("is gone once there is a draft to review", async () => {
+    pageWithOneQuestion();
+    toBackground = (m) =>
+      m.type === "MATCH_ANSWER" ? { answer: null } : { eligible: true, answer_text: "A fresh draft", declined_reason: null, warnings: [] };
+    await mount();
+    await click("Fill this page");
+    expect(textOf()).toContain("Pressing Draft answer");
+
+    await click("Draft answer");
+
+    expect(container.querySelector("textarea")!.value).toBe("A fresh draft");
+    expect(textOf()).not.toContain("Pressing Draft answer");
+    expect(textOf()).not.toContain("Pressing Try again");
+  });
+
+  it("is not shown for a question that is answered by the person alone", async () => {
+    toTab = (_tabId, message) => {
+      if (message.type === "GET_DETECTION_STATE") return tracked(APP_A);
+      if (message.type === "REQUEST_FILL") {
+        return fillResult({ unresolvedQuestions: [{ fieldName: "resume", label: "Resume", kind: "file" }] });
+      }
+      return undefined;
+    };
+    await mount();
+
+    await click("Fill this page");
+
+    expect(textOf()).toContain("Upload this file yourself.");
+    expect(textOf()).not.toContain("Pressing Draft answer");
+  });
+});
