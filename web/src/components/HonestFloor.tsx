@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type { ForgeFitResult } from "../lib/generateTypes";
 import { dimensionRows, fitBadgeLabel } from "../lib/honestFloor";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { HONEST_READ_HEADING_ID } from "../lib/workspaceSections";
 import { SegmentedBar } from "./paper/SegmentedBar";
 import "../styles/workspace.css";
@@ -172,7 +173,7 @@ export function HonestFloor({
           {error}
         </p>
       )}
-      <p className="bj-ws-caption">Your call either way -- the platform advises, it never blocks.</p>
+      <p className="bj-ws-caption">Your call either way -- the platform advises, it never blocks. {spendNotice("Generate anyway", SEVERAL_MODEL_CALLS)}</p>
     </div>
   );
 }

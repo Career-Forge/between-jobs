@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ForgeFitResult } from "../lib/generateTypes";
+import { SEVERAL_MODEL_CALLS, spendNotice } from "../lib/spendNotice";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { FakeApiError, callsTo, on, reset } from "../testing/fakeApi";
 import { settle, text } from "../testing/forms";
@@ -63,6 +64,19 @@ describe("the honest read", () => {
     click(buttonNamed(container, "Generate anyway"));
     expect(onGenerateAnyway).toHaveBeenCalledTimes(1);
     expect(text(container)).toContain("Your call either way -- the platform advises, it never blocks.");
+  });
+
+  it("says, next to Generate anyway, that pressing it makes several model calls on the person's own key", () => {
+    const { container } = render(<HonestFloor applicationId="a1" fit={FIT} onGenerateAnyway={() => undefined} />);
+    const sentence = spendNotice("Generate anyway", SEVERAL_MODEL_CALLS);
+    const caption = [...container.querySelectorAll("p")].find((paragraph) => text(paragraph).includes(sentence));
+    expect(caption).toBeDefined();
+    expect(text(caption!)).toBe(`Your call either way -- the platform advises, it never blocks. ${sentence}`);
+    // The sentence sits in the same block as the button it is about, and Park (which is free) gets none.
+    const block = buttonNamed(container, "Generate anyway").closest(".bj-ws-honest");
+    expect(block).not.toBeNull();
+    expect(block!.contains(caption!)).toBe(true);
+    expect(text(container)).not.toContain("Pressing Park this application");
   });
 
   it("parks the application through the stage endpoint, tells the page, and says where to find it", async () => {
