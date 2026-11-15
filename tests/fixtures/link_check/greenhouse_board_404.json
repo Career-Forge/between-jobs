@@ -1,0 +1,9 @@
+{
+  "captured": "2026-11-04",
+  "request": "GET https://boards-api.greenhouse.io/v1/boards/no-such-board-0000/jobs",
+  "status": 404,
+  "body": {
+    "status": 404,
+    "error": "Job not found"
+  }
+}

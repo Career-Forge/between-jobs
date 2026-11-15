@@ -41,6 +41,8 @@ OTHER_SERVICES_MESSAGE_FIELD = {
     "api/discord_adapter.py": "reads the `message` a Discord button tap was attached to",
     "api/forge_engines_client.py": "reads a validation violation's `message` from forge-engines",
     "api/gmail_client.py": "reads Gmail's `message.threadId` out of a draft response",
+    "api/link_check.py": "reads the `message` of Workday's 403 answer, to tell a closed posting's "
+    '"permission denied" from any other refusal',
     "api/llm_client.py": "compares the `message` of a model provider's error answer with fixed "
     "fragments for a rejected key, and never repeats it",
     "api/upstream_errors.py": "reads the `message` of the resume engine's and the LaTeX service's "

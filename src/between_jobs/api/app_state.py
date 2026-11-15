@@ -22,6 +22,7 @@ from .discord_adapter import build_notifier as build_discord_notifier
 from .discord_client import DiscordClient
 from .discord_config import DiscordConfig
 from .errors import ApiError
+from .link_check import LinkChecker
 from .telegram_adapter import TelegramRenderer, build_notifier, webhook_info_fetcher
 from .telegram_client import TelegramClient
 from .telegram_identity import CHANNEL as TELEGRAM_CHANNEL
@@ -45,6 +46,13 @@ def get_hiring_http_client(request: Request) -> httpx.AsyncClient:
     (see `hiring_signal_search.refuse_non_provider_hosts`). Not `app.state.http`,
     which the ATS poller and Gmail also use for their own hosts."""
     return cast(httpx.AsyncClient, request.app.state.hiring_http)
+
+
+def get_link_checker(request: Request) -> LinkChecker:
+    """The link checker (link_check.py). It owns the one HTTP client that may talk to employers'
+    job boards, and with it the pacing, cool-downs and caches every check shares; not
+    `app.state.http`."""
+    return cast(LinkChecker, request.app.state.link_checker)
 
 
 def telegram_enabled(request: Request) -> bool:

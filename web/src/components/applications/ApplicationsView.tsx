@@ -1,4 +1,5 @@
 import type { Application, ApplicationStatus } from "../../lib/applicationsTypes";
+import type { LinkCheckEntry } from "../../lib/linkCheck";
 import type { NextStepOutcome } from "../../lib/nextStep";
 import ApplicationsBoard from "../ApplicationsBoard";
 import { ViewToggle } from "../ViewToggle";
@@ -44,8 +45,11 @@ export interface ApplicationsViewProps {
   onPhoneStatusChange: (status: ApplicationStatus) => void;
   busyIds: ReadonlySet<string>;
   problems: Readonly<Record<string, MoveProblem | undefined>>;
+  /** What "Check posting" last said for each card, or that its request is out. Never moves a card. */
+  linkChecks: Readonly<Record<string, LinkCheckEntry | undefined>>;
   onChangeStatus: (applicationId: string, status: ApplicationStatus) => void;
   onRetryMove: (applicationId: string) => void;
+  onCheckLink: (applicationId: string) => void;
   /** The tracking forms' own requests finished: read the list again. */
   onCreated: () => Promise<void>;
   /** Read the list again: the body callout's own Retry, offered only where the band holds none. */
@@ -78,8 +82,10 @@ function Cards({ props, applications }: { props: ApplicationsViewProps; applicat
         onStatusChange={props.onPhoneStatusChange}
         busyIds={props.busyIds}
         problems={props.problems}
+        linkChecks={props.linkChecks}
         onChangeStatus={props.onChangeStatus}
         onRetry={props.onRetryMove}
+        onCheckLink={props.onCheckLink}
       />
     );
   }
@@ -90,8 +96,10 @@ function Cards({ props, applications }: { props: ApplicationsViewProps; applicat
         now={props.now}
         busyIds={props.busyIds}
         problems={props.problems}
+        linkChecks={props.linkChecks}
         onChangeStatus={props.onChangeStatus}
         onRetry={props.onRetryMove}
+        onCheckLink={props.onCheckLink}
       />
     );
   }
@@ -104,8 +112,10 @@ function Cards({ props, applications }: { props: ApplicationsViewProps; applicat
           now={props.now}
           busy={props.busyIds.has(application.id)}
           problem={props.problems[application.id]}
+          linkCheck={props.linkChecks[application.id]}
           onChangeStatus={(status) => props.onChangeStatus(application.id, status)}
           onRetry={() => props.onRetryMove(application.id)}
+          onCheckLink={() => props.onCheckLink(application.id)}
         />
       ))}
     </ul>

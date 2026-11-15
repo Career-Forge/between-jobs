@@ -9,7 +9,8 @@ import Applications from "./Applications";
 
 // The page itself, against a fake API: which requests it makes, what the band says as the answers
 // arrive, the list, the board and the phone's one-status-at-a-time list, a status change from the
-// first choice to the re-read after it, and what each failure leaves behind. Every state is reached
+// first choice to the re-read after it, a card's Check posting from the press to the line it leaves, and
+// what each failure leaves behind. Every state is reached
 // here through the page's own requests, since the view that draws them takes only props.
 
 const api = vi.hoisted(() => ({ apiFetch: vi.fn() }));
@@ -24,10 +25,12 @@ class FakeApiError extends Error {
   settingsPath?: string;
   capability?: string;
   missing?: string[];
+  reason?: string;
+  retryAfterSeconds?: number;
   constructor(
     public readonly status: number,
     message: string,
-    extra: { code?: string; settingsPath?: string; capability?: string; missing?: string[] } = {},
+    extra: { code?: string; settingsPath?: string; capability?: string; missing?: string[]; reason?: string; retryAfterSeconds?: number } = {},
   ) {
     super(message);
     Object.assign(this, extra);
@@ -1023,6 +1026,457 @@ describe("a phone", () => {
   it("has no serious accessibility violation", async () => {
     const { container } = await draw(375);
     await expectNoSeriousA11yViolations(container);
+  });
+});
+
+describe("Check posting", () => {
+  const CHECK_A1 = "POST /applications/a1/check-link";
+  const LISTED = { state: "still_listed", reason: "listed", ats: "greenhouse", checked_at: "2026-11-04T14:32:05Z" };
+  const GONE = { state: "gone", reason: "absent", ats: "lever", checked_at: "2026-11-04T14:32:05Z" };
+  const CANT = { state: "cant_tell", reason: "company_page", ats: "other", checked_at: "2026-11-04T14:32:05Z" };
+  const SUGGESTION = "Open the posting to see for yourself.";
+
+  const checkButton = (container: HTMLElement, id: string) => query<HTMLButtonElement>(card(container, id), "button.bj-app-check");
+  const line = (container: HTMLElement, id: string) => query(card(container, id), ".bj-app-check-result");
+  const lineText = (container: HTMLElement, id: string) => text(line(container, id));
+  const checkCalls = () => calls().filter((call) => call.endsWith("/check-link"));
+  // Everything about a card that a check must leave alone: its place in the list, its status chip and select.
+  const cardsAsDrawn = (container: HTMLElement) =>
+    [...container.querySelectorAll("[data-app-id]")].map((element) => [
+      (element as HTMLElement).dataset.appId,
+      element.parentElement?.closest("[data-status]")?.getAttribute("data-status") ?? "list",
+      element.querySelector(".bj-app-chip")?.textContent ?? "",
+      element.querySelector<HTMLSelectElement>("select[data-role='status']")?.value ?? "",
+      element.getAttribute("aria-busy"),
+    ]);
+
+  it("is a button on every card of the list, named for its card, and a secondary one", async () => {
+    const { container } = await draw();
+    expect([...container.querySelectorAll("button.bj-app-check")].map((button) => button.getAttribute("aria-label"))).toEqual([
+      'Check posting for "Data Engineer" at Acme',
+      'Check posting for "ML Engineer" at Orbit',
+      'Check posting for "Analytics Engineer" at Initech',
+    ]);
+    expect(checkButton(container, "a1").textContent).toBe("Check posting");
+    expect(card(container, "a1").querySelector(".bj-app-controls")?.contains(checkButton(container, "a1"))).toBe(true);
+    expect(cyanFills(container)).toBe(0);
+    expect(card(container, "a1").lastElementChild?.classList.contains("bj-trail")).toBe(true);
+  });
+
+  it("makes no request until it is pressed, and then exactly one, a POST with no body", async () => {
+    answer({ [CHECK_A1]: LISTED });
+    const { container } = await draw();
+    expect(checkCalls()).toEqual([]);
+    click(checkButton(container, "a1"));
+    await settle();
+    expect(checkCalls()).toEqual([CHECK_A1]);
+    expect(api.apiFetch.mock.calls.find(([path]) => path === "/applications/a1/check-link")?.[1]).toEqual({ method: "POST" });
+  });
+
+  it("says nothing on any card before a press: every live region is there and empty", async () => {
+    const { container } = await draw();
+    const regions = [...container.querySelectorAll(".bj-app-card [role='status']")];
+    expect(regions).toHaveLength(3);
+    expect(regions.every((region) => region.textContent === "")).toBe(true);
+  });
+
+  it("shows a listed posting on its own card, and leaves the card as it was", async () => {
+    answer({ [CHECK_A1]: LISTED });
+    const { container } = await draw();
+    const before = cardsAsDrawn(container);
+    click(checkButton(container, "a1"));
+    await settle();
+    expect(lineText(container, "a1")).toBe("Still on the company's own board.");
+    expect(text(query(card(container, "a1"), ".bj-app-check-when"))).toBe("Checked just now.");
+    expect(line(container, "a1").getAttribute("data-state")).toBe("still_listed");
+    expect(cardsAsDrawn(container)).toEqual(before);
+    expect(line(container, "a2").textContent).toBe("");
+    expect(line(container, "a3").textContent).toBe("");
+    expect(titles(container)).toEqual(["Data Engineer", "ML Engineer", "Analytics Engineer"]);
+  });
+
+  it("shows a gone posting as gone and not as a rejection, and does not move, archive or re-status the card", async () => {
+    answer({ [CHECK_A1]: GONE });
+    const { container } = await draw();
+    const before = cardsAsDrawn(container);
+    api.apiFetch.mockClear();
+    click(checkButton(container, "a1"));
+    await settle();
+    expect(lineText(container, "a1")).toBe(
+      "No longer on the company's own board. That usually means the posting closed. It does not mean you were rejected.",
+    );
+    expect(cardsAsDrawn(container)).toEqual(before);
+    // The only request is the check: no move, and no re-read of the list.
+    expect(calls()).toEqual([CHECK_A1]);
+    expect(text(query(card(container, "a1"), ".bj-app-chip"))).toBe("◇Saved");
+    expect(sentence(container)).toBe("Your move on 2 · their move on 1.");
+  });
+
+  it("says why it can't tell, in words, and ends with the suggestion", async () => {
+    answer({ [CHECK_A1]: CANT });
+    const { container } = await draw();
+    click(checkButton(container, "a1"));
+    await settle();
+    expect(lineText(container, "a1")).toBe(`This link is on the company's own site, not a job platform we can read. ${SUGGESTION}`);
+    expect(line(container, "a1").getAttribute("data-state")).toBe("cant_tell");
+  });
+
+  it("does not repeat a reason it cannot read, and says so", async () => {
+    answer({ [CHECK_A1]: { ...CANT, reason: "from_a_newer_server" } });
+    const { container } = await draw();
+    click(checkButton(container, "a1"));
+    await settle();
+    expect(lineText(container, "a1")).toBe(`The company's board gave an answer we can't use, so we can't say about this job. ${SUGGESTION}`);
+    expect(container.textContent).not.toContain("from_a_newer_server");
+  });
+
+  it("holds the card's button still while its request is out: Checking..., busy, aria-disabled, and a second press is ignored", async () => {
+    let release: (value: unknown) => void = () => {};
+    answer({ [CHECK_A1]: () => new Promise((resolve) => (release = resolve)) });
+    const { container } = await draw();
+    const button = checkButton(container, "a1");
+    button.focus();
+    click(button);
+    click(button);
+    click(button);
+    await settle(1);
+    expect(checkCalls()).toEqual([CHECK_A1]);
+    expect(button.textContent).toBe("Checking...");
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.disabled).toBe(false);
+    expect(document.activeElement).toBe(button);
+    expect(line(container, "a1").textContent).toBe("");
+    // Only that button: the card is not "moving", its status select is free, and the other cards can be checked.
+    expect(card(container, "a1").getAttribute("aria-busy")).toBeNull();
+    expect(query(card(container, "a1"), "select[data-role='status']").getAttribute("aria-disabled")).toBeNull();
+    expect(checkButton(container, "a2").getAttribute("aria-disabled")).toBeNull();
+    await act(async () => release(LISTED));
+    await settle();
+    expect(button.textContent).toBe("Check posting");
+    expect(button.getAttribute("aria-busy")).toBeNull();
+    expect(document.activeElement).toBe(button);
+    expect(checkCalls()).toEqual([CHECK_A1]);
+  });
+
+  it("ignores a second press that lands before the page has redrawn the first", async () => {
+    answer({ [CHECK_A1]: () => new Promise(() => undefined) });
+    const { container } = await draw();
+    const button = checkButton(container, "a1");
+    act(() => {
+      button.click();
+      button.click();
+    });
+    await settle(1);
+    expect(checkCalls()).toEqual([CHECK_A1]);
+  });
+
+  it("makes one request per press: a press after the answer is a new check, and clears the old answer while it is out", async () => {
+    let release: (value: unknown) => void = () => {};
+    answer({ [CHECK_A1]: LISTED });
+    const { container } = await draw();
+    click(checkButton(container, "a1"));
+    await settle();
+    expect(lineText(container, "a1")).toContain("Still on the company's own board.");
+    answer({ [CHECK_A1]: () => new Promise((resolve) => (release = resolve)) });
+    click(checkButton(container, "a1"));
+    await settle(1);
+    expect(line(container, "a1").textContent).toBe("");
+    await act(async () => release(GONE));
+    await settle();
+    expect(lineText(container, "a1")).toContain("No longer on the company's own board.");
+    expect(checkCalls()).toEqual([CHECK_A1, CHECK_A1]);
+  });
+
+  it("checks two cards at once without one answer landing on the other", async () => {
+    let releaseFirst: (value: unknown) => void = () => {};
+    answer({ [CHECK_A1]: () => new Promise((resolve) => (releaseFirst = resolve)), "POST /applications/a2/check-link": GONE });
+    const { container } = await draw();
+    click(checkButton(container, "a1"));
+    click(checkButton(container, "a2"));
+    await settle();
+    expect(checkButton(container, "a1").textContent).toBe("Checking...");
+    expect(lineText(container, "a2")).toContain("No longer on the company's own board.");
+    expect(line(container, "a1").textContent).toBe("");
+    await act(async () => releaseFirst(LISTED));
+    await settle();
+    expect(lineText(container, "a1")).toContain("Still on the company's own board.");
+    expect(lineText(container, "a2")).toContain("No longer on the company's own board.");
+  });
+
+  it("keeps a pending check through a re-read of the list that another card's move caused", async () => {
+    let release: (value: unknown) => void = () => {};
+    answer({ [CHECK_A1]: () => new Promise((resolve) => (release = resolve)) });
+    const { container } = await draw();
+    click(checkButton(container, "a1"));
+    await settle(1);
+    choose(query<HTMLSelectElement>(card(container, "a2"), "select[data-role='status']"), "offer");
+    await settle();
+    expect(calls().filter((call) => call === "GET /applications")).toHaveLength(2);
+    expect(checkButton(container, "a1").getAttribute("aria-busy")).toBe("true");
+    await act(async () => release(LISTED));
+    await settle();
+    expect(lineText(container, "a1")).toContain("Still on the company's own board.");
+  });
+
+  describe("when the press gets no answer", () => {
+    it("words the person's own rate limit the way the rest of the app does, on the card, and lets them press again", async () => {
+      answer({ [CHECK_A1]: new FakeApiError(429, "Too many requests", { code: "RATE_LIMITED", retryAfterSeconds: 725 }) });
+      const { container } = await draw();
+      const before = cardsAsDrawn(container);
+      click(checkButton(container, "a1"));
+      await settle();
+      expect(lineText(container, "a1")).toBe(
+        `The check didn't go through. You are doing that too often. Try again in about 13 minutes. ${SUGGESTION}`,
+      );
+      expect(line(container, "a1").getAttribute("data-state")).toBe("unanswered");
+      expect(checkButton(container, "a1").getAttribute("aria-disabled")).toBeNull();
+      expect(cardsAsDrawn(container)).toEqual(before);
+    });
+
+    it("words a 429 that carries no code by its status", async () => {
+      answer({ [CHECK_A1]: new FakeApiError(429, "Request failed (429)") });
+      const { container } = await draw();
+      click(checkButton(container, "a1"));
+      await settle();
+      expect(lineText(container, "a1")).toBe(`The check didn't go through. You are doing that too often. Try again in a little while. ${SUGGESTION}`);
+    });
+
+    it("says checking is switched off for the 503 of the kill switch", async () => {
+      answer({ [CHECK_A1]: new FakeApiError(503, "Link checking is off.", { code: "PROVIDER_UNAVAILABLE", reason: "link_check_disabled" }) });
+      const { container } = await draw();
+      click(checkButton(container, "a1"));
+      await settle();
+      expect(lineText(container, "a1")).toBe(`Checking is switched off right now. ${SUGGESTION}`);
+    });
+
+    it("does not say switched off for a 503 that is something else, and keeps its words", async () => {
+      answer({ [CHECK_A1]: new FakeApiError(503, "Service Unavailable") });
+      const { container } = await draw();
+      click(checkButton(container, "a1"));
+      await settle();
+      expect(lineText(container, "a1")).toBe(`The check didn't go through. Service Unavailable. ${SUGGESTION}`);
+    });
+
+    it("keeps the server's words for any other failure, and for one that never reached the server", async () => {
+      answer({ [CHECK_A1]: new FakeApiError(502, "Bad gateway"), "POST /applications/a2/check-link": new TypeError("Failed to fetch") });
+      const { container } = await draw();
+      click(checkButton(container, "a1"));
+      click(checkButton(container, "a2"));
+      await settle();
+      expect(lineText(container, "a1")).toBe(`The check didn't go through. Bad gateway. ${SUGGESTION}`);
+      expect(lineText(container, "a2")).toBe(`The check didn't go through. Failed to fetch. ${SUGGESTION}`);
+    });
+
+    it("says an application deleted elsewhere is gone, in fixed words and not the server's, which carries its id", async () => {
+      // What check_application_link really answers for an id the person no longer has.
+      answer({ [CHECK_A1]: new FakeApiError(404, "no application found for id 'a1'", { code: "NOT_FOUND" }) });
+      const { container } = await draw();
+      click(checkButton(container, "a1"));
+      await settle();
+      expect(lineText(container, "a1")).toBe("That application is no longer here.");
+    });
+
+    it("says a reply it cannot read, and does not take it for an answer", async () => {
+      answer({ [CHECK_A1]: { state: "closed" } });
+      const { container } = await draw();
+      click(checkButton(container, "a1"));
+      await settle();
+      expect(lineText(container, "a1")).toBe(`The check didn't go through. The answer could not be read. ${SUGGESTION}`);
+    });
+
+    it("stays on its own card: no move callout, no alert, no change to the band, and no second request", async () => {
+      answer({ [CHECK_A1]: new FakeApiError(500, "Server unavailable") });
+      const { container } = await draw();
+      click(checkButton(container, "a1"));
+      await settle();
+      expect(container.querySelector(".bj-app-problem, [role='alert']")).toBeNull();
+      expect(sentence(container)).toBe("Your move on 2 · their move on 1.");
+      expect(checkCalls()).toEqual([CHECK_A1]);
+      expect(calls().filter((call) => call === "GET /applications")).toHaveLength(1);
+    });
+  });
+
+  it("is a line for each answer in a live region of its own, and the page's own announcement is untouched", async () => {
+    answer({ [CHECK_A1]: LISTED });
+    const { container } = await draw();
+    click(checkButton(container, "a1"));
+    await settle();
+    expect(line(container, "a1").getAttribute("role")).toBe("status");
+    expect(status(container)).toBe("");
+    expect(container.querySelectorAll(".bj-app-card [role='status']")).toHaveLength(3);
+  });
+
+  it("never calls a posting filled, or rejects the person, in any answer", async () => {
+    for (const reply of [LISTED, GONE, CANT, { ...CANT, reason: "blocked" }, { ...CANT, reason: "signals_disagree" }, { state: "x" }]) {
+      answer({ [CHECK_A1]: reply });
+      const view = await draw();
+      click(checkButton(view.container, "a1"));
+      await settle();
+      const words = lineText(view.container, "a1");
+      expect(words).not.toMatch(/\bfilled\b|verified/i);
+      if (reply !== GONE) expect(words).not.toMatch(/reject/i);
+      view.unmount();
+    }
+  });
+
+  it("keeps the answer when the card's own status is changed, and the card keeps its place in the list", async () => {
+    let applications: unknown[] = APPLICATIONS;
+    answer({
+      [CHECK_A1]: GONE,
+      "/applications": () => applications,
+      "POST /applications/a1/stage": () => {
+        applications = [{ ...SAVED, status: "applied", date_applied: "2026-10-05" }, APPLIED, INTERVIEW];
+        return {};
+      },
+    });
+    const { container } = await draw();
+    click(checkButton(container, "a1"));
+    await settle();
+    choose(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']"), "applied");
+    await settle();
+    expect(text(query(card(container, "a1"), ".bj-app-chip"))).toBe("●Applied");
+    expect(lineText(container, "a1")).toContain("No longer on the company's own board.");
+    expect(titles(container)).toEqual(["Data Engineer", "ML Engineer", "Analytics Engineer"]);
+  });
+
+  it("keeps nothing: no storage written, and a fresh page has no answers", async () => {
+    answer({ [CHECK_A1]: GONE });
+    const first = await draw();
+    click(checkButton(first.container, "a1"));
+    await settle();
+    expect(lineText(first.container, "a1")).toContain("No longer on the company's own board.");
+    expect(memory.size).toBe(0);
+    expect(document.cookie).toBe("");
+    first.unmount();
+
+    const again = await draw();
+    expect([...again.container.querySelectorAll(".bj-app-check-result")].every((region) => region.textContent === "")).toBe(true);
+    expect(calls().filter((call) => call.endsWith("/check-link"))).toEqual([CHECK_A1]);
+  });
+
+  it("has no serious accessibility violation with an answer of each kind on the list", async () => {
+    answer({ [CHECK_A1]: LISTED, "POST /applications/a2/check-link": GONE, "POST /applications/a3/check-link": new FakeApiError(429, "x", { code: "RATE_LIMITED" }) });
+    const { container } = await draw();
+    for (const id of ["a1", "a2", "a3"]) click(checkButton(container, id));
+    await settle();
+    await expectNoSeriousA11yViolations(container);
+    answer({ [CHECK_A1]: () => new Promise(() => undefined) });
+    click(checkButton(container, "a1"));
+    await settle(1);
+    await expectNoSeriousA11yViolations(container);
+  });
+
+  describe("on the board", () => {
+    it("is a button on every board card, after the Actions menu, with the answer under it", async () => {
+      answer({ [CHECK_A1]: GONE });
+      const { container } = await draw();
+      click(buttonNamed(container, "Board"));
+      expect(container.querySelectorAll("button.bj-app-check")).toHaveLength(3);
+      const controls = checkButton(container, "a1").parentElement as HTMLElement;
+      expect([...controls.children].map((child) => child.tagName + (child.getAttribute("aria-label") ?? "").slice(0, 7))).toEqual(["SELECTActions", "BUTTONCheck p", "P"]);
+      click(checkButton(container, "a1"));
+      await settle();
+      expect(lineText(container, "a1")).toContain("No longer on the company's own board.");
+      expect(controls.lastElementChild).toBe(line(container, "a1"));
+      expect(card(container, "a1").lastElementChild?.classList.contains("bj-trail")).toBe(true);
+    });
+
+    it("leaves the card in its column, undraggable only while a move is out, and moves nothing", async () => {
+      answer({ [CHECK_A1]: LISTED });
+      const { container } = await draw();
+      click(buttonNamed(container, "Board"));
+      const before = cardsAsDrawn(container);
+      api.apiFetch.mockClear();
+      click(checkButton(container, "a1"));
+      await settle();
+      expect(cardsAsDrawn(container)).toEqual(before);
+      expect(card(container, "a1").getAttribute("draggable")).toBe("true");
+      expect(titles(query(container, "[data-status='saved']"))).toEqual(["Data Engineer"]);
+      expect(calls()).toEqual([CHECK_A1]);
+    });
+
+    it("keeps the answer when the view is switched to the list and back, and when the card moves to another column", async () => {
+      let applications: unknown[] = APPLICATIONS;
+      answer({
+        [CHECK_A1]: GONE,
+        "/applications": () => applications,
+        "POST /applications/a1/stage": () => {
+          applications = [{ ...SAVED, status: "offer" }, APPLIED, INTERVIEW];
+          return {};
+        },
+      });
+      const { container } = await draw();
+      click(buttonNamed(container, "Board"));
+      click(checkButton(container, "a1"));
+      await settle();
+      click(buttonNamed(container, "List"));
+      expect(lineText(container, "a1")).toContain("No longer on the company's own board.");
+      click(buttonNamed(container, "Board"));
+      expect(lineText(container, "a1")).toContain("No longer on the company's own board.");
+      choose(query<HTMLSelectElement>(card(container, "a1"), "select[data-role='status']"), "offer");
+      await settle();
+      expect(titles(query(container, "[data-status='offer']"))).toEqual(["Data Engineer"]);
+      expect(lineText(container, "a1")).toContain("No longer on the company's own board.");
+    });
+
+    it("holds a pending button on the board the way the list does", async () => {
+      answer({ [CHECK_A1]: () => new Promise(() => undefined) });
+      const { container } = await draw();
+      click(buttonNamed(container, "Board"));
+      click(checkButton(container, "a1"));
+      click(checkButton(container, "a1"));
+      await settle(1);
+      expect(checkCalls()).toEqual([CHECK_A1]);
+      expect(checkButton(container, "a1").getAttribute("aria-busy")).toBe("true");
+      expect(card(container, "a1").getAttribute("aria-busy")).toBeNull();
+      expect(card(container, "a1").getAttribute("draggable")).toBe("true");
+    });
+
+    it("has no serious accessibility violation with answers on the board", async () => {
+      answer({ [CHECK_A1]: LISTED, "POST /applications/a2/check-link": CANT });
+      const { container } = await draw();
+      click(buttonNamed(container, "Board"));
+      click(checkButton(container, "a1"));
+      click(checkButton(container, "a2"));
+      await settle();
+      await expectNoSeriousA11yViolations(container);
+    });
+  });
+
+  describe("on a phone", () => {
+    it("is a button on the cards of the status that is showing, and the answer stays when the picker goes away and back", async () => {
+      answer({ [CHECK_A1]: GONE });
+      const { container } = await draw(375);
+      expect(container.querySelectorAll("button.bj-app-check")).toHaveLength(1);
+      click(checkButton(container, "a1"));
+      await settle();
+      expect(lineText(container, "a1")).toContain("No longer on the company's own board.");
+      choose(query<HTMLSelectElement>(container, "select[data-role='picker']"), "applied");
+      expect(container.querySelector('[data-app-id="a1"]')).toBeNull();
+      choose(query<HTMLSelectElement>(container, "select[data-role='picker']"), "saved");
+      expect(lineText(container, "a1")).toContain("No longer on the company's own board.");
+      expect(calls().filter((call) => call.endsWith("/check-link"))).toEqual([CHECK_A1]);
+    });
+
+    it("has no serious accessibility violation with an answer", async () => {
+      answer({ [CHECK_A1]: CANT });
+      const { container } = await draw(375);
+      click(checkButton(container, "a1"));
+      await settle();
+      await expectNoSeriousA11yViolations(container);
+    });
+  });
+
+  it("is never a second cyan fill, in any view or state", async () => {
+    answer({ [CHECK_A1]: LISTED });
+    const { container } = await draw();
+    click(checkButton(container, "a1"));
+    await settle();
+    expect(cyanFills(container)).toBe(0);
+    click(buttonNamed(container, "Board"));
+    expect(cyanFills(container)).toBe(0);
+    expect(container.querySelector(".bj-app-check")?.classList.contains("bj-primary")).toBe(false);
   });
 });
 

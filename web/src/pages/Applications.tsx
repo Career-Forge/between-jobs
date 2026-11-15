@@ -9,6 +9,8 @@ import { STATUS_LABELS, statusCounts } from "../lib/applicationsBoard";
 import type { Application, ApplicationStatus } from "../lib/applicationsTypes";
 import { phoneStatus, readStoredStatus, storeStatus } from "../lib/applicationsView";
 import { browserStorage } from "../lib/firstRun";
+import type { LinkCheckEntry } from "../lib/linkCheck";
+import { checkApplicationLink } from "../lib/linkCheckClient";
 import { nextStepWithRow, type NextStepInput } from "../lib/nextStep";
 import { START_TRACKING_INTENT, type ApplicationsFacts } from "../lib/nextStep/pages/applications";
 import { setupChecks } from "../lib/setupReads";
@@ -35,6 +37,11 @@ import { useSetupReads } from "../lib/useSetupReads";
 // one card while another card's select is still awaiting its response), and one shared busy id would
 // let the earlier request's card read as no longer busy the moment a second one starts, re-enabling
 // it for a concurrent, racing stage change.
+//
+// A card's "Check posting" is POST /applications/{id}/check-link: one request per press, one at a time per
+// card, and no re-read after it, since it never moves a card. What it said is held here by application id
+// until the page is reloaded -- not on the card, which is a new element when it changes column or view --
+// and is stored nowhere.
 
 // Where focus returns to when the control that had it is gone: the band, a card's status control
 // (after a move), or a card's Retry (after a Retry that failed again).
@@ -63,6 +70,7 @@ export default function Applications() {
   const [loadFailure, setLoadFailure] = useState<LoadFailure | null>(null);
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
   const [problems, setProblems] = useState<Record<string, MoveProblem | undefined>>({});
+  const [linkChecks, setLinkChecks] = useState<Record<string, LinkCheckEntry | undefined>>({});
   const [layout, setLayout] = useState<ApplicationsLayout>("list");
   const [remembered, setRemembered] = useState<ApplicationStatus | null>(() => readStoredStatus(browserStorage()));
   // `count` changes with every announcement, so the same words said twice in a row (moving a card
@@ -76,6 +84,7 @@ export default function Applications() {
   const checks = useMemo(() => setupChecks(setup.reads, setup.at, { modelKey: true }), [setup.reads, setup.at]);
   const retrySetup = setup.retry;
   const inFlight = useRef(new Set<string>());
+  const checking = useRef(new Set<string>());
   // The setup reads as they were when "Try again" was pressed on them: their answer is the first
   // different one that is not still loading, and focus returns to the band then.
   const setupRetry = useRef<typeof setup.reads | null>(null);
@@ -149,6 +158,17 @@ export default function Applications() {
         return next;
       });
     }
+  }
+
+  // The press is ignored while this card's check is out, so two presses in one tick are still one request. The
+  // last answer is cleared while the next one is out: a pending card has nothing to say yet.
+  async function checkLink(applicationId: string) {
+    if (checking.current.has(applicationId)) return;
+    checking.current.add(applicationId);
+    setLinkChecks((current) => ({ ...current, [applicationId]: { kind: "pending" } }));
+    const entry = await checkApplicationLink(apiFetch, applicationId);
+    checking.current.delete(applicationId);
+    setLinkChecks((current) => ({ ...current, [applicationId]: entry }));
   }
 
   function retryMove(applicationId: string) {
@@ -264,8 +284,10 @@ export default function Applications() {
       }}
       busyIds={busyIds}
       problems={shownProblems}
+      linkChecks={linkChecks}
       onChangeStatus={(applicationId, status) => void changeStatus(applicationId, status)}
       onRetryMove={retryMove}
+      onCheckLink={(applicationId) => void checkLink(applicationId)}
       onCreated={async () => {
         await load();
       }}

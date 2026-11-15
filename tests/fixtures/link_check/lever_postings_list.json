@@ -1,0 +1,15 @@
+{
+  "captured": "2026-11-04",
+  "request": "GET https://api.lever.co/v0/postings/leverdemo?mode=json",
+  "status": 200,
+  "body": [
+    {
+      "id": "ad208490-4052-4f91-a57e-433f2d1e484b",
+      "text": "Customer Success Manager"
+    },
+    {
+      "id": "120b5976-ee4e-4dc5-b31b-2b1ca124460c",
+      "text": "Dentist"
+    }
+  ]
+}

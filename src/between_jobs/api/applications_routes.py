@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Response
 from between_jobs.engines import claims_were_verified_by
 from supabase import AsyncClient
 
-from .app_state import get_http_client, get_supabase
+from .app_state import get_http_client, get_link_checker, get_supabase
 from .applications_store import (
     ApplicationNotFound,
     change_stage,
@@ -39,11 +39,13 @@ from .geo_gazetteer import explicit_country_of_location
 from .jobs_store import (
     SnapshotNotFound,
     create_job_from_paste,
+    get_jobs,
     get_snapshot,
     get_snapshots,
     guess_company_name_from_url,
     lookup_registry_posting,
 )
+from .link_check import Busy, LinkChecker, busy_error, disabled_error, link_check_enabled
 from .models import (
     ChangeApplicationStageRequest,
     CreateApplicationFromPasteRequest,
@@ -107,6 +109,24 @@ async def _job_jurisdiction(supabase: AsyncClient, application: dict[str, Any]) 
     except SnapshotNotFound:
         return None
     return explicit_country_of_location(snapshot.get("location_text"))
+
+
+async def _saved_link(supabase: AsyncClient, application: dict[str, Any]) -> str | None:
+    """The address the application was saved with: its active snapshot's `source_url`, else the
+    job's `canonical_url`, else None (a pasted job has neither). The server picks it, never the
+    request, so the link check can only ever read the link the person saved."""
+    snapshot_id = application.get("active_job_snapshot_id")
+    if snapshot_id:
+        try:
+            snapshot = await get_snapshot(supabase, snapshot_id)
+        except SnapshotNotFound:
+            snapshot = {}
+        source_url = snapshot.get("source_url")
+        if isinstance(source_url, str) and source_url.strip():
+            return source_url
+    jobs = await get_jobs(supabase, [application["job_id"]])
+    canonical_url = jobs[0].get("canonical_url") if jobs else None
+    return canonical_url if isinstance(canonical_url, str) else None
 
 
 async def _with_snapshot(
@@ -477,3 +497,28 @@ async def get_export_checklist(
             claims_verified=claims_were_verified_by(version_row.get("generator")),
         )
     }
+
+
+@router.post("/{application_id}/check-link", dependencies=[Depends(limit("link_check"))])
+async def check_application_link(
+    application_id: str,
+    user_id: str = Depends(require_user_id),
+    supabase: AsyncClient = Depends(get_supabase),
+    checker: LinkChecker = Depends(get_link_checker),
+) -> dict[str, str]:
+    """One check of whether the application's saved link is still on the employer's own job
+    board: `{"state": "still_listed" | "gone" | "cant_tell", "reason", "ats", "checked_at"}`
+    (link_check.py says what each means). Read-only and nothing is stored: the answer goes to the
+    caller and no table is written. The ownership lookup comes first, before the switch or any
+    request to an employer."""
+    try:
+        application = await get_application(supabase, user_id, application_id)
+    except ApplicationNotFound as e:
+        raise ApiError("NOT_FOUND", f"no application found for id {application_id!r}") from e
+    if not link_check_enabled():
+        raise disabled_error()
+    try:
+        result = await checker.check(await _saved_link(supabase, application))
+    except Busy as e:
+        raise busy_error() from e
+    return result.as_body()

@@ -1,0 +1,12 @@
+{
+  "captured": "2026-11-04",
+  "request": "GET https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/job/Nowhere/Nothing-To-See_JR0000000",
+  "status": 404,
+  "body": {
+    "errorCode": "S21",
+    "errorCaseId": "5D8DFDMW22U6DI",
+    "httpStatus": 404,
+    "message": "not found: Job_Posting_Anchor_ID=Nothing-To-See_JR0000000",
+    "messageParams": {}
+  }
+}

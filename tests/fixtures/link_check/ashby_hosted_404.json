@@ -1,0 +1,7 @@
+{
+  "captured": "2026-11-04",
+  "request": "GET https://jobs.ashbyhq.com/ashby/00000000-0000-0000-0000-000000000000",
+  "status": 404,
+  "content_type": "text/html; charset=utf-8",
+  "marker": "\"posting\":null"
+}
