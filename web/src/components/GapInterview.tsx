@@ -294,6 +294,7 @@ export function GapInterview({
                     {phase === "drafting" ? "Drafting..." : "Draft the fact →"}
                   </button>
                 </div>
+                <div className="bj-muted bj-small">{spendNotice("Draft the fact", A_MODEL_CALL)}</div>
               </div>
             )}
             {phase === "draft-error" && (

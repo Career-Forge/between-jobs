@@ -142,6 +142,27 @@ describe("Close the gaps", () => {
     expect(text(container)).toContain(sentence);
   });
 
+  it("says, right under Draft the fact, that pressing it makes a model call on the person's own key", async () => {
+    on("POST /resume-documents/doc-1/gap-interview", QUESTIONS);
+    const { container } = open();
+    click(buttonNamed(container, "Close the gaps"));
+    await settle();
+    const sentence = spendNotice("Draft the fact", A_MODEL_CALL);
+    expect(sentence).toBe("Pressing Draft the fact makes a real model call on your own key.");
+    // The answer form is not open yet, so the button and its sentence are not on screen.
+    expect(text(container)).not.toContain(sentence);
+    click(buttonNamed(container, "Yes, add detail"));
+    const actions = buttonNamed(container, /Draft the fact/).closest(".bj-actions");
+    expect(actions).not.toBeNull();
+    const note = actions!.nextElementSibling;
+    expect(note).not.toBeNull();
+    expect(text(note!)).toBe(sentence);
+    expect(note!.classList.contains("bj-muted")).toBe(true);
+    expect(note!.classList.contains("bj-small")).toBe(true);
+    // The sentence names the control without its arrow glyph.
+    expect(sentence).not.toContain("→");
+  });
+
   // Every step replaces the button that was pressed, which drops keyboard focus to the top of the page: it goes
   // to the block, which stays mounted, and a person who has moved on is left alone.
   it("keeps keyboard focus in the block through every step", async () => {
