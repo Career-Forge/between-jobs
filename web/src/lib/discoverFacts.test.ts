@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_REQUEST, discoverQuery, filtersSet, providerCounts, resultsAnnouncement, resultsFactOf, rowsOf, searchNotesOf, warningsOf } from "./discoverFacts";
+import { EMPTY_REQUEST, discoverQuery, filtersSet, hasRows, providerCounts, resultsAnnouncement, resultsFactOf, rowsOf, searchNotesOf, warningsOf } from "./discoverFacts";
 import { fitCounts } from "./discoverArrange";
 import type { DiscoverResponse, JobCard } from "./discoverTypes";
 
@@ -135,6 +135,13 @@ describe("the facts of a finished search", () => {
     expect(resultsFactOf(odd, EMPTY_REQUEST)).toMatchObject({ scored: 0, more: 0, deadRemoved: 0 });
     expect(rowsOf("nope")).toEqual([]);
     expect(warningsOf(odd)).toEqual([]);
+  });
+
+  it("has rows when either list holds one, and none when both are empty or are not lists", () => {
+    expect(hasRows(response({ scored: [], more: [] }))).toBe(false);
+    expect(hasRows({ ...response(), scored: undefined, more: null } as unknown as DiscoverResponse)).toBe(false);
+    expect(hasRows(response({ scored: [], more: [card("a")] }))).toBe(true);
+    expect(hasRows(response({ scored: [card("a")], more: [] }))).toBe(true);
   });
 
   it("drops blank and non-text warnings", () => {

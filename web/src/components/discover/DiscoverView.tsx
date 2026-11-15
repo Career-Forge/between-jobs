@@ -3,7 +3,7 @@ import { NextStepBand } from "../paper/NextStepBand";
 import { PageHeader } from "../paper/PageHeader";
 import { EmptyState, FailureState, LoadingState, SetupRequiredState, type StateLink } from "../paper/StateViews";
 import type { SavedSearchesActions } from "../SavedSearchesCardView";
-import type { DiscoverRequest } from "../../lib/discoverFacts";
+import { hasRows, type DiscoverRequest } from "../../lib/discoverFacts";
 import type { DiscoverResponse, JobCard } from "../../lib/discoverTypes";
 import type { NextStepOutcome } from "../../lib/nextStep";
 import { bandHoldsSearch } from "../../lib/nextStep/pages/discover";
@@ -92,14 +92,15 @@ export function DiscoverView(props: DiscoverViewProps) {
   const { now, search, setup } = props;
   const searched = search.kind === "ready" || search.kind === "error";
   const blockedReason = setup === null || setup.blocksSearch === false ? null : SETUP_BLOCKED_NOTE;
-  // A restored answer's lead (below) already says what Search again costs, and a blocked search is not
-  // one anyone can press, so the form says nothing in either case.
-  const spendNote = blockedReason !== null || props.restored !== undefined ? null : searchSpendNote(searched ? "Search again" : "Search");
-  // The one cost note is on the page under the form's buttons, or in the restored answer's lead (which is drawn only
-  // with the results). It describes the form's Search and the band's, whichever of the two it is, and each names it
-  // only while it is there.
+  // The restored answer's lead (below) says what Search again costs, but it is drawn only with rows: the results view
+  // draws an answer with none as "No results" and nothing else, and a setup block or a failure replaces the results
+  // altogether. Where the lead is not drawn, the form says what Search costs instead, so a pressable Search always has
+  // its sentence on the page. A blocked search is not one anyone can press, so the form says nothing there.
+  const noteInLead = props.restored !== undefined && setup === null && search.kind === "ready" && hasRows(search.result);
+  const spendNote = blockedReason !== null || noteInLead ? null : searchSpendNote(searched ? "Search again" : "Search");
+  // The one cost note is on the page under the form's buttons, or in the restored answer's lead. It describes the form's
+  // Search and the band's, whichever of the two it is, and each names it only while it is there.
   const spendNoteId = useId();
-  const noteInLead = props.restored !== undefined && setup === null && search.kind === "ready";
   const noteOnPage = spendNote !== null || noteInLead;
   return (
     <div className="bj-discover">

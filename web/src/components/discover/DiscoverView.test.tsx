@@ -1643,11 +1643,26 @@ describe("what pressing Search costs, as the buttons' description", () => {
     expect(describedText(bandButton(container))).toBe(SEARCH_AGAIN_SPEND_NOTE);
   });
 
-  it("names the note only while it is on the page: a restored line that is not drawn leaves nothing to point at", () => {
-    for (const overrides of [{ search: { kind: "loading", startedAt: NOW.getTime() } }, { search: { kind: "error", message: "x" } }] as Partial<DiscoverViewProps>[]) {
-      const { container } = draw({ ...overrides, restored: { at: "09:14" } });
-      for (const button of container.querySelectorAll("[aria-describedby]")) expect(() => describedText(button)).not.toThrow();
-      expect(submit(container).getAttribute("aria-describedby")).toBeNull();
+  it("says what Search costs under the form, and names that note, when the restored answer's line is not drawn", () => {
+    const empty = response({ scored: [], more: [] });
+    const states: [string, Partial<DiscoverViewProps>][] = [
+      ["a search in flight", { search: { kind: "loading", startedAt: NOW.getTime() } }],
+      ["a failed search", { search: { kind: "error", message: "x" } }],
+      // The results view draws an answer with no rows as "No results", without the line that carries the note.
+      ["an answer with no rows", ready(empty)],
+      ["setup the server said is missing, which leaves Search pressable", { setup: { ...blocked, blocksSearch: false } }],
+    ];
+    for (const [name, overrides] of states) {
+      const { container, unmount } = draw({ ...overrides, restored: { at: "09:14" } });
+      // Whichever of the form's Search and the band's is on the page (the band holds Search before a search has run).
+      const search = container.querySelector<HTMLButtonElement>("form button[type='submit']") ?? bandButton(container);
+      const note = document.getElementById(search.getAttribute("aria-describedby") ?? "");
+      expect(note, name).not.toBeNull();
+      expect(query(container, "form").contains(note), name).toBe(true);
+      expect(words(note), name).toMatch(/^Pressing Search(?: again)? makes a real model call on your own key/);
+      expect(words(container), name).not.toContain("Showing your search from");
+      for (const button of container.querySelectorAll("[aria-describedby]")) expect(() => describedText(button), name).not.toThrow();
+      unmount();
     }
   });
 
@@ -1668,6 +1683,9 @@ describe("what pressing Search costs, as the buttons' description", () => {
       fallback(),
       fallback({ restored: { at: "09:14" } }),
       { ...ready(), restored: { at: "09:14" } },
+      { ...ready(response({ scored: [], more: [] })), restored: { at: "09:14" } },
+      { ...ready(), restored: { at: "09:14" }, setup: blocked },
+      { ...ready(), restored: { at: "09:14" }, setup: { ...blocked, blocksSearch: false } },
       { setup: blocked },
       { setup: { ...blocked, blocksSearch: false } },
       { saving: true },
