@@ -40,6 +40,12 @@ export function rowsOf(list: unknown): JobCard[] {
   return Array.isArray(list) ? (list as JobCard[]) : [];
 }
 
+// Whether an answer has a row to draw. The results view draws an answer with none as "No results" and nothing else, so
+// whatever is placed only in a drawn answer (the restored answer's lead) is not there for one.
+export function hasRows(result: DiscoverResponse): boolean {
+  return rowsOf(result.scored).length + rowsOf(result.more).length > 0;
+}
+
 export function warningsOf(result: DiscoverResponse): string[] {
   return Array.isArray(result.warnings) ? result.warnings.filter((warning): warning is string => typeof warning === "string" && warning.trim() !== "") : [];
 }

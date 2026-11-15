@@ -16,7 +16,7 @@ import {
   type Section,
   type SortMode,
 } from "../../lib/discoverArrange";
-import { rowsOf, searchNotesOf } from "../../lib/discoverFacts";
+import { hasRows, rowsOf, searchNotesOf } from "../../lib/discoverFacts";
 import type { DiscoverResponse, JobCard } from "../../lib/discoverTypes";
 import { fitViewOf, isFallback } from "../../lib/discoverRow";
 import { EmptyState } from "../paper/StateViews";
@@ -114,7 +114,7 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
   const notes = searchNotesOf(result);
   const strategy = typeof result.scoring_strategy === "string" ? result.scoring_strategy : "";
 
-  if (scored.length + more.length === 0) {
+  if (!hasRows(result)) {
     return (
       <div className="bj-disc-results">
         <SearchStatus notes={notes} showSources={false} />
