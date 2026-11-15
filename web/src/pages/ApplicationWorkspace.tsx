@@ -448,7 +448,9 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
         problem={statusProblem?.source === "select" ? <FailureState message={statusProblem.message} onRetry={statusProblem.retry} /> : undefined}
       />
       <NextStepBand outcome={outcome} onAction={onBandAction} pending={pending}>
-        {bandSpend !== null && <p className="bj-small bj-muted">{spendNotice(bandSpend, SEVERAL_MODEL_CALLS)}</p>}
+        {/* A caption, not a bare paragraph: workspace.css gives it a small top margin and none below, where a plain <p>
+            would take the browser's paragraph margins (the band's own item rules live in the Today stylesheet). */}
+        {bandSpend !== null && <p className="bj-ws-caption">{spendNotice(bandSpend, SEVERAL_MODEL_CALLS)}</p>}
         {coverLetterInBand && (
           <label className="bj-ws-check bj-small">
             <input type="checkbox" checked={controller.wantCoverLetter} onChange={(e) => controller.setWantCoverLetter(e.target.checked)} disabled={controller.state.kind === "generating"} />

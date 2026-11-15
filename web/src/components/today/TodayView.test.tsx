@@ -356,7 +356,12 @@ describe("what pressing Generate anyway costs, said beside it", () => {
     expect(pressing(section)).toEqual([sentence]);
     expect(pressing(query(section, ".bj-band-item"))).toEqual([sentence]);
     // The band's button row comes first, so the sentence sits under the buttons it is about.
-    expect(query(section, ".bj-band-body").compareDocumentPosition(query(section, ".bj-band-item").querySelector("p.bj-muted") as Element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const note = [...query(section, ".bj-band-item").querySelectorAll("p")].find((line) => words(line) === sentence) as Element;
+    expect(note).toBeTruthy();
+    expect(query(section, ".bj-band-body").compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // It is drawn as one of the item's own detail lines, so it takes their zero margin instead of the browser's
+    // paragraph margins inside the item's flex gap.
+    expect(note.classList.contains("bj-today-detail")).toBe(true);
   });
 
   it("is in the list row of a held-back card that is not the lit one, ahead of the trail line", () => {

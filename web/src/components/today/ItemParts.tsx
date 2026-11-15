@@ -49,7 +49,8 @@ export function ItemBody({ view }: { view: RowView }) {
           {"”"}
         </p>
       ))}
-      {view.spendNote !== undefined && <p className="bj-small bj-muted">{view.spendNote}</p>}
+      {/* A detail line like the ones above it: the same class, so the same zero margin inside the item's gap. */}
+      {view.spendNote !== undefined && <p className="bj-today-detail">{view.spendNote}</p>}
       <TrailLine trail={view.trail} receipt={view.receipt} receiptTitle="Where this came from" />
     </>
   );

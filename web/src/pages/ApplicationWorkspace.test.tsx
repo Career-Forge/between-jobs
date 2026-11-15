@@ -509,6 +509,8 @@ describe("the band, from the first step to the last", () => {
     // The band's cyan press is the page's most-pressed button, so it says what it costs, ahead of the
     // cover letter choice that widens it.
     expect(bandNotes(container)).toEqual([spendNotice("Generate resume", SEVERAL_MODEL_CALLS)]);
+    // A caption: workspace.css owns its spacing (a bare paragraph would take the browser's margins).
+    expect(query(band(container), ".bj-band-item p").className).toBe("bj-ws-caption");
     expect([...query(band(container), ".bj-band-item").children].map((node) => text(node))).toEqual([
       spendNotice("Generate resume", SEVERAL_MODEL_CALLS),
       "Also draft a cover letter (a real, extra model call, and a second if the letter fails its checks)",
