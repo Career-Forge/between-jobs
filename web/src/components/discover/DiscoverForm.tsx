@@ -42,7 +42,7 @@ export interface DiscoverFormProps {
   onChange: (values: DiscoverRequest) => void;
   /** A search is in flight: Search reads "Searching..." and ignores presses. */
   searching: boolean;
-  /** A search has run on this visit: the button says "Search again". */
+  /** A finished search is on show, run on this visit or brought back from an earlier one: the button says "Search again". */
   searched: boolean;
   /** Setup is known to be missing: Search ignores presses, and the reason is said beside it. */
   blockedReason: string | null;

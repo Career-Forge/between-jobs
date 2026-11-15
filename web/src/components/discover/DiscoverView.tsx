@@ -21,7 +21,8 @@ import "../../styles/discover.css";
 //   loading   static placeholder rows in the row's own shape, with the elapsed counter in the band
 //   setup     what is missing, each with a link to where it is fixed -- no request is made
 //   error     what could not be read; the band holds "Try again", so the body has no Retry of its own
-//   ready     the rows (lib/discoverRow.ts), what did not arrive, "No results" when nothing did
+//   ready     the rows (lib/discoverRow.ts), what did not arrive, "No results" when nothing did; for an
+//             answer brought back from an earlier visit, one line above them says when it is from
 
 export type SearchView =
   | { kind: "idle" }
@@ -52,6 +53,12 @@ export interface DiscoverViewProps {
   onSave: () => void;
   saving: boolean;
   search: SearchView;
+  /**
+   * Present only while the answer on show was brought back from an earlier visit, never null: `at` is the
+   * clock time it arrived, already written for the reader. A fresh answer leaves it out, and so does any
+   * state that is not a finished search.
+   */
+  restored?: { at: string };
   /** Setup is known to be missing (read, or the server said so): drawn instead of the search's body. */
   setup: SetupView | null;
   /** The setup reads are still out: the idle "Find a job" text waits for them, so it is not swapped for the setup block a moment later. */
@@ -65,6 +72,10 @@ export interface DiscoverViewProps {
 }
 
 export const SETUP_BLOCKED_NOTE = "Search is waiting on the setup above.";
+
+// What pressing Search again costs, said before it is pressed. A search asks every search provider the
+// person has connected, with their own keys, and scores what it finds with one call on their own model key.
+export const SEARCH_AGAIN_SPEND_NOTE = "Pressing Search again makes a real model call on your own key and uses any search keys you have connected.";
 
 export function DiscoverView(props: DiscoverViewProps) {
   const { now, search, setup } = props;
@@ -104,6 +115,11 @@ export function DiscoverView(props: DiscoverViewProps) {
           )}
           {search.kind === "loading" && <LoadingState rows={3} rowHeight={200} label="Searching..." announce={false} />}
           {search.kind === "error" && <FailureState message={`The search couldn't be read: ${search.message}`} />}
+          {search.kind === "ready" && props.restored !== undefined && (
+            <p className="bj-disc-note">
+              Showing your search from {props.restored.at}. The scores and link checks are from then and have not been refreshed. {SEARCH_AGAIN_SPEND_NOTE}
+            </p>
+          )}
           {search.kind === "ready" && (
             <ResultsView
               result={search.result}

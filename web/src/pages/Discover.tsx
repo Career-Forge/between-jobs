@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth";
 import { DiscoverView, type SearchView, type SetupView } from "../components/discover/DiscoverView";
 import type { StateLink } from "../components/paper/StateViews";
@@ -9,6 +9,7 @@ import {
   discoverQuery,
   resultsAnnouncement,
   resultsFactOf,
+  rowsOf,
   savedSearchBody,
   type DiscoverRequest,
 } from "../lib/discoverFacts";
@@ -24,6 +25,7 @@ import { MODEL_PROVIDER_PATH, SETTINGS_PATH } from "../lib/settingsPaths";
 import { type SetupNotice, failureOf } from "../lib/setupRequired";
 import { clockTime } from "../lib/todayFeed";
 import { useBandFocus } from "../lib/useBandFocus";
+import { useDiscoverHold } from "../lib/useDiscoverHold";
 import { useSavedSearches } from "../lib/useSavedSearches";
 import { useSetupReads } from "../lib/useSetupReads";
 
@@ -47,6 +49,17 @@ import { useSetupReads } from "../lib/useSetupReads";
 // the setup reads show it missing (a server answer of SETUP_REQUIRED does not stop the next press: the
 // server is asked again). A test pins this (Discover.test.tsx).
 //
+// WHAT IS KEPT. The page unmounts when the person opens a job or goes to another page, so the last finished
+// answer is held in memory outside it (lib/discoverHold.ts, handed down by lib/useDiscoverHold.tsx) and read
+// once when the page opens again. A held answer comes back as it was: the same rows, the form filled with the
+// filters that produced it, and the postings already tracked from it. Showing it makes no request, and it is
+// not a new search, so it does not count as one for the first-run checklist. It says when it is from and that
+// nothing was refreshed (DiscoverView.tsx), and pressing Search again replaces it like any other search.
+// What is held is the last answer that came back with rows: a search that is running, that failed or that
+// asked for setup leaves it where it is, so a failed "Search again" does not take the earlier list away,
+// while an answer with no rows and "Clear filters" empty it. It lives in memory only (a reload starts
+// empty), is dropped after two hours, and belongs to one signed-in person.
+//
 // This file is the reading and the requests; what is drawn for each state is
 // components/discover/DiscoverView.tsx, the row words are lib/discoverRow.ts.
 
@@ -55,7 +68,9 @@ type State =
   | { kind: "loading"; startedAt: number; request: DiscoverRequest }
   | { kind: "setup"; notice: SetupNotice; request: DiscoverRequest }
   | { kind: "error"; message: string; at: string; request: DiscoverRequest }
-  | { kind: "ready"; result: DiscoverResponse; request: DiscoverRequest };
+  // `at` is when the answer arrived (milliseconds since the epoch); `restored` marks an answer brought back
+  // from the hold on opening the page, as opposed to one this visit searched for.
+  | { kind: "ready"; result: DiscoverResponse; request: DiscoverRequest; at: number; restored: boolean };
 
 const SEARCH_INPUT_SELECTOR = ".bj-disc-form input[type='text']";
 
@@ -84,10 +99,17 @@ export default function Discover() {
   const setup = useSetupReads();
   const saved = useSavedSearches();
   const [now] = useState(() => new Date());
-  const [values, setValues] = useState<DiscoverRequest>(EMPTY_REQUEST);
-  const [state, setState] = useState<State>({ kind: "idle" });
+  const hold = useDiscoverHold();
+  // The held answer, read once when the page opens: in a state initialiser, so no render reads it again, and
+  // the three states below start from this one read. Reading takes nothing out of the hold, so a development
+  // build that runs the initialiser twice reads the same answer twice.
+  const [restore] = useState(() => hold.read());
+  const [values, setValues] = useState<DiscoverRequest>(() => restore?.request ?? EMPTY_REQUEST);
+  const [state, setState] = useState<State>(() =>
+    restore === null ? { kind: "idle" } : { kind: "ready", result: restore.result, request: restore.request, at: restore.at, restored: true },
+  );
   const [tracking, setTracking] = useState<ReadonlySet<string>>(new Set());
-  const [tracked, setTracked] = useState<Record<string, string>>({});
+  const [tracked, setTracked] = useState<Readonly<Record<string, string>>>(() => restore?.tracked ?? {});
   const [trackErrors, setTrackErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -162,7 +184,7 @@ export default function Discover() {
       setAnnouncement("");
       try {
         const result = await apiFetch<DiscoverResponse>(`/discover?${discoverQuery(request)}`);
-        setState({ kind: "ready", result, request });
+        setState({ kind: "ready", result, request, at: Date.now(), restored: false });
         setAnnouncement(resultsAnnouncement(resultsFactOf(result, request)));
         // A search leaves no row, so the first-run checklist (Today) remembers that this person has
         // run one, per user, in this browser (see lib/firstRun.ts).
@@ -182,7 +204,27 @@ export default function Discover() {
   );
 
   // Opening the page must NOT search (see the header). The only effects here read the account, in the
-  // hooks above; none of them calls `search`.
+  // hooks above, and keep the hold below; none of them calls `search`.
+
+  // Keeps the hold true to the page (see WHAT IS KEPT in the header). A finished answer with rows is held with
+  // what was tracked from it, an answer with no rows empties the hold, and anything else (a search running,
+  // a failure, a setup answer, the idle page) leaves the held answer alone, except that a row tracked while
+  // one of those is on show still belongs to the answer it came from. An answer that is already held as it
+  // is (one just restored) is not written again, and a write keeps the time the answer arrived, so showing
+  // it again never makes it younger.
+  useEffect(() => {
+    const held = hold.read();
+    if (state.kind !== "ready") {
+      if (held !== null && held.tracked !== tracked) hold.write({ ...held, tracked });
+      return;
+    }
+    if (rowsOf(state.result.scored).length + rowsOf(state.result.more).length === 0) {
+      hold.clear();
+      return;
+    }
+    if (held !== null && held.result === state.result && held.tracked === tracked) return;
+    hold.write({ result: state.result, request: state.request, tracked, at: state.at });
+  }, [hold, state, tracked]);
 
   function runSearch() {
     if (searchBlocked) return;
@@ -245,6 +287,8 @@ export default function Discover() {
       return;
     }
     if (intent === "clear-filters") {
+      // Clearing the filters starts the page over, so nothing is held to come back to.
+      hold.clear();
       setValues(EMPTY_REQUEST);
       setState({ kind: "idle" });
       setAnnouncement("Filters cleared.");
@@ -274,6 +318,7 @@ export default function Discover() {
       onSave={() => void saveCurrentSearch()}
       saving={saving}
       search={searchView}
+      restored={state.kind === "ready" && state.restored ? { at: clockTime(new Date(state.at)) } : undefined}
       setup={setupView}
       checkingSetup={checkingSetup}
       tracking={tracking}

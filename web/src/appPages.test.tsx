@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { act } from "react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useNavigate, type NavigateFunction } from "react-router-dom";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { CROSS_NAV_ITEMS } from "./lib/applicationsBoard";
 import publicCss from "./styles/public.css?raw";
 import { withoutMedia } from "./testing/css";
 import { response as discoverResponse } from "./testing/discoverFixtures";
-import { FakeApiError, on, reset } from "./testing/fakeApi";
+import { FakeApiError, callsTo, on, reset } from "./testing/fakeApi";
 import { expectNoSeriousA11yViolations } from "./testing/a11y";
 import { settle, text, typeInto } from "./testing/forms";
 import { buttonNamed, click, installViewport, query, render } from "./testing/render";
@@ -607,6 +607,147 @@ describe("the places other pages link to", () => {
     const container = await open("/", 375);
     const hrefs = [...container.querySelectorAll(".bj-rail-nav a, .bj-nav-footer a, .bj-tabbar a, .bj-more-sheet a")].map((a) => a.getAttribute("href"));
     expect(new Set(hrefs)).toEqual(new Set(["/", "/discover", "/hiring-signals", "/applications", "/practice", "/profile", "/settings", "/privacy", "/terms"]));
+  });
+});
+
+// ── Discover, keeping its answer for the way back ──────────────────────────
+
+// Search, track a row and open its workspace, then come back by each way a person can: the browser's Back
+// (a real history POP) and the navigation's own links (a PUSH, from the rail and from the phone's tab bar).
+// The holder App draws around the routes keeps the last answer across the page unmounting, so the rows, the
+// tracked row and the line saying when it is from return with no second search, and a different person
+// starts empty. A MemoryRouter reports POP for its first entry, so the POP here is made by going back from
+// a pushed page, through the router's own navigate.
+describe("Discover, coming back to its answer", () => {
+  const history: { go: NavigateFunction } = { go: (() => undefined) as unknown as NavigateFunction };
+  function History() {
+    history.go = useNavigate();
+    return null;
+  }
+
+  async function openFrom(path: string, width: number) {
+    installViewport(width);
+    const tree = () => (
+      <MemoryRouter initialEntries={[path]}>
+        <History />
+        <App />
+      </MemoryRouter>
+    );
+    const rendered = render(tree());
+    await settle(6);
+    return {
+      container: rendered.container,
+      redraw: async () => {
+        rendered.rerender(tree());
+        await settle(6);
+      },
+    };
+  }
+
+  const rowCount = (container: HTMLElement) => container.querySelectorAll("li.bj-disc-row").length;
+  const openWorkspaceHrefs = (container: HTMLElement) =>
+    [...container.querySelectorAll("li.bj-disc-row a")].filter((link) => text(link) === "Open workspace").map((link) => link.getAttribute("href"));
+  const staleLine = (container: HTMLElement) => [...container.querySelectorAll(".bj-disc-note")].filter((note) => text(note).startsWith("Showing your search from"));
+  const STALE_LINE =
+    /^Showing your search from \d\d:\d\d\. The scores and link checks are from then and have not been refreshed\. Pressing Search again makes a real model call on your own key and uses any search keys you have connected\.$/;
+
+  // One search, one Track, then the Open workspace link: the person is on the workspace with the answer left behind.
+  async function searchTrackAndOpenTheWorkspace(width = 1000) {
+    describeWorkspace("empty", {}, null);
+    on("GET /discover?", discoverResponse());
+    on("POST /discover/track", { id: ID });
+    const page = await openFrom("/discover", width);
+    click(query(page.container, "button.bj-primary"));
+    await settle(6);
+    expect(rowCount(page.container)).toBe(1);
+    expect(staleLine(page.container)).toHaveLength(0);
+    click(buttonNamed(page.container, /^Track /));
+    await settle(4);
+    expect(openWorkspaceHrefs(page.container)).toEqual([`/applications/${ID}`]);
+    click([...page.container.querySelectorAll("li.bj-disc-row a")].find((link) => text(link) === "Open workspace")!);
+    await settle(6);
+    expect(rowCount(page.container)).toBe(0);
+    expect(page.container.querySelector(".bj-breadcrumb")).not.toBeNull();
+    return page;
+  }
+
+  function expectTheAnswerIsBack(container: HTMLElement, what: string) {
+    expect(rowCount(container), `${what}: the rows`).toBe(1);
+    expect(openWorkspaceHrefs(container), `${what}: the tracked row`).toEqual([`/applications/${ID}`]);
+    expect(staleLine(container), `${what}: the line saying when it is from`).toHaveLength(1);
+    expect(text(staleLine(container)[0]), what).toMatch(STALE_LINE);
+    expect(callsTo("GET /discover?"), `${what}: searches made in all`).toHaveLength(1);
+    expectWholePage(container, what);
+  }
+
+  it("comes back by the browser's Back, a real history POP, with its rows, its tracked row and the line, and one search in all", async () => {
+    const page = await searchTrackAndOpenTheWorkspace();
+    act(() => void history.go(-1));
+    await settle(6);
+    expect(document.title).toBe("Discover -- Between Jobs");
+    expectTheAnswerIsBack(page.container, "back");
+  });
+
+  it("comes back by the rail's Discover link, a PUSH, the same way", async () => {
+    const page = await searchTrackAndOpenTheWorkspace();
+    click(query(page.container, '.bj-rail-nav a[href="/discover"]'));
+    await settle(6);
+    expectTheAnswerIsBack(page.container, "rail");
+  });
+
+  it("comes back by the phone's tab bar the same way", async () => {
+    const page = await searchTrackAndOpenTheWorkspace(375);
+    click(query(page.container, '.bj-tabbar a[href="/discover"]'));
+    await settle(6);
+    expectTheAnswerIsBack(page.container, "tab bar");
+  });
+
+  it("comes back after other pages in between, and after another round trip", async () => {
+    const page = await searchTrackAndOpenTheWorkspace();
+    click(query(page.container, '.bj-rail-nav a[href="/applications"]'));
+    await settle(6);
+    click(query(page.container, '.bj-rail-nav a[href="/discover"]'));
+    await settle(6);
+    expectTheAnswerIsBack(page.container, "first return");
+    click(query(page.container, '.bj-rail-nav a[href="/practice"]'));
+    await settle(6);
+    click(query(page.container, '.bj-rail-nav a[href="/discover"]'));
+    await settle(6);
+    expectTheAnswerIsBack(page.container, "second return");
+  });
+
+  it("starts empty for the next person, after signing out and signing in as someone else in the same tab", async () => {
+    const page = await searchTrackAndOpenTheWorkspace();
+    click(query(page.container, '.bj-rail-nav a[href="/discover"]'));
+    await settle(6);
+    expectTheAnswerIsBack(page.container, "before signing out");
+
+    who.signedOut = true;
+    await page.redraw();
+    expect(page.container.querySelector(".bj-rail")).toBeNull();
+    who.signedOut = false;
+    who.n += 1;
+    await page.redraw();
+
+    expect(text(query(page.container, "main h1"))).toBe("Discover");
+    expect(rowCount(page.container)).toBe(0);
+    expect(staleLine(page.container)).toHaveLength(0);
+    expect(text(query(page.container, ".bj-state--empty"))).toContain("Find a job");
+    expect(callsTo("GET /discover?")).toHaveLength(1);
+  });
+
+  it("starts empty for another person even with no sign-out in between, because the holder is keyed by the person", async () => {
+    const page = await searchTrackAndOpenTheWorkspace();
+    click(query(page.container, '.bj-rail-nav a[href="/discover"]'));
+    await settle(6);
+    expectTheAnswerIsBack(page.container, "before the change");
+
+    who.n += 1;
+    await page.redraw();
+
+    expect(rowCount(page.container)).toBe(0);
+    expect(staleLine(page.container)).toHaveLength(0);
+    expect(text(query(page.container, ".bj-state--empty"))).toContain("Find a job");
   });
 });
 

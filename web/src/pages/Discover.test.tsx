@@ -3,6 +3,9 @@ import { StrictMode } from "react";
 import { act } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SEARCH_AGAIN_SPEND_NOTE } from "../components/discover/DiscoverView";
+import { HOLD_MAX_AGE_MS } from "../lib/discoverHold";
+import { DiscoverHoldProvider } from "../lib/useDiscoverHold";
 import { expectNoSeriousA11yViolations } from "../testing/a11y";
 import { job, mixedResponse, response, score } from "../testing/discoverFixtures";
 import { buttonNamed, click, installViewport, query, render } from "../testing/render";
@@ -56,6 +59,13 @@ const memory = new Map<string, string>();
 const storage = {
   getItem: (key: string) => memory.get(key) ?? null,
   setItem: (key: string, value: string) => void memory.set(key, value),
+};
+// The same for sessionStorage, so a page that wrote there would leave a trace to assert on.
+const sessionMemory = new Map<string, string>();
+const sessionStorageStub = {
+  getItem: (key: string) => sessionMemory.get(key) ?? null,
+  setItem: (key: string, value: string) => void sessionMemory.set(key, value),
+  removeItem: (key: string) => void sessionMemory.delete(key),
 };
 
 let replies: Record<string, Reply> = {};
@@ -124,7 +134,9 @@ beforeEach(() => {
   });
   answer();
   memory.clear();
+  sessionMemory.clear();
   Object.defineProperty(window, "localStorage", { configurable: true, value: storage });
+  Object.defineProperty(window, "sessionStorage", { configurable: true, value: sessionStorageStub });
 });
 
 afterEach(() => {
@@ -278,6 +290,8 @@ describe("a search", () => {
     expect(calls().length).toBe(before);
     expect([...memory.entries()]).toEqual([...written.entries()]);
     expect([...memory.keys()]).toEqual(["between-jobs:first-run:searched:user-1"]);
+    // Holding the answer for the next visit is memory only: nothing reaches sessionStorage either.
+    expect([...sessionMemory.keys()]).toEqual([]);
     expect(status(container)).toBe("The search finished: 18 scored, 7 more, unscored.");
   });
 
@@ -800,6 +814,351 @@ describe("saved searches", () => {
     await flush();
     expect(container.querySelector(".bj-ss[role='alert']")).toBeNull();
     expect(words(query(container, ".bj-ss-label"))).toBe('"analytics engineer"');
+  });
+});
+
+// ── coming back to the page ────────────────────────────────────────────────
+
+// The page inside the holder that App draws around the routes, so it can leave (as it does when a job is
+// opened or another page is chosen) and come back to the same store. `as` is a different person: the holder
+// is keyed by the person's id, so it starts over.
+async function drawHeld(options: { strict?: boolean } = {}) {
+  installViewport(1000);
+  const tree = (shown: boolean, who: string) => {
+    const page = (
+      <MemoryRouter>
+        <DiscoverHoldProvider key={who}>{shown ? <Discover /> : <p>Somewhere else</p>}</DiscoverHoldProvider>
+      </MemoryRouter>
+    );
+    return options.strict ? <StrictMode>{page}</StrictMode> : page;
+  };
+  const rendered = render(tree(true, "user-1"));
+  await flush();
+  const to = async (shown: boolean, who = "user-1") => {
+    rendered.rerender(tree(shown, who));
+    await flush();
+  };
+  return { container: rendered.container, leave: () => to(false), comeBack: () => to(true), as: (who: string) => to(true, who) };
+}
+
+const FIRST_SEARCH = "/discover?q=data+engineer&location=Jersey+City&companies=Acme&remote_only=true";
+const ROW_ONE = job();
+const ROW_TWO = job({ title: "Analyst", apply_url: "https://jobs.example/acme/2" });
+const NOTE_START = "Showing your search from";
+
+function fillTheForm(container: HTMLElement) {
+  const [q, location, companies] = [...form(container).querySelectorAll<HTMLInputElement>("input[type='text']")];
+  type(q, "data engineer");
+  type(location, "Jersey City");
+  type(companies, "Acme");
+  click(query(form(container), "input[type='checkbox']"));
+}
+
+const formText = (container: HTMLElement) => ({
+  fields: [...form(container).querySelectorAll<HTMLInputElement>("input[type='text']")].map((input) => input.value),
+  remote: query<HTMLInputElement>(form(container), "input[type='checkbox']").checked,
+});
+const titles = (container: HTMLElement) => [...container.querySelectorAll(".bj-disc-title")].map((title) => words(title));
+const restoredNotes = (container: HTMLElement) => [...container.querySelectorAll(".bj-disc-note")].filter((note) => words(note).startsWith(NOTE_START));
+const openWorkspaceLinks = (container: HTMLElement) =>
+  [...container.querySelectorAll<HTMLAnchorElement>("li.bj-disc-row a")].filter((link) => words(link) === "Open workspace").map((link) => link.getAttribute("href"));
+const SETUP_GETS = ["GET /credentials", "GET /profile/current", "GET /saved-searches"];
+
+describe("coming back to the page", () => {
+  describe.each([
+    ["", false],
+    [" under StrictMode", true],
+  ])("after a search%s", (_label, strict) => {
+    it("shows the same rows and the same form text again, with one search in all", async () => {
+      answer({ [FIRST_SEARCH]: response({ scored: [ROW_ONE, ROW_TWO] }) });
+      const page = await drawHeld({ strict });
+      fillTheForm(page.container);
+      await search(page.container);
+      const before = { titles: titles(page.container), form: formText(page.container) };
+      expect(before.titles).toEqual(["Data Engineer", "Analyst"]);
+      expect(restoredNotes(page.container)).toEqual([]);
+
+      await page.leave();
+      expect(titles(page.container)).toEqual([]);
+      await page.comeBack();
+
+      expect(titles(page.container)).toEqual(before.titles);
+      expect(formText(page.container)).toEqual({ fields: ["data engineer", "Jersey City", "Acme"], remote: true });
+      expect(formText(page.container)).toEqual(before.form);
+      expect(callsTo("GET /discover")).toEqual([`GET ${FIRST_SEARCH}`]);
+    });
+
+    it("brings a tracked row back as Open workspace, and sends nothing to track it again", async () => {
+      answer({ "/discover?": response({ scored: [ROW_ONE, ROW_TWO] }), "POST /discover/track": { id: "app-7" } });
+      const page = await drawHeld({ strict });
+      await search(page.container);
+      click(buttonNamed(page.container, "Track Data Engineer at Acme"));
+      await flush();
+      expect(openWorkspaceLinks(page.container)).toEqual(["/applications/app-7"]);
+
+      await page.leave();
+      await page.comeBack();
+
+      expect(openWorkspaceLinks(page.container)).toEqual(["/applications/app-7"]);
+      expect(buttonNamed(page.container, "Track Analyst at Acme")).toBeDefined();
+      expect(() => buttonNamed(page.container, "Track Data Engineer at Acme")).toThrow();
+      expect(callsTo("POST /discover/track")).toHaveLength(1);
+      expect(callsTo("GET /discover")).toHaveLength(1);
+    });
+  });
+
+  it("says when the answer is from and that nothing was refreshed, in the one note above the results, and says what searching again spends", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 10, 14, 14, 5, 0));
+    answer({ "/discover?": response() });
+    const page = await drawHeld();
+    await search(page.container);
+    await page.leave();
+    vi.setSystemTime(Date.UTC(2026, 10, 14, 15, 0, 0));
+    await page.comeBack();
+    const notes = restoredNotes(page.container);
+    expect(notes).toHaveLength(1);
+    expect(words(notes[0])).toBe(
+      "Showing your search from 14:05. The scores and link checks are from then and have not been refreshed. Pressing Search again makes a real model call on your own key and uses any search keys you have connected.",
+    );
+    expect(words(notes[0])).toContain(SEARCH_AGAIN_SPEND_NOTE);
+    expect(notes[0].compareDocumentPosition(query(page.container, ".bj-disc-results")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("makes no request and writes no first-run mark when it brings the answer back, only the three reads of the setup", async () => {
+    answer({ "/discover?": response() });
+    const page = await drawHeld();
+    await search(page.container);
+    expect(memory.get("between-jobs:first-run:searched:user-1")).toBe("1");
+    memory.clear();
+    const seen = calls().length;
+    await page.leave();
+    await page.comeBack();
+    expect(titles(page.container)).toEqual(["Data Engineer"]);
+    expect(calls().slice(seen).sort()).toEqual(SETUP_GETS);
+    expect([...memory.keys()]).toEqual([]);
+    expect(callsTo("GET /discover")).toHaveLength(1);
+  });
+
+  it("holds, tracks and restores without writing to localStorage or sessionStorage beyond the first-run mark", async () => {
+    answer({ "/discover?": response(), "POST /discover/track": { id: "app-7" } });
+    const page = await drawHeld();
+    await search(page.container);
+    click(buttonNamed(page.container, "Track Data Engineer at Acme"));
+    await flush();
+    await page.leave();
+    await page.comeBack();
+    expect(openWorkspaceLinks(page.container)).toEqual(["/applications/app-7"]);
+    expect([...memory.keys()]).toEqual(["between-jobs:first-run:searched:user-1"]);
+    expect([...sessionMemory.keys()]).toEqual([]);
+  });
+
+  it("says nothing of an earlier search on a fresh answer, and drops the line once a search again has answered", async () => {
+    answer({ "/discover?": response({ scored: [ROW_ONE] }) });
+    const page = await drawHeld();
+    await search(page.container);
+    expect(restoredNotes(page.container)).toEqual([]);
+
+    await page.leave();
+    await page.comeBack();
+    expect(restoredNotes(page.container)).toHaveLength(1);
+
+    answer({ "/discover?": response({ scored: [ROW_TWO] }) });
+    await search(page.container);
+    expect(titles(page.container)).toEqual(["Analyst"]);
+    expect(restoredNotes(page.container)).toEqual([]);
+    expect(callsTo("GET /discover")).toHaveLength(2);
+  });
+
+  it("keeps the line while a row is tracked from the restored answer: the scores are still from then", async () => {
+    answer({ "/discover?": response(), "POST /discover/track": { id: "app-7" } });
+    const page = await drawHeld();
+    await search(page.container);
+    await page.leave();
+    await page.comeBack();
+    click(buttonNamed(page.container, "Track Data Engineer at Acme"));
+    await flush();
+    expect(restoredNotes(page.container)).toHaveLength(1);
+    expect(openWorkspaceLinks(page.container)).toEqual(["/applications/app-7"]);
+  });
+
+  it("holds the newer answer when a second search replaces the first", async () => {
+    answer({ "/discover?q=one": response({ scored: [ROW_ONE] }), "/discover?q=two": response({ scored: [ROW_TWO] }) });
+    const page = await drawHeld();
+    type(query(form(page.container), "input[type='text']"), "one");
+    await search(page.container);
+    type(query(form(page.container), "input[type='text']"), "two");
+    await search(page.container);
+    await page.leave();
+    await page.comeBack();
+    expect(titles(page.container)).toEqual(["Analyst"]);
+    expect(formText(page.container).fields[0]).toBe("two");
+  });
+
+  describe("a search again that does not finish", () => {
+    const REPLIES: [string, Reply][] = [
+      ["fails", new FakeApiError(503, "The scoring model did not answer.", { code: "PROVIDER_UNAVAILABLE" })],
+      ["asks for setup", new FakeApiError(409, "Add a model key before searching.", { code: "SETUP_REQUIRED", capability: "job_scoring", missing: ["credential"] })],
+      ["never answers", () => new Promise(() => undefined)],
+    ];
+
+    it.each(REPLIES)("leaves the earlier answer to come back to when it %s, with the filters that produced it", async (_what, second) => {
+      answer({ "/discover?q=analyst": response({ scored: [ROW_ONE, ROW_TWO] }), "/discover?q=zzz": second });
+      const page = await drawHeld();
+      type(query(form(page.container), "input[type='text']"), "analyst");
+      await search(page.container);
+      type(query(form(page.container), "input[type='text']"), "zzz");
+      await search(page.container);
+      expect(titles(page.container)).toEqual([]);
+
+      await page.leave();
+      await page.comeBack();
+
+      expect(titles(page.container)).toEqual(["Data Engineer", "Analyst"]);
+      expect(formText(page.container).fields[0]).toBe("analyst");
+      expect(restoredNotes(page.container)).toHaveLength(1);
+    });
+
+    it("still holds what was tracked from the earlier answer while the search again was out", async () => {
+      let releaseTrack: (value: unknown) => void = () => undefined;
+      let failSecond: (error: Error) => void = () => undefined;
+      let asked = 0;
+      answer({
+        "/discover?": () => (++asked === 1 ? response() : new Promise((_resolve, reject) => (failSecond = reject))),
+        "POST /discover/track": () => new Promise((resolve) => (releaseTrack = resolve)),
+      });
+      const page = await drawHeld();
+      await search(page.container);
+      click(buttonNamed(page.container, "Track Data Engineer at Acme"));
+      await flush();
+      await search(page.container);
+      await act(async () => releaseTrack({ id: "app-7" }));
+      await flush();
+      await act(async () => failSecond(new FakeApiError(503, "The scoring model did not answer.", { code: "PROVIDER_UNAVAILABLE" })));
+      await flush();
+      expect(page.container.querySelector(".bj-state--failure")).not.toBeNull();
+
+      await page.leave();
+      await page.comeBack();
+
+      expect(openWorkspaceLinks(page.container)).toEqual(["/applications/app-7"]);
+    });
+  });
+
+  describe("an answer that leaves nothing to come back to", () => {
+    it("is a search with no rows: the form and the page are empty on the next visit", async () => {
+      answer({ "/discover?q=analyst": response({ scored: [ROW_ONE] }), "/discover?q=zzz": response({ scored: [], more: [] }) });
+      const page = await drawHeld();
+      type(query(form(page.container), "input[type='text']"), "analyst");
+      await search(page.container);
+      type(query(form(page.container), "input[type='text']"), "zzz");
+      await search(page.container);
+      expect(words(query(page.container, ".bj-state--empty"))).toContain("No results");
+
+      await page.leave();
+      await page.comeBack();
+
+      expect(titles(page.container)).toEqual([]);
+      expect(formText(page.container)).toEqual({ fields: ["", "", ""], remote: false });
+      expect(restoredNotes(page.container)).toEqual([]);
+      expect(words(query(page.container, ".bj-state--empty"))).toContain("Find a job");
+      expect(callsTo("GET /discover")).toHaveLength(2);
+    });
+
+    it("is Clear filters: nothing is held after it either", async () => {
+      answer({ "/discover?q=zzz&location=Mars": response({ scored: [], more: [] }) });
+      const page = await drawHeld();
+      const [q, location] = [...form(page.container).querySelectorAll<HTMLInputElement>("input[type='text']")];
+      type(q, "zzz");
+      type(location, "Mars");
+      await search(page.container);
+      click(buttonNamed(band(page.container), "Clear filters"));
+      await flush();
+      expect(words(query(page.container, ".bj-state--empty"))).toContain("Find a job");
+
+      await page.leave();
+      await page.comeBack();
+
+      expect(titles(page.container)).toEqual([]);
+      expect(formText(page.container)).toEqual({ fields: ["", "", ""], remote: false });
+      expect(restoredNotes(page.container)).toEqual([]);
+    });
+  });
+
+  describe("how long an answer is kept", () => {
+    const T = Date.UTC(2026, 10, 14, 14, 5, 0);
+
+    async function searchedAndAway() {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(T);
+      answer({ "/discover?q=analyst": response({ scored: [ROW_ONE] }) });
+      const page = await drawHeld();
+      type(query(form(page.container), "input[type='text']"), "analyst");
+      await search(page.container);
+      await page.leave();
+      return page;
+    }
+
+    it("shows it again up to the limit, counted from when it arrived", async () => {
+      const page = await searchedAndAway();
+      vi.setSystemTime(T + HOLD_MAX_AGE_MS);
+      await page.comeBack();
+      expect(titles(page.container)).toEqual(["Data Engineer"]);
+      expect(words(restoredNotes(page.container)[0])).toContain("Showing your search from 14:05.");
+    });
+
+    it("starts the page and the form empty once the limit has passed", async () => {
+      const page = await searchedAndAway();
+      vi.setSystemTime(T + HOLD_MAX_AGE_MS + 1);
+      await page.comeBack();
+      expect(titles(page.container)).toEqual([]);
+      expect(formText(page.container)).toEqual({ fields: ["", "", ""], remote: false });
+      expect(restoredNotes(page.container)).toEqual([]);
+      expect(words(query(page.container, ".bj-state--empty"))).toContain("Find a job");
+      expect(callsTo("GET /discover")).toHaveLength(1);
+    });
+
+    it("does not make a restored answer younger by showing it again", async () => {
+      const page = await searchedAndAway();
+      vi.setSystemTime(T + HOLD_MAX_AGE_MS - 60_000);
+      await page.comeBack();
+      await page.leave();
+      vi.setSystemTime(T + HOLD_MAX_AGE_MS + 1);
+      await page.comeBack();
+      expect(titles(page.container)).toEqual([]);
+    });
+  });
+
+  it("starts empty for a different person, and keeps what the first person searched for out of reach", async () => {
+    answer({ "/discover?": response() });
+    const page = await drawHeld();
+    await search(page.container);
+    await page.leave();
+    await page.as("user-2");
+    expect(titles(page.container)).toEqual([]);
+    expect(restoredNotes(page.container)).toEqual([]);
+    expect(words(query(page.container, ".bj-state--empty"))).toContain("Find a job");
+    expect(callsTo("GET /discover")).toHaveLength(1);
+  });
+
+  it("starts empty for a different person even when the page never left, because the holder is keyed by the person", async () => {
+    answer({ "/discover?": response() });
+    const page = await drawHeld();
+    await search(page.container);
+    expect(titles(page.container)).toEqual(["Data Engineer"]);
+    await page.as("user-2");
+    expect(titles(page.container)).toEqual([]);
+    expect(restoredNotes(page.container)).toEqual([]);
+  });
+
+  it("starts empty with no holder around it at all: a page drawn on its own keeps nothing for the next one", async () => {
+    answer({ "/discover?": response() });
+    const first = await draw();
+    await search(first.container);
+    first.unmount();
+    const second = await draw();
+    expect(titles(second.container)).toEqual([]);
+    expect(restoredNotes(second.container)).toEqual([]);
   });
 });
 

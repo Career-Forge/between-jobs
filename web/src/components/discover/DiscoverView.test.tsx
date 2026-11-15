@@ -10,7 +10,7 @@ import { findForbiddenWord } from "../../lib/trail";
 import { nextStep, type NextStepInput, type NextStepOutcome } from "../../lib/nextStep";
 import type { DiscoverFacts } from "../../lib/nextStep/pages/discover";
 import type { SavedSearchesState } from "../../lib/savedSearches";
-import { DiscoverView, SETUP_BLOCKED_NOTE, type DiscoverViewProps, type SearchView } from "./DiscoverView";
+import { DiscoverView, SEARCH_AGAIN_SPEND_NOTE, SETUP_BLOCKED_NOTE, type DiscoverViewProps, type SearchView } from "./DiscoverView";
 
 // Every state of the Discover page, drawn from props: what each shows, what it leaves out, and that
 // whatever the state, the page holds at most one cyan fill and it is the band's. The reading and the
@@ -410,6 +410,75 @@ function openDetails(container: HTMLElement, row = 0): Element {
   click(buttonNamed(item, /^Why this score for /));
   return query(item, ".bj-fit-detail");
 }
+
+describe("restored: an answer brought back from an earlier visit", () => {
+  const RESTORED_WORDS =
+    "Showing your search from 09:14. The scores and link checks are from then and have not been refreshed. Pressing Search again makes a real model call on your own key and uses any search keys you have connected.";
+  const restored = (result = response(), at = "09:14"): Partial<DiscoverViewProps> => ({ ...ready(result), restored: { at } });
+  // The notes of the results block itself (the dropped count, the none-scored and More results notes) are not
+  // this line, so a plain answer is used where the count of notes is the point.
+  const notes = (container: HTMLElement) => [...container.querySelectorAll(".bj-disc-note")];
+
+  it("draws exactly one note above the results, with the time and the spend, for a restored answer", () => {
+    const { container } = draw(restored());
+    expect(notes(container).map((note) => words(note))).toEqual([RESTORED_WORDS]);
+    const results = query(container, ".bj-disc-results");
+    expect(notes(container)[0].compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(results.contains(notes(container)[0])).toBe(false);
+  });
+
+  it("says the spend in the shared shape: Pressing X makes a real model call on your own key", () => {
+    expect(SEARCH_AGAIN_SPEND_NOTE).toBe("Pressing Search again makes a real model call on your own key and uses any search keys you have connected.");
+    expect(SEARCH_AGAIN_SPEND_NOTE).toMatch(/^Pressing .+ makes a real model call on your own key/);
+  });
+
+  it("writes the time it was given and nothing else about it", () => {
+    const { container } = draw(restored(response(), "23:58"));
+    expect(words(notes(container)[0]).startsWith("Showing your search from 23:58. ")).toBe(true);
+  });
+
+  it("draws no note for an answer that was searched for on this visit", () => {
+    const { container } = draw(ready());
+    expect(notes(container)).toEqual([]);
+    expect(words(container)).not.toContain("Showing your search from");
+  });
+
+  it("draws the line only over a finished search, whatever else it is handed", () => {
+    for (const overrides of [{}, { search: { kind: "loading", startedAt: Date.now() } }, { search: { kind: "error", message: "x" } }] as Partial<DiscoverViewProps>[]) {
+      const { container } = draw({ ...overrides, restored: { at: "09:14" } });
+      expect(notes(container).filter((note) => words(note).startsWith("Showing your search from"))).toEqual([]);
+    }
+  });
+
+  it("leaves the rows, the band and the form as they are for any answer: the line is the only difference", () => {
+    const plain = draw(ready(response({ scored: [job(), job({ apply_url: "https://jobs.example/acme/2", title: "Analyst" })] })));
+    const brought = draw(restored(response({ scored: [job(), job({ apply_url: "https://jobs.example/acme/2", title: "Analyst" })] })));
+    const rows = (container: HTMLElement) => [...container.querySelectorAll("li.bj-disc-row")].map((row) => words(row));
+    expect(rows(brought.container)).toEqual(rows(plain.container));
+    expect(words(bandOf(brought.container))).toBe(words(bandOf(plain.container)));
+    expect(words(query(brought.container, "form"))).toBe(words(query(plain.container, "form")));
+  });
+
+  it("holds one page heading and at most one cyan fill, and never says anything is verified", () => {
+    const { container } = draw(restored());
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+    expect(cyanFills(container)).toBeLessThanOrEqual(1);
+    expect(findForbiddenWord(words(container))).toBeNull();
+    expect(words(container).toLowerCase()).not.toContain("verified");
+  });
+
+  it("keeps the band's one cyan, Search again, when the restored scores were placeholders", () => {
+    const { container } = draw(restored(response({ scoring_strategy: "neutral_fallback" })));
+    expect(cyanFills(container)).toBe(1);
+    expect(words(query(bandOf(container), "button.bj-primary"))).toBe("Search again");
+    expect(notes(container).filter((note) => words(note).startsWith("Showing your search from"))).toHaveLength(1);
+  });
+
+  it("has no serious or critical axe violation", async () => {
+    const { container } = draw(restored(response({ warnings: ["brave: down"], more: [job({ apply_url: "https://jobs.example/acme/2", score: null })], dead_removed: 2 })));
+    await expectNoSeriousA11yViolations(container);
+  });
+});
 
 describe("a row's fit block", () => {
   it("draws the ladder with the bin and number and the engine mark in the gutter, and the one line beside the text", () => {
