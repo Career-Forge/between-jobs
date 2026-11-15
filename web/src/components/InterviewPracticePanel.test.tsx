@@ -514,10 +514,26 @@ describe("Practice: Submit answer, described by what pressing it costs", () => {
     const { container } = panel();
     await settle();
     const submit = buttonNamed(container, "Submit answer");
-    expect(describedText(submit)).toBe(SUBMIT_BESIDE_BUTTON);
-    expect(submit.closest(".bj-actions")!.contains(document.getElementById(submit.getAttribute("aria-describedby")!))).toBe(true);
+    // While the box is empty the button is inert, and the line that says why is read ahead of the cost.
+    expect(describedText(submit)).toBe(`Write an answer to submit it. ${SUBMIT_BESIDE_BUTTON}`);
+    for (const id of submit.getAttribute("aria-describedby")!.split(" ")) expect(submit.closest(".bj-actions")!.contains(document.getElementById(id))).toBe(true);
     typeInto(query<HTMLTextAreaElement>(container, "textarea"), "I led the migration.");
     expect(describedText(buttonNamed(container, "Submit answer"))).toBe(SUBMIT_BESIDE_BUTTON);
+  });
+
+  it("gives each mounted panel its own ids, so two never point at each other's notes", async () => {
+    resume(five(0));
+    const first = panel();
+    const second = panel();
+    await settle();
+    const [a, b] = [first, second].map(({ container }) => buttonNamed(container, "Submit answer").getAttribute("aria-describedby")!.split(" "));
+    expect(a).toHaveLength(2);
+    expect(b).toHaveLength(2);
+    expect(new Set([...a, ...b]).size).toBe(4);
+    for (const { container } of [first, second]) {
+      const submit = buttonNamed(container, "Submit answer");
+      for (const id of submit.getAttribute("aria-describedby")!.split(" ")) expect(container.contains(document.getElementById(id))).toBe(true);
+    }
   });
 
   it("keeps the description while the answer is being scored, on the button that reads Scoring...", async () => {
