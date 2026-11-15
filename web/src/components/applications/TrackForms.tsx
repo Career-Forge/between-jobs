@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { apiFetch } from "../../lib/api";
 import { SETTINGS_PATH } from "../../lib/settingsPaths";
+import { spendNotice } from "../../lib/spendNotice";
 import { failureOf, type Failure } from "../../lib/setupRequired";
 import { FailureState, SetupRequiredState } from "../paper/StateViews";
 import "../../styles/applications.css";
@@ -36,6 +37,14 @@ function FormProblem({ problem }: { problem: Failure | null }) {
   return <FailureState message={problem.message} />;
 }
 
+// What pressing the button costs. A posting the job registry already holds with its description is read from there
+// with no call; every other address (LinkedIn and X are refused before any call) is fetched with one scrape call on
+// the person's own Firecrawl key. It spends a Firecrawl key, not a model, so it says "scrape call", not "model call".
+const FETCH_SPEND = spendNotice(
+  "Fetch and start tracking",
+  "a real scrape call on your own Firecrawl key, which you add in Settings, unless the posting is already in the job registry with its description",
+);
+
 export function UrlIngestForm({ onCreated }: { onCreated: () => Promise<void> }) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -65,8 +74,8 @@ export function UrlIngestForm({ onCreated }: { onCreated: () => Promise<void> })
     <form className="bj-app-track-card" onSubmit={(event) => void submit(event)}>
       <h3 className="bj-app-track-title">Fetch a posting by URL</h3>
       <p className="bj-app-track-note">
-        Paste the posting's own address. If it is already in the job registry with its description, that text is used. Otherwise it is
-        fetched with your Firecrawl key, which you add in Settings. LinkedIn and X addresses are never fetched -- paste those instead.
+        Paste the posting's own address. {FETCH_SPEND} If it is, that text is used instead. LinkedIn and X addresses are never fetched -- paste those
+        instead.
       </p>
       <label className="bj-field">
         <span>Posting URL *</span>

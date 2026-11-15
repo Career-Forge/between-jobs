@@ -684,6 +684,24 @@ describe("tracking a job", () => {
     expect(box.value).toBe("");
   });
 
+  it("says, in the note above the box, that pressing Fetch and start tracking makes a scrape call on the person's own Firecrawl key unless the registry has the posting", async () => {
+    answer({ "/applications": [] });
+    const { container } = await draw();
+    const form = query<HTMLFormElement>(container, "form.bj-app-track-card");
+    const note = query(form, ".bj-app-track-note");
+    expect(text(note)).toBe(
+      "Paste the posting's own address. Pressing Fetch and start tracking makes a real scrape call on your own Firecrawl key, which you add in Settings, unless the posting is already in the job registry with its description. If it is, that text is used instead. LinkedIn and X addresses are never fetched -- paste those instead.",
+    );
+    // It is a Firecrawl spend, not a model one, and it uses no dash but the plain double hyphen.
+    expect(text(note)).not.toMatch(/model call/i);
+    expect(text(note)).not.toMatch(/[\u2013\u2014]/);
+    // It sits in the form that holds the button it is about, ahead of the box and the button.
+    expect(form.contains(buttonNamed(form, "Fetch and start tracking"))).toBe(true);
+    expect(note.compareDocumentPosition(buttonNamed(form, "Fetch and start tracking")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The paste form beside it makes no call and carries no such sentence.
+    expect(text(container).match(/Pressing /g) ?? []).toHaveLength(1);
+  });
+
   it("ignores a press while the box is empty or the request is out", async () => {
     let release: (value: unknown) => void = () => {};
     answer({ "POST /applications/from-url": () => new Promise((resolve) => (release = resolve)) });
