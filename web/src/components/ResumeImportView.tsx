@@ -65,8 +65,13 @@ export const IMPORT_LIMITS = `PDF or DOCX, up to ${MAX_IMPORT_BYTES / (1024 * 10
 
 // What choosing a file costs. The file is sent the moment it is chosen, with no second press, so this
 // is said above "Choose a file" and not after it. The server asks the model once, and asks again only
-// when the first reply could not be read as a profile (a hard cap of two).
-export const IMPORT_SPEND = spendNotice("a file", `${A_MODEL_CALL}, and a second one if the first answer can't be read`, "Choosing");
+// when the first reply could not be read as a profile (a hard cap of two). Try again after a failed import
+// sends the same file again, so it costs the same and the sentence names it.
+export const IMPORT_SPEND = spendNotice(
+  "a file, or pressing Try again after a failed import,",
+  `${A_MODEL_CALL}, and a second one if the first answer can't be read`,
+  "Choosing",
+);
 
 export const REVIEW_TITLE = "Check what was read from your file";
 export const REVIEW_LABEL = "Read from your file by an AI model: check every field before you use it";

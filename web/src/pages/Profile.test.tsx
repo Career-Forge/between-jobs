@@ -943,7 +943,7 @@ function chooseFile(container: HTMLElement) {
   });
 }
 
-const CHOOSING_COSTS = "Choosing a file makes a real model call on your own key, and a second one if the first answer can't be read.";
+const CHOOSING_COSTS = "Choosing a file, or pressing Try again after a failed import, makes a real model call on your own key, and a second one if the first answer can't be read.";
 
 async function readFile(container: HTMLElement) {
   chooseFile(container);

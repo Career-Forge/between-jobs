@@ -183,7 +183,7 @@ describe("the card before anything is chosen", () => {
   // The file is read by a model the moment it is chosen, with no second press, so the cost is said above
   // the button that opens the chooser, in the same words as every other control that spends the person's key.
   it("says, above Choose a file, that choosing a file makes a real model call on the person's own key, and a second if the first answer can't be read", () => {
-    const sentence = "Choosing a file makes a real model call on your own key, and a second one if the first answer can't be read.";
+    const sentence = "Choosing a file, or pressing Try again after a failed import, makes a real model call on your own key, and a second one if the first answer can't be read.";
     expect(IMPORT_SPEND).toBe(sentence);
     const nodes = tree(initialImportState);
     const notes = findAll(nodes, (el) => el.type === "p" && textOf(el) === sentence);
@@ -211,7 +211,9 @@ describe("the card before anything is chosen", () => {
       "The text of your file is sent to your own AI provider, using the model key you saved in Settings, so a model can fill in a draft profile for you to review. We do not keep the file itself.",
     );
     expect(IMPORT_LIMITS).toBe("PDF or DOCX, up to 5 MiB.");
-    expect(IMPORT_SPEND).toBe(spendNotice("a file", `${A_MODEL_CALL}, and a second one if the first answer can't be read`, "Choosing"));
+    expect(IMPORT_SPEND).toBe(
+      spendNotice("a file, or pressing Try again after a failed import,", `${A_MODEL_CALL}, and a second one if the first answer can't be read`, "Choosing"),
+    );
     expect(IMPORT_SPEND).not.toMatch(/[\u2013\u2014]/);
     expect(IMPORT_SPEND).not.toMatch(/verified|unknown model|search call/i);
   });
@@ -263,7 +265,7 @@ describe("the card before anything is chosen", () => {
 });
 
 describe("what choosing a file costs, in every state that draws the file button", () => {
-  const SENTENCE = "Choosing a file makes a real model call on your own key, and a second one if the first answer can't be read.";
+  const SENTENCE = "Choosing a file, or pressing Try again after a failed import, makes a real model call on your own key, and a second one if the first answer can't be read.";
 
   it.each([
     ["idle", initialImportState],
@@ -276,6 +278,27 @@ describe("what choosing a file costs, in every state that draws the file button"
     const nodes = tree(state);
     expect(findAll(nodes, (el) => el.type === "p" && textOf(el) === SENTENCE)).toHaveLength(1);
     expect(textOfMarkup(render(state)).split(SENTENCE)).toHaveLength(2);
+  });
+
+  // Try again re-sends the same file, so it is the same paid press, and the one sentence names it.
+  it("names Try again, which re-sends the file, and keeps the sentence above it after a failed import", () => {
+    const retryable = run(
+      { type: "file_chosen", fileName: "a.pdf" },
+      { type: "upload_started" },
+      { type: "upload_failed", failure: { kind: "error", message: "We could not reach the server." }, retry: true },
+    );
+    const nodes = tree(retryable);
+    const retry = buttonsLabelled(nodes, "Try again");
+    expect(retry).toHaveLength(1);
+    const notes = findAll(nodes, (el) => el.type === "p" && textOf(el) === SENTENCE);
+    expect(notes).toHaveLength(1);
+    expect(SENTENCE).toContain("or pressing Try again after a failed import");
+    const panel = findAll(nodes, (el) => el.type === "div" && el.children.includes(notes[0]))[0];
+    const kids = panel.children.filter(isHost);
+    const noteAt = kids.findIndex((el) => el === notes[0]);
+    const retryAt = kids.findIndex((el) => buttonsLabelled([el], "Try again").length === 1);
+    expect(noteAt).toBeGreaterThan(-1);
+    expect(retryAt).toBeGreaterThan(noteAt);
   });
 
   it("says nothing of choosing a file once a draft is on screen: the file has been read and nothing is left to choose", () => {

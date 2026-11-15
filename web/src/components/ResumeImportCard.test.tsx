@@ -21,7 +21,7 @@ describe("the connected resume-file import card", () => {
     expect(textOfMarkup(html)).toContain("Import from a resume file (PDF or DOCX)");
     expect(html).toContain("Choose a file");
     // The card says, before anything is chosen, what choosing a file costs (it is read the moment it is chosen).
-    expect(textOfMarkup(html)).toContain("Choosing a file makes a real model call on your own key, and a second one if the first answer can't be read.");
+    expect(textOfMarkup(html)).toContain("Choosing a file, or pressing Try again after a failed import, makes a real model call on your own key, and a second one if the first answer can't be read.");
     expect(html).not.toContain("Use this profile");
     expect(html).not.toContain("Discard this draft");
     expect(api.apiFetch).not.toHaveBeenCalled();
@@ -36,6 +36,6 @@ describe("the connected resume-file import card", () => {
       </MemoryRouter>,
     );
     expect(html).toContain("Choose a file");
-    expect(textOfMarkup(html)).toContain("Choosing a file makes a real model call on your own key");
+    expect(textOfMarkup(html)).toContain("Choosing a file, or pressing Try again after a failed import, makes a real model call on your own key");
   });
 });

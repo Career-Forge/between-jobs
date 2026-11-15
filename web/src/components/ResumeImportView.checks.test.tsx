@@ -207,7 +207,7 @@ describe("the other states of the card draw no cyan fill and no inline style", (
 });
 
 describe("setup known to be missing", () => {
-  const CHOOSING_COSTS = "Choosing a file makes a real model call on your own key, and a second one if the first answer can't be read.";
+  const CHOOSING_COSTS = "Choosing a file, or pressing Try again after a failed import, makes a real model call on your own key, and a second one if the first answer can't be read.";
 
   const idle = (modelKey?: "none" | "needs_key" | "needs_model" | "ready", actions = actionsOf()) =>
     render(
