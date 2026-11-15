@@ -362,6 +362,28 @@ describe("the idle tab", () => {
     expect(textOf(notes[0])).not.toMatch(/[\u2013\u2014]/);
   });
 
+  // The form stays on screen in every state of a search, and a failed search's Try again and a repeat from
+  // the results re-run the same search, so the sentence must not vanish with the idle state.
+  it("keeps the Search spend sentence under the form while a search runs, after it fails and once results are on screen", () => {
+    const spend =
+      "Pressing Search makes a real search call on your own search key, then tries each other search key you have saved only if that one fails or finds no posts.";
+    const states: [string, TabState][] = [
+      ["loading", ready({ search: { kind: "loading", request: REQUEST } })],
+      [
+        "failed",
+        ready({ search: { kind: "failed", failure: { kind: "error", message: "The search could not be run.", retryable: true }, request: REQUEST } }),
+      ],
+      ["results", results(makeOutcome([makeSignal()]))],
+      ["no results", results(makeOutcome([]))],
+    ];
+    for (const [name, state] of states) {
+      const form = findAll(tree(state, NO_ACTIONS), (el) => el.type === "form")[0];
+      const notes = findAll(form.children, (el) => el.type === "p");
+      expect(notes, name).toHaveLength(1);
+      expect(textOf(notes[0]).replace(/\s+/g, " ").trim().startsWith(spend), name).toBe(true);
+    }
+  });
+
   it("gives Save this search no spend sentence of its own: saving spends nothing and runs nothing", () => {
     const text = visibleText(idle);
     expect(text).not.toContain("Pressing Save this search");
@@ -656,6 +678,24 @@ describe("the saved searches list", () => {
     for (const button of rowButtons) {
       expect(String(prop(button, "aria-label")).startsWith(textOf(button))).toBe(true);
     }
+  });
+
+  it("says, above the list, that pressing Run makes a search call on the person's own key, and gives Delete no sentence", () => {
+    const { actions } = recorder();
+    const nodes = tree(ready({ searches: [makeSearch({ id: "a", query: "one" }), makeSearch({ id: "b", query: "two" })] }), actions);
+    const section = findAll(nodes, (el) => el.type === "section" && prop(el, "aria-labelledby") === TAB_SAVED_SEARCHES_HEADING_ID)[0];
+    const intro = findAll(section.children, (el) => el.type === "p")[0];
+    expect(textOf(intro).replace(/\s+/g, " ").trim()).toBe(
+      "Run one to search it again with the window above. Pressing Run makes a real search call on your own search key, then tries each other search key you have saved only if that one fails or finds no posts.",
+    );
+    expect(textOf(intro)).not.toMatch(/model/i);
+    expect(textOf(intro)).not.toMatch(/[\u2013\u2014]/);
+    // The sentence sits ahead of the rows it is about, and nothing says Delete costs anything.
+    const list = findAll(section.children, (el) => el.type === "ul")[0];
+    expect(section.children.indexOf(intro)).toBeLessThan(section.children.indexOf(list));
+    expect(textOf(section)).not.toContain("Pressing Delete");
+    // Search and Run are the only two presses on the tab that say what they cost.
+    expect((visibleText(html(ready({ searches: [makeSearch()] }))).match(/Pressing /g) ?? [])).toHaveLength(2);
   });
 
   it("Run passes that search to the handler; Delete passes it to the delete handler", () => {

@@ -88,6 +88,10 @@ const LOCATION_HINT_ID = "hst-location-hint";
 // submits this form, and its Try again after a failed search, which re-runs the same search.
 const SEARCH_SPEND = hiringSearchSpend("Search");
 
+// What pressing Run on a saved search costs: Run fills the form from the saved search and runs this same search,
+// so it spends exactly what Search does. Delete is free and gets no sentence.
+const RUN_SPEND = hiringSearchSpend("Run");
+
 export function SearchForm({ state, actions }: { state: TabState; actions: FormActions }) {
   const { form, fieldErrors, search } = state;
   const checked = checkForm(form);
@@ -242,7 +246,9 @@ export function SavedSearchesSection({
       {state.deleteSearchError !== null && <FailureState message={state.deleteSearchError} />}
       {searches.length > 0 && (
         <>
-          <p className="bj-muted bj-small">Run one to search it again with the window above.</p>
+          <p className="bj-muted bj-small">
+            Run one to search it again with the window above. {RUN_SPEND}
+          </p>
           <ul className="bj-hs-list">
             {searches.map((search) => {
               const label = savedSearchLabel(search);
