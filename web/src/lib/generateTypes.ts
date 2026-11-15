@@ -120,7 +120,7 @@ export interface ResumeContentEntry {
   // Can be "" (a title the PDF drops).
   title: string;
   organisation: string | null;
-  // The PDF's date range joined with an en dash (U+2013), e.g. Jan 2020, dash, Present; an open end stays; null when
+  // The PDF's date range as it prints, with two hyphens ("Jan 2020 -- Present"); an open end stays; null when
   // neither end prints.
   dates: string | null;
   // The tech stack of a project, or the education detail line, on one line.

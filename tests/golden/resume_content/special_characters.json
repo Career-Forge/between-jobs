@@ -40,7 +40,7 @@
    "pointer": null,
    "title": "Lead {Platform} ~ Engineer",
    "organisation": "R&D #1 -- Labs_Inc",
-   "dates": "Mar 2017 \u2013",
+   "dates": "Mar 2017 --",
    "detail": null,
    "bullets": [
     {
@@ -68,7 +68,7 @@
   {
    "id": "education.0",
    "pointer": null,
-   "title": "B.Tech \u2013 Electronics",
+   "title": "B.Tech -- Electronics",
    "organisation": "Institute of Technology",
    "dates": "2015",
    "detail": "GPA: 8.4/10",

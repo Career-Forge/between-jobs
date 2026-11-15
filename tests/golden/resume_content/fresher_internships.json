@@ -42,7 +42,7 @@
    "pointer": null,
    "title": "Software Engineering Intern",
    "organisation": "Initech",
-   "dates": "Jun 2024 \u2013 Aug 2024",
+   "dates": "Jun 2024 -- Aug 2024",
    "detail": null,
    "bullets": [
     {
@@ -64,7 +64,7 @@
    "pointer": null,
    "title": "Data Analyst Intern & Tutor",
    "organisation": "Globex Inc",
-   "dates": "Jan 2024 \u2013",
+   "dates": "Jan 2024 --",
    "detail": null,
    "bullets": [
     {
@@ -98,7 +98,7 @@
   {
    "id": "education.0",
    "pointer": null,
-   "title": "B.S. \u2013 Computer Science",
+   "title": "B.S. -- Computer Science",
    "organisation": "State University",
    "dates": "May 2025",
    "detail": "GPA: 3.6",
