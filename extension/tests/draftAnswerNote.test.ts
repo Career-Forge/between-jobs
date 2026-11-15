@@ -9,13 +9,13 @@ const EM_OR_EN_DASH = new RegExp(`[${String.fromCharCode(0x2013)}${String.fromCh
 describe("draftAnswerNote", () => {
   it("says a press makes up to two real model calls on the person's own key, and none for a saved answer", () => {
     expect(draftAnswerNote("Draft answer")).toBe(
-      "Pressing Draft answer makes up to two real model calls on your own key, one to draft the answer and one to check the claims in it, unless you already saved an answer to this question.",
+      "Pressing Draft answer makes up to two real model calls on your own key, one to draft the answer and one to check the claims in it, unless an answer you saved earlier fits this question.",
     );
   });
 
   it("names the button it is beside", () => {
     expect(draftAnswerNote("Try again")).toBe(
-      "Pressing Try again makes up to two real model calls on your own key, one to draft the answer and one to check the claims in it, unless you already saved an answer to this question.",
+      "Pressing Try again makes up to two real model calls on your own key, one to draft the answer and one to check the claims in it, unless an answer you saved earlier fits this question.",
     );
   });
 

@@ -1458,7 +1458,7 @@ describe("fields left empty on purpose are shown to the person", () => {
 
 describe("what Draft answer costs, said beside the button", () => {
   const sentence = (press: string) =>
-    `Pressing ${press} makes up to two real model calls on your own key, one to draft the answer and one to check the claims in it, unless you already saved an answer to this question.`;
+    `Pressing ${press} makes up to two real model calls on your own key, one to draft the answer and one to check the claims in it, unless an answer you saved earlier fits this question.`;
 
   function pageWithOneQuestion(): void {
     toTab = (_tabId, message) => {
