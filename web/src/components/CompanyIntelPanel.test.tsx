@@ -329,8 +329,8 @@ describe("Company intel: the stored run could not be read", () => {
   });
 });
 
-describe("Company intel: the page's one cyan fill is the band's", () => {
-  it("draws no primary button and no filled cyan in any state", async () => {
+describe("Company intel: the page's one gold fill is the band's", () => {
+  it("draws no primary button and no filled gold in any state", async () => {
     on(`GET ${PATH}`, stored([claim(1), claim(2)], { warnings: ["x"] }));
     const { container } = panel();
     await settle();

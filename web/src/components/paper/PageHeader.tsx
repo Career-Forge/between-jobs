@@ -17,7 +17,7 @@ export interface PageHeaderProps {
   /** Home first, the current page last: [{ label: "Applications", to: "/applications" }, { label: "Northstar" }]. */
   breadcrumb?: readonly Crumb[];
   subtitle?: ReactNode;
-  /** Secondary controls, never a primary one: the cyan fill belongs to the next-step band. */
+  /** Secondary controls, never a primary one: the gold fill belongs to the next-step band. */
   actions?: ReactNode;
 }
 

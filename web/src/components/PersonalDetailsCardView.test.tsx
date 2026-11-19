@@ -49,7 +49,7 @@ function toggleButton(nodes: ReturnType<typeof tree>): HostElement {
   return findAll(nodes, (el) => el.type === "button" && prop(el, "aria-expanded") !== undefined)[0];
 }
 
-// Found by its words: the page's one cyan fill is the next-step band's button, so Save carries no
+// Found by its words: the page's one gold fill is the next-step band's button, so Save carries no
 // primary class (a test further down pins that).
 function saveButton(nodes: ReturnType<typeof tree>): HostElement {
   return findAll(nodes, (el) => el.type === "button" && ["Save", "Saving..."].includes(textOf(el)))[0];
@@ -119,7 +119,7 @@ describe("the Save button", () => {
   });
 });
 
-describe("the page's one cyan fill", () => {
+describe("the page's one gold fill", () => {
   it("is not here: Save is an outlined button, a card never takes the band's place", () => {
     const { actions } = recorder();
     const nodes = tree({ ...base(), dirty: true }, actions);

@@ -141,7 +141,7 @@ describe("ImportSection", () => {
     expect(text(query(container, '[role="alert"]'))).toBe("personal.name: field required");
   });
 
-  it("is never a cyan fill, carries no inline style, and has no serious accessibility violation", async () => {
+  it("is never a gold fill, carries no inline style, and has no serious accessibility violation", async () => {
     const { container } = section();
     expect(container.querySelector(".bj-primary, [style]")).toBeNull();
     await expectNoSeriousA11yViolations(container);

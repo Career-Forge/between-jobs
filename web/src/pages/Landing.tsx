@@ -14,7 +14,7 @@ import "../styles/landing.css";
 // draws inside PublicLayout, which supplies the header, the one <main> and the footer.
 //
 // The hero holds the page's next-step band (the landing row: "Create an account, or sign in if you
-// have one."), so the page's one cyan fill is the band's button. Everything else that looks like a
+// have one."), so the page's one gold fill is the band's button. Everything else that looks like a
 // button is outlined, and the tour's depicted buttons are pictures, not controls.
 //
 // The hero is plain content: no state, no effect, nothing that waits for a script to be worth reading.

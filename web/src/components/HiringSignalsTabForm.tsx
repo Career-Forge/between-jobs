@@ -40,9 +40,9 @@ import type { LocaleChoice } from "../lib/hiringSignalsTabTypes";
 //
 // THE FORM IS A REAL <form>. Enter in either box submits it, IME composition is
 // handled by the browser instead of a hand-rolled keydown check. The page's one
-// primary (cyan) action is the next-step band's, and for Search it is the same
+// primary (gold) action is the next-step band's, and for Search it is the same
 // request: the band's button names this form (HIRING_FORM_ID) and submits it from
-// outside. So the form's own Search is an outlined button, never cyan, and so is
+// outside. So the form's own Search is an outlined button, never gold, and so is
 // Save this search.
 //
 // BUSY CONTROLS ARE aria-disabled, NOT disabled (a disabled button drops

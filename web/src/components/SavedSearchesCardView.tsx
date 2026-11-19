@@ -17,7 +17,7 @@ import "../styles/saved-searches.css";
 //
 // Each search is a list row: its label, then its trail as the last line -- "Checked 06:00" when the
 // background matcher has really run over it, "Not checked yet" when no run is on record, and "Paused"
-// after either. Pause and Delete are outlined buttons; none is cyan.
+// after either. Pause and Delete are outlined buttons; none is gold.
 //
 // It draws nothing while the list is loading, and nothing for a person who has no saved searches
 // (a page has no use for an empty card). A failed lookup is NOT nothing: it says so, with a retry,

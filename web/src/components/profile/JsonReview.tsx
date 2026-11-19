@@ -9,7 +9,7 @@ import "../../styles/profile.css";
 //
 // The review has the id `import-review` (the next-step band's link lands on it) and its heading takes
 // focus when a link arrives. Its two buttons are outlined: while this review is open the band holds the
-// page's one cyan button ("Confirm and make active"), which does what "Looks good -- activate" does.
+// page's one gold button ("Confirm and make active"), which does what "Looks good -- activate" does.
 // `trail` is the review's trail line, drawn under the counts (the page builds it, from the version).
 
 const TITLE_ID = "bj-json-review-title";

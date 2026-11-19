@@ -8,7 +8,7 @@ import "../../styles/profile.css";
 // model is involved -- and the result is a preview the person must activate (JsonReview), never a profile
 // in use.
 //
-// Nothing here is cyan: the page's one cyan fill is the next-step band's button, so Import is an ordinary
+// Nothing here is gold: the page's one gold fill is the next-step band's button, so Import is an ordinary
 // outlined button. The hidden file input is the `hidden` attribute, not a style: the page's
 // Content-Security-Policy allows styles from the site's own stylesheet only.
 

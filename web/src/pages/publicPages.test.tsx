@@ -104,7 +104,7 @@ describe.each(PAGES)("%s, in the public layout", (_name, element, variant, path)
     }
   });
 
-  it("holds exactly one cyan fill: the hero band's button on the home page, the header's Create account everywhere else", () => {
+  it("holds exactly one gold fill: the hero band's button on the home page, the header's Create account everywhere else", () => {
     expect(markup.match(/bj-button-link-primary/g) ?? []).toHaveLength(1);
     expect(markup).not.toMatch(/class="[^"]*\bbj-primary\b/);
     const header = markup.slice(markup.indexOf("<header"), markup.indexOf("</header>"));
@@ -277,7 +277,7 @@ describe("the landing page", () => {
 });
 
 describe("the legal pages in the public layout", () => {
-  it("have no hero, so the header's Create account is their one cyan fill", () => {
+  it("have no hero, so the header's Create account is their one gold fill", () => {
     for (const element of [<Privacy key="p" />, <Terms key="t" />]) {
       expect(page(element).match(/bj-button-link-primary/g) ?? []).toHaveLength(1);
     }

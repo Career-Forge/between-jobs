@@ -425,9 +425,9 @@ function ReadyWorkspace({ id, application, profile, credentials, profileCheck, c
   const coverLetterInBand = rowId === "A1" || rowId === "A1g";
   // What the band's own press costs, said under its buttons: the band's sentences are the rule table's
   // and shared, so this is the page's own line, named after the button that spends. Read the fit check
-  // (A1b's cyan button) only scrolls, so it is Generate anyway that the sentence is about there.
+  // (A1b's gold button) only scrolls, so it is Generate anyway that the sentence is about there.
   const bandSpend = rowId === "A1" || rowId === "A1g" ? "Generate resume" : rowId === "A1c" ? "Generate again" : rowId === "A1b" ? "Generate anyway" : null;
-  // The line is the description of the button it is about: the band's primary one, or, for A1b, its second (the cyan one only scrolls).
+  // The line is the description of the button it is about: the band's primary one, or, for A1b, its second (the gold one only scrolls).
   const bandDescribedBy = bandSpend === null ? undefined : rowId === "A1b" ? { secondary: bandSpendNoteId } : { primary: bandSpendNoteId };
   const setup = modelSetupOf(modelKey);
   const result = controller.state.kind === "ready" ? controller.state.result : null;

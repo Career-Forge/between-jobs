@@ -21,7 +21,7 @@ import "../../styles/settings.css";
 // "Connections": the accounts that are linked to this one rather than keys that are pasted in --
 // Telegram, Discord and Gmail. They are the same cards the page always had, with the same logic and
 // the same words; what changed is where they sit and how they look. None of them holds the page's
-// cyan fill: that belongs to the next-step band, so "Generate a code" and "Connect Gmail" are
+// gold fill: that belongs to the next-step band, so "Generate a code" and "Connect Gmail" are
 // ordinary outlined buttons.
 //
 // The Telegram-link card shows only on a server that has a bot: GET /capabilities says so, and

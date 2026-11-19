@@ -8,7 +8,7 @@ import "../../styles/applications.css";
 
 // The two ways to start tracking a job: fetch a posting by its URL, or paste the whole posting. Both
 // create an application through the same requests the page has always made, and both leave the page
-// to re-read its list (`onCreated`). They are drawn secondary: the page's one cyan fill is the
+// to re-read its list (`onCreated`). They are drawn secondary: the page's one gold fill is the
 // next-step band's button, and when there is nothing tracked yet that button leads here.
 //
 // A failure stays on its own form. A 409 SETUP_REQUIRED from the URL form -- no Firecrawl key saved,

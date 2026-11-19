@@ -13,7 +13,7 @@ import "../styles/today.css";
 //   ✓ Done             emerald, with the real fact when one came back ("Active since Sep 12")
 //   ○ Can't tell yet   muted: every read worked and none holds the answer
 //   ○ Couldn't check   muted, with a secondary Try again: a read it depends on failed
-// The words carry every state; the glyphs are decoration. It holds no cyan fill: the next-step band
+// The words carry every state; the glyphs are decoration. It holds no gold fill: the next-step band
 // holds the page's only one.
 //
 // Open it is the list. Closed it is one 44px line that opens it again: "✓ Setup ready" when all five

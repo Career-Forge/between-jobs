@@ -19,7 +19,7 @@ import "../styles/workspace.css";
 // posting asks for that the profile lacks are "Missing" in words with a muted outline, never a red chip.
 //
 // "Generate anyway" and "Park this application" are outlined buttons here. When the next-step band
-// carries the same step it is the page's one cyan, and the copy in the body stays secondary.
+// carries the same step it is the page's one gold, and the copy in the body stays secondary.
 //
 // The heading is a focus target (`HONEST_READ_HEADING_ID`): the band's "Read the fit check" and a link
 // that says "see why" arrive here, not at the top of the section.

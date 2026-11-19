@@ -24,12 +24,12 @@
 // every fact in a `why` line is something the page read -- nothing is said about a claim check that
 // was not stored, a date that was not returned, or a practice session the page never read.
 //
-// A2, A2u and A3 each name two steps, and their cyan is the first one named. A2 asks for the claims to be
-// read first, so its cyan goes to them (a link to the claim check, which the page's hash scroll lands on
+// A2, A2u and A3 each name two steps, and their gold is the first one named. A2 asks for the claims to be
+// read first, so its gold goes to them (a link to the claim check, which the page's hash scroll lands on
 // and focuses) and Download PDF is the outlined button beside it. The band does not move on after that
 // link: the page cannot know the claims were read and does not say so, so the download stays on offer
-// next to it. A2u and A3 ask for the download first, so Download PDF is their cyan. (A4's sentence starts
-// with submitting, which happens on the employer's own site, so its cyan is the way there.)
+// next to it. A2u and A3 ask for the download first, so Download PDF is their gold. (A4's sentence starts
+// with submitting, which happens on the employer's own site, so its gold is the way there.)
 //
 // A band never starts, submits or sends anything the person has not asked for: the furthest it goes is
 // "Open the posting", and the person submits on the employer's own site.

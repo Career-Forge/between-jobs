@@ -168,7 +168,7 @@ describe("the sample next step", () => {
     });
   });
 
-  it("has no button and no cyan fill: the hero holds the page's one", () => {
+  it("has no button and no gold fill: the hero holds the page's one", () => {
     const root = open();
     for (let index = 0; index < TOUR_TABS.length; index++) {
       click(tabsOf(root)[index]);

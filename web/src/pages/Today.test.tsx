@@ -383,7 +383,7 @@ describe("dismissing, accepting and tracking", () => {
     expect(rows(container)).toEqual([]);
   });
 
-  it("accepts a proposal from the band's one cyan button, removes it, and says where the application went", async () => {
+  it("accepts a proposal from the band's one gold button, removes it, and says where the application went", async () => {
     answer({ "/today": [proposalItem], "POST /today/p1/accept-proposal": {} });
     const { container } = await draw();
     click(buttonNamed(band(container), "Accept: move to Interviewing"));
@@ -702,13 +702,13 @@ describe("the margin and the inline trail follow the width", () => {
 });
 
 describe("the setup checklist", () => {
-  it("opens for a new account, from the same reads, and has no cyan fill of its own", async () => {
+  it("opens for a new account, from the same reads, and has no gold fill of its own", async () => {
     answer({ "/profile/current": new FakeApiError(404, "none"), "/credentials": [], "/saved-searches": [], "/applications": [] });
     const { container } = await draw();
     const list = query(container, "section.bj-setup");
     expect(words(query(list, ".bj-setup-count"))).toBe("0 of 5 done");
     expect(list.querySelector(".bj-primary, .bj-button-link-primary")).toBeNull();
-    // Only the band's button is cyan.
+    // Only the band's button is gold.
     expect(container.querySelectorAll(".bj-primary, .bj-button-link-primary")).toHaveLength(1);
     expect(calls().filter((call) => call === "GET /applications")).toHaveLength(1);
   });
@@ -779,7 +779,7 @@ describe("the page as a whole", () => {
     await expectNoSeriousA11yViolations(container);
   });
 
-  it("has exactly one cyan fill with a lit item and none without", async () => {
+  it("has exactly one gold fill with a lit item and none without", async () => {
     answer({ "/today": [proposalItem, readyItem] });
     const lit = await draw();
     expect(lit.container.querySelectorAll(".bj-primary, .bj-button-link-primary")).toHaveLength(1);

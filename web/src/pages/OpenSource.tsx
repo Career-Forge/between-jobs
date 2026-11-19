@@ -11,7 +11,7 @@ import "../styles/site-pages.css";
 // are the home page's, built from the same table (content/landing.ts), so the two cannot disagree.
 //
 // Drawn on the public layout when signed out and inside the shell when signed in, so it carries no account
-// links: the header's Create account is the page's one cyan fill, and the GitHub link here is outlined.
+// links: the header's Create account is the page's one gold fill, and the GitHub link here is outlined.
 
 const REPO_LABEL = REPO_URL.replace(/^https?:\/\//, "");
 

@@ -122,7 +122,7 @@ describe("the resume settings", () => {
     expect(callsTo("GET /resume-documents/mine?application_id=app-9")).toHaveLength(1);
   });
 
-  it("is never a cyan fill, and the one selected segment of a group is the only maroon one", async () => {
+  it("is never a gold fill, and the one selected segment of a group is the only royal one", async () => {
     const { container } = page();
     await settle();
     expect(container.querySelector(".bj-primary")).toBeNull();

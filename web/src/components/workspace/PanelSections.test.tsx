@@ -81,7 +81,7 @@ describe("the sections' structure", () => {
     expect([...container.querySelectorAll(".bj-chapter-eyebrow")].map((node) => text(node))).toEqual(["Research", "Prepare"]);
   });
 
-  it("draws no primary button or link anywhere in the six sections, so the next-step band keeps the page's one cyan fill", async () => {
+  it("draws no primary button or link anywhere in the six sections, so the next-step band keeps the page's one gold fill", async () => {
     installViewport(1280);
     const { container } = sections();
     await settle();

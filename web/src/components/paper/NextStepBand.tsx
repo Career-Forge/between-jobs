@@ -4,13 +4,13 @@ import type { NextStepAction, NextStepOutcome } from "../../lib/nextStep";
 import "../../styles/paper.css";
 
 // The next-step band: one per page, directly under the page header. It says in plain words what to
-// do now, shows the facts that picked that step, and holds the page's ONLY cyan fill.
+// do now, shows the facts that picked that step, and holds the page's ONLY gold fill.
 //
 //   <NextStepBand outcome={nextStep(input)} onAction={(intent) => handlers[intent]?.()} />
 //
-//   lit      eyebrow "Next step", the sentence, a `why:` line, one cyan button (and at most one
+//   lit      eyebrow "Next step", the sentence, a `why:` line, one gold button (and at most one
 //            outlined secondary). Used when the outcome carries an action.
-//   unlit    the sentence and the why line, no button, and nothing else on the page turns cyan to
+//   unlit    the sentence and the why line, no button, and nothing else on the page turns gold to
 //            fill the gap. An outcome with `action: null`.
 //   loading  the eyebrow and "Loading..." only, until the inputs have arrived.
 //   none     renders nothing (legal pages: no next step is not the same as "nothing needs you").
@@ -31,7 +31,7 @@ import "../../styles/paper.css";
 // Today is the one page whose band holds the item itself. It passes the item's own words as
 // `children` (evidence, the trail line, a quiet Dismiss), drawn inside the band under the buttons,
 // and may replace the eyebrow's words with the item's kind (`eyebrow`). Neither changes what the band
-// is: the sentence, the why line and the one cyan button still come from the rule table.
+// is: the sentence, the why line and the one gold button still come from the rule table.
 //
 // While the page has a request out for the step (`pending`), the band's handler buttons and its form
 // submit button stay where they are but are aria-disabled -- not disabled, so a focused one keeps focus

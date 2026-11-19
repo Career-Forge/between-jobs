@@ -8,9 +8,9 @@ import "../styles/public.css";
 
 // The signed-out site's header: the wordmark, the site's four tabs (Product, How it works, Open source,
 // Privacy), and the way in. The tab for the page you are on carries aria-current="page" and the one
-// selection style (maroon fill, ivory text, weight 600), never an underline.
+// selection style (royal fill, ivory text, weight 600), never an underline.
 //
-// THE ONE CYAN BUTTON. Create account is the page's one cyan fill on every public page that has no
+// THE ONE CYAN BUTTON. Create account is the page's one gold fill on every public page that has no
 // hero of its own. The home page's hero holds the page's one (its next-step band), so there the header's
 // is outlined (`filled` is false). Sign in is always a plain text link.
 //

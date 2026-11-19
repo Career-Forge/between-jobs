@@ -9,7 +9,7 @@ import { buttonNamed, click, query, render } from "../testing/render";
 import Login from "./Login";
 
 // The sign-in and register screen as a person meets it, run in a DOM: its labels and field attributes,
-// the one cyan fill (the next-step band's button, which submits the form from outside it), the secondary
+// the one gold fill (the next-step band's button, which submits the form from outside it), the secondary
 // Google button, and every behavior the screen had before it was restyled -- the error line, the double
 // submit guard, the confirmation notice, the password reset. Which mode opens, and what a dead reset link
 // leads to, is lib/passwordReset.ts's own test.
@@ -78,7 +78,7 @@ describe.each([
     expect(password.getAttribute("autocomplete")).toBe(passwordAutocomplete);
   });
 
-  it("holds exactly one cyan fill, and it is the page's submit button, which sits in the band and names the form", () => {
+  it("holds exactly one gold fill, and it is the page's submit button, which sits in the band and names the form", () => {
     const root = open(search);
     const fills = root.querySelectorAll(CYAN);
     expect(fills).toHaveLength(1);
@@ -274,7 +274,7 @@ describe("the password reset form", () => {
     return root;
   }
 
-  it("keeps its own cyan button and draws no band, since the band's action would name a form that is not there", () => {
+  it("keeps its own gold button and draws no band, since the band's action would name a form that is not there", () => {
     const root = reset();
     expect(text(query(root, ".bj-login-card h2"))).toBe("Reset your password");
     expect(root.querySelector('section[aria-label="Next step"]')).toBeNull();

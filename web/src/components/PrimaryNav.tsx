@@ -10,7 +10,7 @@ import { Icon } from "./icons";
 // see which links a person really gets while the answer is unknown, off, or on.
 //
 // The page you are on is the selection primitive: NavLink sets aria-current="page" on its link and
-// tokens.css turns that into the maroon fill. Nothing here styles the active state itself.
+// tokens.css turns that into the royal fill. Nothing here styles the active state itself.
 
 export function PrimaryNav() {
   const hiringSignalsEnabled = useHiringSignalsEnabled();

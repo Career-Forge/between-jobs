@@ -3,7 +3,7 @@
 // the credentials read has answered, and a failed search is not in play (F1 answers for it).
 //
 //   D1   setup is missing: no usable model key (read from the credentials, or the server said so)
-//   D2   ready, no search run yet           "Search company job boards ..."     Search (the page's one cyan)
+//   D2   ready, no search run yet           "Search company job boards ..."     Search (the page's one gold)
 //   D3   searching                          "Searching..."                      (no button)
 //   D4b  results, the scoring fell back     "Your model's reply couldn't be read ..."   Search again
 //   D4   results                            "Track the jobs worth a draft."     (unlit)
@@ -16,7 +16,7 @@
 // A search never runs on its own. D2 is "ready, nothing run", and its button submits the filter
 // form from outside; until a search has run the form draws no Search of its own, so the band's is the
 // only one (bandHoldsSearch tells the form). After that the form's own Search is outlined, because the
-// band holds the page's one cyan fill. The elapsed counter of D3 is not part of the sentence: the
+// band holds the page's one gold fill. The elapsed counter of D3 is not part of the sentence: the
 // sentence would change every second and be announced every second. The page draws the counter beside it.
 //
 // A why line lists the facts that picked the step, and every number in it is a count of what the

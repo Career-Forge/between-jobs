@@ -17,7 +17,7 @@ import "../styles/profile.css";
 // component, never ask "which country are you in." No dropdown, no
 // per-country branching.
 
-// Nothing here is cyan: the page's one cyan fill is the next-step band's button, so Save is an ordinary
+// Nothing here is gold: the page's one gold fill is the next-step band's button, so Save is an ordinary
 // outlined button. Its trail is none: this is a form, with nothing fetched or computed to attribute.
 const TITLE_ID = "bj-personal-details-title";
 

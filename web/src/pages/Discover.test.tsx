@@ -1399,7 +1399,7 @@ describe("accessibility of the whole page", () => {
     await expectNoSeriousA11yViolations(container);
   });
 
-  it("holds exactly one page heading and one cyan fill when ready", async () => {
+  it("holds exactly one page heading and one gold fill when ready", async () => {
     const { container } = await draw();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
     expect(container.querySelectorAll("button.bj-primary, a.bj-button-link-primary")).toHaveLength(1);

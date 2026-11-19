@@ -175,7 +175,7 @@ describe("the review with checks", () => {
     expect(text(first.container)).not.toContain("in place of your current one, which stays");
   });
 
-  it("draws the trail it was given under the notice, and no button of the card is a cyan fill", () => {
+  it("draws the trail it was given under the notice, and no button of the card is a gold fill", () => {
     const { container } = render(<Harness />);
     expect(text(query(container, ".the-trail"))).toBe("Trail slot");
     expect(container.querySelector(".bj-primary")).toBeNull();
@@ -187,7 +187,7 @@ describe("the review with checks", () => {
   });
 });
 
-describe("the other states of the card draw no cyan fill and no inline style", () => {
+describe("the other states of the card draw no gold fill and no inline style", () => {
   const FAILED: ImportState = [
     { type: "file_chosen", fileName: "a.pdf" },
     { type: "upload_started" },

@@ -52,7 +52,7 @@ describe.each(PAGES)("%s in the public layout", (_name, element, doc) => {
   it("is a reading column, not a band or a hero: an article inside the page's one main, with no next step", () => {
     const root = open();
     expect(root.querySelectorAll("main article.bj-legal")).toHaveLength(1);
-    // No band and no button of its own: the one cyan fill is the public header's Create account.
+    // No band and no button of its own: the one gold fill is the public header's Create account.
     expect(root.querySelector(".bj-band, .bj-primary")).toBeNull();
     expect(root.querySelectorAll(".bj-button-link-primary")).toHaveLength(1);
     expect(root.querySelector("header .bj-button-link-primary")).not.toBeNull();

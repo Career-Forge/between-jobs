@@ -51,7 +51,7 @@ import "../styles/profile.css";
 // waiting one, and GET /profile/current returns only the active version. After a reload there is no draft
 // to review (the band says the profile is active) and the page never draws "import waiting" from memory.
 //
-// THE NEXT-STEP BAND holds the page's one cyan button. With an active profile and nothing waiting it is
+// THE NEXT-STEP BAND holds the page's one gold button. With an active profile and nothing waiting it is
 // unlit ("Your profile is active"); with an import waiting it links to the review and then holds
 // "Confirm and make active". Every other button on the page, including the ones that would do the same
 // thing, is outlined. Which row says what is lib/nextStep/pages/profile.ts.

@@ -14,7 +14,7 @@ describe("Wordmark", () => {
     expect(markup).not.toContain("<svg");
   });
 
-  it("draws the red dot as a hidden span after the name, so a screen reader never meets it", () => {
+  it("draws the dot as a hidden span after the name, so a screen reader never meets it", () => {
     const spans = tagsOf(markup, "span");
     expect(spans).toHaveLength(2);
     expect(spans[1]).toMatchObject({ class: "bj-wordmark-dot", "aria-hidden": "true" });

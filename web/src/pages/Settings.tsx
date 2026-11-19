@@ -26,7 +26,7 @@ import "../styles/settings.css";
 // model Between Jobs runs on. A person's own key is the only way anything here is paid for: nothing
 // runs on a shared key.
 //
-// ONE PRIMARY ACTION. The next-step band holds the page's only cyan button. With no model key at
+// ONE PRIMARY ACTION. The next-step band holds the page's only gold button. With no model key at
 // all, that button is "Connect with OpenRouter"; every other button on the page, including the same
 // one inside the AI-provider section and "Validate and save", is outlined. Which row applies is in
 // lib/nextStep/pages/settings.ts, which also says why.

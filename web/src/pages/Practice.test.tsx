@@ -63,7 +63,7 @@ describe("what the page asks for", () => {
 });
 
 describe("the page", () => {
-  it("says practice lives inside each application, with one link on to Applications as the page's one cyan fill", async () => {
+  it("says practice lives inside each application, with one link on to Applications as the page's one gold fill", async () => {
     const { container } = await draw();
     expect(text(query(container, "h1"))).toBe("Practice");
     expect(text(query(band(container), ".bj-band-sentence"))).toBe("Practice lives inside each application.");

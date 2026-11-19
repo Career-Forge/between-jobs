@@ -252,7 +252,7 @@ describe("the table", () => {
     expect(describeAction(decided.secondary) ?? undefined).toBe(secondary);
   });
 
-  it("lights exactly the steps that carry one cyan action, and leaves the rest unlit", () => {
+  it("lights exactly the steps that carry one gold action, and leaves the rest unlit", () => {
     const lit = rows.filter((entry) => step(ask(entry.input).outcome).action !== null).map((entry) => `${entry.row}`);
     expect(new Set(lit)).toEqual(new Set(["A1", "A1g", "A1c", "A1b", "A2", "A2u", "A3", "A4", "A6"]));
     const unlit = rows.filter((entry) => step(ask(entry.input).outcome).action === null).map((entry) => entry.row);

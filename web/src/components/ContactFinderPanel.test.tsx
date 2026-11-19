@@ -581,7 +581,7 @@ describe("Contacts: running", () => {
   });
 });
 
-describe("Contacts: the page's one cyan fill is the band's, and the markup is sound", () => {
+describe("Contacts: the page's one gold fill is the band's, and the markup is sound", () => {
   it("draws no primary button or link in any of its states", async () => {
     on(`GET ${PATH}`, stored([candidate(1, { enriched_email: "p@x.example" })], { warnings: ["x"] }));
     on(`POST ${PATH}/p1/draft-outreach`, { draft: DRAFT });

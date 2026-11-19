@@ -104,7 +104,7 @@ describe("arriving at #ai-provider (the first-run step's link)", () => {
 });
 
 describe("with no model key", () => {
-  it("lights the band with Connect with OpenRouter, the page's only cyan, and outlines the same button in the section", async () => {
+  it("lights the band with Connect with OpenRouter, the page's only gold, and outlines the same button in the section", async () => {
     describeAccount([]);
     const { container } = page();
     await settle();
@@ -370,7 +370,7 @@ describe("when the page cannot tell which model is the default", () => {
 });
 
 describe("with a model ready", () => {
-  it("is unlit: nothing needs you, and nothing on the page is cyan", async () => {
+  it("is unlit: nothing needs you, and nothing on the page is gold", async () => {
     describeAccount([key("openrouter", { model: "vendor/model-a", setup_state: "ready" })]);
     const { container } = page();
     await settle();
@@ -434,7 +434,7 @@ const noProfile = () => new FakeApiError("none", "NOT_FOUND", undefined, 404);
 const primariesIn = (root: ParentNode) => [...root.querySelectorAll(".bj-button-link-primary, .bj-primary")];
 
 describe("with no active profile yet", () => {
-  it("asks for the model key first when none is saved: the band's one cyan is Connect with OpenRouter, and the section's own button stays outlined", async () => {
+  it("asks for the model key first when none is saved: the band's one gold is Connect with OpenRouter, and the section's own button stays outlined", async () => {
     describeAccount([], noProfile());
     const { container } = page();
     await settle();

@@ -71,7 +71,7 @@ describe("HiringSignalsPanel, idle", () => {
     expect(html).not.toMatch(/<img|<svg|<iframe|<a /i);
   });
 
-  it("offers one action, 'Find hiring posts', outlined (the page's one cyan fill is the next-step band's), and it is enabled", () => {
+  it("offers one action, 'Find hiring posts', outlined (the page's one gold fill is the next-step band's), and it is enabled", () => {
     const html = renderIdle();
     expect(html).toMatch(/<button[^>]*>Find hiring posts<\/button>/);
     expect(html).not.toContain("bj-primary");

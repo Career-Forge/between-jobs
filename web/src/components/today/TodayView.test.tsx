@@ -434,7 +434,7 @@ describe("a row", () => {
     expect(words(query(byKind("high_fit_job"), ".bj-trail"))).toBe('engine ✦ · Found by saved search "analytics engineer" · via registry · Sep 22');
   });
 
-  it("offers each row only controls that are real for it, none of them cyan", () => {
+  it("offers each row only controls that are real for it, none of them gold", () => {
     const { container } = draw({ items: [match, ready, tracked] });
     // `match` is lit (T4 comes after T3: the ready resume holds the band).
     const names = (kind: string) => [...(rows(container).find((row) => row.getAttribute("data-kind") === kind) as HTMLElement).querySelectorAll("a, button.bj-today-action")].map(words);
@@ -528,12 +528,12 @@ describe("empty", () => {
       "Stage changed",
     ]);
     expect(container.querySelector("li.bj-today-row")).toBeNull();
-    // And the band says the next step: T5a, a Discover link as the only cyan.
+    // And the band says the next step: T5a, a Discover link as the only gold.
     expect(words(query(band(container), ".bj-band-sentence"))).toBe("Find a job on Discover and track it.");
     expect(container.querySelectorAll(CYAN_FILLS)).toHaveLength(1);
   });
 
-  it("is unlit, with no cyan on the page, when there are saved searches and nothing in the feed", () => {
+  it("is unlit, with no gold on the page, when there are saved searches and nothing in the feed", () => {
     const { container } = draw({ items: [] });
     expect(band(container).className).toContain("bj-band--unlit");
     expect(words(query(band(container), ".bj-band-why"))).toBe("why: 0 items need a decision · 1 saved search active");
@@ -728,7 +728,7 @@ describe("the margin and the inline trail", () => {
   });
 });
 
-describe("the one cyan fill", () => {
+describe("the one gold fill", () => {
   const scenarios: [string, Scenario, number][] = [
     ["a lit proposal", { items: [proposal, ready, match, held] }, 1],
     ["a held-back resume", { items: [held, ready] }, 1],

@@ -196,7 +196,7 @@ describe("a plain key provider", () => {
     expect(text(replacing.container)).not.toContain("Billed by OpenAI");
   });
 
-  it("has no cyan button: the page's one primary action is the next-step band's", () => {
+  it("has no gold button: the page's one primary action is the next-step band's", () => {
     const { container } = mount({ provider: provider("openai") });
     expect(container.querySelector(".bj-primary")).toBeNull();
     expect(container.querySelector(".bj-button-link-primary")).toBeNull();

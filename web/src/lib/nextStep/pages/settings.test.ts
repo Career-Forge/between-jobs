@@ -131,7 +131,7 @@ describe("the table", () => {
     }
   });
 
-  it("is lit by exactly one cyan action in every row but the last two, and unlit in S4 and S4u", () => {
+  it("is lit by exactly one gold action in every row but the last two, and unlit in S4 and S4u", () => {
     const lit = rows.filter((entry) => step(ask(entry.input).outcome).action !== null).map((entry) => entry.row);
     expect(lit).toEqual(["S1", "S2", "S2k", "S3"]);
   });
@@ -298,12 +298,12 @@ describe("facts the page rows cannot read", () => {
   });
 });
 
-describe("the one cyan decision", () => {
+describe("the one gold decision", () => {
   it("is documented where the rows are: the band's action is the page's primary, every other button is outlined", async () => {
     const raw = (await import("./settings.ts?raw")).default as string;
     const source = raw.replace(/\n\/\/ ?/g, " ").replace(/\s+/g, " ");
     expect(source).toContain("WHICH CONTROL IS THE PAGE'S PRIMARY");
-    expect(source).toContain('the cyan button IS "Connect with OpenRouter"');
+    expect(source).toContain('the gold button IS "Connect with OpenRouter"');
     expect(source).toContain("every other control on the page are outlined");
   });
 });

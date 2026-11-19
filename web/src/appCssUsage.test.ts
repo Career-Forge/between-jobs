@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import appCss from "./app.css?raw";
 
-// A class rule in app.css that nothing draws is dead weight, and a dead `.bj-badge-cyan` is also a
-// standing invitation to a second cyan fill. This reads every `.bj-` class the stylesheet names and
+// A class rule in app.css that nothing draws is dead weight, and a dead `.bj-badge-gold` is also a
+// standing invitation to a second gold fill. This reads every `.bj-` class the stylesheet names and
 // looks for it in the source of the app (tests and test helpers do not count as a user).
 
 const sources = import.meta.glob<string>(["./**/*.ts", "./**/*.tsx", "!./**/*.test.ts", "!./**/*.test.tsx", "!./testing/**"], {

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 // The shell's icons, in one place: 24-unit grid, 1.6 stroke, round caps and joins, drawn in the
-// text color so they follow hover, selection and the dark/maroon backgrounds. They are decoration:
+// text color so they follow hover, selection and the dark/royal backgrounds. They are decoration:
 // every use sits beside a visible label, so the SVG is hidden from assistive technology.
 
 export type IconName =

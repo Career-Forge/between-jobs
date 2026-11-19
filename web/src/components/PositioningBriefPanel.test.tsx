@@ -221,7 +221,7 @@ describe("Your play", () => {
     expect(document.activeElement).toBe(buttonNamed(container, "Refresh"));
   });
 
-  it("draws no cyan, and has no serious accessibility violation, empty or built", async () => {
+  it("draws no gold, and has no serious accessibility violation, empty or built", async () => {
     on(`GET ${PATH}`, { brief: { ...BRIEF, rubric_warnings: ["a flag"] } });
     const built = panel();
     await settle();

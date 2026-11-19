@@ -21,7 +21,7 @@ import "../styles/workspace.css";
 //   Adjacent     ◇  something close is in the profile
 //   Gap          ○  nothing in the profile speaks to it
 //
-// Must-have clusters are set in ivory bold and preferred ones in muted text; neither is red or cyan.
+// Must-have clusters are set in ivory bold and preferred ones in muted text; neither is red or gold.
 // The picks a person makes among a cluster's facts are saved (PATCH .../evidence), and the panel says
 // plainly that the draft does not read them yet: generation is not given them today.
 //

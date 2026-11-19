@@ -7,7 +7,7 @@
 //   P2  something is tracked                    "Your move on 3 · their move on 2."   (unlit)
 //
 // P2 is unlit on purpose. Which application to act on is a choice per card, so no single button on
-// the page is the right one, and nothing else on the page turns cyan to fill the gap. The sentence
+// the page is the right one, and nothing else on the page turns gold to fill the gap. The sentence
 // counts what the list says and nothing it would have to guess: "your move" is the four statuses
 // where the next action is the person's (saved, screening, interviewing, offer) and "their move"
 // is applied. Rejected and withdrawn applications are at rest and counted in neither.
