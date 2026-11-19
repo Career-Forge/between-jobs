@@ -59,7 +59,7 @@ import "../../styles/discover.css";
 // that replaces another in place), because a new search is a new question and "Strong" must not hide
 // rows from it unasked. Tracking a row or saving a search keeps the same answer, so it keeps them.
 //
-// The band holds the next step (a search again, clear the filters); nothing here is cyan.
+// The band holds the next step (a search again, clear the filters); nothing here is gold.
 
 export const RESULTS_HEADING_ID = "bj-discover-results";
 

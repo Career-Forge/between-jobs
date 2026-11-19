@@ -6,7 +6,7 @@ import "../../styles/discover.css";
 
 // The filter form: search words, location, companies and "remote only". It is a real <form>, so Enter in
 // any field searches. The next-step band's Search submits it from outside (the band holds the page's one
-// cyan fill), and until a search has run the band's is the only Search on the page: the form draws none
+// gold fill), and until a search has run the band's is the only Search on the page: the form draws none
 // of its own, since two buttons that say Search a few lines apart read as two different things. Enter
 // still works, because a form's default button is the first submit button whose form owner is the form,
 // and a button attached by its `form` attribute counts. Once a search has run the form keeps its own

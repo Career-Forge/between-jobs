@@ -14,9 +14,9 @@
 // there) or when they followed the band's link to #import-review. Anywhere else the band offers the
 // link first.
 //
-// WHICH BUTTON IS CYAN. The band holds the page's only cyan fill. On the review that is "Confirm and
+// WHICH BUTTON IS CYAN. The band holds the page's only gold fill. On the review that is "Confirm and
 // make active"; the review's own "Use this profile" and "Looks good -- activate" are drawn as ordinary
-// outlined buttons, because one action is cyan once. For a resume file the button is locked (a dashed
+// outlined buttons, because one action is gold once. For a resume file the button is locked (a dashed
 // outline and a hint, not a fill) until every field read from the file has been checked one by one:
 // there is deliberately no "check all". The JSON import has no such list to check -- it is parsed by
 // code from the person's own template and shows what was counted -- so its button is never locked.

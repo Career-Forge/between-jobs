@@ -8,7 +8,7 @@ import { MoreSheet } from "./MoreSheet";
 // The phone's navigation, under 960px (CSS decides; this always renders and is display:none above
 // that, where the rail takes over): four tabs and a More button, in a five-column grid, each at
 // least 44px tall with a 12px label. The selected tab is the selection primitive -- NavLink's
-// aria-current="page" plus the maroon fill from tokens.css.
+// aria-current="page" plus the royal fill from tokens.css.
 //
 // More opens a sheet with the entries that have no tab. It is a button with a popup, not a link,
 // and stays unselected: it leads to several pages, so none of them is "this" one.

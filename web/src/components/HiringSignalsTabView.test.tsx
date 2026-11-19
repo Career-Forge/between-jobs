@@ -325,7 +325,7 @@ describe("the idle tab", () => {
     expect(idle).toMatch(/<option value="auto" selected/);
   });
 
-  it("holds no cyan fill of its own: the page's one primary is the band's, which submits this very form", () => {
+  it("holds no gold fill of its own: the page's one primary is the band's, which submits this very form", () => {
     expect(idle).not.toContain("bj-primary");
     expect(idle).toMatch(new RegExp(`<form[^>]*id="${HIRING_FORM_ID}"`));
     expect(idle).toMatch(/<button[^>]*type="submit"[^>]*>Search<\/button>/);
@@ -1297,7 +1297,7 @@ describe("the page around the tab", () => {
     }
   });
 
-  it("draws the band's own action: the step's button, and nothing else turns cyan", () => {
+  it("draws the band's own action: the step's button, and nothing else turns gold", () => {
     const input = {
       page: "hiring-signals",
       signedIn: true,

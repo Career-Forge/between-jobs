@@ -18,7 +18,7 @@ export type TourTabId = "discover" | "prepare" | "reach" | "practice" | "apply";
 export interface TourTab {
   id: TourTabId;
   label: string;
-  /** The sample next step for this tab. Never a control; the hero holds the page's one cyan fill. */
+  /** The sample next step for this tab. Never a control; the hero holds the page's one gold fill. */
   next: { sentence: string; why: readonly string[] };
   /** The one trail line the panel ends in: who made it and what it is based on, in the trail grammar. */
   trail: TrailInput;

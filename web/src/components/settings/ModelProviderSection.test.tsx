@@ -609,7 +609,7 @@ describe("adding a provider", () => {
 });
 
 describe("the section as a whole", () => {
-  it("has no cyan button, and says nothing runs on a shared key", () => {
+  it("has no gold button, and says nothing runs on a shared key", () => {
     const { container } = mount({ credentials: [row("openai", { setup_state: "needs_model" })] });
     expect(container.querySelector(".bj-primary")).toBeNull();
     expect(text(container)).toContain("never runs on a shared key");

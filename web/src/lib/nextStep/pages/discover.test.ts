@@ -214,7 +214,7 @@ describe("the table", () => {
     }
   });
 
-  it("is lit by one cyan action in D1, D2, D4b and D5 (with filters), and unlit in D3, D4 and a D5 with no filter", () => {
+  it("is lit by one gold action in D1, D2, D4b and D5 (with filters), and unlit in D3, D4 and a D5 with no filter", () => {
     const lit = rows.filter((entry) => step(ask(entry.input).outcome).action !== null).map((entry) => entry.row);
     expect(new Set(lit)).toEqual(new Set(["D1", "D2", "D4b", "D5"]));
     const unlit = rows.filter((entry) => step(ask(entry.input).outcome).action === null).map((entry) => entry.row);

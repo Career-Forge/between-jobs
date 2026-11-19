@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-// The elapsed counter of a running search ("Searching... 7s"): cyan, mono, `role="timer"` with its
+// The elapsed counter of a running search ("Searching... 7s"): link blue, mono, `role="timer"` with its
 // live region off. A timer that announced every second would drown the page, so it is read only when
 // a person goes to it; the page announces once when the results or an error arrive. The seconds are
 // worked out from the clock each tick, so a tab that was throttled in the background catches up.

@@ -174,7 +174,7 @@ describe("Events", () => {
     expect(container.querySelectorAll(".bj-rs-item")).toHaveLength(1);
   });
 
-  it("draws no cyan, and has no serious accessibility violation", async () => {
+  it("draws no gold, and has no serious accessibility violation", async () => {
     on(`GET ${PATH}`, stored([event(1, "confirmed_speaker"), event(2, "likely_staffed_sponsor"), event(3, "company_adjacent")], { warnings: ["x"] }));
     const { container } = panel();
     await settle();

@@ -12,10 +12,10 @@ import "../../styles/tour.css";
 // roving tabindex so the strip is one Tab stop, and Left, Right, Home and End to move between tabs.
 // Moving to a tab selects it (the drawings are cheap and nothing is fetched, so there is nothing to
 // wait for). One panel shows at a time; the other four are `hidden` and draw nothing. The selected tab
-// uses the one selection style (maroon fill, ivory text, weight 600, aria-selected), never an underline.
+// uses the one selection style (royal fill, ivory text, weight 600, aria-selected), never an underline.
 //
 // Everything inside a panel is a picture. The depicted buttons are outlined spans, not controls, so the
-// page's one cyan fill stays the hero's, and the only things in the tour that take focus are the tabs
+// page's one gold fill stays the hero's, and the only things in the tour that take focus are the tabs
 // and the selected panel itself (it has no focusable content, so it is a stop of its own, and a reader
 // can scroll it). The sample next step is a polite live region: choosing a tab announces which tab and
 // what its sample step says, the tab's name first so a listener knows what changed. On a phone the strip

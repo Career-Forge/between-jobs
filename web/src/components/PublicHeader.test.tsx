@@ -80,7 +80,7 @@ describe("the tabs", () => {
 });
 
 describe("the way in", () => {
-  it("is Sign in as a plain link and Create account as the page's one cyan button where the page has no hero", () => {
+  it("is Sign in as a plain link and Create account as the page's one gold button where the page has no hero", () => {
     const root = open("/how-it-works", true);
     const nav = query(root, 'nav[aria-label="Account"]');
     const [signIn, create] = [...nav.querySelectorAll("a")];
@@ -90,7 +90,7 @@ describe("the way in", () => {
     expect(root.querySelectorAll(".bj-button-link-primary")).toHaveLength(1);
   });
 
-  it("makes Create account outlined on the home page, whose hero holds the page's one cyan fill", () => {
+  it("makes Create account outlined on the home page, whose hero holds the page's one gold fill", () => {
     const root = open("/", false);
     expect(root.querySelector(".bj-button-link-primary")).toBeNull();
     expect(text(query(root, "a.bj-button-link"))).toBe("Create account");

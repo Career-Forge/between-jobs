@@ -120,7 +120,7 @@ async function draw(width = 1000, at = "/applications") {
 const band = (container: HTMLElement) => query(container, 'section[aria-label="Next step"]');
 const sentence = (container: HTMLElement) => text(query(band(container), ".bj-band-sentence"));
 const why = (container: HTMLElement) => text(query(band(container), ".bj-band-why"));
-const cyanFills = (container: HTMLElement) => container.querySelectorAll(".bj-primary, .bj-button-link-primary").length;
+const goldFills = (container: HTMLElement) => container.querySelectorAll(".bj-primary, .bj-button-link-primary").length;
 const status = (container: HTMLElement) => text(query(container, ".bj-apps > .bj-visually-hidden[role='status']"));
 const card = (container: HTMLElement, id: string) => query(container, `[data-app-id="${id}"]`);
 const titles = (container: HTMLElement) => [...container.querySelectorAll(".bj-app-title")].map((title) => text(title));
@@ -164,7 +164,7 @@ describe("the band as the answers arrive", () => {
     const { container } = await draw();
     expect(band(container).getAttribute("aria-busy")).toBe("true");
     expect(text(band(container))).toBe("Next stepLoading...");
-    expect(cyanFills(container)).toBe(0);
+    expect(goldFills(container)).toBe(0);
     expect(container.querySelector(".bj-state--loading")).not.toBeNull();
     expect(text(query(container, ".bj-state--loading"))).toBe("Loading your applications...");
     expect(container.querySelector(".bj-app-card")).toBeNull();
@@ -174,20 +174,20 @@ describe("the band as the answers arrive", () => {
     expect(sentence(container)).toBe("Your move on 2 · their move on 1.");
   });
 
-  it("is unlit when something is tracked: the choice is per card, and nothing on the page is cyan", async () => {
+  it("is unlit when something is tracked: the choice is per card, and nothing on the page is gold", async () => {
     const { container } = await draw();
     expect(sentence(container)).toBe("Your move on 2 · their move on 1.");
     expect(why(container)).toBe("why: 2 saved, screening, interviewing, offer · 1 applied");
     expect(band(container).classList.contains("bj-band--unlit")).toBe(true);
-    expect(cyanFills(container)).toBe(0);
+    expect(goldFills(container)).toBe(0);
   });
 
-  it("asks to start tracking when nothing is tracked, and that button is the page's one cyan fill", async () => {
+  it("asks to start tracking when nothing is tracked, and that button is the page's one gold fill", async () => {
     answer({ "/applications": [] });
     const { container } = await draw();
     expect(sentence(container)).toBe("Track your first job -- paste a posting or fetch it by URL.");
     expect(why(container)).toBe("why: 0 applications");
-    expect(cyanFills(container)).toBe(1);
+    expect(goldFills(container)).toBe(1);
     expect(query(band(container), ".bj-primary").textContent).toBe("Start tracking");
     // The body's own copy of that action is an outlined button.
     expect(query(container, ".bj-app-track-card:last-child button[type='submit']").className).not.toContain("bj-primary");
@@ -219,7 +219,7 @@ describe("the band as the answers arrive", () => {
     const { container } = await draw();
     expect(sentence(container)).toBe("Everything here starts from your profile. Import it first.");
     expect(query(band(container), "a.bj-button-link-primary").getAttribute("href")).toBe("/profile");
-    expect(cyanFills(container)).toBe(1);
+    expect(goldFills(container)).toBe(1);
     expect(titles(container)).toEqual(["Data Engineer", "ML Engineer", "Analytics Engineer"]);
   });
 
@@ -570,7 +570,7 @@ describe("failure of the list itself", () => {
     expect(container.querySelector(".bj-app-card")).toBeNull();
     expect(container.querySelector(".bj-view-toggle")).toBeNull();
     expect(container.querySelectorAll(".bj-app-track-card")).toHaveLength(2);
-    expect(cyanFills(container)).toBe(1);
+    expect(goldFills(container)).toBe(1);
 
     answer({});
     api.apiFetch.mockClear();
@@ -1061,7 +1061,7 @@ describe("the states that do not occur", () => {
   });
 });
 
-describe("one cyan fill", () => {
+describe("one gold fill", () => {
   it("is never more than the band's own button, in every state the page can be in", async () => {
     const states: Array<[string, Record<string, Reply>, number]> = [
       ["tracked", {}, 0],
@@ -1074,7 +1074,7 @@ describe("one cyan fill", () => {
     for (const [name, replies, expected] of states) {
       answer(replies);
       const view = await draw();
-      expect(cyanFills(view.container), name).toBe(expected);
+      expect(goldFills(view.container), name).toBe(expected);
       view.unmount();
     }
   });

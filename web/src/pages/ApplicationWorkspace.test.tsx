@@ -157,7 +157,7 @@ function page(entry = `/applications/${ID}`) {
 
 const band = (root: ParentNode) => query(root, 'section[aria-label="Next step"]');
 const names = (root: ParentNode, selector: string) => [...root.querySelectorAll(selector)].map((node) => text(node));
-const cyan = (root: ParentNode) => [...root.querySelectorAll(".bj-primary, .bj-button-link-primary")];
+const gold = (root: ParentNode) => [...root.querySelectorAll(".bj-primary, .bj-button-link-primary")];
 // The sentences the band itself carries under its buttons (what pressing its button costs).
 const bandNotes = (root: ParentNode) => names(band(root), ".bj-band-item p");
 
@@ -500,16 +500,16 @@ describe("the status select", () => {
 });
 
 describe("the band, from the first step to the last", () => {
-  it("A1: no resume yet -> Generate resume, the page's one cyan, with the cover letter choice in the band and not twice", async () => {
+  it("A1: no resume yet -> Generate resume, the page's one gold, with the cover letter choice in the band and not twice", async () => {
     describeAccount();
     const { container } = page();
     await settle();
     expect(text(band(container))).toContain("Generate a tailored resume for this posting.");
     expect(text(band(container))).toContain("why: status saved · no resume yet · profile active");
-    expect(cyan(container)).toHaveLength(1);
-    expect(band(container).contains(cyan(container)[0])).toBe(true);
-    expect(text(cyan(container)[0])).toBe("Generate resume");
-    // The band's cyan press is the page's most-pressed button, so it says what it costs, ahead of the
+    expect(gold(container)).toHaveLength(1);
+    expect(band(container).contains(gold(container)[0])).toBe(true);
+    expect(text(gold(container)[0])).toBe("Generate resume");
+    // The band's gold press is the page's most-pressed button, so it says what it costs, ahead of the
     // cover letter choice that widens it.
     expect(bandNotes(container)).toEqual([spendNotice("Generate resume", SEVERAL_MODEL_CALLS)]);
     // A caption: workspace.css owns its spacing (a bare paragraph would take the browser's margins).
@@ -532,7 +532,7 @@ describe("the band, from the first step to the last", () => {
     const { container } = page();
     await settle();
     click(query(band(container), "input[type='checkbox']"));
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     await settle();
     expect(callsTo(`POST /applications/${ID}/prepare`)[0].body).toEqual({
       idempotency_key: "00000000-0000-4000-8000-000000000000",
@@ -548,9 +548,9 @@ describe("the band, from the first step to the last", () => {
     on(`POST /applications/${ID}/prepare`, () => new Promise((resolve) => (release = resolve)));
     const { container } = page();
     await settle();
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     await settle(1);
-    const button = cyan(container)[0];
+    const button = gold(container)[0];
     expect(text(button)).toBe("Generating...");
     expect(button.getAttribute("aria-disabled")).toBe("true");
     // The run is out, and the band is still the Generate step (A1g): its line about the cost stays.
@@ -567,11 +567,11 @@ describe("the band, from the first step to the last", () => {
     on(`POST /applications/${ID}/prepare`, new FakeApiError("The engine did not answer.", "INTERNAL", undefined, 500));
     const { container } = page();
     await settle();
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     await settle();
     expect(text(band(container))).toContain("Generation didn't finish. You didn't do anything wrong, and nothing was lost.");
     expect(text(band(container))).toMatch(/why: POST \/prepare failed · \d\d:\d\d/);
-    expect(text(cyan(container)[0])).toBe("Generate again");
+    expect(text(gold(container)[0])).toBe("Generate again");
     // The failed row names its own button, and has no cover letter choice (that is only on the first two rows).
     expect(bandNotes(container)).toEqual([spendNotice("Generate again", SEVERAL_MODEL_CALLS)]);
     expect([...query(band(container), ".bj-band-item").children].map((node) => text(node))).toEqual([spendNotice("Generate again", SEVERAL_MODEL_CALLS)]);
@@ -580,12 +580,12 @@ describe("the band, from the first step to the last", () => {
     expect(text(callout)).toContain("The engine did not answer.");
     expect(callout.querySelector("button")).toBeNull();
     on(`POST /applications/${ID}/prepare`, drafted());
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     await settle();
     expect(callsTo(`POST /applications/${ID}/prepare`)).toHaveLength(2);
   });
 
-  it("A1b: held back -> Read the fit check in cyan and Generate anyway outlined, no resume, calm honest read", async () => {
+  it("A1b: held back -> Read the fit check in gold and Generate anyway outlined, no resume, calm honest read", async () => {
     describeAccount({ result: HELD });
     const { container } = page();
     await settle();
@@ -593,17 +593,17 @@ describe("the band, from the first step to the last", () => {
     expect(text(band(container))).toContain("why: latest attempt held back · ceiling 3.6 / 10");
     // A held-back draft is not a failure: the band carries no red cross, as the honest read below has no red.
     expect(band(container).querySelector(".bj-band-glyph")).toBeNull();
-    expect(text(cyan(container)[0])).toBe("Read the fit check");
-    expect(cyan(container)).toHaveLength(1);
+    expect(text(gold(container)[0])).toBe("Read the fit check");
+    expect(gold(container)).toHaveLength(1);
     const secondary = buttonNamed(band(container), "Generate anyway");
     expect(secondary.classList.contains("bj-primary")).toBe(false);
-    // The cyan button only scrolls to the fit check, so the one line about the cost is about Generate anyway.
+    // The gold button only scrolls to the fit check, so the one line about the cost is about Generate anyway.
     expect(bandNotes(container)).toEqual([spendNotice("Generate anyway", SEVERAL_MODEL_CALLS)]);
     expect(text(band(container))).not.toContain("Pressing Read the fit check");
     expect(query(container, "#honest-read-heading").tagName).toBe("H3");
     expect(container.querySelector(".bj-danger-callout, .bj-ws-callout--danger")).toBeNull();
     // Reading the fit check goes to its heading.
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     expect(document.activeElement?.id).toBe("honest-read-heading");
     // Generate anyway forces the run.
     on(`POST /applications/${ID}/prepare`, drafted());
@@ -657,12 +657,12 @@ describe("the band, from the first step to the last", () => {
   it.each([
     ["one flagged claim", [CLAIM], "Read the flagged claim"],
     ["two flagged claims", [CLAIM, CLAIM_TWO], "Read the flagged claims"],
-  ])("A2: with %s the cyan is a link to the claim check and Download PDF is the one outlined button beside it", async (_name, warnings, label) => {
+  ])("A2: with %s the gold is a link to the claim check and Download PDF is the one outlined button beside it", async (_name, warnings, label) => {
     describeAccount({ app: application({ resume_exists: true }), result: drafted(warnings) });
     const { container } = page();
     await settle();
-    expect(cyan(container)).toHaveLength(1);
-    const link = cyan(container)[0] as HTMLAnchorElement;
+    expect(gold(container)).toHaveLength(1);
+    const link = gold(container)[0] as HTMLAnchorElement;
     expect(link.tagName).toBe("A");
     expect(text(link)).toBe(label);
     expect(link.getAttribute("href")).toBe(`/applications/${ID}#claim-check-heading`);
@@ -675,13 +675,13 @@ describe("the band, from the first step to the last", () => {
     expect(query(container, "#claim-check-heading").tagName).toBe("H3");
   });
 
-  it("A2: pressing the cyan goes to the claim check, focuses its heading and sends no request", async () => {
+  it("A2: pressing the gold goes to the claim check, focuses its heading and sends no request", async () => {
     describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
     const { container } = page();
     await settle();
     const before = calls.length;
     scrolled = [];
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     await settle();
     expect(text(query(container, "[data-testid='where']"))).toBe(`/applications/${ID}#claim-check-heading`);
     expect(scrolled).toContain("claim-check-heading");
@@ -689,24 +689,24 @@ describe("the band, from the first step to the last", () => {
     expect(calls).toHaveLength(before);
     // The page cannot know the claims were read, so the band is where it was.
     expect(text(band(container))).toContain("Read the 1 flagged claim, then download.");
-    expect(text(cyan(container)[0])).toBe("Read the flagged claim");
-    expect(cyan(container)).toHaveLength(1);
+    expect(text(gold(container)[0])).toBe("Read the flagged claim");
+    expect(gold(container)).toHaveLength(1);
   });
 
   // The address keeps its #claim-check-heading after the first press, and after Back from the profile or a
   // reload, so the link is often pressed with the hash already there. A same-address press changes no
   // hash; it makes a new location key, which is what the page scrolls again on.
-  it("A2: pressing the cyan again, with the address already on the claim check, scrolls to it and focuses it again", async () => {
+  it("A2: pressing the gold again, with the address already on the claim check, scrolls to it and focuses it again", async () => {
     describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
     const { container } = page();
     await settle();
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     await settle();
     const heading = query<HTMLElement>(container, "#claim-check-heading");
     expect(document.activeElement).toBe(heading);
     heading.blur();
     scrolled = [];
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     await settle();
     expect(text(query(container, "[data-testid='where']"))).toBe(`/applications/${ID}#claim-check-heading`);
     expect(scrolled).toContain("claim-check-heading");
@@ -718,13 +718,13 @@ describe("the band, from the first step to the last", () => {
     const { container } = page(`/applications/${ID}#claim-check-heading`);
     await settle();
     scrolled = [];
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     await settle();
     expect(scrolled).toContain("claim-check-heading");
     expect(document.activeElement).toBe(query(container, "#claim-check-heading"));
   });
 
-  it("A2: a press on the cyan holds the claim check in view while the page above it grows, until the person takes over", async () => {
+  it("A2: a press on the gold holds the claim check in view while the page above it grows, until the person takes over", async () => {
     const callbacks: (() => void)[] = [];
     vi.stubGlobal(
       "ResizeObserver",
@@ -744,7 +744,7 @@ describe("the band, from the first step to the last", () => {
     describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
     const { container } = page();
     await settle();
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     await settle();
     scrolled = [];
     // The first report is the arrival; each change after it brings the heading back to the top.
@@ -760,11 +760,11 @@ describe("the band, from the first step to the last", () => {
     expect(scrolled.length).toBe(held);
   });
 
-  it("A2: the outlined Download PDF says Compiling PDF... meanwhile, then the band is A4 and focus is on Open the posting, with one cyan before and after", async () => {
+  it("A2: the outlined Download PDF says Compiling PDF... meanwhile, then the band is A4 and focus is on Open the posting, with one gold before and after", async () => {
     describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
     const { container } = page();
     await settle();
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
     const download = buttonNamed(band(container), "Download PDF");
     // Chrome focuses the button it presses. Safari and Firefox on macOS do not, and neither does jsdom's
     // dispatched click: the next test presses without it.
@@ -772,22 +772,22 @@ describe("the band, from the first step to the last", () => {
     click(download);
     expect(text(download)).toBe("Compiling PDF...");
     expect(download.classList.contains("bj-primary")).toBe(false);
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
     await settle();
     expect(callsTo(`GET /applications/${ID}/resume.pdf`)).toHaveLength(1);
     expect(text(band(container))).toContain("Submit on the employer's site, then mark it applied.");
-    expect(cyan(container)).toHaveLength(1);
-    expect(text(cyan(container)[0])).toBe("Open the posting");
-    expect(document.activeElement).toBe(cyan(container)[0]);
+    expect(gold(container)).toHaveLength(1);
+    expect(text(gold(container)[0])).toBe("Open the posting");
+    expect(document.activeElement).toBe(gold(container)[0]);
   });
 
   it("A4: downloading the PDF from the band moves on to Open the posting, and focus follows the band", async () => {
     describeAccount({ app: application({ resume_exists: true }), result: drafted([CLAIM]) });
     const { container } = page();
     await settle();
-    // With a flagged claim the cyan is the link to it, so the press below is on the outlined Download PDF.
-    expect(cyan(container)).toHaveLength(1);
-    expect(text(cyan(container)[0])).not.toBe("Download PDF");
+    // With a flagged claim the gold is the link to it, so the press below is on the outlined Download PDF.
+    expect(gold(container)).toHaveLength(1);
+    expect(text(gold(container)[0])).not.toBe("Download PDF");
     click(buttonNamed(band(container), "Download PDF"));
     // Pressed without taking focus, as in a browser that does not focus a button on click: the band takes
     // it while the PDF compiles, so it is never left on the page behind.
@@ -800,22 +800,22 @@ describe("the band, from the first step to the last", () => {
     expect(open.getAttribute("href")).toBe("https://jobs.example.com/roles/7");
     expect(open.getAttribute("target")).toBe("_blank");
     expect(document.activeElement).toBe(open);
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
   });
 
-  it("A4 from A3: with nothing flagged the cyan is Download PDF, and pressing it moves on to Open the posting", async () => {
+  it("A4 from A3: with nothing flagged the gold is Download PDF, and pressing it moves on to Open the posting", async () => {
     describeAccount({ app: application({ resume_exists: true }), result: drafted([]) });
     const { container } = page();
     await settle();
-    expect(cyan(container)).toHaveLength(1);
-    expect(text(cyan(container)[0])).toBe("Download PDF");
-    expect(buttonNamed(band(container), "Download PDF")).toBe(cyan(container)[0]);
-    click(cyan(container)[0]);
+    expect(gold(container)).toHaveLength(1);
+    expect(text(gold(container)[0])).toBe("Download PDF");
+    expect(buttonNamed(band(container), "Download PDF")).toBe(gold(container)[0]);
+    click(gold(container)[0]);
     await settle();
     expect(callsTo(`GET /applications/${ID}/resume.pdf`)).toHaveLength(1);
-    expect(cyan(container)).toHaveLength(1);
-    expect(text(cyan(container)[0])).toBe("Open the posting");
-    expect(document.activeElement).toBe(cyan(container)[0]);
+    expect(gold(container)).toHaveLength(1);
+    expect(text(gold(container)[0])).toBe("Open the posting");
+    expect(document.activeElement).toBe(gold(container)[0]);
   });
 
   it("offers the person's own step under Review: open the posting, and record it as applied through the stage endpoint", async () => {
@@ -859,13 +859,13 @@ describe("the band, from the first step to the last", () => {
     await settle();
     expect(text(band(container))).toContain(sentence);
     expect(text(band(container))).toContain(why);
-    expect(cyan(container).length).toBe(lit ? 1 : 0);
+    expect(gold(container).length).toBe(lit ? 1 : 0);
     if (lit) {
-      const link = cyan(container)[0] as HTMLAnchorElement;
+      const link = gold(container)[0] as HTMLAnchorElement;
       expect(text(link)).toBe("Go to Practice");
       expect(link.getAttribute("href")).toBe(`/applications/${ID}#interview-practice`);
     } else {
-      // Unlit: the sentence takes focus for the skip link, and nothing else on the page turns cyan.
+      // Unlit: the sentence takes focus for the skip link, and nothing else on the page turns gold.
       expect(band(container).querySelector("#next-step-focus")?.tagName).toBe("P");
     }
   });
@@ -915,7 +915,7 @@ describe("setup that is known to be missing", () => {
     expect(missing).toEqual([["Add a model key", "/settings#ai-provider"], ["Add a model key", "/settings#ai-provider"]]);
     expect(buttonNamedOrNull(container, "Generate resume")).toBeNull();
     expect(callsTo(`POST /applications/${ID}/prepare`)).toHaveLength(0);
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
   });
 
   it("says Choose a model for a key that is saved without one", async () => {
@@ -1044,7 +1044,7 @@ describe("the Generate and Review sections", () => {
   });
 });
 
-describe("one cyan fill, however the page is", () => {
+describe("one gold fill, however the page is", () => {
   it.each([
     ["no resume", {}],
     ["held back", { result: HELD }],
@@ -1055,7 +1055,7 @@ describe("one cyan fill, however the page is", () => {
     describeAccount(account as Account);
     const { container } = page();
     await settle();
-    const fills = cyan(container);
+    const fills = gold(container);
     expect(fills.length).toBeLessThanOrEqual(1);
     for (const fill of fills) expect(band(container).contains(fill)).toBe(true);
     // Every selectable control is a pressed state or the jump bar, never a second primary.
@@ -1649,14 +1649,14 @@ describe("the Generate buttons, described by what pressing them costs", () => {
     describeAccount();
     const { container } = page();
     await settle();
-    expect(describedText(cyan(container)[0])).toBe(generateNote);
-    expect(band(container).contains(document.getElementById(cyan(container)[0].getAttribute("aria-describedby")!))).toBe(true);
+    expect(describedText(gold(container)[0])).toBe(generateNote);
+    expect(band(container).contains(document.getElementById(gold(container)[0].getAttribute("aria-describedby")!))).toBe(true);
     const body = ownButton(container, "Generate resume");
     expect(body).toHaveLength(1);
     expect(describedText(body[0])).toBe(bodyNote);
     expect(query(container, ".bj-ws-generate .bj-ws-intro").contains(document.getElementById(body[0].getAttribute("aria-describedby")!))).toBe(true);
     // The two buttons name two different notes.
-    expect(body[0].getAttribute("aria-describedby")).not.toBe(cyan(container)[0].getAttribute("aria-describedby"));
+    expect(body[0].getAttribute("aria-describedby")).not.toBe(gold(container)[0].getAttribute("aria-describedby"));
   });
 
   it("A1g: keeps the band's description while the run is out, on the button that now reads Generating...", async () => {
@@ -1664,10 +1664,10 @@ describe("the Generate buttons, described by what pressing them costs", () => {
     on(`POST /applications/${ID}/prepare`, () => new Promise(() => undefined));
     const { container } = page();
     await settle();
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     await settle(1);
-    expect(text(cyan(container)[0])).toBe("Generating...");
-    expect(describedText(cyan(container)[0])).toBe(generateNote);
+    expect(text(gold(container)[0])).toBe("Generating...");
+    expect(describedText(gold(container)[0])).toBe(generateNote);
   });
 
   it("A1c: Generate again is described by the note that names it", async () => {
@@ -1675,10 +1675,10 @@ describe("the Generate buttons, described by what pressing them costs", () => {
     on(`POST /applications/${ID}/prepare`, new FakeApiError("The engine did not answer.", "INTERNAL", undefined, 500));
     const { container } = page();
     await settle();
-    click(cyan(container)[0]);
+    click(gold(container)[0]);
     await settle();
-    expect(text(cyan(container)[0])).toBe("Generate again");
-    expect(describedText(cyan(container)[0])).toBe(spendNotice("Generate again", SEVERAL_MODEL_CALLS));
+    expect(text(gold(container)[0])).toBe("Generate again");
+    expect(describedText(gold(container)[0])).toBe(spendNotice("Generate again", SEVERAL_MODEL_CALLS));
   });
 
   it("A1b: Generate anyway, the band's second button and the honest read's, are each described by the note beside them, and the link that only scrolls is not", async () => {
@@ -1686,8 +1686,8 @@ describe("the Generate buttons, described by what pressing them costs", () => {
     const { container } = page();
     await settle();
     const anyway = spendNotice("Generate anyway", SEVERAL_MODEL_CALLS);
-    expect(text(cyan(container)[0])).toBe("Read the fit check");
-    expect(cyan(container)[0].getAttribute("aria-describedby")).toBeNull();
+    expect(text(gold(container)[0])).toBe("Read the fit check");
+    expect(gold(container)[0].getAttribute("aria-describedby")).toBeNull();
     expect(describedText(buttonNamed(band(container), "Generate anyway"))).toBe(anyway);
     const honest = ownButton(container, "Generate anyway");
     expect(honest).toHaveLength(1);

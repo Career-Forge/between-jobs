@@ -18,7 +18,7 @@ import { buttonNamed, click, installViewport, query, render } from "./testing/re
 // piece cannot quietly break another:
 //
 //   - every signed-in page has exactly one next-step band, and one main heading
-//   - at most one cyan fill on a page (the band's action, or nothing when the step is unlit)
+//   - at most one gold fill on a page (the band's action, or nothing when the step is unlit)
 //   - no duplicate ids, and every link to a place on the same page lands on something
 //   - the places other pages link to (Settings sections, the profile's import, each workspace section)
 //     exist where the link says they do
@@ -128,7 +128,7 @@ async function open(path: string, width: number) {
   return rendered.container;
 }
 
-const cyanFills = (root: ParentNode) => [...root.querySelectorAll("button.bj-primary, a.bj-button-link-primary")].map((element) => text(element));
+const goldFills = (root: ParentNode) => [...root.querySelectorAll("button.bj-primary, a.bj-button-link-primary")].map((element) => text(element));
 const bands = (root: ParentNode) => root.querySelectorAll('section[aria-label="Next step"]');
 
 function duplicateIds(root: ParentNode): string[] {
@@ -146,7 +146,7 @@ function brokenLocalLinks(root: ParentNode): string[] {
 // What every signed-in page promises, whatever state it is in.
 function expectWholePage(container: HTMLElement, what: string) {
   expect(bands(container), `${what}: next-step bands`).toHaveLength(1);
-  expect(cyanFills(container).length, `${what}: cyan fills ${JSON.stringify(cyanFills(container))}`).toBeLessThanOrEqual(1);
+  expect(goldFills(container).length, `${what}: gold fills ${JSON.stringify(goldFills(container))}`).toBeLessThanOrEqual(1);
   expect(container.querySelectorAll("main h1"), `${what}: main headings`).toHaveLength(1);
   expect(duplicateIds(container), `${what}: duplicate ids`).toEqual([]);
   expect(brokenLocalLinks(container), `${what}: links to nowhere on the page`).toEqual([]);
@@ -193,7 +193,7 @@ describe("each signed-in page, in each account state", () => {
   it("says what is missing on a page that needs the profile, with the step that fixes it as the one fill", async () => {
     describeAccount("no-profile");
     const container = await open("/discover", 1000);
-    expect(cyanFills(container)).toEqual(["Set up your profile"]);
+    expect(goldFills(container)).toEqual(["Set up your profile"]);
   });
 });
 
@@ -230,7 +230,7 @@ describe("an address the shell has no page for", () => {
     // the tab says what the page is, like every other signed-in page
     expect(document.title).toBe("Page not found -- Between Jobs");
     expect(bands(container)).toHaveLength(0);
-    expect(cyanFills(container)).toEqual([]);
+    expect(goldFills(container)).toEqual([]);
     expect(text(query(container, "main a"))).toBe("Go to Today");
     expect(query(container, "main a").getAttribute("href")).toBe("/");
     expect([...container.querySelectorAll(".bj-skip-link")].map((link) => text(link))).toEqual(["Skip to content"]);
@@ -321,7 +321,7 @@ describe("Hiring signals", () => {
     describeAccount("empty", { hiring: false });
     const container = await open("/hiring-signals", 1000);
     expectWholePage(container, "hiring signals off");
-    expect(cyanFills(container)).toEqual([]);
+    expect(goldFills(container)).toEqual([]);
   });
 
   it("keeps to one fill with a search key, after a search, and after a search that failed", async () => {
@@ -342,7 +342,7 @@ describe("Hiring signals", () => {
     const result = { provider: "firecrawl", cached: false, freshness: "3days", locale: "global", query_label: "software engineer -- last 3 days", signals: [signal], counts: { raw_hits: 5, rejected: 0, duplicates: 1, role_mismatch_hidden: 2, echoes_hidden: 0, job_seekers_hidden: 0, too_old_hidden: 0, shown: 1 } };
     const container = await open("/hiring-signals", 1000);
     expectWholePage(container, "hiring signals with a key");
-    expect(cyanFills(container)).toEqual(["Search"]);
+    expect(goldFills(container)).toEqual(["Search"]);
 
     answers.extra = (path, init) => (path === "/hiring-signals/search" && init?.method === "POST" ? result : undefined);
     typeInto(query<HTMLInputElement>(container, "#hst-query"), "software engineer");
@@ -370,13 +370,13 @@ describe("Discover, after the search", () => {
   it("with results the step is unlit and each row's Track is outlined", async () => {
     const container = await afterSearch(discoverResponse());
     expectWholePage(container, "discover results");
-    expect(cyanFills(container)).toEqual([]);
+    expect(goldFills(container)).toEqual([]);
   });
 
   it("with placeholder scores the one fill is Search again", async () => {
     const container = await afterSearch(discoverResponse({ scoring_strategy: "neutral_fallback" }));
     expectWholePage(container, "discover placeholder scores");
-    expect(cyanFills(container)).toEqual(["Search again"]);
+    expect(goldFills(container)).toEqual(["Search again"]);
   });
 
   it("with nothing found, with a failure, and with setup missing", async () => {
@@ -392,7 +392,7 @@ describe("Discover, after the search", () => {
     click(query(container, "button.bj-primary"));
     await settle(4);
     expectWholePage(container, "discover searching");
-    expect(cyanFills(container)).toEqual([]);
+    expect(goldFills(container)).toEqual([]);
   });
 });
 
@@ -415,7 +415,7 @@ describe("Profile, with an import waiting", () => {
       click(buttonNamed(query(container, "#json-import"), "Import"));
       await settle(6);
       expectWholePage(container, `profile import waiting (${account})`);
-      expect(cyanFills(container)).toEqual(["Confirm and make active"]);
+      expect(goldFills(container)).toEqual(["Confirm and make active"]);
       expect(container.querySelector("#import-review")).not.toBeNull();
     });
   }
@@ -755,7 +755,7 @@ describe("Discover, coming back to its answer", () => {
 
 // The signed-out site is the same App with no session. Its pages hold to the same promises as the signed-in
 // ones, with the one difference the design makes on purpose: the home page has a band (its hero's, which holds
-// the page's one cyan fill) and every other public page has none and lets the header's Create account be the
+// the page's one gold fill) and every other public page has none and lets the header's Create account be the
 // one fill. A new public page goes in this list, and it fails here until it has one primary action at most.
 
 const PUBLIC_ROUTES: readonly [route: string, title: string, band: boolean][] = [
@@ -785,8 +785,8 @@ describe("each public page, signed out", () => {
         const container = await open(route, width);
         expect(container.querySelectorAll("main h1"), "main headings").toHaveLength(1);
         expect(container.querySelectorAll("h1"), "all headings of level one").toHaveLength(1);
-        // The one cyan fill: the hero band's button on the home page, the header's Create account elsewhere.
-        expect(cyanFills(container), `cyan fills ${JSON.stringify(cyanFills(container))}`).toEqual([band ? "Create an account" : "Create account"]);
+        // The one gold fill: the hero band's button on the home page, the header's Create account elsewhere.
+        expect(goldFills(container), `gold fills ${JSON.stringify(goldFills(container))}`).toEqual([band ? "Create an account" : "Create account"]);
         expect(bands(container)).toHaveLength(band ? 1 : 0);
         expect(duplicateIds(container), "duplicate ids").toEqual([]);
         expect(brokenLocalLinks(container), "links to nowhere on the page").toEqual([]);
@@ -834,7 +834,7 @@ describe("each public page, signed out", () => {
         const links = [...header.querySelectorAll("a")].filter(drawn).map((link) => text(link));
         expect(links, route).toEqual(["Between Jobs", "Create account"]);
         expect(drawn(query(header, "button.bj-public-menu-button")), route).toBe(true);
-        // On a page with no hero of its own this is the page's one cyan fill, so it must be seen.
+        // On a page with no hero of its own this is the page's one gold fill, so it must be seen.
         if (!band) expect([...header.querySelectorAll("a.bj-button-link-primary")].filter(drawn), route).toHaveLength(1);
         click(query(container, "button.bj-public-menu-button"));
         expect([...query(container, "nav.bj-public-menu").querySelectorAll("a")].filter(drawn).map((link) => text(link)), route).toEqual([
@@ -871,7 +871,7 @@ describe("the explainer pages for a signed-in person who follows a shared link",
     expect(document.title).toBe(title);
     expect(query(container, ".bj-rail")).not.toBeNull();
     expect([...container.querySelectorAll("main a")].some((link) => /Create account|Sign in/.test(text(link)))).toBe(false);
-    expect(cyanFills(container)).toEqual([]);
+    expect(goldFills(container)).toEqual([]);
     expect(duplicateIds(container)).toEqual([]);
   });
 });
@@ -881,12 +881,12 @@ describe("the explainer pages for a signed-in person who follows a shared link",
 // The first sweep draws each page once, in its first state. These are the states a person can put a page in
 // without leaving it (opening a disclosure, opening a form, choosing a tour tab, switching the sign-in
 // form), and the other addresses the shell answers (sign-in, the enrollment page, the legal pages
-// signed in). Each holds to the same promise: at most one cyan fill, no repeated id, no link to nowhere.
+// signed in). Each holds to the same promise: at most one gold fill, no repeated id, no link to nowhere.
 
 const llmRow = (provider: string, model: string | null, setup_state: string) => ({ id: `c-${provider}`, service: "llm", provider, model, is_validated: true, setup_state, updated_at: "2026-10-12T10:00:00Z" });
 
 function atMostOneFill(container: HTMLElement, what: string) {
-  expect(cyanFills(container).length, `${what}: cyan fills ${JSON.stringify(cyanFills(container))}`).toBeLessThanOrEqual(1);
+  expect(goldFills(container).length, `${what}: gold fills ${JSON.stringify(goldFills(container))}`).toBeLessThanOrEqual(1);
   expect(duplicateIds(container), `${what}: duplicate ids`).toEqual([]);
   expect(brokenLocalLinks(container), `${what}: links to nowhere on the page`).toEqual([]);
 }
@@ -940,18 +940,18 @@ describe("the sign-in page, signed out", () => {
     const container = await open("/login", 1000);
     expect(bands(container)).toHaveLength(1);
     atMostOneFill(container, "sign in");
-    expect(cyanFills(container)).toHaveLength(1);
+    expect(goldFills(container)).toHaveLength(1);
     click(buttonNamed(container, "Need an account? Register"));
     await settle(2);
     expect(bands(container)).toHaveLength(1);
     atMostOneFill(container, "register");
-    expect(cyanFills(container)).toHaveLength(1);
+    expect(goldFills(container)).toHaveLength(1);
     click(buttonNamed(container, "Already have an account? Sign in"));
     await settle(2);
     click(buttonNamed(container, "Forgot password?"));
     await settle(2);
     atMostOneFill(container, "reset");
-    expect(cyanFills(container)).toHaveLength(1);
+    expect(goldFills(container)).toHaveLength(1);
   });
 
   it("keeps to the home page's one fill whichever tab of the product tour is chosen, and with the phone menu open", async () => {
@@ -961,12 +961,12 @@ describe("the sign-in page, signed out", () => {
     for (const tab of tabs) {
       click(tab);
       await settle(2);
-      expect(cyanFills(container), `tour tab ${text(tab)}`).toEqual(["Create an account"]);
+      expect(goldFills(container), `tour tab ${text(tab)}`).toEqual(["Create an account"]);
       expect(duplicateIds(container), `tour tab ${text(tab)}: duplicate ids`).toEqual([]);
       expect(brokenLocalLinks(container), `tour tab ${text(tab)}: links to nowhere`).toEqual([]);
     }
     click(query(container, "button.bj-public-menu-button"));
-    expect(cyanFills(container)).toEqual(["Create an account"]);
+    expect(goldFills(container)).toEqual(["Create an account"]);
     expect(duplicateIds(container)).toEqual([]);
   });
 

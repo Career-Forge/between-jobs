@@ -23,7 +23,7 @@ import "../styles/workspace.css";
 // A row in "Yours to check" has an "I checked this" button. It is the person's own marker for this visit
 // and nothing more: it is not saved, it is not counted in the summary, and nothing reads it -- Between
 // Jobs has no record that anything was reviewed, so it does not pretend to have one. It uses the shared
-// selection style (a maroon fill with aria-pressed). Nothing here submits or sends anything.
+// selection style (a royal fill with aria-pressed). Nothing here submits or sends anything.
 //
 // The marks belong to the PDF they were made on: when the checks go back to idle (a new generation) they
 // are cleared, so a mark made on draft 1 never reads as "I checked this" on draft 2's rows. A button

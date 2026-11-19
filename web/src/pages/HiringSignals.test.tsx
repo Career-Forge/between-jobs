@@ -102,7 +102,7 @@ async function draw() {
 const words = (element: Element | null) => (element?.textContent ?? "").replace(/\s+/g, " ").trim();
 const band = (container: HTMLElement) => query(container, 'section[aria-label="Next step"]');
 const form = (container: HTMLElement) => query<HTMLFormElement>(container, "form");
-const cyan = (container: HTMLElement) => container.querySelectorAll("button.bj-primary, a.bj-button-link-primary");
+const gold = (container: HTMLElement) => container.querySelectorAll("button.bj-primary, a.bj-button-link-primary");
 
 function type(input: HTMLInputElement, value: string) {
   act(() => {
@@ -164,7 +164,7 @@ describe("the status gate", () => {
     expect(band(container).querySelector("button, a")).toBeNull();
     expect(words(query(container, ".bj-state--empty"))).toContain("Hiring signals is switched off");
     expect(container.querySelector("form")).toBeNull();
-    expect(cyan(container)).toHaveLength(0);
+    expect(gold(container)).toHaveLength(0);
     expect(calls().filter((call) => call.includes("hiring-signals") && !call.endsWith("/status"))).toEqual([]);
   });
 
@@ -189,7 +189,7 @@ describe("the status gate", () => {
     expect(text).toMatch(/why: GET \/hiring-signals\/status failed · \d\d:\d\d/);
     expect(words(query(container, ".bj-state--failure"))).toContain("Could not check whether hiring signals are available on this server.");
     expect(query(container, ".bj-state--failure").querySelector("button")).toBeNull();
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
     click(buttonNamed(band(container), "Try again"));
     await flush();
     expect(callsTo("GET /hiring-signals/status")).toHaveLength(2);
@@ -205,7 +205,7 @@ describe("ready, before any search", () => {
     expect(words(band(container))).toContain("why: 2 search keys connected · 1 saved search");
     const lit = query<HTMLButtonElement>(band(container), "button.bj-primary");
     expect([words(lit), lit.getAttribute("form"), lit.getAttribute("type")]).toEqual(["Search", "hiring-signals-form", "submit"]);
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
     expect(form(container).querySelector("button.bj-primary")).toBeNull();
     expect(words(buttonNamed(form(container), "Search"))).toBe("Search");
   });
@@ -252,7 +252,7 @@ describe("a missing search key", () => {
     expect([words(link), link.getAttribute("href")]).toEqual(["Add a search key", "/settings#search-keys"]);
     expect(words(band(container))).toContain("why: no Brave, Serper, Firecrawl or You.com key");
     expect(words(query(container, ".bj-state--setup"))).toContain("Missing:Add a search key");
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
   });
 
   it("does not stop a search: the server stays the authority, and its answer is shown in the results slot", async () => {
@@ -285,7 +285,7 @@ describe("what the global rows decide here", () => {
     expect(words(band(container))).toContain("Search recent public hiring posts for a role.");
     expect(words(band(container))).not.toContain("profile");
     expect(container.querySelector("form")).not.toBeNull();
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
   });
 
   it("never asks for a model key: a person with no model key is not sent to add one", async () => {
@@ -359,7 +359,7 @@ describe("a search", () => {
     const busy = buttonNamed(form(container), "Searching...");
     expect(busy.getAttribute("aria-disabled")).toBe("true");
     expect(busy.hasAttribute("disabled")).toBe(false);
-    expect(cyan(container)).toHaveLength(0);
+    expect(gold(container)).toHaveLength(0);
     await act(async () => release(RESULT()));
     await flush();
     expect(container.querySelectorAll("li.bj-hs-card")).toHaveLength(2);
@@ -372,7 +372,7 @@ describe("a search", () => {
     expect(words(band(container))).toContain("Save this search to run it again later. It won't run on its own.");
     expect(words(band(container))).toContain("why: 2 shown · 3 hidden · search not saved");
     expect(words(query(band(container), "button.bj-primary"))).toBe("Save this search");
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
     expect(form(container).querySelector("button.bj-primary")).toBeNull();
   });
 
@@ -428,7 +428,7 @@ describe("saving the search from the band", () => {
     expect(text).toContain("Open the posts worth a closer look.");
     expect(text).toContain("why: 2 shown · 3 hidden · search saved");
     expect(band(container).querySelector("button, a")).toBeNull();
-    expect(cyan(container)).toHaveLength(0);
+    expect(gold(container)).toHaveLength(0);
     expect(words(container)).toContain("Search saved.");
   });
 
@@ -611,10 +611,10 @@ describe("focus and accessibility", () => {
     expect(document.activeElement).toBe(box);
   });
 
-  it("holds exactly one page heading and, when ready, one cyan fill", async () => {
+  it("holds exactly one page heading and, when ready, one gold fill", async () => {
     const { container } = await draw();
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
   });
 
   it("has no serious or critical axe violation before a search and with results", async () => {

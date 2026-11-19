@@ -53,7 +53,7 @@ export interface EmptyStateProps {
   heading: string;
   /** What will appear here, named with real item kinds, and what each needs. */
   children: ReactNode;
-  /** The next step as a cyan text link. The band holds the button; this never repeats it. */
+  /** The next step as a text link. The band holds the button; this never repeats it. */
   link?: StateLink;
 }
 

@@ -160,7 +160,7 @@ describe("FailureState", () => {
     expect(buttonNamed(container, "Search again")).toBeDefined();
   });
 
-  it("draws Retry as a secondary button, never a cyan fill", () => {
+  it("draws Retry as a secondary button, never a gold fill", () => {
     const { container } = view(<FailureState message="x" onRetry={() => undefined} />);
     expect(container.querySelector(".bj-primary, .bj-button-link-primary")).toBeNull();
   });

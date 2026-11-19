@@ -4,7 +4,7 @@
 // is not in a whole-page failure. Every sentence is chosen by code, and every fact in a `why` line is
 // a field the page read.
 //
-//   S1  no model key at all        "Add a model key ..."        Connect with OpenRouter (the page's one cyan)
+//   S1  no model key at all        "Add a model key ..."        Connect with OpenRouter (the page's one gold)
 //   S2  a key is checked, no model "Your X key is saved ..."    Choose a model
 //   S2k a key is not confirmed     "Your X key isn't ..."       Replace the key
 //   S3  a model was chosen just now "Your model is set ..."     Go to Discover
@@ -16,11 +16,11 @@
 // lib/settings/llmProviders.ts, the same answer the Default model card gives). Where it cannot, S4u
 // says so, in the card's words, instead of the page contradicting itself.
 //
-// WHICH CONTROL IS THE PAGE'S PRIMARY. The band holds the only cyan fill, and where its action also
+// WHICH CONTROL IS THE PAGE'S PRIMARY. The band holds the only gold fill, and where its action also
 // exists in the page's body the body copy is drawn as an ordinary outlined button (one action, one
-// cyan, once). So in S1 the cyan button IS "Connect with OpenRouter": it starts the same sign-in the
+// gold, once). So in S1 the gold button IS "Connect with OpenRouter": it starts the same sign-in the
 // outlined button inside the AI-provider section does. That button, "Validate and save", and every
-// other control on the page are outlined; they are never promoted to cyan because a person happens to
+// other control on the page are outlined; they are never promoted to gold because a person happens to
 // be typing in them. In S2 the band's action opens the model picker, and "Use this model" is outlined.
 // The band never sends a person to a particular provider unless OpenRouter is the answer: it is the
 // one provider with a one-click connection, and the page offers the others one chip below it.

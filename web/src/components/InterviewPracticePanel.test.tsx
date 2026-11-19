@@ -483,7 +483,7 @@ describe("Practice: the heading outline", () => {
   });
 });
 
-describe("Practice: the page's one cyan fill is the band's, and the markup is sound", () => {
+describe("Practice: the page's one gold fill is the band's, and the markup is sound", () => {
   it("draws no primary button in any state", async () => {
     resume(five(2));
     const { container } = panel();

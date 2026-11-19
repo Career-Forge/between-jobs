@@ -19,7 +19,7 @@ import "../../styles/paper-doc.css";
 // blocks, each with its trail line. Where that trail goes depends on the width, and the page does not
 // have to know:
 //
-//   1280px and up   a 280px right margin with a 1px maroon rule. A block's trail line is a button in
+//   1280px and up   a 280px right margin with a 1px royal rule. A block's trail line is a button in
 //                   the margin beside the block; opening it shows the receipt in the margin.
 //   960 - 1279px    no margin. Each trail line sits under its block and its receipt opens inline, as
 //                   a disclosure under the line. The page's "current state" summary (if it gave one)

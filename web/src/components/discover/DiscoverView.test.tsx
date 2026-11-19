@@ -16,7 +16,7 @@ import { SAVE_SEARCH_SPEND_NOTE } from "./DiscoverForm";
 import { DiscoverView, SEARCH_AGAIN_SPEND_NOTE, SETUP_BLOCKED_NOTE, type DiscoverViewProps, type SearchView } from "./DiscoverView";
 
 // Every state of the Discover page, drawn from props: what each shows, what it leaves out, and that
-// whatever the state, the page holds at most one cyan fill and it is the band's. The reading and the
+// whatever the state, the page holds at most one gold fill and it is the band's. The reading and the
 // requests are pages/Discover.tsx (Discover.test.tsx).
 
 const NOW = new Date("2026-09-22T12:00:00Z");
@@ -70,7 +70,7 @@ function draw(overrides: Partial<DiscoverViewProps> = {}) {
 
 const words = (element: Element | null) => (element?.textContent ?? "").replace(/\s+/g, " ").trim();
 const bandOf = (container: HTMLElement) => query(container, 'section[aria-label="Next step"]');
-const cyanFills = (container: HTMLElement) => container.querySelectorAll("button.bj-primary, a.bj-button-link-primary").length;
+const goldFills = (container: HTMLElement) => container.querySelectorAll("button.bj-primary, a.bj-button-link-primary").length;
 
 function ready(result = response(), request = EMPTY_REQUEST) {
   const search: SearchView = { kind: "ready", result };
@@ -110,9 +110,9 @@ describe("idle: nothing has been searched", () => {
     expect(container.querySelectorAll("li.bj-disc-row")).toHaveLength(0);
   });
 
-  it("is lit by one cyan Search, the band's, and the form draws no Search of its own", () => {
+  it("is lit by one gold Search, the band's, and the form draws no Search of its own", () => {
     const { container } = draw();
-    expect(cyanFills(container)).toBe(1);
+    expect(goldFills(container)).toBe(1);
     const form = query(container, "form");
     expect(form.querySelector("button.bj-primary")).toBeNull();
     expect(form.querySelector("button[type='submit']")).toBeNull();
@@ -288,7 +288,7 @@ describe("loading: a search is running", () => {
     expect(words(bandOf(container))).toContain("Searching...");
     expect(words(bandOf(container))).toContain("why: link checks can take about 20 seconds");
     expect(bandOf(container).querySelector("button, a")).toBeNull();
-    expect(cyanFills(container)).toBe(0);
+    expect(goldFills(container)).toBe(0);
   });
 
   it("shows a live elapsed counter as role=timer with its live region off, ticking each second", () => {
@@ -329,14 +329,14 @@ describe("loading: a search is running", () => {
 });
 
 describe("results", () => {
-  it("is unlit with 'Track the jobs worth a draft.', the two counts in the why line, and no cyan fill on the page", () => {
+  it("is unlit with 'Track the jobs worth a draft.', the two counts in the why line, and no gold fill on the page", () => {
     const { container } = draw(ready(response({ scored: [job()], more: [job({ apply_url: "https://jobs.example/acme/2", score: null })], dead_removed: 3 })));
     const text = words(bandOf(container));
     expect(text).toContain("Track the jobs worth a draft.");
     expect(text).toContain("why: 1 scored · 1 more, unscored");
     expect(text).not.toContain("dropped");
     expect(text).not.toContain("serper");
-    expect(cyanFills(container)).toBe(0);
+    expect(goldFills(container)).toBe(0);
   });
 
   it("counts rows the way the Not scored chip does: a scored-list row with a bin nobody can read is not scored, in the band as in the chips", () => {
@@ -362,7 +362,7 @@ describe("results", () => {
     expect(again.filter((button) => button.classList.contains("bj-primary"))).toHaveLength(1);
     expect(bandOf(container).contains(again.find((button) => button.classList.contains("bj-primary"))!)).toBe(true);
     expect(query(container, "form").contains(again.find((button) => !button.classList.contains("bj-primary"))!)).toBe(true);
-    expect(cyanFills(container)).toBe(1);
+    expect(goldFills(container)).toBe(1);
   });
 
   it("keeps the form's 'Search again' when nothing matched and the band offers Clear filters", () => {
@@ -480,17 +480,17 @@ describe("restored: an answer brought back from an earlier visit", () => {
     expect([...query(container, "form").querySelectorAll("p")].map((note) => words(note)).filter((note) => note.startsWith("Pressing Search"))).toEqual([]);
   });
 
-  it("holds one page heading and at most one cyan fill, and never says anything is verified", () => {
+  it("holds one page heading and at most one gold fill, and never says anything is verified", () => {
     const { container } = draw(restored());
     expect(container.querySelectorAll("h1")).toHaveLength(1);
-    expect(cyanFills(container)).toBeLessThanOrEqual(1);
+    expect(goldFills(container)).toBeLessThanOrEqual(1);
     expect(findForbiddenWord(words(container))).toBeNull();
     expect(words(container).toLowerCase()).not.toContain("verified");
   });
 
-  it("keeps the band's one cyan, Search again, when the restored scores were placeholders", () => {
+  it("keeps the band's one gold, Search again, when the restored scores were placeholders", () => {
     const { container } = draw(restored(response({ scoring_strategy: "neutral_fallback" })));
-    expect(cyanFills(container)).toBe(1);
+    expect(goldFills(container)).toBe(1);
     expect(words(query(bandOf(container), "button.bj-primary"))).toBe("Search again");
     expect(notes(container).filter((note) => words(note).startsWith("Showing your search from"))).toHaveLength(1);
   });
@@ -754,10 +754,10 @@ describe("a row's fit block", () => {
     expect(words(query(container, ".bj-disc-fallback"))).toContain("these scores are placeholders");
   });
 
-  it("lights 'Search again' as the page's one cyan, in the band, when the scoring fell back", () => {
+  it("lights 'Search again' as the page's one gold, in the band, when the scoring fell back", () => {
     const fallback = response({ scoring_strategy: "neutral_fallback" });
     const { container } = draw({ ...ready(fallback), outcome: band({ phase: "results", results: resultsFactOf(fallback, EMPTY_REQUEST) }) });
-    expect(cyanFills(container)).toBe(1);
+    expect(goldFills(container)).toBe(1);
     const lit = query<HTMLButtonElement>(bandOf(container), "button.bj-primary");
     expect(words(lit)).toBe("Search again");
     expect(lit.getAttribute("form")).toBe("discover-form");
@@ -1197,7 +1197,7 @@ describe("a row's links and its Track action", () => {
     expect(onTrack.mock.calls[0][0].apply_url).toBe("https://jobs.example/acme/1");
   });
 
-  it("is outlined, never cyan, and a row's Track is not a form submit", () => {
+  it("is outlined, never gold, and a row's Track is not a form submit", () => {
     const { container } = draw(ready());
     const track = buttonNamed(container, /^Track /);
     expect(track.classList.contains("bj-primary")).toBe(false);
@@ -1257,7 +1257,7 @@ describe("partial: what arrived renders, what did not is named", () => {
     const { container } = draw({ ...ready(partial), outcome: band({ phase: "results", results: resultsFactOf(partial, EMPTY_REQUEST) }) });
     expect(words(bandOf(container))).not.toContain("brave");
     expect(words(bandOf(container))).toContain("why: 1 scored");
-    expect(cyanFills(container)).toBe(0);
+    expect(goldFills(container)).toBe(0);
   });
 
   it("says how many listings were dropped as no longer live, in the status block", () => {
@@ -1310,7 +1310,7 @@ describe("empty: nothing matched", () => {
     expect(container.querySelectorAll("li.bj-disc-row")).toHaveLength(0);
     expect(words(bandOf(container))).toContain("No results. Widen your filters or clear Companies.");
     expect(words(query(bandOf(container), "button.bj-primary"))).toBe("Clear filters");
-    expect(cyanFills(container)).toBe(1);
+    expect(goldFills(container)).toBe(1);
   });
 
   it("puts the warnings and the dropped count in the status block above the empty state", () => {
@@ -1337,7 +1337,7 @@ describe("empty: nothing matched", () => {
     const result = empty();
     const { container } = draw({ search: { kind: "ready", result }, outcome: band({ phase: "results", results: resultsFactOf(result, EMPTY_REQUEST) }) });
     expect(words(bandOf(container))).toContain("No results, and no filters were set.");
-    expect(cyanFills(container)).toBe(0);
+    expect(goldFills(container)).toBe(0);
   });
 });
 
@@ -1363,11 +1363,11 @@ describe("setup-required: no search is made", () => {
     expect(search.getAttribute("aria-describedby")).toBe("bj-discover-blocked");
   });
 
-  it("is lit by the band's own link, which is the page's one cyan, and G2 wins when there is no profile", () => {
+  it("is lit by the band's own link, which is the page's one gold, and G2 wins when there is no profile", () => {
     const g2 = band({}, { profile: { state: "ready", value: { active: false, importWaiting: false } } });
     const { container } = draw({ outcome: g2, setup: { message: "x", missing: [{ label: "Add your profile", to: "/profile" }] } });
     expect(words(bandOf(container))).toContain("Everything here starts from your profile. Import it first.");
-    expect(cyanFills(container)).toBe(1);
+    expect(goldFills(container)).toBe(1);
     const d1 = band({ key: "none" });
     const second = draw({ outcome: d1, setup: { message: "x", missing: [{ label: "Add a model key", to: "/settings#ai-provider" }] } });
     expect(words(bandOf(second.container))).toContain("Discover scores jobs with your model. Add a model key first.");
@@ -1399,9 +1399,9 @@ describe("failure: the page's own request failed", () => {
     expect(container.querySelector("li.bj-disc-row")).toBeNull();
   });
 
-  it("keeps the form usable, and Search again outlined: the band holds the one cyan", () => {
+  it("keeps the form usable, and Search again outlined: the band holds the one gold", () => {
     const { container } = draw(failed());
-    expect(cyanFills(container)).toBe(1);
+    expect(goldFills(container)).toBe(1);
     expect(query(container, "form").querySelector("button.bj-primary")).toBeNull();
     expect(words(buttonNamed(query(container, "form"), "Search again"))).toBe("Search again");
   });
@@ -1501,7 +1501,7 @@ describe("saved searches on the page", () => {
   });
 });
 
-describe("the one cyan fill", () => {
+describe("the one gold fill", () => {
   const states: Array<[string, Partial<DiscoverViewProps>, number]> = [
     ["idle and ready", {}, 1],
     ["searching", { search: { kind: "loading", startedAt: 0 }, outcome: band({ phase: "searching" }) }, 0],
@@ -1513,7 +1513,7 @@ describe("the one cyan fill", () => {
     ["signed-out safe: loading setup", { outcome: nextStep({ page: "discover", signedIn: true, profile: { state: "loading" }, facts: undefined } as NextStepInput) }, 0],
   ];
 
-  it.each(states)("%s holds at most one cyan fill, and it is the band's", (_name, overrides, expected) => {
+  it.each(states)("%s holds at most one gold fill, and it is the band's", (_name, overrides, expected) => {
     // The result states that fall back or hold nothing need the fact-based band to match.
     const merged = _name === "results scored by the fallback" ? { ...ready(response({ scoring_strategy: "neutral_fallback" })), outcome: band({ phase: "results", results: resultsFactOf(response({ scoring_strategy: "neutral_fallback" }), EMPTY_REQUEST) }) } : overrides;
     const { container } = draw(merged);

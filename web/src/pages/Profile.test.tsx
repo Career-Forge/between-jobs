@@ -75,7 +75,7 @@ function page(path = "/profile") {
 }
 
 const band = (root: ParentNode) => query(root, 'section[aria-label="Next step"]');
-const cyan = (root: ParentNode) => [...root.querySelectorAll(".bj-primary, .bj-button-link-primary")];
+const gold = (root: ParentNode) => [...root.querySelectorAll(".bj-primary, .bj-button-link-primary")];
 const trails = (root: ParentNode) => [...root.querySelectorAll(".bj-trail")].map((line) => text(line));
 const named = (root: ParentNode, label: string | RegExp) =>
   [...root.querySelectorAll<HTMLElement>("button, a")].find((element) => (typeof label === "string" ? text(element) === label : label.test(text(element)))) as HTMLElement;
@@ -127,7 +127,7 @@ describe("loading", () => {
     const { container } = page();
     await settle(1);
     expect(text(band(container))).toBe("Next stepLoading...");
-    expect(cyan(container)).toHaveLength(0);
+    expect(gold(container)).toHaveLength(0);
     expect(text(container)).toContain("Loading your profile...");
     expect(container.querySelector(".bj-doc")).toBeNull();
   });
@@ -162,7 +162,7 @@ describe("loading", () => {
 });
 
 describe("no profile yet (the 404)", () => {
-  it("lights the band with G2, pointing at the import section of this page, and that is the page's only cyan", async () => {
+  it("lights the band with G2, pointing at the import section of this page, and that is the page's only gold", async () => {
     describeAccount({ current: NOT_FOUND });
     const { container } = page();
     await settle();
@@ -170,7 +170,7 @@ describe("no profile yet (the 404)", () => {
     expect(text(band(container))).toContain("why: no active profile");
     const link = named(band(container), "Set up your profile") as HTMLAnchorElement;
     expect(link.getAttribute("href")).toBe("/profile#set-up");
-    expect(cyan(container)).toEqual([link]);
+    expect(gold(container)).toEqual([link]);
   });
 
   it("teaches what will appear and what it feeds, with no example and no number", async () => {
@@ -212,14 +212,14 @@ describe("no profile yet (the 404)", () => {
 });
 
 describe("an active profile with nothing waiting", () => {
-  it("is unlit: PR0 says it is active and since when, from the activation date the API returned, and no cyan fill is drawn", async () => {
+  it("is unlit: PR0 says it is active and since when, from the activation date the API returned, and no gold fill is drawn", async () => {
     describeAccount();
     const { container } = page();
     await settle();
     expect(text(band(container))).toContain("Your profile is active. Edits save a new version.");
     expect(text(band(container))).toContain("why: profile active since Oct 12");
     expect(band(container).querySelector("a, button")).toBeNull();
-    expect(cyan(container)).toHaveLength(0);
+    expect(gold(container)).toHaveLength(0);
   });
 
   it("leaves the date out of the why line when the activation was not returned", async () => {
@@ -402,13 +402,13 @@ describe("the trail margin and its inline and sheet forms", () => {
 // ── failure and partial ────────────────────────────────────────────────────
 
 describe("when the profile cannot be read", () => {
-  it("says so in the band (G1), names the call and the time, and holds the page's one cyan button: Try again", async () => {
+  it("says so in the band (G1), names the call and the time, and holds the page's one gold button: Try again", async () => {
     describeAccount({ current: new FakeApiError("Internal error", "INTERNAL_ERROR", undefined, 500) });
     const { container } = page();
     await settle();
     expect(text(band(container))).toContain("Couldn't check your setup. You didn't do anything wrong, and nothing was lost.");
     expect(text(band(container))).toMatch(/why: GET \/profile\/current failed · \d\d:\d\d/);
-    expect(cyan(container).map((button) => text(button))).toEqual(["Try again"]);
+    expect(gold(container).map((button) => text(button))).toEqual(["Try again"]);
   });
 
   it("names what failed in the body, as an alert with no Retry of its own, and still offers the account card", async () => {
@@ -453,7 +453,7 @@ describe("with no usable model key", () => {
     expect(text(band(container))).toContain("why: profile active · no model key saved");
     const link = named(band(container), "Add a model key") as HTMLAnchorElement;
     expect(link.getAttribute("href")).toBe("/settings#ai-provider");
-    expect(cyan(container)).toEqual([link]);
+    expect(gold(container)).toEqual([link]);
   });
 });
 
@@ -468,7 +468,7 @@ describe("when one card cannot read its own part", () => {
     expect(alerts.length).toBe(3);
     expect(alerts.every((alert) => text(alert).includes("The resume service is not answering"))).toBe(true);
     expect(trails(container).filter((line) => line.startsWith("✕"))).toHaveLength(3);
-    expect(cyan(container)).toHaveLength(0);
+    expect(gold(container)).toHaveLength(0);
   });
 
   it("says a header preview built from an earlier profile version is one", async () => {
@@ -528,14 +528,14 @@ describe("the JSON import for a person with no profile", () => {
     expect(container.querySelector(".bj-account-delete")).not.toBeNull();
   });
 
-  it("puts the band on the review, with the review's own step and the page's only cyan button", async () => {
+  it("puts the band on the review, with the review's own step and the page's only gold button", async () => {
     const { container } = page();
     await settle();
     await importJson(container);
     expect(text(band(container))).toContain("Check what was read, then make this your profile.");
     expect(text(band(container))).toContain("why: import waiting for review · parsed by code, no model · draft inactive");
     const button = buttonNamed(band(container), "Confirm and make active");
-    expect(cyan(container)).toEqual([button]);
+    expect(gold(container)).toEqual([button]);
     const own = buttonNamed(query(container, "#import-review"), "Looks good -- activate");
     expect(own.classList.contains("bj-primary")).toBe(false);
   });
@@ -691,7 +691,7 @@ describe("the JSON import says only what is true about the draft", () => {
     expect(text(query(jsonImport(container), "[role='status']"))).toBe("This matches your current profile: nothing to change.");
     expect(text(band(container))).toContain("Your profile is active.");
     expect(text(band(container))).not.toContain("draft inactive");
-    expect(cyan(container)).toHaveLength(0);
+    expect(gold(container)).toHaveLength(0);
     expect(container.querySelector(".bj-profile-identity")).not.toBeNull();
     // a later import is a new question: the note goes
     on("POST /profile/versions", PENDING);
@@ -801,7 +801,7 @@ describe("a failed re-read after the profile changed replaces the page and says 
     expect(text(band(container))).toContain("Couldn't check your setup.");
     expect(text(band(container))).toMatch(/why: GET \/profile\/current failed/);
     expect(text(query(container, ".bj-state--failure"))).toContain("Couldn't read your profile (Internal error).");
-    expect(cyan(container).map((button) => text(button))).toEqual(["Try again"]);
+    expect(gold(container).map((button) => text(button))).toEqual(["Try again"]);
     expect(container.querySelector(".bj-profile-identity")).toBeNull();
   }
 
@@ -896,7 +896,7 @@ describe("the JSON import for a person who has a profile", () => {
     expect(container.querySelector("#import-review")).not.toBeNull();
     expect(container.querySelector(".bj-profile-identity")).toBeNull();
     expect(text(band(container))).toContain("Check what was read, then make this your profile.");
-    expect(cyan(container).map((button) => text(button))).toEqual(["Confirm and make active"]);
+    expect(gold(container).map((button) => text(button))).toEqual(["Confirm and make active"]);
   });
 
   it("puts G3 first when there is no model key, since a JSON import needs none and the band follows the global rows", async () => {
@@ -906,7 +906,7 @@ describe("the JSON import for a person who has a profile", () => {
     await settle();
     await importJson(container);
     expect(text(band(container))).toContain("Add a model key so Between Jobs can draft and score.");
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
     expect(container.querySelector("#import-review")).not.toBeNull();
   });
 });
@@ -995,7 +995,7 @@ describe("a resume file's draft for a person with a profile", () => {
     expect(container.querySelector(".bj-account-delete")).not.toBeNull();
   });
 
-  it("tells the band an import is waiting: PR1, whose link to the review is the page's only cyan", async () => {
+  it("tells the band an import is waiting: PR1, whose link to the review is the page's only gold", async () => {
     const { container } = page();
     await settle();
     await readFile(container);
@@ -1003,7 +1003,7 @@ describe("a resume file's draft for a person with a profile", () => {
     expect(text(band(container))).toContain("why: import waiting for review · converted by your model, probabilistic · not active until you confirm");
     const link = named(band(container), "Review the import") as HTMLAnchorElement;
     expect(link.getAttribute("href")).toBe("/profile#import-review");
-    expect(cyan(container)).toEqual([link]);
+    expect(gold(container)).toEqual([link]);
     expect(buttonNamed(container, "Use this profile").classList.contains("bj-primary")).toBe(false);
   });
 
@@ -1029,7 +1029,7 @@ describe("a resume file's draft for a person with a profile", () => {
     expect(locked?.getAttribute("aria-disabled")).toBe("true");
     expect(text(locked as HTMLElement)).toBe("Confirm and make active");
     expect(text(band(container))).toContain(`Check the ${FIELDS} remaining fields to unlock this.`);
-    expect(cyan(container)).toHaveLength(0);
+    expect(gold(container)).toHaveLength(0);
   });
 
   it("does nothing when the locked band button is pressed", async () => {
@@ -1053,7 +1053,7 @@ describe("a resume file's draft for a person with a profile", () => {
     click(checkboxes(container)[FIELDS - 1]);
     expect(text(band(container))).toContain("0 still to check");
     expect(band(container).querySelector("button.bj-band-locked")).toBeNull();
-    expect(cyan(container).map((button) => text(button))).toEqual(["Confirm and make active"]);
+    expect(gold(container).map((button) => text(button))).toEqual(["Confirm and make active"]);
     expect(buttonNamed(container, "Use this profile").hasAttribute("aria-disabled")).toBe(false);
   });
 
@@ -1107,7 +1107,7 @@ describe("a resume file's draft for a person with a profile", () => {
     await readFile(container);
     expect(text(query(container, ".bj-import-failure"))).toContain("That PDF is password-protected.");
     expect(text(band(container))).toContain("Your profile is active.");
-    expect(cyan(container)).toHaveLength(0);
+    expect(gold(container)).toHaveLength(0);
   });
 
   it("shows the model-key setup notice with its link when the upload needs a key", async () => {
@@ -1163,7 +1163,7 @@ describe("the file import card with no usable model key", () => {
     expect(text(query(card, ".bj-state--setup"))).toContain("Pasting your profile as JSON, below, needs no key.");
     expect(query<HTMLAnchorElement>(card, ".bj-state--setup a").getAttribute("href")).toBe("/settings#ai-provider");
     expect(buttonNamed(card, "Choose a file").getAttribute("aria-disabled")).toBe("true");
-    expect(cyan(container)).toHaveLength(1);
+    expect(gold(container)).toHaveLength(1);
   });
 
   it("still says what choosing a file costs, above the missing-key notice, while the file button is off", async () => {
@@ -1224,7 +1224,7 @@ describe("a resume file's draft for a person with no profile", () => {
     await readFile(container);
     expect(text(band(container))).toContain("Check every field, then make this your profile.");
     expect(band(container).querySelector("button.bj-band-locked")).not.toBeNull();
-    expect(cyan(container)).toHaveLength(0);
+    expect(gold(container)).toHaveLength(0);
     expect(text(band(container))).not.toContain("Your import is waiting");
   });
 
@@ -1311,9 +1311,9 @@ describe("editing: every save is a new version through the importer", () => {
   });
 });
 
-// ── the one cyan fill, the account and the accessibility of every state ────
+// ── the one gold fill, the account and the accessibility of every state ────
 
-describe("one cyan fill per page", () => {
+describe("one gold fill per page", () => {
   const states: [string, () => Promise<HTMLElement>, number][] = [
     ["active, nothing waiting", async () => {
       describeAccount();
@@ -1343,7 +1343,7 @@ describe("one cyan fill per page", () => {
 
   it.each(states)("%s: at most one, and it is the band's", async (_name, open, expected) => {
     const container = await open();
-    const fills = cyan(container);
+    const fills = gold(container);
     expect(fills).toHaveLength(expected);
     for (const fill of fills) expect(band(container).contains(fill)).toBe(true);
     expect(container.querySelector("[style]")).toBeNull();

@@ -224,7 +224,7 @@ describe("the table", () => {
     expect(ask({ facts: facts({ searchKeys: 0, results: null }) }).rowId).toBe("HS1");
   });
 
-  it("is lit by one cyan action in HS2 (ready), in HS3 when the search is not saved, and is a link in HS1", () => {
+  it("is lit by one gold action in HS2 (ready), in HS3 when the search is not saved, and is a link in HS1", () => {
     const lit = rows.filter((entry) => step(ask(entry.input).outcome).action !== null).map((entry) => entry.row);
     expect(new Set(lit)).toEqual(new Set(["HS1", "HS2", "HS3"]));
     expect(rows.filter((entry) => entry.row === "HS2" && entry.action === null).map((entry) => entry.name)).toEqual(["a search is in flight"]);

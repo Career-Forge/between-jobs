@@ -13,7 +13,7 @@ import { ShellBandContext } from "./ShellBandContext";
 import { MAIN_CONTENT_ID, SkipLink } from "./SkipLink";
 import { Wordmark } from "./Wordmark";
 
-// The signed-in frame around every page. At 960px and wider: a 220px rail on the left (wordmark,
+// The signed-in frame around every page. At 960px and wider: a 232px rail on the left (wordmark,
 // the main navigation, then the address, Settings, Sign out and the legal links) and the page
 // beside it. The rail is an <aside> named "Sidebar", so everything in it sits inside a landmark. Under 960px: a slim top bar with the wordmark, the page, and
 // a bottom tab bar with a More sheet. Both navigations are always in the markup; CSS shows one.

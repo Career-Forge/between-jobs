@@ -7,7 +7,7 @@ import "../../styles/research.css";
 
 // The pieces the three research runs (Company intel, Contacts, Events) draw the same way.
 
-// The button that makes a run. It is outlined: the page's one cyan fill is the next-step band's. While a
+// The button that makes a run. It is outlined: the page's one gold fill is the next-step band's. While a
 // run is out it is aria-disabled, not disabled, so a focused button keeps focus and a screen reader still
 // finds it; the press itself is ignored by the hook (lib/useResearchRun.ts).
 //

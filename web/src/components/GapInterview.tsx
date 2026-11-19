@@ -31,7 +31,7 @@ import "../styles/workspace.css";
 // depends on the next extraction's judgment, not a formula), so a precise-looking number would be a
 // fabrication. The cluster a question addresses is real and is shown instead.
 //
-// Every button here is outlined: the page's one cyan fill is the next-step band's. The model mark
+// Every button here is outlined: the page's one gold fill is the next-step band's. The model mark
 // (violet) is on what a model worded or drafted, and a fact the person has approved is marked saved.
 
 type Phase =

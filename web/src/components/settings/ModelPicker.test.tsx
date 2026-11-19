@@ -281,7 +281,7 @@ describe("choosing a model", () => {
     );
   });
 
-  it("has no cyan button, and is one tab stop for the whole list", async () => {
+  it("has no gold button, and is one tab stop for the whole list", async () => {
     on("POST /credentials/llm/models", listing());
     const { container } = mount();
     await settle();

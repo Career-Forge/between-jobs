@@ -4,7 +4,7 @@
 
 import type { ModelKeyReading } from "../modelKey";
 
-// What the cyan button (or a link styled as it) does. The engine never holds a handler: it names
+// What the gold button (or a link styled as it) does. The engine never holds a handler: it names
 // the action and the page that owns the band maps `intent` to a real function.
 export type NextStepAction =
   /** Goes to one of the app's own routes (a hash is fine, as in a link to a section of a page). */
@@ -32,10 +32,10 @@ export interface UnlitStep extends StepWords {
   locked?: undefined;
 }
 
-/** A lit band: the page's one cyan action. */
+/** A lit band: the page's one gold action. */
 export interface LitStep extends StepWords {
   action: NextStepAction;
-  /** One outlined button beside the cyan one, only where a row asks for one. Never a second cyan. */
+  /** One outlined button beside the gold one, only where a row asks for one. Never a second gold. */
   secondary?: NextStepAction | null;
   /** The action exists but is locked until the person finishes something; `hint` names what unlocks it. */
   locked?: { hint: string };

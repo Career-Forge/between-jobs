@@ -13,9 +13,9 @@ import "../styles/public.css";
 // links, the source and the two contact addresses. No state of its own, so a test can render it directly.
 //
 // `variant="landing"` is the page that has a next-step band, the home page: its hero holds the page's one
-// cyan fill, so the header's Create account is outlined, and a "Skip to next step" link comes ahead of
+// gold fill, so the header's Create account is outlined, and a "Skip to next step" link comes ahead of
 // "Skip to content". Every other public page has no band (they have no "now"), so its header's Create
-// account is the one cyan fill and there is only "Skip to content".
+// account is the one gold fill and there is only "Skip to content".
 
 export function PublicLayout({ children, variant = "page" }: { children: ReactNode; variant?: "landing" | "page" }) {
   const landing = variant === "landing";

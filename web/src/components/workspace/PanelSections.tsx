@@ -33,7 +33,7 @@ import "../../styles/workspace.css";
 //    panel knowing which. A panel with a richer layout may use several blocks.
 //  - The panel does NOT draw its own h2: the chapter is the section's heading, and a panel's own headings
 //    are h3 and below. Nothing hides a panel's heading any more; one that draws an h2 gets two.
-//  - The page's one cyan fill is the next-step band's. A panel's buttons are outlined and none asks for
+//  - The page's one gold fill is the next-step band's. A panel's buttons are outlined and none asks for
 //    the primary class; a failure of one panel never changes the band.
 //
 // Each of the six is built the same way (components/research/ and lib/research*.ts): an intro that says

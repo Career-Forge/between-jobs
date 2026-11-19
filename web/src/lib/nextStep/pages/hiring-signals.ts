@@ -6,7 +6,7 @@
 //   --   the status is still being asked: the band waits, and shows only "Loading..."
 //   HS1  no search key: the credentials hold none of the four providers the search can use, or a
 //        search answered SETUP_REQUIRED
-//   HS2  ready and nothing on the page for what the boxes hold -- Search is the one cyan action; or
+//   HS2  ready and nothing on the page for what the boxes hold -- Search is the one gold action; or
 //        a search is in flight (no button)
 //   HS3  results on the page for what the boxes hold: Save this search when it is not saved yet,
 //        unlit when it is (or when the page cannot tell)

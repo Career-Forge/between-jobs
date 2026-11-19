@@ -36,7 +36,7 @@ import "../styles/profile.css";
 // reviewer who ticked everything at once would have reviewed nothing. Without `checks` (a caller that has
 // no such state) the card is as it always was.
 //
-// NOTHING HERE IS CYAN. The page's one cyan fill is the next-step band's button, so every button here is an
+// NOTHING HERE IS CYAN. The page's one gold fill is the next-step band's button, so every button here is an
 // ordinary outlined one, including "Use this profile". The review has the id `import-review` (the band's
 // link lands on it) and the card's heading takes focus when a link arrives (tabIndex -1).
 //

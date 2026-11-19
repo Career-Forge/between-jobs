@@ -263,7 +263,7 @@ describe("saving a key", () => {
     expect(query<HTMLInputElement>(row(container, "brave"), 'input[autocomplete="off"]').value).toBe("");
   });
 
-  it("has no cyan button anywhere in the section", () => {
+  it("has no gold button anywhere in the section", () => {
     const { container } = mount([saved("brave")]);
     connect(container, "serper", "Serper");
     expect(container.querySelector(".bj-primary")).toBeNull();

@@ -16,7 +16,7 @@ import "../styles/profile-studio.css";
 // open; focus moves to its first field and is kept inside it (Tab and Shift+Tab wrap); Esc cancels --
 // not while a save is out -- and focus goes back to the control that opened it, or to where `returnFocus`
 // says (lib/useModalDialog.ts).
-// Nothing in it is cyan: the page's one cyan fill is the next-step band's button, so Save is an
+// Nothing in it is gold: the page's one gold fill is the next-step band's button, so Save is an
 // outlined button like every other.
 //
 // The footer says what saving does -- `versionLabel`, "Saving creates version 4" -- because an edit is

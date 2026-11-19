@@ -160,7 +160,7 @@ describe("the entry dialog", () => {
     expect(alert.textContent).toBe("Your profile must keep at least one piece of evidence.");
   });
 
-  it("is never a cyan fill: Save is an ordinary outlined button", () => {
+  it("is never a gold fill: Save is an ordinary outlined button", () => {
     open();
     expect(dialog().querySelector(".bj-primary")).toBeNull();
     expect(buttonNamed(dialog(), "Save").className).toBe("bj-dialog-confirm");

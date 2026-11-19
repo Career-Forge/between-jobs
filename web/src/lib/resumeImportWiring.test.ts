@@ -272,7 +272,7 @@ describe("the Profile page", () => {
   });
 });
 
-describe("the page's one cyan fill", () => {
+describe("the page's one gold fill", () => {
   it("is not drawn by the card, the JSON import or its preview, or the Profile page: the band's button is", () => {
     for (const [name, source] of Object.entries({ viewSource, cardSource, jsonImportSource, jsonReviewSource, profileSource })) {
       expect(withoutComments(source), name).not.toMatch(/bj-primary|bj-button-link-primary/);
@@ -285,7 +285,7 @@ describe("the stylesheet", () => {
     const defined = new Set([...rulesOf(appCss), ...rulesOf(profileCss)].flatMap((rule) => rule.selectors.flatMap((selector) => selector.match(/\.bj-[a-z0-9-]+/g) ?? [])));
     const used = [...viewSource.matchAll(/className="([^"]+)"/g)].flatMap((match) => match[1].split(/\s+/));
     // The card's own classes are in styles/profile.css and the shared ones in app.css. The card draws no
-    // `bj-primary` any more (the page's one cyan fill is the next-step band's button), which is pinned below.
+    // `bj-primary` any more (the page's one gold fill is the next-step band's button), which is pinned below.
     const missing = [...new Set(used)].filter((name) => name.startsWith("bj-") && !defined.has(`.${name}`));
     expect(missing).toEqual([]);
   });

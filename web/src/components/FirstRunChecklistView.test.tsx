@@ -128,7 +128,7 @@ describe("the open checklist", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("holds no cyan fill: the next-step band holds the page's only one", () => {
+  it("holds no gold fill: the next-step band holds the page's only one", () => {
     const { container } = draw(deriveFirstRun(BRAND_NEW, FLAGS));
     expect(container.querySelector(".bj-primary, .bj-button-link-primary")).toBeNull();
   });

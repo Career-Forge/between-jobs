@@ -110,7 +110,7 @@ export default function Login() {
     }
   }
 
-  // The reset form has its own button (the one cyan fill on this screen), so this form carries no
+  // The reset form has its own button (the one gold fill on this screen), so this form carries no
   // band: the band's sign-in action would point at a form that is not here.
   if (mode === "reset") {
     return (

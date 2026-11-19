@@ -29,7 +29,7 @@ import { SETTINGS_PATH } from "../lib/settingsPaths";
 // says what happens later: once the draft is sent, a reply to it can be read by the person's model on
 // their own key. The note is there only while the button is.
 //
-// Every control is secondary (outlined): the page's one cyan fill is the next-step band's. A busy button
+// Every control is secondary (outlined): the page's one gold fill is the next-step band's. A busy button
 // is aria-disabled, not disabled, so a focused one keeps focus.
 
 export interface GmailDraftActionsProps {

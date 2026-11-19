@@ -25,7 +25,7 @@ const CYAN_FILLS = ".bj-primary, .bj-button-link-primary";
 const FADING = ".bj-band-body--fade-a, .bj-band-body--fade-b";
 
 describe("a lit band", () => {
-  it("shows the eyebrow, the sentence, a why line that starts `why:`, and one cyan button", () => {
+  it("shows the eyebrow, the sentence, a why line that starts `why:`, and one gold button", () => {
     const { container } = render(band(ready(step())));
     const section = query(container, 'section[aria-label="Next step"]');
     expect(text(query(section, ".bj-band-eyebrow"))).toBe("Next step");
@@ -82,12 +82,12 @@ describe("a lit band", () => {
     }
   });
 
-  it("gives the cyan button the id a skip link focuses", () => {
+  it("gives the gold button the id a skip link focuses", () => {
     const { container } = render(band(ready(step())));
     expect(query(container, "button.bj-primary").id).toBe(NEXT_STEP_FOCUS_ID);
   });
 
-  it("holds an outlined secondary beside the cyan one, never a second cyan", () => {
+  it("holds an outlined secondary beside the gold one, never a second gold", () => {
     const onAction = vi.fn();
     const { container } = render(
       band(ready(step({ secondary: { kind: "button", label: "Generate anyway", intent: "force" } })), onAction),
@@ -136,7 +136,7 @@ describe("an unlit band", () => {
     expect(sentence.getAttribute("tabindex")).toBe("-1");
   });
 
-  it("ignores a secondary action: with no cyan button there is nothing to sit beside", () => {
+  it("ignores a secondary action: with no gold button there is nothing to sit beside", () => {
     // The types no longer allow this shape; data that slipped past them is still not drawn.
     const stray = { sentence: "s.", why: [], action: null, secondary: { kind: "button", label: "Generate anyway", intent: "force" } };
     const { container } = render(band(ready(stray as unknown as NextStep)));
@@ -186,7 +186,7 @@ describe("a band with nothing to show", () => {
   });
 });
 
-describe("the one cyan fill", () => {
+describe("the one gold fill", () => {
   it("is the band's alone: a lit band beside quiet content leaves no other element with the primary class", () => {
     const { container } = render(
       <MemoryRouter>
@@ -228,7 +228,7 @@ describe("the locked button", () => {
     }),
   );
 
-  it("is a focusable aria-disabled button with a hint, not a cyan fill, and does nothing when pressed", () => {
+  it("is a focusable aria-disabled button with a hint, not a gold fill, and does nothing when pressed", () => {
     const onAction = vi.fn();
     const { container } = render(band(locked, onAction));
     const button = query<HTMLButtonElement>(container, "button.bj-band-locked");
@@ -410,7 +410,7 @@ describe("a band that holds an item", () => {
     }
   });
 
-  it("replaces the words in the eyebrow when asked, and keeps the band's name and its one cyan fill", () => {
+  it("replaces the words in the eyebrow when asked, and keeps the band's name and its one gold fill", () => {
     const { container } = render(held("Next step · Resume ready", <p>x</p>));
     const section = query(container, 'section[aria-label="Next step"]');
     expect(text(query(section, ".bj-band-eyebrow"))).toBe("Next step · Resume ready");
@@ -522,7 +522,7 @@ describe("a button described by a cost note", () => {
     expect(describedText(button)).toBe("Pressing Generate resume makes several real model calls on your own key.");
   });
 
-  it("puts a note on the secondary button without touching the primary, as when the cyan one only scrolls", () => {
+  it("puts a note on the secondary button without touching the primary, as when the gold one only scrolls", () => {
     const { container } = render(
       withNote({ action: { kind: "link", label: "See why", to: "/x" }, secondary: { kind: "button", label: "Generate anyway", intent: "anyway" } }, { secondary: "secondary-note" }),
     );

@@ -10,7 +10,7 @@ import "../styles/site-pages.css";
 // content/publicPages.ts.
 //
 // Drawn on the public layout when signed out and inside the shell when signed in (the same way the legal
-// pages are), so it carries no account links of its own: the header's Create account is the page's one cyan
+// pages are), so it carries no account links of its own: the header's Create account is the page's one gold
 // fill. A link such as /how-it-works#prepare scrolls to the step and focuses its heading.
 
 export default function HowItWorks() {
