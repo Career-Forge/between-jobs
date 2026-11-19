@@ -1,13 +1,13 @@
 /* The home page's product tour (components/landing/ProductTour.tsx and TourMocks.tsx): a strip of five
  * tabs, one drawing of the product under it, and a sample next step. Tokens only, with one exception: the
  * printed resume page in the Prepare drawing is white paper, so its colors are its own, set on
- * .bj-tour-sheet. Nothing here is filled cyan: the page's one cyan fill is the hero band's button, and
+ * .bj-tour-sheet. Nothing here is filled gold: the page's one gold fill is the hero band's button, and
  * every depicted button is an outlined picture.
  *
  * Wide (960px and up) a drawing is two columns with its trail line under both. Under 960px the columns
  * stack, and the tab strip scrolls sideways inside its own box: nothing here can widen the page. Every
  * grid or flex child that holds text can shrink (min-width: 0) and wraps long words. The selected tab is
- * the selection style from tokens.css (maroon fill, aria-selected), never an underline. Motion is one
+ * the selection style from tokens.css (royal fill, aria-selected), never an underline. Motion is one
  * 200ms fade of the sample next step; under prefers-reduced-motion nothing fades or moves. */
 
 @keyframes bj-tour-fade {
@@ -57,7 +57,7 @@
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
   /* A group of selectable segments carries the group outline (tokens.css, .bj-segmented): the selected tab's
-     maroon fill is 1.7:1 against the canvas, so it is the outline, at 3:1, that bounds the strip and the fill. */
+     royal fill is 1.7:1 against the canvas, so it is the outline, at 3:1, that bounds the strip and the fill. */
   border: 1px solid var(--bj-outline);
   border-radius: 8px;
 }

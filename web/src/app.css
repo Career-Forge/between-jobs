@@ -30,7 +30,7 @@
 
 /* ------------------------------------------------------------------ */
 /* The signed-in shell (components/AppShell.tsx)                        */
-/*   960px and wider: a 220px rail on the left, the page beside it.     */
+/*   960px and wider: a 232px rail on the left, the page beside it.     */
 /*   Under 960px: a slim top bar, the page, a bottom tab bar.           */
 /* ------------------------------------------------------------------ */
 
@@ -39,9 +39,9 @@
   min-height: 100vh;
 }
 
-/* The brand lockup (components/Wordmark.tsx): the serif name with a small red dot after "Jobs". The
+/* The brand lockup (components/Wordmark.tsx): the serif name with a small gold dot after "Jobs". The
    size is set by the font size of the place it sits in, and the dot is in em so it keeps its
-   proportion. The dot is the documented exception to "red means failure" (tokens.css). */
+   proportion. The dot is a brand mark, never a status (tokens.css). */
 .bj-wordmark {
   display: inline-flex;
   align-items: flex-start;
@@ -49,6 +49,7 @@
   font-family: var(--bj-font-display);
   font-weight: 500;
   line-height: 1;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   color: var(--bj-text);
 }
@@ -69,21 +70,21 @@
   top: 0;
   align-self: flex-start;
   flex: none;
-  width: 220px;
+  width: 232px;
   height: 100vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--bj-space-4);
-  padding: 22px 14px 20px;
+  gap: var(--bj-space-1);
+  padding: 22px 12px 16px;
   background: var(--bj-bg);
   border-right: 1px solid var(--bj-border);
 }
 
 .bj-rail-brand {
   align-self: flex-start;
-  padding: 0 var(--bj-space-3);
-  font-size: 21px;
+  padding: 2px var(--bj-space-3) var(--bj-space-5);
+  font-size: 22px;
   color: var(--bj-text);
 }
 
@@ -106,16 +107,20 @@
 }
 
 /* A row of the rail. Selection is the shared primitive (.bj-selectable, tokens.css), so a row
-   marked aria-current gets the maroon fill from there, not from anything here. */
+   marked aria-current gets the royal fill from there, not from anything here. */
 .bj-nav-item {
   display: flex;
   align-items: center;
   gap: var(--bj-space-3);
   min-height: 40px;
   padding: 0 var(--bj-space-3);
-  border-radius: 7px;
+  border-radius: var(--bj-radius-control);
   color: var(--bj-text-muted);
   font-size: var(--bj-text-control);
+  font-weight: 500;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
 }
 
 .bj-nav-item:hover {
@@ -142,16 +147,16 @@
   margin: 0 0 var(--bj-space-2);
   padding: 0 var(--bj-space-3);
   color: var(--bj-text-muted);
-  font-size: var(--bj-text-badge);
+  font-size: var(--bj-text-small);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
 .bj-rail-signout {
-  width: 100%;
-  min-height: 36px;
-  margin-top: var(--bj-space-2);
-  font-size: var(--bj-text-small);
+  width: calc(100% - var(--bj-space-2));
+  min-height: 38px;
+  margin: var(--bj-space-2) var(--bj-space-1) 0;
+  font-weight: 500;
 }
 
 .bj-main {
@@ -198,7 +203,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  font-size: 21px;
+  font-size: 22px;
   color: var(--bj-text);
 }
 
@@ -219,7 +224,7 @@
   border-top: 1px solid var(--bj-border);
 }
 
-/* Five labels share 375px, so the label is 12px and weight 600 -- the one place text on the maroon
+/* Five labels share 375px, so the label is 12px and weight 600 -- the one place text on the royal
    selection is under 13px. The tab is the whole 56px cell: well over the 44px minimum target. */
 .bj-tab {
   display: flex;
@@ -461,9 +466,9 @@ body:has(.bj-more-sheet[open]) {
   gap: 12px;
 }
 
-/* Emerald = completed/verified; gold = review/pending; violet =
- * elevated/in-process -- per the semantic contract in tokens.css. Cyan is
- * the page's one primary fill, never a badge, so there is no cyan badge. */
+/* Emerald = completed/verified; gold outline = review/pending; violet =
+ * elevated/in-process -- per the semantic contract in tokens.css. A gold
+ * fill is the page's one primary action, never a badge, so badges are outlines. */
 .bj-badge-emerald,
 .bj-badge-gold,
 .bj-badge-violet {
@@ -519,7 +524,7 @@ body:has(.bj-more-sheet[open]) {
 }
 
 /* A group of two or more segments of which one is chosen (the selection primitive in tokens.css:
-   a maroon fill inside an outlined group). */
+   a royal fill inside an outlined group). */
 .bj-view-toggle {
   display: inline-flex;
   gap: 2px;
@@ -564,7 +569,7 @@ body:has(.bj-more-sheet[open]) {
   background: none;
   border: none;
   padding: 0;
-  color: var(--bj-cyan);
+  color: var(--bj-link);
   font-size: 13px;
   margin-top: 8px;
 }
@@ -1069,7 +1074,7 @@ button.bj-danger {
 }
 
 /* A link that looks like a button, for the way in. Secondary (outlined) by default; the primary
-   variant is the cyan fill, with the same one-per-page rule as button.bj-primary. */
+   variant is the gold fill, with the same one-per-page rule as button.bj-primary. */
 a.bj-button-link {
   display: inline-block;
   padding: 8px 16px;
@@ -1087,15 +1092,15 @@ a.bj-button-link:hover {
 }
 
 a.bj-button-link-primary {
-  background: var(--bj-cyan);
-  border-color: var(--bj-cyan);
-  color: #06211f;
+  background: var(--bj-primary);
+  border-color: var(--bj-primary);
+  color: var(--bj-primary-ink);
   font-weight: 600;
 }
 
 a.bj-button-link-primary:hover {
-  background: var(--bj-cyan-hover);
-  border-color: var(--bj-cyan-hover);
+  background: var(--bj-primary-hover);
+  border-color: var(--bj-primary-hover);
 }
 
 /* The Privacy / Terms links: in the public footer, the sign-in card and the shell's nav. */
@@ -1160,7 +1165,7 @@ a.bj-button-link-primary:hover {
 }
 
 .bj-agreement:focus-visible {
-  outline: 2px solid var(--bj-cyan);
+  outline: 2px solid var(--bj-focus-ring);
   outline-offset: 2px;
 }
 

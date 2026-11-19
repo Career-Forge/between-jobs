@@ -5,7 +5,7 @@ import { PHONE_QUERY } from "../lib/useMediaQuery";
 import settingsCss from "./settings.css?raw";
 
 // settings.css is read as text (there is no layout engine in the test run). What it pins is what can
-// be measured in it: it defines no color, it fills nothing cyan, and its phone rules sit at the
+// be measured in it: it defines no color, it fills nothing gold, and its phone rules sit at the
 // shell's own breakpoint and keep the page inside 375px.
 
 const base = withoutMedia(settingsCss);
@@ -33,15 +33,15 @@ describe("settings.css", () => {
     expect([...used].filter((name) => !defined.has(name))).toEqual([]);
   });
 
-  it("fills nothing cyan: the page's one cyan fill is the next-step band's", () => {
+  it("fills nothing gold: the page's one gold fill is the next-step band's", () => {
     for (const rule of rulesOf(settingsCss)) {
       for (const property of ["background", "background-color"]) {
-        expect(rule.declarations[property] ?? "").not.toContain("--bj-cyan");
+        expect(rule.declarations[property] ?? "").not.toContain("--bj-primary");
       }
     }
   });
 
-  it("marks a chosen model the way every chosen item is marked: the maroon fill with the ivory text", () => {
+  it("marks a chosen model the way every chosen item is marked: the royal fill with the ivory text", () => {
     const chosen = declarationsFor(base, ".bj-set-model:has(input:checked)");
     expect(chosen.background).toBe("var(--bj-selected-bg)");
     expect(chosen.color).toBe("var(--bj-selected-text)");

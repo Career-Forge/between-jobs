@@ -4,8 +4,8 @@
  * jump bar, score bars, claim and checklist rows -- are paper-doc.css's; this file is only what is
  * particular to this page.
  *
- * Tokens only -- no color is defined here -- and no rule fills anything cyan: the page's one cyan fill is
- * the next-step band's button. Selection is the shared maroon fill (.bj-selectable). Red is for a real
+ * Tokens only -- no color is defined here -- and no rule fills anything gold: the page's one gold fill is
+ * the next-step band's button. Selection is the shared royal fill (.bj-selectable). Red is for a real
  * failure; the one solid red block is the sponsorship mismatch in the honest read, with the canvas color
  * for its text.
  *
@@ -210,7 +210,7 @@ h4.bj-ws-label {
   max-width: 100%;
 }
 
-/* A link inside a sentence is told apart by an underline, not by colour alone (WCAG 1.4.1): cyan
+/* A link inside a sentence is told apart by an underline, not by colour alone (WCAG 1.4.1): link blue
    against the ivory or muted text around it is about 1.5:1. A link that is drawn as a button is not
    in a sentence and keeps its outline. */
 .bj-ws-callout a,

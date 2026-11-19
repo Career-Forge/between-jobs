@@ -5,7 +5,7 @@ import { blockOf, declarationsFor, rulesOf, tokenResolver, withoutMedia } from "
 import workspaceCss from "./workspace.css?raw";
 
 // workspace.css is read as text. It pins what can be measured from the rules: that it defines no color of
-// its own, never fills anything cyan, keeps the page to one cyan, and the few rules the page's structure depends on.
+// its own, never fills anything gold, keeps the page to one gold, and the few rules the page's structure depends on.
 
 const resolve = tokenResolver(tokensCss);
 const base = withoutMedia(workspaceCss);
@@ -28,10 +28,10 @@ describe("workspace.css", () => {
     expect([...used].filter((name) => !defined.has(name))).toEqual([]);
   });
 
-  it("never fills anything cyan: the page's one cyan fill is the next-step band's button", () => {
+  it("never fills anything gold: the page's one gold fill is the next-step band's button", () => {
     for (const rule of rulesOf(workspaceCss)) {
       for (const property of ["background", "background-color"]) {
-        expect(rule.declarations[property] ?? "").not.toContain("--bj-cyan");
+        expect(rule.declarations[property] ?? "").not.toContain("--bj-primary");
       }
     }
   });

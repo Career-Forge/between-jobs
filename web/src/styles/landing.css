@@ -1,6 +1,6 @@
 /* The landing page (pages/Landing.tsx) and the hero's worked example (components/landing/TrailExample.tsx);
- * the product tour has its own sheet, tour.css. Tokens only. Nothing here is filled cyan: the page's one
- * cyan fill is the next-step band's button in the hero. Layout is a 1200px column that gives way to one
+ * the product tour has its own sheet, tour.css. Tokens only. Nothing here is filled gold: the page's one
+ * gold fill is the next-step band's button in the hero. Layout is a 1200px column that gives way to one
  * column at 960px; every flex or grid child that holds text can shrink (min-width: 0) so nothing pushes a
  * phone sideways. */
 
@@ -103,7 +103,7 @@
   color: var(--bj-text-muted);
 }
 
-/* The hero's band is the one place the page's cyan fill lives. It sits under the lead, a step down
+/* The hero's band is the one place the page's gold fill lives. It sits under the lead, a step down
    from the sentence's size so the headline stays the loudest thing on the screen. */
 .bj-landing-hero .bj-band {
   max-width: 600px;
@@ -358,7 +358,7 @@
   font-size: clamp(32px, 4vw, 48px);
 }
 
-/* A link inside a sentence is told apart by an underline, not by colour alone: cyan beside ivory or
+/* A link inside a sentence is told apart by an underline, not by colour alone: link blue beside ivory or
    muted text is about 1.5:1, under the 3:1 WCAG 1.4.1 asks for when colour is the only cue. Button
    links and the header's links keep the plain style. */
 .bj-landing section p a {
@@ -367,7 +367,7 @@
 }
 
 .bj-landing section p a:hover {
-  color: var(--bj-cyan-hover);
+  color: var(--bj-link-hover);
   text-decoration-thickness: 2px;
 }
 

@@ -1,5 +1,5 @@
 /* The Settings page: its sections, rows, forms and the model list. Tokens only -- no color is
- * defined here, and nothing here fills anything cyan: the page's one cyan fill is the next-step band's
+ * defined here, and nothing here fills anything gold: the page's one gold fill is the next-step band's
  * button (components/paper/NextStepBand.tsx), so every button on this page is the global outlined
  * button, a quiet text button, or a link. Phone rules sit under the shell's own 960px breakpoint. */
 
@@ -563,8 +563,8 @@ button.bj-set-action {
 
 /* A row is a native radio, so the list is one tab stop and the arrow keys move through it. The radio
    itself is hidden; the row shows the choice the way every chosen item in the app is shown -- the
-   maroon fill with ivory text, and weight 600 -- set here from :checked because a native radio's
-   state is not an ARIA attribute the shared .bj-selectable rule reads. Focus is the separate cyan
+   royal fill with ivory text, and weight 600 -- set here from :checked because a native radio's
+   state is not an ARIA attribute the shared .bj-selectable rule reads. Focus is the separate link-blue
    ring, drawn inside the row so the scroller does not clip it. */
 .bj-set-model {
   position: relative;

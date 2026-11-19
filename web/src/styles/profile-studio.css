@@ -4,8 +4,8 @@
  * layout" and the application workspace embeds the same components, so these rules depend on no parent
  * class: each component imports this file.
  *
- * Tokens only -- no color is defined here -- and no rule fills anything cyan: the page's one cyan fill is
- * the next-step band's button. Selection is the shared primitive (.bj-selectable, tokens.css): a maroon
+ * Tokens only -- no color is defined here -- and no rule fills anything gold: the page's one gold fill is
+ * the next-step band's button. Selection is the shared primitive (.bj-selectable, tokens.css): a royal
  * fill with the ARIA state. Under 960px (the shell's phone breakpoint) every control is at least 44px
  * tall and the entry dialog is a full-width sheet. */
 
@@ -98,7 +98,7 @@
 }
 
 a.bj-contact-chip {
-  color: var(--bj-cyan);
+  color: var(--bj-link);
 }
 
 .bj-studio-note {
@@ -215,7 +215,7 @@ a.bj-contact-chip {
   outline: none;
 }
 
-/* Save in a dialog is an outlined button like every other: the page's one cyan fill is the band's. It
+/* Save in a dialog is an outlined button like every other: the page's one gold fill is the band's. It
    is told apart from Cancel by weight and a firmer outline, not by a fill. */
 button.bj-dialog-confirm {
   border-color: var(--bj-text);

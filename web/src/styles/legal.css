@@ -103,7 +103,7 @@
   margin: 2px 0 0;
 }
 
-/* A link inside a sentence is told apart by an underline, not by colour alone: cyan beside ivory or
+/* A link inside a sentence is told apart by an underline, not by colour alone: link blue beside ivory or
    muted text is about 1.5:1, under the 3:1 WCAG 1.4.1 asks for when colour is the only cue. Link lists
    (the table of contents) keep the plain style. `ul`, not `li`, so the table of contents (an `ol`)
    stays plain. */
@@ -117,7 +117,7 @@
 .bj-legal p a:hover,
 .bj-legal ul a:hover,
 .bj-legal dd a:hover {
-  color: var(--bj-cyan-hover);
+  color: var(--bj-link-hover);
   text-decoration-thickness: 2px;
 }
 

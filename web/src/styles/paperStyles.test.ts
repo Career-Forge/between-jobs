@@ -53,10 +53,10 @@ describe("paper.css", () => {
     expect([...used].filter((name) => !defined.has(name))).toEqual([]);
   });
 
-  it("never fills anything cyan: the band's fill comes from .bj-primary, the one primary class", () => {
+  it("never fills anything gold: the band's fill comes from .bj-primary, the one primary class", () => {
     for (const rule of rulesOf(paperCss)) {
       for (const property of ["background", "background-color"]) {
-        expect(rule.declarations[property] ?? "").not.toContain("--bj-cyan");
+        expect(rule.declarations[property] ?? "").not.toContain("--bj-primary");
       }
     }
   });
@@ -94,7 +94,7 @@ describe("the trail line", () => {
   it("holds the receipt in a bounded well on the canvas color, in mono", () => {
     const well = declarationsFor(base, ".bj-receipt");
     expect(well.background).toBe("var(--bj-bg)");
-    expect(resolve(well.background)).toBe("#070607");
+    expect(resolve(well.background)).toBe("#05060a");
     expect(well["max-height"]).toBe("240px");
     expect(well.overflow).toBe("auto");
     expect(well["font-family"]).toBe("var(--bj-font-mono)");
@@ -158,9 +158,9 @@ describe("the next-step band", () => {
     expect(declarationsFor(phone, ".bj-band a.bj-band-action").width).toBe("100%");
   });
 
-  it("draws the locked button as a dashed cyan outline, not a fill", () => {
+  it("draws the locked button as a dashed gold outline, not a fill", () => {
     const locked = declarationsFor(base, "button.bj-band-locked");
-    expect(locked.border).toBe("1px dashed var(--bj-cyan)");
+    expect(locked.border).toBe("1px dashed var(--bj-primary)");
     expect(locked.background).toBe("transparent");
   });
 

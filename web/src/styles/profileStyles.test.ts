@@ -9,7 +9,7 @@ import profileCss from "./profile.css?raw";
 import studioCss from "./profile-studio.css?raw";
 
 // profile.css and profile-studio.css are read as text (there is no layout engine in the test run). What they
-// pin is what the Profile page rests on: tokens only, no cyan fill, the phone's 44px targets, user text that
+// pin is what the Profile page rests on: tokens only, no gold fill, the phone's 44px targets, user text that
 // wraps inside its column, and that every class the components use has a rule somewhere.
 
 const SHEETS: Record<string, string> = { "profile.css": profileCss, "profile-studio.css": studioCss };
@@ -44,10 +44,10 @@ describe.each(Object.entries(SHEETS))("%s", (_name, css) => {
     expect([...used].filter((name) => !defined.has(name))).toEqual([]);
   });
 
-  it("never fills anything cyan: the next-step band's button is the page's one cyan fill", () => {
+  it("never fills anything gold: the next-step band's button is the page's one gold fill", () => {
     for (const rule of rulesOf(css)) {
       for (const property of ["background", "background-color"]) {
-        expect(rule.declarations[property] ?? "", rule.selectors.join(", ")).not.toContain("--bj-cyan");
+        expect(rule.declarations[property] ?? "", rule.selectors.join(", ")).not.toContain("--bj-primary");
       }
     }
   });

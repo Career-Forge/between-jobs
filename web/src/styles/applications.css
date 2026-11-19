@@ -1,7 +1,7 @@
 /* Applications and Practice: the cards of the list and the board, the phone's one-status-at-a-time
  * list, the two tracking forms and the Practice pointer (pages/Applications.tsx, pages/Practice.tsx,
  * components/applications/, components/ApplicationsBoard.tsx). Tokens only -- no color is defined
- * here -- and no rule fills anything cyan: the page's one cyan fill is the next-step band's button.
+ * here -- and no rule fills anything gold: the page's one gold fill is the next-step band's button.
  *
  * Widths. The list is a column of at most 880px. The board takes the whole content column (from 1280px
  * the shell's 960px cap is lifted for this page) and its seven columns scroll inside their own row,

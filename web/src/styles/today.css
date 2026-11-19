@@ -1,6 +1,6 @@
 /* Today: the feed rows, the item the band holds, the setup checklist and the "In the background"
  * trail (pages/Today.tsx, components/today/). Tokens only -- no color is defined here -- and no rule
- * fills anything cyan: the page's one cyan fill is the next-step band's button.
+ * fills anything gold: the page's one gold fill is the next-step band's button.
  *
  * Widths. From 1280px the page has a right margin of 280px (the background trail) beside a feed no
  * wider than 880px. Under 1280px there is no margin: the same trail is one disclosure line under the
@@ -26,7 +26,7 @@
     position: sticky;
     top: var(--bj-space-5);
     padding-left: var(--bj-space-4);
-    border-left: 1px solid var(--bj-maroon);
+    border-left: 1px solid var(--bj-royal);
   }
 }
 

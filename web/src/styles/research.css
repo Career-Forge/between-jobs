@@ -5,7 +5,7 @@
  * only what these sections add: a list of items, the evidence line, a chip, a draft well and the practice
  * answer rows.
  *
- * Tokens only -- no color is defined here -- and no rule fills anything cyan: the page's one cyan fill is
+ * Tokens only -- no color is defined here -- and no rule fills anything gold: the page's one gold fill is
  * the next-step band's button, and these sections add none. Gold is evidence (a model's reading, never a
  * checked fact), muted is plain code and "not set", red is for a real failure and lives in the state
  * views. Selection is not used here.

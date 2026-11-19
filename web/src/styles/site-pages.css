@@ -2,8 +2,8 @@
  * Tokens only. Both are one reading column on the public layout's 1200px page, left-aligned with the
  * header and the footer, and both are drawn inside the signed-in shell too, so nothing here depends on the
  * public frame. Every grid or flex child that holds text can shrink (min-width: 0) and wraps long words, so
- * nothing pushes a 375px phone sideways. Nothing here is filled cyan: the public header's Create account
- * is the one cyan fill on these pages, and the GitHub link is outlined. */
+ * nothing pushes a 375px phone sideways. Nothing here is filled gold: the public header's Create account
+ * is the one gold fill on these pages, and the GitHub link is outlined. */
 
 .bj-site {
   display: flex;
@@ -60,7 +60,7 @@
   color: var(--bj-text-muted);
 }
 
-/* A link inside a sentence is told apart by an underline, not by colour alone: cyan beside ivory or muted
+/* A link inside a sentence is told apart by an underline, not by colour alone: link blue beside ivory or muted
    text is about 1.5:1, under the 3:1 WCAG 1.4.1 asks for when colour is the only cue. */
 .bj-site p a {
   text-decoration: underline;
@@ -68,7 +68,7 @@
 }
 
 .bj-site p a:hover {
-  color: var(--bj-cyan-hover);
+  color: var(--bj-link-hover);
   text-decoration-thickness: 2px;
 }
 

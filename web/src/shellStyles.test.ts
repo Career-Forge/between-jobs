@@ -14,8 +14,8 @@ const phone = (selector: string): Record<string, string> => declarationsFor(phon
 const size = (value: string | undefined): number => Number.parseFloat(px(value ?? "NaN"));
 
 describe("the rail", () => {
-  it("is 220px wide, stays in view while the page scrolls, and leaves no room for a horizontal scroll", () => {
-    expect(base(".bj-rail")).toMatchObject({ width: "220px", position: "sticky", top: "0", height: "100vh", "overflow-y": "auto" });
+  it("is 232px wide, stays in view while the page scrolls, and leaves no room for a horizontal scroll", () => {
+    expect(base(".bj-rail")).toMatchObject({ width: "232px", position: "sticky", top: "0", height: "100vh", "overflow-y": "auto" });
     expect(base(".bj-rail").flex).toBe("none");
   });
 
@@ -52,7 +52,7 @@ describe("under 960px", () => {
     expect(phone(".bj-shell")["flex-direction"]).toBe("column");
   });
 
-  it("pads the page 32px rather than 48px up to 1279px, where the content column is still 740px at 1024", () => {
+  it("pads the page 32px rather than 48px up to 1279px, where the content column is still 728px at 1024", () => {
     const mid = blockOf(appCss, "@media (max-width: 1279px)") ?? "";
     expect(declarationsFor(mid, ".bj-main").padding).toBe("40px 32px");
     expect(base(".bj-main").padding).toBe("40px 48px");

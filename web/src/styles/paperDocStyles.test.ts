@@ -6,7 +6,7 @@ import docCss from "./paper-doc.css?raw";
 
 // paper-doc.css is read as text (the test run has no layout engine). It pins what can be measured from
 // the rules: the margin, the measures, the sizes the layout is built to, that it defines no color of its own and
-// that it never fills anything cyan.
+// that it never fills anything gold.
 
 const resolve = tokenResolver(tokensCss);
 const base = withoutMedia(docCss);
@@ -33,10 +33,10 @@ describe("paper-doc.css", () => {
     expect([...used].filter((name) => !defined.has(name))).toEqual([]);
   });
 
-  it("never fills anything cyan: the page's one cyan fill is the band's button", () => {
+  it("never fills anything gold: the page's one gold fill is the band's button", () => {
     for (const rule of rulesOf(docCss)) {
       for (const property of ["background", "background-color"]) {
-        expect(rule.declarations[property] ?? "").not.toContain("--bj-cyan");
+        expect(rule.declarations[property] ?? "").not.toContain("--bj-primary");
       }
     }
   });
@@ -66,10 +66,10 @@ describe("the document layout and its trail margin", () => {
     expect(block["column-gap"]).toBe("var(--bj-doc-gap)");
   });
 
-  it("draws the margin's rule as one 1px maroon hairline, 280px from the right edge, and never as an indicator", () => {
+  it("draws the margin's rule as one 1px royal hairline, 280px from the right edge, and never as an indicator", () => {
     const rule = decl(".bj-doc--margin::before");
     expect(rule.width).toBe("1px");
-    expect(rule.background).toBe("var(--bj-maroon)");
+    expect(rule.background).toBe("var(--bj-royal)");
     expect(rule.left).toBe("calc(100% - var(--bj-doc-margin))");
     expect(rule["pointer-events"]).toBe("none");
   });
