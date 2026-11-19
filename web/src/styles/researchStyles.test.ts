@@ -5,7 +5,7 @@ import { blockOf, declarationsFor, rulesOf, tokenResolver, withoutMedia } from "
 import researchCss from "./research.css?raw";
 
 // research.css is read as text. It pins what can be measured from the rules: that it defines no color of
-// its own, never fills anything cyan (the page's one cyan fill is the next-step band's), keeps evidence
+// its own, never fills anything gold (the page's one gold fill is the next-step band's), keeps evidence
 // gold and never green, and the touch targets the phone needs.
 
 const resolve = tokenResolver(tokensCss);
@@ -39,10 +39,10 @@ describe("research.css", () => {
     expect([...used].filter((name) => !defined.has(name))).toEqual([]);
   });
 
-  it("never fills anything cyan, and uses no green or red for evidence", () => {
+  it("never fills anything gold, and uses no green or red for evidence", () => {
     for (const rule of rulesOf(researchCss)) {
       for (const property of ["background", "background-color"]) {
-        expect(rule.declarations[property] ?? "").not.toContain("--bj-cyan");
+        expect(rule.declarations[property] ?? "").not.toContain("--bj-primary");
         expect(rule.declarations[property] ?? "").not.toContain("--bj-emerald");
         expect(rule.declarations[property] ?? "").not.toContain("--bj-danger");
       }

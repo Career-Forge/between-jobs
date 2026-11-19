@@ -1,6 +1,6 @@
 /* The Hiring signals page: the search form, the saved searches and the saved posts, as list-like
  * sections with hairline rules (pages/HiringSignals.tsx, components/HiringSignals*). Tokens only -- no
- * color is defined here -- and no rule fills anything cyan: the page's one cyan fill is the next-step
+ * color is defined here -- and no rule fills anything gold: the page's one gold fill is the next-step
  * band's button.
  *
  * The result cards and their embeds are shared with the per-application panel and keep the card rules

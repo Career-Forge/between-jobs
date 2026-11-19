@@ -5,7 +5,7 @@
  *
  * It is a document, not a set of cards: blocks are separated by space and hairlines, the headings are
  * the serif, and the trail lines sit in the right margin (paper-doc.css). Tokens only -- no color is
- * defined here -- and no rule fills anything cyan: the page's one cyan fill is the next-step band's
+ * defined here -- and no rule fills anything gold: the page's one gold fill is the next-step band's
  * button. Selection is the shared primitive (tokens.css). Under 960px (the shell's phone breakpoint)
  * every control is at least 44px tall, and user text wraps inside its column rather than widening the
  * page. */
@@ -467,7 +467,7 @@
   overflow-wrap: anywhere;
 }
 
-/* A link out is a link: cyan text in an outline, never a fill. */
+/* A link out is a link: link-blue text in an outline, never a fill. */
 .bj-link-chip {
   padding: 3px 10px;
   border: 1px solid var(--bj-outline);

@@ -6,7 +6,7 @@ import todayCss from "./today.css?raw";
 import pageSource from "../pages/Today.tsx?raw";
 
 // today.css is read as text (there is no layout engine in the test run). What it pins is what the page
-// rests on: the margin at 1280px and up, the 44px targets on a phone, that no rule fills anything cyan,
+// rests on: the margin at 1280px and up, the 44px targets on a phone, that no rule fills anything gold,
 // that it defines no color of its own, and that the held-back card's only red is a mark.
 
 // Every block under one query, joined: a section of the file keeps its own query beside its rules, so
@@ -55,10 +55,10 @@ describe("today.css", () => {
     expect([...used].filter((name) => !defined.has(name))).toEqual([]);
   });
 
-  it("never fills anything cyan: the band's button is the page's one cyan fill", () => {
+  it("never fills anything gold: the band's button is the page's one gold fill", () => {
     for (const rule of rulesOf(todayCss)) {
       for (const property of ["background", "background-color"]) {
-        expect(rule.declarations[property] ?? "").not.toContain("--bj-cyan");
+        expect(rule.declarations[property] ?? "").not.toContain("--bj-primary");
       }
     }
   });
@@ -73,10 +73,10 @@ describe("today.css", () => {
 });
 
 describe("the margin", () => {
-  it("is 280px beside a feed of at most 880px, from 1280px up, with a 1px maroon rule on its left", () => {
+  it("is 280px beside a feed of at most 880px, from 1280px up, with a 1px royal rule on its left", () => {
     expect(declarationsFor(wide, ".bj-today-grid")["grid-template-columns"]).toBe("minmax(0, 880px) 280px");
     const margin = declarationsFor(wide, ".bj-today-margin");
-    expect(margin["border-left"]).toBe("1px solid var(--bj-maroon)");
+    expect(margin["border-left"]).toBe("1px solid var(--bj-royal)");
     expect(todayCss).toMatch(/@media \(min-width: 1280px\)/);
   });
 

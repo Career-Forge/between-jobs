@@ -1,6 +1,6 @@
 /* Discover: the filter form, the saved-searches row, the toolbar, the status block and the result rows
  * with their fit blocks (pages/Discover.tsx, components/discover/). Tokens only -- no color is defined
- * here -- and no rule fills anything cyan: the page's one cyan fill is the next-step band's button.
+ * here -- and no rule fills anything gold: the page's one gold fill is the next-step band's button.
  *
  * Top to bottom the page is: the band, the filter form, one folded row for saved searches, then the
  * results. In the results section the order is the status block (what the search itself said: failures,
@@ -164,13 +164,13 @@
   overflow-wrap: anywhere;
 }
 
-/* The elapsed counter of a running search, beside the band's sentence: the one cyan text that is
+/* The elapsed counter of a running search, beside the band's sentence: the one link-blue text that is
    live, in the mono face. Text only -- never a fill. */
 .bj-disc-timer {
   margin: 0;
   font-family: var(--bj-font-mono);
   font-size: var(--bj-text-body);
-  color: var(--bj-cyan);
+  color: var(--bj-link);
 }
 
 .bj-disc-results {

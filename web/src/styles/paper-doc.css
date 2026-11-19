@@ -1,7 +1,7 @@
 /* Document-page chrome: the layout with its trail margin, the section chapter and jump bar, and the
  * score, claim and checklist patterns (components/paper/DocumentLayout, JumpBar, SectionChapter,
  * SegmentedBar, ScoreBlock, ClaimRow, ChecklistRow). Tokens only -- no color is defined here -- and no
- * rule fills anything cyan: the page's one cyan fill is the next-step band's button.
+ * rule fills anything gold: the page's one gold fill is the next-step band's button.
  *
  * Widths are NOT repeated here. DocumentLayout and JumpBar read the viewport in script
  * (useDocumentMode: 1280px for the margin, the shell's 959px for a phone) and put the answer on the
@@ -45,7 +45,7 @@
   max-width: none;
 }
 
-/* The margin's 1px maroon rule runs the whole height of the document in one piece, through the
+/* The margin's 1px royal rule runs the whole height of the document in one piece, through the
    chapter headings too, rather than being cut up by whatever each block's margin cell happens to hold.
    A hairline, never an indicator for selection. */
 .bj-doc--margin::before {
@@ -55,7 +55,7 @@
   bottom: 0;
   left: calc(100% - var(--bj-doc-margin));
   width: 1px;
-  background: var(--bj-maroon);
+  background: var(--bj-royal);
   pointer-events: none;
 }
 

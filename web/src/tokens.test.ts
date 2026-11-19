@@ -26,49 +26,58 @@ function contrast(a: string, b: string): number {
 }
 
 describe("the palette contract", () => {
-  it("is unchanged", () => {
+  it("is the Regalia palette of the Royal Atelier boards", () => {
     expect({
       bg: token("--bj-bg"),
       surface: token("--bj-surface"),
       raised: token("--bj-surface-raised"),
+      overlay: token("--bj-surface-overlay"),
       border: token("--bj-border"),
       text: token("--bj-text"),
       muted: token("--bj-text-muted"),
-      maroon: token("--bj-maroon"),
-      maroonHover: token("--bj-maroon-hover"),
+      royal: token("--bj-royal"),
+      royalHover: token("--bj-royal-hover"),
       gold: token("--bj-gold"),
-      cyan: token("--bj-cyan"),
-      cyanHover: token("--bj-cyan-hover"),
+      goldHover: token("--bj-gold-hover"),
+      link: token("--bj-link"),
       emerald: token("--bj-emerald"),
       violet: token("--bj-violet"),
       danger: token("--bj-danger"),
       focus: token("--bj-focus-ring"),
     }).toEqual({
-      bg: "#070607",
-      surface: "#100d0f",
-      raised: "#171216",
-      border: "#34252b",
-      text: "#f2eadf",
-      muted: "#a99da0",
-      maroon: "#641e2e",
-      maroonHover: "#7a2839",
-      gold: "#c7a15a",
-      cyan: "#38d6d0",
-      cyanHover: "#55dfda",
-      emerald: "#3cb878",
+      bg: "#05060a",
+      surface: "#0b1430",
+      raised: "#122047",
+      overlay: "#1a2c5e",
+      border: "#1c2b55",
+      text: "#eef2fa",
+      muted: "#a6b3d1",
+      royal: "#2b50c8",
+      royalHover: "#3159d2",
+      gold: "#e8b84a",
+      goldHover: "#fbc750",
+      link: "#9db7ff",
+      emerald: "#3dd6a0",
       violet: "#9a7be8",
-      danger: "#e25555",
-      focus: "#38d6d0",
+      danger: "#ff7a8a",
+      focus: "#9db7ff",
     });
+  });
+
+  it("makes gold the primary fill, with near-black ink, and links the link blue", () => {
+    expect(token("--bj-primary")).toBe(token("--bj-gold"));
+    expect(token("--bj-primary-hover")).toBe(token("--bj-gold-hover"));
+    expect(token("--bj-primary-ink")).toBe("#1a1304");
+    expect(token("--bj-link-hover")).toBe(token("--bj-text"));
   });
 });
 
 describe("what was added", () => {
   it("names the outline, the brand dot and the selection primitive", () => {
-    expect(token("--bj-outline")).toBe("#7d6870");
-    expect(token("--bj-brand-dot")).toBe("#e0414f");
-    expect(token("--bj-selected-bg")).toBe(token("--bj-maroon"));
-    expect(token("--bj-selected-bg-hover")).toBe(token("--bj-maroon-hover"));
+    expect(token("--bj-outline")).toBe("#6c86c9");
+    expect(token("--bj-brand-dot")).toBe(token("--bj-gold"));
+    expect(token("--bj-selected-bg")).toBe(token("--bj-royal"));
+    expect(token("--bj-selected-bg-hover")).toBe(token("--bj-royal-hover"));
     expect(token("--bj-selected-text")).toBe(token("--bj-text"));
     expect(token("--bj-hover-bg")).toBe(token("--bj-surface"));
     expect(token("--bj-hover-bg-raised")).toBe(token("--bj-surface-raised"));
@@ -124,14 +133,14 @@ describe("what was added", () => {
     expect(rootBlock).toContain("color-scheme: dark;");
   });
 
-  it("uses the brand dot for the wordmark's dot and nothing else (red still means failure)", () => {
+  it("uses the brand dot for the wordmark's dot and nothing else", () => {
     expect(appCss.match(/var\(--bj-brand-dot\)/g)).toHaveLength(1);
     expect(declarationsFor(appCss, ".bj-wordmark-dot").background).toBe("var(--bj-brand-dot)");
   });
 });
 
 describe("selection and buttons", () => {
-  it("turns a chosen control into a maroon fill with ivory text and weight 600, and nothing else", () => {
+  it("turns a chosen control into a royal fill with ivory text and weight 600, and nothing else", () => {
     // The unconditional rules only: the forced-colors block (tested below) restates the fill.
     const selected = declarationsFor(withoutMedia(tokensCss), '.bj-selectable[aria-current="page"]');
     expect(selected).toEqual({
@@ -162,9 +171,9 @@ describe("selection and buttons", () => {
     expect(declarationsFor(appCss, "a.bj-button-link").border).toBe("1px solid var(--bj-outline)");
   });
 
-  it("fills only the primary: the cyan fill is on .bj-primary and its link twin, nowhere else", () => {
+  it("fills only the primary: the gold primary fill is on .bj-primary and its link twin, nowhere else", () => {
     const filled = [...rulesOf(tokensCss), ...rulesOf(appCss)]
-      .filter((r) => /var\(--bj-cyan(-hover)?\)/.test(r.declarations.background ?? ""))
+      .filter((r) => /var\(--bj-primary(-hover)?\)/.test(r.declarations.background ?? ""))
       .flatMap((r) => r.selectors);
     expect([...new Set(filled)].sort()).toEqual(
       ["a.bj-button-link-primary", "a.bj-button-link-primary:hover", "button.bj-primary", "button.bj-primary:hover"].sort(),
@@ -199,7 +208,7 @@ describe("selection and buttons", () => {
 });
 
 describe("forced colors", () => {
-  // Windows High Contrast replaces author colors, and a maroon fill with no other cue (the design
+  // Windows High Contrast replaces author colors, and a royal fill with no other cue (the design
   // forbids underlines and edge bars) would vanish: every tab would look the same as the chosen one.
   const selectedStates = ["page", "location"].map((v) => `[aria-current="${v}"]`).concat(["pressed", "selected", "checked"].map((v) => `[aria-${v}="true"]`));
 
@@ -241,8 +250,8 @@ describe("motion", () => {
 // Every text and non-text pair this work introduced, with the ratio WCAG asks for: 4.5 for text, 3 for
 // large text (24px and up) and for the lines and shapes a person has to see.
 const PAIRS: [label: string, foreground: string, background: string, minimum: number][] = [
-  ["selected item: ivory on maroon", "--bj-selected-text", "--bj-selected-bg", 4.5],
-  ["selected item, hovered: ivory on maroon hover", "--bj-selected-text", "--bj-selected-bg-hover", 4.5],
+  ["selected item: ivory on royal", "--bj-selected-text", "--bj-selected-bg", 4.5],
+  ["selected item, hovered: ivory on royal hover", "--bj-selected-text", "--bj-selected-bg-hover", 4.5],
   ["rail item at rest: muted on canvas", "--bj-text-muted", "--bj-bg", 4.5],
   ["rail item hovered: ivory on surface", "--bj-text", "--bj-hover-bg", 4.5],
   ["rail item hovered on a surface: ivory on raised", "--bj-text", "--bj-hover-bg-raised", 4.5],
@@ -252,13 +261,13 @@ const PAIRS: [label: string, foreground: string, background: string, minimum: nu
   ["quiet button on a surface: muted on surface", "--bj-text-muted", "--bj-surface", 4.5],
   ["More sheet: ivory on surface", "--bj-text", "--bj-surface", 4.5],
   ["More sheet: muted on surface", "--bj-text-muted", "--bj-surface", 4.5],
-  ["More sheet link: cyan on surface", "--bj-cyan", "--bj-surface", 4.5],
+  ["More sheet link: link blue on surface", "--bj-link", "--bj-surface", 4.5],
   ["skip link: ivory on raised", "--bj-text", "--bj-surface-raised", 4.5],
   ["secondary button: ivory on canvas", "--bj-text", "--bj-bg", 4.5],
-  ["primary button: dark teal on cyan", "#06211f", "--bj-cyan", 4.5],
-  ["primary button, hovered: dark teal on cyan hover", "#06211f", "--bj-cyan-hover", 4.5],
+  ["primary button: gold ink on gold", "--bj-primary-ink", "--bj-primary", 4.5],
+  ["primary button, hovered: gold ink on gold hover", "--bj-primary-ink", "--bj-primary-hover", 4.5],
   ["danger button: canvas on danger", "--bj-bg", "--bj-danger", 4.5],
-  ["text link: cyan on canvas", "--bj-cyan", "--bj-bg", 4.5],
+  ["text link: link blue on canvas", "--bj-link", "--bj-bg", 4.5],
   ["wordmark (22px and up in places, 21px in the rail): ivory on canvas", "--bj-text", "--bj-bg", 4.5],
   ["focus ring against the canvas", "--bj-focus-ring", "--bj-bg", 3],
   ["focus ring against a surface", "--bj-focus-ring", "--bj-surface", 3],
@@ -270,6 +279,13 @@ const PAIRS: [label: string, foreground: string, background: string, minimum: nu
   ["brand dot against the canvas", "--bj-brand-dot", "--bj-bg", 3],
   ["Discover score numeral: gold on the lifted Strong row's surface", "--bj-gold", "--bj-surface", 4.5],
   ["Discover score numeral: gold on the canvas", "--bj-gold", "--bj-bg", 4.5],
+  ["text link on a raised surface: link blue on raised", "--bj-link", "--bj-surface-raised", 4.5],
+  ["field text: ivory on raised", "--bj-text", "--bj-surface-raised", 4.5],
+  ["field and secondary outline against a raised surface", "--bj-outline", "--bj-surface-raised", 3],
+  ["text on the overlay surface: ivory and muted", "--bj-text-muted", "--bj-surface-overlay", 4.5],
+  ["model mark: violet on surface", "--bj-violet", "--bj-surface", 4.5],
+  ["danger text on surface", "--bj-danger", "--bj-surface", 4.5],
+  ["verified mark: emerald on surface", "--bj-emerald", "--bj-surface", 4.5],
 ];
 
 describe("contrast", () => {

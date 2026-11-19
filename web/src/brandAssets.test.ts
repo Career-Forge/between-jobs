@@ -87,8 +87,8 @@ describe("site.webmanifest", () => {
   it("names the app and paints it the canvas color", () => {
     expect(manifest.name).toBe("Between Jobs");
     expect(manifest.short_name).toBe("Between Jobs");
-    expect(manifest.theme_color).toBe("#070607");
-    expect(manifest.background_color).toBe("#070607");
+    expect(manifest.theme_color).toBe("#05060a");
+    expect(manifest.background_color).toBe("#05060a");
   });
 
   it("lists a 192 and a 512 PNG that exist at those sizes, and are safe to mask", () => {
@@ -128,7 +128,7 @@ describe("index.html", () => {
   });
 
   it("is dark: a theme color and color scheme that match the canvas", () => {
-    expect(metaContent("name", "theme-color")).toBe("#070607");
+    expect(metaContent("name", "theme-color")).toBe("#05060a");
     expect(metaContent("name", "color-scheme")).toBe("dark");
   });
 
@@ -180,7 +180,7 @@ describe("index.html", () => {
   });
 
   it("keeps the inline style that paints the page before any script runs, and adds no inline script", () => {
-    expect(indexHtml).toMatch(/<style>\s*html\s*\{\s*background:\s*#070607;\s*\}\s*<\/style>/);
+    expect(indexHtml).toMatch(/<style>\s*html\s*\{\s*background:\s*#05060a;\s*\}\s*<\/style>/);
     expect(indexHtml).not.toMatch(/<script(?![^>]*\ssrc=)[^>]*>/);
   });
 });

@@ -34,7 +34,7 @@ const PROSE_LINKS: [string, string][] = [
 
 describe("links inside running text", () => {
   it.each(PROSE_LINKS)(
-    "%s is underlined at rest: cyan beside ivory or muted text is about 1.5:1, and WCAG 1.4.1 asks for 3:1 or another cue",
+    "%s is underlined at rest: link blue beside ivory or muted text is about 1.5:1, and WCAG 1.4.1 asks for 3:1 or another cue",
     (selector, css) => {
       expect(declarationsFor(css, selector)["text-decoration"]).toBe("underline");
     },
@@ -43,7 +43,7 @@ describe("links inside running text", () => {
   it.each(PROSE_LINKS)("%s keeps the underline on hover and gets a thicker one", (selector, css) => {
     const hover = declarationsFor(css, `${selector}:hover`);
     expect(hover["text-decoration-thickness"]).toBe("2px");
-    expect(hover.color).toBe("var(--bj-cyan-hover)");
+    expect(hover.color).toBe("var(--bj-link-hover)");
   });
 
   it("leaves link lists and button-styled links plain: the table of contents, the footer's legal row, the header, the buttons", () => {
@@ -114,7 +114,7 @@ describe("the public frame's column", () => {
     expect(declarationsFor(wide, ".bj-public-menu").display).toBe("none");
     // Nothing else takes anything out of the page at any width. In particular nothing hides the way in's
     // box (.bj-public-actions) or Create account inside it: a phone visitor on a page with no hero of its
-    // own would have no cyan fill and no way in without opening the menu.
+    // own would have no gold fill and no way in without opening the menu.
     const hiding = rulesOf(publicCss).filter((rule) => rule.declarations.display === "none").flatMap((rule) => rule.selectors);
     expect(hiding.sort()).toEqual([".bj-public-menu", ".bj-public-menu-button", ".bj-public-signin", ".bj-public-tabs"]);
   });
@@ -131,7 +131,7 @@ describe("the public frame's column", () => {
 
   it("lets the current page in the menu keep the selection style's hover fill: the plain hover fill is only for the other links", () => {
     // `.bj-public-menu a.bj-selectable:hover` is (0,3,1) and tokens.css's `.bj-selectable[aria-current="page"]:hover` is
-    // (0,3,0), so a plain hover rule would replace the maroon fill of the current page with the grey one.
+    // (0,3,0), so a plain hover rule would replace the royal fill of the current page with the grey one.
     const hovers = rulesOf(publicCss).filter((rule) => rule.selectors.some((selector) => selector.includes(".bj-public-menu a.bj-selectable") && selector.endsWith(":hover")));
     for (const rule of hovers) {
       if (rule.declarations.background === undefined) continue;
@@ -141,7 +141,7 @@ describe("the public frame's column", () => {
     expect(declarationsFor(withoutMedia(tokensCss), '.bj-selectable[aria-current="page"]:hover').background).toBe("var(--bj-selected-bg-hover)");
   });
 
-  it("marks the current tab with the selection style (a fill) and never an underline, an edge bar or a maroon line", () => {
+  it("marks the current tab with the selection style (a fill) and never an underline, an edge bar or a royal line", () => {
     const rules = rulesOf(publicCss).filter((rule) => rule.selectors.some((selector) => /bj-public-(tabs|menu)/.test(selector)));
     for (const rule of rules) {
       for (const property of ["text-decoration", "text-decoration-color", "border-bottom", "border-left", "box-shadow"]) {
@@ -335,11 +335,11 @@ describe("colour and motion", () => {
     }
   });
 
-  it("fills nothing cyan: the page's one cyan fill is the next-step band's button", () => {
+  it("fills nothing gold: the page's one gold fill is the next-step band's button", () => {
     for (const [name, css] of Object.entries(ALL)) {
       for (const rule of rulesOf(css)) {
         for (const property of ["background", "background-color"]) {
-          expect(rule.declarations[property] ?? "", `${name} ${rule.selectors.join(", ")}`).not.toContain("--bj-cyan");
+          expect(rule.declarations[property] ?? "", `${name} ${rule.selectors.join(", ")}`).not.toContain("--bj-primary");
         }
       }
     }
@@ -399,7 +399,7 @@ describe("contrast of what the tour and the explainer pages draw", () => {
     const text: [string, string, string][] = [
       ["a tab, and the header's, at rest", token("--bj-text-muted"), token("--bj-bg")],
       ["a hovered tab", token("--bj-text"), token("--bj-surface")],
-      ["the selected tab (ivory on the maroon fill, never muted)", token("--bj-selected-text"), token("--bj-selected-bg")],
+      ["the selected tab (ivory on the royal fill, never muted)", token("--bj-selected-text"), token("--bj-selected-bg")],
       ["a kicker or note on the tour's cards", token("--bj-text-muted"), token("--bj-surface")],
       ["a note on the extension's panel", token("--bj-text-muted"), token("--bj-surface-raised")],
       ["code in a sentence", token("--bj-text"), token("--bj-surface-raised")],
@@ -420,7 +420,7 @@ describe("contrast of what the tour and the explainer pages draw", () => {
     expect(strip["border-top"]).toBeUndefined();
     expect(strip["border-bottom"]).toBeUndefined();
     expect(contrast(token("--bj-outline"), token("--bj-bg"))).toBeGreaterThanOrEqual(3);
-    // The hairline it replaced is far under 3:1, which is why a maroon fill alone does not bound a group.
+    // The hairline it replaced is far under 3:1, which is why a royal fill alone does not bound a group.
     expect(contrast(token("--bj-border"), token("--bj-bg"))).toBeLessThan(3);
     expect(contrast(token("--bj-selected-bg"), token("--bj-bg"))).toBeLessThan(3);
   });

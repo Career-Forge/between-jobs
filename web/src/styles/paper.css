@@ -305,7 +305,7 @@ button.bj-sheet-close {
   gap: var(--bj-space-3);
 }
 
-/* The cyan button's size; its fill comes from .bj-primary or .bj-button-link-primary. The link form is
+/* The gold button's size; its fill comes from .bj-primary or .bj-button-link-primary. The link form is
    named with .bj-band in front on purpose: app.css's plain link-button rule (a.bj-button-link: display
    inline-block, its own padding, radius and size) ties a bare a.bj-band-action on specificity, so
    which one won depended on the order the stylesheets were bundled in, and on a phone the label sat at
@@ -333,12 +333,12 @@ button.bj-band-action,
   cursor: progress;
 }
 
-/* The one disabled-primary case: a dashed cyan outline, not a fill, and it stays focusable. */
+/* The one disabled-primary case: a dashed gold outline, not a fill, and it stays focusable. */
 button.bj-band-locked,
 button.bj-band-locked:hover {
   background: transparent;
-  border: 1px dashed var(--bj-cyan);
-  color: var(--bj-cyan);
+  border: 1px dashed var(--bj-primary);
+  color: var(--bj-primary);
   cursor: not-allowed;
   opacity: 1;
 }

@@ -6,7 +6,7 @@ import { blockOf, declarationsFor, rulesOf, withoutMedia } from "../testing/css"
 import applicationsCss from "./applications.css?raw";
 
 // applications.css is read as text (there is no layout engine in the test run). What it pins is what
-// can be measured in it: no color of its own, no cyan fill, the board scrolling inside itself, the
+// can be measured in it: no color of its own, no gold fill, the board scrolling inside itself, the
 // list's measure, the 44px targets on a phone, and that the old board's rules are gone from app.css.
 
 const code = applicationsCss.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -32,10 +32,10 @@ describe("applications.css", () => {
     expect([...used].filter((name) => !defined.has(name))).toEqual([]);
   });
 
-  it("never fills anything cyan: the page's one cyan fill is the next-step band's button", () => {
+  it("never fills anything gold: the page's one gold fill is the next-step band's button", () => {
     for (const rule of rulesOf(applicationsCss)) {
       for (const property of ["background", "background-color"]) {
-        expect(rule.declarations[property] ?? "").not.toContain("--bj-cyan");
+        expect(rule.declarations[property] ?? "").not.toContain("--bj-primary");
       }
     }
   });

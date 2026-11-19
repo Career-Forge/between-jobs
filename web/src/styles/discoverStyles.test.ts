@@ -22,7 +22,7 @@ import hiringResults from "../components/HiringSignalsTabResults.tsx?raw";
 import arrangeSource from "../lib/discoverArrange.ts?raw";
 
 // The Discover, saved-search and Hiring signals stylesheets are read as text (there is no layout engine
-// in the test run). What they pin is what the pages rest on: no colors of their own, no cyan fill, the
+// in the test run). What they pin is what the pages rest on: no colors of their own, no gold fill, the
 // one breakpoint, the 44px targets on a phone, the row layout, and that long text wraps. The markup
 // that uses them has no inline style attribute, because the production policy allows styles from the
 // site's own origin only.
@@ -63,10 +63,10 @@ describe.each(sheets)("%s", (name, css) => {
     expect([...used].filter((token) => !defined.has(token))).toEqual([]);
   });
 
-  it("never fills anything cyan: the band's button is the page's one cyan fill", () => {
+  it("never fills anything gold: the band's button is the page's one gold fill", () => {
     for (const rule of rulesOf(css)) {
       for (const property of ["background", "background-color"]) {
-        expect(rule.declarations[property] ?? "", `${name} ${rule.selectors.join(", ")}`).not.toContain("--bj-cyan");
+        expect(rule.declarations[property] ?? "", `${name} ${rule.selectors.join(", ")}`).not.toContain("--bj-primary");
       }
     }
   });
@@ -210,9 +210,9 @@ describe("the Discover rows", () => {
     expect(declarationsFor(phone, ".bj-discover .bj-state-missing a")["min-height"]).toBe("44px");
   });
 
-  it("draw the elapsed counter in the mono face and cyan as text, never a fill", () => {
+  it("draw the elapsed counter in the mono face and link blue as text, never a fill", () => {
     const timer = declarationsFor(base, ".bj-disc-timer");
-    expect(timer.color).toBe("var(--bj-cyan)");
+    expect(timer.color).toBe("var(--bj-link)");
     expect(timer["font-family"]).toBe("var(--bj-font-mono)");
     expect(timer.background).toBeUndefined();
   });
@@ -434,9 +434,9 @@ describe("the toolbar", () => {
     expect(chip["min-height"]).toBe("44px");
   });
 
-  it("defines no selection style of its own: the chosen chip is the shared maroon fill", () => {
+  it("defines no selection style of its own: the chosen chip is the shared royal fill", () => {
     const code = discoverCss.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(code).not.toMatch(/aria-pressed|\.bj-selectable|--bj-maroon|--bj-selected/);
+    expect(code).not.toMatch(/aria-pressed|\.bj-selectable|--bj-royal|--bj-selected/);
   });
 
   it("uses only the pattern the shared stylesheet defines for a group of choices", () => {
@@ -485,9 +485,9 @@ describe("the saved-searches row and the form's actions", () => {
     expect(declarationsFor(base, ".bj-disc-form-actions > .bj-quiet")["padding-inline"]).toBe("0");
   });
 
-  it("uses no color but the muted and ordinary text colors, and no gold, cyan or maroon", () => {
+  it("uses no color but the muted and ordinary text colors, and no gold, gold or royal", () => {
     for (const selector of [".bj-disc-saved-title", ".bj-disc-saved-hint", ".bj-disc-saved-glyph", ".bj-disc-saved-toggle"]) {
-      for (const value of Object.values(declarationsFor(base, selector))) expect(value, selector).not.toMatch(/--bj-(?:gold|cyan|maroon|violet|emerald|danger)/);
+      for (const value of Object.values(declarationsFor(base, selector))) expect(value, selector).not.toMatch(/--bj-(?:gold|gold|royal|violet|emerald|danger)/);
     }
   });
 });

@@ -1,8 +1,8 @@
 /* The sign-in, register and password-reset screen (pages/Login.tsx). Tokens only. One column that
  * fits a 375px phone: the wordmark, the next-step band (whose button submits the form), then the card
  * with the fields. Inputs are 16px so a phone does not zoom the page when one takes focus, and every
- * control is at least 44px tall. The band holds this screen's one cyan fill; the Google button is
- * outlined. The reset form, which has no band, keeps its own cyan button. */
+ * control is at least 44px tall. The band holds this screen's one gold fill; the Google button is
+ * outlined. The reset form, which has no band, keeps its own gold button. */
 
 .bj-login {
   display: flex;
@@ -135,7 +135,7 @@
 }
 
 .bj-consent-notice a:hover {
-  color: var(--bj-cyan-hover);
+  color: var(--bj-link-hover);
   text-decoration-thickness: 2px;
 }
 

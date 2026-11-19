@@ -7,7 +7,7 @@
  * site's four tabs and Sign in. The tabs fold; the way in does not, so a visitor on a phone sees Create
  * account on every public page, not only the home page's hero. From 960px up the button and the panel go
  * and the tabs, Sign in and Create account are a row beside the wordmark. The tab for the page you are on is the selection style from tokens.css (.bj-selectable with
- * aria-current="page"): a maroon fill, never an underline. */
+ * aria-current="page"): a royal fill, never an underline. */
 
 .bj-public {
   min-height: 100vh;
@@ -139,7 +139,7 @@
   min-height: 32px;
 }
 
-/* A link inside a sentence is told apart by an underline, not by colour alone: cyan beside ivory or
+/* A link inside a sentence is told apart by an underline, not by colour alone: link blue beside ivory or
    muted text is about 1.5:1, under the 3:1 WCAG 1.4.1 asks for when colour is the only cue. Link
    lists (the footer's legal row, the header) and button-styled links keep the plain style. */
 .bj-public-footer p a {
@@ -148,7 +148,7 @@
 }
 
 .bj-public-footer p a:hover {
-  color: var(--bj-cyan-hover);
+  color: var(--bj-link-hover);
   text-decoration-thickness: 2px;
 }
 

@@ -1,13 +1,14 @@
-/* Between Jobs design tokens -- the Obsidian Atlas hybrid.
+/* Between Jobs design tokens -- Regalia: royal black and navy, with gold.
  *
- * Source of truth: the private design book's foundation tokens and
- * semantic color contract. Dark is the canonical design; light mode is
- * not a launch requirement.
+ * Source of truth: the "Royal Atelier" design boards. Every text pair is
+ * checked here and in tokens.test.ts. Dark is the canonical design; light
+ * mode is not a launch requirement.
  *
  * SEMANTIC CONTRACT (which color may mean what -- never decorative):
- *   maroon   brand structure, navigation, selected context
- *   gold     evidence, provenance, scores, review, uncertainty
- *   cyan     primary action, links, live state, sync
+ *   royal    selection, brand structure, selected context
+ *   gold     the one primary action per screen; also scores, evidence and
+ *            review, drawn as outlines (a filled gold is always the action)
+ *   link     text links, focus, live state
  *   emerald  verified fact, completed step, successful deterministic action
  *   violet   AI, memory, voice, MCP -- ONLY where a model acted
  *   red      actual failure, destructive action, security warning
@@ -17,43 +18,53 @@
  */
 
 :root {
-  --bj-bg: #070607;
-  --bj-surface: #100d0f;
-  --bj-surface-raised: #171216;
-  --bj-border: #34252b;
-  --bj-text: #f2eadf;
-  --bj-text-muted: #a99da0;
+  /* The surface ladder: ground, then panel, raised and overlay, each one
+   * step lighter. Hairline is decorative only: it never has to be seen to
+   * be understood, so it does not need 3:1. */
+  --bj-bg: #05060a;
+  --bj-surface: #0b1430;
+  --bj-surface-raised: #122047;
+  --bj-surface-overlay: #1a2c5e;
+  --bj-border: #1c2b55;
+  --bj-text: #eef2fa;
+  --bj-text-muted: #a6b3d1;
 
-  --bj-maroon: #641e2e;
-  --bj-gold: #c7a15a;
-  --bj-cyan: #38d6d0;
-  --bj-emerald: #3cb878;
+  --bj-royal: #2b50c8;
+  --bj-gold: #e8b84a;
+  --bj-link: #9db7ff;
+  --bj-emerald: #3dd6a0;
   --bj-violet: #9a7be8;
-  --bj-danger: #e25555;
+  --bj-danger: #ff7a8a;
 
   /* Interaction variants (production tokens must include these -- the
    * base values alone are "the visual starting point, not permission to
    * skip contrast testing"). */
-  --bj-maroon-hover: #7a2839;
-  --bj-cyan-hover: #55dfda;
-  --bj-focus-ring: #38d6d0;
+  --bj-royal-hover: #3159d2;
+  --bj-gold-hover: #fbc750;
+  --bj-link-hover: var(--bj-text);
+  --bj-focus-ring: var(--bj-link);
 
-  /* Outline for secondary buttons and for the border around a group of
-   * selectable segments. A maroon fill alone is 1.7:1 against the canvas, so
-   * the group needs this line to read as a group. */
-  --bj-outline: #7d6870;
+  /* The one filled action of a screen: gold with near-black ink. */
+  --bj-primary: var(--bj-gold);
+  --bj-primary-hover: var(--bj-gold-hover);
+  --bj-primary-ink: #1a1304;
 
-  /* The red dot after "Jobs" in the wordmark and the middle of the icon. It is
-   * a brand mark, the one documented exception to "red means failure": it is
-   * never a status, never text, and never appears inside the app's content. */
-  --bj-brand-dot: #e0414f;
+  /* Outline for secondary buttons, fields and the border around a group of
+   * selectable segments: the edge colour, 3:1 or better on every surface up
+   * to raised. */
+  --bj-outline: #6c86c9;
 
-  /* Selection -- one style everywhere: maroon fill, ivory text, weight 600,
+  /* The dot after "Jobs" in the wordmark. Gold, like the action: it is a
+   * brand mark, never a status, never text. */
+  --bj-brand-dot: var(--bj-gold);
+
+  /* Selection -- one style everywhere: royal fill, ivory text, weight 600,
    * plus the ARIA state (aria-current, aria-pressed, aria-selected or
-   * aria-checked). Never an underline, an edge bar, maroon text or a colored
-   * border. Focus is separate and always visible (--bj-focus-ring below). */
-  --bj-selected-bg: var(--bj-maroon);
-  --bj-selected-bg-hover: var(--bj-maroon-hover);
+   * aria-checked). Never an underline, an edge bar, royal text or a colored
+   * border. Only ivory text sits on this fill: muted and gold both fall
+   * under 4.5:1 there. Focus is separate and always visible. */
+  --bj-selected-bg: var(--bj-royal);
+  --bj-selected-bg-hover: var(--bj-royal-hover);
   --bj-selected-text: var(--bj-text);
   /* Hover on something that is not selected: a surface fill, one step up
    * when the control already sits on a surface. */
@@ -62,6 +73,9 @@
 
   --bj-focus-ring-width: 2px;
   --bj-focus-ring-offset: 2px;
+
+  /* Corners: controls and rail rows. */
+  --bj-radius-control: 8px;
 
   /* Spacing, in 4px steps. */
   --bj-space-1: 4px;
@@ -145,7 +159,7 @@ body {
 }
 
 a {
-  color: var(--bj-cyan);
+  color: var(--bj-link);
   text-decoration: none;
 }
 
@@ -154,19 +168,19 @@ a:hover {
 }
 
 /* Buttons come in four weights, so a page can show one thing as the main action:
- *   primary    cyan fill        .bj-primary -- one per page
+ *   primary    gold fill        .bj-primary -- one per page
  *   secondary  outlined         a plain <button>, or .bj-secondary
  *   quiet      text only        .bj-quiet
- *   text link  cyan text        a plain <a>, or .bj-link-button for a button that acts like one
+ *   text link  link-blue text   a plain <a>, or .bj-link-button for a button that acts like one
  * Anything that is not primary stays outlined or plain, so a plain or .bj-quiet button
- * never turns into a second filled cyan one by itself. Which controls carry .bj-primary
+ * never turns into a second filled gold one by itself. Which controls carry .bj-primary
  * (or its link twin, a.bj-button-link-primary) is each page's decision: the rule is one
  * per page, and the page tests pin it for the signed-out pages. */
 button {
   font-family: var(--bj-font-body);
   font-size: var(--bj-text-control);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--bj-radius-control);
   border: 1px solid var(--bj-outline);
   background: transparent;
   color: var(--bj-text);
@@ -203,15 +217,15 @@ main[tabindex="-1"]:focus-visible {
 }
 
 button.bj-primary {
-  background: var(--bj-cyan);
-  border-color: var(--bj-cyan);
-  color: #06211f;
+  background: var(--bj-primary);
+  border-color: var(--bj-primary);
+  color: var(--bj-primary-ink);
   font-weight: 600;
 }
 
 button.bj-primary:hover {
-  background: var(--bj-cyan-hover);
-  border-color: var(--bj-cyan-hover);
+  background: var(--bj-primary-hover);
+  border-color: var(--bj-primary-hover);
 }
 
 button.bj-quiet {
@@ -252,7 +266,7 @@ button[aria-disabled="true"] {
 }
 
 /* Windows High Contrast and other forced-colors modes replace every author color with the person's
- * own palette, which erases the maroon fill that is this design's only selection cue (no underline,
+ * own palette, which erases the royal fill that is this design's only selection cue (no underline,
  * no edge bar). So a chosen item is drawn again in the system's own selection colors -- a fill
  * still, nothing red -- and opts out of the replacement so that fill is the one that shows. */
 @media (forced-colors: active) {
@@ -298,10 +312,10 @@ input,
 textarea {
   font-family: var(--bj-font-body);
   font-size: var(--bj-text-control);
-  background: var(--bj-surface);
+  background: var(--bj-surface-raised);
   color: var(--bj-text);
-  border: 1px solid var(--bj-border);
-  border-radius: 6px;
+  border: 1px solid var(--bj-outline);
+  border-radius: var(--bj-radius-control);
   padding: 9px 12px;
 }
 
@@ -325,7 +339,7 @@ h3 {
   letter-spacing: 0.01em;
 }
 
-/* Thin brass/maroon rules for information structure -- the reference
+/* Thin hairline rules for information structure -- the reference
  * set's dossier motif, instead of card walls. */
 hr {
   border: none;
