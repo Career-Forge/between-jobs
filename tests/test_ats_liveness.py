@@ -8,12 +8,16 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+import pytest
+from place_fixtures import places_gazetteer
 
 from between_jobs.api.ats_liveness import (
     _as_dict,
     _ashby_location,
     _chase,
     _is_listing_page,
+    _parse_url,
+    _plausible_location,
     _probe,
     _probe_ashby,
     _probe_avature,
@@ -25,10 +29,12 @@ from between_jobs.api.ats_liveness import (
     _probe_linkedin,
     _probe_successfactors,
     _probe_workday,
+    _ProbeResult,
     _successfactors_location,
     _workday_cxs_url,
     verify_liveness,
 )
+from between_jobs.api.location_place import Place, read_place
 from between_jobs.api.search_providers import SearchResult
 
 
@@ -109,6 +115,7 @@ async def test_probe_ashby_alive_job_is_kept_with_location() -> None:
 
     assert result.verdict == "keep"
     assert result.location == "Remote (US), USA"
+    assert result.location_source == "ats_api"
 
 
 async def test_probe_ashby_absent_job_id_is_dead() -> None:
@@ -170,6 +177,20 @@ def test_ashby_location_returns_none_when_nothing_present() -> None:
     assert _ashby_location({}) is None
 
 
+def test_ashby_location_that_already_ends_in_its_country_is_still_read_as_one_place() -> None:
+    """The probe appends the posting's country to its location, which may already end in it; the
+    string handed to the location reader must still be the one place it names."""
+    job = {
+        "location": "Austin, TX, United States",
+        "address": {"postalAddress": {"addressCountry": "United States"}},
+    }
+
+    joined = _ashby_location(job)
+
+    assert joined == "Austin, TX, United States, United States"
+    assert read_place(places_gazetteer(), joined) == Place("US", "austin", "tx")
+
+
 # ── Lever ────────────────────────────────────────────────────────────────
 
 _LEVER_REAL_POSTING = {
@@ -190,6 +211,7 @@ async def test_probe_lever_alive_job_is_kept_with_location() -> None:
 
     assert result.verdict == "keep"
     assert result.location == "Massachusetts - Boston"
+    assert result.location_source == "ats_api"
 
 
 async def test_probe_lever_absent_job_id_is_dead() -> None:
@@ -275,6 +297,7 @@ async def test_probe_greenhouse_200_is_kept_with_location() -> None:
 
     assert result.verdict == "keep"
     assert result.location == "Madison, Wisconsin, United States"
+    assert result.location_source == "ats_api"
 
 
 async def test_probe_greenhouse_job_boards_host_variant_is_matched() -> None:
@@ -439,6 +462,30 @@ async def test_probe_workday_200_is_kept_with_location() -> None:
 
     assert result.verdict == "keep"
     assert result.location == "Singapore, South West, Singapore, Singapore"
+    assert result.location_source == "ats_api"
+
+
+async def test_probe_workday_location_that_already_ends_in_its_country_is_read_as_one_place() -> (
+    None
+):
+    http = _http(
+        lambda r: httpx.Response(
+            200,
+            json={
+                "jobPostingInfo": {
+                    "canApply": True,
+                    "location": "Toronto, ON, Canada",
+                    "country": {"descriptor": "Canada"},
+                }
+            },
+        )
+    )
+    url = _url("https://hp.wd5.myworkdayjobs.com/ExternalCareerSite/job/Slug_1")
+
+    result = await _probe_workday(http, url)
+
+    assert result.location == "Toronto, ON, Canada, Canada"
+    assert read_place(places_gazetteer(), result.location) == Place("CA", "toronto", "on")
 
 
 async def test_probe_workday_unconstructible_url_is_inconclusive() -> None:
@@ -621,6 +668,7 @@ async def test_probe_successfactors_alive_page_is_kept_with_location() -> None:
 
     assert result.verdict == "keep"
     assert result.location == "Camana Bay, KY, Cayman Islands"
+    assert result.location_source == "ats_page"
 
 
 async def test_probe_successfactors_closed_job_no_itemtype_is_dead() -> None:
@@ -936,6 +984,38 @@ async def test_probe_non_https_url_is_kept() -> None:
     assert result.verdict == "keep"
 
 
+@pytest.mark.parametrize(
+    "link",
+    [
+        "http://boards.greenhouse.io/acme/jobs/1",  # not https
+        "https:///boards.greenhouse.io/acme/jobs/1",  # no host
+        "https://",
+    ],
+)
+async def test_a_link_the_guard_refuses_is_kept_without_a_request(link: str) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(404)
+
+    result = await _probe(_http(handler), _result(apply_url=link), {}, {})
+
+    assert result.verdict == "keep"
+    assert requests == []
+
+
+@pytest.mark.parametrize("link", ["https://xn--a.example/jobs/1", "https://xn--/jobs/1"])
+def test_parse_url_refuses_a_host_with_a_malformed_international_label(link: str) -> None:
+    """`.host` decodes IDNA and raises UnicodeError for a malformed xn-- label."""
+    assert _parse_url(link) is None
+
+
+@pytest.mark.parametrize("value", ["", "   ", "\n\t", None, 5, ["Austin, TX"]])
+def test_plausible_location_is_none_for_nothing_or_not_a_string(value: object) -> None:
+    assert _plausible_location(value) is None
+
+
 # ── verify_liveness (top-level orchestration) ───────────────────────────
 
 
@@ -1009,6 +1089,195 @@ async def test_verify_liveness_does_not_touch_location_when_no_correction_found(
 
     assert alive[0].location == "Original Location"
     assert alive[0].location_verified is True
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [12345, ["New York", "London"], {"a": 1}, True, "", "   ", "x" * 201, "a" + " " * 40_000 + "b"],
+)
+async def test_verify_liveness_ignores_an_implausible_location(bad: Any) -> None:
+    """A probe reads its location from third-party JSON. Anything that is not a short string
+    leaves the result's own location and verdict alone, so the location filter that runs after
+    this module never has to parse it."""
+    http = _http(lambda r: httpx.Response(200, json={"location": {"name": bad}}))
+    results = [
+        _result(
+            apply_url="https://boards.greenhouse.io/acme/jobs/555",
+            location="Original Location",
+            location_verified=True,
+        )
+    ]
+
+    alive, dead_removed = await verify_liveness(http, results)
+
+    assert dead_removed == 0
+    assert alive[0].location == "Original Location"
+    assert alive[0].location_verified is True
+
+
+@pytest.mark.parametrize("bad", ["New York\x00, NY", "\u202eKroY weN\u202c", "New\u200bYork"])
+async def test_verify_liveness_ignores_a_location_with_unprintable_characters(bad: str) -> None:
+    """A control character, a bidirectional override or a zero-width character has no place in a
+    location a person reads and a database stores, so it is not taken over from the board."""
+    http = _http(lambda r: httpx.Response(200, json={"location": {"name": bad}}))
+    results = [
+        _result(
+            apply_url="https://boards.greenhouse.io/acme/jobs/555",
+            location="Original Location",
+            location_verified=True,
+        )
+    ]
+
+    alive, _dead_removed = await verify_liveness(http, results)
+
+    assert alive[0].location == "Original Location"
+    assert alive[0].location_verified is True
+    assert alive[0].location_source is None
+
+
+async def test_verify_liveness_ignores_a_location_with_a_lone_surrogate() -> None:
+    """JSON can carry a lone UTF-16 surrogate (a client that cuts an emoji in half escapes one),
+    and it cannot be encoded as UTF-8: taken over, it would fail the whole response."""
+    body = b'{"location": {"name": "New York\\ud800"}}'
+    http = _http(lambda r: httpx.Response(200, content=body))
+    results = [
+        _result(
+            apply_url="https://boards.greenhouse.io/acme/jobs/555",
+            location="Original Location",
+            location_verified=True,
+        )
+    ]
+
+    alive, _dead_removed = await verify_liveness(http, results)
+
+    assert alive[0].location == "Original Location"
+    assert alive[0].location_source is None
+    alive[0].location.encode("utf-8")
+
+
+async def test_verify_liveness_collapses_whitespace_in_a_location() -> None:
+    http = _http(lambda r: httpx.Response(200, json={"location": {"name": "  New York,\n\t NY  "}}))
+    results = [_result(apply_url="https://boards.greenhouse.io/acme/jobs/555", location="Old")]
+
+    alive, _dead_removed = await verify_liveness(http, results)
+
+    assert alive[0].location == "New York, NY"
+
+
+_LINKS_A_BROWSER_WOULD_SEND_ELSEWHERE = [
+    "https://evil.example\\@jobs.lever.co/acme/ddad0cc6-1967-458c-a868-e14116ee139c",
+    "https://evil.example\\@jobs.ashbyhq.com/acme/0451eb82-21cd-4d72-8e03-c148c53e745d",
+    "https://evil.example\\@boards.greenhouse.io/acme/jobs/555",
+    "https://evil.example\\@acme.wd5.myworkdayjobs.com/Site/job/Slug_1",
+    "https://user:secret@boards.greenhouse.io/acme/jobs/555",
+    "https://user@boards.greenhouse.io/acme/jobs/555",
+    "https://:secret@boards.greenhouse.io/acme/jobs/555",
+    # No credentials in these: this client keeps the backslash inside the host name, so only the
+    # backslash itself gives them away.
+    "https://evil.example\\.myworkdayjobs.com/Site/job/Slug_1",
+    "https://boards.greenhouse.io\\.evil.example/acme/jobs/555",
+    "https://boards.greenhouse.io/acme/jobs/5 55",
+    "https://boards.greenhouse.io/acme/jobs/55\n5",
+    # Padding is whitespace too, at either end.
+    "  https://boards.greenhouse.io/acme/jobs/555  ",
+    "https://boards.greenhouse.io/acme/jobs/555 ",
+    "https://jobs.lever.co/acme/ddad0cc6-1967-458c-a868-e14116ee139c ",
+    "https://jobs.ashbyhq.com/acme/0451eb82-21cd-4d72-8e03-c148c53e745d ",
+    # Characters nobody sees: this client carries them in the path, a person reads another link.
+    "https://boards.greenhouse.io/acme/jobs/555\u200b",
+    "https://boards.greenhouse.io/acme/jobs/\u202e555",
+]
+
+
+@pytest.mark.parametrize("raw", _LINKS_A_BROWSER_WOULD_SEND_ELSEWHERE)
+async def test_verify_liveness_never_probes_a_link_a_browser_would_send_elsewhere(raw: str) -> None:
+    """`https://evil.example\\@jobs.lever.co/...` is jobs.lever.co to this client, but a browser
+    treats the backslash as a slash and opens evil.example. A probe's answer is taken as the
+    board's own, so a link that can be read two ways is never sent to a board's probe: nothing is
+    fetched and the result keeps the location it came with."""
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(200, json={"location": {"name": "New York, NY"}})
+
+    http = _http(handler)
+    results = [_result(apply_url=raw, location="Original Location")]
+
+    alive, _dead_removed = await verify_liveness(http, results)
+
+    assert requested == []
+    assert alive[0].location == "Original Location"
+    assert alive[0].location_source is None
+
+
+async def test_verify_liveness_keeps_a_location_at_the_length_limit() -> None:
+    at_limit = "x" * 200
+    http = _http(lambda r: httpx.Response(200, json={"location": {"name": f"  {at_limit}  "}}))
+    results = [_result(apply_url="https://boards.greenhouse.io/acme/jobs/555", location="Old")]
+
+    alive, _dead_removed = await verify_liveness(http, results)
+
+    assert alive[0].location == at_limit
+
+
+def test_a_probe_result_that_names_no_source_is_not_trusted() -> None:
+    """A probe that forgets to say where its location came from must land on the untrusted
+    side, so a new probe can never confirm a match by accident."""
+    assert _ProbeResult("keep", "Somewhere").location_source == "ats_page"
+
+
+async def test_verify_liveness_records_a_board_api_location_as_ats_api() -> None:
+    http = _http(lambda r: httpx.Response(200, json={"location": {"name": "Madison, Wisconsin"}}))
+    results = [_result(apply_url="https://boards.greenhouse.io/acme/jobs/555", location="Old")]
+
+    alive, _dead_removed = await verify_liveness(http, results)
+
+    assert alive[0].location == "Madison, Wisconsin"
+    assert alive[0].location_source == "ats_api"
+
+
+async def test_verify_liveness_records_a_page_markup_location_as_ats_page() -> None:
+    http = _http(lambda r: httpx.Response(200, text=_SF_ALIVE_HTML))
+    results = [
+        _result(
+            apply_url="https://careers.somecompany.example/job/some-role/123456789/",
+            location="Old",
+            location_verified=True,
+        )
+    ]
+
+    alive, _dead_removed = await verify_liveness(http, results)
+
+    assert alive[0].location == "Camana Bay, KY, Cayman Islands"
+    assert alive[0].location_verified is None
+    assert alive[0].location_source == "ats_page"
+
+
+async def test_verify_liveness_labels_no_source_when_the_greenhouse_api_fails() -> None:
+    """The API errors, so the probe falls back to a plain link check. That check says the link is
+    alive and nothing about where the job is, so the result keeps the location it came with."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "boards-api.greenhouse.io" in str(request.url):
+            return httpx.Response(500)
+        return httpx.Response(200)
+
+    http = _http(handler)
+    results = [
+        _result(
+            apply_url="https://boards.greenhouse.io/acme/jobs/555",
+            location="Original Location",
+            location_verified=True,
+        )
+    ]
+
+    alive, dead_removed = await verify_liveness(http, results)
+
+    assert dead_removed == 0
+    assert alive[0].location == "Original Location"
+    assert alive[0].location_verified is True
+    assert alive[0].location_source is None
 
 
 async def test_verify_liveness_probe_exception_fails_open_to_keep() -> None:

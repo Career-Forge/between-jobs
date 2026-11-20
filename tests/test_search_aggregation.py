@@ -5,14 +5,17 @@ Aggregate Jobs node (aggregate_jobs.js)."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from place_fixtures import places_gazetteer as _places_gazetteer
 
 from between_jobs.api import geo_gazetteer as geo_gazetteer_module
 from between_jobs.api.geo_gazetteer import Gazetteer, build_gazetteer
+from between_jobs.api.location_place import Place, read_place
 from between_jobs.api.search_aggregation import (
     _canonicalize_url,
     _dedup_keys,
@@ -25,7 +28,9 @@ from between_jobs.api.search_aggregation import (
     filter_by_location,
     filter_by_role,
     matches_all_role_terms,
+    rejudge_corrected_locations,
     role_term_patterns,
+    sort_results,
 )
 from between_jobs.api.search_providers import SearchResult
 
@@ -681,6 +686,446 @@ def test_filter_by_location_stamps_none_on_unknown_not_false() -> None:
     assert result[0].location_verified is None  # never False -- mismatches are dropped, not flagged
 
 
+def test_rejudge_corrected_locations_confirms_a_board_api_match() -> None:
+    job = _result(location="New York, NY", apply_url="https://a.com/1", location_source="ats_api")
+
+    result = rejudge_corrected_locations([job], "New York", gazetteer=_test_gazetteer())
+
+    assert [r.location for r in result] == ["New York, NY"]
+    assert result[0].location_verified is True
+
+
+@pytest.mark.parametrize("job_location", ["Berlin, Germany", "Zzyzxville"])
+def test_rejudge_corrected_locations_never_drops_a_board_api_result(job_location: str) -> None:
+    """A probe reads one location per posting and the gazetteer can misread a place, so a mismatch
+    or a place it cannot read keeps the result in, as unknown, instead of removing it."""
+    job = _result(
+        location=job_location,
+        apply_url="https://a.com/1",
+        location_source="ats_api",
+        location_verified=True,
+    )
+
+    result = rejudge_corrected_locations([job], "New York", gazetteer=_test_gazetteer())
+
+    assert [r.location for r in result] == [job_location]
+    assert result[0].location_verified is None
+
+
+@pytest.mark.parametrize("job_location", ["New York, NY", "Berlin, Germany", "Zzyzxville"])
+def test_rejudge_corrected_locations_leaves_a_page_read_location_alone(job_location: str) -> None:
+    """A location scraped from a job page is a claim by whatever host served the page: it is not
+    confirmed, and it is not a reason to hide the result either."""
+    job = _result(location=job_location, apply_url="https://a.com/1", location_source="ats_page")
+
+    result = rejudge_corrected_locations([job], "New York", gazetteer=_test_gazetteer())
+
+    assert result == [job]
+    assert result[0].location_verified is None
+
+
+def test_rejudge_corrected_locations_leaves_an_uncorrected_result_alone() -> None:
+    """The first pass already judged these. A provider's own location that happens to match is
+    not this pass's to confirm, and a provider's own confirmed match is not this pass's to
+    withdraw, even when the location would read as a mismatch now."""
+    matches_but_unconfirmed = _result(location="New York, NY", apply_url="https://a.com/1")
+    confirmed_elsewhere = _result(
+        location="Berlin, Germany", apply_url="https://b.com/2", location_verified=True
+    )
+
+    result = rejudge_corrected_locations(
+        [matches_but_unconfirmed, confirmed_elsewhere], "New York", gazetteer=_test_gazetteer()
+    )
+
+    assert result == [matches_but_unconfirmed, confirmed_elsewhere]
+    assert [r.location_verified for r in result] == [None, True]
+
+
+@pytest.mark.parametrize(
+    ("search", "board_location"),
+    [
+        # a large city that no place in another country shares, or the country named
+        ("New York", "New York, NY"),
+        ("New York", "New York"),
+        ("New York", "New York, New York"),
+        ("New York City", "New York   City, NY"),  # whitespace inside a name is collapsed
+        ("New York", "Remote - New York"),
+        ("New York", "Remote: New York, NY"),
+        ("New York", "Remote \u2013 New York, NY"),
+        ("New York City", "New York City, NY"),
+        ("Egypt", "Cairo"),
+        ("Toronto", "Toronto, ON"),
+        ("Toronto", "Toronto, Ontario"),
+        ("United Kingdom", "Cambridge, United Kingdom"),
+        ("Cambridge, United Kingdom", "Cambridge, United Kingdom"),
+        # a state code or name between the city and the named country is a region
+        ("United States", "Cambridge, MA, United States"),
+        ("Cambridge, United States", "Cambridge, MA, United States"),
+        ("Portland, OR", "Portland, Oregon, United States"),
+        ("Portland", "Portland, Oregon, United States"),
+        ("Portland, Oregon, United States", "Portland, OR"),
+        ("Portland, Oregon, United States", "Portland, Oregon, United States"),
+        ("United States", "Remote - US"),
+        ("United States", "Remote (US), USA"),
+        ("United States", "Austin, TX"),
+        ("United States", "Austin, Texas"),
+        ("Austin", "Austin, TX"),  # several rows, all in one country
+        ("Austin, Texas", "Austin, TX"),
+        ("Dallas, TX", "Dallas, TX"),
+        ("Portland, ME", "Portland, ME"),
+        ("Dallas", "Dallas, OR (Remote)"),  # Oregon's code, not the word "or"
+        ("Dallas, OR", "Dallas, OR (Remote)"),
+        # a search that names no region is satisfied by any region of the city
+        ("Austin", "Austin, MN"),
+        # a town the gazetteer lacks, with a state and the country the text names
+        ("United States", "Smalltown, TX, United States"),
+        # a part that is not read leaves the country established: a country search is confirmed
+        ("United States", "Portland, Downtown, United States"),
+        ("United States", "Austin, PK, United States"),  # a code that is no state is not read
+        # "CA" after a Canadian city is Canada's own code, or at worst a region Canada can have
+        ("Toronto", "Toronto, CA"),
+        ("Canada", "Toronto, CA"),
+        # the same country written twice adds nothing, and a probe appends the board's own country
+        # to a location that may already end in it
+        ("United States", "Austin, TX, United States, United States"),
+        ("Austin, TX", "Austin, TX, United States, United States"),
+        ("United Kingdom", "London, United Kingdom, United Kingdom"),
+        ("United Arab Emirates", "UAE, United Arab Emirates"),
+        # the country's name at the end of a place, and a name for part of a country there too
+        ("United Kingdom", "London, England"),
+        ("United Arab Emirates", "Dubai, United Arab Emirates"),
+        ("Dubai", "Dubai"),
+        ("Dubai, United Arab Emirates", "Dubai, United Arab Emirates"),
+        # a US state code beside another country's city is an unread part, not that country's
+        ("Brazil", "Sao Paulo, SP, Brazil"),
+        ("Brazil", "Recife, PE, Brazil"),
+        ("India", "Chennai, TN, India"),
+        # an accent-free spelling is the city's name without its accents; the accented one exactly
+        ("S\u00e3o Paulo", "Sao Paulo"),
+        ("Spain", "Malaga"),
+        ("Spain", "M\u00e1laga"),
+        ("Malaga", "M\u00e1laga, Spain"),
+        # Oregon's code before a work mode or the end is not the word "or"
+        ("Dallas, OR", "Dallas, OR "),
+        # a country's name that is also a town's, first and last with a region between
+        ("Singapore", "Singapore, South West, Singapore"),
+        # "USA" and "India" are alternate names of towns, and here are the countries
+        ("USA", "Remote - USA"),
+        ("USA", "Remote - US"),
+        ("USA", "Austin, TX"),
+        ("India", "Pune, India"),
+        ("India", "Remote - India"),
+        ("Nigeria", "Benin City"),
+        # a large city under its own name, with or without its accents; the floor is inclusive
+        ("China", "Beijing"),
+        ("Brazil", "Sao Paulo"),
+        ("Brazil", "S\u00e3o Paulo"),
+        ("United States", "Exactville"),
+    ],
+)
+def test_rejudge_corrected_locations_confirms_evidence_for_the_geography_searched(
+    search: str, board_location: str
+) -> None:
+    job = _result(location=board_location, apply_url="https://a.com/1", location_source="ats_api")
+
+    result = rejudge_corrected_locations([job], search, gazetteer=_places_gazetteer())
+
+    assert [r.location for r in result] == [board_location]
+    assert result[0].location_verified is True
+
+
+@pytest.mark.parametrize(
+    ("search", "board_location"),
+    [
+        # a name shared by several countries, not qualified by one: the largest is a guess
+        ("United Kingdom", "Cambridge, MA"),
+        ("United States", "Cambridge, MA"),
+        ("Cambridge", "Cambridge, MA"),
+        # a name large in two countries: nothing else blocks these, only the two countries do
+        ("Venezuela", "Valencia"),
+        ("Spain", "Valencia"),
+        # a bare name that a place in another country shares, though the other one is smaller
+        ("United Kingdom", "London"),
+        ("Canada", "London"),
+        # a name that is large in one country and shared with a small place in another
+        ("United States", "Boston, MA"),
+        ("Boston", "Boston, MA"),
+        ("Boston", "Boston"),  # the same bare name on both sides is still two countries' worth
+        ("United Kingdom", "Boston"),
+        # another place in the searched city's country, or the same name in another region
+        ("New York", "Austin, TX"),
+        ("Dallas, TX", "Dallas, OR"),
+        ("Portland, ME", "Portland, OR"),
+        ("Portland, ME", "Portland, Oregon, United States"),
+        ("Portland, Maine", "Portland, OR"),
+        # the city is the text a person wrote, not the gazetteer's city: two names of one differ
+        ("New York", "New York City, NY"),
+        ("New York City", "New York, NY"),
+        # a search that names a region is not satisfied by a board that names none
+        ("Dallas, TX", "Dallas"),
+        ("Dallas, TX", "Dallas, OR (Remote)"),
+        # a part between the city and the country that is not read leaves the city unknown, so no
+        # city search is confirmed by it, and a search that has one is unreadable
+        ("Portland", "Portland, Downtown, United States"),
+        ("Portland, OR", "Portland, Downtown, United States"),
+        ("Portland, Downtown, United States", "Portland, OR"),
+        ("Portland, Downtown, United States", "Portland, Downtown, United States"),
+        # a place that is only a state, or a country-level location, for a search about a city
+        ("New York", "United States"),
+        ("New York", "Remote"),
+        ("Austin, Texas", "Texas"),
+        # a country the board names that the city cannot be in, and the other country
+        ("Ireland", "Austin, Ireland"),
+        ("New York", "New York, United Kingdom"),
+        ("United States", "Cambridge, United Kingdom"),
+        # an alternate name shared with a town in another country is not evidence
+        ("Germany", "Augusta, GA"),
+        # a state belongs to its own country, and a code that is neither a state nor a province
+        # is not a region
+        ("Canada", "Toronto, OH"),
+        ("United States", "Toronto, OH"),
+        ("Toronto", "Toronto, OH"),
+        ("Toronto", "Toronto, Texas"),
+        ("Egypt", "Cairo, ON"),
+        ("Egypt", "Cairo, Ontario"),
+        ("United States", "Austin, ON"),
+        ("Canada", "Austin, ON"),
+        ("Colombia", "Bogota, PE"),
+        ("Colombia", "Bogota, VE"),
+        ("Australia", "Sydney, NSW"),
+        ("Georgia", "Tbilisi, Georgia"),  # a state of the same name is not the country
+        # a town the gazetteer cannot place beside a smaller foreign namesake of the same name
+        ("United Kingdom", "Greenwich, CT"),
+        ("United States", "Greenwich, CT"),
+        ("United States", "Greenwich"),  # below the population floor, and nothing else blocks it
+        ("United States", "Nearville"),  # one below the floor
+        ("Egypt", "Cairo, IL"),  # Cairo is the large, only Cairo here: the state belongs to the US
+        ("Canada", "Vancouver, WA"),  # Vancouver is the only Vancouver here, and in Canada
+        ("United States", "Vancouver, WA"),
+        ("United States", "Smallville, NY"),  # below the floor
+        # a town the table lacks, with nothing but the country to say that it is a place at all
+        ("United States", "Smalltown, United States"),
+        # a single word is not read without its trailing "City" ("Benin" is a country; "Bénin" its
+        # name in French), though "New York" is read as New York City
+        ("Nigeria", "B\u00e9nin"),
+        ("Philippines", "Cebu"),
+        # an alternate spelling or a code of a large city is not its name
+        ("India", "Bombay"),
+        ("India", "BOM"),
+        ("China", "Peking"),
+        ("China", "BJS"),
+        ("United States", "NYC"),
+        # a name written as a fragment or inside a wrapper is not read, and neither are region
+        # words and placeholders that happen to be the names of small towns
+        ("Ghana", "Seattle-WA"),
+        ("United States", "Seattle-WA"),
+        ("Ghana", "Remote, WA"),
+        ("Uganda", "Remote - APAC"),
+        ("Uganda", "APAC"),
+        ("United States", "TBD"),
+        ("Canada", "Remote - Ontario"),
+        # a region or a placeholder before the country names no place
+        ("United States", "Remote - EMEA, United States"),
+        ("United States", "Remote (Europe), United States"),
+        ("United States", "North America, United States"),
+        ("Germany", "Remote - DACH, Germany"),
+        # a city with more written after it than a region and a country is not read
+        ("United States", "Austin, TX, Remote Office"),
+        ("New York", "New York, NY, Hybrid Flex"),
+        ("United States", "Austin, TX, United States (anywhere)"),
+        ("Canada", "Toronto, OH, Canada"),
+        # a text that starts with a country and goes on is a city, not the country, as a board
+        # and as a search: it would confirm every board in the country
+        ("United States", "US, Texas"),
+        ("United States", "US, Paris"),
+        ("United States", "Remote - US (East)"),
+        ("United States", "Remote - US (Must reside in CA, TX, NY)"),
+        ("United Kingdom", "UK Remote, London"),
+        ("United States", "United States, Austin, TX, United States"),
+        # Oregon's code beside a work mode, without its comma, is not read; nor is "or" before one
+        ("Dallas", "Dallas OR (Remote)"),
+        ("Dallas, OR", "Dallas OR Remote"),
+        ("Austin, TX", "Austin, TX or Remote"),
+        ("Seattle, WA", "SEATTLE OR REMOTE"),
+        ("Dallas, OR", "DALLAS OR REMOTE"),
+        ("Portland, ME", "Portland, OR - Remote"),
+        # a search that starts with a country and goes on is not the whole country
+        ("US, Texas", "Seattle, WA"),
+        ("US (Texas)", "Seattle, WA"),
+        ("Remote (US), Texas", "Seattle, WA"),
+        ("US, Texas, USA", "Seattle, WA, United States"),
+        ("United States, Austin, TX, United States", "Seattle, WA, United States"),
+        ("Germany, Berlin, Germany", "Berlin, Germany"),
+        ("Canada (Ontario), Canada", "Toronto, ON"),
+        # a place the gazetteer has only elsewhere after the country is a list, not a qualifier
+        ("United States", "US, Berlin"),
+        # two countries are a list, even where a table also has the first one as a town
+        ("United States", "Ireland, United States of America"),
+        ("India", "India, Serbia"),
+        ("United States", "Jamaica, United States"),
+        # the state called California is not Canada's code
+        ("Canada", "Toronto, California"),
+        ("United States", "Toronto, California"),
+        # the lower-case word is the conjunction, not Oregon
+        ("Dallas, OR", "Dallas, or"),
+        # a country code beside other words is not the country
+        ("London UK Remote", "London, United Kingdom"),
+        ("United Kingdom", "London UK Remote"),
+        ("United Kingdom", "UK Remote USA"),
+        ("United States", "US \u6771\u4eac"),
+        ("US \u6771\u4eac", "Austin, TX"),
+        # a name for part of a country is not the country: a Scotland search must not confirm a
+        # London board, nor Dubai an Abu Dhabi one
+        ("Scotland", "London, UK"),
+        ("England", "London, UK"),
+        ("Dubai", "Abu Dhabi"),
+        ("Abu Dhabi", "Dubai, United Arab Emirates"),
+        ("Dubai, United Arab Emirates", "Abu Dhabi, United Arab Emirates"),
+        # a state code of the named country's neighbour, with the country that is named
+        ("United States", "Chennai, TN, India"),
+        ("Spain", "M\u00e0laga"),
+        # a parenthesis is read like a comma: Jamaica is the borough of New York, not the country
+        ("Jamaica", "Jamaica, NY"),
+        ("Jamaica", "Jamaica (NY)"),
+        # Oregon's code before a work mode is not the word "or": the town is not the country,
+        # with or without the comma; and an "OR" that is followed by a place is the word
+        ("Lebanon", "Lebanon, OR (Remote)"),
+        ("Lebanon", "Lebanon OR (Remote)"),
+        ("Lebanon", "Lebanon OR Remote"),
+        ("Canada", "Toronto, Canada (OR United States)"),
+        ("United Kingdom", "LONDON, UNITED KINGDOM (OR IRELAND)"),
+        ("United States", "Austin, TX, United States, OR Canada"),
+        ("United Kingdom", "London, UK, OR France"),
+        ("United States", "Canada - OR, US"),
+        # several places, several countries, or a list of countries
+        ("United States", "Remote - UK or Ireland"),
+        ("New York", "New York, NY / Austin, TX"),
+        ("New York", "New York, NY OR Austin, TX"),
+        ("New York", "New York, NY, or Austin, TX"),
+        ("United States", "USA, Canada"),
+        ("Canada", "USA, Canada"),
+        ("United States", "Remote - US & Canada"),
+        ("United States", "US + Canada"),
+        ("United States", "US-Canada"),
+        ("Canada", "US-Canada"),
+        ("United States", "US Virgin Islands"),
+        ("United States", "US Remote, United Kingdom"),
+        ("United Kingdom", "US Remote, United Kingdom"),
+        ("United States", "Canada (or United States)"),
+        ("Canada", "Canada (or United States)"),
+        ("United States", "Remote - Canada (or United States)"),
+        ("United States", "Canada, or United States"),
+        ("Germany (or Austria)", "Berlin, Germany"),
+        ("United Kingdom (or Ireland)", "London, United Kingdom"),
+        # worldwide text, even beside a city and a country
+        ("United States", "Anywhere in Europe"),
+        ("India", "Global Technology Center, Pune"),
+        ("United States", "Global HQ, Austin, TX"),
+        ("United States", "Global HQ, Austin, TX, United States"),
+        ("United States", "Anywhere, United States"),
+        ("India", "Worldwide, India"),
+        ("New York", "New York, NY or anywhere"),
+        # a search that is itself a guess or a list is held to the same bar
+        ("Cambridge, MA", "Cambridge, United Kingdom"),
+        ("Cambridge, MA", "Cambridge, MA, United States"),
+        ("London or New York", "London, UK"),
+        ("London or New York", "New York, NY"),
+        # another country than the one named, and a country code that the alias table lacks
+        ("India", "Remote - Pakistan"),
+        ("London, UK", "London, GB"),
+    ],
+)
+def test_rejudge_corrected_locations_does_not_confirm_what_is_not_evidence(
+    search: str, board_location: str
+) -> None:
+    """Every case stays in the results, unconfirmed: nothing here is dropped."""
+    job = _result(location=board_location, apply_url="https://a.com/1", location_source="ats_api")
+
+    result = rejudge_corrected_locations([job], search, gazetteer=_places_gazetteer())
+
+    assert [r.location for r in result] == [board_location]
+    assert result[0].location_verified is None
+
+
+@pytest.mark.parametrize(
+    "error", [ValueError, TypeError, IndexError, KeyError, UnicodeError, AttributeError]
+)
+def test_rejudge_corrected_locations_leaves_a_result_as_unknown_when_its_text_cannot_be_read(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, error: type[Exception]
+) -> None:
+    """A reading bug is not the search's to fail, whatever it raises, on the board's side or the
+    search's; and it is said once per text in the log, without the text or a traceback."""
+    import between_jobs.api.search_aggregation as module
+
+    real = read_place
+
+    def raising(gazetteer: Gazetteer, text: str | None) -> Place | None:
+        if text == "Explode":
+            raise error(f"leaked {text}")
+        return real(gazetteer, text)
+
+    monkeypatch.setattr(module, "read_place", raising)
+    exploding = _result(location="Explode", apply_url="https://a.com/1", location_source="ats_api")
+    fine = _result(location="Austin, TX", apply_url="https://a.com/2", location_source="ats_api")
+
+    with caplog.at_level("WARNING", logger=module.logger.name):
+        on_the_board = rejudge_corrected_locations(
+            [exploding, fine], "United States", gazetteer=_places_gazetteer()
+        )
+        on_the_search = rejudge_corrected_locations(
+            [fine], "Explode", gazetteer=_places_gazetteer()
+        )
+
+    assert [r.location_verified for r in on_the_board] == [None, True]
+    assert on_the_search == [fine]
+    warnings = [r for r in caplog.records if "could not read a location text" in r.getMessage()]
+    assert len(warnings) == 2
+    for record in warnings:
+        # the error's type is named; its message (which here carries the text) and the text are not
+        assert record.levelname == "WARNING"
+        assert error.__name__ in record.getMessage()
+        assert "Explode" not in record.getMessage()
+        assert "leaked" not in record.getMessage()
+        assert record.exc_info is None
+        assert "Explode" not in str(record.__dict__)  # nor in a structured field
+
+
+def test_rejudge_corrected_locations_is_a_no_op_when_nothing_constrains_the_search() -> None:
+    """Each call below leaves a board location that matches the search unconfirmed. An empty
+    gazetteer and a remote-only search are no-ops even when the text itself names a country, and
+    a missing or unresolvable search constrains nothing."""
+    job = _result(location="New York, NY", apply_url="https://a.com/1", location_source="ats_api")
+    empty = Gazetteer(city_index={}, country_alias_to_code={}, country_names={})
+
+    assert rejudge_corrected_locations([job], "New York", gazetteer=empty) == [job]
+    named_country = _result(
+        location="Remote - US", apply_url="https://c.com/3", location_source="ats_api"
+    )
+    assert rejudge_corrected_locations([named_country], "US", gazetteer=empty) == [named_country]
+    assert rejudge_corrected_locations([job], None, gazetteer=_test_gazetteer()) == [job]
+    assert rejudge_corrected_locations([job], "Zzyzxville", gazetteer=_test_gazetteer()) == [job]
+    assert rejudge_corrected_locations(
+        [job], "New York", gazetteer=_test_gazetteer(), remote_only=True
+    ) == [job]
+
+
+def test_filter_by_location_ignores_where_a_location_came_from() -> None:
+    """The first pass judges a location the same way whatever `location_source` says: that label
+    only matters to the second pass."""
+    matching = [
+        _result(location="New York, NY", apply_url="https://a.com/1", location_source=source)
+        for source in (None, "ats_api", "ats_page")
+    ]
+    elsewhere = _result(
+        location="Berlin, Germany", apply_url="https://b.com/2", location_source="ats_page"
+    )
+
+    result = filter_by_location([*matching, elsewhere], "New York", gazetteer=_test_gazetteer())
+
+    assert [r.location_verified for r in result] == [True, True, True]
+    assert len(result) == 3
+
+
 def test_filter_by_location_no_op_when_remote_only() -> None:
     de_job = _result(location="Berlin, Germany", apply_url="https://b.com/2")
 
@@ -723,6 +1168,48 @@ def test_aggregate_jobs_sorts_location_verified_first() -> None:
     result = aggregate_jobs([unverified_tier1, verified_tier2])
 
     assert [r.company for r in result] == ["B", "A"]  # verified wins even over a better tier
+
+
+def test_sort_results_newest_also_puts_a_verified_result_first() -> None:
+    newer_unverified = _result(
+        apply_url="https://a.com/1", company="A", posted_at="2026-08-30T00:00:00Z"
+    )
+    older_verified = _result(
+        apply_url="https://b.com/2",
+        company="B",
+        posted_at="2026-08-01T00:00:00Z",
+        location_verified=True,
+    )
+
+    result = sort_results([newer_unverified, older_verified], sort_by="newest")
+
+    assert [r.company for r in result] == ["B", "A"]
+
+
+def test_sort_results_lifts_a_result_stamped_verified_after_the_first_sort() -> None:
+    """`filter_by_location` stamps `location_verified` AFTER `aggregate_jobs` has sorted, so
+    the first order cannot know. Sorting again must lift the newly verified result over a
+    better tier and a newer date, and must return a new list, not reorder the caller's."""
+    newer_tier1 = _result(
+        apply_url="https://a.com/1",
+        company="A",
+        source_tier=1.0,
+        posted_at="2026-08-30T00:00:00Z",
+    )
+    older_tier2 = _result(
+        apply_url="https://b.com/2",
+        company="B",
+        source_tier=2.0,
+        posted_at="2026-08-01T00:00:00Z",
+    )
+    first_pass = aggregate_jobs([older_tier2, newer_tier1])
+    assert [r.company for r in first_pass] == ["A", "B"]  # nothing verified yet: tier, then recency
+
+    stamped = [replace(r, location_verified=True) if r.company == "B" else r for r in first_pass]
+    result = sort_results(stamped)
+
+    assert [r.company for r in result] == ["B", "A"]
+    assert [r.company for r in stamped] == ["A", "B"]  # the caller's list is left as it was
 
 
 # ── apply_search_filters: the shared 3-step chain ──

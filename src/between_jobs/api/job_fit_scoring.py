@@ -17,13 +17,13 @@ expand_cohort`). A hosted deployment wanting its own further-tuned
 prompt can supply one via `JOB_SCORING_SYSTEM_PROMPT_PATH` (see
 `_load_system_prompt` below) rather than this repo ever carrying it.
 
-One LLM call scores up to 30 jobs at once (`aggregate_jobs()`'s own
-tier+recency sort already put the best candidates first, so this is
+One LLM call scores up to 30 jobs at once (the caller's own ranking, see
+`search_aggregation.sort_results()`, already put the best candidates first, so this is
 simply the first 30) -- a real, deliberately cheap ranking pass, distinct
 from forge-engines' own deep ATS/ForgeScore engine, which only ever runs
 once a user commits to ONE specific posting, never in a batch loop over
 search results. Results beyond 30 are returned unscored, not dropped --
-the caller decides how to present them (already-sorted by tier/recency).
+the caller decides how to present them (in the caller's ranking).
 
 Three of the six /100 sub-score weights need a real signal between-jobs'
 profile schema doesn't have yet, checked directly before writing this,
@@ -514,9 +514,9 @@ async def score_jobs(
     company_health_lookup: CompanyHealthLookup = _default_company_health_lookup,
     generate: LlmGenerate | None = None,
 ) -> tuple[list[ScoredJob], list[SearchResult], str]:
-    """Scores the first 30 `results` (already sorted by `aggregate_jobs()`
-    -- this function trusts that ordering, it doesn't re-rank before
-    picking the batch). Returns `(scored, unscored, strategy)`:
+    """Scores the first 30 `results` (already ranked by the caller, see
+    `search_aggregation.sort_results()` -- this function trusts that ordering,
+    it doesn't re-rank before picking the batch). Returns `(scored, unscored, strategy)`:
     `unscored` is `results[30:]`, still real `SearchResult`s the caller
     can still show, just never sent to the LLM; `strategy` names which
     parse strategy actually produced `scored` (`"direct"` through
