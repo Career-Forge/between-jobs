@@ -766,6 +766,84 @@ describe("the setup checklist", () => {
   });
 });
 
+describe("the right column, from 1280px", () => {
+  const STAGED = [
+    { id: "app-1", status: "applied", source_channel: "discover", resume_exists: true, updated_at: "2026-09-01T00:00:00Z", snapshot: { title: "Data Engineer", company_name: "Acme" } },
+    { id: "app-2", status: "saved", source_channel: "manual_paste", resume_exists: false, updated_at: "2026-09-21T00:00:00Z", snapshot: { title: "ML Engineer", company_name: "Orbit" } },
+    { id: "app-3", status: "applied", source_channel: "discover", resume_exists: false, updated_at: "2026-08-01T00:00:00Z", snapshot: { title: "Analyst", company_name: "Initech" } },
+    { id: "app-4", status: "paused", source_channel: "discover", resume_exists: false, updated_at: "2026-08-01T00:00:00Z", snapshot: { title: "Data Scientist", company_name: "Hooli" } },
+  ];
+  const pipeline = (container: HTMLElement) => query(container, "section.bj-pipeline");
+  const pipelineLines = (container: HTMLElement) => [...pipeline(container).querySelectorAll("li")].map((line) => words(line));
+
+  it("counts the stages from the applications the page already reads, and asks for nothing more", async () => {
+    answer({ "/applications": STAGED });
+    const { container } = await draw(1280);
+    expect(pipelineLines(container)).toEqual(["Saved 1 application", "Applied 2 applications", "Other 1 application"]);
+    expect(pipeline(container).closest(".bj-today-side")).not.toBeNull();
+    expect([...new Set(calls())].sort()).toEqual(["GET /applications", "GET /credentials", "GET /profile/current", "GET /saved-searches", "GET /today"]);
+    expect(calls().filter((call) => call === "GET /applications")).toHaveLength(1);
+  });
+
+  it("says nothing about how long ago an application changed: the row's updated_at is not when it was last worked on", async () => {
+    answer({ "/applications": STAGED });
+    const { container } = await draw(1280);
+    expect(words(pipeline(container))).not.toMatch(/touched|days|stale/i);
+  });
+
+  it("puts the checklist in the column, above Pipeline, for an account still setting up", async () => {
+    answer({ "/profile/current": new FakeApiError(404, "none"), "/credentials": [], "/saved-searches": [], "/applications": [] });
+    const { container } = await draw(1280);
+    const side = query(container, ".bj-today-side");
+    expect([...side.children].map((child) => words(child.querySelector("h2")))).toEqual(["Setup", "Pipeline", "✦ In the background"]);
+    expect(query(container, ".bj-today-main").querySelector(".bj-setup")).toBeNull();
+    expect(words(query(pipeline(container), ".bj-pipeline-note"))).toBe("No applications are tracked yet: find a job in Discover.");
+  });
+
+  it("puts a finished account's one setup line there too", async () => {
+    answer({ "/today": [], "/saved-searches": SEARCHES, "/applications": APPLICATIONS });
+    const { container } = await draw(1280);
+    expect(query(container, "button.bj-setup-line").parentElement).toBe(query(container, ".bj-today-side"));
+  });
+
+  it("says a failed applications read plainly in Pipeline, with no count, and reads the account again on Retry", async () => {
+    answer({ "/applications": new FakeApiError(500, "boom") });
+    const { container } = await draw(1280);
+    const callout = query(pipeline(container), ".bj-state--failure");
+    expect(words(callout)).toContain("Your applications couldn't be read, so there are no counts to show.");
+    expect(words(pipeline(container))).not.toMatch(/\d/);
+    api.apiFetch.mockClear();
+    answer({ "/applications": STAGED });
+    click(buttonNamed(callout, "Retry"));
+    await flush();
+    expect(calls()).toContain("GET /applications");
+    expect(pipelineLines(container)).toEqual(["Saved 1 application", "Applied 2 applications", "Other 1 application"]);
+  });
+
+  it("shows a placeholder, not a zero, while the applications are still being read", async () => {
+    let release: (value: unknown) => void = () => {};
+    answer({ "/applications": () => new Promise((resolve) => (release = resolve)) });
+    const { container } = await draw(1280);
+    expect(words(query(pipeline(container), ".bj-state--loading"))).toBe("Loading your applications...");
+    expect(words(pipeline(container))).not.toMatch(/\d/);
+    await act(async () => release(STAGED));
+    expect(pipelineLines(container)).toEqual(["Saved 1 application", "Applied 2 applications", "Other 1 application"]);
+  });
+
+  it("moves between the two layouts with the window, keeping one checklist and one Pipeline card", async () => {
+    answer({ "/profile/current": new FakeApiError(404, "none"), "/credentials": [], "/saved-searches": [], "/applications": STAGED });
+    const { container, viewport } = await draw(1279);
+    expect(container.querySelector(".bj-today-side, .bj-today-grid")).toBeNull();
+    expect(query(container, "section.bj-setup").closest(".bj-today-main")).not.toBeNull();
+    expect(query(container, ".bj-today").lastElementChild).toBe(pipeline(container));
+    viewport.setWidth(1280);
+    expect(query(container, "section.bj-setup").parentElement).toBe(query(container, ".bj-today-side"));
+    expect(container.querySelectorAll("section.bj-setup")).toHaveLength(1);
+    expect(container.querySelectorAll("section.bj-pipeline")).toHaveLength(1);
+    expect(calls().filter((call) => call === "GET /applications")).toHaveLength(1);
+  });
+});
+
 describe("the page as a whole", () => {
   it("has no serious accessibility violation with a lit item, a list, the checklist and the margin", async () => {
     answer({ "/today": [proposalItem, readyItem, heldItem, matchItem, trackedItem], "/applications/app-1/prepare-result": { result: { resume: null, fit: { overall_score: 3 } } } });

@@ -4,6 +4,7 @@ import type { NextStepOutcome } from "../../lib/nextStep";
 import type { TodayRowId } from "../../lib/nextStep/pages/today";
 import type { Failure } from "../../lib/setupRequired";
 import { kindLabel, rowView, type BackgroundView, type RowContext, type TodayItem } from "../../lib/todayFeed";
+import type { PipelineView } from "../../lib/todayPipeline";
 import { todayIntent } from "../../lib/nextStep/pages/today";
 import { NextStepBand, type NextStepPending } from "../paper/NextStepBand";
 import { PageHeader } from "../paper/PageHeader";
@@ -12,12 +13,20 @@ import { TodayEmptyState } from "../TodayEmptyState";
 import { BackgroundTrail } from "./BackgroundTrail";
 import { BUSY_LABELS, type BusyKind, type ItemActionsProps } from "./ItemParts";
 import { LitItem } from "./LitItem";
+import { PipelineCard } from "./PipelineCard";
 import { TodayRow } from "./TodayRow";
 import "../../styles/today.css";
 
 // Today as a function of what it has read: the header, the next-step band (which holds the lit item
-// itself), then the body -- setup, the checklist, the feed or what to expect from it -- and the
-// "In the background" trail, in a right margin from 1280px and as one line under the band below that.
+// itself), then the page in one of two layouts.
+//
+//   from 1280px   two columns. The feed (or what to expect from it) is on the left. The right column
+//                 holds, top to bottom, the setup checklist in whichever of its forms it is in (the
+//                 open list, its one folded line, or nothing), the Pipeline card and the
+//                 "In the background" trail.
+//   under that    one column: "In the background" as one line under the band, then the checklist, the
+//                 feed, and the Pipeline card as the last section.
+//
 // Every state of the page is drawn here from props, so each can be shown and tested on its own; the
 // reading, the requests and the handlers are pages/Today.tsx.
 
@@ -38,7 +47,7 @@ export interface AccountNotes {
 
 export interface TodayViewProps {
   now: Date;
-  /** From 1280px: the trail is a right margin. Below: one line under the band. */
+  /** From 1280px: the checklist, the Pipeline card and the trail are a right column. Below: one column. */
   wide: boolean;
   outcome: NextStepOutcome;
   /** The row of the rule table that decided, when it is one that lights an item. */
@@ -52,6 +61,8 @@ export interface TodayViewProps {
   busy: Readonly<Record<string, BusyKind | undefined>>;
   problems: Readonly<Record<string, Failure | undefined>>;
   background: BackgroundView;
+  /** How many applications sit at each stage, from the applications read (lib/todayPipeline.ts). */
+  pipeline: PipelineView;
   account: AccountNotes;
   /** The setup checklist (it reads its own flags from the browser). */
   checklist: ReactNode;
@@ -125,7 +136,7 @@ export function TodayView(props: TodayViewProps) {
           {props.confirmation.text} <Link to={props.confirmation.link.to}>{props.confirmation.link.label}</Link>
         </p>
       )}
-      {props.checklist}
+      {!wide && props.checklist}
       {(feed.state === "loading" || holding) && (
         <div className="bj-today-section">
           <LoadingState rows={3} rowHeight={72} label="Loading Today..." />
@@ -199,12 +210,17 @@ export function TodayView(props: TodayViewProps) {
       {wide ? (
         <div className="bj-today-grid">
           {body}
-          <BackgroundTrail view={background} now={now} placement="margin" onRetry={props.onRetryAccount} timeZone={context.timeZone} />
+          <div className="bj-today-side">
+            {props.checklist}
+            <PipelineCard view={props.pipeline} placement="side" onRetry={props.onRetryAccount} />
+            <BackgroundTrail view={background} now={now} placement="margin" onRetry={props.onRetryAccount} timeZone={context.timeZone} />
+          </div>
         </div>
       ) : (
         <>
           <BackgroundTrail view={background} now={now} placement="inline" onRetry={props.onRetryAccount} timeZone={context.timeZone} />
           {body}
+          <PipelineCard view={props.pipeline} placement="inline" onRetry={props.onRetryAccount} />
         </>
       )}
     </div>

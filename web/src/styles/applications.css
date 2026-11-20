@@ -3,11 +3,15 @@
  * components/applications/, components/ApplicationsBoard.tsx). Tokens only -- no color is defined
  * here -- and no rule fills anything gold: the page's one gold fill is the next-step band's button.
  *
- * Widths. The list is a column of at most 880px. The board takes the whole content column (from 1280px
- * the shell's 960px cap is lifted for this page) and its seven columns scroll inside their own row,
- * which the keyboard can reach, so the page itself never scrolls sideways. Under 960px (the shell's
- * phone breakpoint) there is no board at all: one status at a time, and every control is at least
- * 44px tall. */
+ * Widths. Up to 1279px the list is a column of at most 880px. From 1280px its cards sit two to a row,
+ * as wide together as the shell's widest column (1440px less this page's padding), so a wide window is
+ * used and no card is stretched into one long line. The tracking forms and the callouts are forms and
+ * sentences, and keep 880px at every width. The board takes the whole content column (from 1280px the
+ * shell's cap is lifted for this page, however wide the window) and its seven columns scroll inside
+ * their own row, which the keyboard can reach, so the page itself never scrolls sideways. Under 960px
+ * (the shell's phone breakpoint) there is no board at all: one status at a time, and every control is
+ * at least 44px tall. Practice is a short page of sentences: from 1280px, where the shell's column
+ * grows, it keeps the list measure. */
 
 @media (min-width: 1280px) {
   .bj-main:has(.bj-apps) {
@@ -68,6 +72,17 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* From 1280px the cards sit two to a row. Reading order is still the list's own: the cards fill each
+   row from the left, and two cards in a row are the same height. The rule comes after the one above
+   so that it is the one that applies. */
+@media (min-width: 1280px) {
+  .bj-app-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 1376px;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -398,6 +413,12 @@
 
 .bj-practice .bj-state--empty {
   max-width: 680px;
+}
+
+@media (min-width: 1280px) {
+  .bj-practice {
+    max-width: 880px;
+  }
 }
 
 @media (max-width: 959px) {

@@ -91,8 +91,8 @@ function answer(extra: Record<string, Reply> = {}) {
 
 const flush = () => act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
 
-async function draw(options: { strict?: boolean } = {}) {
-  installViewport(1000);
+async function draw(options: { strict?: boolean; width?: number } = {}) {
+  const viewport = installViewport(options.width ?? 1000);
   const page = (
     <MemoryRouter>
       <Discover />
@@ -100,7 +100,7 @@ async function draw(options: { strict?: boolean } = {}) {
   );
   const rendered = render(options.strict ? <StrictMode>{page}</StrictMode> : page);
   await flush();
-  return rendered;
+  return { ...rendered, viewport };
 }
 
 const words = (element: Element | null) => (element?.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -182,6 +182,65 @@ describe("opening the page", () => {
     answer({ "/credentials": [GOOD_KEY, { service: "search", provider: "apollo" }, { service: "search", provider: "brave" }] });
     const { container } = await draw();
     expect(words(band(container))).toContain("1 search provider connected");
+  });
+});
+
+describe("the width of the window", () => {
+  const three = () =>
+    response({
+      scored: [job(), job({ apply_url: "https://jobs.example/acme/2", title: "Analyst" })],
+      more: [job({ apply_url: "https://jobs.example/acme/3", title: "Data Scientist", score: null })],
+    });
+
+  it("draws full rows and no pane under 1280px", async () => {
+    answer({ "/discover?": three() });
+    const { container } = await draw({ width: 1279 });
+    await search(container);
+    expect(query(container, ".bj-discover").className).toBe("bj-discover");
+    expect(container.querySelectorAll("li.bj-disc-row")).toHaveLength(3);
+    expect(container.querySelector(".bj-disc-pane, .bj-disc-row--compact, button.bj-disc-select")).toBeNull();
+    expect(container.querySelectorAll("button.bj-fit-toggle")).toHaveLength(2);
+  });
+
+  it("draws the list beside the first row in full from 1280px, with no request beyond the search", async () => {
+    answer({ "/discover?": three() });
+    const { container } = await draw({ width: 1280 });
+    await search(container);
+    expect(query(container, ".bj-discover").className).toBe("bj-discover bj-discover--wide");
+    expect(container.querySelectorAll("li.bj-disc-row.bj-disc-row--compact")).toHaveLength(3);
+    const pane = query(container, "section.bj-disc-pane");
+    expect(words(query(pane, "h3"))).toBe("Data Engineer");
+    const before = calls().length;
+    click(buttonNamed(container, "Data Scientist at Acme, show details"));
+    expect(words(query(pane, "h3"))).toBe("Data Scientist");
+    expect(words(query(pane, ".bj-fit-unscored"))).toBe("Not scored");
+    expect(calls().length).toBe(before);
+    // Choosing a row is not something the page speaks: its polite status still holds the search's sentence.
+    expect(status(container)).toBe("The search finished: 2 scored, 1 more, unscored.");
+  });
+
+  it("follows the window: the same answer is redrawn as the other layout, and nothing is searched again", async () => {
+    answer({ "/discover?": three() });
+    const { container, viewport } = await draw({ width: 1440 });
+    await search(container);
+    expect(container.querySelector(".bj-disc-pane")).not.toBeNull();
+    viewport.setWidth(1100);
+    expect(container.querySelector(".bj-disc-pane, .bj-disc-row--compact")).toBeNull();
+    expect(container.querySelectorAll("li.bj-disc-row")).toHaveLength(3);
+    viewport.setWidth(1440);
+    expect(words(query(query(container, "section.bj-disc-pane"), "h3"))).toBe("Data Engineer");
+    expect(callsTo("GET /discover")).toHaveLength(1);
+  });
+
+  it("tracks from the pane with the same request a row makes, and offers Open workspace in both", async () => {
+    answer({ "/discover?": three(), "POST /discover/track": { id: "app-9" } });
+    const { container } = await draw({ width: 1440 });
+    await search(container);
+    click(buttonNamed(query(container, "section.bj-disc-pane"), "Track Data Engineer at Acme"));
+    await flush();
+    expect(callsTo("POST /discover/track")).toHaveLength(1);
+    expect(container.querySelectorAll("a[href='/applications/app-9']")).toHaveLength(2);
+    expect(status(container)).toBe("Tracked Data Engineer. Open workspace is now available.");
   });
 });
 

@@ -227,6 +227,33 @@ export function arrange(input: ArrangeInput): Arranged {
   };
 }
 
+// ── which row the detail pane shows ────────────────────────────────────────
+//
+// On a wide screen the rows are a compact list and one of them is shown in full beside it. A row is named
+// by its section as well as its address, because one posting can sit in both lists and choosing one must
+// not choose the other. The same key names a row's open "Why this score" on a narrow screen.
+
+/** The name of one drawn row: its section and its address. */
+export function rowKey(section: Section, job: JobCard): string {
+  return `${section}:${job.apply_url}`;
+}
+
+/** The rows on show, in the order they are drawn: the scored section, then "More results". */
+export function shownRowKeys(arranged: Arranged): string[] {
+  return [...arranged.scored.map((job) => rowKey("scored", job)), ...arranged.more.map((job) => rowKey("more", job))];
+}
+
+/**
+ * The row the pane shows: the chosen one while it is still on show, otherwise the first row on show, and
+ * none when no row is. So the first row is shown when an answer arrives (nothing is chosen yet), and when
+ * a fit choice hides the chosen row the pane moves to the first row that is left instead of showing a job
+ * that is no longer in the list.
+ */
+export function selectedRowKey(shown: readonly string[], chosen: string | null): string | null {
+  if (chosen !== null && shown.includes(chosen)) return chosen;
+  return shown[0] ?? null;
+}
+
 function resultsWord(total: number): string {
   return total === 1 ? "result" : "results";
 }

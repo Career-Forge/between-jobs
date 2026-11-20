@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import {
   arrange,
   arrangeAnnouncement,
@@ -10,6 +10,9 @@ import {
   reordersByDate,
   resolveFilter,
   resolveSort,
+  rowKey,
+  selectedRowKey,
+  shownRowKeys,
   TOOLBAR_MIN_ROWS,
   type Arranged,
   type FitFilter,
@@ -20,6 +23,8 @@ import { hasRows, rowsOf, searchNotesOf } from "../../lib/discoverFacts";
 import type { DiscoverResponse, JobCard } from "../../lib/discoverTypes";
 import { fitViewOf, isFallback } from "../../lib/discoverRow";
 import { EmptyState } from "../paper/StateViews";
+import { CompactRow } from "./CompactRow";
+import { DetailPane } from "./DetailPane";
 import { ResultRow } from "./ResultRow";
 import { ResultsToolbar } from "./ResultsToolbar";
 import { SearchStatus } from "./SearchStatus";
@@ -53,11 +58,21 @@ import "../../styles/discover.css";
 // rule: it says "newest first" for the whole page only when every shown section moved, and names the one that
 // kept its order otherwise.
 //
-// A person's choices -- the fit, the sort, which details are open and the sentence last announced --
-// are state of this view and live only in memory. They start fresh whenever a different search answer
-// arrives (the page unmounts this view while a search runs, and the derived reset below covers an answer
-// that replaces another in place), because a new search is a new question and "Good" must not hide
-// rows from it unasked. Tracking a row or saving a search keeps the same answer, so it keeps them.
+// TWO LAYOUTS. Under 1280px the rows are full rows, each with its text, its model's line and its own
+// "Why this score" to open. From 1280px (`wide`) the same rows are compact (CompactRow.tsx) in a list on
+// the left, and a pane on the right shows one of them in full (DetailPane.tsx): the row whose title was
+// pressed, or the first row on show when an answer arrives. When a fit choice hides the chosen row the
+// pane moves to the first row that is left, and that row stays chosen afterwards, so the earlier one does
+// not come back unasked when the fit is cleared. A sort moves rows and leaves the choice where it is. The
+// pane has nothing folded, so the "Show score details" switch is not drawn there. The heading, the notices,
+// the status block and the toolbar are the same in both and sit above the two columns.
+//
+// A person's choices -- the fit, the sort, which details are open, which row the pane shows and the
+// sentence last announced -- are state of this view and live only in memory. They start fresh whenever
+// a different search answer arrives (the page unmounts this view while a search runs, and the derived
+// reset below covers an answer that replaces another in place), because a new search is a new question
+// and "Good" must not hide rows from it unasked. Tracking a row or saving a search keeps the same answer,
+// so it keeps them.
 //
 // The band holds the next step (a search again, clear the filters); nothing here is gold.
 
@@ -86,9 +101,11 @@ export interface ResultsViewProps {
   /** A line about the answer as a whole (where it is from), drawn under the "Results" heading. Not drawn when there are no rows. */
   lead?: ReactNode;
   timeZone?: string;
+  /** From 1280px: compact rows beside a pane that shows the chosen one in full. Full rows otherwise. */
+  wide?: boolean;
 }
 
-export function ResultsView({ result, now, tracking, tracked, trackErrors, onTrack, lead, timeZone }: ResultsViewProps) {
+export function ResultsView({ result, now, tracking, tracked, trackErrors, onTrack, lead, timeZone, wide = false }: ResultsViewProps) {
   const [filter, setFilter] = useState<FitFilter>("all");
   const [sort, setSort] = useState<SortMode>("returned");
   // "Show score details": every row's "Why this score". A row's own press is an override of it, keyed by
@@ -97,6 +114,10 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
   const [allOpen, setAllOpen] = useState(false);
   const [overrides, setOverrides] = useState<Readonly<Record<string, boolean>>>({});
   const [announcement, setAnnouncement] = useState("");
+  // The row the pane shows on a wide screen, by its key; null until a title is pressed or a row is given
+  // the pane because the chosen one left the list.
+  const [chosenRow, setChosenRow] = useState<string | null>(null);
+  const paneId = useId();
   // The derived-state reset: a different answer starts from All, As returned, details closed. Done while
   // rendering, so the old choices are never drawn against the new rows.
   const [seen, setSeen] = useState(result);
@@ -107,6 +128,7 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
     setAllOpen(false);
     setOverrides({});
     setAnnouncement("");
+    setChosenRow(null);
   }
 
   const scored = rowsOf(result.scored);
@@ -194,7 +216,7 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
   };
 
   const row = (section: Section) => (job: JobCard) => {
-    const key = `${section}:${job.apply_url}`;
+    const key = rowKey(section, job);
     const open = overrides[key] ?? allOpen;
     return (
       <ResultRow
@@ -212,6 +234,49 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
       />
     );
   };
+
+  // The row the pane shows: the chosen one while it is on show, otherwise the first that is. When that is
+  // not the stored choice it is stored now, while rendering (as the reset above is), so a row the pane was
+  // given stays chosen and the one a fit choice hid does not come back unasked. Only a wide screen has a
+  // pane, so only a wide screen stores anything.
+  const shownRow = selectedRowKey(shownRowKeys(arranged), chosenRow);
+  if (wide && shownRow !== chosenRow) setChosenRow(shownRow);
+  const compactRow = (section: Section) => (job: JobCard) => {
+    const key = rowKey(section, job);
+    return (
+      <CompactRow
+        key={job.apply_url}
+        job={job}
+        scoringStrategy={strategy}
+        trackedApplicationId={tracked[job.apply_url] ?? null}
+        tracking={tracking.has(job.apply_url)}
+        trackError={trackErrors[job.apply_url] ?? null}
+        onTrack={onTrack}
+        selected={key === shownRow}
+        paneId={paneId}
+        onSelect={() => setChosenRow(key)}
+      />
+    );
+  };
+  const drawRow = wide ? compactRow : row;
+  // The job behind that key, looked up in the section the key names.
+  const shownJob =
+    (["scored", "more"] as const)
+      .flatMap((section) => arranged[section].map((job) => ({ key: rowKey(section, job), job })))
+      .find((entry) => entry.key === shownRow) ?? null;
+
+  const lists = (
+    <>
+      {arranged.scored.length > 0 && <ul className="bj-disc-list">{arranged.scored.map(drawRow("scored"))}</ul>}
+      {arranged.more.length > 0 && (
+        <>
+          <h2 className="bj-disc-heading bj-disc-heading--more">More results</h2>
+          <p className="bj-disc-note">{moreByDate ? MORE_NOTE_NEWEST : MORE_NOTE_RETURNED}</p>
+          <ul className="bj-disc-list">{arranged.more.map(drawRow("more"))}</ul>
+        </>
+      )}
+    </>
+  );
 
   return (
     <section className="bj-disc-results" aria-labelledby={RESULTS_HEADING_ID}>
@@ -239,19 +304,29 @@ export function ResultsView({ result, now, tracking, tracked, trackErrors, onTra
           onSort={chooseSort}
           allOpen={allOpen}
           onAllOpen={chooseAllOpen}
-          showDetailsSwitch={showDetailsSwitch}
+          showDetailsSwitch={showDetailsSwitch && !wide}
           countLine={filterSummary(activeFilter, shown, total, hiddenUnscored)}
           announcement={announcement}
         />
       )}
       {counts.unscored === counts.all && !isFallback(strategy) && <p className="bj-disc-note">{NONE_SCORED_NOTE}</p>}
-      {arranged.scored.length > 0 && <ul className="bj-disc-list">{arranged.scored.map(row("scored"))}</ul>}
-      {arranged.more.length > 0 && (
-        <>
-          <h2 className="bj-disc-heading bj-disc-heading--more">More results</h2>
-          <p className="bj-disc-note">{moreByDate ? MORE_NOTE_NEWEST : MORE_NOTE_RETURNED}</p>
-          <ul className="bj-disc-list">{arranged.more.map(row("more"))}</ul>
-        </>
+      {wide ? (
+        <div className="bj-disc-split">
+          <div className="bj-disc-split-list">{lists}</div>
+          <DetailPane
+            id={paneId}
+            selected={shownJob}
+            scoringStrategy={strategy}
+            now={now}
+            trackedApplicationId={shownJob === null ? null : (tracked[shownJob.job.apply_url] ?? null)}
+            tracking={shownJob !== null && tracking.has(shownJob.job.apply_url)}
+            trackError={shownJob === null ? null : (trackErrors[shownJob.job.apply_url] ?? null)}
+            onTrack={onTrack}
+            timeZone={timeZone}
+          />
+        </div>
+      ) : (
+        lists
       )}
     </section>
   );

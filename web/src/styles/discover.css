@@ -13,8 +13,18 @@
  * word "Placeholder" (96px). A phone puts the rest below the identity; from 960px (the shell's phone
  * breakpoint) the model's line moves to a column on the right. Rows past the scoring batch and rows whose score is a placeholder
  * are lighter and use their own templates. The strongest tier alone sits on a lighter surface; no tier
- * is dimmed or recolored. The list takes the width of the shell's column, at most 880px, and bleeds
- * one row padding into the page so the text lines up with the page edge.
+ * is dimmed or recolored. The list bleeds one row padding into the page so the text lines up with the
+ * page edge.
+ *
+ * Widths. Under 1280px the page is one column of at most 880px. From 1280px it takes the whole of the
+ * shell's column (at most 1440px): the form's three fields share one row, and a finished search is two
+ * columns -- the list, which takes the room that is left, and a pane of 400px that shows the chosen row
+ * in full, stays in view while the list scrolls and scrolls inside itself when it is taller than the
+ * window. There the rows are compact (the score gutter, and beside it the identity with the actions
+ * under it) and the pane holds the rest. The sentences above the two columns keep a readable measure.
+ * This file states no width for that layout: components/discover/DiscoverView.tsx is told the window
+ * is wide and puts .bj-discover--wide on the page, and the rules for the wide layout key on that class
+ * and on the classes only its markup has, so the styles and the markup cannot disagree.
  *
  * Under 960px every control is at least 44px tall, the form's fields stack, and a field's text is 16px
  * so a phone does not zoom in when one is focused. Long unbroken strings from a posting (a company, a
@@ -700,6 +710,200 @@
   .bj-disc-row--unscored .bj-disc-actions {
     margin-top: 0;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* The wide layout: a compact list beside the chosen row in full        */
+/* ------------------------------------------------------------------ */
+
+/* Every rule here is for markup that is drawn only from 1280px (see the top of the file), and comes
+   after the rules it overrides. */
+
+.bj-discover--wide {
+  max-width: none;
+}
+
+/* The three fields share one row, the search words taking half of it. */
+.bj-discover--wide .bj-disc-fields {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.bj-discover--wide .bj-disc-field-wide {
+  grid-column: auto;
+}
+
+/* Sentences and callouts keep a measure a line can be read at, however wide the column is. */
+.bj-discover--wide .bj-disc-form > p,
+.bj-discover--wide > .bj-state,
+.bj-discover--wide .bj-disc-results > .bj-disc-note,
+.bj-discover--wide .bj-disc-fallback,
+.bj-discover--wide .bj-disc-status,
+.bj-discover--wide .bj-disc-count {
+  max-width: 880px;
+}
+
+.bj-disc-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  column-gap: var(--bj-space-6);
+  align-items: start;
+  min-width: 0;
+}
+
+/* The two lists and the "More results" heading between them, spaced as they are in one column. */
+.bj-disc-split-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+}
+
+/* A compact row keeps the full row's gutter and leaves out most of its areas: the score at the left, and
+   beside it the identity with the actions under it. The gutter is the tallest thing in the row, so putting
+   the actions under the identity costs no height and leaves the title the whole width of the list, however
+   narrow the list is. A failed Track goes under the actions. The posting text, the model's line, the detail
+   and the trail have no area: the pane draws them. */
+.bj-disc-row--compact {
+  grid-template-columns: 100px minmax(0, 1fr);
+  grid-template-areas:
+    "score main"
+    "score actions"
+    ". problem";
+  padding-top: var(--bj-space-3);
+  padding-bottom: var(--bj-space-3);
+}
+
+/* A placeholder's gutter holds the word "Placeholder", which takes 96px. */
+.bj-disc-row--compact.bj-disc-row--placeholder {
+  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-areas:
+    "score main"
+    "score actions"
+    ". problem";
+}
+
+/* A row that was not scored has no gutter, so it is one line that wraps: the identity, which takes the room
+   and keeps at least 240px, then "Not scored" and the actions at the middle of the line they are on. A
+   failed Track takes a line of its own. */
+.bj-disc-row--compact.bj-disc-row--unscored {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bj-space-2) var(--bj-space-5);
+}
+
+.bj-disc-row--compact.bj-disc-row--unscored .bj-disc-main {
+  flex: 1 1 240px;
+}
+
+.bj-disc-row--compact.bj-disc-row--unscored .bj-fit,
+.bj-disc-row--compact.bj-disc-row--unscored .bj-disc-actions {
+  flex: none;
+  align-self: center;
+  margin-top: 0;
+}
+
+.bj-disc-row--compact.bj-disc-row--unscored .bj-disc-problem {
+  flex: 1 1 100%;
+  margin-top: 0;
+}
+
+/* The title of a compact row is the button that puts the row in the pane. It keeps the title's face and
+   size and wraps like one; its padding is the hit area, and it is pulled back by that padding so the
+   words line up with the lines under them. Which row is on show is the shared selection fill, turned on
+   by the button's pressed state (tokens.css): nothing here styles a state. */
+button.bj-disc-select {
+  max-width: 100%;
+  margin: 0 0 0 calc(-1 * var(--bj-space-2));
+  padding: 2px var(--bj-space-2);
+  border-color: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+button.bj-disc-select:hover {
+  border-color: transparent;
+  background: var(--bj-hover-bg-raised);
+}
+
+/* The pane. It keeps the window's height less the space above and below it, and scrolls inside itself
+   past that. Its inner padding is at least the focus ring's width and offset, so a ring on a control at
+   its edge is not cut off by that scrolling, and is wider at the right, where its scrollbar is drawn, so
+   the bar does not sit on the end of a line. A hairline at its left, as a rule and not as a card. */
+.bj-disc-pane {
+  position: sticky;
+  top: var(--bj-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--bj-space-3);
+  min-width: 0;
+  max-height: calc(100vh - 2 * var(--bj-space-5));
+  overflow-y: auto;
+  padding: var(--bj-space-1) var(--bj-space-3) var(--bj-space-1) var(--bj-space-5);
+  border-left: 1px solid var(--bj-border);
+}
+
+/* The parts are the row's own, which space themselves with a top margin inside the row's grid. In the
+   pane the gap above does that. */
+.bj-disc-pane > * {
+  margin-top: 0;
+}
+
+/* "Selected job": the region's name, small and quiet, in the mono caps of a label. */
+.bj-disc-pane-label {
+  margin: 0;
+  font-family: var(--bj-font-mono);
+  font-size: var(--bj-text-eyebrow);
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bj-text-muted);
+}
+
+/* The score beside the identity, on one baseline as in a row. A placeholder has no number to line up,
+   and a row that was not scored has no gutter. */
+.bj-disc-pane-head {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  grid-template-areas: "score main";
+  column-gap: var(--bj-space-4);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.bj-disc-pane-head--placeholder {
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: start;
+}
+
+.bj-disc-pane-head--unscored {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "main";
+}
+
+.bj-disc-pane-heading {
+  margin: var(--bj-space-2) 0 0;
+  font-family: var(--bj-font-body);
+  font-size: var(--bj-text-small);
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--bj-text);
+}
+
+/* Nothing is folded in the pane: the posting's text and the model's line are whole, and the pane's own
+   scrolling holds a long one. */
+.bj-disc-pane .bj-disc-snippet,
+.bj-disc-pane .bj-fit-oneliner {
+  display: block;
+  -webkit-line-clamp: none;
+  overflow: visible;
+}
+
+/* One bar to a line: the pane is narrower than the width at which a row's bars pair up. */
+.bj-disc-pane .bj-fit-bars {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* ------------------------------------------------------------------ */

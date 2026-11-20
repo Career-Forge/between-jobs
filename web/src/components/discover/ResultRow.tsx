@@ -1,17 +1,17 @@
-import { useEffect, useId, useRef } from "react";
-import { Link } from "react-router-dom";
-import { formatSalary, locationLabel } from "../../lib/discover";
-import type { JobCard, ScoreBin } from "../../lib/discoverTypes";
-import { fitViewOf, hasSponsorshipSignal, rowReceipt, rowTrail, sponsorshipTag, sponsorshipWords } from "../../lib/discoverRow";
+import { useId } from "react";
+import type { JobCard } from "../../lib/discoverTypes";
+import { fitViewOf, rowReceipt, rowTrail } from "../../lib/discoverRow";
 import { FailureState } from "../paper/StateViews";
 import { TrailLine } from "../paper/TrailLine";
 import { FitDetail, FitReading, FitScore, FitToggle } from "./FitBlock";
+import { IdentityMeta, RowActions, postingBody, rowKindClass, useTrackPress, whatOf } from "./RowParts";
 import "../../styles/discover.css";
 
-// One search result as a list row, in the order a person reads it: who and where (title, company and
+// One search result as a full list row, in the order a person reads it: who and where (title, company and
 // place, pay), then the fit score in a gutter on the left, what the posting says, the model's one line
 // and what the score left out, the row's actions, and its trail as the last line (inline at every
-// width, as a list-like surface's trails are).
+// width, as a list-like surface's trails are). This is the row of a screen under 1280px; from there the
+// list is compact rows beside a pane that shows one of them in full (CompactRow.tsx, DetailPane.tsx).
 //
 // A row is one of three kinds, by what it has to say:
 //
@@ -22,19 +22,9 @@ import "../../styles/discover.css";
 //                 and the words "Not scored" with the actions -- with no gutter, no model line and no detail
 //
 // The rows in the engine's top bin (Strong, which a person reads as "Good") are lifted onto a slightly
-// lighter surface; the other bins carry only a class so a later rule can find them. The classes are named
-// for the engine's bins, not for the grades a person is shown, and come from a fixed table, never from
-// the response's own text.
-//
-// An address that came from a search provider or a scraped page is untrusted text: only an http(s)
-// address becomes a link, and any other is left out of the row, never repaired.
-
-const BIN_CLASS: Readonly<Record<ScoreBin, string>> = {
-  Strong: "bj-disc-row--strong",
-  Good: "bj-disc-row--good",
-  Mixed: "bj-disc-row--mixed",
-  Poor: "bj-disc-row--poor",
-};
+// lighter surface; the other bins carry only a class so a later rule can find them. The classes, the
+// rule for which address may become a link, the posting's text and the actions are RowParts.tsx, shared
+// with the other two drawings of a result.
 
 export interface ResultRowProps {
   job: JobCard;
@@ -53,101 +43,29 @@ export interface ResultRowProps {
   onToggleDetails?: () => void;
 }
 
-function safeHref(url: string): string | null {
-  return /^https?:\/\//i.test(url) ? url : null;
-}
-
 export function ResultRow({ job, scoringStrategy, now, trackedApplicationId, tracking, trackError, onTrack, timeZone, detailsOpen = false, onToggleDetails }: ResultRowProps) {
-  // Track is replaced by "Open workspace" when it succeeds. The button a person pressed is then gone
-  // and focus would fall to the page, so focus follows to the link that took its place. Only a row
-  // whose Track was pressed does this, and only when focus really was lost (it is on the page itself),
-  // never when the person has moved on to something else.
-  const trackPressed = useRef(false);
-  const workspaceLink = useRef<HTMLAnchorElement>(null);
-  const track = () => {
-    if (tracking) return;
-    trackPressed.current = true;
-    onTrack(job);
-  };
-  useEffect(() => {
-    if (trackedApplicationId === null || !trackPressed.current) return;
-    trackPressed.current = false;
-    const active = document.activeElement;
-    if (active === null || active === document.body) workspaceLink.current?.focus();
-  }, [trackedApplicationId]);
-  const salary = formatSalary(job.salary_min, job.salary_max, job.salary_currency);
+  const press = useTrackPress(job, tracking, trackedApplicationId, onTrack);
   const fit = fitViewOf(job, scoringStrategy);
-  const href = safeHref(job.apply_url);
-  const company = job.company ?? "Unknown company";
-  const what = `${job.title} at ${company}`;
+  const what = whatOf(job);
   const detailId = useId();
   const open = fit.kind === "scored" && detailsOpen;
-  const rowClass = [
-    "bj-disc-row",
-    fit.kind === "placeholder" ? "bj-disc-row--placeholder" : fit.kind === "unscored" ? "bj-disc-row--unscored" : BIN_CLASS[fit.level],
-    open ? "bj-disc-row--open" : null,
-  ]
-    .filter((name) => name !== null)
-    .join(" ");
-  const snippet = job.snippet !== "" ? <p className="bj-disc-snippet">{job.snippet}</p> : null;
-  const signal = hasSponsorshipSignal(job.sponsorship_signal) ? (
-    <p className="bj-disc-signal">
-      {sponsorshipWords(job.sponsorship_signal, job.provider)}{" "}
-      <span className="bj-disc-signal-tag">
-        <span className="bj-trail-glyph bj-trail-glyph--muted" aria-hidden="true">
-          {"○"}
-        </span>{" "}
-        {sponsorshipTag(job.sponsorship_signal, job.provider)}
-      </span>
-    </p>
-  ) : null;
-  // The posting text and the sponsorship line share one area. On a row past the scoring batch the
-  // sponsorship line leads, and the text under it is muted and kept to four lines.
-  const body =
-    fit.kind === "unscored" ? (
-      <>
-        {signal}
-        {snippet}
-      </>
-    ) : (
-      <>
-        {snippet}
-        {signal}
-      </>
-    );
+  const rowClass = ["bj-disc-row", rowKindClass(fit), open ? "bj-disc-row--open" : null].filter((name) => name !== null).join(" ");
+  const body = postingBody(job, fit.kind);
   return (
     <li className={rowClass}>
       <div className="bj-disc-main">
         <h3 className="bj-disc-title">{job.title}</h3>
-        <p className="bj-disc-meta">
-          {company} {"--"} {locationLabel(job)}
-        </p>
-        {salary !== null && <p className="bj-disc-meta">{salary}</p>}
+        <IdentityMeta job={job} />
       </div>
       <FitScore view={fit} />
-      {(snippet !== null || signal !== null) && <div className="bj-disc-body">{body}</div>}
+      {body !== null && <div className="bj-disc-body">{body}</div>}
       <FitReading view={fit} />
-      <div className="bj-disc-actions">
-        {href !== null && (
-          <a href={href} target="_blank" rel="noopener noreferrer" aria-label={`View posting for ${what} (opens in a new tab)`}>
-            View posting
-          </a>
-        )}
-        {trackedApplicationId !== null ? (
-          <Link ref={workspaceLink} to={`/applications/${trackedApplicationId}`} aria-label={`Open workspace for ${what}`}>
-            Open workspace
-          </Link>
-        ) : (
-          <button type="button" aria-disabled={tracking ? true : undefined} aria-label={`${tracking ? "Tracking..." : "Track"} ${what}`} onClick={track}>
-            {tracking ? "Tracking..." : "Track"}
-          </button>
-        )}
-      </div>
+      <RowActions job={job} trackedApplicationId={trackedApplicationId} tracking={tracking} press={press} />
       {fit.kind === "scored" && <FitToggle open={open} detailId={detailId} label={`Why this score for ${what}`} onToggle={() => onToggleDetails?.()} />}
       {fit.kind === "scored" && open && <FitDetail view={fit} id={detailId} />}
       {trackError !== null && (
         <div className="bj-disc-problem">
-          <FailureState message={`Couldn't track ${what}: ${trackError}`} onRetry={track} />
+          <FailureState message={`Couldn't track ${what}: ${trackError}`} onRetry={press.track} />
         </div>
       )}
       <div className="bj-disc-trail">

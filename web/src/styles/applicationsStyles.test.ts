@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import appCss from "../app.css?raw";
 import { PHONE_QUERY } from "../lib/useMediaQuery";
 import tokensCss from "../tokens.css?raw";
-import { blockOf, declarationsFor, rulesOf, withoutMedia } from "../testing/css";
+import { blockOf, declarationsFor, horizontalPaddingPx, rulesOf, withoutMedia } from "../testing/css";
 import applicationsCss from "./applications.css?raw";
 
 // applications.css is read as text (there is no layout engine in the test run). What it pins is what
@@ -14,6 +14,20 @@ const base = withoutMedia(applicationsCss);
 const phone = blockOf(applicationsCss, "@media (max-width: 959px)") ?? "";
 const mid = blockOf(applicationsCss, "@media (min-width: 960px)") ?? "";
 const wide = blockOf(applicationsCss, "@media (min-width: 1280px)") ?? "";
+
+// Every block under one query, joined: a rule that has to come after the one it overrides sits in a
+// block of its own further down the file.
+function blocksOf(header: string): string {
+  const parts: string[] = [];
+  let rest = applicationsCss;
+  for (;;) {
+    const block = blockOf(rest, header);
+    if (block === null) return parts.join("\n");
+    parts.push(block);
+    rest = rest.slice(rest.indexOf(block) + block.length);
+  }
+}
+const everyWide = blocksOf("@media (min-width: 1280px)");
 
 describe("applications.css", () => {
   it("was loaded as text and holds its three width blocks", () => {
@@ -52,13 +66,44 @@ describe("applications.css", () => {
 });
 
 describe("the list and the board", () => {
-  it("keeps the list to the measure for lists, 880px", () => {
-    expect(declarationsFor(base, ".bj-app-list")["max-width"]).toBe("880px");
+  it("keeps the list to the measure for lists, 880px, under 1280px, as one column", () => {
+    const list = declarationsFor(base, ".bj-app-list");
+    expect(list["max-width"]).toBe("880px");
+    expect(list.display).toBe("flex");
+    expect(list["flex-direction"]).toBe("column");
     expect(declarationsFor(base, ".bj-app-track")["max-width"]).toBe("880px");
+    for (const block of [phone, mid]) expect(declarationsFor(block, ".bj-app-list")).toEqual({});
   });
 
-  it("lifts the shell's 960px cap from 1280px, so the board can use the content column", () => {
+  it("sets the list's cards two to a row from 1280px, as wide together as the shell's column less the page's padding", () => {
+    const list = declarationsFor(everyWide, ".bj-app-list");
+    expect(list).toEqual({ display: "grid", "grid-template-columns": "repeat(2, minmax(0, 1fr))", "max-width": "1376px" });
+    // 1440px, the shell's cap (app.css), less what this page pads each side with.
+    const [left, right] = horizontalPaddingPx(declarationsFor(wide, ".bj-main:has(.bj-apps)"));
+    const shellCap = Number.parseFloat(declarationsFor(blockOf(appCss, "@media (min-width: 1280px)") ?? "", ".bj-main")["max-width"]);
+    expect(shellCap - (left ?? Number.NaN) - (right ?? Number.NaN)).toBe(1376);
+    // The list has two rules, and the two-column one comes after the one-column one, so it is the one
+    // that applies from 1280px (a media query adds no weight of its own).
+    expect(code.match(/\.bj-app-list \{/g)).toHaveLength(2);
+    expect(code.indexOf("max-width: 1376px")).toBeGreaterThan(code.indexOf(".bj-app-list {"));
+    expect(code.indexOf("max-width: 1376px")).toBeGreaterThan(code.lastIndexOf(".bj-app-list {"));
+  });
+
+  it("keeps the tracking forms and the callouts at 880px at every width: they are forms and sentences", () => {
+    expect(declarationsFor(base, ".bj-app-track")["max-width"]).toBe("880px");
+    expect(declarationsFor(base, ".bj-app-section > .bj-state")["max-width"]).toBe("880px");
+    expect(declarationsFor(everyWide, ".bj-app-track")).toEqual({});
+    expect(declarationsFor(everyWide, ".bj-app-section > .bj-state")).toEqual({});
+  });
+
+  it("lifts the shell's cap from 1280px, so the board can use the content column however wide the window", () => {
     expect(declarationsFor(wide, ".bj-main:has(.bj-apps)")["max-width"]).toBe("none");
+  });
+
+  it("keeps Practice, a page of sentences, to the list measure from 1280px, where the shell's column grows", () => {
+    expect(declarationsFor(everyWide, ".bj-practice")).toEqual({ "max-width": "880px" });
+    // Under 1280px the shell's own cap is narrower than that, so the page states none there.
+    expect(declarationsFor(base, ".bj-practice")["max-width"]).toBeUndefined();
   });
 
   it("lays the seven columns in one row that scrolls inside itself, never the page", () => {

@@ -60,7 +60,7 @@ function props(overrides: Partial<DiscoverViewProps> = {}): DiscoverViewProps {
 }
 
 function draw(overrides: Partial<DiscoverViewProps> = {}) {
-  installViewport(1000);
+  installViewport(overrides.wide === true ? 1440 : 1000);
   return render(
     <MemoryRouter>
       <DiscoverView {...props(overrides)} />
@@ -1740,5 +1740,73 @@ describe("what pressing Search costs, as the buttons' description", () => {
     expect(a).not.toBe(b);
     expect(first.container.contains(document.getElementById(a!))).toBe(true);
     expect(second.container.contains(document.getElementById(b!))).toBe(true);
+  });
+});
+
+describe("a wide screen: the list beside the chosen row", () => {
+  const two = () => response({ scored: [job(), job({ apply_url: "https://jobs.example/acme/2", title: "Analyst" })] });
+
+  it("marks the page wide only when it is told the window is, and not otherwise", () => {
+    const narrow = draw(ready(two()));
+    expect(query(narrow.container, ".bj-discover").className).toBe("bj-discover");
+    expect(narrow.container.querySelector(".bj-disc-pane, .bj-disc-split")).toBeNull();
+    narrow.unmount();
+    const wide = draw({ ...ready(two()), wide: true });
+    expect(query(wide.container, ".bj-discover").className).toBe("bj-discover bj-discover--wide");
+  });
+
+  it("draws a finished search as compact rows and a pane that shows the first of them", () => {
+    const { container } = draw({ ...ready(two()), wide: true });
+    expect(container.querySelectorAll("li.bj-disc-row.bj-disc-row--compact")).toHaveLength(2);
+    const pane = query(container, "section.bj-disc-pane");
+    expect(words(query(pane, "h3"))).toBe("Data Engineer");
+    expect(query(container, "button.bj-disc-select[aria-pressed='true']").getAttribute("aria-controls")).toBe(pane.id);
+  });
+
+  it("keeps the page's order: the band, the form, the saved searches, then the results with the pane last", () => {
+    const saved = { id: "s-1", query: "data analyst", location: null, companies: [], remote_only: false, is_active: true, created_at: "2026-09-01T00:00:00Z", last_matched_at: null };
+    const { container } = draw({
+      ...ready(two()),
+      wide: true,
+      saved: { state: { kind: "ready", searches: [saved], busyId: null, error: null }, actions: { toggle: vi.fn(), remove: vi.fn(), retry: vi.fn() }, createError: null },
+    });
+    const order = [...container.querySelectorAll("section[aria-label='Next step'], form, .bj-disc-saved, .bj-disc-results, .bj-disc-pane")].map((element) =>
+      element.matches(".bj-disc-pane") ? "pane" : element.matches(".bj-disc-results") ? "results" : element.matches(".bj-disc-saved") ? "saved" : element.tagName,
+    );
+    expect(order).toEqual(["SECTION", "FORM", "saved", "results", "pane"]);
+    expect(query(container, ".bj-disc-saved").closest(".bj-disc-split")).toBeNull();
+  });
+
+  it("draws no pane in any state that has no rows: idle, searching, setup, a failure and an answer with nothing in it", () => {
+    const empty = response({ scored: [], more: [] });
+    const states: Partial<DiscoverViewProps>[] = [
+      {},
+      { search: { kind: "loading", startedAt: NOW.getTime() }, outcome: band({ phase: "searching" }) },
+      { search: { kind: "error", message: "Request failed (500)" } },
+      { setup: { message: "Discover scores jobs against your profile with your model.", missing: [{ label: "Add your profile", to: "/profile" }] } },
+      ready(empty),
+    ];
+    for (const overrides of states) {
+      const { container, unmount } = draw({ ...overrides, wide: true });
+      expect(container.querySelector(".bj-disc-pane, .bj-disc-split, button.bj-disc-select")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("holds at most one gold fill there too, and it is the band's", () => {
+    const { container } = draw({ ...ready(two()), wide: true });
+    expect(goldFills(container)).toBeLessThanOrEqual(1);
+    expect(query(container, ".bj-disc-pane").querySelector("button.bj-primary, a.bj-button-link-primary")).toBeNull();
+  });
+
+  it("keeps the restored answer's cost note as the description of the form's Search", () => {
+    const { container } = draw({ ...ready(two()), restored: { at: "09:14" }, wide: true });
+    const submit = buttonNamed(query(container, "form"), "Search again");
+    expect(describedText(submit)).toBe(SEARCH_AGAIN_SPEND_NOTE);
+  });
+
+  it("has no serious accessibility violation", async () => {
+    const { container } = draw({ ...ready(mixedResponse()), wide: true });
+    await expectNoSeriousA11yViolations(container);
   });
 });

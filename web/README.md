@@ -22,7 +22,7 @@ tags name its own host; left unset they name the hosted site (`scripts/siteOrigi
 
 ## Shell, selection and buttons
 
-`src/components/AppShell.tsx` is the signed-in frame. From 960px wide it is a 220px left rail (wordmark,
+`src/components/AppShell.tsx` is the signed-in frame. From 960px wide it is a 232px left rail (wordmark,
 the main navigation, then the signed-in address, Settings, Sign out and the legal links). Under 960px the rail is replaced by a slim top bar and a bottom tab bar with four tabs and a
 More button, whose sheet holds the entries that have no tab. Both navigations are always in the markup and
 CSS shows one; the destinations come from one list in `src/lib/nav.ts`. The page is the one `<main>`, and the
@@ -33,6 +33,14 @@ except while the tester-programme gate draws its own page, or its wait, at one o
 page has both. The command palette and the assistant drawer are reserved
 (`src/components/ReservedSlots.tsx`): `hidden` and inert, so they take no room, print no placeholder and have no
 behavior.
+
+The page column (`.bj-main` in `src/app.css`) is at most 960px wide up to 1279px and at most 1440px from 1280px,
+so a wide window is not left a third empty. Nothing about the shell changes under 1280px. Today and Discover draw
+a second column from that width, and the Applications list sets its cards two to a row; `WIDE_QUERY` and
+`useIsWide()` in `src/lib/useMediaQuery.ts` are the one place the pages read it from. A page of forms or prose
+(Settings, Profile, Hiring signals, Practice, the legal and explainer pages) keeps the narrower measure its own
+stylesheet sets, and what the shell draws itself in the column (the placeholder while a page's code is fetched,
+a page that could not be drawn) keeps 880px.
 
 An address the shell has no page for draws `src/pages/NotFound.tsx` (a heading and a link to Today, no band) instead of an
 empty column; a signed-out visitor to any address but the public ones still gets the sign-in page.
@@ -79,7 +87,9 @@ what it has read, and they draw only that.
   it; its own rows (S1, S2, S2k) say the same thing with buttons that act in place.
 - `components/paper/PageHeader.tsx` (breadcrumb, the page's one `<h1>`, subtitle, actions) and
   `components/paper/StateViews.tsx` (loading, empty, partial, stale, setup-required, failure). `LoadingState`
-  takes `announce={false}` where the band already says the same thing in a live region. `FailureState` takes
+  takes `announce={false}` where the band already says the same thing in a live region, and `FailureState` takes
+  it where the same failure is drawn twice and the other one is the alert (a Discover row and the pane that shows
+  that row in full). `FailureState` takes
   `restoreFocusTo` for a Retry that removes the callout it sits in; the handoff lives in its own marker
   component so that `FailureState` itself stays a plain function of its props, which the DOM-free tests in
   `src/testing/reactTree.ts` rely on (they call components as functions).
@@ -330,9 +340,23 @@ receipt from the same fields.
 - The setup checklist (`components/FirstRunChecklistView.tsx`, rules in `lib/firstRun.ts`) is five steps in
   three states -- to do, done with the real fact, can't tell or couldn't check -- and folds to one line
   ("Setup ready", or the counts) that opens again. It holds no cyan fill.
-- From 1280px a right margin carries "In the background" (saved-search checks and Gmail reads, on whose key);
-  below that the same lines are one disclosure line under the band. `src/styles/today.css` holds the layout
-  and lifts the shell's 960px cap on the column where the margin needs the room.
+- From 1280px the page is two columns (`wide` in `components/today/TodayView.tsx`, from `useIsWide()`): the feed,
+  which takes the room that is left and whose content is at most 1000px wide, and a right column of 320px that
+  stays in view and scrolls inside itself when it is taller than the window. The right column holds, top to
+  bottom, the setup checklist in whichever form it is in (the open list, its one folded line, or nothing), the
+  Pipeline card and "In the background" (saved-search checks and Gmail reads, on whose key). Under 1280px there
+  is one column: "In the background" is one disclosure line under the band, the checklist sits above
+  the feed, and the Pipeline card is the last section. `src/styles/today.css` holds the layout; it pads the
+  column 32px and does not lift the shell's cap.
+- The Pipeline card (`components/today/PipelineCard.tsx`, counted in `lib/todayPipeline.ts`) is one line a stage
+  with its count, each a link to Applications, in the order and words of the Applications board
+  (`ALL_STATUSES`, `STATUS_LABELS`; the card has no list of its own). It counts the `/applications` rows Today
+  already read and makes no request. A row whose status is not one of those stages is counted under "Other",
+  never dropped and never filed under a stage it did not say; a stage that holds nothing has no line; with no
+  applications it is one sentence with a link to Discover. While the read is out it is a placeholder, and when
+  the read failed it says so with a Retry: no count is drawn for data that was not read. It has no "not touched
+  in N days" line, because a row's `updated_at` changes only when the row itself does (a stage move), not when
+  a resume is generated or the company is researched.
 - Links to set something up use `SETTINGS_PATH` and `MODEL_PROVIDER_PATH` (`lib/settingsPaths.ts`), the one place that names the Settings page.
 
 ## Applications and Practice
@@ -365,7 +389,10 @@ cannot be read, is left out rather than guessed.
   an element some page or component renders.
 - `src/pages/Practice.tsx` is a pointer: practice sessions live in each application's workspace. It reads the
   same two setup facts for the band's global rows and nothing of its own.
-- Styles are `src/styles/applications.css` (tokens only; it lifts the shell's 960px cap from 1280px for the board).
+- Styles are `src/styles/applications.css` (tokens only; it lifts the shell's cap from 1280px for the board).
+  Under 1280px the list is one column of at most 880px. From 1280px its cards sit two to a row, up to 1376px
+  (the shell's 1440px column less the page's padding), in the list's own reading order. The tracking forms and
+  the callouts keep 880px at every width, and Practice keeps 880px from 1280px.
 
 ## Discover and Hiring signals
 
@@ -418,6 +445,23 @@ their trail line, inline at every width. Neither makes a search when it opens.
   USAJobs' sponsorship line is worded as the provider's category fact ("by provider, no text read"), never a
   text match. A live-search row says "Link not found closed" when the link check kept it (never "verified"), and
   "Link not checked yet" when it never reached the check. Only an http(s) address becomes a link.
+- **From 1280px the results are a list beside the chosen row** (`wide`, from `useIsWide()` in the page, handed
+  down to `DiscoverView` and `ResultsView`; the page carries `.bj-discover--wide` and `discover.css` keys on that
+  class, so it states no width for this layout). The page takes the whole of the shell's column, the form's three
+  fields share one row, and the heading, the notices and the toolbar sit above two columns. On the left are
+  compact rows (`components/discover/CompactRow.tsx`): the score gutter, and beside it the title, company, place
+  and pay with the row's actions under them. On the right is a pane of 400px (`DetailPane.tsx`), a region labelled
+  "Selected job" that stays in view and scrolls inside itself, and shows one row in full with nothing folded:
+  the identity and score, the same actions, the model's line and the line of what the score left out, every part
+  of "Why this score", the whole posting text with the sponsorship line, and the trail with its receipt. Both
+  are built from the same parts as the full row (`RowParts.tsx`, `FitBlock.tsx`, `lib/discoverRow.ts`), so a
+  placeholder, a row that was not scored and an address that is not http(s) are drawn by the same rules in all
+  three. The first row is shown when an answer arrives. A row is chosen with its title, which is a button
+  (`aria-pressed` on the row on show, `aria-controls` naming the pane, the shared `.bj-selectable` fill);
+  choosing moves no focus and announces nothing. When a fit choice hides the chosen row the pane moves to the
+  first row left and stays there (`selectedRowKey` in `lib/discoverArrange.ts`); a sort keeps the choice. The
+  "Show score details" switch is not drawn there. A failed Track is on the row, as an alert, and also in the pane
+  for the row on show, without the alert role. Under 1280px none of this is drawn: the rows are the full rows.
 - **The results** (`components/discover/ResultsView.tsx`, `ResultsToolbar.tsx`, `lib/discoverArrange.ts`). From three
   rows there is a toolbar, and it draws only the tools that have something to offer: chips to keep one fit (All,
   Good, Decent, Bad fit and Not scored: a grade, or the rows that were not scored), each with its count, a sort (as

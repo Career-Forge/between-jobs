@@ -147,6 +147,11 @@ export interface FailureStateProps {
    * control that stays, evaluated when the callout goes. Nothing moves when focus was somewhere else.
    */
   restoreFocusTo?: () => HTMLElement | null;
+  /**
+   * False when the same failure is drawn in another place on the page that already announces it (a row and
+   * the pane that shows that row in full), so it is spoken once. The callout looks the same either way.
+   */
+  announce?: boolean;
 }
 
 // The focus handoff, kept apart from FailureState so that the callout itself stays a plain function of its props (the
@@ -171,9 +176,9 @@ function FocusHandoff({ restoreFocusTo }: { restoreFocusTo: () => HTMLElement | 
   return <span ref={marker} hidden />;
 }
 
-export function FailureState({ message, onRetry, retryLabel = "Retry", restoreFocusTo }: FailureStateProps) {
+export function FailureState({ message, onRetry, retryLabel = "Retry", restoreFocusTo, announce = true }: FailureStateProps) {
   return (
-    <div className="bj-state bj-state--failure" role="alert">
+    <div className="bj-state bj-state--failure" role={announce ? "alert" : undefined}>
       <p>
         <span className="bj-state-glyph" aria-hidden="true">
           {"✕"}
