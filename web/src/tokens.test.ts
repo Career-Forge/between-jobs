@@ -26,7 +26,7 @@ function contrast(a: string, b: string): number {
 }
 
 describe("the palette contract", () => {
-  it("is the Regalia palette of the Royal Atelier boards", () => {
+  it("is the charcoal palette: neutral greys, a slate selection fill, one gold and one link blue", () => {
     expect({
       bg: token("--bj-bg"),
       surface: token("--bj-surface"),
@@ -45,22 +45,22 @@ describe("the palette contract", () => {
       danger: token("--bj-danger"),
       focus: token("--bj-focus-ring"),
     }).toEqual({
-      bg: "#05060a",
-      surface: "#0b1430",
-      raised: "#122047",
-      overlay: "#1a2c5e",
-      border: "#1c2b55",
-      text: "#eef2fa",
-      muted: "#a6b3d1",
-      royal: "#2b50c8",
-      royalHover: "#3159d2",
-      gold: "#e8b84a",
-      goldHover: "#fbc750",
-      link: "#9db7ff",
-      emerald: "#3dd6a0",
-      violet: "#9a7be8",
-      danger: "#ff7a8a",
-      focus: "#9db7ff",
+      bg: "#15171d",
+      surface: "#1c1f27",
+      raised: "#242833",
+      overlay: "#2d323d",
+      border: "#2b303b",
+      text: "#e6e9f0",
+      muted: "#a3abbb",
+      royal: "#34436b",
+      royalHover: "#3c4d79",
+      gold: "#d9a93f",
+      goldHover: "#e4b752",
+      link: "#8fb0ff",
+      emerald: "#5cc29b",
+      violet: "#a898e6",
+      danger: "#ee8a96",
+      focus: "#8fb0ff",
     });
   });
 
@@ -73,8 +73,9 @@ describe("the palette contract", () => {
 });
 
 describe("what was added", () => {
-  it("names the outline, the brand dot and the selection primitive", () => {
-    expect(token("--bj-outline")).toBe("#6c86c9");
+  it("names the outline, the field well, the brand dot and the selection primitive", () => {
+    expect(token("--bj-outline")).toBe("#747c8f");
+    expect(token("--bj-field")).toBe("#111318");
     expect(token("--bj-brand-dot")).toBe(token("--bj-gold"));
     expect(token("--bj-selected-bg")).toBe(token("--bj-royal"));
     expect(token("--bj-selected-bg-hover")).toBe(token("--bj-royal-hover"));
@@ -136,6 +137,31 @@ describe("what was added", () => {
   it("uses the brand dot for the wordmark's dot and nothing else", () => {
     expect(appCss.match(/var\(--bj-brand-dot\)/g)).toHaveLength(1);
     expect(declarationsFor(appCss, ".bj-wordmark-dot").background).toBe("var(--bj-brand-dot)");
+  });
+});
+
+describe("fields", () => {
+  it("draws a text field as a dark well with the outline around it, not as a filled card", () => {
+    for (const selector of ["input", "textarea"]) {
+      expect(declarationsFor(tokensCss, selector).background, selector).toBe("var(--bj-field)");
+      expect(declarationsFor(tokensCss, selector).border, selector).toBe("1px solid var(--bj-outline)");
+    }
+    expect(luminance(token("--bj-field"))).toBeLessThan(luminance(token("--bj-bg")));
+  });
+});
+
+describe("how little colour the surfaces carry", () => {
+  // The glare this palette replaces came from large navy surfaces. A surface here is a grey with a
+  // faint cool cast: no channel may sit more than 16 steps (of 255) from another.
+  it.each(["--bj-bg", "--bj-surface", "--bj-surface-raised", "--bj-surface-overlay", "--bj-border", "--bj-field"])("%s is close to neutral", (name) => {
+    const channels = [1, 3, 5].map((i) => Number.parseInt(token(name).slice(i, i + 2), 16));
+    expect(Math.max(...channels) - Math.min(...channels), token(name)).toBeLessThanOrEqual(16);
+  });
+
+  it("steps each surface lighter than the one under it", () => {
+    const ladder = ["--bj-field", "--bj-bg", "--bj-surface", "--bj-surface-raised", "--bj-surface-overlay"].map((name) => luminance(token(name)));
+    expect([...ladder].sort((a, b) => a - b)).toEqual(ladder);
+    expect(new Set(ladder).size).toBe(ladder.length);
   });
 });
 
@@ -280,8 +306,15 @@ const PAIRS: [label: string, foreground: string, background: string, minimum: nu
   ["Discover score numeral: gold on the lifted Strong row's surface", "--bj-gold", "--bj-surface", 4.5],
   ["Discover score numeral: gold on the canvas", "--bj-gold", "--bj-bg", 4.5],
   ["text link on a raised surface: link blue on raised", "--bj-link", "--bj-surface-raised", 4.5],
-  ["field text: ivory on raised", "--bj-text", "--bj-surface-raised", 4.5],
-  ["field and secondary outline against a raised surface", "--bj-outline", "--bj-surface-raised", 3],
+  ["field text: ivory on the field well", "--bj-text", "--bj-field", 4.5],
+  ["field placeholder and hint: muted on the field well", "--bj-text-muted", "--bj-field", 4.5],
+  ["field outline against the field well", "--bj-outline", "--bj-field", 3],
+  ["secondary outline against a raised surface", "--bj-outline", "--bj-surface-raised", 3],
+  ["rail marker: gold against the selected fill", "--bj-gold", "--bj-selected-bg", 3],
+  ["text on the overlay surface: ivory", "--bj-text", "--bj-surface-overlay", 4.5],
+  ["model mark: violet on a raised surface", "--bj-violet", "--bj-surface-raised", 4.5],
+  ["danger text on a raised surface", "--bj-danger", "--bj-surface-raised", 4.5],
+  ["verified mark: emerald on a raised surface", "--bj-emerald", "--bj-surface-raised", 4.5],
   ["text on the overlay surface: ivory and muted", "--bj-text-muted", "--bj-surface-overlay", 4.5],
   ["model mark: violet on surface", "--bj-violet", "--bj-surface", 4.5],
   ["danger text on surface", "--bj-danger", "--bj-surface", 4.5],

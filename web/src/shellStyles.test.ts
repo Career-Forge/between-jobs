@@ -36,9 +36,10 @@ describe("the rail", () => {
     expect(base(".bj-palette-slot")).not.toHaveProperty("border");
   });
 
-  it("leaves selection to the shared primitive: no rule of its own colors an active rail row", () => {
+  it("leaves selection to the shared primitive: the rail's own rule for the current row adds the gold marker and nothing else", () => {
     const own = rulesOf(appCss).filter((rule) => rule.selectors.some((selector) => /^\.bj-nav-item.*(\.active|aria-current)/.test(selector) && !selector.includes(":not(")));
-    expect(own).toEqual([]);
+    expect(own.map((rule) => rule.selectors)).toEqual([['.bj-nav-item[aria-current="page"]']]);
+    expect(own[0].declarations).toEqual({ "box-shadow": "inset 3px 0 0 var(--bj-gold)" });
   });
 });
 

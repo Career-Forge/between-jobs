@@ -107,7 +107,8 @@
 }
 
 /* A row of the rail. Selection is the shared primitive (.bj-selectable, tokens.css), so a row
-   marked aria-current gets the royal fill from there, not from anything here. */
+   marked aria-current gets the royal fill from there. The one thing added here is the gold marker
+   on its left edge (below), drawn as an inset shadow so the row keeps its size and corners. */
 .bj-nav-item {
   display: flex;
   align-items: center;
@@ -130,6 +131,10 @@
 .bj-nav-item:not([aria-current]):hover {
   color: var(--bj-text);
   background: var(--bj-hover-bg);
+}
+
+.bj-nav-item[aria-current="page"] {
+  box-shadow: inset 3px 0 0 var(--bj-gold);
 }
 
 .bj-icon {

@@ -94,7 +94,7 @@ describe("the trail line", () => {
   it("holds the receipt in a bounded well on the canvas color, in mono", () => {
     const well = declarationsFor(base, ".bj-receipt");
     expect(well.background).toBe("var(--bj-bg)");
-    expect(resolve(well.background)).toBe("#05060a");
+    expect(resolve(well.background)).toBe("#15171d");
     expect(well["max-height"]).toBe("240px");
     expect(well.overflow).toBe("auto");
     expect(well["font-family"]).toBe("var(--bj-font-mono)");
