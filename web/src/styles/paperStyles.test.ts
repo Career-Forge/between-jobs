@@ -204,10 +204,16 @@ describe("the page header and state views", () => {
     expect(resolve(title["font-size"])).toBe("34px");
   });
 
-  it("draws placeholders on the raised surface with no shimmer", () => {
+  it("draws placeholders on the raised surface, breathing while they wait, with no shimmer", () => {
     expect(declarationsFor(base, ".bj-skeleton-row").background).toBe("var(--bj-surface-raised)");
     expect(paperCss.replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(/shimmer|linear-gradient/i);
-    expect(declarationsFor(base, ".bj-skeleton-row").animation).toBeUndefined();
+    expect(declarationsFor(base, ".bj-skeleton-row").animation).toBe("bj-skeleton-pulse 1.6s ease-in-out infinite");
+  });
+
+  it("holds the placeholders still for anyone who asks for less motion", () => {
+    const reduced = blockOf(paperCss, "@media (prefers-reduced-motion: reduce)") ?? "";
+    const rule = rulesOf(reduced).find((r) => r.selectors.includes(".bj-skeleton-row"));
+    expect(rule?.declarations.animation).toBe("none");
   });
 
   it("outlines a failure in the danger color and a partial or missing thing in the neutral outline", () => {

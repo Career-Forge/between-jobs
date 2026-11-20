@@ -403,6 +403,23 @@ body:has(.bj-more-sheet[open]) {
   }
 }
 
+/* How a card or a row arrives: it fades in and rises four pixels, once, when it is first drawn. The
+   sheets that use it name it on their own rows (today.css, applications.css). */
+@keyframes bj-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* A placeholder row breathes while its content is on the way, so a loading block does not look like
+   an empty one. It dims and returns; nothing slides across it. */
+@keyframes bj-skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
 /* Reserved for the assistant drawer: 360px on the right edge, above the page. Hidden (and
    display: none) until something real replaces it. */
 .bj-assistant-slot {

@@ -496,11 +496,13 @@ h1.bj-page-title {
   overflow-wrap: anywhere;
 }
 
-/* Static placeholder rows in the block's own shape: no shimmer. */
+/* Placeholder rows in the block's own shape. They breathe (app.css, bj-skeleton-pulse) so a block
+   that is loading is not mistaken for an empty one; there is no shimmer and nothing moves. */
 .bj-skeleton-row {
   margin-bottom: var(--bj-space-2);
   border-radius: 8px;
   background: var(--bj-surface-raised);
+  animation: bj-skeleton-pulse 1.6s ease-in-out infinite;
 }
 
 .bj-state-heading {
@@ -563,6 +565,7 @@ h1.bj-page-title {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .bj-skeleton-row,
   .bj-trail-receipt,
   .bj-sheet-scrim,
   .bj-sheet,

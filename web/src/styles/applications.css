@@ -99,6 +99,8 @@
   border: 1px solid var(--bj-border);
   border-radius: 10px;
   background: var(--bj-surface);
+  /* A card fades in and rises once when it is first drawn (app.css, bj-rise-in). */
+  animation: bj-rise-in 0.18s ease-out backwards;
 }
 
 .bj-app-card > * {

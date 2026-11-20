@@ -210,11 +210,23 @@ button {
   background: transparent;
   color: var(--bj-text);
   padding: 8px 16px;
+  /* A hover or a press eases in over a moment, so a control answers the pointer without snapping.
+   * The focus ring is an outline and is not in this list: it appears at once. */
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.08s ease;
 }
 
 button:hover {
   background: var(--bj-hover-bg);
   border-color: var(--bj-text-muted);
+}
+
+/* A pressed button dips by a pixel. A disabled or busy one does not move. */
+button:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: translateY(1px);
 }
 
 /* The text-style buttons -- links and close marks that happen to be buttons -- sit on the page with
@@ -272,6 +284,12 @@ button[aria-disabled="true"] {
 /* Selection: the one style for anything that is chosen out of a set. Add
  * .bj-selectable to the control; the ARIA state turns the fill on. A group of
  * them sits inside .bj-segmented. */
+.bj-selectable {
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
 .bj-selectable[aria-current="page"],
 .bj-selectable[aria-current="location"],
 .bj-selectable[aria-pressed="true"],
@@ -342,6 +360,13 @@ textarea {
   border: 1px solid var(--bj-outline);
   border-radius: var(--bj-radius-control);
   padding: 9px 12px;
+  transition: border-color 0.15s ease;
+}
+
+/* A field under the pointer lifts its edge to the muted text color, the same step a button takes. */
+input:hover,
+textarea:hover {
+  border-color: var(--bj-text-muted);
 }
 
 textarea {
