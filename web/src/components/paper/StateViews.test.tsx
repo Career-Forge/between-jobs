@@ -139,6 +139,17 @@ describe("SetupRequiredState", () => {
 });
 
 describe("FailureState", () => {
+  it("is an alert unless the same failure is already announced from another place on the page", () => {
+    const loud = view(<FailureState message="Couldn't track the job." onRetry={() => undefined} />);
+    expect(loud.container.querySelector(".bj-state--failure")?.getAttribute("role")).toBe("alert");
+    const quiet = view(<FailureState message="Couldn't track the job." onRetry={() => undefined} announce={false} />);
+    const callout = quiet.container.querySelector(".bj-state--failure");
+    expect(callout?.getAttribute("role")).toBeNull();
+    // It reads and works the same: only the announcement is left to the other one.
+    expect(callout?.textContent).toContain("Couldn't track the job.");
+    expect(callout?.querySelector("button")?.textContent).toBe("Retry");
+  });
+
   it("names what could not be read as an alert, with the red cross hidden from assistive technology", () => {
     const { container } = view(<FailureState message="Couldn't load your applications." />);
     const alert = query(container, '[role="alert"]');

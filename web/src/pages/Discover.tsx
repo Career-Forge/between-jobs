@@ -25,6 +25,7 @@ import { type SetupNotice, failureOf } from "../lib/setupRequired";
 import { clockTime } from "../lib/todayFeed";
 import { useBandFocus } from "../lib/useBandFocus";
 import { useDiscoverHold } from "../lib/useDiscoverHold";
+import { useIsWide } from "../lib/useMediaQuery";
 import { useSavedSearches } from "../lib/useSavedSearches";
 import { useSetupReads } from "../lib/useSetupReads";
 
@@ -101,6 +102,9 @@ export default function Discover() {
   const setup = useSetupReads();
   const saved = useSavedSearches();
   const [now] = useState(() => new Date());
+  // From 1280px a finished search is a list beside the chosen row in full; the same width at which Today
+  // draws its right column.
+  const wide = useIsWide();
   const hold = useDiscoverHold();
   // The held answer, read once when the page opens: in a state initialiser, so no render reads it again, and
   // the three states below start from this one read. Reading takes nothing out of the hold, so a development
@@ -331,6 +335,7 @@ export default function Discover() {
       trackErrors={trackErrors}
       onTrack={(job) => void track(job)}
       saved={{ state: saved.state, actions: { toggle: saved.toggle, remove: saved.remove, retry: saved.retry }, createError }}
+      wide={wide}
     />
   );
 }

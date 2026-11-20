@@ -12,12 +12,24 @@ import hook from "./useFirstRun.ts?raw";
 // components/FirstRunChecklist.test.tsx.)
 
 describe("the first-run checklist's wiring", () => {
-  it("is shown on Today, before the feed and the empty state", () => {
+  it("is shown on Today, before the feed and the empty state, in the one-column layout", () => {
     expect(today).toContain("<FirstRunChecklist");
     expect(today).toContain("checklist={");
-    expect(todayView).toContain("{props.checklist}");
-    expect(todayView.indexOf("{props.checklist}")).toBeLessThan(todayView.indexOf("<TodayEmptyState />"));
-    expect(todayView.indexOf("{props.checklist}")).toBeLessThan(todayView.indexOf('className="bj-today-list"'));
+    const inColumn = todayView.indexOf("{!wide && props.checklist}");
+    expect(inColumn).toBeGreaterThan(-1);
+    expect(inColumn).toBeLessThan(todayView.indexOf("<TodayEmptyState />"));
+    expect(inColumn).toBeLessThan(todayView.indexOf('className="bj-today-list"'));
+  });
+
+  it("is shown once on a wide screen too: first in the right column, above the Pipeline card", () => {
+    const side = todayView.indexOf('className="bj-today-side"');
+    const inSide = todayView.indexOf("{props.checklist}", side);
+    expect(side).toBeGreaterThan(-1);
+    expect(inSide).toBeGreaterThan(side);
+    expect(inSide).toBeLessThan(todayView.indexOf("<PipelineCard", side));
+    // Two places in the source, one for each layout, and each layout draws only its own.
+    expect(todayView.match(/props\.checklist\}/g)).toHaveLength(2);
+    expect(todayView.slice(0, side)).not.toContain("{props.checklist}");
   });
 
   it("is marked by Discover only after a search that returned, never on a failed one", () => {

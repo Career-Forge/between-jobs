@@ -20,12 +20,19 @@ import "../../styles/discover.css";
 // can be shown and tested on its own; the reading, the requests and the handlers are pages/Discover.tsx.
 //
 //   idle      what will appear here, and that nothing runs until a search is asked for
-//   loading   static placeholder rows in the row's own shape, with the elapsed counter in the band
+//   loading   static placeholder rows in the row's own shape (taller full rows, or the shorter compact
+//             ones of a wide screen), with the elapsed counter in the band
 //   setup     what is missing, each with a link to where it is fixed -- no request is made
 //   error     what could not be read; the band holds "Try again", so the body has no Retry of its own
 //   ready     the rows (lib/discoverRow.ts), what did not arrive, "No results" when nothing did; for an
 //             answer brought back from an earlier visit, one line under the Results heading says when it
 //             is from (ResultsView draws it, inside its own block, so the block's spacing applies to it)
+//
+// From 1280px (`wide`) the page takes the whole of the shell's column: the form's three fields share one
+// row, and a finished search is a compact list beside a pane that shows the chosen row in full
+// (ResultsView.tsx). Under that it is one column of at most 880px with full rows. The page is told which
+// by its caller, and marks the wide layout with a class the stylesheet keys on, so the markup and the
+// styles cannot disagree about the width.
 
 export type SearchView =
   | { kind: "idle" }
@@ -72,6 +79,8 @@ export interface DiscoverViewProps {
   onTrack: (job: JobCard) => void;
   saved: { state: SavedSearchesState; actions: SavedSearchesActions; createError: string | null };
   timeZone?: string;
+  /** The window is 1280px or wider: the list-and-pane layout. One column otherwise. */
+  wide?: boolean;
 }
 
 export const SETUP_BLOCKED_NOTE = "Search is waiting on the setup above.";
@@ -89,7 +98,7 @@ export const searchSpendNote = (press: "Search" | "Search again"): string => spe
 export const SEARCH_AGAIN_SPEND_NOTE = searchSpendNote("Search again");
 
 export function DiscoverView(props: DiscoverViewProps) {
-  const { now, search, setup } = props;
+  const { now, search, setup, wide = false } = props;
   const searched = search.kind === "ready" || search.kind === "error";
   const blockedReason = setup === null || setup.blocksSearch === false ? null : SETUP_BLOCKED_NOTE;
   // The restored answer's lead (below) says what Search again costs, but it is drawn only with rows: the results view
@@ -103,7 +112,7 @@ export function DiscoverView(props: DiscoverViewProps) {
   const spendNoteId = useId();
   const noteOnPage = spendNote !== null || noteInLead;
   return (
-    <div className="bj-discover">
+    <div className={wide ? "bj-discover bj-discover--wide" : "bj-discover"}>
       <div className="bj-visually-hidden" role="status" aria-live="polite">
         {props.announcement}
       </div>
@@ -139,7 +148,7 @@ export function DiscoverView(props: DiscoverViewProps) {
               </p>
             </EmptyState>
           )}
-          {search.kind === "loading" && <LoadingState rows={3} rowHeight={200} label="Searching..." announce={false} />}
+          {search.kind === "loading" && <LoadingState rows={wide ? 5 : 3} rowHeight={wide ? 96 : 200} label="Searching..." announce={false} />}
           {search.kind === "error" && <FailureState message={`The search couldn't be read: ${search.message}`} />}
           {search.kind === "ready" && (
             <ResultsView
@@ -157,6 +166,7 @@ export function DiscoverView(props: DiscoverViewProps) {
                 ) : undefined
               }
               timeZone={props.timeZone}
+              wide={wide}
             />
           )}
         </>

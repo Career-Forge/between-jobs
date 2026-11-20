@@ -17,6 +17,9 @@ import {
   reordersByDate,
   resolveFilter,
   resolveSort,
+  rowKey,
+  selectedRowKey,
+  shownRowKeys,
   sortRows,
   tierOf,
   type FitFilter,
@@ -623,5 +626,44 @@ describe("the sentences", () => {
       expect(line).not.toContain("\u2014");
       expect(line.toLowerCase()).not.toContain("verified");
     }
+  });
+});
+
+describe("which row the pane shows", () => {
+  const first = job({ apply_url: "https://jobs.example/a", title: "A" });
+  const second = job({ apply_url: "https://jobs.example/b", title: "B", score: score({ bin: "Poor" }) });
+  const past = job({ apply_url: "https://jobs.example/a", title: "A again", score: null });
+
+  it("names a row by its section and its address, so one posting in both lists is two rows", () => {
+    expect(rowKey("scored", first)).toBe("scored:https://jobs.example/a");
+    expect(rowKey("more", past)).toBe("more:https://jobs.example/a");
+    expect(rowKey("scored", first)).not.toBe(rowKey("more", past));
+  });
+
+  it("lists the rows on show in the order they are drawn: the scored section, then More results", () => {
+    const all = arrange({ scored: [first, second], more: [past], filter: "all", sort: "returned" });
+    expect(shownRowKeys(all)).toEqual(["scored:https://jobs.example/a", "scored:https://jobs.example/b", "more:https://jobs.example/a"]);
+    const bad = arrange({ scored: [first, second], more: [past], filter: "bad", sort: "returned" });
+    expect(shownRowKeys(bad)).toEqual(["scored:https://jobs.example/b"]);
+  });
+
+  it("shows the first row when nothing is chosen yet", () => {
+    expect(selectedRowKey(["scored:a", "scored:b"], null)).toBe("scored:a");
+  });
+
+  it("keeps the chosen row while it is on show, wherever a sort put it", () => {
+    expect(selectedRowKey(["scored:a", "scored:b", "more:c"], "more:c")).toBe("more:c");
+    expect(selectedRowKey(["scored:b", "scored:a"], "scored:a")).toBe("scored:a");
+  });
+
+  it("moves to the first row on show when the chosen one is gone, and never to a row that is not there", () => {
+    expect(selectedRowKey(["scored:b", "more:c"], "scored:a")).toBe("scored:b");
+    // The same address in the other list is a different row.
+    expect(selectedRowKey(["more:a"], "scored:a")).toBe("more:a");
+  });
+
+  it("shows none when no row is on show", () => {
+    expect(selectedRowKey([], null)).toBeNull();
+    expect(selectedRowKey([], "scored:a")).toBeNull();
   });
 });

@@ -21,3 +21,13 @@ export const PHONE_QUERY = "(max-width: 959px)";
 export function useIsPhone(): boolean {
   return useMediaQuery(PHONE_QUERY);
 }
+
+// The wide layouts' breakpoint. From 1280px the shell's column grows (app.css), Today draws its right
+// column and Discover draws its list beside the selected job. The stylesheets that key on a width use
+// the same number. Where matchMedia is missing it reads as "does not match", so those pages draw their
+// one-column layout.
+export const WIDE_QUERY = "(min-width: 1280px)";
+
+export function useIsWide(): boolean {
+  return useMediaQuery(WIDE_QUERY);
+}

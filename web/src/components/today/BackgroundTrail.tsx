@@ -9,9 +9,10 @@ import "../../styles/today.css";
 
 // "In the background": what runs without a click and on whose key. Saved searches are matched and
 // scored by a model on the person's own key, and Gmail replies are read the same way, so the summary
-// carries the model mark. From 1280px it is the page's right margin (placement "margin"); under
-// that it is one line under the band that opens inline (placement "inline"). Both hold the same
-// lines, built by lib/todayFeed.ts from what GET /saved-searches and GET /credentials returned.
+// carries the model mark. From 1280px it is the last block of the page's right column (placement
+// "margin"); under that it is one line under the band that opens inline (placement "inline"). Both
+// hold the same lines, built by lib/todayFeed.ts from what GET /saved-searches and GET /credentials
+// returned.
 
 export interface BackgroundTrailProps {
   view: BackgroundView;

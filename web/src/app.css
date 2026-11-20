@@ -32,6 +32,9 @@
 /* The signed-in shell (components/AppShell.tsx)                        */
 /*   960px and wider: a 232px rail on the left, the page beside it.     */
 /*   Under 960px: a slim top bar, the page, a bottom tab bar.           */
+/*   The page column is at most 960px wide up to 1279px, and at most    */
+/*   1440px from 1280px. A page of forms or prose sets its own narrower */
+/*   measure inside it.                                                 */
 /* ------------------------------------------------------------------ */
 
 .bj-shell {
@@ -174,6 +177,22 @@
 @media (max-width: 1279px) {
   .bj-main {
     padding: 40px 32px;
+  }
+}
+
+/* A wide window is not left a third empty: from 1280px the column may grow to 1440px. Pages that list
+   or compare things use the room (Today, Discover, Applications); a page of forms or prose keeps the
+   measure its own stylesheet sets. */
+@media (min-width: 1280px) {
+  .bj-main {
+    max-width: 1440px;
+  }
+
+  /* What the shell itself draws in the column -- the placeholder while a page's code is fetched, the
+     callout when a page could not be drawn, the note at an address with no page -- is a few sentences,
+     and keeps the measure of a list. */
+  .bj-main > .bj-state {
+    max-width: 880px;
   }
 }
 

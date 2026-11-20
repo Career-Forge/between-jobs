@@ -8,6 +8,9 @@ import savedCss from "./saved-searches.css?raw";
 import discoverView from "../components/discover/DiscoverView.tsx?raw";
 import discoverForm from "../components/discover/DiscoverForm.tsx?raw";
 import resultRow from "../components/discover/ResultRow.tsx?raw";
+import compactRow from "../components/discover/CompactRow.tsx?raw";
+import detailPane from "../components/discover/DetailPane.tsx?raw";
+import rowParts from "../components/discover/RowParts.tsx?raw";
 import savedFold from "../components/discover/SavedSearchesFold.tsx?raw";
 import resultsToolbar from "../components/discover/ResultsToolbar.tsx?raw";
 import resultsView from "../components/discover/ResultsView.tsx?raw";
@@ -89,7 +92,7 @@ describe("the Discover rows", () => {
   const wide = blocksOf(discoverCss, "@media (min-width: 960px)");
   const phone = blocksOf(discoverCss, `@media ${PHONE_QUERY}`);
 
-  it("are at most the list measure, 880px, and let the page shrink around long text", () => {
+  it("are at most the list measure, 880px, under 1280px, and let the page shrink around long text", () => {
     expect(declarationsFor(base, ".bj-discover")["max-width"]).toBe("880px");
     expect(declarationsFor(base, ".bj-discover")["min-width"]).toBe("0");
     expect(declarationsFor(withoutMedia(savedCss), ".bj-ss")["max-width"]).toBe("880px");
@@ -232,6 +235,193 @@ describe("the Discover rows", () => {
   it("put the sub-score bars in one column on a phone and two from 600px", () => {
     expect(declarationsFor(base, ".bj-fit-bars")["grid-template-columns"]).toBe("minmax(0, 1fr)");
     expect(declarationsFor(blocksOf(discoverCss, "@media (min-width: 600px)"), ".bj-fit-bars")["grid-template-columns"]).toBe("minmax(0, 1fr) minmax(0, 1fr)");
+  });
+});
+
+describe("the wide layout: a compact list beside the chosen row", () => {
+  const base = withoutMedia(discoverCss);
+  const code = discoverCss.replace(/\/\*[\s\S]*?\*\//g, "");
+  const flat = (value: string | undefined) => (value ?? "").replace(/\s+/g, " ").trim();
+  // Where a rule's selector first appears in the file: a later rule of the same weight is the one that applies.
+  const at = (selector: string) => code.indexOf(`${selector} {`);
+
+  it("states no width of its own: the page is told it is wide and the rules key on the class it then carries", () => {
+    expect(code).not.toMatch(/1280|1440/);
+    expect(discoverView).toContain('wide ? "bj-discover bj-discover--wide" : "bj-discover"');
+    // Every rule for the wide layout names the wide page or markup only the wide page has.
+    const wideOnly = /\.bj-discover--wide|\.bj-disc-split|\.bj-disc-row--compact|\.bj-disc-select|\.bj-disc-pane/;
+    const start = code.indexOf(".bj-discover--wide {");
+    const end = code.indexOf("@media (max-width: 959px)", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    for (const rule of rulesOf(code.slice(start, end))) {
+      for (const selector of rule.selectors) expect(selector, selector).toMatch(wideOnly);
+    }
+    // And no rule outside that part of the file does.
+    for (const rule of rulesOf(code.slice(0, start) + code.slice(end))) {
+      for (const selector of rule.selectors) expect(selector, selector).not.toMatch(wideOnly);
+    }
+  });
+
+  it("lets the page take the whole of the shell's column, in a rule that comes after the 880px one", () => {
+    expect(declarationsFor(base, ".bj-discover--wide")).toEqual({ "max-width": "none" });
+    expect(at(".bj-discover--wide")).toBeGreaterThan(at(".bj-discover"));
+  });
+
+  it("puts the form's three fields in one row, the search words taking half of it", () => {
+    expect(declarationsFor(base, ".bj-discover--wide .bj-disc-fields")["grid-template-columns"]).toBe("minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr)");
+    expect(declarationsFor(base, ".bj-discover--wide .bj-disc-field-wide")["grid-column"]).toBe("auto");
+    // The field that spans the row of two is the first of the three in the markup.
+    expect(discoverForm.indexOf("bj-disc-field-wide")).toBeLessThan(discoverForm.indexOf("<span>Location</span>"));
+  });
+
+  it("keeps sentences and callouts to 880px however wide the column is", () => {
+    for (const selector of [
+      ".bj-discover--wide .bj-disc-form > p",
+      ".bj-discover--wide > .bj-state",
+      ".bj-discover--wide .bj-disc-results > .bj-disc-note",
+      ".bj-discover--wide .bj-disc-fallback",
+      ".bj-discover--wide .bj-disc-status",
+      ".bj-discover--wide .bj-disc-count",
+    ]) {
+      expect(declarationsFor(base, selector)["max-width"], selector).toBe("880px");
+    }
+  });
+
+  it("lays the results out as a list that takes the room left and a pane of 400px", () => {
+    const split = declarationsFor(base, ".bj-disc-split");
+    expect(split.display).toBe("grid");
+    expect(split["grid-template-columns"]).toBe("minmax(0, 1fr) 400px");
+    expect(split["align-items"]).toBe("start");
+    expect(split["min-width"]).toBe("0");
+    const list = declarationsFor(base, ".bj-disc-split-list");
+    expect(list["min-width"]).toBe("0");
+    // The two lists and the heading between them are spaced as the results block spaces them in one column.
+    expect(list.display).toBe(declarationsFor(base, ".bj-disc-results").display);
+    expect(list["flex-direction"]).toBe(declarationsFor(base, ".bj-disc-results")["flex-direction"]);
+    expect(list.gap).toBe(declarationsFor(base, ".bj-disc-results").gap);
+  });
+
+  it("keeps the pane in view while the list scrolls, and scrolls it inside itself past the window's height", () => {
+    const pane = declarationsFor(base, ".bj-disc-pane");
+    expect(pane.position).toBe("sticky");
+    expect(pane.top).toBe("var(--bj-space-5)");
+    expect(pane["max-height"]).toBe("calc(100vh - 2 * var(--bj-space-5))");
+    expect(pane["overflow-y"]).toBe("auto");
+    expect(pane["min-width"]).toBe("0");
+    // A hairline at its left, not a card: no fill and no selection colour.
+    expect(pane["border-left"]).toBe("1px solid var(--bj-border)");
+    expect(pane.background).toBeUndefined();
+  });
+
+  it("leaves room inside the pane for a focus ring, which its scrolling would otherwise cut off", () => {
+    const padding = declarationsFor(base, ".bj-disc-pane").padding.split(" ").map((value) => Number.parseFloat(resolve(value)));
+    const ring = Number.parseFloat(resolve("var(--bj-focus-ring-width)")) + Number.parseFloat(resolve("var(--bj-focus-ring-offset)"));
+    expect(padding).toHaveLength(4);
+    for (const side of padding) expect(side).toBeGreaterThanOrEqual(ring);
+  });
+
+  it("draws a compact row as the gutter with the identity beside it and the actions under the identity", () => {
+    const areas = '"score main" "score actions" ". problem"';
+    expect(flat(declarationsFor(base, ".bj-disc-row--compact")["grid-template-columns"])).toBe("100px minmax(0, 1fr)");
+    expect(flat(declarationsFor(base, ".bj-disc-row--compact")["grid-template-areas"])).toBe(areas);
+    expect(flat(declarationsFor(base, ".bj-disc-row--compact.bj-disc-row--placeholder")["grid-template-columns"])).toBe("96px minmax(0, 1fr)");
+    expect(flat(declarationsFor(base, ".bj-disc-row--compact.bj-disc-row--placeholder")["grid-template-areas"])).toBe(areas);
+    // The gutters are the full row's own widths, so "100 / 100" and "Placeholder" fit on one line here too.
+    expect(flat(declarationsFor(blocksOf(discoverCss, "@media (min-width: 960px)"), ".bj-disc-row")["grid-template-columns"]).split(" ")[0]).toBe("100px");
+    // No area for what the pane draws.
+    expect(areas).not.toMatch(/body|fit|why|detail|trail/);
+    // It overrides the full row's grid, so it has to come after every rule that sets one: each of these
+    // selectors opens a rule of the full row, at the start of a line.
+    for (const selector of [".bj-disc-row", ".bj-disc-row--placeholder", ".bj-disc-row--unscored"]) {
+      const rules = [...code.matchAll(new RegExp(`^\\s*${selector.replace(/\./g, "\\.")} \\{`, "gm"))].map((match) => match.index);
+      expect(rules.length, selector).toBeGreaterThanOrEqual(2);
+      expect(at(".bj-disc-row--compact"), selector).toBeGreaterThan(Math.max(...rules));
+    }
+  });
+
+  it("draws a compact row that was not scored as one line that wraps, with no gutter", () => {
+    const row = declarationsFor(base, ".bj-disc-row--compact.bj-disc-row--unscored");
+    expect(row.display).toBe("flex");
+    expect(row["flex-wrap"]).toBe("wrap");
+    expect(row["align-items"]).toBe("center");
+    expect(declarationsFor(base, ".bj-disc-row--compact.bj-disc-row--unscored .bj-disc-main").flex).toBe("1 1 240px");
+    for (const part of [".bj-fit", ".bj-disc-actions"]) {
+      expect(declarationsFor(base, `.bj-disc-row--compact.bj-disc-row--unscored ${part}`), part).toMatchObject({ flex: "none", "margin-top": "0" });
+    }
+    // A failed Track takes a whole line under them.
+    expect(declarationsFor(base, ".bj-disc-row--compact.bj-disc-row--unscored .bj-disc-problem").flex).toBe("1 1 100%");
+  });
+
+  it("keeps the identity ahead of the gutter in the markup, as the full row does: the grid places the gutter, not the order of the source", () => {
+    for (const source of [compactRow, resultRow]) {
+      expect(source.indexOf('<div className="bj-disc-main">')).toBeGreaterThan(-1);
+      expect(source.indexOf('<div className="bj-disc-main">')).toBeLessThan(source.indexOf("<FitScore"));
+    }
+    expect(code).not.toMatch(/\border\s*:/);
+  });
+
+  it("makes the title of a compact row a button that still reads as the title, and styles no state of it", () => {
+    const select = declarationsFor(base, "button.bj-disc-select");
+    expect(select.font).toBe("inherit");
+    expect(select.color).toBe("inherit");
+    expect(select["border-color"]).toBe("transparent");
+    expect(select["text-align"]).toBe("left");
+    expect(select["overflow-wrap"]).toBe("anywhere");
+    expect(select["max-width"]).toBe("100%");
+    expect(select.background).toBeUndefined();
+    // Its padding is the hit area, and it is pulled back by that padding so the words line up.
+    expect(select.padding).toBe("2px var(--bj-space-2)");
+    expect(select.margin).toBe("0 0 0 calc(-1 * var(--bj-space-2))");
+    // Which row is on show is the shared selection fill, turned on by aria-pressed: nothing here names a state.
+    expect(code).not.toMatch(/aria-pressed|aria-current|aria-selected|\.bj-selectable|--bj-royal|--bj-selected/);
+    expect(compactRow).toContain('className="bj-disc-select bj-selectable"');
+    expect(compactRow).toContain("aria-pressed={selected}");
+    expect(compactRow).toContain("aria-controls={paneId}");
+  });
+
+  it("gives the title button a hover that is not the selection: one surface step, no outline", () => {
+    const hover = declarationsFor(base, "button.bj-disc-select:hover");
+    expect(hover).toEqual({ "border-color": "transparent", background: "var(--bj-hover-bg-raised)" });
+    // The shared rule for a pressed control outweighs it (two classes or attributes against one and an element),
+    // so a chosen title keeps its fill under the pointer.
+    expect(declarationsFor(withoutMedia(tokensCss), '.bj-selectable[aria-pressed="true"]:hover').background).toBe("var(--bj-selected-bg-hover)");
+  });
+
+  it("folds nothing in the pane: the posting's text and the model's line are whole, and the bars are one to a line", () => {
+    for (const selector of [".bj-disc-pane .bj-disc-snippet", ".bj-disc-pane .bj-fit-oneliner"]) {
+      expect(declarationsFor(base, selector), selector).toEqual({ display: "block", "-webkit-line-clamp": "none", overflow: "visible" });
+    }
+    expect(declarationsFor(base, ".bj-disc-pane .bj-fit-bars")["grid-template-columns"]).toBe("minmax(0, 1fr)");
+    // The row's own clamps are untouched.
+    expect(declarationsFor(base, ".bj-disc-snippet")["-webkit-line-clamp"]).toBe("2");
+  });
+
+  it("spaces the pane's parts with its gap in place of the top margins they carry in a row", () => {
+    expect(declarationsFor(base, ".bj-disc-pane").gap).toBe("var(--bj-space-3)");
+    expect(declarationsFor(base, ".bj-disc-pane > *")).toEqual({ "margin-top": "0" });
+    for (const part of [".bj-disc-actions", ".bj-fit-detail", ".bj-disc-problem", ".bj-disc-trail", ".bj-disc-body"]) {
+      expect(at(".bj-disc-pane > *"), part).toBeGreaterThan(at(part));
+    }
+  });
+
+  it("sets the score beside the identity in the pane, with no gutter for a row that was not scored", () => {
+    expect(flat(declarationsFor(base, ".bj-disc-pane-head")["grid-template-columns"])).toBe("100px minmax(0, 1fr)");
+    expect(flat(declarationsFor(base, ".bj-disc-pane-head")["grid-template-areas"])).toBe('"score main"');
+    expect(flat(declarationsFor(base, ".bj-disc-pane-head--placeholder")["grid-template-columns"])).toBe("96px minmax(0, 1fr)");
+    expect(flat(declarationsFor(base, ".bj-disc-pane-head--unscored")["grid-template-columns"])).toBe("minmax(0, 1fr)");
+    expect(flat(declarationsFor(base, ".bj-disc-pane-head--unscored")["grid-template-areas"])).toBe('"main"');
+    // The three classes are the three kinds of fit, which is what the pane builds the class from.
+    expect(detailPane).toContain("bj-disc-pane-head--${fit.kind}");
+  });
+
+  it("names the pane in small mono capitals, muted, from the type scale", () => {
+    const label = declarationsFor(base, ".bj-disc-pane-label");
+    expect(label["font-family"]).toBe("var(--bj-font-mono)");
+    expect(label["font-size"]).toBe("var(--bj-text-eyebrow)");
+    expect(label["text-transform"]).toBe("uppercase");
+    expect(label.color).toBe("var(--bj-text-muted)");
+    expect(declarationsFor(base, ".bj-disc-pane-heading")["font-size"]).toBe("var(--bj-text-small)");
   });
 });
 
@@ -581,6 +771,9 @@ describe("the markup that uses them", () => {
     ["DiscoverView", discoverView],
     ["DiscoverForm", discoverForm],
     ["ResultRow", resultRow],
+    ["CompactRow", compactRow],
+    ["DetailPane", detailPane],
+    ["RowParts", rowParts],
     ["ResultsView", resultsView],
     ["ResultsToolbar", resultsToolbar],
     ["FitBlock", fitBlock],
@@ -619,6 +812,9 @@ describe("what the results hold", () => {
     ["ResultsView", resultsView],
     ["ResultsToolbar", resultsToolbar],
     ["ResultRow", resultRow],
+    ["CompactRow", compactRow],
+    ["DetailPane", detailPane],
+    ["RowParts", rowParts],
     ["FitBlock", fitBlock],
     ["SavedSearchesFold", savedFold],
     ["lib/discoverArrange.ts", arrangeSource],

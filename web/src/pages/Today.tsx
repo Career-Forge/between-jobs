@@ -28,8 +28,9 @@ import {
   type RowContext,
   type TodayItem,
 } from "../lib/todayFeed";
+import { pipelineView } from "../lib/todayPipeline";
 import { useCapabilities } from "../lib/useCapabilities";
-import { useMediaQuery } from "../lib/useMediaQuery";
+import { useIsWide } from "../lib/useMediaQuery";
 
 // Today, the page a signed-in person lands on. It says one thing to do next: the next-step band
 // carries the most urgent item itself (lib/nextStep/pages/today.ts decides which), and that item is
@@ -38,15 +39,12 @@ import { useMediaQuery } from "../lib/useMediaQuery";
 //
 // Requests. GET /today is the page's own data: when it fails the band says so (row F1) and offers
 // Try again. GET /profile/current, /credentials, /saved-searches and /applications are read once
-// (readAccount) and shared by the band's setup rows, the setup checklist, the "In the background"
-// trail and the job names in sentences. A held-back resume asks GET /applications/{id}/prepare-result
+// (readAccount) and shared by the band's setup rows, the setup checklist, the Pipeline card's counts,
+// the "In the background" trail and the job names in sentences. A held-back resume asks GET /applications/{id}/prepare-result
 // once for the fit check's score. Actions are the ones Today has always had -- dismiss, accept or
 // dismiss a status proposal, track a high fit job -- plus "Generate anyway" for a held-back resume,
 // which is the workspace's own generation with the fit gate bypassed. A failed action is shown under
 // the item it was for and leaves the rest of the page as it was.
-
-// The widest the right margin fits: the same width at which the shell stops capping the column.
-const WIDE_QUERY = "(min-width: 1280px)";
 
 type FeedLoad = { kind: "loading" } | { kind: "failed"; message: string; at: string } | { kind: "ready"; items: TodayItem[] };
 
@@ -101,7 +99,7 @@ export default function Today() {
   // load of the feed (a capped few, newest first), so what is waited for never changes while it is.
   const [fitTargets, setFitTargets] = useState<readonly string[]>([]);
   const [now] = useState(() => new Date());
-  const wide = useMediaQuery(WIDE_QUERY);
+  const wide = useIsWide();
   const inFlight = useRef(new Set<string>());
   const lastAction = useRef(new Map<string, { action: ItemAction; item: TodayItem }>());
   const askedFit = useRef(new Set<string>());
@@ -224,6 +222,8 @@ export default function Today() {
   // the shell); the trail claims nothing about Gmail until it is a definite yes.
   const gmail = gmailAccess(useCapabilities());
   const background = useMemo(() => backgroundView(searches, account.reads.credentials, gmail), [searches, account.reads.credentials, gmail]);
+
+  const pipeline = useMemo(() => pipelineView(account.reads.applications), [account.reads.applications]);
 
   const profile = account.reads.profile;
   const notes: AccountNotes = {
@@ -433,6 +433,7 @@ export default function Today() {
       busy={busy}
       problems={problems}
       background={background}
+      pipeline={pipeline}
       account={notes}
       announcement={announcement}
       confirmation={confirmation}

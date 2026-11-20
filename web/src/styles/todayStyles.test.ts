@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { PHONE_QUERY } from "../lib/useMediaQuery";
+import { PHONE_QUERY, WIDE_QUERY } from "../lib/useMediaQuery";
 import tokensCss from "../tokens.css?raw";
-import { blockOf, declarationsFor, rulesOf, tokenResolver, withoutMedia } from "../testing/css";
+import { blockOf, declarationsFor, horizontalPaddingPx, rulesOf, tokenResolver, withoutMedia } from "../testing/css";
 import todayCss from "./today.css?raw";
 import pageSource from "../pages/Today.tsx?raw";
 
 // today.css is read as text (there is no layout engine in the test run). What it pins is what the page
-// rests on: the margin at 1280px and up, the 44px targets on a phone, that no rule fills anything gold,
-// that it defines no color of its own, and that the held-back card's only red is a mark.
+// rests on: the two columns at 1280px and up, the 44px targets on a phone, that no rule fills anything
+// gold, that it defines no color of its own, and that the held-back card's only red is a mark.
 
 // Every block under one query, joined: a section of the file keeps its own query beside its rules, so
 // the same query may appear more than once.
@@ -72,30 +72,116 @@ describe("today.css", () => {
   });
 });
 
-describe("the margin", () => {
-  it("is 280px beside a feed of at most 880px, from 1280px up, with a 1px royal rule on its left", () => {
-    expect(declarationsFor(wide, ".bj-today-grid")["grid-template-columns"]).toBe("minmax(0, 880px) 280px");
-    const margin = declarationsFor(wide, ".bj-today-margin");
-    expect(margin["border-left"]).toBe("1px solid var(--bj-royal)");
+describe("the two columns", () => {
+  it("are a feed that takes the room left beside a right column of 320px, from 1280px up", () => {
+    const grid = declarationsFor(wide, ".bj-today-grid");
+    expect(grid.display).toBe("grid");
+    expect(grid["grid-template-columns"]).toBe("minmax(0, 1fr) 320px");
+    expect(grid["align-items"]).toBe("start");
     expect(todayCss).toMatch(/@media \(min-width: 1280px\)/);
   });
 
-  it("is not a rule at any narrower width: the grid exists only inside the 1280px block", () => {
+  it("start at the width the page switches its markup on, so the styles and the markup cannot disagree", () => {
+    expect(blocksOf(`@media ${WIDE_QUERY}`)).toBe(wide);
+    expect(wide).not.toBe("");
+    expect(pageSource).toContain("useIsWide()");
+  });
+
+  it("keep the right column in view, let it scroll inside itself, and rule it off with a 1px royal line", () => {
+    const side = declarationsFor(wide, ".bj-today-side");
+    expect(side.position).toBe("sticky");
+    expect(side.top).toBe("var(--bj-space-5)");
+    expect(side["max-height"]).toBe("calc(100vh - 2 * var(--bj-space-5))");
+    expect(side["overflow-y"]).toBe("auto");
+    expect(side["border-left"]).toBe("1px solid var(--bj-royal)");
+    expect(side["min-width"]).toBe("0");
+    // Stacked with a gap: the checklist, the Pipeline card, the trail.
+    expect(side.display).toBe("flex");
+    expect(side["flex-direction"]).toBe("column");
+    expect(side.gap).toBe("var(--bj-space-5)");
+  });
+
+  it("leave room inside the right column for a focus ring, which its scrolling would otherwise cut off", () => {
+    const [left, right] = horizontalPaddingPx(Object.fromEntries(Object.entries(declarationsFor(wide, ".bj-today-side")).map(([property, value]) => [property, value.replace(/var\((--[\w-]+)\)/g, (_, name: string) => resolve(`var(${name})`))])));
+    const ring = Number.parseFloat(resolve("var(--bj-focus-ring-width)")) + Number.parseFloat(resolve("var(--bj-focus-ring-offset)"));
+    expect(left).toBeGreaterThanOrEqual(ring);
+    expect(right).toBeGreaterThanOrEqual(ring);
+  });
+
+  it("are not rules at any narrower width: the grid and the column exist only inside the 1280px blocks", () => {
     expect(declarationsFor(base, ".bj-today-grid")).toEqual({});
+    expect(declarationsFor(base, ".bj-today-side")).toEqual({});
     expect(declarationsFor(base, ".bj-today-margin")).toEqual({});
     expect(declarationsFor(phone, ".bj-today-grid")).toEqual({});
+    expect(declarationsFor(mid, ".bj-today-grid")).toEqual({});
   });
 
-  it("lifts the shell's 960px cap on the page column where the margin needs the room", () => {
+  it("use the shell's 1440px column and do not lift its cap, padding it 32px where the two columns need the room", () => {
     const main = declarationsFor(wide, ".bj-main:has(.bj-today)");
-    expect(main["max-width"]).toBe("none");
-    expect(main.padding).toBe("40px 32px");
+    expect(main).toEqual({ padding: "40px 32px" });
+    expect(todayCss.replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(/max-width:\s*none/);
   });
 
-  it("caps the feed at the list measure, and lets it shrink inside the grid", () => {
+  it("cap the feed at the list measure, 880px, under 1280px, and let it shrink inside the grid", () => {
     const feed = declarationsFor(base, ".bj-today-main");
     expect(feed["max-width"]).toBe("880px");
     expect(feed["min-width"]).toBe("0");
+  });
+
+  it("cap the feed's content at 1000px from 1280px, in a rule that comes after the 880px one so it applies", () => {
+    expect(declarationsFor(wide, ".bj-today-main")).toEqual({ "max-width": "1000px" });
+    expect(code.indexOf("max-width: 1000px")).toBeGreaterThan(code.indexOf("max-width: 880px"));
+  });
+});
+
+describe("the checklist in the right column", () => {
+  it("stacks a step in the order the markup has it, and drops the rule and the margin the one column gives it", () => {
+    expect(declarationsFor(wide, ".bj-today-side .bj-setup-step")["grid-template-columns"]).toBe("minmax(0, 1fr)");
+    expect((declarationsFor(wide, ".bj-today-side .bj-setup-step")["grid-template-areas"] ?? "").replace(/\s+/g, " ")).toBe('"state" "link" "note" "retry"');
+    expect(declarationsFor(wide, ".bj-today-side > .bj-setup")["border-top"]).toBe("0");
+    expect(declarationsFor(wide, ".bj-today-side > .bj-setup-line")["margin-bottom"]).toBe("0");
+    expect(declarationsFor(wide, ".bj-today-side .bj-setup-retry")["justify-self"]).toBe("start");
+  });
+
+  it("is laid out that way only there: the one column's own rules are as they were", () => {
+    expect(declarationsFor(base, ".bj-setup-step")["grid-template-columns"]).toBe("9em minmax(0, 1fr) auto");
+    expect(declarationsFor(base, ".bj-setup")["border-top"]).toBe("1px solid var(--bj-border)");
+    // The column's rules come after the ones they override.
+    const own = [...code.matchAll(/(?<!\.bj-today-side )\.bj-setup-step \{/g)].map((match) => match.index);
+    expect(own.length).toBeGreaterThanOrEqual(2);
+    expect(Math.max(...own)).toBeLessThan(code.indexOf(".bj-today-side .bj-setup-step"));
+  });
+});
+
+describe("the Pipeline card", () => {
+  it("draws a stage as one link line: the name at the left, the count at the right, with a hairline under it", () => {
+    const line = declarationsFor(base, ".bj-pipeline-line");
+    expect(line.display).toBe("flex");
+    expect(line["justify-content"]).toBe("space-between");
+    expect(line["border-bottom"]).toBe("1px solid var(--bj-border)");
+    expect(resolve(line["font-size"])).toBe(resolve("var(--bj-text-control)"));
+    expect(declarationsFor(base, ".bj-pipeline-lines")["list-style"]).toBe("none");
+  });
+
+  it("is at least 24px tall on a wide screen and 44px on a phone", () => {
+    expect(Number.parseFloat(declarationsFor(base, ".bj-pipeline-line")["min-height"])).toBeGreaterThanOrEqual(24);
+    expect(declarationsFor(phone, ".bj-pipeline-line")["min-height"]).toBe("44px");
+  });
+
+  it("sets a count in the mono face with tabular figures, and lets a long stage name wrap", () => {
+    const count = declarationsFor(base, ".bj-pipeline-count");
+    expect(count["font-family"]).toBe("var(--bj-font-mono)");
+    expect(count["font-variant-numeric"]).toBe("tabular-nums");
+    expect(declarationsFor(base, ".bj-pipeline-stage")["overflow-wrap"]).toBe("anywhere");
+    expect(declarationsFor(base, ".bj-pipeline")["min-width"]).toBe("0");
+    // As the last section of the one-column page it is no wider than the feed above it.
+    expect(declarationsFor(base, ".bj-pipeline")["max-width"]).toBe(declarationsFor(base, ".bj-today-main")["max-width"]);
+  });
+
+  it("colors nothing by stage: a stage is a word and a number, never a status color", () => {
+    const rules = rulesOf(todayCss).filter((rule) => rule.selectors.some((selector) => selector.includes("bj-pipeline")));
+    const colors = rules.flatMap((rule) => Object.entries(rule.declarations).filter(([property]) => property === "color" || property.startsWith("background") || property === "border-color").map(([, value]) => value));
+    expect([...new Set(colors)].sort()).toEqual(["var(--bj-text)", "var(--bj-text-muted)"]);
   });
 });
 
@@ -174,8 +260,8 @@ describe("the setup checklist", () => {
 });
 
 describe("links in a sentence", () => {
-  it("are underlined in the empty state and the background trail, so colour is not the only cue", () => {
-    for (const selector of [".bj-state--empty .bj-state-body a", ".bj-bg-line a"]) {
+  it("are underlined in the empty state, the Pipeline card's sentence and the background trail, so colour is not the only cue", () => {
+    for (const selector of [".bj-state--empty .bj-state-body a", ".bj-pipeline-note a", ".bj-bg-line a"]) {
       expect(declarationsFor(base, selector)["text-decoration"], selector).toBe("underline");
     }
   });

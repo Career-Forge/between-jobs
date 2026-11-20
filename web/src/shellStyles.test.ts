@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import appCss from "./app.css?raw";
 import tokensCss from "./tokens.css?raw";
+import { WIDE_QUERY } from "./lib/useMediaQuery";
 import { blockOf, declarationsFor, rulesOf, tokenResolver, withoutMedia } from "./testing/css";
 
 // What the shell's stylesheet promises about layout, read as text (there is no DOM here, so no
@@ -57,6 +58,32 @@ describe("under 960px", () => {
     const mid = blockOf(appCss, "@media (max-width: 1279px)") ?? "";
     expect(declarationsFor(mid, ".bj-main").padding).toBe("40px 32px");
     expect(base(".bj-main").padding).toBe("40px 48px");
+  });
+
+  it("caps the page column at 960px up to 1279px, where no page draws a second column", () => {
+    expect(base(".bj-main")["max-width"]).toBe("960px");
+    const mid = blockOf(appCss, "@media (max-width: 1279px)") ?? "";
+    // Nothing under 1280px touches the cap: the block there only changes the padding.
+    expect(declarationsFor(mid, ".bj-main")).toEqual({ padding: "40px 32px" });
+  });
+
+  it("lets the column grow to 1440px from 1280px, and states that width nowhere else", () => {
+    const wide = blockOf(appCss, "@media (min-width: 1280px)") ?? "";
+    // The same width Today and Discover switch to their two columns at.
+    expect(blockOf(appCss, `@media ${WIDE_QUERY}`)).toBe(wide);
+    expect(declarationsFor(wide, ".bj-main")).toEqual({ "max-width": "1440px" });
+    // The block holds that rule and the one for the shell's own states, so nothing else changes at 1280px.
+    expect(rulesOf(wide).map((rule) => rule.selectors)).toEqual([[".bj-main"], [".bj-main > .bj-state"]]);
+    // It comes after the 960px rule, so it is the one that applies there.
+    const code = appCss.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(code.indexOf("max-width: 1440px")).toBeGreaterThan(code.indexOf("max-width: 960px"));
+    expect(code.match(/1440px/g)).toHaveLength(1);
+  });
+
+  it("keeps what the shell draws itself (a loading placeholder, a failed page, an address with no page) to 880px there", () => {
+    const wide = blockOf(appCss, "@media (min-width: 1280px)") ?? "";
+    expect(declarationsFor(wide, ".bj-main > .bj-state")).toEqual({ "max-width": "880px" });
+    expect(base(".bj-main > .bj-state")).toEqual({});
   });
 
   it("lets the page use the whole width and clear the tab bar and the home indicator", () => {

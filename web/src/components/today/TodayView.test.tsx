@@ -16,6 +16,7 @@ import {
   type JobMatch,
   type TodayItem,
 } from "../../lib/todayFeed";
+import { pipelineView } from "../../lib/todayPipeline";
 import { expectNoSeriousA11yViolations } from "../../testing/a11y";
 import { describedText } from "../../testing/forms";
 import { buttonNamed, click, query, render } from "../../testing/render";
@@ -127,6 +128,7 @@ function props(scenario: Scenario = {}, handlers: Partial<TodayViewProps> = {}):
     busy: scenario.busy ?? {},
     problems: scenario.problems ?? {},
     background: backgroundView(searches, credentials, scenario.gmail ?? "available"),
+    pipeline: pipelineView(applications),
     account: { ...NO_NOTES, ...scenario.notes },
     checklist: null,
     announcement: "",
@@ -639,12 +641,13 @@ describe("failure", () => {
 });
 
 describe("the margin and the inline trail", () => {
-  it("is a right margin at 1280px and up: a labelled aside with the lines, beside the feed", () => {
+  it("is the last block of the right column at 1280px and up: a labelled aside with the lines, beside the feed", () => {
     const { container } = draw({ items: [tracked], wide: true });
     const grid = query(container, ".bj-today-grid");
-    expect(grid.children[0].className).toContain("bj-today-main");
+    expect([...grid.children].map((child) => child.className)).toEqual(["bj-today-main", "bj-today-side"]);
     const aside = query(container, "aside.bj-today-margin");
-    expect(aside.parentElement).toBe(grid);
+    expect(aside.parentElement).toBe(grid.children[1]);
+    expect(grid.children[1].lastElementChild).toBe(aside);
     expect(words(query(aside, "h2"))).toBe("✦ In the background");
     expect(aside.getAttribute("aria-labelledby")).toBe(query(aside, "h2").id);
     expect(container.querySelector("button.bj-bg-toggle")).toBeNull();
@@ -914,4 +917,134 @@ describe("Generate anyway, described by what pressing it costs", () => {
     for (const node of container.querySelectorAll("[aria-describedby]")) expect(() => describedText(node)).not.toThrow();
     expect([...container.querySelectorAll("button")].map(words)).not.toContain("Generate anyway");
   });
+});
+
+describe("the right column, from 1280px", () => {
+  const CHECKLIST = (
+    <section className="bj-setup" aria-label="Setup stand-in">
+      <a href="/profile">Add your profile</a>
+    </section>
+  );
+
+  it("holds the setup checklist, then Pipeline, then In the background, and the feed's column does not hold the checklist", () => {
+    const { container } = draw({ items: [tracked], wide: true }, { checklist: CHECKLIST });
+    const side = query(container, ".bj-today-side");
+    expect([...side.children].map((child) => child.getAttribute("aria-label") ?? words(child.querySelector("h2")))).toEqual(["Setup stand-in", "Pipeline", "✦ In the background"]);
+    expect(query(container, ".bj-today-main").querySelector(".bj-setup")).toBeNull();
+    expect(container.querySelectorAll(".bj-setup")).toHaveLength(1);
+  });
+
+  it("holds Pipeline and the trail alone when the checklist draws nothing", () => {
+    const { container } = draw({ items: [], wide: true });
+    expect([...query(container, ".bj-today-side").children].map((child) => words(child.querySelector("h2")))).toEqual(["Pipeline", "✦ In the background"]);
+  });
+
+  it("leaves the checklist where it was under 1280px: in the one column, above the feed", () => {
+    const { container } = draw({ items: [tracked], wide: false }, { checklist: CHECKLIST });
+    expect(container.querySelector(".bj-today-side, .bj-today-grid")).toBeNull();
+    const main = query(container, ".bj-today-main");
+    const setup = query(main, ".bj-setup");
+    const feed = query(main, "ul.bj-today-list");
+    expect(setup.compareDocumentPosition(feed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("comes after the feed for a keyboard, so the feed's controls are met before the column's", () => {
+    const { container } = draw({ items: [proposal, tracked], wide: true, applications: STAGED }, { checklist: CHECKLIST });
+    const all = [...container.querySelectorAll("a, button")];
+    const lastOfFeed = Math.max(...[...query(container, ".bj-today-main").querySelectorAll("a, button")].map((control) => all.indexOf(control)));
+    const firstOfSide = Math.min(...[...query(container, ".bj-today-side").querySelectorAll("a, button")].map((control) => all.indexOf(control)));
+    expect(lastOfFeed).toBeLessThan(firstOfSide);
+  });
+});
+
+const STAGED = ok([
+  { id: "app-1", status: "saved", snapshot: { title: "Data Engineer", company_name: "Acme" } },
+  { id: "app-2", status: "interviewing", snapshot: { title: "ML Engineer", company_name: "Orbit" } },
+  { id: "app-3", status: "saved", snapshot: { title: "Analyst", company_name: "Initech" } },
+  { id: "app-4", status: "applied", snapshot: { title: "Data Scientist", company_name: "Hooli" } },
+  { id: "app-5", status: "ghosted", snapshot: { title: "Platform Engineer", company_name: "Globex" } },
+]);
+
+describe("the Pipeline card", () => {
+  const card = (container: HTMLElement) => query(container, "section.bj-pipeline");
+  const lineWords = (container: HTMLElement) => [...card(container).querySelectorAll("li")].map((line) => words(line));
+
+  it("is a labelled section with one line a stage, in the board's order, each a link to Applications", () => {
+    const { container } = draw({ items: [], wide: true, applications: STAGED });
+    const section = card(container);
+    expect(words(document.getElementById(section.getAttribute("aria-labelledby") ?? ""))).toBe("Pipeline");
+    expect(lineWords(container)).toEqual(["Saved 2 applications", "Applied 1 application", "Interviewing 1 application", "Other 1 application"]);
+    const links = [...section.querySelectorAll("a")];
+    expect(links).toHaveLength(4);
+    for (const link of links) expect(link.getAttribute("href")).toBe("/applications");
+    // What is seen is the stage and its count; the word after it is for a screen reader only.
+    expect(words(query(links[0], ".bj-pipeline-stage"))).toBe("Saved");
+    expect(words(query(links[0], ".bj-pipeline-count"))).toBe("2");
+    expect(query(links[0], ".bj-visually-hidden").textContent).toBe(" applications");
+  });
+
+  it("counts a status the board does not have under Other, and files it under no stage", () => {
+    const { container } = draw({ items: [], wide: true, applications: ok([{ id: "a", status: "ghosted" }, { id: "b" }, { id: "c", status: "offer" }]) });
+    expect(lineWords(container)).toEqual(["Offer 1 application", "Other 2 applications"]);
+  });
+
+  it("leaves out a stage that holds nothing", () => {
+    const { container } = draw({ items: [], wide: true, applications: STAGED });
+    for (const absent of ["Screening", "Offer", "Rejected", "Withdrawn"]) expect(words(card(container))).not.toContain(absent);
+    expect(words(card(container))).not.toMatch(/\b0\b/);
+  });
+
+  it("says there are none in one sentence, with a link to Discover", () => {
+    const { container } = draw({ items: [], wide: true, applications: ok([]) });
+    expect(words(query(card(container), ".bj-pipeline-note"))).toBe("No applications are tracked yet: find a job in Discover.");
+    const links = [...card(container).querySelectorAll("a")];
+    expect(links.map((link) => [words(link), link.getAttribute("href")])).toEqual([["find a job in Discover", "/discover"]]);
+    expect(card(container).querySelector("ul")).toBeNull();
+  });
+
+  it("shows a placeholder and no number while the applications are being read", () => {
+    const { container } = draw({ items: [], wide: true, applications: loading });
+    expect(words(query(card(container), ".bj-state--loading"))).toBe("Loading your applications...");
+    expect(card(container).querySelector("a, ul, .bj-pipeline-note")).toBeNull();
+    expect(words(card(container))).not.toMatch(/\d/);
+  });
+
+  it("says the read failed, with a Retry that reads the account again, and shows no count", () => {
+    const onRetryAccount = vi.fn();
+    const { container } = draw({ items: [], wide: true, applications: failed }, { onRetryAccount });
+    const callout = query(card(container), ".bj-state--failure");
+    expect(words(callout)).toContain("Your applications couldn't be read, so there are no counts to show.");
+    expect(card(container).querySelector("a, ul, .bj-pipeline-note")).toBeNull();
+    expect(words(card(container))).not.toMatch(/\d/);
+    click(buttonNamed(callout, "Retry"));
+    expect(onRetryAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it("is the page's last section under 1280px, under a heading the size of the feed's, with the same lines", () => {
+    const { container } = draw({ items: [tracked], wide: false, applications: STAGED });
+    const section = card(container);
+    expect(query(container, ".bj-today").lastElementChild).toBe(section);
+    expect(query(section, "h2").className).toBe("bj-today-heading");
+    expect(lineWords(container)).toEqual(["Saved 2 applications", "Applied 1 application", "Interviewing 1 application", "Other 1 application"]);
+    expect(container.querySelectorAll("section.bj-pipeline")).toHaveLength(1);
+  });
+
+  it("takes the small title of a margin block in the right column", () => {
+    const { container } = draw({ items: [], wide: true, applications: STAGED });
+    expect(query(card(container), "h2").className).toBe("bj-bg-title");
+  });
+
+  it("holds no gold fill", () => {
+    const { container } = draw({ items: [], wide: true, applications: STAGED });
+    expect(card(container).querySelector(CYAN_FILLS)).toBeNull();
+  });
+
+  for (const [name, applications] of [["the stages", STAGED], ["none", ok([])], ["a failed read", failed], ["a read still out", loading]] as const) {
+    for (const wide of [true, false]) {
+      it(`has no serious accessibility violation: ${name}, ${wide ? "wide" : "one column"}`, async () => {
+        const { container } = draw({ items: [tracked], wide, applications });
+        await expectNoSeriousA11yViolations(container);
+      });
+    }
+  }
 });
