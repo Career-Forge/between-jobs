@@ -81,6 +81,9 @@ function dated(index: number): string | null {
  * its own. The scored rows come back interleaved across tiers (as a search that scored them in a
  * different order than their fit would), so "Best fit" changes their order and "As returned" does not.
  * Titles are "Strong 1", "Good 3" and "Unscored 2"; within a tier a lower number scores higher.
+ * The tiers here, and the titles, are the engine's bins, as the API sends them. A person is shown three
+ * grades for them (lib/fitGrade.ts): the "Strong" rows read Good, the "Good" rows read Decent, and the
+ * "Mixed" and "Poor" rows both read Bad fit.
  */
 export function mixedResponse(mix: Partial<TierMix> = {}, overrides: Partial<DiscoverResponse> = {}): DiscoverResponse {
   const counts = { ...DEFAULT_MIX, ...mix };

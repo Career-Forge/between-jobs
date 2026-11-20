@@ -64,6 +64,29 @@ describe("the palette contract", () => {
     });
   });
 
+  it("has a colour for each fit grade and a grey for no grade, and keeps the bad-fit rose apart from the danger red", () => {
+    expect(tokens["--bj-fit-good"]).toBe("var(--bj-emerald)");
+    expect(tokens["--bj-fit-unscored"]).toBe("var(--bj-text-muted)");
+    expect({
+      good: token("--bj-fit-good"),
+      decent: token("--bj-fit-decent"),
+      bad: token("--bj-fit-bad"),
+      unscored: token("--bj-fit-unscored"),
+    }).toEqual({
+      good: "#5cc29b",
+      decent: "#d8c45c",
+      bad: "#e0808e",
+      unscored: "#a3abbb",
+    });
+    // A bad fit is a reading, not a failure: it is not the danger token, by name or by value.
+    expect(tokens["--bj-fit-bad"]).not.toContain("--bj-danger");
+    expect(token("--bj-fit-bad")).not.toBe(token("--bj-danger"));
+    // And no grade is gold, which is the action.
+    for (const name of ["--bj-fit-good", "--bj-fit-decent", "--bj-fit-bad", "--bj-fit-unscored"]) {
+      expect(token(name), name).not.toBe(token("--bj-gold"));
+    }
+  });
+
   it("makes gold the primary fill, with near-black ink, and links the link blue", () => {
     expect(token("--bj-primary")).toBe(token("--bj-gold"));
     expect(token("--bj-primary-hover")).toBe(token("--bj-gold-hover"));
@@ -303,8 +326,20 @@ const PAIRS: [label: string, foreground: string, background: string, minimum: nu
   ["group and secondary outline against the canvas", "--bj-outline", "--bj-bg", 3],
   ["group and secondary outline against a surface", "--bj-outline", "--bj-surface", 3],
   ["brand dot against the canvas", "--bj-brand-dot", "--bj-bg", 3],
-  ["Discover score numeral: gold on the lifted Strong row's surface", "--bj-gold", "--bj-surface", 4.5],
-  ["Discover score numeral: gold on the canvas", "--bj-gold", "--bj-bg", 4.5],
+  ["Discover score numeral: ivory on the lifted row's surface", "--bj-text", "--bj-surface", 4.5],
+  ["Discover score numeral: ivory on the canvas", "--bj-text", "--bj-bg", 4.5],
+  ["fit grade Good: green on the canvas", "--bj-fit-good", "--bj-bg", 4.5],
+  ["fit grade Good: green on a surface", "--bj-fit-good", "--bj-surface", 4.5],
+  ["fit grade Good: green on a raised surface", "--bj-fit-good", "--bj-surface-raised", 4.5],
+  ["fit grade Decent: yellow on the canvas", "--bj-fit-decent", "--bj-bg", 4.5],
+  ["fit grade Decent: yellow on a surface", "--bj-fit-decent", "--bj-surface", 4.5],
+  ["fit grade Decent: yellow on a raised surface", "--bj-fit-decent", "--bj-surface-raised", 4.5],
+  ["fit grade Bad fit: rose on the canvas", "--bj-fit-bad", "--bj-bg", 4.5],
+  ["fit grade Bad fit: rose on a surface", "--bj-fit-bad", "--bj-surface", 4.5],
+  ["fit grade Bad fit: rose on a raised surface", "--bj-fit-bad", "--bj-surface-raised", 4.5],
+  ["no fit grade: grey on the canvas", "--bj-fit-unscored", "--bj-bg", 4.5],
+  ["no fit grade: grey on a surface", "--bj-fit-unscored", "--bj-surface", 4.5],
+  ["no fit grade: grey on a raised surface", "--bj-fit-unscored", "--bj-surface-raised", 4.5],
   ["text link on a raised surface: link blue on raised", "--bj-link", "--bj-surface-raised", 4.5],
   ["field text: ivory on the field well", "--bj-text", "--bj-field", 4.5],
   ["field placeholder and hint: muted on the field well", "--bj-text-muted", "--bj-field", 4.5],

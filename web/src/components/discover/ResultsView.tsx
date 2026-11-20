@@ -56,7 +56,7 @@ import "../../styles/discover.css";
 // A person's choices -- the fit, the sort, which details are open and the sentence last announced --
 // are state of this view and live only in memory. They start fresh whenever a different search answer
 // arrives (the page unmounts this view while a search runs, and the derived reset below covers an answer
-// that replaces another in place), because a new search is a new question and "Strong" must not hide
+// that replaces another in place), because a new search is a new question and "Good" must not hide
 // rows from it unasked. Tracking a row or saving a search keeps the same answer, so it keeps them.
 //
 // The band holds the next step (a search again, clear the filters); nothing here is gold.

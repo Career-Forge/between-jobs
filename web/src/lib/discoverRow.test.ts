@@ -138,6 +138,16 @@ describe("the fit block", () => {
     expect(view.oneLiner).toBe("Strong overlap on data pipelines.");
   });
 
+  it("carries the grade a person is shown beside the engine's bin, and keeps the bin as the engine named it", () => {
+    const shown = [["Strong", "good"], ["Good", "decent"], ["Mixed", "bad"], ["Poor", "bad"]] as const;
+    for (const [bin, grade] of shown) {
+      const view = fitViewOf(job({ score: score({ bin }) }), "direct");
+      if (view.kind !== "scored") throw new Error("expected a scored view");
+      expect(view.level, bin).toBe(bin);
+      expect(view.grade, bin).toBe(grade);
+    }
+  });
+
   it("draws a bar only for a dimension that was applied: a dropped one is never drawn as 0", () => {
     const view = fitViewOf(job(), "direct");
     if (view.kind !== "scored") throw new Error("expected a scored view");
@@ -204,8 +214,9 @@ describe("the fit block", () => {
     expect(view.kind).toBe("scored");
   });
 
-  it("is nothing at all for a bin the ladder does not know: the row is unscored, whatever else its score holds", () => {
-    const bins = ["Excellent", "strong", " Strong", "Strong bj-primary", "", "constructor", "__proto__", "toString", null, undefined, 3, {}, ["Strong"]];
+  it("is nothing at all for a bin the engine does not have: the row is unscored, whatever else its score holds", () => {
+    // A grade's own name or label is not an engine bin either.
+    const bins = ["Excellent", "strong", " Strong", "Strong bj-primary", "good", "decent", "bad", "Decent", "Bad fit", "", "constructor", "__proto__", "toString", null, undefined, 3, {}, ["Strong"]];
     for (const bin of bins) {
       const odd = job({ score: score({ bin: bin as never, score100: 77, one_liner: "A model line." }) });
       expect(fitViewOf(odd, "direct"), JSON.stringify(bin)).toEqual({ kind: "unscored" });

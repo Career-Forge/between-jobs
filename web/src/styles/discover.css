@@ -386,8 +386,9 @@
   }
 }
 
-/* The strongest fits read as a group: one near-black step lighter than the page, and nothing else.
-   The other tiers carry their class only as a hook; they are not dimmed, recolored or outlined. */
+/* The best fits read as a group: one step lighter than the page, and nothing else. The class is named for
+   the engine's bin (Strong), which a person reads as "Good". The other bins carry their class only as a
+   hook; they are not dimmed, recolored or outlined. */
 .bj-disc-row--strong {
   background: var(--bj-surface);
 }
@@ -559,9 +560,10 @@
   column-gap: var(--bj-space-1);
 }
 
-/* The number is the row's one gold figure; the tier word beside it is the reading. */
+/* The number is plain ivory text, not gold and not the grade's colour: the grade word beside it is the
+   reading, and the ladder under it is the only thing here that takes a colour. */
 .bj-disc-score-num {
-  color: var(--bj-gold);
+  color: var(--bj-text);
   font-family: var(--bj-font-display);
   font-size: var(--bj-text-title);
   font-weight: 500;
@@ -585,7 +587,7 @@
   font-size: var(--bj-text-small);
 }
 
-/* Four cells fit the gutter. */
+/* Three narrow cells fit the gutter. */
 .bj-disc-ladder .bj-ladder-cell {
   width: 12px;
 }
@@ -676,11 +678,11 @@
   overflow-wrap: anywhere;
 }
 
-/* A row past the scoring batch has no score block at all, only these words. */
+/* A row past the scoring batch has no score block at all, only these words, in the grey of no grade. */
 .bj-fit-unscored {
   margin: 0;
   font-size: var(--bj-text-small);
-  color: var(--bj-text-muted);
+  color: var(--bj-fit-unscored);
 }
 
 /* On a row past the scoring batch the words sit level with the actions: centered against them on a

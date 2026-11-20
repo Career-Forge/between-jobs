@@ -238,12 +238,24 @@ ring or radar.
 **`ScoreBlock`, `FitLadder`** (`components/paper/ScoreBlock.tsx`). `ScoreBlock` is the ATS block's frame: `label`,
 `value`, `max?` (100), `from?` (draws "64 -> 72" only when it differs, and says "was 64, now 72" to a screen reader), `caption?` ("medium confidence"),
 `engine?` (the "engine ✦" mark, on by default), `children` (the bars), `footer?`. `FitLadder` is Discover's
-four-rung ladder: `levels` (lowest first), `level` (the rung's name, from the engine; there is no score-to-rung
-mapping here), `score?` (left out of the words and of the label unless it is a number from 0 to `max`, one predicate
+three-rung ladder, one rung per grade a person is shown (Bad fit, Decent, Good): `grade` (`"bad"`, `"decent"` or
+`"good"` from `lib/fitGrade.ts`, or `null` for no rung; there is no score-to-rung mapping here, and anything that
+is not a grade is drawn as "Not scored"), `score?` (left out of the words and of the label unless it is a number from 0 to `max`, one predicate
 shared with the row's number and "Best fit": `lib/scoreRange.ts`), `max?`, `placeholder?` (hollow, no number, for a fallback), `showWords?` (the words beside
-the cells, on by default; Discover prints the number and tier itself, and the image's label still says all of it). The "engine" caption is drawn only when a rung
+the cells, on by default; Discover prints the number and grade itself, and the image's label still says all of it). The filled cells take the
+grade's colour (`--bj-fit-good`, `--bj-fit-decent`, `--bj-fit-bad`), never gold, and the grade's word is always beside
+them or in the image's label, so the colour never carries the meaning alone. The "engine" caption is drawn only when a rung
 was reached, never for "Not scored" or a placeholder. Use them only for a score
 that code computed; a model's judgement gets the model mark in its trail, not this.
+
+**Fit grades** (`lib/fitGrade.ts`). The engine sorts a fit score into four bins and the API sends those words
+(`ScoreBin`: Strong, Good, Mixed, Poor). A person is shown three grades instead, each with a colour: the engine's
+Strong reads **Good** (green), its Good reads **Decent** (yellow), and its Mixed and Poor both read **Bad fit**
+(rose, which is its own token and not the danger red). The word "Good" therefore moves: on screen it is the
+engine's best bin, the only one a saved search brings to Today as a match, and never the engine's bin of the same
+name. This is display only. The API types, the sort by score, the rule for which rows read as scored, the rows'
+`bj-disc-row--strong` (and so on) classes and the test fixtures keep the engine's bins; `gradeOfBin()` is the one
+place a bin becomes a grade, and a bin it does not know has no grade and reads "Not scored".
 
 **`ClaimRow`, `ClaimList`** (`components/paper/ClaimRow.tsx`). One claim and what is known about it: `status`
 ("supported", "unverifiable", "contradicted" or "unchecked"), `claim` (verbatim, without quotation marks), `reason?`,
@@ -383,8 +395,9 @@ their trail line, inline at every width. Neither makes a search when it opens.
   block above the results. The elapsed counter of a running search is drawn beside the
   band (`role="timer"`, live region off), not in its sentence, so the sentence is announced once.
 - **A Discover row** (`lib/discoverRow.ts`, drawn by `components/discover/`) is built from returned fields only. It
-  leads with its score: the number out of 100, the tier word, the four-cell ladder and the "engine" mark sit in a
-  gutter at the left, and the Strong rows alone are on a lighter surface. Beside the text is the model's one line and
+  leads with its score: the number out of 100 in plain text, the grade word (Good, Decent or Bad fit: see Fit
+  grades above), the three-cell ladder in that grade's colour and the "engine" mark sit in a gutter at the left, and
+  the Good rows alone (the engine's Strong bin) are on a lighter surface. Beside the text is the model's one line and
   one line of what the score left out (the lowest part with its number, how many parts were not applied, a location
   that does not match). A bar out of 100 for each applied part, what was not applied and why, the lowest part and the
   model's three-way reading of the location are behind that row's "Why this score". Rows past the scoring batch are
@@ -392,11 +405,11 @@ their trail line, inline at every width. Neither makes a search when it opens.
   and no number. Those two kinds of row have no "Why this score" to open, so their posting text is capped at four
   lines with nothing to release it: "View posting" is on every row that has an http(s) address and is the way to
   the rest. A scored row shows two lines of the text and three of the model's line, and releases both while that
-  row's "Why this score" is open. A bin the ladder does not know (anything but Strong, Good, Mixed or
+  row's "Why this score" is open. A bin the engine does not have (anything but its own Strong, Good, Mixed or
   Poor) makes the row unscored throughout: it is the same one band that reads "Not scored", with no number, model
   line, preview or detail, it is counted and filtered as not scored, and the response's own words are never printed
   or turned into a class. A score that is not a number from 0 to 100 (NaN, text, 150, -5) is never printed or
-  ranked: the tier word and the ladder stand alone. A part of the score that is not one is treated as a part that is
+  ranked: the grade word and the ladder stand alone. A part of the score that is not one is treated as a part that is
   missing: no bar, no number beside the lowest part and no line in the receipt. A fraction inside the scale is
   printed as it came.
 
@@ -406,10 +419,11 @@ their trail line, inline at every width. Neither makes a search when it opens.
   text match. A live-search row says "Link not found closed" when the link check kept it (never "verified"), and
   "Link not checked yet" when it never reached the check. Only an http(s) address becomes a link.
 - **The results** (`components/discover/ResultsView.tsx`, `ResultsToolbar.tsx`, `lib/discoverArrange.ts`). From three
-  rows there is a toolbar, and it draws only the tools that have something to offer: chips to keep one fit (a tier,
-  or the rows that were not scored), each with its count, a sort (as returned, best fit, newest) and a "Show score
-  details" switch. A fit is offered only when at least two groups hold rows and the scoring did not fall back; a
-  bin the ladder does not know counts as not scored, so the chips add up to All. The sorts are offered from the rows
+  rows there is a toolbar, and it draws only the tools that have something to offer: chips to keep one fit (All,
+  Good, Decent, Bad fit and Not scored: a grade, or the rows that were not scored), each with its count, a sort (as
+  returned, best fit, newest) and a "Show score details" switch. The chips are by grade, so Bad fit counts and keeps
+  the engine's Mixed and Poor rows together. A fit is offered only when at least two groups hold rows and the scoring did not fall back; a
+  bin the engine does not have counts as not scored, so the chips add up to All. The sorts are offered from the rows
   the fit choice keeps: "Best fit" only when two rows of the scored list read as scored and carry a score from 0 to 100
   (a row that reads "Not scored" has no rank and sorts last, and rows under "More results" are never ranked), "Newest" only when a section holds two rows with a posting date
   the trail can read. The Sort group is drawn only when at least two sorts are

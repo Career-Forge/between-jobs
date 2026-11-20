@@ -501,10 +501,25 @@ select.bj-jump-select-control optgroup {
   border-radius: 2px;
 }
 
+/* A filled cell is the colour of the grade the ladder reached, never gold: the class on the ladder
+   names the grade, and the word beside the cells says it. A ladder with no grade fills nothing. */
 .bj-ladder-cell--filled {
-  border-color: var(--bj-gold);
-  background: var(--bj-gold);
   forced-color-adjust: none;
+}
+
+.bj-ladder--good .bj-ladder-cell--filled {
+  border-color: var(--bj-fit-good);
+  background: var(--bj-fit-good);
+}
+
+.bj-ladder--decent .bj-ladder-cell--filled {
+  border-color: var(--bj-fit-decent);
+  background: var(--bj-fit-decent);
+}
+
+.bj-ladder--bad .bj-ladder-cell--filled {
+  border-color: var(--bj-fit-bad);
+  background: var(--bj-fit-bad);
 }
 
 .bj-ladder-words {

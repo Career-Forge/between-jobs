@@ -261,7 +261,7 @@ describe("the score, the tiers and the clamps", () => {
     expect(code).not.toMatch(/box-shadow|gradient|transition|animation|@keyframes/);
   });
 
-  it("lifts a Strong row onto the surface step and does nothing else to it", () => {
+  it("lifts a row in the engine's Strong bin (shown as Good) onto the surface step and does nothing else to it", () => {
     expect(declarationsFor(base, ".bj-disc-row--strong")).toEqual({ background: "var(--bj-surface)" });
   });
 
@@ -279,11 +279,18 @@ describe("the score, the tiers and the clamps", () => {
     expect(declarationsFor(base, ".bj-disc-row--unscored .bj-disc-title")["font-size"]).toBe("var(--bj-text-body)");
   });
 
-  it("sets the number in gold, in exactly one rule, and uses gold nowhere else but the fallback notice's outline", () => {
+  it("sets the number in plain ivory text, and uses gold nowhere but the fallback notice's outline", () => {
     const gold = rulesOf(discoverCss).filter((rule) => Object.values(rule.declarations).some((value) => value.includes("--bj-gold")));
-    expect(gold.map((rule) => rule.selectors.join(", ")).sort()).toEqual([".bj-disc-fallback", ".bj-disc-score-num"]);
-    expect(declarationsFor(base, ".bj-disc-score-num").color).toBe("var(--bj-gold)");
+    expect(gold.map((rule) => rule.selectors.join(", ")).sort()).toEqual([".bj-disc-fallback"]);
+    expect(declarationsFor(base, ".bj-disc-score-num").color).toBe("var(--bj-text)");
+    expect(declarationsFor(wide, ".bj-disc-score-num").color).toBeUndefined();
     expect(declarationsFor(base, ".bj-disc-fallback").border).toBe("1px solid var(--bj-gold)");
+  });
+
+  it("colours nothing of its own by fit grade: the ladder's cells are the only grade colour on a row, and 'Not scored' is the grey of no grade", () => {
+    const graded = rulesOf(discoverCss).filter((rule) => Object.values(rule.declarations).some((value) => /--bj-fit-(?:good|decent|bad)/.test(value)));
+    expect(graded).toEqual([]);
+    expect(declarationsFor(base, ".bj-fit-unscored").color).toBe("var(--bj-fit-unscored)");
   });
 
   it("sets the number from the type scale only: the title size, and the page title size from 960px", () => {
@@ -293,14 +300,14 @@ describe("the score, the tiers and the clamps", () => {
     expect(declarationsFor(base, ".bj-disc-score-num")["font-variant-numeric"]).toBe("lining-nums tabular-nums");
   });
 
-  it("sets '/ 100' muted and small, and the tier word in the text color, neither gold", () => {
+  it("sets '/ 100' muted and small, and the grade word in the text color, neither gold nor a grade's colour", () => {
     expect(declarationsFor(base, ".bj-disc-score-of").color).toBe("var(--bj-text-muted)");
     expect(declarationsFor(base, ".bj-disc-score-of")["font-size"]).toBe("var(--bj-text-trail)");
     expect(declarationsFor(base, ".bj-disc-score-tier").color).toBe("var(--bj-text)");
     expect(declarationsFor(base, ".bj-disc-score-tier")["font-size"]).toBe("var(--bj-text-small)");
   });
 
-  it("narrows the ladder's cells so four fit the gutter", () => {
+  it("narrows the ladder's cells to fit the gutter", () => {
     expect(declarationsFor(base, ".bj-disc-ladder .bj-ladder-cell").width).toBe("12px");
   });
 

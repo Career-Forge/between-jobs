@@ -1,5 +1,4 @@
 import type { ReactElement } from "react";
-import { FIT_LEVELS } from "../../lib/discoverRow";
 import { StaticTrailLine, GlyphMark } from "../paper/TrailLine";
 import { ChecklistGroup } from "../paper/ChecklistRow";
 import { ClaimList, ClaimRow } from "../paper/ClaimRow";
@@ -72,7 +71,7 @@ export function DiscoverMock() {
 
       <div className="bj-tour-column">
         <p className="bj-tour-kicker">{copy.fitKicker}</p>
-        <FitLadder levels={FIT_LEVELS} level={copy.fitLevel} />
+        <FitLadder grade={copy.fitGrade} />
         <p className="bj-tour-sentence">{copy.fitOneLiner}</p>
         <ul className="bj-tour-parts" aria-label={copy.partsLabel}>
           {copy.parts.map((part) => (

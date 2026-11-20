@@ -80,6 +80,9 @@ const switchBox = (container: HTMLElement) => query<HTMLInputElement>(container,
 const detailToggles = (container: HTMLElement) => [...container.querySelectorAll<HTMLButtonElement>("button.bj-fit-toggle")];
 const openCount = (container: HTMLElement) => container.querySelectorAll(".bj-fit-detail").length;
 
+// The fixture is API data: its counts are by the engine's bin and its titles carry that bin ("Strong 1",
+// "Good 3"). The chips are by the grade a person is shown: the Good chip holds the Strong rows, Decent the
+// Good rows, and Bad fit the Mixed and the Poor rows together.
 const MIXED = () => mixedResponse();
 const ALL_TITLES = (result: DiscoverResponse) => [...result.scored, ...result.more].map((entry) => entry.title);
 
@@ -103,15 +106,15 @@ describe("the toolbar", () => {
     expect(fitGroup(container).classList.contains("bj-segmented")).toBe(true);
     expect(sortGroup(container).classList.contains("bj-segmented")).toBe(true);
     const names = [...fitGroup(container).querySelectorAll("button")].map((button) => words(button));
-    expect(names).toEqual(["All 25 results", "Strong 6 results", "Good 6 results", "Mixed 3 results", "Poor 3 results", "Not scored 7 results"]);
+    expect(names).toEqual(["All 25 results", "Good 6 results", "Decent 6 results", "Bad fit 6 results", "Not scored 7 results"]);
     const visible = [...fitGroup(container).querySelectorAll("button")].map((button) => words(button).replace(/\s+results?$/, ""));
-    expect(visible).toEqual(["All 25", "Strong 6", "Good 6", "Mixed 3", "Poor 3", "Not scored 7"]);
+    expect(visible).toEqual(["All 25", "Good 6", "Decent 6", "Bad fit 6", "Not scored 7"]);
     expect([...sortGroup(container).querySelectorAll("button")].map((button) => words(button))).toEqual(["As returned", "Best fit", "Newest"]);
   });
 
   it("sets each chip's number in the mono face, as its own element, and the group's words as aria-hidden labels", () => {
     const { container } = draw(MIXED());
-    expect([...container.querySelectorAll(".bj-disc-chip-count")].map((count) => words(count))).toEqual(["25", "6", "6", "3", "3", "7"]);
+    expect([...container.querySelectorAll(".bj-disc-chip-count")].map((count) => words(count))).toEqual(["25", "6", "6", "6", "7"]);
     const labels = [...container.querySelectorAll(".bj-disc-tool-label")];
     expect(labels.map((label) => words(label))).toEqual(["Fit", "Sort"]);
     for (const label of labels) expect(label.getAttribute("aria-hidden")).toBe("true");
@@ -119,16 +122,16 @@ describe("the toolbar", () => {
 
   it("says result, not results, for a count of one", () => {
     const { container } = draw(mixedResponse({ Strong: 1, Good: 4, Mixed: 0, Poor: 0, unscored: 0 }));
-    expect([...fitGroup(container).querySelectorAll("button")].map((button) => words(button))).toEqual(["All 5 results", "Strong 1 result", "Good 4 results"]);
+    expect([...fitGroup(container).querySelectorAll("button")].map((button) => words(button))).toEqual(["All 5 results", "Good 1 result", "Decent 4 results"]);
   });
 
   it("presses one chip and one sort at a time, All and As returned to begin with, and draws no tier nobody holds", () => {
-    const { container } = draw(mixedResponse({ Mixed: 0 }));
-    expect(pressed(fitGroup(container))).toEqual(["All 22 results"]);
+    const { container } = draw(mixedResponse({ Mixed: 0, Poor: 0 }));
+    expect(pressed(fitGroup(container))).toEqual(["All 19 results"]);
     expect(pressed(sortGroup(container))).toEqual(["As returned"]);
-    expect(words(fitGroup(container))).not.toContain("Mixed");
-    click(chip(container, "Good"));
-    expect(pressed(fitGroup(container))).toEqual(["Good 6 results"]);
+    expect(words(fitGroup(container))).not.toContain("Bad fit");
+    click(chip(container, "Decent"));
+    expect(pressed(fitGroup(container))).toEqual(["Decent 6 results"]);
     click(sortButton(container, "Newest"));
     expect(pressed(sortGroup(container))).toEqual(["Newest"]);
   });
@@ -145,7 +148,7 @@ describe("the toolbar", () => {
     act(() => {
       for (const key of ["ArrowRight", "ArrowLeft", "Home", "End", "s", "/"]) document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
     });
-    keydown("ArrowRight", { target: chip(container, "Strong") });
+    keydown("ArrowRight", { target: chip(container, "Good") });
     expect(container.innerHTML).toBe(before);
   });
 
@@ -162,23 +165,43 @@ describe("keeping one fit", () => {
     const result = MIXED();
     const { container } = draw(result);
     expect(countLine(container)).toBeNull();
-    click(chip(container, "Strong"));
+    click(chip(container, "Good"));
     expect(titles(container)).toEqual(["Strong 1", "Strong 2", "Strong 3", "Strong 4", "Strong 5", "Strong 6"]);
     expect(headings(container)).not.toContain("More results");
     expect(container.querySelectorAll("ul.bj-disc-list")).toHaveLength(1);
-    expect(countLine(container)).toBe("Showing 6 of 25 results, Strong fit only. 7 not scored are not shown.");
-    click(chip(container, "Poor"));
-    expect(titles(container)).toEqual(["Poor 1", "Poor 2", "Poor 3"]);
-    expect(countLine(container)).toBe("Showing 3 of 25 results, Poor fit only. 7 not scored are not shown.");
+    expect(countLine(container)).toBe("Showing 6 of 25 results, Good fit only. 7 not scored are not shown.");
+    click(chip(container, "Bad fit"));
+    expect(titles(container)).toEqual(["Poor 1", "Mixed 1", "Poor 2", "Mixed 2", "Poor 3", "Mixed 3"]);
+    expect(countLine(container)).toBe("Showing 6 of 25 results, Bad fit only. 7 not scored are not shown.");
+  });
+
+  it("shows a person three grades for the engine's four bins: the words Strong, Mixed and Poor are on no chip, row or count line", () => {
+    const { container } = draw(MIXED());
+    const said = () => [words(query(container, ".bj-disc-toolbar")), ...[...container.querySelectorAll(".bj-disc-score")].map((gutter) => `${words(gutter)} ${gutter.querySelector("[role='img']")?.getAttribute("aria-label") ?? ""}`)].join(" ");
+    for (const label of ["All", "Good", "Decent", "Bad fit"]) {
+      click(chip(container, label));
+      expect(said(), label).not.toMatch(/Strong|Mixed|Poor/);
+    }
+    // The Bad fit chip's number is the Mixed rows and the Poor rows together, and pressing it shows exactly those.
+    click(chip(container, "Bad fit"));
+    expect(words(chip(container, "Bad fit"))).toBe("Bad fit 6 results");
+    expect(rowsOf(container).map((row) => words(query(row, ".bj-disc-score-tier")))).toEqual(Array(6).fill("Bad fit"));
+    expect([...container.querySelectorAll(".bj-disc-row--mixed")]).toHaveLength(3);
+    expect([...container.querySelectorAll(".bj-disc-row--poor")]).toHaveLength(3);
+    // The engine's bin Good is under Decent, and the chip that reads Good holds the engine's Strong rows.
+    click(chip(container, "Decent"));
+    expect(titles(container).every((title) => title.startsWith("Good "))).toBe(true);
+    click(chip(container, "Good"));
+    expect(titles(container).every((title) => title.startsWith("Strong "))).toBe(true);
   });
 
   it("says 'is' for one not-scored row left out, and says nothing about it when there are none", () => {
     const one = draw(mixedResponse({ unscored: 1 }));
-    click(chip(one.container, "Good"));
-    expect(countLine(one.container)).toBe("Showing 6 of 19 results, Good fit only. 1 not scored is not shown.");
+    click(chip(one.container, "Decent"));
+    expect(countLine(one.container)).toBe("Showing 6 of 19 results, Decent fit only. 1 not scored is not shown.");
     const none = draw(mixedResponse({ unscored: 0 }));
-    click(chip(none.container, "Good"));
-    expect(countLine(none.container)).toBe("Showing 6 of 18 results, Good fit only.");
+    click(chip(none.container, "Decent"));
+    expect(countLine(none.container)).toBe("Showing 6 of 18 results, Decent fit only.");
   });
 
   it("restores everything with All, and shows only More results for Not scored", () => {
@@ -199,9 +222,9 @@ describe("keeping one fit", () => {
     const { container } = draw(MIXED());
     click(chip(container, "All"));
     expect(live(container).textContent).toBe("");
-    click(chip(container, "Strong"));
+    click(chip(container, "Good"));
     const said = live(container).textContent;
-    click(chip(container, "Strong"));
+    click(chip(container, "Good"));
     expect(live(container).textContent).toBe(said);
     click(sortButton(container, "As returned"));
     expect(live(container).textContent).toBe(said);
@@ -211,7 +234,7 @@ describe("keeping one fit", () => {
     const result = MIXED();
     const target = result.scored.find((entry) => entry.title === "Good 2")!;
     const view = draw(result);
-    click(chip(view.container, "Good"));
+    click(chip(view.container, "Decent"));
     click(sortButton(view.container, "Best fit"));
     expect(titles(view.container)).toEqual(["Good 1", "Good 2", "Good 3", "Good 4", "Good 5", "Good 6"]);
     const onTrack = vi.fn();
@@ -221,7 +244,7 @@ describe("keeping one fit", () => {
     view.again(result, { onTrack, tracked: { [target.apply_url]: "app-7" } });
     const open = [...rowsOf(view.container)[1].querySelectorAll<HTMLAnchorElement>("a")].find((link) => words(link) === "Open workspace");
     expect(open?.getAttribute("href")).toBe("/applications/app-7");
-    expect(pressed(fitGroup(view.container))).toEqual(["Good 6 results"]);
+    expect(pressed(fitGroup(view.container))).toEqual(["Decent 6 results"]);
     expect(pressed(sortGroup(view.container))).toEqual(["Best fit"]);
   });
 });
@@ -386,6 +409,13 @@ describe("what is drawn when there is nothing to choose between", () => {
     expect(container.querySelector(".bj-disc-toggle")).not.toBeNull();
   });
 
+  it("draws no fit group for Mixed and Poor rows alone: both read Bad fit, which is one tier", () => {
+    const { container } = draw(mixedResponse({ Strong: 0, Good: 0, Mixed: 2, Poor: 2, unscored: 0 }));
+    expect(container.querySelector('[aria-label="Show results by fit"]')).toBeNull();
+    expect(sortGroup(container)).not.toBeNull();
+    expect(container.querySelector(".bj-disc-toggle")).not.toBeNull();
+  });
+
   it("draws the status block and then the empty state, and no toolbar, for a search with no rows", () => {
     const { container } = draw(response({ scored: [], more: [], warnings: ["brave: down"], dead_removed: 2 }));
     expect(container.querySelector(".bj-disc-tools")).toBeNull();
@@ -471,15 +501,15 @@ describe("the details switch", () => {
     expect(container.querySelector(".bj-disc-toggle")).not.toBeNull();
     click(chip(container, "Not scored"));
     expect(container.querySelector(".bj-disc-toggle")).toBeNull();
-    click(chip(container, "Poor"));
+    click(chip(container, "Bad fit"));
     expect(container.querySelector(".bj-disc-toggle")).not.toBeNull();
   });
 
   it("opens the details of the rows a later choice brings in", () => {
     const { container } = draw(MIXED());
     click(switchBox(container));
-    click(chip(container, "Poor"));
-    expect(openCount(container)).toBe(3);
+    click(chip(container, "Bad fit"));
+    expect(openCount(container)).toBe(6);
     expect(switchBox(container).checked).toBe(true);
   });
 });
@@ -500,8 +530,8 @@ describe("what a screen reader is told", () => {
 
   it("says what a chip did, in the count line's words, and what a sort did", () => {
     const { container } = draw(MIXED());
-    click(chip(container, "Strong"));
-    expect(live(container).textContent).toBe("Showing 6 of 25 results, Strong fit only. 7 not scored are not shown.");
+    click(chip(container, "Good"));
+    expect(live(container).textContent).toBe("Showing 6 of 25 results, Good fit only. 7 not scored are not shown.");
     click(chip(container, "Not scored"));
     expect(live(container).textContent).toBe("Showing 7 of 25 results, not scored only.");
     click(chip(container, "All"));
@@ -516,7 +546,7 @@ describe("what a screen reader is told", () => {
 
   it("keeps the visible count line out of the live region, so it is not read twice", () => {
     const { container } = draw(MIXED());
-    click(chip(container, "Good"));
+    click(chip(container, "Decent"));
     const line = query(container, ".bj-disc-count");
     expect(line.closest("[role='status']")).toBeNull();
     expect(line.getAttribute("aria-live")).toBeNull();
@@ -525,11 +555,11 @@ describe("what a screen reader is told", () => {
 
   it("keeps focus on the control that was pressed while the list changes under it", () => {
     const { container } = draw(MIXED());
-    const strong = chip(container, "Strong");
-    act(() => strong.focus());
-    click(strong);
-    expect(document.activeElement).toBe(strong);
-    expect(strong.isConnected).toBe(true);
+    const best = chip(container, "Good");
+    act(() => best.focus());
+    click(best);
+    expect(document.activeElement).toBe(best);
+    expect(best.isConnected).toBe(true);
     const newest = sortButton(container, "Newest");
     act(() => newest.focus());
     click(newest);
@@ -545,7 +575,7 @@ describe("a new answer starts over", () => {
   it("returns to All, As returned, details closed and a silent live region when a different answer arrives", () => {
     const first = MIXED();
     const view = draw(first);
-    click(chip(view.container, "Poor"));
+    click(chip(view.container, "Bad fit"));
     click(sortButton(view.container, "Newest"));
     click(switchBox(view.container));
     expect(live(view.container).textContent).not.toBe("");
@@ -561,8 +591,8 @@ describe("a new answer starts over", () => {
 
   it("does not bring a choice back when the next answer has that tier again", () => {
     const view = draw(MIXED());
-    click(chip(view.container, "Poor"));
-    view.again(mixedResponse({ Poor: 0 }));
+    click(chip(view.container, "Bad fit"));
+    view.again(mixedResponse({ Mixed: 0, Poor: 0 }));
     view.again(mixedResponse());
     expect(pressed(fitGroup(view.container))).toEqual(["All 25 results"]);
     expect(titles(view.container)).toEqual(ALL_TITLES(mixedResponse()));
@@ -571,13 +601,13 @@ describe("a new answer starts over", () => {
   it("keeps every choice across a change that keeps the same answer, such as tracking a row", () => {
     const result = MIXED();
     const view = draw(result);
-    click(chip(view.container, "Good"));
+    click(chip(view.container, "Decent"));
     click(sortButton(view.container, "Best fit"));
     click(detailToggles(view.container)[1]);
     view.again(result, { tracking: new Set([result.scored[0].apply_url]) });
     view.again(result, { tracked: { [result.scored[0].apply_url]: "app-1" } });
     view.again(result, { trackErrors: { [result.scored[0].apply_url]: "No." } });
-    expect(pressed(fitGroup(view.container))).toEqual(["Good 6 results"]);
+    expect(pressed(fitGroup(view.container))).toEqual(["Decent 6 results"]);
     expect(pressed(sortGroup(view.container))).toEqual(["Best fit"]);
     expect(openCount(view.container)).toBe(1);
   });
@@ -609,8 +639,8 @@ describe("a new answer starts over after a choice was pressed again and again", 
 
   it.each([1, 2, 3, 4, 5, 6])("returns to All after a fit chip was pressed %i times and a different answer arrives", (presses) => {
     const view = draw(MIXED());
-    for (let press = 0; press < presses; press++) click(chip(view.container, "Good"));
-    expect(pressed(fitGroup(view.container))).toEqual(["Good 6 results"]);
+    for (let press = 0; press < presses; press++) click(chip(view.container, "Decent"));
+    expect(pressed(fitGroup(view.container))).toEqual(["Decent 6 results"]);
     const next = mixedResponse({ Poor: 2 });
     view.again(next);
     expect(pressed(fitGroup(view.container))).toEqual(["All 24 results"]);
@@ -621,7 +651,7 @@ describe("a new answer starts over after a choice was pressed again and again", 
   it.each([1, 2, 3, 4, 5, 6])("returns to All and As returned after a chip and a sort were each pressed %i times and a different answer arrives", (presses) => {
     const view = draw(MIXED());
     for (let press = 0; press < presses; press++) {
-      click(chip(view.container, "Strong"));
+      click(chip(view.container, "Good"));
       click(sortButton(view.container, "Best fit"));
     }
     const next = mixedResponse({ Poor: 2 });
@@ -641,7 +671,7 @@ describe("what it keeps", () => {
     Object.defineProperty(window, "indexedDB", { configurable: true, value: { open } });
     try {
       const { container } = draw(MIXED());
-      for (const label of ["Strong", "Good", "Mixed", "Poor", "Not scored", "All"]) click(chip(container, label));
+      for (const label of ["Good", "Decent", "Bad fit", "Not scored", "All"]) click(chip(container, label));
       for (const label of ["Best fit", "Newest", "As returned"]) click(sortButton(container, label));
       click(switchBox(container));
       click(detailToggles(container)[0]);
@@ -795,11 +825,11 @@ describe("the sorts follow the rows that are shown", () => {
 
   it("leaves Best fit out for a tier that holds one row", () => {
     const { container } = draw(mixedResponse({ Strong: 3, Good: 3, Mixed: 1, Poor: 0, unscored: 0 }));
-    click(chip(container, "Mixed"));
+    click(chip(container, "Bad fit"));
     // One row has nothing to rank or to put before another, so no sort is left to draw.
     expect(container.querySelector('[aria-label="Sort results"]')).toBeNull();
     expect(words(container)).not.toContain("Best fit");
-    click(chip(container, "Strong"));
+    click(chip(container, "Good"));
     expect(sortNames(container)).toContain("Best fit");
   });
 });
@@ -877,7 +907,7 @@ describe("what each section's notice says about its order", () => {
     expect(moreNote(container)).toBe(MORE_NEWEST);
     click(chip(container, "Not scored"));
     expect(moreNote(container)).toBe(MORE_NEWEST);
-    click(chip(container, "Strong"));
+    click(chip(container, "Good"));
     expect(container.querySelector("h2.bj-disc-heading--more")).toBeNull();
   });
 });
@@ -935,7 +965,7 @@ describe("what Newest announces, section by section", () => {
     const { container } = draw(response({ scored: section("Scored", DATED), more: section("More", UNDATED, { score: null }) }));
     click(sortButton(container, "Newest"));
     expect(live(container).textContent).toBe(MORE_KEPT);
-    click(chip(container, "Good"));
+    click(chip(container, "Decent"));
     click(sortButton(container, "As returned"));
     click(sortButton(container, "Newest"));
     expect(live(container).textContent).toBe(WHOLE);
@@ -958,14 +988,14 @@ describe("what the toolbar draws when there is little to choose", () => {
   it("draws no Sort group for a tier of one row, and still draws the fit group, the switch and the count line", () => {
     const { container } = draw(mixedResponse({ Strong: 3, Good: 3, Mixed: 1, Poor: 0, unscored: 0 }));
     expect(sortTool(container)).not.toBeNull();
-    click(chip(container, "Mixed"));
+    click(chip(container, "Bad fit"));
     expect(titles(container)).toEqual(["Mixed 1"]);
     expect(sortTool(container)).toBeNull();
     expect(words(container)).not.toContain("As returned");
     expect(fitGroup(container)).not.toBeNull();
     expect(switchBox(container)).not.toBeNull();
-    expect(countLine(container)).toBe("Showing 1 of 7 results, Mixed fit only.");
-    click(chip(container, "Strong"));
+    expect(countLine(container)).toBe("Showing 1 of 7 results, Bad fit only.");
+    click(chip(container, "Good"));
     expect(sortTool(container)).not.toBeNull();
   });
 
@@ -1036,8 +1066,8 @@ describe("a sort that a fit choice left off does not come back unchosen", () => 
   it("says nothing about the sort when a fit choice leaves the one shown on offer", () => {
     const { container } = draw(MIXED());
     click(sortButton(container, "Best fit"));
-    click(chip(container, "Good"));
-    expect(live(container).textContent).toBe("Showing 6 of 25 results, Good fit only. 7 not scored are not shown.");
+    click(chip(container, "Decent"));
+    expect(live(container).textContent).toBe("Showing 6 of 25 results, Decent fit only. 7 not scored are not shown.");
     expect(pressed(sortGroup(container))).toEqual(["Best fit"]);
     click(chip(container, "All"));
     expect(live(container).textContent).toBe("Showing all 25 results.");
@@ -1052,9 +1082,9 @@ describe("a sort that a fit choice left off does not come back unchosen", () => 
     const { container } = draw(response({ scored: scoredRows }));
     click(sortButton(container, "Newest"));
     expect(titles(container)).toEqual(["Poor 2", "Good 3", "Good 2", "Good 1", "Poor 1", "Poor 3"]);
-    click(chip(container, "Poor"));
+    click(chip(container, "Bad fit"));
     expect(titles(container)).toEqual(["Poor 1", "Poor 2", "Poor 3"]);
-    expect(live(container).textContent).toBe("Showing 3 of 6 results, Poor fit only. Sorted as the search returned them.");
+    expect(live(container).textContent).toBe("Showing 3 of 6 results, Bad fit only. Sorted as the search returned them.");
     click(chip(container, "All"));
     expect(pressed(sortGroup(container))).toEqual(["As returned"]);
     expect(titles(container)).toEqual(scoredRows.map((entry) => entry.title));
@@ -1075,14 +1105,14 @@ describe("a choice that no longer exists in an answer that was changed under it"
   it("falls back to All when the chosen tier has no rows left, and shows every row with no count line", () => {
     const result = mixedResponse();
     const view = draw(result);
-    click(chip(view.container, "Poor"));
-    expect(pressed(fitGroup(view.container))).toEqual(["Poor 3 results"]);
-    expect(rowsOf(view.container)).toHaveLength(3);
+    click(chip(view.container, "Bad fit"));
+    expect(pressed(fitGroup(view.container))).toEqual(["Bad fit 6 results"]);
+    expect(rowsOf(view.container)).toHaveLength(6);
     // The same answer object, edited: the view is not told it is a new search.
-    result.scored = result.scored.filter((entry) => entry.score?.bin !== "Poor");
+    result.scored = result.scored.filter((entry) => entry.score?.bin !== "Poor" && entry.score?.bin !== "Mixed");
     view.again(result);
-    expect(pressed(fitGroup(view.container))).toEqual(["All 22 results"]);
-    expect(rowsOf(view.container)).toHaveLength(22);
+    expect(pressed(fitGroup(view.container))).toEqual(["All 19 results"]);
+    expect(rowsOf(view.container)).toHaveLength(19);
     expect(countLine(view.container)).toBeNull();
   });
 
@@ -1107,10 +1137,10 @@ describe("a choice that no longer exists in an answer that was changed under it"
     const result = mixedResponse();
     const all = result.scored;
     const view = draw(result);
-    click(chip(view.container, "Poor"));
-    result.scored = all.filter((entry) => entry.score?.bin !== "Poor");
+    click(chip(view.container, "Bad fit"));
+    result.scored = all.filter((entry) => entry.score?.bin !== "Poor" && entry.score?.bin !== "Mixed");
     view.again(result);
-    expect(pressed(fitGroup(view.container))).toEqual(["All 22 results"]);
+    expect(pressed(fitGroup(view.container))).toEqual(["All 19 results"]);
     click(chip(view.container, "All"));
     result.scored = all;
     view.again(result);
@@ -1126,7 +1156,7 @@ describe("a choice that no longer exists in an answer that was changed under it"
     result.scored = all.slice(0, 1);
     view.again(result);
     expect(pressed(sortGroup(view.container))).toEqual(["As returned"]);
-    click(chip(view.container, "Good"));
+    click(chip(view.container, "Decent"));
     result.scored = all;
     view.again(result);
     expect(sortNames(view.container)).toContain("Best fit");
@@ -1149,7 +1179,7 @@ describe("accessibility", () => {
   const states: Array<[string, () => DiscoverResponse, (container: HTMLElement) => void]> = [
     ["the toolbar with every detail closed", MIXED, () => undefined],
     ["every detail open through the switch", MIXED, (container) => click(switchBox(container))],
-    ["a tier chosen, with its count line and no More results", MIXED, (container) => click(chip(container, "Strong"))],
+    ["a tier chosen, with its count line and no More results", MIXED, (container) => click(chip(container, "Good"))],
     ["Not scored chosen", MIXED, (container) => click(chip(container, "Not scored"))],
     ["a sort chosen", MIXED, (container) => click(sortButton(container, "Newest"))],
     ["nothing scored", () => mixedResponse({ Strong: 0, Good: 0, Mixed: 0, Poor: 0, unscored: 4 }), () => undefined],

@@ -2,7 +2,8 @@ import { useId } from "react";
 import { FILTER_LABEL, SORT_LABEL, countFor, type FitCounts, type FitFilter, type SortMode } from "../../lib/discoverArrange";
 import "../../styles/discover.css";
 
-// What a person can do to a page of results: keep one fit (a tier, or the rows that were not scored),
+// What a person can do to a page of results: keep one fit (a tier, which is one of the three grades a
+// person is shown -- Good, Decent, Bad fit -- or the rows that were not scored),
 // order them, and open "Why this score" on every row at once. It draws only what the results make
 // meaningful -- a fit group when at least two groups hold rows, a sort group when at least two sorts are
 // on offer ("As returned" alone is nothing to choose), the switch when some shown row has a detail -- and
@@ -31,7 +32,7 @@ export interface ResultsToolbarProps {
   onAllOpen: (open: boolean) => void;
   /** Some shown row has a detail to open. */
   showDetailsSwitch: boolean;
-  /** "Showing 6 of 25 results, Strong fit only." for a fit other than All; null otherwise. */
+  /** "Showing 6 of 25 results, Good fit only." for a fit other than All; null otherwise. */
   countLine: string | null;
   /** What the last press did, for the live region; empty until a press. */
   announcement: string;

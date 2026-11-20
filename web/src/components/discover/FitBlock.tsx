@@ -1,6 +1,7 @@
 import { SegmentedBar } from "../paper/SegmentedBar";
 import { FitLadder } from "../paper/ScoreBlock";
-import { FIT_LEVELS, fitPreviewOf, type FitView, type ScoredFit } from "../../lib/discoverRow";
+import { fitPreviewOf, type FitView, type ScoredFit } from "../../lib/discoverRow";
+import { GRADE_LABEL } from "../../lib/fitGrade";
 import { isScoreWithin } from "../../lib/scoreRange";
 import "../../styles/discover.css";
 
@@ -8,35 +9,37 @@ import "../../styles/discover.css";
 // lays them out itself (ResultRow.tsx) so the score can lead the row on its own and the rest can sit
 // where the reader's eye goes next.
 //
-//   FitScore     the gutter: the number out of 100 and the tier word, the four-cell ladder and the
-//                "engine" mark. A placeholder row (the scoring model's reply could not be read) has the
-//                hollow ladder that says "Placeholder" and no number; a row past the scoring batch, or
-//                one whose bin the ladder does not know, has no gutter at all
+//   FitScore     the gutter: the number out of 100 and the grade word (Good, Decent or Bad fit), the
+//                three-cell ladder in that grade's colour and the "engine" mark. A placeholder row (the
+//                scoring model's reply could not be read) has the hollow ladder that says "Placeholder"
+//                and no number; a row past the scoring batch, or one whose bin the engine does not have,
+//                has no gutter at all
 //   FitReading   the model's one line, and one line of what the score left out (the lowest part with
 //                its number, how many parts were not applied, a location that does not match), so a
 //                closed row never reads as complete. A row past the scoring batch (or one whose bin the
-//                ladder does not know) says only "Not scored"
+//                engine does not have) says only "Not scored"
 //   FitToggle    "Why this score": opens the detail of that row
 //   FitDetail    a bar out of 100 for every part that was applied, what was not applied and why, the
 //                lowest part, and where the model read the job to be (a match, a mismatch or "can't
 //                tell")
 //
-// Never a gauge, ring or radar. A part that was dropped is named, never drawn as 0. The tier word and
+// Never a gauge, ring or radar. A part that was dropped is named, never drawn as 0. The grade word and
 // the number are drawn for the eye and hidden from assistive technology, because the ladder's label
-// ("Fit: Strong -- 88 / 100") says the same words once.
+// ("Fit: Good -- 88 / 100") says the same words once. The word is the grade a person is shown, not the
+// engine's bin: a row the engine binned Strong reads "Good" (lib/fitGrade.ts).
 
 export function FitScore({ view }: { view: FitView }) {
   if (view.kind === "unscored") return null;
   if (view.kind === "placeholder") {
     return (
       <div className="bj-disc-score">
-        <FitLadder levels={FIT_LEVELS} level={null} placeholder className="bj-disc-ladder" />
+        <FitLadder grade={null} placeholder className="bj-disc-ladder" />
       </div>
     );
   }
-  // A scored view always has a bin the ladder knows (fitViewOf makes any other bin an unscored row, which
+  // A scored view always has a grade (fitViewOf makes a bin the engine does not have an unscored row, which
   // has no gutter). A number that is not a score from 0 to 100 is not printed, here or in the ladder's
-  // label: the tier word and the ladder stand alone, so what a sighted reader sees is what a screen
+  // label: the grade word and the ladder stand alone, so what a sighted reader sees is what a screen
   // reader is told.
   const hasNumber = isScoreWithin(view.score100);
   return (
@@ -47,9 +50,9 @@ export function FitScore({ view }: { view: FitView }) {
             <span className="bj-disc-score-num">{view.score100}</span> <span className="bj-disc-score-of">/ 100</span>
           </span>
         )}
-        <span className="bj-disc-score-tier">{view.level}</span>
+        <span className="bj-disc-score-tier">{GRADE_LABEL[view.grade]}</span>
       </div>
-      <FitLadder levels={FIT_LEVELS} level={view.level} score={view.score100} className="bj-disc-ladder" showWords={false} />
+      <FitLadder grade={view.grade} score={view.score100} className="bj-disc-ladder" showWords={false} />
     </div>
   );
 }
