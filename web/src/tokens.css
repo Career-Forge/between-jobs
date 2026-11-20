@@ -1,14 +1,16 @@
-/* Between Jobs design tokens -- Regalia: royal black and navy, with gold.
+/* Between Jobs design tokens -- charcoal: neutral dark greys with one gold action.
  *
- * Source of truth: the "Royal Atelier" design boards. Every text pair is
- * checked here and in tokens.test.ts. Dark is the canonical design; light
- * mode is not a launch requirement.
+ * The surfaces carry almost no colour of their own, so large areas do not
+ * glare; colour is kept for the few things that mean something. Every text
+ * pair is checked here and in tokens.test.ts. Dark is the canonical design;
+ * light mode is not a launch requirement.
  *
  * SEMANTIC CONTRACT (which color may mean what -- never decorative):
- *   royal    selection, brand structure, selected context
- *   gold     the one primary action per screen; also scores, evidence and
- *            review, drawn as outlines (a filled gold is always the action)
- *   link     text links, focus, live state
+ *   royal    selection: a muted slate-blue fill behind the chosen item
+ *   gold     the one primary action per screen and the marker beside the
+ *            current page in the rail; also evidence and review, drawn as
+ *            outlines (a filled gold is always the action)
+ *   link     text links and the focus ring, nothing else
  *   emerald  verified fact, completed step, successful deterministic action
  *   violet   AI, memory, voice, MCP -- ONLY where a model acted
  *   red      actual failure, destructive action, security warning
@@ -21,26 +23,30 @@
   /* The surface ladder: ground, then panel, raised and overlay, each one
    * step lighter. Hairline is decorative only: it never has to be seen to
    * be understood, so it does not need 3:1. */
-  --bj-bg: #05060a;
-  --bj-surface: #0b1430;
-  --bj-surface-raised: #122047;
-  --bj-surface-overlay: #1a2c5e;
-  --bj-border: #1c2b55;
-  --bj-text: #eef2fa;
-  --bj-text-muted: #a6b3d1;
+  --bj-bg: #15171d;
+  --bj-surface: #1c1f27;
+  --bj-surface-raised: #242833;
+  --bj-surface-overlay: #2d323d;
+  --bj-border: #2b303b;
+  --bj-text: #e6e9f0;
+  --bj-text-muted: #a3abbb;
 
-  --bj-royal: #2b50c8;
-  --bj-gold: #e8b84a;
-  --bj-link: #9db7ff;
-  --bj-emerald: #3dd6a0;
-  --bj-violet: #9a7be8;
-  --bj-danger: #ff7a8a;
+  /* A text field: a well one step darker than the page, with the outline
+   * around it, so a field reads as somewhere to type and not as a card. */
+  --bj-field: #111318;
+
+  --bj-royal: #34436b;
+  --bj-gold: #d9a93f;
+  --bj-link: #8fb0ff;
+  --bj-emerald: #5cc29b;
+  --bj-violet: #a898e6;
+  --bj-danger: #ee8a96;
 
   /* Interaction variants (production tokens must include these -- the
    * base values alone are "the visual starting point, not permission to
    * skip contrast testing"). */
-  --bj-royal-hover: #3159d2;
-  --bj-gold-hover: #fbc750;
+  --bj-royal-hover: #3c4d79;
+  --bj-gold-hover: #e4b752;
   --bj-link-hover: var(--bj-text);
   --bj-focus-ring: var(--bj-link);
 
@@ -51,8 +57,8 @@
 
   /* Outline for secondary buttons, fields and the border around a group of
    * selectable segments: the edge colour, 3:1 or better on every surface up
-   * to raised. */
-  --bj-outline: #6c86c9;
+   * to raised, and on a field. */
+  --bj-outline: #747c8f;
 
   /* The dot after "Jobs" in the wordmark. Gold, like the action: it is a
    * brand mark, never a status, never text. */
@@ -60,9 +66,10 @@
 
   /* Selection -- one style everywhere: royal fill, ivory text, weight 600,
    * plus the ARIA state (aria-current, aria-pressed, aria-selected or
-   * aria-checked). Never an underline, an edge bar, royal text or a colored
-   * border. Only ivory text sits on this fill: muted and gold both fall
-   * under 4.5:1 there. Focus is separate and always visible. */
+   * aria-checked). Never an underline, royal text or a colored border. The
+   * rail adds one thing on top: a gold marker on the edge of the current
+   * page's row (app.css). Only ivory text sits on this fill: muted text
+   * falls under 4.5:1 there. Focus is separate and always visible. */
   --bj-selected-bg: var(--bj-royal);
   --bj-selected-bg-hover: var(--bj-royal-hover);
   --bj-selected-text: var(--bj-text);
@@ -266,9 +273,9 @@ button[aria-disabled="true"] {
 }
 
 /* Windows High Contrast and other forced-colors modes replace every author color with the person's
- * own palette, which erases the royal fill that is this design's only selection cue (no underline,
- * no edge bar). So a chosen item is drawn again in the system's own selection colors -- a fill
- * still, nothing red -- and opts out of the replacement so that fill is the one that shows. */
+ * own palette, which erases the royal fill that is this design's selection cue (no underline). So
+ * a chosen item is drawn again in the system's own selection colors -- a fill still, nothing red --
+ * and opts out of the replacement so that fill is the one that shows. */
 @media (forced-colors: active) {
   .bj-selectable[aria-current="page"],
   .bj-selectable[aria-current="location"],
@@ -312,7 +319,7 @@ input,
 textarea {
   font-family: var(--bj-font-body);
   font-size: var(--bj-text-control);
-  background: var(--bj-surface-raised);
+  background: var(--bj-field);
   color: var(--bj-text);
   border: 1px solid var(--bj-outline);
   border-radius: var(--bj-radius-control);
