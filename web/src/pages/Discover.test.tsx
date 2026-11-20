@@ -285,11 +285,12 @@ describe("a search", () => {
     const before = calls().length;
     const written = new Map(memory);
     const fit = query(container, '[aria-label="Show results by fit"]');
-    click(buttonNamed(fit, /^Poor /));
+    // The Bad fit chip keeps the engine's three Mixed rows and its three Poor rows.
+    click(buttonNamed(fit, /^Bad fit /));
     click(buttonNamed(query(container, '[aria-label="Sort results"]'), "Best fit"));
     click(query(container, ".bj-disc-toggle input"));
-    expect(container.querySelectorAll("li.bj-disc-row")).toHaveLength(3);
-    expect(container.querySelectorAll(".bj-fit-detail")).toHaveLength(3);
+    expect(container.querySelectorAll("li.bj-disc-row")).toHaveLength(6);
+    expect(container.querySelectorAll(".bj-fit-detail")).toHaveLength(6);
     expect(calls().length).toBe(before);
     expect([...memory.entries()]).toEqual([...written.entries()]);
     expect([...memory.keys()]).toEqual(["between-jobs:first-run:searched:user-1"]);
@@ -600,7 +601,8 @@ describe("Track", () => {
     answer({ "/discover?": mixedResponse(), "POST /discover/track": { id: "app-3" } });
     const { container } = await draw();
     await search(container);
-    click(buttonNamed(query(container, '[aria-label="Show results by fit"]'), /^Good /));
+    // The fixture's "Good" rows are the engine's bin Good, which is the Decent chip.
+    click(buttonNamed(query(container, '[aria-label="Show results by fit"]'), /^Decent /));
     click(buttonNamed(query(container, '[aria-label="Sort results"]'), "Best fit"));
     click(buttonNamed(container, "Track Good 2 at Acme"));
     await flush();
@@ -610,7 +612,7 @@ describe("Track", () => {
     expect(rows).toHaveLength(6);
     const open = [...rows[1].querySelectorAll<HTMLAnchorElement>("a")].find((link) => words(link) === "Open workspace");
     expect(open?.getAttribute("href")).toBe("/applications/app-3");
-    expect(query(container, '[aria-label="Show results by fit"] [aria-pressed="true"]').textContent).toContain("Good");
+    expect(query(container, '[aria-label="Show results by fit"] [aria-pressed="true"]').textContent).toContain("Decent");
     expect(query(container, '[aria-label="Sort results"] [aria-pressed="true"]').textContent).toBe("Best fit");
     expect(callsTo("GET /discover")).toHaveLength(1);
   });
@@ -1395,7 +1397,7 @@ describe("accessibility of the whole page", () => {
     const { container } = await draw();
     await search(container);
     click(query(container, ".bj-disc-toggle input"));
-    click(buttonNamed(query(container, '[aria-label="Show results by fit"]'), /^Strong /));
+    click(buttonNamed(query(container, '[aria-label="Show results by fit"]'), /^Good /));
     await expectNoSeriousA11yViolations(container);
   });
 

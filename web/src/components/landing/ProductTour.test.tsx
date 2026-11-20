@@ -216,7 +216,11 @@ describe("each drawing", () => {
     const panel = visiblePanel(root);
     expect(text(panel)).toContain(TOUR.role);
     expect(text(panel)).toContain(TOUR.company);
-    expect(query(panel, '[role="img"]').getAttribute("aria-label")).toBe("Fit: Good");
+    // The sample's grade is the middle one, drawn as two of three cells in that grade's colour class.
+    expect(query(panel, '[role="img"]').getAttribute("aria-label")).toBe("Fit: Decent");
+    expect(query(panel, ".bj-ladder").className).toBe("bj-ladder bj-ladder--decent");
+    expect(panel.querySelectorAll(".bj-ladder-cell--filled")).toHaveLength(2);
+    expect(panel.querySelectorAll(".bj-ladder-cell")).toHaveLength(3);
     expect(text(panel)).toContain(TOUR.discover.fitOneLiner);
     expect(text(panel)).toContain("Lowest part: Skills");
     // The parts carry only their names (a real bar's value is a number, which a sample never has), with the
@@ -226,7 +230,7 @@ describe("each drawing", () => {
     expect([...panel.querySelectorAll(".bj-segbar-cells")].every((cells) => cells.getAttribute("aria-hidden") === "true")).toBe(true);
     // Nothing a Discover result does not have: no skills table, no per-skill "In your profile" column, no word per part.
     expect(panel.querySelector("table, caption, th, td")).toBeNull();
-    expect(text(panel)).not.toMatch(/In your profile|Not in your profile|Skills the posting lists|Mixed|Strong/);
+    expect(text(panel)).not.toMatch(/In your profile|Not in your profile|Skills the posting lists|Mixed|Strong|Poor/);
   });
 
   it("Prepare: a resume page with the flagged word marked, the flagged-claim row, and the four checks that are not checked", () => {

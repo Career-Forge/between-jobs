@@ -19,13 +19,11 @@
 // The word the trail never says is not in this file (lib/trail.ts refuses it as well).
 
 import { subScoreLabel } from "./discover";
-import { isUnscored, tierOf } from "./discoverArrange";
+import { binOf, isUnscored } from "./discoverArrange";
 import type { JobCard, JobScore, LocationMatch, ScoreBin } from "./discoverTypes";
+import { gradeOfBin, type FitGrade } from "./fitGrade";
 import { isScoreWithin } from "./scoreRange";
 import { formatTrailDate, type ReceiptRowInput, type TrailInput } from "./trail";
-
-// The ladder's rungs, lowest first, as the engine names its bins.
-export const FIT_LEVELS: readonly ScoreBin[] = ["Poor", "Mixed", "Good", "Strong"];
 
 export const NEUTRAL_FALLBACK = "neutral_fallback";
 
@@ -144,7 +142,10 @@ export type FitView =
   | { kind: "placeholder" }
   | {
       kind: "scored";
+      /** The bin as the engine named it. Never printed: the row's class is looked up from it and nothing else. */
       level: ScoreBin;
+      /** What the row says and draws for that bin: the word, the ladder's rung and its colour (lib/fitGrade.ts). */
+      grade: FitGrade;
       score100: number;
       oneLiner: string;
       bars: readonly FitBar[];
@@ -175,13 +176,14 @@ function notAppliedReason(key: string, job: JobCard): string | null {
 }
 
 export function fitViewOf(job: JobCard, scoringStrategy: string): FitView {
-  // A row with no score object (null, or the field left out) or with a bin the ladder does not know has no
+  // A row with no score object (null, or the field left out) or with a bin the engine does not have has no
   // score it can show. The arranging code (discoverArrange.ts isUnscored) counts, filters and labels it
   // "Not scored" by the same rule, so the row draws that way too, and carries nothing of the response's own
   // reading: no number, no model line, no preview and no detail.
-  const level = tierOf(job);
+  const level = binOf(job);
+  const grade = gradeOfBin(level);
   const score = job.score;
-  if (level === null || score === null || score === undefined) return { kind: "unscored" };
+  if (level === null || grade === null || score === null || score === undefined) return { kind: "unscored" };
   if (isFallback(scoringStrategy)) return { kind: "placeholder" };
   const dropped = Array.isArray(score.inapplicable_dims) ? score.inapplicable_dims : [];
   const subScores: Record<string, unknown> = typeof score.sub_scores === "object" && score.sub_scores !== null ? { ...score.sub_scores } : {};
@@ -198,6 +200,7 @@ export function fitViewOf(job: JobCard, scoringStrategy: string): FitView {
   return {
     kind: "scored",
     level,
+    grade,
     score100: score.score100,
     oneLiner: typeof score.one_liner === "string" ? score.one_liner.trim() : "",
     bars,

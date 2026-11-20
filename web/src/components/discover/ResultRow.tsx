@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 import { Link } from "react-router-dom";
 import { formatSalary, locationLabel } from "../../lib/discover";
-import { tierOf } from "../../lib/discoverArrange";
 import type { JobCard, ScoreBin } from "../../lib/discoverTypes";
 import { fitViewOf, hasSponsorshipSignal, rowReceipt, rowTrail, sponsorshipTag, sponsorshipWords } from "../../lib/discoverRow";
 import { FailureState } from "../paper/StateViews";
@@ -19,16 +18,18 @@ import "../../styles/discover.css";
 //   scored        the gutter, the posting text, the model's line, "Why this score" and its detail
 //   placeholder   the scoring model's reply could not be read: a hollow ladder that says "Placeholder",
 //                 the posting text and the actions, with no number and nothing to open
-//   unscored      past the scoring batch, or with a bin the ladder does not know: one band -- identity
+//   unscored      past the scoring batch, or with a bin the engine does not have: one band -- identity
 //                 and the words "Not scored" with the actions -- with no gutter, no model line and no detail
 //
-// The Strong rows are lifted onto a slightly lighter surface; the other tiers carry only a class so a
-// later rule can find them. A tier class comes from a fixed table, never from the response's own text.
+// The rows in the engine's top bin (Strong, which a person reads as "Good") are lifted onto a slightly
+// lighter surface; the other bins carry only a class so a later rule can find them. The classes are named
+// for the engine's bins, not for the grades a person is shown, and come from a fixed table, never from
+// the response's own text.
 //
 // An address that came from a search provider or a scraped page is untrusted text: only an http(s)
 // address becomes a link, and any other is left out of the row, never repaired.
 
-const TIER_CLASS: Readonly<Record<ScoreBin, string>> = {
+const BIN_CLASS: Readonly<Record<ScoreBin, string>> = {
   Strong: "bj-disc-row--strong",
   Good: "bj-disc-row--good",
   Mixed: "bj-disc-row--mixed",
@@ -81,10 +82,9 @@ export function ResultRow({ job, scoringStrategy, now, trackedApplicationId, tra
   const what = `${job.title} at ${company}`;
   const detailId = useId();
   const open = fit.kind === "scored" && detailsOpen;
-  const tier = fit.kind === "scored" ? tierOf(job) : null;
   const rowClass = [
     "bj-disc-row",
-    fit.kind === "placeholder" ? "bj-disc-row--placeholder" : fit.kind === "unscored" ? "bj-disc-row--unscored" : tier === null ? null : TIER_CLASS[tier],
+    fit.kind === "placeholder" ? "bj-disc-row--placeholder" : fit.kind === "unscored" ? "bj-disc-row--unscored" : BIN_CLASS[fit.level],
     open ? "bj-disc-row--open" : null,
   ]
     .filter((name) => name !== null)

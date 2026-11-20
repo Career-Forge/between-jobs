@@ -395,7 +395,8 @@ describe("a row's words", () => {
         item({ id: "m", kind: "high_fit_job", headline: "🎯 High-fit match: Analytics Engineer @ Initech", detail: "Strong on SQL", job_match: MATCH }),
         context({ searchLabels: new Map([["ss-1", '"analytics engineer"']]) }),
       );
-      expect(view.chip).toEqual({ tone: "gold", text: "Strong -- 74 / 100" });
+      // The match is in the engine's bin Strong, which a person is shown as "Good", in that grade's colour.
+      expect(view.chip).toEqual({ tone: "fit-good", text: "Good -- 74 / 100" });
       expect(view.details).toEqual(["Initech -- Remote", "Strong on SQL"]);
       expect(trailText(view)).toBe('engine · Found by saved search "analytics engineer" · via registry · Sep 22');
       expect(buildTrail(view.trail)?.glyphs).toEqual(["engine"]);
@@ -405,6 +406,29 @@ describe("a row's words", () => {
       const view = rowView(item({ id: "m", kind: "high_fit_job", job_match: { ...MATCH, company: null, location: null } }), context());
       expect(view.details).toEqual(["Unknown company"]);
       expect(trailText(view)).toBe("engine · Found by a saved search · via registry · Sep 22");
+    });
+
+    it("says the grade a person is shown for each of the engine's bins, in that grade's tone and never gold", () => {
+      const chipOf = (bin: string) => rowView(item({ id: "m", kind: "high_fit_job", job_match: { ...MATCH, bin } }), context()).chip;
+      expect(chipOf("Strong")).toEqual({ tone: "fit-good", text: "Good -- 74 / 100" });
+      expect(chipOf("Good")).toEqual({ tone: "fit-decent", text: "Decent -- 74 / 100" });
+      expect(chipOf("Mixed")).toEqual({ tone: "fit-bad", text: "Bad fit -- 74 / 100" });
+      expect(chipOf("Poor")).toEqual({ tone: "fit-bad", text: "Bad fit -- 74 / 100" });
+    });
+
+    it("prints no word for a bin it does not know: the score alone, in the grey of no grade", () => {
+      for (const bin of ["Excellent", "strong", "good", "constructor", ""]) {
+        const view = rowView(item({ id: "m", kind: "high_fit_job", job_match: { ...MATCH, bin } }), context());
+        expect(view.chip, bin).toEqual({ tone: "fit-unscored", text: "74 / 100" });
+      }
+    });
+
+    it("keeps the engine's own word in the receipt, and says beside it what it is shown as", () => {
+      const binRow = (bin: string) => buildReceipt(rowView(item({ id: "m", kind: "high_fit_job", job_match: { ...MATCH, bin } }), context()).receipt)?.rows.find((row) => "label" in row && row.label === "bin");
+      expect(binRow("Strong")).toEqual({ label: "bin", value: "Strong -- shown as Good" });
+      expect(binRow("Good")).toEqual({ label: "bin", value: "Good -- shown as Decent" });
+      expect(binRow("Poor")).toEqual({ label: "bin", value: "Poor -- shown as Bad fit" });
+      expect(binRow("Excellent")).toEqual({ label: "bin", value: "Excellent" });
     });
 
     it("has no chip or provider when the companion row is missing", () => {

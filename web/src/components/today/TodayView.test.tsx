@@ -229,10 +229,20 @@ describe("the band holds the lit item, and the list does not", () => {
 
   it("lights a high fit job (T4) with Track, and leaves the other items in the list", () => {
     const { container } = draw({ items: [match, tracked] });
-    expect(words(query(band(container), ".bj-band-sentence"))).toBe("A Strong match landed: Analytics Engineer at Initech.");
+    expect(words(query(band(container), ".bj-band-sentence"))).toBe("A Good match landed: Analytics Engineer at Initech.");
     expect(words(query(band(container), ".bj-band-why"))).toBe('why: high fit job · 74 / 100 · saved search "analytics engineer"');
     buttonNamed(band(container), "Track");
     expect(rows(container)).toHaveLength(1);
+  });
+
+  it("draws a match's chip with the grade's word and in the grade's colour, and leaves the other chips gold", () => {
+    const { container } = draw({ items: [match] });
+    const chip = query(band(container), ".bj-today-chip");
+    // The fixture's bin is the engine's Strong, which a person is shown as "Good".
+    expect(words(chip)).toBe("◆Good -- 74 / 100");
+    expect(chip.className).toBe("bj-today-chip bj-today-chip--fit-good");
+    const other = draw({ items: [ready] });
+    expect(query(band(other.container), ".bj-today-chip").className).toBe("bj-today-chip");
   });
 
   it("turns Track into Open workspace in place once the job is tracked", () => {

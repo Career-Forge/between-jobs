@@ -141,6 +141,12 @@ describe("the feed rows", () => {
     expect(chip.color).toBe("var(--bj-gold)");
   });
 
+  it("outlines a match's chip in its fit grade's colour in place of gold, and never fills it or turns it danger red", () => {
+    for (const [tone, token] of [["fit-good", "--bj-fit-good"], ["fit-decent", "--bj-fit-decent"], ["fit-bad", "--bj-fit-bad"], ["fit-unscored", "--bj-fit-unscored"]] as const) {
+      expect(declarationsFor(base, `.bj-today-chip--${tone}`), tone).toEqual({ "border-color": `var(${token})`, color: `var(${token})` });
+    }
+  });
+
   it("sets the reply's own words in the serif italic, the one use of it", () => {
     const quote = declarationsFor(base, ".bj-today-quote");
     expect(quote["font-style"]).toBe("italic");

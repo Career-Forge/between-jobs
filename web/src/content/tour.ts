@@ -106,7 +106,9 @@ export const TOUR = {
       "Build and evaluate retrieval systems for internal research tools. Work in Python, write evaluation suites, ship to Kubernetes.",
     postingNote: "Sample posting text, written for this page.",
     fitKicker: "Fit check",
-    fitLevel: "Good",
+    // A grade (lib/fitGrade.ts), which the ladder turns into its word and its colour. The sample is the
+    // middle grade, "Decent", to go with a lowest part that is drawn half full.
+    fitGrade: "decent",
     fitOneLiner: "Matches Python, evals and retrieval. Kubernetes is not in your profile.",
     partsLabel: "Parts of the fit",
     // The labels are the ones a real result draws (lib/discover.ts SUB_SCORE_LABELS), and a bar carries no word

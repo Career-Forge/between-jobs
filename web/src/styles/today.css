@@ -158,6 +158,28 @@
   overflow-wrap: anywhere;
 }
 
+/* A job match's chip says a fit grade, so it takes that grade's colour in place of gold. The word is in
+   the chip; the colour only repeats it. A match with no readable grade is the grey of "not scored". */
+.bj-today-chip--fit-good {
+  border-color: var(--bj-fit-good);
+  color: var(--bj-fit-good);
+}
+
+.bj-today-chip--fit-decent {
+  border-color: var(--bj-fit-decent);
+  color: var(--bj-fit-decent);
+}
+
+.bj-today-chip--fit-bad {
+  border-color: var(--bj-fit-bad);
+  color: var(--bj-fit-bad);
+}
+
+.bj-today-chip--fit-unscored {
+  border-color: var(--bj-fit-unscored);
+  color: var(--bj-fit-unscored);
+}
+
 .bj-today-item-actions {
   display: flex;
   flex-wrap: wrap;

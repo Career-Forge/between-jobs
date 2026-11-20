@@ -12,6 +12,7 @@
 import type { ReceiptRowInput, TrailInput } from "./trail";
 import { formatTrailDate, formatTrailTime, mono } from "./trail";
 import type { TrackDiscoveredJobBody } from "./discoverTypes";
+import { GRADE_LABEL, gradeOfBin, type FitGrade } from "./fitGrade";
 import { savedSearchLabel } from "./discover";
 import { parseSavedSearch } from "./savedSearches";
 import { SEVERAL_MODEL_CALLS, spendNotice } from "./spendNotice";
@@ -314,9 +315,35 @@ export interface RowContext {
   timeZone?: string;
 }
 
+// Gold is a chip that waits on the person, or says why a draft was held back. A job match's chip says a
+// fit grade and takes that grade's colour; a match whose bin cannot be read has no grade and is grey.
+export type ChipTone = "gold" | "fit-good" | "fit-decent" | "fit-bad" | "fit-unscored";
+
 export interface ChipView {
-  tone: "gold";
+  tone: ChipTone;
   text: string;
+}
+
+const FIT_TONE: Readonly<Record<FitGrade, ChipTone>> = {
+  good: "fit-good",
+  decent: "fit-decent",
+  bad: "fit-bad",
+};
+
+// A match's chip: the grade a person is shown for the engine's bin (lib/fitGrade.ts) and the score. A bin
+// that is not one of the engine's is never printed and never guessed into a grade: the chip is the score
+// alone, in grey.
+function matchChip(match: JobMatch): ChipView {
+  const grade = gradeOfBin(match.bin);
+  const score = `${match.score100} / 100`;
+  return grade === null ? { tone: "fit-unscored", text: score } : { tone: FIT_TONE[grade], text: `${GRADE_LABEL[grade]} -- ${score}` };
+}
+
+// The receipt's "bin" row is the engine's own word, as returned. Beside a chip that says the grade, the
+// engine's word alone would look like a second, different answer, so the row says both.
+function binReceipt(bin: string): string {
+  const grade = gradeOfBin(bin);
+  return grade === null ? bin : `${bin} -- shown as ${GRADE_LABEL[grade]}`;
 }
 
 export interface RowView {
@@ -407,7 +434,7 @@ export function rowView(item: TodayItem, context: RowContext): RowView {
       const location = match?.location ? ` -- ${match.location}` : "";
       return {
         ...base,
-        chip: match === null ? null : { tone: "gold", text: `${match.bin} -- ${match.score100} / 100` },
+        chip: match === null ? null : matchChip(match),
         details: [
           ...(match === null ? [] : [`${match.company ?? "Unknown company"}${location}`]),
           ...(detail === null ? [] : [detail]),
@@ -422,7 +449,7 @@ export function rowView(item: TodayItem, context: RowContext): RowView {
           { label: "kind", value: item.kind },
           logged,
           { label: "provider", value: match?.provider },
-          { label: "bin", value: match?.bin },
+          { label: "bin", value: match === null ? null : binReceipt(match.bin) },
           { label: "score", value: match === null ? null : `${match.score100} / 100` },
           { label: "saved search", value: searchLabel },
         ],

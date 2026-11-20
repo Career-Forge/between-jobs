@@ -9,35 +9,39 @@
 // of that tier (they are all in the scored section) and so hides "More results"; the count line says how
 // many unscored rows that left out.
 //
+// A tier is a grade, not a bin. The engine sorts a score into four bins and a person is shown three
+// grades (lib/fitGrade.ts): Good, Decent and Bad fit. The chips, their counts and the filter are all by
+// grade, so the "Bad fit" chip counts and keeps the engine's Mixed and Poor rows together. The engine's
+// own bin is still what decides whether a row is scored at all (binOf).
+//
 // A tier is only a group worth choosing when the bins mean something. Under the scoring fallback every
 // bin is a placeholder, so no tier is offered and "Best fit" is not a sort.
 //
-// A row is scored when its bin is one of the four the ladder knows, and unscored otherwise: with no
-// score at all, or with a bin nobody can read. One rule (tierOf), used by the row, the counts, the chips
-// and the filter alike, so a row that reads "Not scored" is counted, filtered and drawn as one.
+// A row is scored when its bin is one of the engine's four, and unscored otherwise: with no score at all,
+// or with a bin nobody can read. One rule (binOf, and tierOf which is the grade of that bin), used by the
+// row, the counts, the chips and the filter alike, so a row that reads "Not scored" is counted, filtered
+// and drawn as one.
 
 import type { JobCard, ScoreBin } from "./discoverTypes";
+import { GRADE_LABEL, GRADE_LADDER, gradeOfBin, isEngineBin, type FitGrade } from "./fitGrade";
 import { isScoreWithin } from "./scoreRange";
 import { postedDay, postedMillis } from "./trail";
 
-export type FitFilter = "all" | ScoreBin | "unscored";
+export type FitFilter = "all" | FitGrade | "unscored";
 export type SortMode = "returned" | "fit" | "newest";
 
 /** The two lists a page of results is drawn in: the rows the model scored, then "More results". */
 export type Section = "scored" | "more";
 
-/** Tier chips in display order, best first (the ladder's FIT_LEVELS, reversed). */
-export const TIER_ORDER: readonly ScoreBin[] = ["Strong", "Good", "Mixed", "Poor"];
+/** Tier chips in display order, best first (the ladder's rungs, reversed). */
+export const TIER_ORDER: readonly FitGrade[] = [...GRADE_LADDER].reverse();
 
 /** The least number of rows for which choosing between groups or orders means anything. */
 export const TOOLBAR_MIN_ROWS = 3;
 
 export const FILTER_LABEL: Readonly<Record<FitFilter, string>> = {
   all: "All",
-  Strong: "Strong",
-  Good: "Good",
-  Mixed: "Mixed",
-  Poor: "Poor",
+  ...GRADE_LABEL,
   unscored: "Not scored",
 };
 
@@ -49,18 +53,23 @@ export const SORT_LABEL: Readonly<Record<SortMode, string>> = {
 
 export interface FitCounts {
   all: number;
-  tiers: Readonly<Record<ScoreBin, number>>;
+  tiers: Readonly<Record<FitGrade, number>>;
   unscored: number;
 }
 
-/** The row's tier, or null when it has no score or a bin the ladder does not know. */
-export function tierOf(job: JobCard): ScoreBin | null {
-  const bin = job.score?.bin;
-  return TIER_ORDER.find((tier) => tier === bin) ?? null;
+/** The row's bin as the engine named it, or null when it has no score or a bin the engine does not have. */
+export function binOf(job: JobCard): ScoreBin | null {
+  const bin: unknown = job.score?.bin;
+  return isEngineBin(bin) ? bin : null;
+}
+
+/** The row's tier (the grade its bin is shown as), or null for a row that reads "Not scored". */
+export function tierOf(job: JobCard): FitGrade | null {
+  return gradeOfBin(job.score?.bin);
 }
 
 /**
- * True when the row has no tier: no score object (null or undefined), or a bin the ladder does not know.
+ * True when the row has no tier: no score object (null or undefined), or a bin the engine does not have.
  * It reads "Not scored", and is counted and filtered as not scored, whatever else its score object holds.
  */
 export function isUnscored(job: JobCard): boolean {
@@ -69,7 +78,7 @@ export function isUnscored(job: JobCard): boolean {
 
 /** Counts over every row (scored then more): each row is in exactly one tier or in `unscored`. */
 export function fitCounts(rows: readonly JobCard[]): FitCounts {
-  const tiers: Record<ScoreBin, number> = { Strong: 0, Good: 0, Mixed: 0, Poor: 0 };
+  const tiers: Record<FitGrade, number> = { good: 0, decent: 0, bad: 0 };
   let unscored = 0;
   for (const row of rows) {
     const tier = tierOf(row);
@@ -222,13 +231,21 @@ function resultsWord(total: number): string {
   return total === 1 ? "result" : "results";
 }
 
+// How the count line names a tier. Written out, not built from the chip's label: "Bad fit" already ends
+// in the word the other two add.
+const TIER_ONLY: Readonly<Record<FitGrade, string>> = {
+  good: "Good fit only",
+  decent: "Decent fit only",
+  bad: "Bad fit only",
+};
+
 /** The visible count line: null for "all". */
 export function filterSummary(filter: FitFilter, shown: number, total: number, hiddenUnscored: number): string | null {
   if (filter === "all") return null;
   const head = `Showing ${shown} of ${total} ${resultsWord(total)}, `;
   if (filter === "unscored") return `${head}not scored only.`;
   const hidden = hiddenUnscored > 0 ? ` ${hiddenUnscored} not scored ${hiddenUnscored === 1 ? "is" : "are"} not shown.` : "";
-  return `${head}${filter} fit only.${hidden}`;
+  return `${head}${TIER_ONLY[filter]}.${hidden}`;
 }
 
 const SORT_SENTENCE: Readonly<Record<SortMode, string>> = {

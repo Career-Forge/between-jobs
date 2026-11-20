@@ -9,11 +9,19 @@
  *   royal    selection: a muted slate-blue fill behind the chosen item
  *   gold     the one primary action per screen and the marker beside the
  *            current page in the rail; also evidence and review, drawn as
- *            outlines (a filled gold is always the action)
+ *            outlines (a filled gold is always the action). Never a job's
+ *            fit grade or its number: the Discover number is ivory and the
+ *            fit ladder takes a fit colour
  *   link     text links and the focus ring, nothing else
  *   emerald  verified fact, completed step, successful deterministic action
  *   violet   AI, memory, voice, MCP -- ONLY where a model acted
  *   red      actual failure, destructive action, security warning
+ *   fit      green, yellow and rose (--bj-fit-good, -decent, -bad) for the
+ *            grade of a job's fit and nothing else, always beside the
+ *            grade's word (Good, Decent, Bad fit). The rose is NOT the
+ *            danger red: a bad fit is a reading, not a failure, and danger
+ *            stays for things that went wrong. A job with no grade is the
+ *            muted grey (--bj-fit-unscored)
  *   ivory    primary text and editorial display typography
  * Color never carries meaning alone -- every state also uses a label,
  * icon, shape, or position. At most two chromatic accents per region.
@@ -41,6 +49,16 @@
   --bj-emerald: #5cc29b;
   --bj-violet: #a898e6;
   --bj-danger: #ee8a96;
+
+  /* The grade of a job's fit (lib/fitGrade.ts): Good, Decent, Bad fit, and
+   * the grey of a job that was not scored. Each is text-strength (4.5:1) on
+   * the canvas, a surface and a raised surface, so it can colour a word or
+   * an outline as well as a ladder cell. The rose is its own colour, a step
+   * away from --bj-danger, so a bad fit is never read as an error. */
+  --bj-fit-good: var(--bj-emerald);
+  --bj-fit-decent: #d8c45c;
+  --bj-fit-bad: #e0808e;
+  --bj-fit-unscored: var(--bj-text-muted);
 
   /* Interaction variants (production tokens must include these -- the
    * base values alone are "the visual starting point, not permission to

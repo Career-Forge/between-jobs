@@ -7,6 +7,7 @@ import {
   TOOLBAR_MIN_ROWS,
   arrange,
   arrangeAnnouncement,
+  binOf,
   countFor,
   fitCounts,
   filterSummary,
@@ -21,9 +22,11 @@ import {
   type FitFilter,
 } from "./discoverArrange";
 import type { JobCard, ScoreBin } from "./discoverTypes";
-import { FIT_LEVELS } from "./discoverRow";
+import { GRADE_LADDER, type FitGrade } from "./fitGrade";
 
 // Narrowing and ordering a page of results: pure, so each rule is a table. Rows are identified by title.
+// A row is built with the engine's bin, as the API sends it; a filter is a grade, as a person is shown it
+// (lib/fitGrade.ts): Strong is "good", Good is "decent", Mixed and Poor are both "bad".
 
 function row(title: string, bin: ScoreBin | null, score100 = 50, extra: Partial<JobCard> = {}): JobCard {
   return job({
@@ -43,21 +46,34 @@ function unreadable(title: string, score100 = 95, extra: Partial<JobCard> = {}):
 
 describe("tiers and counts", () => {
   it("lists the tiers best first, which is the ladder reversed", () => {
-    expect(TIER_ORDER).toEqual(["Strong", "Good", "Mixed", "Poor"]);
-    expect([...TIER_ORDER].reverse()).toEqual([...FIT_LEVELS]);
+    expect(TIER_ORDER).toEqual(["good", "decent", "bad"]);
+    expect([...TIER_ORDER].reverse()).toEqual([...GRADE_LADDER]);
     expect(TOOLBAR_MIN_ROWS).toBe(3);
   });
 
-  it("reads a row's tier from its bin, and nothing from a row with no score or a bin it does not know", () => {
-    expect(tierOf(row("a", "Strong"))).toBe("Strong");
-    expect(tierOf(row("a", "Poor"))).toBe("Poor");
+  it("reads a row's tier as the grade its bin is shown as, and nothing from a row with no score or a bin it does not know", () => {
+    expect(tierOf(row("a", "Strong"))).toBe("good");
+    expect(tierOf(row("a", "Good"))).toBe("decent");
+    expect(tierOf(row("a", "Mixed"))).toBe("bad");
+    expect(tierOf(row("a", "Poor"))).toBe("bad");
     expect(tierOf(row("a", null))).toBeNull();
     expect(tierOf(job({ score: undefined as unknown as null }))).toBeNull();
     expect(tierOf(job({ score: score({ bin: "Strong bj-primary" as ScoreBin }) }))).toBeNull();
     expect(tierOf(job({ score: score({ bin: "strong" as ScoreBin }) }))).toBeNull();
   });
 
-  it("calls a row unscored when it has no score object, or a bin the ladder does not know", () => {
+  it("keeps the engine's own bin apart from the tier, for the code that needs the bin and not the grade", () => {
+    for (const bin of ["Strong", "Good", "Mixed", "Poor"] as const) {
+      expect(binOf(row("a", bin))).toBe(bin);
+    }
+    expect(binOf(row("a", null))).toBeNull();
+    expect(binOf(job({ score: undefined as unknown as null }))).toBeNull();
+    for (const bin of ["good", "decent", "bad", "Bad fit", "strong", "Strong bj-primary", "constructor", "__proto__", "", null, 3, {}, ["Strong"]]) {
+      expect(binOf(job({ score: score({ bin: bin as unknown as ScoreBin }) })), JSON.stringify(bin)).toBeNull();
+    }
+  });
+
+  it("calls a row unscored when it has no score object, or a bin the engine does not have", () => {
     expect(isUnscored(row("a", null))).toBe(true);
     expect(isUnscored(job({ score: undefined as unknown as null }))).toBe(true);
     expect(isUnscored(row("a", "Poor"))).toBe(false);
@@ -73,17 +89,30 @@ describe("tiers and counts", () => {
 
   it("counts every row once under All, once under its tier, and unscored rows apart", () => {
     const counts = fitCounts([row("a", "Strong"), row("b", "Strong"), row("c", "Good"), row("d", "Poor"), row("e", null), row("f", null), row("g", null)]);
-    expect(counts).toEqual({ all: 7, tiers: { Strong: 2, Good: 1, Mixed: 0, Poor: 1 }, unscored: 3 });
+    expect(counts).toEqual({ all: 7, tiers: { good: 2, decent: 1, bad: 1 }, unscored: 3 });
     expect(countFor(counts, "all")).toBe(7);
-    expect(countFor(counts, "Strong")).toBe(2);
-    expect(countFor(counts, "Mixed")).toBe(0);
+    expect(countFor(counts, "good")).toBe(2);
+    expect(countFor(counts, "decent")).toBe(1);
+    expect(countFor(counts, "bad")).toBe(1);
     expect(countFor(counts, "unscored")).toBe(3);
+  });
+
+  it("counts the engine's Mixed and Poor rows together under Bad fit, and a tier nobody holds as zero", () => {
+    const counts = fitCounts([row("a", "Mixed"), row("b", "Poor"), row("c", "Mixed"), row("d", "Poor"), row("e", "Poor"), row("f", "Good")]);
+    expect(counts).toEqual({ all: 6, tiers: { good: 0, decent: 1, bad: 5 }, unscored: 0 });
+    expect(countFor(counts, "bad")).toBe(5);
+    expect(countFor(counts, "good")).toBe(0);
+  });
+
+  it("counts the engine's bin Good under Decent, never under the tier that reads Good", () => {
+    const counts = fitCounts([row("a", "Good"), row("b", "Good"), row("c", "Strong")]);
+    expect(counts.tiers).toEqual({ good: 1, decent: 2, bad: 0 });
   });
 
   it("counts a row with an unrecognised bin as not scored, so the groups always add up to All", () => {
     const counts = fitCounts([row("a", "Good"), job({ title: "odd", score: score({ bin: "Excellent" as ScoreBin }) }), row("c", null)]);
     expect(counts.all).toBe(3);
-    expect(counts.tiers).toEqual({ Strong: 0, Good: 1, Mixed: 0, Poor: 0 });
+    expect(counts.tiers).toEqual({ good: 0, decent: 1, bad: 0 });
     expect(counts.unscored).toBe(2);
     const rows = [row("a", "Good"), row("b", "Poor"), row("c", null), job({ title: "x", score: score({ bin: "?" as ScoreBin }) }), job({ title: "y", score: score({ bin: 7 as unknown as ScoreBin }) })];
     const all = fitCounts(rows);
@@ -91,43 +120,50 @@ describe("tiers and counts", () => {
   });
 
   it("counts nothing for no rows", () => {
-    expect(fitCounts([])).toEqual({ all: 0, tiers: { Strong: 0, Good: 0, Mixed: 0, Poor: 0 }, unscored: 0 });
+    expect(fitCounts([])).toEqual({ all: 0, tiers: { good: 0, decent: 0, bad: 0 }, unscored: 0 });
   });
 });
 
 describe("which filters are offered", () => {
-  const counts = (tiers: Partial<Record<ScoreBin, number>>, unscored = 0) => ({
+  const counts = (tiers: Partial<Record<FitGrade, number>>, unscored = 0) => ({
     all: Object.values(tiers).reduce((sum, n) => sum + n, 0) + unscored,
-    tiers: { Strong: 0, Good: 0, Mixed: 0, Poor: 0, ...tiers },
+    tiers: { good: 0, decent: 0, bad: 0, ...tiers },
     unscored,
   });
 
   it("offers nothing when fewer than two groups hold rows", () => {
     expect(offeredFilters(counts({}), true)).toEqual([]);
-    expect(offeredFilters(counts({ Good: 5 }), true)).toEqual([]);
+    expect(offeredFilters(counts({ decent: 5 }), true)).toEqual([]);
     expect(offeredFilters(counts({}, 4), true)).toEqual([]);
   });
 
   it("offers All, the non-empty tiers best first, then Not scored, once there are two groups", () => {
-    expect(offeredFilters(counts({ Good: 2, Poor: 1 }), true)).toEqual(["all", "Good", "Poor"]);
-    expect(offeredFilters(counts({ Poor: 1, Strong: 3, Mixed: 2 }, 4), true)).toEqual(["all", "Strong", "Mixed", "Poor", "unscored"]);
-    expect(offeredFilters(counts({ Good: 2 }, 1), true)).toEqual(["all", "Good", "unscored"]);
+    expect(offeredFilters(counts({ decent: 2, bad: 1 }), true)).toEqual(["all", "decent", "bad"]);
+    expect(offeredFilters(counts({ bad: 1, good: 3, decent: 2 }, 4), true)).toEqual(["all", "good", "decent", "bad", "unscored"]);
+    expect(offeredFilters(counts({ decent: 2 }, 1), true)).toEqual(["all", "decent", "unscored"]);
+  });
+
+  it("offers no fit group for rows that are all Mixed or Poor: they are one tier, and one group is nothing to choose", () => {
+    const onlyBad = fitCounts([row("a", "Mixed"), row("b", "Poor"), row("c", "Poor")]);
+    expect(offeredFilters(onlyBad, true)).toEqual([]);
+    const withUnscored = fitCounts([row("a", "Mixed"), row("b", "Poor"), row("c", null)]);
+    expect(offeredFilters(withUnscored, true)).toEqual(["all", "bad", "unscored"]);
   });
 
   it("offers no group when the tiers mean nothing, whatever the rows hold", () => {
-    expect(offeredFilters(counts({ Good: 2, Poor: 1 }), false)).toEqual([]);
-    expect(offeredFilters(counts({ Good: 2 }, 3), false)).toEqual([]);
+    expect(offeredFilters(counts({ decent: 2, bad: 1 }), false)).toEqual([]);
+    expect(offeredFilters(counts({ decent: 2 }, 3), false)).toEqual([]);
   });
 
   it("falls back to All for a choice that is not offered", () => {
-    expect(resolveFilter("Poor", ["all", "Strong", "Good"])).toBe("all");
-    expect(resolveFilter("Strong", ["all", "Strong", "Good"])).toBe("Strong");
+    expect(resolveFilter("bad", ["all", "good", "decent"])).toBe("all");
+    expect(resolveFilter("good", ["all", "good", "decent"])).toBe("good");
     expect(resolveFilter("unscored", [])).toBe("all");
     expect(resolveFilter("all", [])).toBe("all");
   });
 
   it("names every filter and every sort in the words the toolbar prints", () => {
-    expect(FILTER_LABEL).toEqual({ all: "All", Strong: "Strong", Good: "Good", Mixed: "Mixed", Poor: "Poor", unscored: "Not scored" });
+    expect(FILTER_LABEL).toEqual({ all: "All", good: "Good", decent: "Decent", bad: "Bad fit", unscored: "Not scored" });
     expect(SORT_LABEL).toEqual({ returned: "As returned", fit: "Best fit", newest: "Newest" });
   });
 });
@@ -384,18 +420,30 @@ describe("arranging both sections", () => {
 
   it("returns empty sections for no rows", () => {
     expect(arrange({ scored: [], more: [], filter: "all", sort: "fit" })).toEqual({ scored: [], more: [] });
-    expect(arrange({ scored: [], more: [], filter: "Strong", sort: "newest" })).toEqual({ scored: [], more: [] });
+    expect(arrange({ scored: [], more: [], filter: "good", sort: "newest" })).toEqual({ scored: [], more: [] });
   });
 
   it("keeps one tier and hides the rows past the scoring batch", () => {
-    const out = arrange({ scored, more, filter: "Strong", sort: "returned" });
+    const out = arrange({ scored, more, filter: "good", sort: "returned" });
     expect(titles(out.scored)).toEqual(["s1", "s2"]);
     expect(out.more).toEqual([]);
   });
 
+  it("keeps the engine's Mixed and Poor rows together for Bad fit, in the order they came", () => {
+    const out = arrange({ scored, more, filter: "bad", sort: "returned" });
+    expect(titles(out.scored)).toEqual(["p1", "m1"]);
+    expect(out.more).toEqual([]);
+    expect(titles(arrange({ scored, more, filter: "bad", sort: "fit" }).scored)).toEqual(["m1", "p1"]);
+  });
+
+  it("keeps the engine's bin Good for Decent, and never for the tier that reads Good", () => {
+    expect(titles(arrange({ scored, more, filter: "decent", sort: "returned" }).scored)).toEqual(["g1"]);
+    expect(titles(arrange({ scored, more, filter: "good", sort: "returned" }).scored)).not.toContain("g1");
+  });
+
   it("keeps a tier by section membership, and finds a row of that tier in either section", () => {
     const stray = row("stray", "Good", 30);
-    const out = arrange({ scored, more: [...more, stray], filter: "Good", sort: "returned" });
+    const out = arrange({ scored, more: [...more, stray], filter: "decent", sort: "returned" });
     expect(titles(out.scored)).toEqual(["g1"]);
     expect(titles(out.more)).toEqual(["stray"]);
   });
@@ -408,7 +456,7 @@ describe("arranging both sections", () => {
   });
 
   it("returns empty sections for a tier nobody holds, though the toolbar never offers it", () => {
-    expect(arrange({ scored: [row("a", "Good")], more: [], filter: "Poor", sort: "returned" })).toEqual({ scored: [], more: [] });
+    expect(arrange({ scored: [row("a", "Good")], more: [], filter: "bad", sort: "returned" })).toEqual({ scored: [], more: [] });
   });
 
   it("shows a row with an unrecognised bin under All and under Not scored, and under no tier", () => {
@@ -458,7 +506,7 @@ describe("arranging both sections", () => {
 
   it("does not mutate the sections it is given", () => {
     const before = [titles(scored), titles(more)];
-    arrange({ scored, more, filter: "Strong", sort: "fit" });
+    arrange({ scored, more, filter: "good", sort: "fit" });
     arrange({ scored, more, filter: "all", sort: "newest" });
     expect([titles(scored), titles(more)]).toEqual(before);
   });
@@ -481,6 +529,7 @@ describe("the invariant: every filter the toolbar offers keeps at least one row"
       more: [],
       tiersMeaningful: true,
     },
+    { name: "Mixed and Poor rows under one chip", scored: [row("m", "Mixed", 45), row("p", "Poor", 10), row("s", "Strong", 90)], more: [], tiersMeaningful: true },
     { name: "two tiers, nothing past the batch", scored: [row("s", "Strong", 90), row("p", "Poor", 10), row("p2", "Poor", 9)], more: [], tiersMeaningful: true },
     { name: "an unscored row inside the scored section", scored: [row("g", "Good"), row("hole", null)], more: [], tiersMeaningful: true },
   ];
@@ -503,10 +552,18 @@ describe("the sentences", () => {
   });
 
   it("says how many of the total a tier keeps, and how many unscored rows that leaves out", () => {
-    expect(filterSummary("Strong", 6, 25, 7)).toBe("Showing 6 of 25 results, Strong fit only. 7 not scored are not shown.");
-    expect(filterSummary("Poor", 3, 25, 1)).toBe("Showing 3 of 25 results, Poor fit only. 1 not scored is not shown.");
-    expect(filterSummary("Mixed", 3, 18, 0)).toBe("Showing 3 of 18 results, Mixed fit only.");
-    expect(filterSummary("Good", 1, 4, 0)).toBe("Showing 1 of 4 results, Good fit only.");
+    expect(filterSummary("good", 6, 25, 7)).toBe("Showing 6 of 25 results, Good fit only. 7 not scored are not shown.");
+    expect(filterSummary("bad", 3, 25, 1)).toBe("Showing 3 of 25 results, Bad fit only. 1 not scored is not shown.");
+    expect(filterSummary("decent", 3, 18, 0)).toBe("Showing 3 of 18 results, Decent fit only.");
+    expect(filterSummary("decent", 1, 4, 0)).toBe("Showing 1 of 4 results, Decent fit only.");
+  });
+
+  it("names a tier in the count line by the grade a person is shown, and says 'fit' once", () => {
+    for (const tier of TIER_ORDER) {
+      const line = filterSummary(tier, 2, 9, 0) ?? "";
+      expect(line, tier).not.toMatch(/Strong|Mixed|Poor|fit fit/);
+      expect(line.match(/\bfit\b/g), tier).toHaveLength(1);
+    }
   });
 
   it("says Not scored only", () => {
@@ -516,8 +573,8 @@ describe("the sentences", () => {
 
   it("announces each filter in the count line's words, and All in its own", () => {
     expect(arrangeAnnouncement({ kind: "filter", filter: "all", shown: 25, total: 25, hiddenUnscored: 0 })).toBe("Showing all 25 results.");
-    expect(arrangeAnnouncement({ kind: "filter", filter: "Strong", shown: 6, total: 25, hiddenUnscored: 7 })).toBe(
-      "Showing 6 of 25 results, Strong fit only. 7 not scored are not shown.",
+    expect(arrangeAnnouncement({ kind: "filter", filter: "good", shown: 6, total: 25, hiddenUnscored: 7 })).toBe(
+      "Showing 6 of 25 results, Good fit only. 7 not scored are not shown.",
     );
     expect(arrangeAnnouncement({ kind: "filter", filter: "unscored", shown: 7, total: 25, hiddenUnscored: 0 })).toBe("Showing 7 of 25 results, not scored only.");
     expect(arrangeAnnouncement({ kind: "filter", filter: "all", shown: 1, total: 1, hiddenUnscored: 0 })).toBe("Showing all 1 result.");
@@ -554,7 +611,7 @@ describe("the sentences", () => {
   });
 
   it("uses no em dash and not the word verified", () => {
-    const filters: FitFilter[] = ["all", "Strong", "Good", "Mixed", "Poor", "unscored"];
+    const filters: FitFilter[] = ["all", "good", "decent", "bad", "unscored"];
     const lines = [
       ...filters.map((filter) => arrangeAnnouncement({ kind: "filter", filter, shown: 2, total: 9, hiddenUnscored: 3 })),
       ...(["returned", "fit", "newest"] as const).map((sort) => arrangeAnnouncement({ kind: "sort", sort })),

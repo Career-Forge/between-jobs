@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { GRADE_LABEL, GRADE_LADDER, isFitGrade, type FitGrade } from "../../lib/fitGrade";
 import { isScoreWithin } from "../../lib/scoreRange";
 import { GlyphMark } from "./TrailLine";
 import "../../styles/paper-doc.css";
@@ -9,8 +10,11 @@ import "../../styles/paper-doc.css";
 //   ScoreBlock  The ATS score block: a label with the "engine ✦" mark at the right, the big numeral
 //               (gold serif, lining tabular figures) with its muted "/ 100 · medium confidence",
 //               then whatever the page puts under it -- usually SegmentedBars -- and a footer line.
-//   FitLadder   The Discover fit block's ladder: four gold cells (Poor 1, Mixed 2, Good 3, Strong 4
-//               filled) and the words "Good -- 61 / 100".
+//   FitLadder   The Discover fit block's ladder: three cells, one per grade a person is shown (Bad fit 1,
+//               Decent 2, Good 3 filled), and the words "Decent -- 61 / 100". The filled cells take the
+//               grade's own colour (rose, yellow, green), never gold, and the word is always beside them:
+//               the colour repeats the word and never stands in for it. The grades, and which of the
+//               engine's bins each one is shown for, are lib/fitGrade.ts.
 //
 // Both say that code did the math over what a model extracted ("engine ✦"), because that is what the
 // trail's own "engine" glyph means; pass `engine={false}` for a number that is not that.
@@ -77,10 +81,8 @@ export function ScoreBlock({ label, value, max = 100, from, caption, engine = tr
 }
 
 export interface FitLadderProps {
-  /** The rungs, lowest first: ["Poor", "Mixed", "Good", "Strong"]. */
-  levels: readonly string[];
-  /** The rung reached, by name; null for no rung. */
-  level: string | null;
+  /** The grade reached, which is the rung; null (or anything that is not a grade) for no rung. */
+  grade: FitGrade | null;
   /** The number beside the name; left out of the words when null, missing or outside 0 to `max`. */
   score?: number | null;
   max?: number;
@@ -90,26 +92,28 @@ export interface FitLadderProps {
   /** Draws the "engine ✦" micro-caption when a rung was reached (never for "Not scored"). On by default. */
   engine?: boolean;
   /**
-   * Draws the words beside the cells ("Good -- 61 / 100", or "Placeholder"). On by default. A caller that
-   * prints the number and the name itself leaves them off; the image's label still says all of it.
+   * Draws the words beside the cells ("Decent -- 61 / 100", or "Placeholder"). On by default. A caller that
+   * prints the number and the grade itself leaves them off; the image's label still says all of it.
    */
   showWords?: boolean;
   className?: string;
 }
 
-export function FitLadder({ levels, level, score, max = 100, placeholder = false, placeholderLabel = "Placeholder", engine = true, showWords = true, className }: FitLadderProps) {
-  const rung = placeholder || level === null ? -1 : levels.indexOf(level);
-  // A level the ladder does not have is drawn as no rung and no name rather than guessed at.
-  const reached = rung === -1 ? 0 : rung + 1;
-  const hasScore = !placeholder && rung !== -1 && isScoreWithin(score, max);
-  const words = placeholder ? placeholderLabel : rung === -1 ? "Not scored" : hasScore ? `${level} -- ${score} / ${max}` : String(level);
+export function FitLadder({ grade, score, max = 100, placeholder = false, placeholderLabel = "Placeholder", engine = true, showWords = true, className }: FitLadderProps) {
+  // A value that is not one of the grades is drawn as no rung and no name rather than guessed at.
+  const reached = placeholder || !isFitGrade(grade) ? null : grade;
+  const filled = reached === null ? 0 : GRADE_LADDER.indexOf(reached) + 1;
+  const hasScore = reached !== null && isScoreWithin(score, max);
+  const words = placeholder ? placeholderLabel : reached === null ? "Not scored" : hasScore ? `${GRADE_LABEL[reached]} -- ${score} / ${max}` : GRADE_LABEL[reached];
   const label = `Fit: ${words}`;
+  // The grade's class is what colours the filled cells, from a fixed list of three.
+  const classes = ["bj-ladder", reached === null ? null : `bj-ladder--${reached}`, className ?? null].filter((name) => name !== null).join(" ");
   return (
-    <div className={className === undefined ? "bj-ladder" : `bj-ladder ${className}`}>
+    <div className={classes}>
       <div className="bj-ladder-row" role="img" aria-label={label}>
         <span className="bj-ladder-cells" aria-hidden="true">
-          {levels.map((name, index) => (
-            <span key={name} className={index < reached ? "bj-ladder-cell bj-ladder-cell--filled" : "bj-ladder-cell"} />
+          {GRADE_LADDER.map((rung, index) => (
+            <span key={rung} className={index < filled ? "bj-ladder-cell bj-ladder-cell--filled" : "bj-ladder-cell"} />
           ))}
         </span>
         {showWords && (
@@ -118,7 +122,7 @@ export function FitLadder({ levels, level, score, max = 100, placeholder = false
           </span>
         )}
       </div>
-      {engine && !placeholder && rung !== -1 && (
+      {engine && reached !== null && (
         <p className="bj-ladder-caption">
           <GlyphMark name="engine" />
         </p>

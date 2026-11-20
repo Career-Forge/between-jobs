@@ -34,7 +34,7 @@ export function ItemBody({ view, spendNoteId }: { view: RowView; spendNoteId?: s
   return (
     <>
       {view.chip !== null && (
-        <p className="bj-today-chip">
+        <p className={view.chip.tone === "gold" ? "bj-today-chip" : `bj-today-chip bj-today-chip--${view.chip.tone}`}>
           <span aria-hidden="true">{"◆"}</span>
           {view.chip.text}
         </p>

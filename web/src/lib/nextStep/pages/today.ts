@@ -19,6 +19,7 @@
 // band holds out of the list below it (an item never shows twice) without deciding it a second time.
 
 import { CROSS_NAV_HASH } from "../../applicationsBoard";
+import { GRADE_LABEL, gradeOfBin } from "../../fitGrade";
 import { definePage, type NextStep, type NextStepAction, type NextStepRow } from "../types";
 
 export type TodayKind =
@@ -291,8 +292,6 @@ function readyStep(item: TodayItemFact): NextStep | null {
   };
 }
 
-const KNOWN_BINS: readonly string[] = ["Strong", "Good", "Mixed", "Poor"];
-
 function matchStep(item: TodayItemFact): NextStep | null {
   const match = item.match;
   if (match === null) return null;
@@ -300,7 +299,10 @@ function matchStep(item: TodayItemFact): NextStep | null {
     item.trackedApplicationId === null
       ? { kind: "button", label: "Track", intent: todayIntent("track", item.id) }
       : { kind: "link", label: "Open workspace", to: workspacePath(item.trackedApplicationId) };
-  const what = KNOWN_BINS.includes(match.bin) ? `A ${match.bin} match` : "A match";
+  // The sentence says the grade a person is shown for the engine's bin (lib/fitGrade.ts), so it reads as
+  // the item's chip does. A bin that is not one of the engine's is not printed: the match has no grade word.
+  const grade = gradeOfBin(match.bin);
+  const what = grade === null ? "A match" : `A ${GRADE_LABEL[grade]} match`;
   const why = ["high fit job", `${match.score100} / 100`];
   if (match.searchLabel !== null) why.push(`saved search ${match.searchLabel}`);
   return {

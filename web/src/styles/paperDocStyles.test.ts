@@ -206,9 +206,18 @@ describe("the score patterns", () => {
     expect(numeral["font-variant-numeric"]).toBe("lining-nums tabular-nums");
   });
 
-  it("draws the fit ladder in four gold cells", () => {
-    expect(decl(".bj-ladder-cell--filled").background).toBe("var(--bj-gold)");
+  it("fills the fit ladder's cells in the colour of the grade reached, and never in gold", () => {
+    for (const [grade, token] of [["good", "--bj-fit-good"], ["decent", "--bj-fit-decent"], ["bad", "--bj-fit-bad"]] as const) {
+      expect(decl(`.bj-ladder--${grade} .bj-ladder-cell--filled`), grade).toEqual({ "border-color": `var(${token})`, background: `var(${token})` });
+    }
+    // A filled cell has no colour of its own: without a grade on the ladder nothing is filled.
+    expect(decl(".bj-ladder-cell--filled")).toEqual({ "forced-color-adjust": "none" });
     expect(decl(".bj-ladder-cell").border).toBe("1px solid var(--bj-outline)");
+    const ladderRules = rulesOf(docCss).filter((rule) => rule.selectors.some((selector) => selector.includes("bj-ladder")));
+    expect(ladderRules.length).toBeGreaterThan(0);
+    for (const rule of ladderRules) {
+      expect(Object.values(rule.declarations).join(" "), rule.selectors.join(", ")).not.toMatch(/--bj-gold|--bj-danger/);
+    }
   });
 
   it("draws no gauge, ring or radar: no conic or radial gradient, no clip-path arc", () => {

@@ -653,11 +653,13 @@ describe("what pressing Save this search starts, said under the form's buttons",
 });
 
 describe("a row's fit block", () => {
-  it("draws the ladder with the bin and number and the engine mark in the gutter, and the one line beside the text", () => {
+  it("draws the ladder with the grade and number and the engine mark in the gutter, and the one line beside the text", () => {
+    // The fixture row is in the engine's bin Good, which a person is shown as "Decent": two of three cells.
     const { container } = draw(ready());
     const gutter = query(container, ".bj-disc-score");
-    expect(query(gutter, "[role='img']").getAttribute("aria-label")).toBe("Fit: Good -- 61 / 100");
-    expect(gutter.querySelectorAll(".bj-ladder-cell--filled")).toHaveLength(3);
+    expect(query(gutter, "[role='img']").getAttribute("aria-label")).toBe("Fit: Decent -- 61 / 100");
+    expect(gutter.querySelectorAll(".bj-ladder-cell")).toHaveLength(3);
+    expect(gutter.querySelectorAll(".bj-ladder-cell--filled")).toHaveLength(2);
     expect(words(gutter)).toContain("engine");
     expect(words(query(container, ".bj-fit"))).toContain("Strong overlap on data pipelines.");
     expect(container.querySelector(".bj-ladder-words")).toBeNull();
@@ -772,15 +774,35 @@ describe("a row, in the order it is read", () => {
   const childClasses = (row: Element) => [...row.children].map(areaClass);
   const unscored = (extra: Partial<ReturnType<typeof job>> = {}) => job({ score: null, apply_url: "https://jobs.example/acme/u", title: "Analyst", ...extra });
 
-  it("leads a scored row with its number out of 100 and its tier word, hidden from assistive technology, since the ladder says the same once", () => {
+  it("leads a scored row with its number out of 100 and its grade word, hidden from assistive technology, since the ladder says the same once", () => {
     const strong = job({ score: score({ bin: "Strong", score100: 88 }) });
     const { container } = draw(ready(response({ scored: [strong] })));
     const text = query(container, ".bj-disc-score-text");
     expect(text.getAttribute("aria-hidden")).toBe("true");
     expect(words(query(text, ".bj-disc-score-line"))).toBe("88 / 100");
-    expect(words(query(text, ".bj-disc-score-tier"))).toBe("Strong");
-    expect(query(container, ".bj-disc-score [role='img']").getAttribute("aria-label")).toBe("Fit: Strong -- 88 / 100");
+    expect(words(query(text, ".bj-disc-score-tier"))).toBe("Good");
+    expect(query(container, ".bj-disc-score [role='img']").getAttribute("aria-label")).toBe("Fit: Good -- 88 / 100");
     expect(words(query(container, ".bj-disc-score .bj-ladder-caption"))).toBe("engine ✦");
+  });
+
+  it("shows each of the engine's four bins as one of three grades: the word, the rungs filled and the ladder's colour class agree, and the engine's word is not printed", () => {
+    const shown = [
+      ["Strong", "Good", 3, "bj-ladder--good"],
+      ["Good", "Decent", 2, "bj-ladder--decent"],
+      ["Mixed", "Bad fit", 1, "bj-ladder--bad"],
+      ["Poor", "Bad fit", 1, "bj-ladder--bad"],
+    ] as const;
+    for (const [bin, word, filled, ladderClass] of shown) {
+      const { container, unmount } = draw(ready(response({ scored: [job({ score: score({ bin, score100: 50, one_liner: "Reads the posting." }) })] })));
+      const gutter = query(container, ".bj-disc-score");
+      expect(words(query(gutter, ".bj-disc-score-tier")), bin).toBe(word);
+      expect(query(gutter, "[role='img']").getAttribute("aria-label"), bin).toBe(`Fit: ${word} -- 50 / 100`);
+      expect(gutter.querySelectorAll(".bj-ladder-cell"), bin).toHaveLength(3);
+      expect(gutter.querySelectorAll(".bj-ladder-cell--filled"), bin).toHaveLength(filled);
+      expect(classes(query(gutter, ".bj-ladder")).filter((name) => name.startsWith("bj-ladder--")), bin).toEqual([ladderClass]);
+      if (bin !== word) expect(words(rowsOf(container)[0]), bin).not.toContain(bin);
+      unmount();
+    }
   });
 
   it("prints '/ 100' as visible text on every scored row", () => {
@@ -799,15 +821,15 @@ describe("a row, in the order it is read", () => {
     expect(words(query(container, ".bj-disc-score"))).toBe("Placeholder");
   });
 
-  it("prints no number it cannot read: a score that is not a number, or is outside 0 to 100, leaves the tier word and the ladder alone", () => {
+  it("prints no number it cannot read: a score that is not a number, or is outside 0 to 100, leaves the grade word and the ladder alone", () => {
     for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, undefined as unknown as number, 150, -5, 100.01, Number.NEGATIVE_INFINITY]) {
       const { container, unmount } = draw(ready(response({ scored: [job({ score: score({ score100: bad }) })] })));
       const gutter = words(query(container, ".bj-disc-score"));
       expect(gutter).not.toMatch(/NaN|Infinity|undefined|150|-5|100\.01/);
       expect(container.querySelector(".bj-disc-score-num")).toBeNull();
       expect(container.querySelector(".bj-disc-score-of")).toBeNull();
-      expect(words(query(container, ".bj-disc-score-tier"))).toBe("Good");
-      expect(query(container, ".bj-disc-score [role='img']").getAttribute("aria-label")).toBe("Fit: Good");
+      expect(words(query(container, ".bj-disc-score-tier"))).toBe("Decent");
+      expect(query(container, ".bj-disc-score [role='img']").getAttribute("aria-label")).toBe("Fit: Decent");
       unmount();
     }
   });
@@ -830,7 +852,7 @@ describe("a row, in the order it is read", () => {
     for (const [value, printed] of [[0, "0 / 100"], [100, "100 / 100"], [88.5, "88.5 / 100"], [12, "12 / 100"]] as const) {
       const { container, unmount } = draw(ready(response({ scored: [job({ score: score({ bin: "Strong", score100: value }) })] })));
       expect(words(query(container, ".bj-disc-score-line"))).toBe(printed);
-      expect(query(container, ".bj-disc-score [role='img']").getAttribute("aria-label")).toBe(`Fit: Strong -- ${printed}`);
+      expect(query(container, ".bj-disc-score [role='img']").getAttribute("aria-label")).toBe(`Fit: Good -- ${printed}`);
       unmount();
     }
   });
@@ -867,7 +889,8 @@ describe("a row, in the order it is read", () => {
     const { container } = draw(ready(response({ scored: rows, more: [unscored()] })));
     const counts = [...container.querySelectorAll('[aria-label="Show results by fit"] .bj-disc-chip-count')].map((count) => Number(words(count)));
     const names = [...container.querySelectorAll('[aria-label="Show results by fit"] button')].map((button) => words(button).replace(/ \d+ results?$/, ""));
-    expect(names).toEqual(["All", "Good", "Poor", "Not scored"]);
+    // Row A is in the engine's bin Good (the Decent chip) and row B in Poor (the Bad fit chip).
+    expect(names).toEqual(["All", "Decent", "Bad fit", "Not scored"]);
     expect(counts).toEqual([4, 1, 1, 2]);
     expect(counts[0]).toBe(counts.slice(1).reduce((sum, n) => sum + n, 0));
     click(buttonNamed(query(container, '[aria-label="Show results by fit"]'), /^Not scored /));
@@ -878,8 +901,8 @@ describe("a row, in the order it is read", () => {
     const { container } = draw(ready(response({ scored: [job({ score: score({ bin: "Strong", score100: 88 }) })] })));
     const gutter = query(container, ".bj-disc-score");
     expect(words(query(gutter, ".bj-disc-score-line"))).toBe("88 / 100");
-    expect(words(query(gutter, ".bj-disc-score-tier"))).toBe("Strong");
-    expect(query(gutter, "[role='img']").getAttribute("aria-label")).toBe("Fit: Strong -- 88 / 100");
+    expect(words(query(gutter, ".bj-disc-score-tier"))).toBe("Good");
+    expect(query(gutter, "[role='img']").getAttribute("aria-label")).toBe("Fit: Good -- 88 / 100");
   });
 
   it("keeps the whole posting text in a row that has no Why this score: the stylesheet caps what shows, and View posting is on the row", () => {
@@ -898,7 +921,7 @@ describe("a row, in the order it is read", () => {
     }
   });
 
-  it("gives each row the class of its tier, and a placeholder or unscored row the class of its kind", () => {
+  it("gives each row the class of its engine bin, whatever grade it is shown as, and a placeholder or unscored row the class of its kind", () => {
     const bins = ["Strong", "Good", "Mixed", "Poor"] as const;
     const scored = bins.map((bin, index) => job({ apply_url: `https://jobs.example/acme/${index}`, score: score({ bin }) }));
     const { container } = draw(ready(response({ scored, more: [unscored()] })));
@@ -1078,10 +1101,11 @@ describe("the results' choices, across the page's states", () => {
   it("forgets the fit, the sort and the open details while the next search runs, and starts the next answer from All", () => {
     const first = mixedResponse();
     const view = draw(ready(first));
-    click(buttonNamed(query(view.container, '[aria-label="Show results by fit"]'), /^Poor /));
+    click(buttonNamed(query(view.container, '[aria-label="Show results by fit"]'), /^Bad fit /));
     click(buttonNamed(query(view.container, '[aria-label="Sort results"]'), "Newest"));
     click(query(view.container, ".bj-disc-toggle input"));
-    expect(rowsIn(view.container)).toBe(3);
+    // Bad fit keeps the engine's three Mixed rows and its three Poor rows.
+    expect(rowsIn(view.container)).toBe(6);
     redraw(view, { search: { kind: "loading", startedAt: Date.now() }, outcome: band({ phase: "searching" }) });
     expect(view.container.querySelector(".bj-disc-tools")).toBeNull();
     redraw(view, ready(mixedResponse()));
