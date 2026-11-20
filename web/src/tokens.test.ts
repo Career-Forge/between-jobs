@@ -288,6 +288,26 @@ describe("forced colors", () => {
 });
 
 describe("motion", () => {
+  it("eases a button's hover and press, and never its focus ring", () => {
+    const transition = declarationsFor(tokensCss, "button").transition ?? "";
+    expect(transition.replace(/\s+/g, " ")).toBe("background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.08s ease");
+    expect(transition).not.toMatch(/outline|all/);
+    expect(declarationsFor(tokensCss, "input").transition).toBe("border-color 0.15s ease");
+  });
+
+  it("dips a pressed button by a pixel, and leaves a disabled or busy one where it is", () => {
+    expect(declarationsFor(tokensCss, 'button:active:not(:disabled):not([aria-disabled="true"])')).toEqual({ transform: "translateY(1px)" });
+  });
+
+  it("defines the arrival and the placeholder pulse once, in the shell's stylesheet, without moving anything sideways", () => {
+    const rise = blockOf(appCss, "@keyframes bj-rise-in") ?? "";
+    expect(rise).toMatch(/opacity:\s*0/);
+    expect(rise).toMatch(/transform:\s*translateY\(4px\)/);
+    const pulse = blockOf(appCss, "@keyframes bj-skeleton-pulse") ?? "";
+    expect(pulse).toMatch(/opacity:\s*0\.55/);
+    expect(pulse).not.toMatch(/transform|background/);
+  });
+
   it("collapses animation, transition and smooth scrolling for anyone who asks for less motion", () => {
     const block = blockOf(tokensCss, "@media (prefers-reduced-motion: reduce)") ?? "";
     expect(block).toMatch(/animation-duration:\s*0\.01ms !important/);
